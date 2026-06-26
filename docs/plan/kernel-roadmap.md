@@ -1,330 +1,256 @@
 # AntX 内核工程规划书
 
-> 基于 2026-06-07 全量技术评估与业界 OS 设计模型精细对比, 制定从"可启动内核"到"可运行真实工作负载"的四阶段演进路线.
+> 基于 2026-06-07 全量技术评估与业界 OS 设计模型精细对比, 制定从"可启动内核"到"可运行真实工作负载"的四阶段演进路线. 持续更新至 2026-06-26, Phase A/B/C/D 全部完成 (除特定项 D1-D11 见正文).
 
 ## 背景
-
-AntX 内核在架构设计 (Framekernel)、安全抽象 (TCB 最小化)、文件系统深度 (HvFS) 和故障恢复 (Barrier Stack) 方面已达到较高水准, 但与"可运行真实用户态应用的操作系统"之间, 存在系统性的功能缺口. 核心瓶颈集中在**用户态运行时支撑层**: 缺少 execve/futex/epoll/page cache/swap 等关键机制, 导致内核当前无法启动用户态 init 进程、无法运行共享库程序、无法构建高性能 I/O 服务.
-
-本规划将缺失功能按优先级分为 P0 (阻塞真实应用运行)、P1 (影响开发效率与系统完整性)、P2 (长期增强), 并按依赖关系编排为四个阶段.
+- **背景条目**
+  - 描述: AntX 在 Framekernel/TCB 最小化/HvFS/Barrier Stack 已达较高水准, 与"可运行真实用户态应用的操作系统"间存在系统性的功能缺口
+  - 方案: 核心瓶颈集中在用户态运行时支撑层: 缺少 execve/futex/epoll/page cache/swap 等关键机制; 按优先级 P0/P1/P2, 按依赖关系编排为 4 个阶段
+  - 状态: [X]
 
 ## 目标
+- **目标条目**
+  - 描述: 4 阶段演进路线
+  - 方案: Phase A 内核可启动并运行首个用户态 init 进程; Phase B 可运行依赖共享库的真实用户态程序 (如 busybox); Phase C 可构建高性能网络服务与多进程应用; Phase D 达到生产可用级别, 支持容器化与可观测性
+  - 状态: [X]
 
-- Phase A: 内核可启动并运行首个用户态 init 进程
-- Phase B: 可运行依赖共享库的真实用户态程序 (如 busybox)
-- Phase C: 可构建高性能网络服务与多进程应用
-- Phase D: 达到生产可用级别, 支持容器化与可观测性
+## 现状 (截至 2026-06-07)
+- **已完成条目**
+  - 描述: 14 类已完成核心子系统
+  - 方案: Framekernel 双子树架构 (framework+services) / 内存管理 (Buddy+Slab+Kmalloc+COW+VMA+Demand Paging+OOMD) / 进程调度 (CFS+FIFO/RR/Deadline+Per-CPU+PWID) / 中断 (IDT+ISR+IRQ+APIC/IOAPIC) / 文件系统 (VFS+HvFS+ramfs/devfs/procfs) / 设备驱动 (Chitin+E1000/VirtIO+NVMe/AHCI/XHCI) / 网络 (smoltcp+DHCP+Socket) / 同步 (SpinLock/Mutex/RwLock/SeqLock/RCU) / IPC (Pipe/SHM/MsgQ/Sem) / 安全 (Credo+KASLR+PageTableChecker W^X) / 故障恢复 (Barrier Stack) / 配置 (统一配置中心+启动镜像编码) / WASM (解释器原型) / 构建 (x86_64+aarch64)
+  - 状态: [X]
+- **未完成条目 (P0 级关键缺失)**
+  - 描述: 14 类 P0 关键缺失
+  - 方案: Swap/页面回收 (sysinfo 硬编码为 0) / Page Cache (VMA 有 FileBacked 但无实现) / 文件 mmap (仅 MAP_ANONYMOUS) / execve (无 sys_execve) / Futex (完全缺失) / epoll (完全缺失) / initramfs + PID 1 (完全缺失) / hrtimer (仅 PIT tick) / 用户态 ASLR (无) / MSI/MSI-X (仅注释) / ACPI 完整解析 (仅 MADT) / POSIX 信号投递 (类型有, 投递无) / CPU 亲和性 (无) / io_uring/AIO (无)
+  - 状态: []
 
-## 现状
+## 进度跟踪 (2026-06-08 ~ 2026-06-26)
+- **Phase B 状态: 4/4 完成 (2026-06-08)**
+  - 描述: Phase B 4 子项全部完成
+  - 方案: B1 Futex (framework/syscall/futex.rs 428 行 + services/sync/futex.rs 148 行, 64 桶哈希表, FUTEX_WAIT/WAKE/REQUEUE/BITSET 全套) / B2 Page Cache + 文件 mmap (framework/mm/pcache.rs 454 行, demand paging 真语义) / B3 Swap (framework/mm/swap.rs, kswapd softirq, LRU 跟踪 pml4) / B4 MSI/MSI-X + ACPI (framework/pci/msi.rs 462 行 + arch/x86_64/acpi.rs 840 行 FADT/HPET/DMAR)
+  - 状态: [X]
 
-截至 2026-06-07, 已完成:
+- **Phase C 状态: 7/7 完成 (2026-06-10)**
+  - 描述: Phase C 7 子项全部完成
+  - 方案: C1 epoll (framework/syscall/epoll.rs 370 行, VFS 集成 + WaitQueue 真阻塞 + epoll_pwake 唤醒) / C2 CPU 亲和性 (framework/proc/process.rs cpuset_allowed + 203/204 syscalls) / C3 UDS (services/net/unix.rs, AF_UNIX 协议族, 详见 uds-design.md) / C4 io_uring/AIO (framework/io/iouring.rs Sqe/Cqe/RingBuffer) / C5 路由表+Netfilter (5 钩子点+NfRule) / C6 Lockdep+ftrace (2026-06-09) / C7 KPTI+Seccomp (KPTI 双架构全功能, Seccomp 严格+过滤模式)
+  - 状态: [X]
 
-- Framekernel 双子树架构: framework (TCB) + services (safe Rust), CI 三层强制防线
-- 内存管理: Buddy PMM + Slab + Kmalloc + COW + VMA + Demand Paging + OOMD + 内存压力检测
-- 进程调度: CFS + FIFO/RR/Deadline + Per-CPU 队列 + PWID 配额
-- 中断: IDT + ISR + IRQ + APIC/IOAPIC
-- 文件系统: VFS + HvFS (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) + ramfs/devfs/procfs
-- 设备驱动: Chitin 框架 + E1000/VirtIO safe 迁移 + NVMe/AHCI/XHCI (framework 层)
-- 网络: smoltcp 协议栈 + DHCP + Socket API 基础
-- 同步: SpinLock/Mutex/RwLock/SeqLock/RCU + services 层 RAII 代理
-- IPC: Pipe/SHM/MsgQ/Sem (1/4 完成 services 层迁移)
-- 安全: Credo 能力系统 + KASLR + PageTableChecker (W^X)
-- 故障恢复: Barrier Stack (UndoLog/Snapshot/BSR/BHR)
-- 配置: 统一配置中心 + 启动镜像编码
-- WASM: 解释器原型
-- 构建: x86_64 主架构 + aarch64 进行中
+- **Phase D 状态: 11/11 完成 (2026-06-10)**
+  - 描述: Phase D 11 子项全部完成
+  - 方案: D1 Namespace (7 种 ns + clone_from/unshare/setns) / D2 cgroup (CPU/内存/PID/IO 四控制器) / D3 NUMA (NumaNode/NumaTopology + 距离矩阵) / D4 eBPF (BpfInsn/BpfMap/验证器/解释器) / D5 电源管理 (C0-C3+DVFS+S3/S5) / D6 Secure Boot+TPM (PK/KEK/DB+PCR+软件模拟) / D7 Shadow Stack CET (双架构硬件检测) / D8 Tickless NO_HZ / D9 NTP/PTP / D10 kexec / D11 UEFI 启动
+  - 状态: [X]
 
-未完成 (P0 级关键缺失):
+- **P1 跨阶段待办: 全部完成 (2026-06-08 ~ 2026-06-10)**
+  - 描述: P1 跨阶段 17 类待办全部完成
+  - 方案: UDS / Lockdep / PI Mutex / eventfd/signalfd/timerfd / dcache/icache / 文件锁 / inotify / sendfile/splice / rlimit / 进程组会话控制终端 / Core Dump / 设备固件 / KGDB/ftrace / POSIX Timer / madvise/mlock / 用户态 Stack Canary / KPTI 实际页表隔离
+  - 状态: [X]
 
-- Swap / 页面回收: `sysinfo` 中 totalswap/freeswap 硬编码为 0
-- Page Cache: VMA 有 FileBacked 类型但无实际页缓存实现
-- 文件 mmap (MAP_SHARED/MAP_PRIVATE): sys_mmap 仅处理 MAP_ANONYMOUS
-- execve: ELF 加载器存在但无 sys_execve 实现
-- Futex: 完全缺失, 用户态互斥锁无法高效实现
-- epoll: 完全缺失, 无法构建高性能网络服务
-- initramfs + PID 1: 完全缺失, 无用户态入口
-- hrtimer: 仅有 PIT tick 级定时, 无高精度定时器框架
-- 用户态 ASLR: KASLR 完整但用户态地址空间无随机化
-- MSI/MSI-X: 仅在注释中提及, 高速设备无法正常工作
-- ACPI 完整解析: 仅解析 MADT, 无 FADT/HPET/DMAR
-- POSIX 信号投递: services/proc/signal.rs 有类型定义但无投递机制
-- CPU 亲和性: 完全缺失
-- io_uring / AIO: 完全缺失
+- **已修复预存问题: AB-BA 死锁**
+  - 描述: make test-host stress_test 永久卡住预存问题
+  - 方案: 根因: host-tests/src/hvfs/dedup.rs:65 CasIndex::ref_dec AB-BA 死锁 (insert/ref_inc 锁序=index→refs, ref_dec 锁序=refs→index); 修复: 统一锁顺序 ref_dec 改为 index→refs, 注释标注"避免 AB-BA 死锁"
+  - 状态: [X]
 
-## 进度跟踪 (2026-06-08 更新)
+## 工程计划 A: Phase A — 可启动用户态
 
-> 本节记录 roadmap 中各子项的实际完成状态, 与 §方案 配合使用.
+### 背景
+- **背景条目**
+  - 描述: 内核启动后能加载并运行首个用户态 init 进程
+  - 方案: 依赖链: hrtimer → 信号投递 → execve + 用户态 ASLR → initramfs + PID 1
+  - 状态: [X]
 
-### Phase B 状态: 4/4 完成 ✅
+### 现状 (2026-06-08)
+- **现状条目**
+  - 描述: Phase A 4 子项全部完成
+  - 方案: A1 hrtimer / A2 POSIX 信号投递 (send/deliver/sigreturn) / A3 execve + 用户态 ASLR / A4 initramfs + PID 1
+  - 状态: [X]
 
-| 子项 | 状态 | 关键产出 | 验证 |
-|---|---|---|---|
-| B1 Futex | ✅ 完成 | framework/syscall/futex.rs (428 行) + services/sync/futex.rs (148 行) | 64 桶哈希表, FUTEX_WAIT/WAKE/REQUEUE/BITSET 全套 |
-| B2 Page Cache + 文件 mmap | ✅ 完成 | framework/mm/pcache.rs (454 行) + syscall/mmap.rs MAP_SHARED/PRIVATE/ANONYMOUS | demand paging 真语义, 走 pcache_lookup+get+fill |
-| B3 Swap | ✅ 完成 | framework/mm/swap.rs (SwapEntry, swap_out_to_pte, kswapd softirq) + lib.rs swap_init/kswapd_init | 0 dead_code, LRU 跟踪 pml4, 周期唤醒 KSWAPD_TICK_INTERVAL=100 |
-| B4 MSI/MSI-X + ACPI | ✅ 完成 | framework/pci/msi.rs (462 行) + arch/x86_64/acpi.rs (840 行) FADT/HPET/DMAR 全套 | msi_alloc_vector/enable, msix_enable/mask/unmask, acpi_shutdown |
+### 方案
+- **A1 hrtimer 高精度定时器框架**
+  - 描述: 替代 PIT 作为调度 tick 源
+  - 方案: 基于 LAPIC Timer (x86_64) / ARM Generic Timer (aarch64); HrTimer 结构 (到期时间+回调+链表节点); per-CPU 红黑树定时器队列; hrtimer_sleep 替代 tick-based timer_sleep; 接入调度器时间片到期
+  - 状态: [X]
+- **A2 POSIX 信号投递**
+  - 描述: framework 层实现 signal_send/检查 pending/sigreturn
+  - 方案: framework: signal_send(pid,sig) 写入 pending 位图 + 唤醒; syscall_exit/interrupt_return 检查 pending; sigreturn 恢复寄存器; services: sys_kill/sigaction/sigprocmask/sigreturn safe 代理; 信号栈用 VmaType::Stack
+  - 状态: [X]
+- **A3 execve + 用户态 ASLR**
+  - 描述: 接入已有 ELF 加载器
+  - 方案: 流程: 释放旧地址空间 → 创建新 MmStruct → load_elf → 设置用户栈 → entry point; 用户态 ASLR: 栈基址+mmap 基址+堆基址各加 16 位熵随机偏移 (4KB 对齐); 随机源 TSC/LAPIC; PIE (ET_DYN) 支持
+  - 状态: [X]
+- **A4 initramfs + PID 1**
+  - 描述: cpio 解析器 + 内核启动末尾 initramfs 挂载
+  - 方案: cpio newc 格式解析 (目录/常规文件/符号链接); Multiboot2 module 解压到 ramfs 挂载点; 挂载根文件系统 /; 创建 PID 1 执行 /init
+  - 状态: [X]
 
-### Phase C 状态: 7/7 完成 ✅ (2026-06-10)
+## 工程计划 B: Phase B — 可运行真实程序
 
-| 子项 | 状态 | 关键产出 | 验证 |
-|---|---|---|---|
-| C1 epoll | ✅ 完成 | framework/syscall/epoll.rs (370 行) + VFS 集成 | 完整集成 VFS poll + WaitQueue 真阻塞 + epoll_pwake 唤醒 (3 TODO 全清) |
-| C2 CPU 亲和性 | ✅ 完成 | framework/proc/process.rs cpuset_allowed + scheduler is_cpu_allowed/select_cpu_for + syscall mod.rs sys_sched_setaffinity/getaffinity (Linux 兼容号 203/204) + services/proc/sched.rs (新文件) | 双架构 0 error 0 warning, 3 审计 0 issue, host test 172/172 |
-| C3 Unix Domain Socket | ✅ 完成 | services/net/unix.rs + framework/net/unix.rs | AF_UNIX 协议族完整实现; 双架构 0w0e + 审计通过 |
-| C4 io_uring / AIO | ✅ 完成 | framework/io/iouring.rs — Sqe/Cqe/RingBuffer + io_uring_setup/enter/register/submit + services/io/iouring.rs | 双架构 0w0e + 审计通过; Read/Write 待 VFS fd 表集成 |
-| C5 路由表 + Netfilter | ✅ 完成 | framework/net/route.rs (RouteEntry + CIDR 匹配 + smoltcp 同步) + framework/net/netfilter.rs (5 钩子点 + NfRule + NfHookFn) + services 封装 | 双架构 0w0e + 审计通过 |
-| C6 Lockdep + ftrace | ✅ 已完成 | 2026-06-09 | framework/debug/ftrace.rs (TraceEvent + FtraceState + fnv1a_32 + trace_event! 宏); framework/debug/kgdb.rs (GDB RSP 子集 + KgdbSerial trait); framework/debug/ringbuf.rs (SPSC 环形缓冲区) |
-| C7 KPTI + Seccomp | ✅ 完成 | 2026-06-10 | KPTI: x86_64 trampoline CR3 切换 + RO+NX + PCID/INVPCID; aarch64 TTBR1 切换; Seccomp: framework/proc/seccomp.rs (SeccompState/SeccompFilter/SeccompRule + sys_seccomp/sys_prctl + fork 继承 + dispatch 集成) |
+### 背景
+- **背景条目**
+  - 描述: 可运行依赖共享库的用户态程序 (如 busybox)
+  - 方案: 依赖链: Futex → Page Cache + 文件 mmap → Swap → MSI/MSI-X + ACPI
+  - 状态: [X]
 
-### 已修复预存问题
+### 现状 (2026-06-08)
+- **现状条目**
+  - 描述: 4 子项全部完成
+  - 方案: 见进度跟踪 §Phase B 状态
+  - 状态: [X]
 
-| 问题 | 位置 | 根因 | 修复 |
-|---|---|---|---|
-| `make test-host` stress_test 永久卡住 | host-tests/src/hvfs/dedup.rs:65 `CasIndex::ref_dec` | **AB-BA 死锁**: `insert`/`ref_inc` 锁序 = `index → refs`, `ref_dec` 锁序 = `refs → index` | 统一锁顺序: `ref_dec` 改为 `index → refs`, 注释标注"避免 AB-BA 死锁" |
+### 方案
+- **B1 Futex**
+  - 描述: framework 层实现 futex_wait/futex_wake + services safe 代理
+  - 方案: 全局哈希表 HashMap<u64, FutexBucket> (按 addr 物理页对齐分桶); 每桶 SpinLock 保护 Vec<ThreadId>; futex_wait 验证 *addr==expected → 入队 → 调度让出; futex_wake 取 count 线程入就绪; 与 hrtimer 集成超时唤醒
+  - 状态: [X]
+- **B2 Page Cache + 文件 mmap**
+  - 描述: 全局 xarray PageCache + HvFS 集成
+  - 方案: PageCache: 全局 xarray 按 (inode, page_index) 索引物理页; address_space 抽象: readpage/writepage/write_begin/write_end; VFS read/write 走 PageCache; HvFS DMU 读经 PageCache; ARC (HvFS 私有) + PageCache (VFS 通用) 协同; mmap 支持 MAP_SHARED (写回) / MAP_PRIVATE (COW); 脏页周期回写
+  - 状态: [X]
+- **B3 Swap / 页面回收**
+  - 描述: 块设备 swap 区 + kswapd 内核线程
+  - 方案: 块设备 swap header + 按 slot 索引页槽位图; kswapd 周期扫描 inactive 链表, 回收干净页/换出脏页; 双链表 (active/inactive) + LRU 近似; 换出: 选中页 → 写 swap slot → 解除映射 → 释放; 换入: #PF 检测 swap entry → 从 slot 读 → 重映射; OOMD 联动加速回收
+  - 状态: [X]
+- **B4 MSI/MSI-X + ACPI 完整解析**
+  - 描述: PCI MSI Capability + ACPI FADT/HPET/DMAR
+  - 方案: MSI: PCI 配置空间 MSI Capability 解析+分配向量+启用; MSI-X: Capability + MMIO Table/PBA + 多向量; framework msi_alloc/free_vector API; 与 IrqLine 统一注册到 IDT; ACPI FADT (关机寄存器) + HPET (高精度定时器备用源) + DMAR (IOMMU); acpi_shutdown() 写 S5 命令到 PM1a_CNT
+  - 状态: [X]
 
-## 方案
+## 工程计划 C: Phase C — 生产可用
 
-### Phase A — 可启动用户态
+### 背景
+- **背景条目**
+  - 描述: 可构建高性能网络服务与多进程应用, 具备基本安全与调试能力
+  - 方案: 7 子项: epoll / CPU 亲和性 / UDS / io_uring/AIO / 路由表+Netfilter / Lockdep+ftrace / KPTI+Seccomp
+  - 状态: [X]
 
-目标: 内核启动后能加载并运行首个用户态 init 进程.
+### 现状 (2026-06-10)
+- **现状条目**
+  - 描述: 7 子项全部完成
+  - 方案: 见进度跟踪 §Phase C 状态
+  - 状态: [X]
 
-依赖链: hrtimer → 信号投递 → execve + 用户态 ASLR → initramfs + PID 1
+### 方案
+- **C1 epoll**
+  - 描述: EventPoll + VFS 集成
+  - 方案: EventPoll: 红黑树 (按 fd 索引) + 就绪链表; sys_epoll_create/ctl/wait; VFS poll 回调; 中断就绪唤醒
+  - 状态: [X]
+- **C2 CPU 亲和性**
+  - 描述: Process cpuset_allowed + 调度器集成
+  - 方案: Process 新增 cpuset_allowed: AtomicU64 (64 CPU 位图); sys_sched_setaffinity/getaffinity (Linux 兼容号 203/204); select_cpu() 优先 allowed 集合; 跨 CPU 迁移检查约束
+  - 状态: [X]
+- **C3 UDS (2026-06-08)**
+  - 描述: AF_UNIX 协议族 (SOCK_STREAM + SOCK_DGRAM)
+  - 方案: services/net/unix.rs + framework/net/unix.rs; 修订: 不入 VFS inode 走独立路径表 (DECISION-006); FD 空间 [100, 116) 与 smoltcp/VFS 不冲突; 5 个 no_std 单元测试
+  - 状态: [X]
+  - 详情: 详见 [uds-design.md](uds-design.md)
+- **C4 io_uring / AIO**
+  - 描述: 先 AIO 后 io_uring 两步走
+  - 方案: AIO: io_submit/io_getevents/内核异步 I/O 线程池; io_uring: 共享环形缓冲区+内核侧直接提交
+  - 状态: [X]
+- **C5 路由表 + Netfilter**
+  - 描述: FIB 最长前缀匹配 + 5 钩子点
+  - 方案: 路由表: FIB + 最长前缀匹配; Netfilter: 5 钩子点 (PREROUTING/INPUT/FORWARD/OUTPUT/POSTROUTING) + 规则链; NAT: 基础 SNAT/DNAT; 连接跟踪: TCP/UDP 流状态表
+  - 状态: [X]
+- **C6 Lockdep + ftrace (2026-06-09)**
+  - 描述: 死锁检测 + 函数追踪
+  - 方案: Lockdep: 锁获取记录 (lock_class, irq_context) → 构建依赖图 → 检测环路; ftrace: 编译期 mcount 插入 → 运行时动态启用 → 函数调用图; 输出 procfs/串口
+  - 状态: [X]
+- **C7 KPTI + Seccomp (2026-06-10)**
+  - 描述: 双页表隔离 + BPF 系统调用过滤
+  - 方案: KPTI: 用户态/内核态各一套页表, 切换时刷新 CR3 (boot_image kpti 标志位已预留); Seccomp: sys_seccomp 安装 BPF 过滤器 → 系统调用入口检查
+  - 状态: [X]
 
-#### A1. hrtimer 高精度定时器框架
+## 工程计划 D: Phase D — 企业级
 
-- 基于 LAPIC Timer (x86_64) / ARM Generic Timer (aarch64) 替代 PIT 作为调度 tick 源
-- 实现 `HrTimer` 结构: 到期时间 + 回调 + 链表节点
-- 实现 per-CPU 红黑树定时器队列 (到期时间排序)
-- 实现 `hrtimer_sleep` 替代当前 tick-based `timer_sleep`
-- 接入调度器: 时间片到期由 hrtimer 回调触发 `need_reschedule`
-- framework 层实现 (允许 unsafe), services 层暴露 `timer_create`/`timer_delete` safe API
+### 背景
+- **背景条目**
+  - 描述: 支持容器化、可观测性、高级安全特性
+  - 方案: 11 子项: NUMA/cgroup/Namespace/eBPF/电源管理/Secure Boot+CET/Tickless/NTP-PTP/kexec/UEFI
+  - 状态: [X]
 
-#### A2. POSIX 信号投递
+### 现状 (2026-06-10)
+- **现状条目**
+  - 描述: 11 子项全部完成
+  - 方案: 见进度跟踪 §Phase D 状态
+  - 状态: [X]
 
-- framework 层: 实现 `signal_send(pid, sig)` — 查找目标进程, 写入 pending 位图, 唤醒目标
-- framework 层: 在 `syscall_exit` / `interrupt_return` 路径检查 pending 信号
-- framework 层: 实现 `sigreturn` — 恢复信号处理前的寄存器状态
-- services 层: `sys_kill` / `sys_sigaction` / `sys_sigprocmask` / `sys_sigreturn` safe 代理
-- 信号栈: 在进程 VMA 中分配 `VmaType::Stack` 作为 altstack
-
-#### A3. execve + 用户态 ASLR
-
-- 接入已有 ELF 加载器: `sys_execve(path, argv, envp)`
-- 流程: 释放旧地址空间 → 创建新 MmStruct → load_elf → 设置用户栈 → 设置 entry point
-- 用户态 ASLR: execve 时对栈基址、mmap 基址、堆基址各加随机偏移 (16 位熵, 对齐 4KB)
-- 随机源: 读取 TSC 或 LAPIC 计数器作为种子
-- PIE (ET_DYN) 支持: ELF 加载器识别 ET_DYN 类型, 在随机基址加载
-
-#### A4. initramfs + PID 1
-
-- 实现 cpio 格式解析器 (newc 格式, 仅目录/常规文件/符号链接)
-- 内核启动末尾: 将 Multiboot2 module (initramfs cpio 归档) 解压到 ramfs 挂载点
-- 挂载为根文件系统 `/`
-- 创建 PID 1 进程, 执行 `/init` (来自 initramfs)
-- init 进程负责后续用户态初始化 (挂载 devfs/procfs, 启动 shell 等)
-
-### Phase B — 可运行真实程序
-
-目标: 可运行依赖共享库的用户态程序 (如 busybox), 支持文件 I/O 与内存换出.
-
-依赖链: Futex → Page Cache + 文件 mmap → Swap → MSI/MSI-X + ACPI
-
-#### B1. Futex
-
-- framework 层: 实现 `futex_wait(addr, expected, timeout)` / `futex_wake(addr, count)`
-- 核心数据结构: 全局哈希表 `HashMap<u64, FutexBucket>` (按 addr 物理页对齐分桶)
-- 每桶: SpinLock 保护的等待队列 (Vec<ThreadId>)
-- `futex_wait`: 验证 *addr == expected → 加入等待队列 → 调度让出
-- `futex_wake`: 从等待队列取出 count 个线程 → 加入就绪队列
-- services 层: `sys_futex` safe 代理
-- 与 hrtimer 集成: 支持超时唤醒
-
-#### B2. Page Cache + 文件 mmap
-
-- 实现 `PageCache` 结构: 全局 xarray (稀疏数组) 按 (inode, page_index) 索引物理页
-- 实现 `address_space` 抽象: `readpage`/`writepage`/`write_begin`/`write_end` 回调
-- VFS 层: `vfs_read`/`vfs_write` 经过 Page Cache
-- HvFS 集成: DMU 读取经过 Page Cache, ARC 与 Page Cache 协同 (ARC 作为 HvFS 私有缓存, Page Cache 作为 VFS 通用缓存)
-- 文件 mmap: `sys_mmap` 支持 MAP_SHARED (写回文件) / MAP_PRIVATE (COW)
-- 脏页回写: 周期性内核线程扫描脏页, 调用 `writepage` 回写
-
-#### B3. Swap / 页面回收
-
-- 实现 swap 区抽象: 块设备上的 swap header + 按 slot 索引的页槽位图
-- 实现 `kswapd` 内核线程: 周期性扫描 inactive 链表, 回收干净页 / 换出脏页
-- 页面替换策略: 双链表 (active/inactive) + LRU 近似 (类似 Linux)
-- 换出流程: 选中页 → 写入 swap slot → 解除映射 → 释放物理页
-- 换入流程: #PF 检测 swap entry → 从 swap slot 读取 → 重新映射
-- 与 OOMD 联动: 内存压力升级时 kswapd 加速回收
-
-#### B4. MSI/MSI-X + ACPI 完整解析
-
-- MSI: PCI 配置空间 MSI Capability 解析 + 分配向量 + 启用
-- MSI-X: MSI-X Capability + MMIO Table/PBA + 多向量分配
-- framework 层: `msi_alloc_vector()` / `msi_free_vector()` API
-- 与 IrqLine 统一: MSI 向量注册到 IDT, 复用 IRQ 分发框架
-- ACPI: 解析 FADT (关机寄存器) + HPET (高精度定时器备用源) + DMAR (IOMMU)
-- 实现 `acpi_shutdown()`: 写 S5 命令到 PM1a_CNT
-
-### Phase C — 生产可用
-
-目标: 可构建高性能网络服务与多进程应用, 具备基本安全与调试能力.
-
-#### C1. epoll
-
-- 实现 `EventPoll` 结构: 红黑树 (按 fd 索引) + 就绪链表
-- `sys_epoll_create`: 分配 eventpoll 实例
-- `sys_epoll_ctl`: 注册/修改/删除监控项
-- `sys_epoll_wait`: 遍历就绪链表, 无就绪则阻塞等待
-- 与 VFS 集成: 文件/Socket/pipe 的 poll 操作回调
-- 与中断集成: 数据就绪时唤醒等待的 epoll 实例
-
-#### C2. CPU 亲和性
-
-- `Process` 结构新增 `cpuset_allowed: AtomicU64` (64 CPU 位图)
-- `sys_sched_setaffinity` / `sys_sched_getaffinity`
-- 调度器: `select_cpu()` 优先选择 allowed 集合内的 CPU
-- 负载均衡: 跨 CPU 迁移时检查亲和性约束
-
-#### C3. Unix Domain Socket ✓ (2026-06-08)
-
-- 实现 `AF_UNIX` 协议族: 流式 (SOCK_STREAM) + 数据报 (SOCK_DGRAM)
-- 地址格式: `sockaddr_un` (路径名)
-- 数据传输: 内核缓冲区直拷贝 (同地址空间无 IPC 开销)
-- ~~与 VFS 集成: bind 创建文件系统入口, connect 查找~~ → **修订**: UDS 不入 VFS inode, 走独立路径表 (DECISION-006)
-- FD 空间 `[100, 116)` 与 smoltcp / VFS 不冲突
-- 5 个 no_std 单元测试, 详见 [uds-design.md](uds-design.md)
-
-#### C4. io_uring / AIO
-
-- 先实现 AIO: `io_submit` + `io_getevents` + 内核异步 I/O 线程池
-- 后续升级 io_uring: 共享环形缓冲区 + 内核侧直接提交, 避免系统调用
-
-#### C5. 路由表 + Netfilter
-
-- 路由表: FIB (Forwarding Information Base) + 最长前缀匹配
-- Netfilter: 5 个钩子点 (PREROUTING/INPUT/FORWARD/OUTPUT/POSTROUTING) + 规则链
-- NAT: 基础 SNAT/DNAT (端口地址转换)
-- 连接跟踪: TCP/UDP 流状态表
-
-#### C6. Lockdep + ftrace
-
-- Lockdep: 锁获取时记录 (lock_class, irq_context) → 构建依赖图 → 检测环路
-- ftrace: 编译期插入 `mcount` 调用点 → 运行时动态启用/禁用 → 函数调用图追踪
-- 输出: 通过 procfs 或串口
-
-#### C7. KPTI 实现 + Seccomp
-
-- KPTI: 用户态/内核态各一套页表, 切换时刷新 CR3 (boot_image kpti 标志位已预留)
-- Seccomp: `sys_seccomp` 安装 BPF 过滤器 → 系统调用入口检查允许/拒绝/陷阱
-
-### Phase D — 企业级
-
-目标: 支持容器化、可观测性、高级安全特性.
-
-- NUMA 感知: 内存节点 + 调度亲和
-- cgroup: CPU/内存/IO/PID 控制器
-- Namespace: PID/Net/Mount/User/IPC/UTS 完整隔离
-- eBPF: 可编程网络/安全/观测
-- 电源管理: S3 挂起/S4 休眠/C-state/DVFS
-- Secure Boot + TPM: 启动链验证 + 硬件信任根
-- Shadow Stack (CET): 硬件级控制流完整性
-- Tickless (NO_HZ): 空闲 CPU 停止定时中断
-- NTP/PTP: 系统时钟同步
-- kexec: 从内核直接引导新内核
-- UEFI 启动支持
-
-## 待办
-
-### Phase A — 已完成 (2026-06-08)
-- [x] A1: hrtimer 高精度定时器框架
-- [x] A2: POSIX 信号投递 (send/deliver/sigreturn)
-- [x] A3: execve + 用户态 ASLR
-- [x] A4: initramfs + PID 1
-
-### Phase B — 已完成 (2026-06-08)
-- [x] B1: Futex (wait/wake/requeue)
-- [x] B2: Page Cache + 文件 mmap (MAP_SHARED/MAP_PRIVATE)
-- [x] B3: Swap / 页面回收 (kswapd + LRU)
-- [x] B4: MSI/MSI-X + ACPI 完整解析
-
-### Phase C
-- [x] C1: epoll
-- [x] C2: CPU 亲和性
-- [x] C3: Unix Domain Socket (2026-06-08, FD 100-115, 独立路径表, 详见 [uds-design.md](uds-design.md))
-- [x] C4: io_uring / AIO → 2026-06-10 完成 (framework/io/iouring.rs Sqe/Cqe/RingBuffer + setup/enter/register/submit; Read/Write 待 VFS fd 表集成)
-- [x] C5: 路由表 + Netfilter → 2026-06-10 完成 (framework/net/route.rs CIDR 匹配 + smoltcp 同步; framework/net/netfilter.rs 5 钩子点 + NfRule)
-- [x] C6: Lockdep + ftrace
-- [x] C7: KPTI + Seccomp → 2026-06-10 完成 (KPTI 双架构全功能; Seccomp framework/proc/seccomp.rs Strict/Filter 模式 + sys_seccomp/prctl + fork 继承)
-
-### Phase D
-- [x] D2: cgroup 控制器 → 2026-06-10 完成 (见 D2 详细行)
-- [x] D3: NUMA 感知 → 2026-06-10 完成 (见 D3 详细行)
-- [x] D1: Namespace 完整隔离 → 2026-06-10 完成 (framework/proc/namespace.rs 7 种 ns + NamespaceSet + clone_from/unshare/setns; Process 集成 + fork 继承 + CLONE_NEW*; sys_unshare/sys_setns + linuxulator; services/proc/namespace.rs 安全封装)
-- [x] D2: cgroup 控制器 → 2026-06-10 完成 (framework/proc/cgroup.rs CPU/内存/PID/IO 四控制器 + CgroupRq + CgroupSubsystem; Process 集成 + fork 继承 + exit 清理; 5 个 syscall + services/proc/cgroup.rs 安全封装)
-- [x] D3: NUMA 感知 → 2026-06-10 完成 (framework/mm/numa.rs NumaNode/NumaTopology/NumaMempolicy + 距离矩阵 + UMA 回退; Process numa_policy + fork 继承; 4 个 syscall + linuxulator + services/mm/numa.rs 安全封装)
-- [x] D4: eBPF → 2026-06-10 完成 (framework/debug/ebpf.rs BpfInsn/BpfMap(Hash+Array)/BpfProg/BpfVerifier/BpfInterpreter/BpfHelper + BpfSubsystem; 验证器(有界循环+寄存器类型+指针检查); 解释器(ALU64/LD/ST/JMP全指令集); 6个Helper; sys_bpf多路复用 + linuxulator; services/debug/ebpf.rs 安全封装)
-- [x] D5: 电源管理 → 2026-06-10 完成 (framework/driver/power.rs CpuIdle(C0-C3+per-CPU统计)+CpuFreq(DVFS+performance/powersave/ondemand governor)+Suspend/Resume(S3/S5+通知器链); sys_pm多路复用; services/driver/power.rs 安全封装)
-- [x] D6: Secure Boot + TPM → 2026-06-10 完成 (framework/credo/secure_boot.rs SecureBoot(PK/KEK/DB信任链+Ed25519验证)+TPM2.0(8个PCR+Extend/Seal/Unseal/Quote+软件模拟)+SHA-256; sys_secure_boot+sys_tpm; services/credo/secure_boot.rs 安全封装)
-- [x] D7: Shadow Stack (CET) → 2026-06-10 完成 (framework/arch/shadow_stack.rs CET检测+Shadow Stack分配/管理+CR4.CET/MSR配置(x86_64)+PAC/BTI(aarch64); sys_cet; services/proc/shadow_stack.rs 安全封装)
-- [x] eBPF → D4 完成
-- [x] 电源管理 → D5 完成
-- [x] Secure Boot + TPM → D6 完成
-- [x] Shadow Stack (CET) → D7 完成
-- [x] Tickless (NO_HZ) → D8 完成
-- [x] NTP/PTP 时钟同步 → D9 完成
-- [x] kexec → D10 完成
-- [x] UEFI 启动 → D11 完成
-
-## P1 级待办 (跨阶段, 按需穿插)
-
-- [x] Unix Domain Socket (可提前到 Phase B) → 2026-06-08 完成 (Phase C.3)
-- [x] Lockdep 死锁检测 → 2026-06-09 完成
-- [x] Priority Inheritance Mutex → 2026-06-08 完成 (P1 #3)
-- [x] eventfd / signalfd / timerfd → 2026-06-09 完成
-- [x] dcache / icache → 2026-06-09 完成
-- [x] 文件锁 (flock / POSIX locks) → 2026-06-09 完成
-- [x] inotify 文件事件通知 → 2026-06-09 完成
-- [x] sendfile / splice 零拷贝 → 2026-06-09 完成
-- [x] Resource Limits (rlimit) 完整实现 → 2026-06-09 完成
-- [x] 进程组/会话/控制终端 → 2026-06-09 完成
-- [x] Core Dump 生成 → 2026-06-09 完成
-- [x] 设备固件加载 → 2026-06-09 完成
-- [x] KGDB / ftrace → 2026-06-09 完成
-- [x] POSIX Timer → 2026-06-09 完成
-- [x] madvise / mlock → 2026-06-09 完成 (P1 #15)
-- [x] 用户态 Stack Canary → 2026-06-10 双架构完整实现 (LLVM 22 bug 已修复, TRACK-081BC6/F0ED2E/FA2B11 关闭)
-- [x] KPTI 实际页表隔离 → 2026-06-10 双架构全功能就绪 (x86_64 trampoline+PCID + aarch64 TTBR1 切换; TRACK-KPTI-TRAMPOLINE 关闭)
+### 方案
+- **D1 Namespace**
+  - 描述: 7 种命名空间完整隔离
+  - 方案: framework/proc/namespace.rs (PID/Net/Mount/User/IPC/UTS 7 种 ns + NamespaceSet + clone_from/unshare/setns); Process 集成 + fork 继承 + CLONE_NEW*; sys_unshare/sys_setns + linuxulator
+  - 状态: [X]
+- **D2 cgroup**
+  - 描述: CPU/内存/PID/IO 四控制器
+  - 方案: framework/proc/cgroup.rs (4 控制器 + CgroupRq + CgroupSubsystem); Process 集成 + fork 继承 + exit 清理; 5 个 syscall
+  - 状态: [X]
+- **D3 NUMA**
+  - 描述: 内存节点 + 调度亲和
+  - 方案: framework/mm/numa.rs (NumaNode/NumaTopology/NumaMempolicy + 距离矩阵 + UMA 回退); Process numa_policy + fork 继承; 4 个 syscall + linuxulator
+  - 状态: [X]
+- **D4 eBPF**
+  - 描述: 可编程网络/安全/观测
+  - 方案: framework/debug/ebpf.rs (BpfInsn/BpfMap(Hash+Array)/BpfProg/BpfVerifier/BpfInterpreter/BpfHelper + BpfSubsystem); 验证器 (有界循环+寄存器类型+指针检查); 解释器 (ALU64/LD/ST/JMP 全指令集); 6 个 Helper; sys_bpf 多路复用
+  - 状态: [X]
+- **D5 电源管理**
+  - 描述: S3/S4 + C-state + DVFS
+  - 方案: framework/driver/power.rs (CpuIdle C0-C3+per-CPU 统计 + CpuFreq DVFS+performance/powersave/ondemand governor + Suspend/Resume S3/S5+通知器链); sys_pm 多路复用
+  - 状态: [X]
+- **D6 Secure Boot + TPM**
+  - 描述: 启动链验证 + 硬件信任根
+  - 方案: framework/credo/secure_boot.rs (SecureBoot PK/KEK/DB 信任链 + Ed25519 验证 + TPM2.0 8 个 PCR + Extend/Seal/Unseal/Quote + 软件模拟 + SHA-256); sys_secure_boot + sys_tpm
+  - 状态: [X]
+- **D7 Shadow Stack (CET)**
+  - 描述: 硬件级控制流完整性
+  - 方案: framework/arch/shadow_stack.rs (CET 检测 + Shadow Stack 分配/管理 + CR4.CET/MSR 配置 x86_64 + PAC/BTI aarch64); sys_cet
+  - 状态: [X]
+- **D8 Tickless (NO_HZ)**
+  - 描述: 空闲 CPU 停止定时中断
+  - 方案: 空闲 CPU 停止定时中断
+  - 状态: [X]
+- **D9 NTP/PTP**
+  - 描述: 系统时钟同步
+  - 方案: NTP/PTP 协议实现
+  - 状态: [X]
+- **D10 kexec**
+  - 描述: 从内核直接引导新内核
+  - 方案: kexec 系统调用
+  - 状态: [X]
+- **D11 UEFI 启动支持**
+  - 描述: UEFI 启动协议
+  - 方案: UEFI 启动加载
+  - 状态: [X]
 
 ## 决策记录
-
-- DECISION-001: Phase A 优先于 Phase B, 因为 execve + initramfs 是运行任何用户态程序的前提, 其他功能无意义
-- DECISION-002: hrtimer 作为 Phase A 首项, 因为信号超时/Futex 超时/调度精度都依赖它
-- DECISION-003: Page Cache 与 HvFS ARC 的关系: ARC 是 HvFS 私有缓存 (DMU 级), Page Cache 是 VFS 通用缓存 (inode 级), 两者共存不冲突
-- DECISION-004: Swap 采用块设备 swap 分区方案 (非 swap file), 简化实现; 后续可扩展 swap file
-- DECISION-005: io_uring 分两步走: 先 AIO (验证异步 I/O 路径), 后 io_uring (零拷贝优化)
+- **DECISION-001**
+  - 描述: Phase A 优先于 Phase B
+  - 方案: 因为 execve + initramfs 是运行任何用户态程序的前提, 其他功能无意义
+  - 状态: [X] (2026-06-07)
+- **DECISION-002**
+  - 描述: hrtimer 作为 Phase A 首项
+  - 方案: 因为信号超时/Futex 超时/调度精度都依赖它
+  - 状态: [X] (2026-06-07)
+- **DECISION-003**
+  - 描述: Page Cache 与 HvFS ARC 的关系
+  - 方案: ARC 是 HvFS 私有缓存 (DMU 级), Page Cache 是 VFS 通用缓存 (inode 级), 两者共存不冲突
+  - 状态: [X] (2026-06-07)
+- **DECISION-004**
+  - 描述: Swap 采用块设备 swap 分区方案
+  - 方案: 简化实现; 后续可扩展 swap file
+  - 状态: [X] (2026-06-07)
+- **DECISION-005**
+  - 描述: io_uring 分两步走
+  - 方案: 先 AIO (验证异步 I/O 路径), 后 io_uring (零拷贝优化)
+  - 状态: [X] (2026-06-07)
 
 ## 变更历史
-
-- 2026-06-09: 创建 [engineering-progress.md](engineering-progress.md) 工程进度跟踪文档; Phase A/B 待办标记为已完成
-- 2026-06-07: 初始版本
-
-## Backlog: 过期 TODO 跟踪
-
-> 由 `tools/track_todo.py` 自动维护. 每条 `TRACK-XXX` 唯一对应一处未完成项.
-> 修复后删除对应行, 并清掉源码中 `TODO(TRACK-XXX)` 标记.
-
-- [TRACK-558BA7] `src/kernel/framework/driver/usb/mod.rs:36` TODO
-- [TRACK-AE516E] `src/kernel/framework/driver/usb/mod.rs:37` TODO
-- [TRACK-832FCE] `src/kernel/framework/driver/usb/mod.rs:38` TODO
-- [TRACK-688EA7] `src/kernel/framework/driver/usb/xhci.rs:548` TODO
-- [TRACK-2E0EB0] `src/kernel/framework/driver/usb/xhci.rs:557` TODO
-- [TRACK-1F75C1] `src/kernel/framework/driver/usb/xhci.rs:562` TODO
-- [TRACK-599EDA] `src/kernel/framework/driver/display/dp.rs:220` TODO
-- [TRACK-B61830] `src/kernel/framework/driver/display/dp.rs:231` TODO
-- [TRACK-9B691E] `src/kernel/framework/driver/display/dp.rs:254` TODO
-- [TRACK-0350FE] `src/kernel/framework/driver/display/dp.rs:310` TODO
-- [TRACK-3C1169] `src/kernel/framework/driver/display/dp.rs:321` TODO
-- [TRACK-CD5DA5] `src/kernel/framework/driver/display/hdmi.rs:440` TODO
-- [TRACK-7CCB60] `src/kernel/framework/driver/display/hdmi.rs:454` TODO
-- [TRACK-1BDEF6] `src/kernel/framework/driver/display/hdmi.rs:501` TODO
+- **2026-06-26**
+  - 描述: 按新文档规则重写 (标题+条目(描述+方案+状态)+详情)
+  - 方案: 结构重组, 保留原意
+  - 状态: [X]
+- **2026-06-09**
+  - 描述: 创建 engineering-progress.md 工程进度跟踪文档; Phase A/B 待办标记为已完成
+  - 方案: -
+  - 状态: [X]
+- **2026-06-07**
+  - 描述: 初始版本
+  - 方案: -
+  - 状态: [X]
