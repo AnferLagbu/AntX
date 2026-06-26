@@ -6,14 +6,8 @@ description = "QueenX host-side tests + microbenchmarks"
 authors = ["Anfer"]
 
 # 集成测试 (integration tests) 由 Cargo 自动从 tests/ 目录发现
-# - tests/display.rs       — 显示器驱动 (PixelFormat/Color/DisplayMode/HDMI/DP)
-# - tests/e1000_eeprom.rs  — e1000 EEPROM 读取 (QEMU 兼容 + 真实硬件双路径)
-# - tests/iomem_alias.rs   — IoMem 别名检测 (16 用例)
-# - tests/hvfs_test.rs     — HvFS 综合端到端 (CRUD/seek/error/advanced/FD)
-# - tests/hvfs_persist.rs  — HvFS 内存持久化往返
-# - tests/stress_test.rs   — HvFS 压力 (CAS/ZAP/ZIL 各 100~256 循环)
-# - tests/td25_comment_language_test.rs — 注释语言一致性 audit 契约 (TD-24, 8 用例)
-# - tests/common/mod.rs    — 共享 helper 占位 (Rust 官方测试组织标准 §tests/common/)
+# 完整索引见 host-tests/README.md §测试分类索引
+# 命名规范: <scope>_<feature>_<kind>_test.rs
 #
 # 单元测试 (unit tests) 内联于 src/*.rs 的 #[cfg(test)] mod tests:
 # - src/buddy.rs       — 伙伴分配器

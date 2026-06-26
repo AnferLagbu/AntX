@@ -1,4 +1,7 @@
-//! HvFS 持久化往返集成测试 (HvFS Persistence Roundtrip Integration Tests)
+//! hvfs: 持久化往返集成测试
+//!
+//! 追踪: I-05
+//! SPDX-License-Identifier: Apache-2.0
 //!
 //! 验证 HvFS 的内存持久化往返行为:
 //! 1. 写入一批文件 → sync

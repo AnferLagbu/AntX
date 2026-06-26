@@ -1,4 +1,7 @@
-//! e1000 EEPROM 读取集成测试 (e1000 EEPROM Read Integration Tests)
+//! driver: e1000 EEPROM 读取集成测试
+//!
+//! 追踪: I-40
+//! SPDX-License-Identifier: Apache-2.0
 //!
 //! 目标: 验证 `framework::driver::net::e1000` 中 `eeprom_read` /
 //! `read_mac_address` 的字节组装逻辑 (EERD 寄存器读取在真实硬件上由

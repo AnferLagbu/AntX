@@ -1,7 +1,14 @@
-//! 显示器驱动集成测试 (Display Driver Integration Tests)
+//! driver: 显示器驱动集成测试
 //!
-//! 验证显示器驱动算法 (PixelFormat, Color 转换, DisplayMode 带宽,
-//! HDMI EDID, DisplayPort LinkRate/LaneCount) 的正确性.
+//! 验收:
+//!   - PixelFormat 字节序正确
+//!   - Color 转换 (Rgb565/Rgb888/Argb8888) 边界条件
+//!   - DisplayMode 带宽计算
+//!   - HDMI EDID 解析
+//!   - DisplayPort LinkRate/LaneCount 协商
+//!
+//! 追踪: I-22
+//! SPDX-License-Identifier: Apache-2.0
 //!
 //! 这些测试覆盖原 `framework::driver::display` 纯算法部分, 不依赖
 //! 真实硬件, 在 host 端纯 std 环境运行.

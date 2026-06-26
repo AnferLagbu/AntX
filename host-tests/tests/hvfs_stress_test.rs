@@ -1,11 +1,14 @@
-//! HvFS 压力集成测试 (HvFS Stress Integration Tests)
+//! hvfs: 压力集成测试
 //!
 //! 验证 HvFS 高频路径 (CAS 去重表 / ZAP 哈希表 / ZIL 事务日志) 在
 //! 100~256 次循环下的正确性与性能特征. 集成测试视角, 不依赖真实硬件.
 //!
+//! 追踪: I-05
+//! SPDX-License-Identifier: Apache-2.0
+//!
 //! ## 与单元测试的分工
 //! - 单元测试 (`src/hvfs/*`) 验证各模块基本行为
-//! - 本文件 (`tests/stress_test.rs`) 验证整体压力下的稳定性
+//! - 本文件验证整体压力下的稳定性
 //!
 //! ## 与性能基准的分工
 //! - `framekernel_bench` 测量 ns_per_op 微基准

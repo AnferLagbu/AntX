@@ -1,4 +1,7 @@
-//! IoMem 别名检测集成测试 (IoMem Alias Registry Integration Tests)
+//! mm: IoMem 别名检测集成测试
+//!
+//! 追踪: I-25
+//! SPDX-License-Identifier: Apache-2.0
 //!
 //! 复刻 `src/kernel/framework/iomem.rs` 中的 `AliasRegistry` 逻辑,
 //! 在 host 端进行集成测试, 验证:
