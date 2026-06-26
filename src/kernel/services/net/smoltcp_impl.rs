@@ -133,6 +133,19 @@ pub struct SmoltcpNetStack {
     next_smol_idx: u16,
     dhcp_user_id: Option<u32>,
     dhcp_state: DhcpState,
+    /// DHCP Discover/Request 重试计数 (Bound 后清零).
+    ///
+    /// 由 `record_dhcp_retry()` 递增, `record_dhcp_bound()` 清零.
+    /// W6 策略依赖此字段决定是否走 Fallback.
+    dhcp_retry_count: u32,
+    /// 上次进入 Bound 状态的协议栈时间 (ms), 0 = 未 Bound.
+    ///
+    /// W6 策略依赖此字段 + 当前时间计算续约时机.
+    dhcp_bound_at_ms: u64,
+    /// 上次 Bound 的租期总长 (ms), 0 = 未知.
+    ///
+    /// W6 策略用此字段计算 T1/T2 续约阈值.
+    dhcp_lease_duration_ms: u64,
     initialized: bool,
 }
 
@@ -146,6 +159,9 @@ impl SmoltcpNetStack {
             next_smol_idx: 0,
             dhcp_user_id: None,
             dhcp_state: DhcpState::Idle,
+            dhcp_retry_count: 0,
+            dhcp_bound_at_ms: 0,
+            dhcp_lease_duration_ms: 0,
             initialized: false,
         }
     }
@@ -440,6 +456,81 @@ impl SmoltcpNetStack {
             fallback_to_static: true,
         };
         self.dhcp_decide(&POLICY, &CFG, retry_count, elapsed_ms, lease_duration_ms)
+    }
+
+    // ---- DHCP 内部状态追踪 (W6 集成) ----
+    //
+    // 调用方 (framework poll_network) 在状态变化时调用下面 3 个方法,
+    // `dhcp_decide_at` 自动基于内部状态计算 elapsed_ms / lease_ms
+    // 并返回 Action. 调用方代码无需自己维护计数器.
+
+    /// 记录一次 DHCP Discover/Request 重试.
+    ///
+    /// ## 调用时机
+    ///
+    /// - DHCP 状态从 Discovering/Requesting 推进但未收到 ACK 时
+    /// - 每次重试前调用, `dhcp_retry_count` 自增
+    ///
+    /// ## 副作用
+    ///
+    /// 无副作用, 仅更新内部计数. Bound 后会被 `record_dhcp_bound` 清零.
+    #[inline]
+    pub fn record_dhcp_retry(&mut self) {
+        self.dhcp_retry_count = self.dhcp_retry_count.saturating_add(1);
+    }
+
+    /// 记录 DHCP 进入 Bound 状态.
+    ///
+    /// ## 调用时机
+    ///
+    /// - DHCP 状态从 Requesting 转为 Bound 时 (smoltcp `Event::Configured`)
+    /// - 静态 IP init 成功时 (不走 DHCP, 但记录起始时间)
+    ///
+    /// ## 参数
+    ///
+    /// - `now_ms`: 当前协议栈时间 (ms)
+    /// - `lease_duration_ms`: 租期总长 (ms, 静态 IP 传 u64::MAX)
+    #[inline]
+    pub fn record_dhcp_bound(&mut self, now_ms: u64, lease_duration_ms: u64) {
+        self.dhcp_bound_at_ms = now_ms;
+        self.dhcp_lease_duration_ms = lease_duration_ms;
+        self.dhcp_retry_count = 0; // 进入 Bound 后清零重试计数
+    }
+
+    /// 记录 DHCP 退出 Bound 状态 (Idle/Failed/Deconfigured).
+    ///
+    /// 退出 Bound 时不清零 retry_count, 留给 `record_dhcp_retry` 自然推进.
+    /// 退出 Bound 时清零 `dhcp_bound_at_ms` 和 `dhcp_lease_duration_ms`,
+    /// 避免 stale 值影响后续策略决策.
+    #[inline]
+    pub fn record_dhcp_unbound(&mut self) {
+        self.dhcp_bound_at_ms = 0;
+        self.dhcp_lease_duration_ms = 0;
+    }
+
+    /// 集成 DHCP 决策: 自动用内部状态计算 elapsed / lease, 委托给默认策略.
+    ///
+    /// ## 与 `dhcp_decide_default` 的区别
+    ///
+    /// - `dhcp_decide_default(r, e, l)`: 调用方提供 3 个参数
+    /// - `dhcp_decide_at(now_ms)`: 仅需当前时间, 内部自动取 retry/elapsed/lease
+    ///
+    /// ## 调用方契约
+    ///
+    /// `now_ms` 应来自统一的协议栈时间源 (e.g. hrtimer_clock_read / 1_000_000).
+    /// 协议栈时间在每次 record_dhcp_bound 时记录, 续约阈值基于此计算.
+    #[inline]
+    pub fn dhcp_decide_at(&self, now_ms: u64) -> DhcpAction {
+        let elapsed_ms = if self.dhcp_bound_at_ms == 0 {
+            0
+        } else {
+            now_ms.saturating_sub(self.dhcp_bound_at_ms)
+        };
+        self.dhcp_decide_default(
+            self.dhcp_retry_count,
+            elapsed_ms,
+            self.dhcp_lease_duration_ms,
+        )
     }
 }
 
@@ -972,5 +1063,142 @@ mod tests {
             policy.decide(&DhcpState::Idle, &cfg, &pc, 0, 0, 0),
             DhcpAction::Continue
         );
+    }
+
+    // ---- 9. W7-E: DHCP 内部状态追踪 + dhcp_decide_at ----
+
+    /// 验证: record_dhcp_retry 单调递增, 不溢出.
+    #[test]
+    fn test_record_dhcp_retry_monotonic() {
+        let mut stack = SmoltcpNetStack::new();
+        assert_eq!(stack.dhcp_retry_count, 0);
+        stack.record_dhcp_retry();
+        assert_eq!(stack.dhcp_retry_count, 1);
+        stack.record_dhcp_retry();
+        assert_eq!(stack.dhcp_retry_count, 2);
+        stack.record_dhcp_retry();
+        assert_eq!(stack.dhcp_retry_count, 3);
+    }
+
+    /// 验证: record_dhcp_retry 在 u32::MAX 时饱和不溢出.
+    #[test]
+    fn test_record_dhcp_retry_saturating() {
+        let mut stack = SmoltcpNetStack::new();
+        // 直接设到 u32::MAX - 2, 然后再 +3, 应饱和为 u32::MAX
+        stack.dhcp_retry_count = u32::MAX - 2;
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        assert_eq!(stack.dhcp_retry_count, u32::MAX, "应饱和到 u32::MAX");
+        // 再次调用仍应饱和
+        stack.record_dhcp_retry();
+        assert_eq!(stack.dhcp_retry_count, u32::MAX);
+    }
+
+    /// 验证: record_dhcp_bound 清零 retry_count + 设置 bound_at/lease.
+    #[test]
+    fn test_record_dhcp_bound_clears_retry() {
+        let mut stack = SmoltcpNetStack::new();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        assert_eq!(stack.dhcp_retry_count, 3);
+        stack.record_dhcp_bound(1_000_000, 3_600_000); // 1s, 1h lease
+        assert_eq!(stack.dhcp_retry_count, 0, "bound 后 retry 应清零");
+        assert_eq!(stack.dhcp_bound_at_ms, 1_000_000);
+        assert_eq!(stack.dhcp_lease_duration_ms, 3_600_000);
+    }
+
+    /// 验证: record_dhcp_unbound 清零 bound_at + lease, 保留 retry.
+    #[test]
+    fn test_record_dhcp_unbound_keeps_retry() {
+        let mut stack = SmoltcpNetStack::new();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_bound(1_000_000, 3_600_000);
+        stack.record_dhcp_unbound();
+        assert_eq!(stack.dhcp_bound_at_ms, 0);
+        assert_eq!(stack.dhcp_lease_duration_ms, 0);
+        assert_eq!(
+            stack.dhcp_retry_count, 0,
+            "bound 后 retry 已被清零, unbound 不再变"
+        );
+        // 再 retry, 应能正常递增
+        stack.record_dhcp_retry();
+        assert_eq!(stack.dhcp_retry_count, 1);
+    }
+
+    /// 验证: dhcp_decide_at 自动用内部状态计算 elapsed_ms.
+    #[test]
+    fn test_dhcp_decide_at_computes_elapsed() {
+        let mut stack = SmoltcpNetStack::new();
+        // 模拟: 100s 时 Bound, 租期 1000s, 700s 后查询
+        stack.record_dhcp_bound(100_000, 1_000_000);
+        // 100s + 700s = 800s
+        let action = stack.dhcp_decide_at(800_000);
+        // T1=500s (50%), T2=875s (87.5%), elapsed=700s 在 T1..T2 之间
+        assert_eq!(action, DhcpAction::Renew);
+    }
+
+    /// 验证: dhcp_decide_at 在未 Bound 时 elapsed=0, 返回 Continue (Idle).
+    #[test]
+    fn test_dhcp_decide_at_before_bound_continue() {
+        let stack = SmoltcpNetStack::new();
+        let action = stack.dhcp_decide_at(0);
+        assert_eq!(action, DhcpAction::Continue);
+    }
+
+    /// 验证: dhcp_decide_at 在 retry_count 累加后给出 GiveUp.
+    #[test]
+    fn test_dhcp_decide_at_giveup_after_max_retries() {
+        let mut stack = SmoltcpNetStack::new();
+        // 模拟: DHCP Discovering 状态, 已重试 4 次 (超过 max_retries=4)
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry(); // 5 次重试
+        // 状态保持 Idle (未进入 Bound), config.static_ipv4 = None (默认)
+        let action = stack.dhcp_decide_at(0);
+        assert_eq!(action, DhcpAction::GiveUp);
+    }
+
+    /// 验证: dhcp_decide_at 在 retry 超限且有静态 IP 时 fallback.
+    #[test]
+    fn test_dhcp_decide_at_fallback_with_static() {
+        let mut stack = SmoltcpNetStack::new();
+        // init with static IPv4
+        stack
+            .init(NetConfig {
+                mac_address: [0; 6],
+                static_ipv4: Some([192, 168, 1, 50]),
+                prefix_len: 24,
+                gateway: [192, 168, 1, 1],
+                random_seed: 0,
+            })
+            .unwrap();
+        // 模拟: DHCP 模式, 但有静态 IP 作为 fallback
+        stack.dhcp_state = DhcpState::Discovering;
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        stack.record_dhcp_retry();
+        let action = stack.dhcp_decide_at(0);
+        assert_eq!(
+            action,
+            DhcpAction::FallbackToStatic(Ipv4Addr::from_octets([192, 168, 1, 50]))
+        );
+    }
+
+    /// 验证: dhcp_decide_at 在 T1 之前 Continue (有 Bound 但未到续约时机).
+    #[test]
+    fn test_dhcp_decide_at_bound_before_t1_continue() {
+        let mut stack = SmoltcpNetStack::new();
+        // Bound 100s, 租期 1000s, T1=500s, T2=875s
+        stack.record_dhcp_bound(100_000, 1_000_000);
+        // 100s + 100s = 200s, < T1=500s
+        let action = stack.dhcp_decide_at(200_000);
+        assert_eq!(action, DhcpAction::Continue);
     }
 }

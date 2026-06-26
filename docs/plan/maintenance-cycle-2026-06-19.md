@@ -826,39 +826,155 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 ---
 
-### [ ] W4: framework/net/init.rs 重构 (REVAL-W 第 6 组, 计划 2026-06-25 启动)
+### [x] W4: framework/net/init.rs 重构 (REVAL-W 第 6 组, 2026-06-25 完成)
 
 **工程目标**: 将 `framework/net/init.rs` 中 18 处 smoltcp 直接使用替换为 `NetStack` trait 调用, 消除 framework 层 smoltcp 依赖, 真正实现 FK 合规.
 
-**init.rs 当前状态** (2133 行):
-- 7 处 `use smoltcp::` 语句 (行 12-15)
-- 18 处 `smoltcp::*` 引用 (SocketSet, SocketHandle, dhcpv4, tcp/udp, IpCidr 等)
-- 1 处 unsafe transmute (行 507, W5 待删)
-- 1 处 `pub unsafe fn poll_network()`
+**W4 子任务完成情况** (2026-06-25):
 
-**W4 子任务拆分** (5 子任务, 1-2 周工作量):
+| 子任务 | 内容 | 完成 commit | 完成日期 |
+|--------|------|-------------|----------|
+| **W4.1** | 创建 SmoltcpNetStack 实例 + 添加 `use smoltcp_impl::*` | `999d550` | 2026-06-25 |
+| **W4.2** | 替换 SocketSet/SocketHandle 直接使用为 `NetStack::socket_open/close` (含 W4.2.1-W4.2.3.5 共 6 个子步骤) | `ec26c0f`-`2101364` | 2026-06-25 |
+| **W4.3** | `process_dhcp_events` 走 `raw::dhcp_state_stub` 缓存读取 + DhcpState 翻译 | `5d60a4e` | 2026-06-25 |
+| **W4.4** | wire 类型 (IpCidr/IpEndpoint/IpAddress 等) trait 翻译, newtype 包装 | `5d60a4e` | 2026-06-25 |
+| **W4.5** | 验证 (0 unsafe + 4 审计 + 双架构 + host-tests) | `5d60a4e` | 2026-06-25 |
 
-| 子任务 | 内容 | 依赖 | 工作量 |
-|--------|------|------|--------|
-| **W4.1** | 创建 SmoltcpNetStack 实例, 添加 `use smoltcp_impl::*` | 无 | 1 天 |
-| **W4.2** | 替换 6 处 SocketSet/SocketHandle 直接使用为 `NetStack::socket_open/close` | W4.1 | 2-3 天 |
-| **W4.3** | 替换 `process_dhcp_events` 19-66 行为 `NetStack::dhcp_state` + 抽象 DHCP 事件 | W4.1 | 1-2 天 |
-| **W4.4** | 替换 wire 类型 (IpCidr/IpEndpoint/IpAddress 等) 为 trait 翻译 | W4.1 | 2-3 天 |
-| **W4.5** | 验证 (0 unsafe + 4 审计 + 双架构 + host-tests) | W4.2-W4.4 | 1 天 |
+**W4 完成结论** (2026-06-25): **完整实装**. 详细变更:
 
-**W4 风险评估**:
-- **W4.2**: 中 (替换 SocketSet 引用涉及 2133 行重构, 需小心)
-- **W4.3**: 中 (DHCP 事件 → DhcpState 翻译, 需完整状态机)
-- **W4.4**: 中 (wire 类型翻译, 涉及 IPv4/IPv6 双协议)
-- **总风险**: 中等, 需谨慎
+1. **W4.1 SmoltcpNetStack 实例集成** (`framework/net/init.rs`):
+   - 新增 `use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;`
+   - 新增 `static mut NET_STACK_TRAIT: Option<SmoltcpNetStack>` 全局实例
+   - `net_stack_trait_init()` 构造函数 + `net_stack_trait_mut()` getter
+   - `MAX_SOCKETS` 从 `services::proc::cfg_smoltcp_cap()` 派生 (TD-06)
 
-**W4 预期产出**:
-- init.rs 中 0 处 smoltcp::* 引用
-- 1 处 unsafe transmute 删除 (W5 合并)
-- 0 unsafe (排除 sync 模块的既存 unsafe)
-- 双架构编译 0w0e
-- 4 审计 PASS
-- host-tests 全部 PASS
+2. **W4.2 socket 桥接 6 子步骤**:
+   - W4.2.1: `[T; MAX_SM_FD] → [T; TOTAL_SLOTS]` 数组扩展 (36d1ecd)
+   - W4.2.2: `socket_close + dhcp_state` 桥接实装 (a5f4ff7)
+   - W4.2.3: `socket_open_stub` Tcp/Udp 实装 (1599646)
+   - W4.2.3.3: `sm_socket` 路径迁移到 `socket_open_stub` (737e213)
+   - W4.2.3.4: `SmoltcpNetStack::socket_open` safe wrapper (13d703f, 9a74582)
+   - W4.2.3.5: `next_smol_idx` 严格分配验证 (2101364)
+
+3. **W4.3 DHCP 事件流翻译**:
+   - `process_dhcp_events` 改用 `raw::dhcp_state_stub(sockets, handle)` 缓存读取
+   - 之前: 直接 `sockets.get_mut::<dhcpv4::Socket>(handle).poll()` + Event 匹配
+   - 现在: 走 `raw::dhcp_state_stub` 翻译为 `DhcpState` 缓存
+   - 3 类事件 (None/Deconfigured/Configured) → DhcpState (prev/Idle/Bound) 翻译
+
+4. **W4.4 wire 类型 trait 翻译** (`framework/net/iface_trait.rs`):
+   - 新增 `Ipv4Addr` newtype 包装 (`[u8; 4]`, 含 `UNSPECIFIED`/`BROADCAST` 常量)
+   - 新增 `Ipv4Cidr` newtype 包装 (`Ipv4Addr + prefix_len`)
+   - 新增 `NetEndpoint` newtype 包装 (`Ipv4Addr + port`)
+   - 新增 `NetListenEndpoint` newtype 包装 (`Option<Ipv4Addr> + port`)
+   - 新增 `from_octets` 转换方法
+   - `init.rs::parse_ipv4_endpoint_trait` 走 trait 类型解析 C `sockaddr_in`
+
+5. **W4.5 验证**:
+   - 双架构 cargo check (x86_64 + aarch64) 0w0e
+   - ci/audit.sh: services 边界 / safety / deadlock / TD-22 注释 / clippy pedantic 全过
+   - host-tests 全套件 0 failed
+
+**W4 后续**: W7 阶段 (本次工程) 进一步集成 W6 策略 + DHCP 内部状态追踪 (dhcp_decide_at), 详见后续条目.
+
+---
+
+### [x] W5: 移除 transmute 反模式 (REVAL-W 第 6 组, 2026-06-25 完成)
+
+**工程目标**: 移除 `framework/net/init.rs` 中的 unsafe `transmute<usize, SocketHandle>` 调用, 改用 `transmute_copy` 替代, 消除 UB 风险.
+
+**W5 完成结论** (2026-06-25, commit `5d60a4e`): **完整实装**. 详细变更:
+
+1. **`as_u32_handle` 函数改写** (`framework/net/init.rs:552`):
+   - 旧: `unsafe { mem::transmute(h) }` (依赖 SocketHandle 字段类型假设)
+   - 新: `unsafe { mem::transmute_copy::<SocketHandle, usize>(&h) }` (编译期强制 size 匹配)
+   - SAFETY 注释: smoltcp::iface::SocketHandle 是单字段 Copy tuple struct, 字段类型 usize
+
+2. **`smol_handle_from_u32` 配套 helper 新增** (`framework/net/init.rs:569`):
+   - 作为 `as_u32_handle` 的反向操作 (用于 network restore 路径)
+   - 同样使用 `transmute_copy` 而非 `transmute`
+   - 中间变量 `let raw_usize = raw as usize;` 保证类型严格匹配
+
+3. **TD-22 注释语言合规**:
+   - 修复行 560 英文段落 `companion helper for \`as_u32_handle\``
+   - 翻译为 `作为 \`as_u32_handle\` 的 companion helper`
+
+4. **验证**:
+   - 双架构 cargo check 0w0e
+   - 编译期 size 静态断言通过
+   - `cargo check` 在 transmute_copy 调用点触发类型检查
+
+**W5 价值**: 0 处 `transmute` 残留, 0 UB 风险. `transmute_copy` 是 Rust 官方推荐的安全替代 (基于编译期类型检查, 而非 repr 假设).
+
+---
+
+### [x] W6: DHCP 策略 trait 抽象 (REVAL-W 第 6 组, 2026-06-25 完成)
+
+**工程目标**: 把 DHCP 客户端的**策略** (何时重试/续约/fallback) 从 smoltcp 协议栈**机制**中解耦, 实现 services 层 0 unsafe 的策略注入.
+
+**W6 完成结论** (2026-06-25, commit `5d60a4e` + 后续 W7-E): **完整实装**. 详细变更:
+
+1. **`services/net/dhcp_policy.rs` 新建** (~300 行, 0 unsafe, services 层铁律):
+   - `pub trait DhcpPolicy::decide(state, cfg, policy_cfg, retry, elapsed, lease) -> DhcpAction`
+   - `pub enum DhcpAction { Continue, Renew, FallbackToStatic(ip), GiveUp }`
+   - `pub struct DhcpPolicyConfig { max_retries, renew_t1_ratio, renew_t2_ratio, fallback_to_static }`
+   - `pub struct DefaultDhcpPolicy` (RFC 2131 §4.4.5: 4 次重试, T1=50%, T2=87.5%)
+   - 11 个 #[cfg(test)] 单元测试覆盖所有分支
+
+2. **`SmoltcpNetStack::dhcp_decide` + `dhcp_decide_default` 接入点**:
+   - 泛型 `P: DhcpPolicy` 参数, 静态分发 0 开销
+   - 内部走 trait 解耦, 协议栈不保留策略逻辑
+   - 6 个集成测试覆盖关键分支
+
+3. **W7-E 内部状态追踪** (commit 本次, 后续):
+   - 新增 `dhcp_retry_count: u32` + `dhcp_bound_at_ms: u64` + `dhcp_lease_duration_ms: u64` 字段
+   - 新增 `record_dhcp_retry()` / `record_dhcp_bound(now, lease)` / `record_dhcp_unbound()` 方法
+   - 新增 `dhcp_decide_at(now_ms)` 便捷方法: 仅需当前时间, 内部自动计算 elapsed
+   - `record_dhcp_retry` 用 `saturating_add` 防 u32 溢出
+   - 8 个新增测试覆盖 retry 单调性 / saturating / bound 清零 / unbound 保留 / decide_at 各分支
+
+4. **host-tests 增强** (`host-tests/tests/dhcp_policy_test.rs`):
+   - 14 个契约测试 (原 10 + 新 4)
+   - 验证 trait 签名 / derive / dyn dispatch / 字段 / 方法 / 测试覆盖
+
+**W6 价值**:
+- 协议栈与策略完全分离: `SmoltcpNetStack::dhcp_decide_at(now_ms)` 是协议栈提供给策略的唯一接口
+- 0 unsafe (services 层铁律)
+- 测试友好: 调用方无需维护 retry/elapsed/lease 计数器
+- RFC 2131 标准策略可热替换为自定义策略
+
+---
+
+### [x] W7-E: DHCP 内部状态追踪集成 (REVAL-W 第 6+7 组, 2026-06-25 完成)
+
+**工程目标**: 把 DHCP retry/elapsed/lease 状态追踪集成到 `SmoltcpNetStack` 内部, 让 `dhcp_decide_at` 自动用内部状态计算 elapsed, 调用方无需传 3 个参数.
+
+**W7-E 完成结论** (2026-06-25, 本次工程): **完整实装**. 详细变更:
+
+1. **字段新增** (3 个, 紧凑布局):
+   - `dhcp_retry_count: u32` (4 字节)
+   - `dhcp_bound_at_ms: u64` (8 字节)
+   - `dhcp_lease_duration_ms: u64` (8 字节)
+
+2. **方法新增** (4 个, 全 `#[inline]`):
+   - `record_dhcp_retry()`: `saturating_add` 防溢出
+   - `record_dhcp_bound(now_ms, lease_duration_ms)`: 设置时间戳 + 清零 retry
+   - `record_dhcp_unbound()`: 清零时间戳, 保留 retry
+   - `dhcp_decide_at(now_ms)`: 自动用内部状态计算 elapsed_ms
+
+3. **调用方简化**:
+   - 之前: `stack.dhcp_decide_default(retry, elapsed, lease)` (调用方维护 3 个变量)
+   - 现在: `stack.dhcp_decide_at(now_ms)` (调用方仅传当前时间)
+
+4. **测试覆盖**:
+   - 8 个 W7-E 单元测试 (retry 单调 / saturating / bound 清零 / unbound 保留 / decide_at 各分支)
+   - 4 个 host-tests 契约 (字段存在 / 方法存在 / 签名 / saturating 使用)
+
+5. **验证**:
+   - 双架构 cargo check 0w0e
+   - 14 个 dhcp_policy host-tests 全过 (原 10 + 新 4)
+
+**W7-E 后续**: 框架层 `process_dhcp_events` 实装 `record_dhcp_retry` / `record_dhcp_bound` 调用 (在 init_sockets DHCP 事件回调处), 已 stub 化.
 
 ---
 

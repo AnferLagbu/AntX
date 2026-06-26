@@ -118,6 +118,120 @@ fn test_dhcp_decide_integration_tests_present() {
 }
 
 #[test]
+fn test_dhcp_internal_state_tracking_present() {
+    // W7-E: SmoltcpNetStack 内部 DHCP 状态追踪 (retry/elapsed/lease)
+    let content = read(IMPL_RS);
+
+    // 字段
+    assert!(
+        content.contains("dhcp_retry_count: u32"),
+        "SmoltcpNetStack 应有 dhcp_retry_count 字段"
+    );
+    assert!(
+        content.contains("dhcp_bound_at_ms: u64"),
+        "SmoltcpNetStack 应有 dhcp_bound_at_ms 字段"
+    );
+    assert!(
+        content.contains("dhcp_lease_duration_ms: u64"),
+        "SmoltcpNetStack 应有 dhcp_lease_duration_ms 字段"
+    );
+
+    // 方法
+    assert!(
+        content.contains("fn record_dhcp_retry"),
+        "应有 record_dhcp_retry 方法"
+    );
+    assert!(
+        content.contains("fn record_dhcp_bound"),
+        "应有 record_dhcp_bound 方法"
+    );
+    assert!(
+        content.contains("fn record_dhcp_unbound"),
+        "应有 record_dhcp_unbound 方法"
+    );
+    assert!(
+        content.contains("fn dhcp_decide_at"),
+        "应有 dhcp_decide_at 便捷方法"
+    );
+
+    // 测试覆盖 (至少 8 个 W7-E 相关测试)
+    let w7e_tests = content.matches("fn test_record_dhcp").count()
+        + content.matches("fn test_dhcp_decide_at").count();
+    assert!(
+        w7e_tests >= 8,
+        "W7-E DHCP 内部状态追踪应有至少 8 个测试, 实测: {}",
+        w7e_tests
+    );
+}
+
+#[test]
+fn test_dhcp_decide_at_signature() {
+    // 验证 dhcp_decide_at 仅接收 now_ms, 自动取内部 retry/elapsed/lease
+    let content = read(IMPL_RS);
+    let sig = "fn dhcp_decide_at(";
+    let idx = content.find(sig).expect("应存在 dhcp_decide_at 函数");
+    let header = &content[idx..];
+    // 找到函数体起点
+    let body_start = header.find(") -> DhcpAction").expect("应有完整签名");
+    let header_only = &header[..body_start];
+    assert!(
+        header_only.contains("&self"),
+        "dhcp_decide_at 应为 &self 方法"
+    );
+    assert!(
+        header_only.contains("now_ms: u64"),
+        "dhcp_decide_at 应接收 now_ms: u64"
+    );
+    // 应仅 1 个参数 (now_ms), retry/elapsed/lease 从内部状态取
+    let param_count = header_only.matches(": u32").count() + header_only.matches(": u64").count();
+    assert_eq!(
+        param_count, 1,
+        "dhcp_decide_at 应仅 1 个 u64 参数 (now_ms), 实测: {} 个",
+        param_count
+    );
+}
+
+#[test]
+fn test_record_dhcp_retry_uses_saturating_add() {
+    // 验证 record_dhcp_retry 用 saturating_add 防止 u32 溢出
+    let content = read(IMPL_RS);
+    let idx = content.find("fn record_dhcp_retry").expect("应有此函数");
+    let end = content[idx..]
+        .find("}")
+        .map(|e| idx + e)
+        .expect("应有函数体结束");
+    let body = &content[idx..end];
+    assert!(
+        body.contains("saturating_add"),
+        "record_dhcp_retry 应使用 saturating_add 防溢出"
+    );
+}
+
+#[test]
+fn test_record_dhcp_bound_clears_retry() {
+    // 验证 record_dhcp_bound 在设置 bound_at_ms 时同时清零 retry_count
+    let content = read(IMPL_RS);
+    let idx = content.find("fn record_dhcp_bound").expect("应有此函数");
+    let end = content[idx..]
+        .find("}")
+        .map(|e| idx + e)
+        .expect("应有函数体结束");
+    let body = &content[idx..end];
+    assert!(
+        body.contains("dhcp_retry_count = 0"),
+        "record_dhcp_bound 应清零 dhcp_retry_count"
+    );
+    assert!(
+        body.contains("dhcp_bound_at_ms = now_ms"),
+        "record_dhcp_bound 应设置 dhcp_bound_at_ms"
+    );
+    assert!(
+        body.contains("dhcp_lease_duration_ms = lease_duration_ms"),
+        "record_dhcp_bound 应设置 dhcp_lease_duration_ms"
+    );
+}
+
+#[test]
 fn test_no_unsafe_in_dhcp_policy() {
     // 验证 services 层铁律: dhcp_policy.rs 0 unsafe
     let content = read(POLICY_RS);
