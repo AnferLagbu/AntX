@@ -9,7 +9,7 @@
   3. 若文件没有 `use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock`, 在 use 区添加
   4. 不动 .lock() 调用 (Guard API 兼容)
   5. 跳过 `spin::Once` / `spin::OnceCell` (已识别的 init-once 模式, 单独处理)
-  6. 跳过 host-tests / miri-tests / 第三方目录
+  6. 跳过 host-tests / 第三方目录 (miri-tests 已删除 2026-06-26)
 
 输出: 直接 patch 文件
 """

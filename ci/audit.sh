@@ -175,17 +175,8 @@ else
 fi
 popd > /dev/null
 
-# ── 5. Miri 严格 provenance 配置验证 ───────────────────────────
-step "5/6 Miri 严格 provenance 配置"
-MIRIFLAGS_OK=0
-if grep -rn "MIRIFLAGS" "$PROJECT_ROOT/miri-tests" "$PROJECT_ROOT/src/rust" 2>/dev/null | head -3; then
-    MIRIFLAGS_OK=1
-fi
-if [ "$MIRIFLAGS_OK" -eq 1 ]; then
-    ok "Miri 配置存在"
-else
-    echo -e "${YELLOW}⚠ Miri 严格 provenance 未配置 (待补)${NC}"
-fi
+# ── 5. miri 已于 2026-06-26 弃用 (见 CHANGELOG.md [Unreleased] 移除节) ──
+# 原 Miri 严格 provenance 配置验证已删除, UB 检测由 Rust 编译期 + 7 个审计脚本覆盖
 
 # ── 6. 模块级 SAFETY 不变式审计 ────────────────────────────────
 step "6/6 模块级 SAFETY 不变式 (框架特权层)"

@@ -111,9 +111,10 @@ CI 流程在 `ci/build.sh` 与 `ci/audit.sh` 中串联。`ci/audit.sh` 包含 fa
 ### 测试分层
 
 - `framework/tests/`: 31 个 no_std 单元测试，手动注册 + QEMU Runner
-- `host-tests/`: 5 个内联单元测试 + 7 个 Cargo 自动发现的集成测试 + 1 个性能基准 binary
-- `miri-tests/`: 13 个 TCB 纯算法模块，Miri 解释器扫描 UB
+- `host-tests/`: 5 个内联单元测试 + 70 个 Cargo 自动发现的集成测试 + 1 个性能基准 binary
 - `src/rust/queenx-tests/`: 用户态集成测试桩
+
+> **miri-tests 已于 2026-06-26 删除** (4883 行死代码). UB 检测由 Rust 编译期 + 7 个审计脚本覆盖.
 
 ### 内置 make 测试目标
 
@@ -168,7 +169,6 @@ make test-smp         # SMP 多核测试
 │       ├── httpsrv/         HTTP 服务器
 │       └── lib/             用户态共享 lib
 ├── host-tests/              host 端 std 测试 + HvFS mock
-├── miri-tests/              TCB 算法 Miri 验证
 └── build/                   构建产物 (kernel.bin / kernel.flat / .iso / .img)
 ```
 

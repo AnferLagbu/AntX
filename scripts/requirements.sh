@@ -594,11 +594,7 @@ install_rust_toolchain() {
                     rustup component add rust-src clippy rustfmt
                 fi
 
-                # 询问是否安装 miri
-                if ask_yes_no "是否安装 miri (UB 检测)？" "y"; then
-                    rustup +nightly component add miri
-                fi
-
+                # miri 已于 2026-06-26 弃用 (工具未实际安装, 由 Rust 编译期 + 审计脚本覆盖)
                 # 询问是否安装 llvm-tools-preview
                 if ask_yes_no "是否安装 llvm-tools-preview (cargo cov / 覆盖率)？" "y"; then
                     rustup +nightly component add llvm-tools-preview
@@ -708,7 +704,7 @@ ${YELLOW}示例:${NC}
 
 ${YELLOW}依赖分类 (8 类, v3.2):${NC}
   ${RED}必需 (1/8)${NC}    : Rust 工具链 + QEMU + Python 3 + Make
-  ${YELLOW}推荐 (2/8)${NC}    : rust-src/clippy/rustfmt/miri/llvm-tools/targets
+  ${YELLOW}推荐 (2/8)${NC}    : rust-src/clippy/rustfmt/llvm-tools/targets (miri 已弃用 2026-06-26)
   ${MAGENTA}测试 (3/8)${NC}    : lockbud/cargo-deny/cargo-audit/llvm-cov/mutants/bloat/geiger
   ${YELLOW}可选 (4/8)${NC}    : rust-analyzer/bindgen/htop/tmux/gdb/strace
   ${BLUE}C 链接 (5/8)${NC}   : nasm / {x86_64,aarch64}-linux-gnu-{ld,objcopy,as}
@@ -893,16 +889,8 @@ if [ "$SKIP_OPTIONAL" = false ]; then
         RECOMMENDED_TOTAL=$((RECOMMENDED_TOTAL + 2))
     fi
 
-    print_subsection "Miri UB 检测"
-    print_check "miri 组件"
-    if has_cmd rustup && rustup +nightly component list 2>/dev/null | grep -q "^miri.*installed"; then
-        print_ok
-        RECOMMENDED_OK=$((RECOMMENDED_OK + 1))
-    else
-        print_recommended_missing
-        MISSING_RUSTUP_COMPONENTS+=("miri")
-    fi
-    RECOMMENDED_TOTAL=$((RECOMMENDED_TOTAL + 1))
+    # miri 已于 2026-06-26 弃用, 跳过 miri 组件检查
+    # print_subsection "Miri UB 检测" - 见 CHANGELOG.md [Unreleased] 移除节
 
     print_subsection "LLVM Tools (cargo cov / 性能分析)"
     print_check "llvm-tools-preview 组件"
@@ -1462,12 +1450,11 @@ echo "    make -f Makefile.ci ci-cargo            # cargo check (x86_64 + aarch6
 echo "    make -f Makefile.ci ci-bench            # framekernel-bench + 回归检查"
 echo "    make -f Makefile.ci ci-test-host        # host-tests 全量 (Cargo 自动发现)"
 echo "    make test                                # test-host + test-unit"
-echo "    cargo +nightly miri test                # Miri UB 检测"
 echo ""
 echo -e "  ${BOLD}代码质量 (cargo 子命令):${NC}"
 echo "    cargo clippy -- -D warnings             # clippy.toml deny all"
 echo "    cargo fmt --check                       # 格式门禁"
-echo "    cargo +nightly miri run --bin miri-runner  # 严苛模式"
+echo "    # miri 已于 2026-06-26 弃用, UB 检测由 Rust 编译期 + 7 个审计脚本覆盖"
 echo "    cargo deny check                        # deny.toml 许可证/漏洞/版本"
 echo "    cargo audit                             # RustSec 漏洞库"
 echo "    cargo llvm-cov test --html              # 覆盖率 HTML 报告"

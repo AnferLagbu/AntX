@@ -5,7 +5,7 @@
 ## 项目速览
 - **项目基本信息**
   - 描述: AntX (内核) + QueenX (用户态系统) 整体内核项目, Framekernel 架构
-  - 方案: 代码组织 src/kernel/{framework,services}/ (双子树) + src/{user,userland,rust}/ (用户态) + host-tests/ + miri-tests/; 架构责任 framework/ TCB (允许 unsafe, 硬件抽象), services/ 100% safe Rust (业务策略); 支持架构 x86_64 + aarch64 双架构, 编译验证命令 ./ci/build.sh all; 远程 git@gitee.com:AnferLagbu/AntX.git (Gitee); 核心约束详见 AGENTS.md + CLAUDE.md
+  - 方案: 代码组织 src/kernel/{framework,services}/ (双子树) + src/{user,userland,rust}/ (用户态) + host-tests/; 架构责任 framework/ TCB (允许 unsafe, 硬件抽象), services/ 100% safe Rust (业务策略); 支持架构 x86_64 + aarch64 双架构, 编译验证命令 ./ci/build.sh all; 远程 git@gitee.com:AnferLagbu/AntX.git (Gitee); 核心约束详见 AGENTS.md + CLAUDE.md (注: miri-tests/ 已于 2026-06-26 删除)
   - 状态: [X]
 
 ## 工作范围 (2026-06-13)
@@ -100,7 +100,7 @@
   - 状态: [X]
 - **7.3 测试与工具**
   - 描述: 4 类工具
-  - 方案: host-tests 主机端单元/集成测试 (make test-host) / miri-tests unsafe 正确性 (cargo miri test) / QEMU 启动测试 (./scripts/qemu_boot_test.sh) / QEMU 调试 gdb 远程调试 (./scripts/qemu_debug.sh)
+  - 方案: host-tests 主机端单元/集成测试 (make test-host) / QEMU 启动测试 (./scripts/qemu_boot_test.sh) / QEMU 调试 gdb 远程调试 (./scripts/qemu_debug.sh) (注: miri-tests/ 已于 2026-06-26 删除, UB 检测由 Rust 编译期 + 7 个审计脚本覆盖)
   - 状态: [X]
 
 ## 接手后第一周建议路径

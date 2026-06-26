@@ -71,7 +71,7 @@
 ## 工作原理
 - **6 层防护机制**
   - 描述: 6 层防护
-  - 方案: 编译期: services/mod.rs 顶部 #![deny(unsafe_code)] 强制 services 0 unsafe; 静态检查: audit_services_boundary + audit_safety_coverage + audit_deadlock_matrix + audit_comment_language + audit_coupling + audit_tcb_ratio + audit_invariants 7 个审计脚本; 编译验证: 双架构 cargo check 0w0e + clippy 0 warning; 测试: host-tests + miri-tests + QEMU 集成测试; 人工审查: PR review 流程覆盖本规范 13 章节; 文档同步: CHANGELOG.md + plan/ + explain/ 三层文档自动维护
+  - 方案: 编译期: services/mod.rs 顶部 #![deny(unsafe_code)] 强制 services 0 unsafe; 静态检查: audit_services_boundary + audit_safety_coverage + audit_deadlock_matrix + audit_comment_language + audit_coupling + audit_tcb_ratio + audit_invariants 7 个审计脚本; 编译验证: 双架构 cargo check 0w0e + clippy 0 warning; 测试: host-tests + QEMU 集成测试 (miri-tests 已于 2026-06-26 删除, UB 检测由 Rust 编译期 + 7 个审计脚本覆盖); 人工审查: PR review 流程覆盖本规范 13 章节; 文档同步: CHANGELOG.md + plan/ + explain/ 三层文档自动维护
   - 状态: [X]
 
 ## 注意事项

@@ -102,5 +102,5 @@
 //! ## P2-4 结论
 //!
 //! 通过手动 SAFETY 审查 (8 类, 30+ 项), 未发现 UB 风险点.
-//! miri 等价覆盖: 100% SAFETY 注释 + 编译期断言 + 运行期 debug_assert.
-//! 真实 miri 测试需 nightly toolchain + 裸机 target 支持, 留作未来 CI 实装.
+//! 等价覆盖: 100% SAFETY 注释 + 编译期断言 + 运行期 debug_assert.
+//! (原 miri 测试节于 2026-06-26 删除, 见 CHANGELOG.md [Unreleased] 移除节)

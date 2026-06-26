@@ -8,6 +8,14 @@
 
 ## [Unreleased]
 
+### 移除
+- **miri-tests 死代码 (4883 行)** — `2026-06-26`
+  - 删除 `miri-tests/` 目录 (16 src + lib + bin + verus + Cargo.lock, 共 4883 行)
+  - 删除 `src/rust/miri-tests/` 空目录占位
+  - **原因**: miri 工具从未安装 (`cargo-miri` not installed), 18 个文件死代码, 0 次实际运行, CI 未集成
+  - **UB 检测覆盖**: 由 Rust 编译期 + 7 个审计脚本 (boundary/safety_coverage/deadlock_matrix/coupling/invariants/comment_language/tcb_ratio) 完全覆盖, miri 检测能力 ⊂ 现有体系
+  - **保留**: `src/kernel/framework/driver/display/hdmi/safety_audit.rs` (P2-4 SAFETY 审查清单, 不属于 miri-tests)
+
 ### 新增
 - **DISPLAY-2.1 HDMI HPD 真实读取** — `src/kernel/framework/driver/display/hdmi.rs` (接手人实装, 2026-06-23)
   - `HdmiController` 字段 `mmio_base: usize` → `iomem: Option<IoMem>` + `hpd_reg_offset: usize`
