@@ -24,6 +24,7 @@ use crate::kernel::framework::net_socket as fw_net_socket;
 use crate::kernel::framework::net::init as init;
 
 // kernel_test 桩: 对齐真实 `net::init` 暴露的类型与函数签名.
+// 同时为 smoltcp_impl.rs 的 `fw_init::` 调用提供 kernel_test no-op stub.
 #[cfg(feature = "kernel_test")]
 mod init {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +44,15 @@ mod init {
     }
     pub fn get_init_state() -> InitState {
         InitState::Uninitialized
+    }
+    // I-预存 (kernel_test build): 为 smoltcp_impl.rs 的 fw_init:: 调用
+    // 提供 no-op stub, 避免编译失败. 测试模式下不创建真实 socket.
+    use crate::kernel::framework::net::iface_trait::SocketKind;
+    pub fn smoltcp_net_stack_socket_open(_kind: SocketKind, _slot_idx: usize) -> Option<u32> {
+        None
+    }
+    pub fn smoltcp_net_stack_slot_base() -> usize {
+        0
     }
 }
 

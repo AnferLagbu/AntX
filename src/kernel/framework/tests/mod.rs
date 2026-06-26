@@ -335,6 +335,13 @@ pub use {assert_eq_test, check, skip_test};
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === QueenX Test Framework ===");
 
+    // FS 全局单例初始化 — 测试模式下需主动 init, 否则后续
+    // 调用 global() 会 panic (e.g. devfs::global() called before init_global()).
+    // init_global 是幂等的 (OnceCell::get_or_init), 多次调用安全.
+    // 注: ramfs::init_global 需要 mount_point 参数, 在 mount 测试内显式调用.
+    crate::kernel::services::fs::devfs::init_global();
+    crate::kernel::services::fs::procfs::init_global();
+
     test_barrier::register_barrier_tests();
     test_barrier_ext::register_barrier_ext_tests();
     test_config::register_config_tests();

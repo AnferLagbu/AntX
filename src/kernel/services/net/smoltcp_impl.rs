@@ -49,7 +49,13 @@ use crate::kernel::framework::net::iface_trait::{
 // 实际 smoltcp socket 创建. smoltcp_impl 是 services 层唯一允许直接使用
 // smoltcp 类型的文件, 但 socket_open 的实际 smoltcp 操作 (k_malloc +
 // SocketBuffer::new + sockets.add) 由 framework 层 (允许 unsafe) 提供.
+//
+// kernel_test 模式下 framework::net::init 被 cfg-out, 用 services::net::init
+// 的桩实现 (其中 smoltcp_net_stack_* 函数为 no-op stub).
+#[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::net::init as fw_init;
+#[cfg(feature = "kernel_test")]
+use crate::kernel::services::net::init as fw_init;
 
 // ============================================================================
 // 编译期常量
