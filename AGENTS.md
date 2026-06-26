@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> AntX/QueenX 内核工程 agent 工作指南. 融合 Asterinas 上游规范 + AntX 项目实际架构 (framework/services 双子树).
+> QueenX 内核工程 agent 工作指南. 融合 Asterinas 上游规范 + QueenX 项目实际架构 (framework/services 双子树).
 >
 > **硬规则**: 见 [§6 硬规则 (零容忍)](#6-硬规则-零容忍违反即拒收). 违反任一即拒收 PR.
 >
@@ -79,7 +79,7 @@ cargo test -p host-tests           # 等价
 ## 3. 工具链
 
 - **Rust nightly** 锁定在 `src/rust/rust-toolchain.toml`
-- **Edition:** 2021 (与上游对齐, AntX 未升 2024)
+- **Edition:** 2021 (与上游对齐, QueenX 未升 2024)
 - **目标架构:** x86_64 (主) + aarch64 (次)
 - **`rustfmt.toml`:** 4 空格缩进, 尾逗号允许
 - **Clippy 配置:** `clippy.toml` (cognitive-complexity-threshold = 25, missing-docs-in-crate-items = true)
@@ -88,7 +88,7 @@ cargo test -p host-tests           # 等价
 
 ## 4. 架构责任分离 (核心)
 
-> 这是 AntX 与 Asterinas 最关键的区别: 我们用 `framework/` + `services/`, 不是 `ostd/` + `kernel/`.
+> 这是 QueenX 与 Asterinas 最关键的区别: 我们用 `framework/` + `services/`, 不是 `ostd/` + `kernel/`.
 
 ### 4.1 一句话判据
 

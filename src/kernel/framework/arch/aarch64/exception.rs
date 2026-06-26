@@ -447,7 +447,7 @@ extern "C" {
 ///
 /// EL0 SVC 系统调用处理器。
 /// 从 EL0 通过 `svc #0` 进入。
-/// AntX aarch64 系统调用约定: x0=syscall_num, x1-x4=args, 返回 x0。
+/// QueenX aarch64 系统调用约定: x0=syscall_num, x1-x4=args, 返回 x0。
 #[no_mangle]
 pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     let syscall_num = frame.x0;

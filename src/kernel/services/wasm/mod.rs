@@ -4,11 +4,11 @@
 //! ## 当前状态: ⏳ 未迁移 (Phase 7 未完成)
 //!
 //! 实际实现仍在 `kernel/wasm/` 老位置:
-//! - [kernel/wasm/interpreter.rs](file:///home/anfer/Code/AntX/src/kernel/wasm/interpreter.rs) — 解释器
-//! - [kernel/wasm/runtime.rs](file:///home/anfer/Code/AntX/src/kernel/wasm/runtime.rs) — 运行时
-//! - [kernel/wasm/module.rs](file:///home/anfer/Code/AntX/src/kernel/wasm/module.rs) — 模块加载
-//! - [kernel/wasm/types.rs](file:///home/anfer/Code/AntX/src/kernel/wasm/types.rs) — 类型
-//! - [kernel/wasm/leb128.rs](file:///home/anfer/Code/AntX/src/kernel/wasm/leb128.rs) — LEB128 解码
+//! - [kernel/wasm/interpreter.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/interpreter.rs) — 解释器
+//! - [kernel/wasm/runtime.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/runtime.rs) — 运行时
+//! - [kernel/wasm/module.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/module.rs) — 模块加载
+//! - [kernel/wasm/types.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/types.rs) — 类型
+//! - [kernel/wasm/leb128.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/leb128.rs) — LEB128 解码
 //!
 //! ## 迁移路径
 //!

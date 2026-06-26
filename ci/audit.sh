@@ -1,5 +1,5 @@
 #!/bin/bash
-# AntX 内核代码审计脚本
+# QueenX 内核代码审计脚本
 # 工具栈: cargo check + clippy (pedantic) + Lockbud + Miri 配置验证
 # 用法: ./ci/audit.sh [quick|full]
 #

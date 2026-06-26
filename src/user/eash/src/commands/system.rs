@@ -14,7 +14,7 @@ impl Write for FmtWriter {
 }
 
 pub fn osinfo(_: &Cmd) {
-    println("AntX Operating System");
+    println("QueenX Operating System");
     println("Kernel:  QueenX (QX)");
     println("Userland: Rust");
     #[cfg(target_arch = "x86_64")]

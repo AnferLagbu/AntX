@@ -20,7 +20,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn repo_root() -> PathBuf {
-    // host-tests 在 /home/anfer/Code/AntX/host-tests, 源码在同级的 kernel/
+    // host-tests 在 <CARGO_WORKSPACE>/host-tests, 源码在同级的 kernel/
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest.parent().unwrap().to_path_buf()
 }

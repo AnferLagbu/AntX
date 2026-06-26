@@ -1,12 +1,14 @@
-# AntX
+# QueenX
 
-AntX (QueenX内核 + 任意上层用户态空间 = AntX) 是一个从零构建的操作系统内核，支持 x86_64 与 aarch64 双架构。源码主体为 Rust 并以少量 NASM 汇编构成，不包含 Linux 或其他现有内核的代码。
+QueenX 是一个从零构建的操作系统内核 (Rust + 少量 NASM 汇编, 支持 x86_64 与 aarch64 双架构, 采用 Asterinas 框内核 Framekernel 架构). 未来基于 QueenX 内核的完整操作系统/发行版代号为 AntX.
+
+不包含 Linux 或其他现有内核的代码, 全部从零实现.
 
 ## 仓库
 
-- 许可证: MIT (见 [LICENSE](file:///home/anfer/Code/AntX/LICENSE))
-- 协作规范: [AGENTS.md](file:///home/anfer/Code/AntX/AGENTS.md) (硬约束) 与 [CLAUDE.md](file:///home/anfer/Code/AntX/CLAUDE.md)
-- 变更记录: [CHANGELOG.md](file:///home/anfer/Code/AntX/CHANGELOG.md)
+- 许可证: MIT (见 [LICENSE](file:///home/anfer/Code/QueenX/LICENSE))
+- 协作规范: [AGENTS.md](file:///home/anfer/Code/QueenX/AGENTS.md) (硬约束) 与 [CLAUDE.md](file:///home/anfer/Code/QueenX/CLAUDE.md)
+- 变更记录: [CHANGELOG.md](file:///home/anfer/Code/QueenX/CHANGELOG.md)
 
 ## 架构
 
@@ -27,7 +29,7 @@ QueenX 采用 Asterinas 框内核 (Framekernel) 范式：单一地址空间，�
 - 静态扫描 `scripts/audit_safety_coverage.py` 校验 framework 每个 `unsafe` 块配 `// SAFETY:` 注释
 - 静态扫描 `scripts/audit_deadlock_matrix.py` 标记锁顺序与中断上下文风险
 
-完整规范见 [docs/explain/framekernel-nature.md](file:///home/anfer/Code/AntX/docs/explain/framekernel-nature.md) 与 [docs/explain/framekernel-dev-guide.md](file:///home/anfer/Code/AntX/docs/explain/framekernel-dev-guide.md)。
+完整规范见 [docs/explain/framekernel-nature.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-nature.md) 与 [docs/explain/framekernel-dev-guide.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-dev-guide.md)。
 
 ## 子系统
 
@@ -54,7 +56,7 @@ QueenX 采用 Asterinas 框内核 (Framekernel) 范式：单一地址空间，�
 | x86_64 | `x86_64-unknown-none` | `ARCH=x86_64` (默认) | 主架构 |
 | aarch64 | `aarch64-unknown-none` | `ARCH=aarch64` | QEMU 验证中 |
 
-详细路线图与各 Phase 进度见 [docs/plan/kernel-roadmap.md](file:///home/anfer/Code/AntX/docs/plan/kernel-roadmap.md)。
+详细路线图与各 Phase 进度见 [docs/plan/kernel-roadmap.md](file:///home/anfer/Code/QueenX/docs/plan/kernel-roadmap.md)。
 
 ## 构建
 
@@ -63,7 +65,7 @@ QueenX 采用 Asterinas 框内核 (Framekernel) 范式：单一地址空间，�
 ```bash
 make                # x86_64 默认
 make ARCH=aarch64   # aarch64
-make user           # 5 个用户态 Rust 程序 (init/axsh/install/fbterm/httpsrv)
+make user           # 5 个用户态 Rust 程序 (init/eash/install/fbterm/httpsrv)
 make run            # QEMU 启动
 make run-headless   # QEMU 无头模式, 串口写入 build/log/serial.log
 make debug          # QEMU + gdb remote :1234
@@ -163,7 +165,7 @@ make test-smp         # SMP 多核测试
 │   │   └── queenx-tests/    用户态集成测试桩
 │   └── user/                用户态 Rust 程序
 │       ├── init/            PID 1
-│       ├── axsh/            AntX Shell
+│       ├── eash/            Easy Shell
 │       ├── install/         安装向导
 │       ├── fbterm/          帧缓冲终端
 │       ├── httpsrv/         HTTP 服务器
@@ -176,11 +178,11 @@ make test-smp         # SMP 多核测试
 
 | 路径 | 内容 |
 |------|------|
-| [AGENTS.md](file:///home/anfer/Code/AntX/AGENTS.md) | 项目硬约束：编码风格、构建、测试、审计 |
-| [CLAUDE.md](file:///home/anfer/Code/AntX/CLAUDE.md) | AI 协作行为准则（编码前先思考、简单优先、外科手术式修改、目标驱动） |
-| [CHANGELOG.md](file:///home/anfer/Code/AntX/CHANGELOG.md) | 全部变更（时间倒序，无项目级版本号） |
-| [docs/README.md](file:///home/anfer/Code/AntX/docs/README.md) | 文档写作规范 |
-| [docs/explain/framekernel-nature.md](file:///home/anfer/Code/AntX/docs/explain/framekernel-nature.md) | 框内核定义与原理 |
-| [docs/explain/framekernel-dev-guide.md](file:///home/anfer/Code/AntX/docs/explain/framekernel-dev-guide.md) | 框内核开发与维护指导 |
-| [docs/plan/kernel-roadmap.md](file:///home/anfer/Code/AntX/docs/plan/kernel-roadmap.md) | 四阶段路线图与进度跟踪 |
-| [docs/plan/queenx-naming-standpoint.md](file:///home/anfer/Code/AntX/docs/plan/queenx-naming-standpoint.md) | 命名、syscall 编号、libc 选型、linuxulator 立场 |
+| [AGENTS.md](file:///home/anfer/Code/QueenX/AGENTS.md) | 项目硬约束：编码风格、构建、测试、审计 |
+| [CLAUDE.md](file:///home/anfer/Code/QueenX/CLAUDE.md) | AI 协作行为准则（编码前先思考、简单优先、外科手术式修改、目标驱动） |
+| [CHANGELOG.md](file:///home/anfer/Code/QueenX/CHANGELOG.md) | 全部变更（时间倒序，无项目级版本号） |
+| [docs/README.md](file:///home/anfer/Code/QueenX/docs/README.md) | 文档写作规范 |
+| [docs/explain/framekernel-nature.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-nature.md) | 框内核定义与原理 |
+| [docs/explain/framekernel-dev-guide.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-dev-guide.md) | 框内核开发与维护指导 |
+| [docs/plan/kernel-roadmap.md](file:///home/anfer/Code/QueenX/docs/plan/kernel-roadmap.md) | 四阶段路线图与进度跟踪 |
+| [docs/plan/queenx-naming-standpoint.md](file:///home/anfer/Code/QueenX/docs/plan/queenx-naming-standpoint.md) | 命名、syscall 编号、libc 选型、linuxulator 立场 |

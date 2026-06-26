@@ -4,14 +4,14 @@
 //! ## 当前状态: ⏳ 5/6 未迁移 (Phase 2.1 在途)
 //!
 //! 已迁移 (演示级 safe API, 0 unsafe):
-//! - [net/e1000.rs](file:///home/anfer/Code/AntX/src/kernel/services/driver/net/e1000.rs) — E1000 网卡 (Phase 2.1.1)
-//! - [virtio/transport.rs](file:///home/anfer/Code/AntX/src/kernel/services/driver/virtio/transport.rs) — VirtIO MMIO Transport (Phase 2.1.2/2.1.3 共享底层)
+//! - [net/e1000.rs](file:///home/anfer/Code/QueenX/src/kernel/services/driver/net/e1000.rs) — E1000 网卡 (Phase 2.1.1)
+//! - [virtio/transport.rs](file:///home/anfer/Code/QueenX/src/kernel/services/driver/virtio/transport.rs) — VirtIO MMIO Transport (Phase 2.1.2/2.1.3 共享底层)
 //!
 //! 未迁移 (实际实现仍在 `kernel/driver/`):
-//! - [kernel/driver/char/](file:///home/anfer/Code/AntX/src/kernel/driver/char/) — 字符设备 (vga/serial/pl011) → Phase 2.1.5
-//! - [kernel/driver/display/](file:///home/anfer/Code/AntX/src/kernel/driver/display/) — 显示 (framebuffer/HDMI/DP) → Phase 2.1.5
-//! - [kernel/driver/storage/](file:///home/anfer/Code/AntX/src/kernel/driver/storage/) — 存储 (ATA/AHCI/NVMe) → Phase 2.1.3/2.1.4
-//! - [kernel/driver/usb/](file:///home/anfer/Code/AntX/src/kernel/driver/usb/) — USB (xHCI 控制器) → Phase 2.1.6
+//! - [kernel/driver/char/](file:///home/anfer/Code/QueenX/src/kernel/driver/char/) — 字符设备 (vga/serial/pl011) → Phase 2.1.5
+//! - [kernel/driver/display/](file:///home/anfer/Code/QueenX/src/kernel/driver/display/) — 显示 (framebuffer/HDMI/DP) → Phase 2.1.5
+//! - [kernel/driver/storage/](file:///home/anfer/Code/QueenX/src/kernel/driver/storage/) — 存储 (ATA/AHCI/NVMe) → Phase 2.1.3/2.1.4
+//! - [kernel/driver/usb/](file:///home/anfer/Code/QueenX/src/kernel/driver/usb/) — USB (xHCI 控制器) → Phase 2.1.6
 //!
 //! ## 迁移路径
 //!

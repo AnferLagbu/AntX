@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path("/home/anfer/Code/AntX")
+PROJECT_ROOT = Path("/home/anfer/Code/QueenX")
 
 
 def list_missing() -> list[tuple[str, int, str, str]]:

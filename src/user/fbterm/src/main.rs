@@ -149,7 +149,7 @@ impl Terminal {
     fn draw_status_bar(&mut self) {
         let y0 = (self.rows - 1) * GLYPH_H;
         self.fill_rect(0, y0, self.width, GLYPH_H, 50, 50, 70);
-        let info = " fbterm v0.2 | AntX User-Space Terminal ";
+        let info = " fbterm v0.2 | QueenX User-Space Terminal ";
         let mut col = 0u32;
         for &b in info.as_bytes() {
             if col < self.cols { self.draw_glyph(b, col, self.rows - 1, 180, 180, 200, 50, 50, 70); col += 1; }
@@ -197,7 +197,7 @@ pub fn _start() -> ! {
 
     term.cursor_col = 0;
     term.cursor_row = 0;
-    term.write_str("*** AntX fbterm v0.2 ***", 255, 255, 100, 20, 20, 28);
+    term.write_str("*** QueenX fbterm v0.2 ***", 255, 255, 100, 20, 20, 28);
     term.newline();
     term.write_str("Keyboard-driven user-space terminal.", 180, 180, 200, 20, 20, 28);
     term.newline();

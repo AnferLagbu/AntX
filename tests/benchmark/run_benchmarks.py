@@ -205,7 +205,7 @@ def print_benchmark_result(result: BenchmarkResult):
     print()
 
 def main():
-    print_header("AntX 性能基准测试")
+    print_header("QueenX 性能基准测试")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     

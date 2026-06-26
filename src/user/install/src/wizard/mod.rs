@@ -24,10 +24,10 @@ fn unmount_target() {
 fn welcome_page() {
     println("");
     println("========================================");
-    println("        AntX Installation Wizard");
+    println("        QueenX Installation Wizard");
     println("========================================");
     println("");
-    println("Welcome to AntX Operating System!");
+    println("Welcome to QueenX Operating System!");
     println("");
     println("This wizard will guide you through the");
     println("system installation process.");

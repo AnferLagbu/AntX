@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0 OR MIT
-# Copyright (c) 2026 AntX Contributors
+# Copyright (c) 2026 QueenX Contributors
 #
 # record_bench_baseline.py — 记录 framekernel-bench 当前的性能基线
 #

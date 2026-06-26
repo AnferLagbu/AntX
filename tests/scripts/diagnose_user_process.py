@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AntX OS User Process Diagnostic Tool
+QueenX OS User Process Diagnostic Tool
 
 This script diagnoses the user process crash issue by:
 1. Verifying ELF entry points (embedded vs compiled)
@@ -144,7 +144,7 @@ def run_qemu_test(timeout=30):
     log_file = os.path.join(LOG_DIR, f"qemu_run_{timestamp}.log")
     
     print(f"\n{'='*70}")
-    print(f"[TEST] Running AntX OS in QEMU")
+    print(f"[TEST] Running QueenX OS in QEMU")
     print(f"{'='*70}")
     print(f"[TEST] Log file: {log_file}")
     print(f"[TEST] Timeout: {timeout}s")
@@ -278,7 +278,7 @@ def analyze_test_output(output_text, log_file):
         successes.append("Shell process started")
         print(f"✓ Shell process creation initiated")
     
-    if "Welcome to AntX Operating System!" in output_text:
+    if "Welcome to QueenX Operating System!" in output_text:
         successes.append("Welcome message displayed")
         print(f"✓ Welcome message shown to user")
     
@@ -329,7 +329,7 @@ def analyze_test_output(output_text, log_file):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AntX OS User Process Diagnostic Tool",
+        description="QueenX OS User Process Diagnostic Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -354,7 +354,7 @@ Examples:
     args = parser.parse_args()
     
     print(f"\n{'█'*70}")
-    print(f"█  AntX OS User Process Diagnostic Tool")
+    print(f"█  QueenX OS User Process Diagnostic Tool")
     print(f"{'█'*70}")
     print(f"Project Root: {PROJECT_ROOT}")
     print(f"Log Directory: {LOG_DIR}")

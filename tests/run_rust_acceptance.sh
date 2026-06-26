@@ -1,5 +1,5 @@
 #!/bin/bash
-# AntX Rust 化工程 - 一键阶段性验收脚本
+# QueenX Rust 化工程 - 一键阶段性验收脚本
 # 用途: 快速运行所有 Rust 验收检查并生成报告
 
 set -e
@@ -7,7 +7,7 @@ set -e
 cd "$(dirname "$0")/../"
 
 echo "╔══════════════════════════════════════════════════════════╗"
-echo "║  🦀 AntX Rust 内核 - 阶段性验收                       ║"
+echo "║  🦀 QueenX Rust 内核 - 阶段性验收                       ║"
 echo "║  $(date) ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 
@@ -27,7 +27,7 @@ python3 tests/rust_acceptance.py --json > "$REPORT_FILE" 2>&1 || true
 
 # 同时保存可读的 Markdown 报告
 cat > "$MARKDOWN_FILE" << HEADER
-# 🦀 AntX Rust 内核阶段性验收报告
+# 🦀 QueenX Rust 内核阶段性验收报告
 
 > **时间**: $(date)
 > **版本**: Phase 1-4 完成 (核心基础设施 + 内存管理 + 调度 + 定时器)

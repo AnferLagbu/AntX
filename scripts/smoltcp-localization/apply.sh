@@ -27,7 +27,7 @@ declare -A PATCHES=(
     ["src/wire/udp.rs"]="src_wire_udp.rs.patch"
 )
 
-cd /home/anfer/Code/AntX/$VENDORED
+cd /home/anfer/Code/QueenX/$VENDORED
 total=${#PATCHES[@]}
 ok=0
 fail=0

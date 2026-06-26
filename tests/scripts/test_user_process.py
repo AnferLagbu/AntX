@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-AntX OS User Process Debug Test Script
+QueenX OS User Process Debug Test Script
 
-This script automates running the AntX OS kernel in QEMU and captures
+This script automates running the QueenX OS kernel in QEMU and captures
 detailed logs to diagnose user process execution issues.
 
 Usage:
@@ -361,7 +361,7 @@ def analyze_output(output_text, log_file):
     print(f"[ANALYSIS] Detailed analysis saved to: {analysis_file}")
 
 def main():
-    parser = argparse.ArgumentParser(description="AntX OS User Process Debug Test")
+    parser = argparse.ArgumentParser(description="QueenX OS User Process Debug Test")
     parser.add_argument("--mode", choices=["basic", "debug", "gdb"], default="basic",
                        help="Test mode: basic (serial), debug (QEMU trace), gdb (GDB server)")
     parser.add_argument("--timeout", type=int, default=30,
@@ -371,7 +371,7 @@ def main():
     
     args = parser.parse_args()
     
-    print(f"AntX OS User Process Debug Tool")
+    print(f"QueenX OS User Process Debug Tool")
     print(f"{'='*40}")
     print(f"Mode: {args.mode}")
     print(f"Timeout: {args.timeout}s")

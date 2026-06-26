@@ -20,7 +20,7 @@ pub fn execute() -> i32 {
     println("========================================");
     println("     Installation Complete!");
     println("========================================");
-    println(""); println("AntX has been installed to your disk.");
+    println(""); println("QueenX has been installed to your disk.");
     println("Please remove the installation media");
     println("and press ENTER to reboot your system.");
     println("");

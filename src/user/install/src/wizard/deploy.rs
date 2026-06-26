@@ -17,7 +17,7 @@ static TARGET_PREFIX: &[u8] = b"/mnt";
 static MANIFEST: &[AppManifest] = &[
     AppManifest { src: b"/boot/kernel.bin\0", dst_rel: b"cfg/boot/kernel.bin\0",   desc: "Kernel" },
     AppManifest { src: b"/bin/init\0",        dst_rel: b"app/sys/init\0",          desc: "Init process" },
-    AppManifest { src: b"/bin/axsh\0",        dst_rel: b"app/sys/axsh\0",          desc: "axsh Shell" },
+    AppManifest { src: b"/bin/eash\0",        dst_rel: b"app/sys/eash\0",          desc: "eash Shell" },
     AppManifest { src: b"/bin/install\0",     dst_rel: b"app/sys/installguide\0",  desc: "Install guide" },
 ];
 

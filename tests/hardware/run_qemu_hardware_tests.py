@@ -206,7 +206,7 @@ def print_test_result(test: QemuHardwareTest):
         print(f"         • {detail}")
 
 def main():
-    print_header("AntX QEMU硬件测试")
+    print_header("QueenX QEMU硬件测试")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     

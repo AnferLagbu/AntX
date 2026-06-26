@@ -297,7 +297,7 @@ def test_display_unit_tests(output: str) -> TestResult:
 # ============================================================================
 
 def main():
-    print_header("AntX 驱动集成测试")
+    print_header("QueenX 驱动集成测试")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     

@@ -90,7 +90,7 @@ def test_init_process_started(output: str) -> SmokeTest:
 
     t.check("[init]" in output, "No [init] output — init process did not start")
     t.check(
-        "AntX init process started" in output,
+        "QueenX init process started" in output,
         "init process did not emit startup message",
     )
     t.passed = True

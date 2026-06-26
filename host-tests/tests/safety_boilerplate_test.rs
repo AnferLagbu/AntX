@@ -36,7 +36,7 @@ fn count_safety_boilerplate(src: &str) -> HashMap<String, usize> {
 
 fn check_boilerplate(file: &str, top_dupes: &[(&str, usize)]) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap() // AntX (host-tests' parent)
+        .parent().unwrap() // QueenX workspace root (host-tests' parent)
         .join("src/kernel/framework")
         .join(file);
     let src = fs::read_to_string(&path)

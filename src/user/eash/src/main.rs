@@ -1,4 +1,4 @@
-//! axsh — AntX Shell
+//! eash — easy shell (QueenX userland)
 //!
 //! 模块化 Shell: 主循环 + 提示符在此，命令实现位于 `commands/` 子目录。
 
@@ -16,7 +16,7 @@ pub static MAIN_EXIT: AtomicBool = AtomicBool::new(false);
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    userlib::print("[axsh] PANIC: ");
+    userlib::print("[eash] PANIC: ");
     if let Some(loc) = info.location() {
         userlib::print("at "); userlib::print(loc.file());
         userlib::print(":"); print_dec(loc.line() as i64);
@@ -29,7 +29,7 @@ fn banner() {
     println(""); println("  ___  _  _ ___");
     println(" / _ \\| || | __|"); println("| (_) | || |__ \\");
     println(" \\___/|_||_|___/"); println("");
-    println("axsh - AntX Shell  (type 'help')"); println("");
+    println("eash - QueenX Shell  (type 'help')"); println("");
 }
 
 fn prompt() {

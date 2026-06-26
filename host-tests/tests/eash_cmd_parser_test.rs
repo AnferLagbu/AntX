@@ -1,20 +1,20 @@
-//! I-10: axsh 用户态 Shell 单元测试
+//! I-10: eash 用户态 Shell 单元测试
 //!
-//! 验证 axsh 核心逻辑的契约:
+//! 验证 eash 核心逻辑的契约:
 //! 1. Cmd 解析: 单词/多参/引号/空白/换行剥离
 //! 2. 路径参数: path_arg() 处理无参数/单参数
 //! 3. 命令调度表: 31 个内置命令都已注册
 //! 4. 管道检测: is_pipeline() 识别 |, >, <
 //! 5. as_str(): 无效 UTF-8 降级处理
 //!
-//! axsh 是 #![no_std] 用户态二进制, 主机端 cargo test 会冲突 panic_impl/lang item.
+//! eash 是 #![no_std] 用户态二进制, 主机端 cargo test 会冲突 panic_impl/lang item.
 //! 这里在 host-test 中镜像核心算法 (Cmd::new), 与生产代码保持一致; 如生产代码
 //! 改动, 需同步更新此测试的 mirror 逻辑. 这是测试脆弱性的妥协, 比建独立 test
 //! crate 更轻量.
 
 use std::ffi::CStr;
 
-// ─────────────── Mirror of axsh::commands::Cmd ───────────────
+// ─────────────── Mirror of eash::commands::Cmd ───────────────
 
 #[derive(Clone, Debug)]
 struct Cmd {
@@ -228,11 +228,11 @@ fn test_as_str_invalid_utf8_fallback() {
 }
 
 #[test]
-fn test_cmd_realistic_axsh_commands() {
-    // 来自 axsh 真实命令, 验证不会因空白/大小写问题误解析
+fn test_cmd_realistic_eash_commands() {
+    // 来自 eash 真实命令, 验证不会因空白/大小写问题误解析
     let cases: &[(&[u8], usize, &[&[u8]])] = &[
         (b"help", 1, &[b"help"]),
-        (b"echo AntX Shell", 3, &[b"echo", b"AntX", b"Shell"]),
+        (b"echo QueenX Shell", 3, &[b"echo", b"QueenX", b"Shell"]),
         (b"dir /bin", 2, &[b"dir", b"/bin"]),
         (b"cat /etc/hostname", 2, &[b"cat", b"/etc/hostname"]),
         (b"kill 1234", 2, &[b"kill", b"1234"]),
@@ -248,9 +248,9 @@ fn test_cmd_realistic_axsh_commands() {
 }
 
 #[test]
-fn test_axsh_command_table_completeness() {
-    // 验证 axsh 命令注册表的核心命令都在 (axsh 31 个内置命令的子集验证)
-    // 完整列表参见 src/user/axsh/src/commands/mod.rs 的 TABLE
+fn test_eash_command_table_completeness() {
+    // 验证 eash 命令注册表的核心命令都在 (eash 31 个内置命令的子集验证)
+    // 完整列表参见 src/user/eash/src/commands/mod.rs 的 TABLE
     let known_commands: &[&[u8]] = &[
         b"help", b"clear", b"echo", b"exit",
         b"dir", b"cd", b"cat", b"cp", b"mv", b"rm", b"mkdir", b"rmdir", b"pwd",
@@ -272,8 +272,8 @@ fn test_axsh_command_table_completeness() {
 }
 
 #[test]
-fn test_axsh_no_std_panic_safety() {
-    // axsh 是 no_std, 解析函数不能依赖 std. 这里调用 1000 次, 模拟 main loop
+fn test_eash_no_std_panic_safety() {
+    // eash 是 no_std, 解析函数不能依赖 std. 这里调用 1000 次, 模拟 main loop
     // 高频调用, 验证没有分配 (Vec/Box) 也没有 panic.
     for i in 0..1000 {
         let input = format!("echo iter {}", i);

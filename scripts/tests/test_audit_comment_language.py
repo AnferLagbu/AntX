@@ -163,7 +163,7 @@ class TestActualSourceFiles(unittest.TestCase):
         (Path("src/kernel/framework/syscall/mod.rs"), 752),
         (Path("src/kernel/framework/syscall/mod.rs"), 765),
     ]
-    PROJECT_ROOT = Path("/home/anfer/Code/AntX")
+    PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
     def test_no_violation_in_target_lines(self) -> None:
         for rel_path, target_line in self.SOURCE_ROOTS:

@@ -1,5 +1,5 @@
 #!/bin/bash
-# AntX 框内核构建环境依赖检查与安装工具
+# QueenX 内核构建环境依赖检查与安装工具
 #
 # 适用于 QueenX 框内核项目, 基于 2026-06-05 v3.2 工具链实测:
 #
@@ -111,7 +111,7 @@ PROJECT_TOOLS_TOTAL=0
 print_header() {
     echo ""
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║   AntX 框内核构建环境依赖检查工具 v3.2 (2026-06-05)     ║${NC}"
+    echo -e "${CYAN}║   QueenX 内核构建环境依赖检查工具 v3.2 (2026-06-05)     ║${NC}"
     echo -e "${CYAN}║   Project: QueenX Framekernel | Toolchain: Rust 2021      ║${NC}"
     echo -e "${CYAN}║   C 工具链已分类: 链接层(5) + 测试桩(6) — 均可跳过       ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
@@ -1411,7 +1411,7 @@ echo -e "${CYAN}═════════════════════�
 echo ""
 
 if [ $REQUIRED_OK -eq $REQUIRED_TOTAL ] && [ $REQUIRED_TOTAL -gt 0 ]; then
-    echo -e "  ${GREEN}✓ 必需依赖已满足, 可以开始构建 AntX 内核${NC}"
+    echo -e "  ${GREEN}✓ 必需依赖已满足, 可以开始构建 QueenX 内核${NC}"
 else
     echo -e "  ${RED}✗ 必需依赖缺失, 请先安装后重试${NC}"
 fi

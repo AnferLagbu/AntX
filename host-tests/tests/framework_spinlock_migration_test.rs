@@ -13,8 +13,9 @@ use std::path::Path;
 use std::fs;
 
 fn read_src(rel: &str) -> String {
-    // host-tests/CARGO_MANIFEST_DIR = /home/anfer/Code/AntX/host-tests
-    // 目标在 /home/anfer/Code/AntX/src/kernel/framework/...
+    // host-tests/CARGO_MANIFEST_DIR = <workspace>/host-tests
+    // 目标在 <workspace>/src/kernel/framework/...
+    // 用 CARGO_MANIFEST_DIR 动态计算, 避免硬编码仓库绝对路径
     let path = format!(
         "{}/../src/kernel/framework/{}",
         env!("CARGO_MANIFEST_DIR"),

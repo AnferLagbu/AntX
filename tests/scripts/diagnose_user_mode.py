@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AntX 用户态进程启动诊断脚本
+QueenX 用户态进程启动诊断脚本
 用于诊断 iretq 后的 Page Fault 问题
 """
 
@@ -192,7 +192,7 @@ def analyze_qemu_debug_log():
 
 def main():
     """主函数"""
-    print("AntX 用户态进程启动诊断工具")
+    print("QueenX 用户态进程启动诊断工具")
     print("=" * 60)
     
     output = run_qemu_with_debug()

@@ -174,7 +174,7 @@ def test_kernel_boot(timeout: int = 10) -> Dict[str, any]:
         stderr = result["stderr"]
 
         # Check for successful boot indicators
-        if "QueenX" in output or "[TEST]" in output or "AntX" in output:
+        if "QueenX" in output or "[TEST]" in output or "QueenX" in output:
             result["success"] = True
             result["issues"].append("✓ Kernel appears to have started")
 

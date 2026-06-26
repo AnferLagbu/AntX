@@ -21,7 +21,7 @@ INSTALL_INPUT = (
     b"abcde\n"      # Root password
     b"abcde\n"      # Confirm password  
     b"\n"           # Hostname default
-    b"\n"           # Wait for axsh prompt
+    b"\n"           # Wait for eash prompt
     b"ls /\n"       # List root directory
     b"ls /bin\n"    # List /bin (user programs)
     b"mkdir /test\n"# Create test directory
@@ -40,7 +40,7 @@ INSTALL_INPUT = (
 RESULTS = {
     "boot":           {"status": "pending", "detail": ""},
     "install":        {"status": "pending", "detail": ""},
-    "axsh_prompt":    {"status": "pending", "detail": ""},
+    "eash_prompt":    {"status": "pending", "detail": ""},
     "ls_root":        {"status": "pending", "detail": ""},
     "ls_bin":         {"status": "pending", "detail": ""},
     "mkdir":          {"status": "pending", "detail": ""},
@@ -100,7 +100,7 @@ def run_test(timeout=40):
             if input_idx < len(INSTALL_INPUT):
                 for trigger, data in [
                     (b"\n", b"\n"),
-                    (b"axsh>", INSTALL_INPUT[input_idx]),
+                    (b"eash>", INSTALL_INPUT[input_idx]),
                 ]:
                     pass
                 full_bytes = full.encode('utf-8', errors='replace')
@@ -135,7 +135,7 @@ def run_test(timeout=40):
                     input_idx = 5
                     time.sleep(1)
 
-                elif "axsh>" in full and input_idx >= 5 and input_idx < len(INSTALL_INPUT):
+                elif "eash>" in full and input_idx >= 5 and input_idx < len(INSTALL_INPUT):
                     proc.stdin.write(INSTALL_INPUT[input_idx])
                     proc.stdin.flush()
                     input_idx += 1
@@ -156,7 +156,7 @@ def run_test(timeout=40):
     return True
 
 def analyze_results(output):
-    if "AntX Operating System" in output:
+    if "QueenX Operating System" in output:
         RESULTS["boot"]["status"] = "PASS"
         RESULTS["boot"]["detail"] = "Kernel booted successfully"
 
@@ -166,9 +166,9 @@ def analyze_results(output):
         RESULTS["install"]["status"] = "SKIP"
         RESULTS["install"]["detail"] = "Install prompt not detected"
 
-    if "axsh>" in output:
-        RESULTS["axsh_prompt"]["status"] = "PASS"
-        RESULTS["axsh_prompt"]["detail"] = "Shell prompt detected"
+    if "eash>" in output:
+        RESULTS["eash_prompt"]["status"] = "PASS"
+        RESULTS["eash_prompt"]["detail"] = "Shell prompt detected"
 
     if "VFS" in output or "bin" in output or "init" in output:
         RESULTS["ls_root"]["status"] = "PASS"

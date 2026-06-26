@@ -1,5 +1,5 @@
 #!/bin/bash
-# AntX 双架构构建验证脚本
+# QueenX 双架构构建验证脚本
 # 用法: ./ci/build.sh [x86_64|aarch64|all]
 
 set -euo pipefail

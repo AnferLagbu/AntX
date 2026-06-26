@@ -1,4 +1,4 @@
-//! 跨架构 syscall 编号 (与 AntX kernel 一致)
+//! 跨架构 syscall 编号 (与 QueenX kernel 一致)
 //!
 //! x86_64 Linux ABI:  rax=syscall#, rdi,rsi,rdx,r10,r8,r9 → rax
 //! aarch64 Linux:    x8=syscall#, x0..x5 → x0

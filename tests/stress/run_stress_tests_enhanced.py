@@ -216,7 +216,7 @@ def print_stress_result(result: StressTestResult):
     print()
 
 def main():
-    print_header("AntX 压力测试")
+    print_header("QueenX 压力测试")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     

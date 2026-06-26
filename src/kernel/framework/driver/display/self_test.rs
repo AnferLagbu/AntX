@@ -184,7 +184,7 @@ pub fn framebuffer_self_test(fb: &mut Framebuffer, font: &Font) -> usize {
     let text_y: u32 = fh.saturating_sub(40);
     font.render_text(
         fb,
-        "AntX Framebuffer Self-Test v2.0",
+        "QueenX Framebuffer Self-Test v2.0",
         10,
         text_y,
         colors::WHITE,

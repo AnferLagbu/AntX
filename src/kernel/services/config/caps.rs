@@ -35,7 +35,7 @@ pub struct KernelCapabilities {
     pub kaslr: bool,
     /// x86_64 KPTI 缓解措施.
     pub kpti: bool,
-    /// AntX Barrier 子系统已编译入.
+    /// QueenX Barrier 子系统已编译入.
     pub barrier: bool,
 }
 

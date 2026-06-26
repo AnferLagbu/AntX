@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path("/home/anfer/Code/AntX")
+PROJECT_ROOT = Path("/home/anfer/Code/QueenX")
 USE_LINE = "use crate::kernel::framework::sync::once_lock::OnceLock;\n"
 
 

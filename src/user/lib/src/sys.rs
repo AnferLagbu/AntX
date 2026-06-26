@@ -1,5 +1,5 @@
 #![allow(non_upper_case_globals)]
-//! AntX 用户态运行时 — POSIX 原生系统调用层
+//! QueenX 用户态运行时 — POSIX 原生系统调用层
 //! x86_64: syscall, rax=num, rdi=a1, rsi=a2, rdx=a3, r10=a4, r8=a5, rax=ret
 //! aarch64: svc #0, x0=num, x1-x4=args, x0=返回
 use core::arch::asm;

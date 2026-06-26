@@ -1227,7 +1227,7 @@ impl Scheduler {
             return true;
         }
         if (cpu_id as usize) >= 64 {
-            return true; // AntX 当前 cpuset 是 64-bit
+            return true; // QueenX 当前 cpuset 是 64-bit
         }
         let allowed = PROCESS_TABLE
             .with_process(pid, |p| p.cpuset_allowed.load(Ordering::Acquire))

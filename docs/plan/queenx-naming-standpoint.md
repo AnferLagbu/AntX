@@ -136,9 +136,9 @@
 ## 十、Phase D 优先序 (在本文立场上)
 - **D 任务优先序**
   - 描述: Phase D 6 个任务工作量/价值/符合哲学评估
-  - 方案: D1 网络栈收尾 (小/高/✅) / D3.5 axsh 增强 (中/高/✅) / D6 axsh 单元测试 (小/高/✅) / D2 HiveFS 端到端测试 (小/中/✅) / D4 elfld.so 实现 (极大/高/✅) / D5 linuxulator (大/中/✅)
+  - 方案: D1 网络栈收尾 (小/高/✅) / D3.5 eash 增强 (中/高/✅) / D6 eash 单元测试 (小/高/✅) / D2 HiveFS 端到端测试 (小/中/✅) / D4 elfld.so 实现 (极大/高/✅) / D5 linuxulator (大/中/✅)
   - 状态: [X]
-  - 详情: 推荐顺序: D1 收尾 → D3.5 axsh 增强 + D6 axsh 测试 → D2 HiveFS e2e → D4 elfld (musl ABI) → D5 linuxulator
+  - 详情: 推荐顺序: D1 收尾 → D3.5 eash 增强 + D6 eash 测试 → D2 HiveFS e2e → D4 elfld (musl ABI) → D5 linuxulator
 
 ## 十一、一句话定位
 - **一句话定位**

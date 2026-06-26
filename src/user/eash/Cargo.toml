@@ -1,5 +1,5 @@
 [package]
-name = "axsh"
+name = "eash"
 version.workspace = true
 edition.workspace = true
 

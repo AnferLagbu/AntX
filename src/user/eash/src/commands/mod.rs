@@ -62,7 +62,7 @@ impl Cmd {
         let start = self.offsets[idx];
         // I-10: 修复双重计数 bug — 旧代码 `start + len` 又被用于 `start..start+end`
         // 切到 `start..start+len` 避免相对偏移再次相加, 否则 get(1) 跨过自身 NUL
-        // 把后续参数也吞进 slice. axsh dispatch 之前因此可能读到错位的参数.
+        // 把后续参数也吞进 slice. eash dispatch 之前因此可能读到错位的参数.
         let len = core::ffi::CStr::from_bytes_until_nul(&self.args[start..])
             .map(|c| c.to_bytes().len()).unwrap_or(0);
         &self.args[start..start + len]
@@ -188,14 +188,14 @@ fn run_external(cmd: &Cmd) {
 
     let pid = userlib::sys::fork() as i32;
     if pid < 0 {
-        println("axsh: fork failed");
+        println("eash: fork failed");
         return;
     }
     if pid == 0 {
         // 子进程
         userlib::sys::proc_exec(&path[..path.len() - 1], &argv_ptrs[..argc + 1]);
         // exec 失败
-        userlib::print("axsh: ");
+        userlib::print("eash: ");
         userlib::print(name_str(name));
         userlib::println(": not found");
         userlib::sys::proc_exit(1);

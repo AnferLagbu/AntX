@@ -1194,17 +1194,17 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 > 以下项目来自 maintenance-2026-06-11.md 中 `[ ]` 未闭合项，经源码验证后纳入。
 
-### [x] LEGACY-1: 用户态进程可正常运行 axsh — **x86_64 已 QEMU 真机验证, aarch64 待环境就绪**
+### [x] LEGACY-1: 用户态进程可正常运行 eash — **x86_64 已 QEMU 真机验证, aarch64 待环境就绪**
 
 **来源**: maintenance-2026-06-11.md I-29 验收清单
-**当前**: 用户态 Ring 3 切换已实现，但 axsh 集成运行尚未验证
+**当前**: 用户态 Ring 3 切换已实现，但 eash 集成运行尚未验证
 
 **验收**:
-- [x] QEMU 启动后 axsh 可正常执行基本命令 — **DEFERRED** (留待 QEMU 真机测试)
+- [x] QEMU 启动后 eash 可正常执行基本命令 — **DEFERRED** (留待 QEMU 真机测试)
 - [x] 双架构验证 — **DEFERRED** (留待 QEMU 真机测试)
 
 **完成记录** (2026-06-22 重审): **已验证, QEMU x86_64 启动到 Ring 3**
-- 主机端可验证项: `host-tests/tests/axsh_cmd_parser_test.rs` (8 用例) 验证 axsh 命令解析契约
+- 主机端可验证项: `host-tests/tests/eash_cmd_parser_test.rs` (8 用例) 验证 eash 命令解析契约
 - QEMU 端验证项: `scripts/qemu_boot_test.sh x86_64` 双架构启动测试
 - 重审实测: 2026-06-22 07:20 运行 QEMU x86_64 真机启动
   - 启动 0.20s 内完成
@@ -1372,7 +1372,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
   1. DisplayPort AUX 通道 (I2C-over-AUX) 协议复杂
   2. HDMI TMDS/phy 配置需厂商特定寄存器
   3. 当前 QEMU 启动走 `-vga std` (简单 VGA) + 串口, 无需 DP/HDMI 协议栈
-- 决策: 保留占位至 Phase E, 当前 fbterm + multiboot2 framebuffer 已满足 axsh 显示需求
+- 决策: 保留占位至 Phase E, 当前 fbterm + multiboot2 framebuffer 已满足 eash 显示需求
 
 ---
 
@@ -1493,7 +1493,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 | REVAL-3 | pcache 策略提取 | **评估完成** (无 LRU 链表, 无 trait 价值) |
 | REVAL-5 T4-2 | CapabilityMatrix 路径验证 | **已验证 + 10 单元测试**: trait 抽象正确, 无全局 CapabilityMatrix, 能力位在 `PwmEntry.caps` per-entry, 全 Atomic 访问; 全 Atomic 重构依赖 T4-1 |
 | DOC-1~7 | 文档状态对齐 | 文档更新 |
-| LEGACY-1 | axsh QEMU 真机测试 | **x86_64 已实测** 0.20s 到 Ring 3; aarch64 待环境就绪 |
+| LEGACY-1 | eash QEMU 真机测试 | **x86_64 已实测** 0.20s 到 Ring 3; aarch64 待环境就绪 |
 | LEGACY-2 | Socket 1000 并发 send 延迟 < 1ms | **已实装** `framekernel-bench` 第 11 项 `socket_wait_queue` (host-only mock), 2 ps/op 远低于 1ms 目标 |
 | LEGACY-3 | virtio-blk 4K 写延迟 < 100μs | **已实装** `framekernel-bench` 第 12 项 `virtio_blk_io` (host-only mock, 32 virtqueue + 3 段描述符链 + 完整回收); QEMU 真机 DEFERRED 至 Phase E |
 | LEGACY-6 | sysctl 框架 | **已实装** services/config/sysctl.rs (314 行) |
@@ -2477,7 +2477,7 @@ pub unsafe fn new_with_iomem(iomem: IoMem, hpd_reg_offset: usize) -> Self {
 | 2026-06-22 | **第 11 批 (修正事实陈述)**: 独立核查发现多处文档内数字与代码实际不符, 修正: (1) unsafe impl 15→**111** (audit_safety_coverage.py 范围 8 文件 55 处 100%, 全局 111 处 94.6%); (2) framework dead_code 27→**143**; (3) services dead_code 13→**16**; (4) services TRACK 13→**19**; (5) sysctl.rs 0 unsafe (确认, 含 `#![deny(unsafe_code)]`); (6) non-smoltcp TODO 15→**0** (全部用 TODO(TRACK-...)); (7) smoltcp 0.12 (Q4 2026) → 0.13.0 (当前 vendored) |
 | 2026-06-22 | **第 6 批 (1 项)**: HARD-5 (VIRTIO_MMIO_BASE 服务侧改用 re-export) [x] |
 | 2026-06-22 | **第 5 批 (4 项, 全部评估/DEFERRED)**: LEGACY-5 (HvFS 子系统 trait 化按需扩展) + LEGACY-6 (sysctl 框架留 Phase D) + DRIVER-1 (USB 留 Phase E, 与 LEGACY-4 同步) + DRIVER-2 (Display 留 Phase E, fbterm 已满足) 全部 [x] |
-| 2026-06-22 | **第 4 批 (4 项, 全部评估/DEFERRED)**: LEGACY-1 (axsh QEMU 真机测试) + LEGACY-2 (Socket 性能基线) + LEGACY-3 (virtio-blk I/O 中断实测) + LEGACY-4 (BlockOps thunk 移除) 全部 [x], 评估完成并标记 DEFERRED 至对应 phase |
+| 2026-06-22 | **第 4 批 (4 项, 全部评估/DEFERRED)**: LEGACY-1 (eash QEMU 真机测试) + LEGACY-2 (Socket 性能基线) + LEGACY-3 (virtio-blk I/O 中断实测) + LEGACY-4 (BlockOps thunk 移除) 全部 [x], 评估完成并标记 DEFERRED 至对应 phase |
 | 2026-06-22 | **第 3 批 (5 项)**: DOC-1 (T6-1 验收已闭合) + DOC-2 (进度总表已更新到 25/7/1) + DOC-5 (E6 9/9 已完成) + DOC-6 (pi-mutex-design 已完成) + DOC-7 (uds-design 已完成) 全部 [x] |
 | 2026-06-22 | **第 2 批 (4 项)**: QUAL-2 (审查 8 处 panic!, 全部已有 `// 不可恢复:` 注释) + QUAL-6 (审查 15+ 处 TODO, 全部已分配 TRACK-ID) + REVAL-2 (posix_timer 仍 SKIP) + REVAL-3 (pcache 部分可推进, 留待 Phase E) 全部 [x] |
 | 2026-06-22 | **第 1 批 (4 项)**: HARD-2 (framework PAGE_SIZE 实际清理 6 处) + HARD-3 (services PAGE_SIZE 验收闭合) + DECOUPL-1/2/3 (解耦边界修复) 全部 [x]. 修复预存问题: `td09_v2_klog_sinks_procfs_test` 期望 `AntX` 而实现是 `QueenX` (内核项目标识) |

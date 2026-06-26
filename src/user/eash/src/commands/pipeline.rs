@@ -184,13 +184,13 @@ pub fn execute_pipeline(input: &[u8]) {
 
         if !is_last {
             if pipe_create(&mut cur_pipe) < 0 {
-                println("axsh: pipe() failed"); return;
+                println("eash: pipe() failed"); return;
             }
         }
 
         let pid = fork() as i32;
         if pid < 0 {
-            println("axsh: fork() failed");
+            println("eash: fork() failed");
             // 清理所有管道
             for fd in &prev_pipe { if *fd >= 0 { fs_close(*fd); } }
             for fd in &cur_pipe { if *fd >= 0 { fs_close(*fd); } }
@@ -221,7 +221,7 @@ pub fn execute_pipeline(input: &[u8]) {
                     dup2_fd(fd, STDIN);
                     fs_close(fd);
                 } else {
-                    print("axsh: cannot open "); println(from_utf8(file).unwrap_or("?"));
+                    print("eash: cannot open "); println(from_utf8(file).unwrap_or("?"));
                     proc_exit(1);
                 }
             }
@@ -237,7 +237,7 @@ pub fn execute_pipeline(input: &[u8]) {
                     dup2_fd(fd, STDOUT);
                     fs_close(fd);
                 } else {
-                    print("axsh: cannot create "); println(from_utf8(file).unwrap_or("?"));
+                    print("eash: cannot create "); println(from_utf8(file).unwrap_or("?"));
                     proc_exit(1);
                 }
             }
@@ -250,7 +250,7 @@ pub fn execute_pipeline(input: &[u8]) {
             let path_slice = unsafe { CStr::from_ptr(path as *const core::ffi::c_char) }.to_bytes();
             proc_exec(path_slice, argv);
             // exec 失败
-            print("axsh: "); print(from_utf8(path_slice).unwrap_or("?"));
+            print("eash: "); print(from_utf8(path_slice).unwrap_or("?"));
             println(": exec failed");
             proc_exit(1);
         } else {

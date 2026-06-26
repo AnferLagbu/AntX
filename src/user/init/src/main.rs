@@ -1,6 +1,6 @@
-//! AntX Init — 首个用户态进程
+//! QueenX Init — 首个用户态进程
 //!
-//! 检测首次启动 → 运行安装向导 → 挂载文件系统 → 启动 axsh Shell
+//! 检测首次启动 → 运行安装向导 → 挂载文件系统 → 启动 eash Shell
 
 #![no_std]
 #![no_main]
@@ -9,7 +9,7 @@ use userlib::*;
 use userlib::sys::*;
 
 const FSTAB_PATH: &[u8] = b"/cfg/system/fstab\0";
-const SHELL_PATH: &[u8] = b"/app/sys/axsh\0";
+const SHELL_PATH: &[u8] = b"/app/sys/eash\0";
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -88,8 +88,8 @@ fn mount_fstab() {
 }
 
 fn start_shell() {
-    println("[init] Starting axsh...");
-    let argv: [*const u8; 2] = [b"axsh\0".as_ptr(), core::ptr::null()];
+    println("[init] Starting eash...");
+    let argv: [*const u8; 2] = [b"eash\0".as_ptr(), core::ptr::null()];
     let r = proc_exec(SHELL_PATH, &argv);
     if r < 0 {
         print("[init] ERROR: Failed to start shell (error: ");
@@ -101,7 +101,7 @@ fn start_shell() {
 
 fn init_main() {
     println("");
-    println("[init] AntX init process started");
+    println("[init] QueenX init process started");
     println("");
 
     if install::wizard::needed() {

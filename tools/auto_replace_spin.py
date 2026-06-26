@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path("/home/anfer/Code/AntX")
+PROJECT_ROOT = Path("/home/anfer/Code/QueenX")
 SCAN_DIR = "src/kernel/framework"
 
 USE_LINE = "use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;\n"

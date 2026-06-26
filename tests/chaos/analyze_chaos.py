@@ -30,7 +30,7 @@ def analyze_chaos_log(log_path: str):
     test_failed = len(re.findall(r'FAIL(ED)?|FAILED', content))
 
     print("=" * 60)
-    print("  AntX Chaos Test Analysis Report")
+    print("  QueenX Chaos Test Analysis Report")
     print("=" * 60)
     print(f"  Log file: {log_path}")
     print(f"  Log size: {len(content)} bytes")

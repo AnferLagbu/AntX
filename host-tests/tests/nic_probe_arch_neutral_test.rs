@@ -14,7 +14,7 @@ use std::path::Path;
 #[test]
 fn test_nic_probe_all_no_arch_mutex() {
     let init_rs = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent().unwrap() // AntX
+        .parent().unwrap() // QueenX workspace root
         .join("src/kernel/framework/net/init.rs");
     let src = fs::read_to_string(&init_rs)
         .unwrap_or_else(|e| panic!("无法读取 {}: {}", init_rs.display(), e));

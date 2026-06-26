@@ -2,7 +2,7 @@
 name = "queenx_userland"
 version = "0.1.0"
 edition = "2021"
-description = "AntX 用户态 libc-like 子集 (Phase C3)"
+description = "QueenX 用户态 libc-like 子集 (Phase C3)"
 
 [lib]
 name = "queenx_userland"

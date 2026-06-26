@@ -101,7 +101,7 @@ pub fn list_names(buf: &mut [&'static str; framework_klog::MAX_LOG_SINKS]) -> us
 /// 文本格式: 一行一 sink, 形如:
 ///
 /// ```text
-/// AntX klog sinks
+/// QueenX klog sinks
 /// ===============
 /// count: 2
 /// 0: serial

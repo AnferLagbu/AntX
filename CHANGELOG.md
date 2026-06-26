@@ -1,4 +1,4 @@
-# AntX 变更记录
+# QueenX 变更记录
 
 > 格式: 时间倒序, 每节用日期 `## YYYY-MM-DD` 标题. 子节: 新增 / 变更 / 修复 / 移除.
 > 本项目**无项目级版本号** (5月21日 `df0cb83` 已移除, 后续 commit 中的 v2.x 均为子特性代号, 非项目版本).
@@ -7,6 +7,22 @@
 ---
 
 ## [Unreleased]
+
+### 变更
+- **axsh → eash 改名 (easy shell)** — `2026-06-26`
+  - `src/user/axsh/` 整个目录重命名为 `src/user/eash/` (含 Cargo crate name `axsh` → `eash`)
+  - 14 文件全部更新: src/user/Cargo.toml (workspace members) + 7 个 eash 源文件 + init/main.rs (SHELL_PATH `/app/sys/eash`) + install/deploy.rs (AppManifest) + host-tests/tests/axsh_cmd_parser_test.rs (重命名为 eash_cmd_parser_test.rs) + 3 个 host-tests/README.md/queenx-naming/maintenance-cycle/README.md 描述
+  - 含义: "AntX Shell" (axsh) → "easy shell" (eash), 适配项目改名 AntX → QueenX 后 shell 命名去 OS 商标
+- **AntX 残留清理 (72 处 → 2 处保留)** — `2026-06-26`
+  - 25+ 源码 .rs: `src/user/{httpsrv,init,install,fbterm,eash}` + `src/kernel/{services/driver,services/wasm,services/klog,framework/debug,framework/klog,framework/barrier,framework/chitin,framework/idt,...}` 全部 AntX → QueenX
+  - 10+ 脚本 .py/.sh: scripts/{check_bench_regression,qemu_boot_test,record_bench_baseline,audit_invariants,tests/test_audit_comment_language,smoltcp-localization/apply} + tests/{run_rust_acceptance,smoke,chaos,...} 全部 AntX → QueenX
+  - clippy.toml: "AntX kernel" → "QueenX kernel"
+  - 4 个硬编码路径动态化: scripts/tests/test_audit_comment_language.py 用 `__file__.resolve().parents[2]`; scripts/smoltcp-localization/apply.sh 用 `$(dirname "$0")/../..`; tests/run_rust_acceptance.sh 用 `$(dirname "$(readlink -f "$0")")/..`; src/kernel/framework/debug/mod.rs 4 个 file:// 链接 → QueenX
+  - docs/explain/framekernel-dev-guide.md: "(AntX/QueenX)" → "(QueenX)" (活跃文档, 非归档)
+  - **保留 2 处 (合理)**:
+    - AGENTS.md:367 2026-06-26 变更历史记录 (审计卡, 不可改)
+    - README.md:3 "未来基于 QueenX 内核的完整操作系统/发行版代号为 AntX" (项目命名理念)
+  - 保留 19 处 (归档/历史): CHANGELOG.md 8 + docs/plan/maintenance-cycle-2026-06-19.md 4 + docs/plan/archive/* 7 (历史决策不可逆)
 
 ### 移除
 - **miri-tests 死代码 (4883 行)** — `2026-06-26`
