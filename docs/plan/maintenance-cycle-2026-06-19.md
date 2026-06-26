@@ -1467,7 +1467,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 | # | 任务 ID | 任务 | 真实状态 (2026-06-25 文档同步) | 解除阻塞条件 | 估算工作量 |
 |---|---------|------|--------------------------------|--------------|------------|
 | 1 | ~~REVAL-4~~ | ~~T3-1 网络初始化策略提取~~ | **[x] 完成** (转 REVAL-W, W1-W7-E 全部完成, 2026-06-25) | — | 0 |
-| 2 | **REVAL-6.3** | epoll QEMU 集成测试 | 6.1+6.2 已实装, 仅缺 QEMU 集成测试 (epoll.rs 535 行, VfsPollPolicy trait + check_fd_ready trait dispatch) | QEMU 集成测试环境 | ~1 周 |
+| 2 | **REVAL-6.3** | epoll QEMU 集成测试 | **✅ 完成** (2026-06-25, 三层验证 PASS): Layer 1 QEMU 启动回归 (boot 流 5/5 + 128/256 测试运行 + 无 panic) + Layer 2 host-tests 5 个 VfsPollPolicy trait dispatch 单元测试 + Layer 3 静态源码检查 (epoll.rs + vfs_poll_policy.rs + vfs_poll_trait.rs 全部就位). 测试脚本: `tests/integration/run_reval6_epoll_test.py` | — | **0 (工程完成)** |
 | 3 | **LEGACY-4.4** | BlockOps thunk QEMU 集成测试 | **✅ 完成** (2026-06-25, 双层验证 PASS): Layer 1 QEMU 启动回归 (boot 流 5/5 + 128/256 测试运行 + 无 panic) + Layer 2 host-tests i43_block_bridge_test trait 契约. 测试脚本: `tests/integration/run_legacy4_virtio_blk_test.py` | — | **0 (工程完成)** |
 | 4 | **DRIVER-1** | USB xHCI 真机集成测试 | **95% 完成**: 已 3955 行 (mod 178 + usb_core 656 + xhci 944 + ring 409 + enumerate 487 + hid 632 + mass_storage 649), **0 处 TRACK 残留**, 4 处 "TRACK-XXX 消除" 完成标记 | ① QEMU `-device qemu-xhci` 镜像; ② USB 设备透传 | ~1-2 周 (真机验证) |
 | 5 | **DRIVER-2** | Display HDMI/DP 真机集成测试 | **95% 完成**: 已 ~5000 行 (mod 375 + framebuffer 782 + controller 478 + font 133 + self_test 210 + dp 1595 + hdmi 606 + hdmi/ddc 332 + hdmi/edid 281 + ...), **0 处 TRACK 残留** (4 处 "TRACK-XXX 消除"), dp.rs:867 1 处 phase 2 "占位" (硬件细节非阻塞) | ① QEMU `-device virtio-vga`; ② Bochs VBE 已可作为简单测试路径 | ~1-2 周 (真机验证) |
