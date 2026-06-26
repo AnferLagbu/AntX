@@ -102,7 +102,8 @@ pub fn discover_xhci_controllers() -> framework::Result<Vec<XhciController>> {
         };
 
         // 5. 实例化 XhciController (未初始化, 调用方需 init_hardware)
-        controllers.push(XhciController::new(iomem));
+        //    with_bar 携带 BAR0 地址/大小, 用于初始化日志.
+        controllers.push(XhciController::new(iomem).with_bar(bar_base, mmio_size as u64));
     }
 
     Ok(controllers)
@@ -123,15 +124,28 @@ fn is_xhci_device(dev: &crate::kernel::framework::pci::PciDevice) -> bool {
 pub fn usb_init() -> framework::Result<()> {
     // USB-1.2: TRACK-558BA7 消除 — 扫描 PCI 总线查找 xHCI 控制器
     let controllers = discover_xhci_controllers()?;
+    crate::klog_info!(Driver, "[USB] discovered {} xHCI controller(s)", controllers.len());
 
     // USB-1.2 续: 初始化找到的控制器
     // 注: 每个控制器的 init_hardware 会触发 reset + start (USB-1.1).
     //      当前阶段返回的控制器未持久化 (Phase E 引入 chitin 注册); 此处仅触发 init.
     for mut ctrl in controllers {
         // SAFETY: `iomem` 由 `discover_xhci_controllers` 通过 PCI BAR 创建, IoMem 边界已保证.
-        if let Err(_e) = unsafe { init_xhci_controller(&mut ctrl) } {
-            // 初始化失败: 跳过该控制器, 继续下一个
-            // (KLOG 记录待 Phase E 完善)
+        match unsafe { init_xhci_controller(&mut ctrl) } {
+            Ok(()) => {
+                crate::klog_info!(
+                    Driver,
+                    "[USB] xHCI controller initialized: BAR0=0x{:X}",
+                    ctrl.bar_base
+                );
+            }
+            Err(e) => {
+                crate::klog_drv_warn!(
+                    "[USB] xHCI init failed: {:?}, skipping",
+                    e
+                );
+                continue;
+            }
         }
 
         // USB-1.6: TRACK-832FCE 消除 — 枚举 USB 设备

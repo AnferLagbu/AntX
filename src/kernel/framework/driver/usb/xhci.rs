@@ -300,6 +300,10 @@ const HC_POLL_DELAY_ITERS: usize = 1;
 pub struct XhciController {
     /// MMIO 句柄 (safe access proxy)
     iomem: Option<IoMem>,
+    /// BAR0 MMIO 基地址 (从 PCI BAR 提取, 用于日志显示)
+    pub bar_base: u64,
+    /// BAR0 MMIO 大小
+    pub bar_size: u64,
     /// 能力寄存器指针
     cap_regs: *const XhciCapabilityRegisters,
     /// 操作寄存器指针
@@ -337,6 +341,8 @@ impl XhciController {
     pub fn new(iomem: IoMem) -> Self {
         Self {
             iomem: Some(iomem),
+            bar_base: 0,
+            bar_size: 0,
             cap_regs: ptr::null(),
             op_regs: ptr::null_mut(),
             port_regs: ptr::null_mut(),
@@ -349,6 +355,13 @@ impl XhciController {
             address_bitmap: [0u8; 32],
             next_address_hint: 1,
         }
+    }
+
+    /// 构造时附加 BAR0 信息 (用于日志/调试)
+    pub fn with_bar(mut self, bar_base: u64, bar_size: u64) -> Self {
+        self.bar_base = bar_base;
+        self.bar_size = bar_size;
+        self
     }
 
     /// 初始化控制器 (USB-1.1).
