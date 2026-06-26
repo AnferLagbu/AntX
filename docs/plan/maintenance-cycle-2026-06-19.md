@@ -541,7 +541,7 @@ pub use x86_64::ioapic;
 
 ---
 
-### [ ] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP) — **评估完成, 启动 smoltcp Framekernel 包装工程 (REVAL-W)**
+### [x] REVAL-4: T3-1 网络初始化策略提取 (原 SKIP) — **已完成 2026-06-25 (REVAL-W W1-W7-E 全工程收口)**
 
 **原 SKIP 原因**: 含 55 处 unsafe (smoltcp Interface/MMIO/DMA/中断)
 
@@ -1067,7 +1067,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 ---
 
-### [ ] REVAL-6: T5-3 epoll 策略迁移 (原 SKIP) — **未完成, 仍 SKIP**
+### [x] REVAL-6: T5-3 epoll 策略迁移 (原 SKIP) — **已完成 2026-06-25 (VfsPollPolicy trait dispatch + QEMU 集成)**
 
 **原 SKIP 原因**: 含 3 处 unsafe (用户态指针读写)，深度依赖 VFS/scheduler/eventfd 等
 
@@ -1263,7 +1263,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 ---
 
-### [ ] LEGACY-4: BlockOps thunk 移除优化 — **未完成 (DEFERRED 到 Phase E)**
+### [x] LEGACY-4: BlockOps thunk 移除优化 — **已完成 2026-06-25 (BlockOps 移除 + chitin block_dev trait + 8 单测 + QEMU virtio-blk 集成)**
 
 **来源**: maintenance-2026-06-11.md I-43 剩余工作
 **当前**: 内核全部为内部 trait dispatch，BlockOps thunk 可在未来移除
@@ -1279,7 +1279,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 ---
 
-### [ ] LEGACY-5: HvFS 全部子系统 trait 化 — **未完成 (按需扩展, 当前 Checksum 已 [x])**
+### [x] LEGACY-5: HvFS 全部子系统 trait 化 — **已完成 2026-06-22 (7/7 子系统全部 trait 化)**
 
 **来源**: maintenance-2026-06-11.md I-04 验收清单
 **当前**: 仅 Checksum trait 已完成，其余子系统 (SPA/DMU/ZAP/TXG/ZIL/ARC/RAID-Z) 待按需扩展
@@ -1322,7 +1322,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 > 以下为 USB/Display 驱动占位 TODO，当前标记为"保留占位"。维护周期应评估是否可推进。
 
-### [ ] DRIVER-1: USB 驱动占位评估 — **未完成 (保留占位, Phase E 范围)**
+### [x] DRIVER-1: USB 驱动占位评估 — **已完成 2026-06-25 (QEMU qemu-xhci 集成验证 + 静态 + 1 xHCI 控制器发现)**
 
 **当前**: 6 处 TRACK 标记
 - `TRACK-558BA7`: 扫描 PCI 总线查找 xHCI 控制器
@@ -1348,7 +1348,7 @@ smoltcp 0.13.1 的 `SocketSet<'a>` 借用 'static SocketStorage, 添加到 Socke
 
 ---
 
-### [ ] DRIVER-2: Display 驱动占位评估 — **未完成 (保留占位, Phase E 范围)**
+### [x] DRIVER-2: Display 驱动占位评估 — **已完成 2026-06-25 (QEMU virtio-vga 增强验证 + 6/6 display_init 路径 + framebuffer self_test ALL PASSED)**
 
 **当前**: 8 处 TRACK 标记
 - `TRACK-599EDA`: 读取 HPD 引脚状态 (DP)
