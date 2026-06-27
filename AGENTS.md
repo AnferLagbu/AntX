@@ -1,30 +1,30 @@
 # AGENTS.md
 
-> QueenX 内核工程 agent 工作指南. 融合 Asterinas 上游规范 + QueenX 项目实际架构 (framework/services 双子树).
+> QueenX 内核工程 agent 工作指南.
 >
 > **硬规则**: 见 [§6 硬规则 (零容忍)](#6-硬规则-零容忍违反即拒收). 违反任一即拒收 PR.
 >
 > **必读** (开始任何任务前): 本文件 + `CLAUDE.md` + `docs/README.md` + `docs/explain/framekernel-nature.md` + `docs/explain/framekernel-dev-guide.md` + `docs/explain/engineering-discipline-spec.md`.
 
----
+***
 
 ## 1. 仓库布局
 
-| 目录 | 用途 |
-|------|------|
-| `src/kernel/framework/` | TCB 子树 (允许 unsafe, 硬件抽象) |
-| `src/kernel/services/` | 100% safe Rust 子树 (策略与业务) |
-| `src/kernel/services/net/smoltcp/` | smoltcp 0.13 vendored (3rd-party, 锁定) |
-| `src/user/`, `src/userland/`, `src/rust/` | 用户态程序与工具 |
-| `host-tests/` | 主机端单元/集成测试 (no_std + std) |
-| `docs/plan/` | 工程计划 (Phase A-D + 维护周期) |
-| `docs/explain/` | 现状解释 (架构/规范) |
-| `docs/CHANGELOG.md` | 面向用户/接手人的变更日志 |
-| `scripts/` | 审计/构建/集成脚本 |
-| `ci/` | CI 入口 (build.sh + audit.sh) |
-| `tools/` | 工具脚本 (track_todo.py 等) |
+| 目录                                        | 用途                                    |
+| ----------------------------------------- | ------------------------------------- |
+| `src/kernel/framework/`                   | TCB 子树 (允许 unsafe, 硬件抽象)              |
+| `src/kernel/services/`                    | 100% safe Rust 子树 (策略与业务)             |
+| `src/kernel/services/net/smoltcp/`        | smoltcp 0.13 vendored (3rd-party, 锁定) |
+| `src/user/`, `src/userland/`, `src/rust/` | 用户态程序与工具                              |
+| `host-tests/`                             | 主机端单元/集成测试 (no\_std + std)            |
+| `docs/plan/`                              | 工程计划 (Phase A-D + 维护周期)               |
+| `docs/explain/`                           | 现状解释 (架构/规范)                          |
+| `docs/CHANGELOG.md`                       | 面向用户/接手人的变更日志                         |
+| `scripts/`                                | 审计/构建/集成脚本                            |
+| `ci/`                                     | CI 入口 (build.sh + audit.sh)           |
+| `tools/`                                  | 工具脚本 (track\_todo.py 等)               |
 
----
+***
 
 ## 2. 构建与测试
 
@@ -43,18 +43,18 @@
 
 ### 2.2 审计脚本
 
-| 脚本 | 作用 | 阈值 |
-|------|------|------|
-| `scripts/audit_services_boundary.py` | services 0 unsafe + 顶层 re-export 强制 | 硬 |
-| `scripts/audit_safety_coverage.py` | framework unsafe 块 SAFETY 100% 覆盖 | 硬 |
-| `scripts/audit_deadlock_matrix.py` | 锁顺序 + 中断上下文 + 递归锁检测 | 硬 |
-| `scripts/audit_coupling.py` | 跨模块循环依赖 + 公开接口统计 | 硬 |
-| `scripts/audit_comment_language.py` | 中文注释强制 (除非豁免) | 硬 0 |
-| `scripts/audit_invariants.py` | 6 安全不变式断言 | 硬 |
-| `scripts/audit_tcb_ratio.py` | TCB 占比统计 | 软 < 30% |
-| `scripts/audit_once_cell.py` | OnceCell 模式统一 | 硬 |
-| `scripts/audit_c_naming.py` | C 命名规范 | 硬 |
-| `scripts/audit_block_registration.py` | 块设备注册 | 硬 |
+| 脚本                                    | 作用                                  | 阈值      |
+| ------------------------------------- | ----------------------------------- | ------- |
+| `scripts/audit_services_boundary.py`  | services 0 unsafe + 顶层 re-export 强制 | 硬       |
+| `scripts/audit_safety_coverage.py`    | framework unsafe 块 SAFETY 100% 覆盖   | 硬       |
+| `scripts/audit_deadlock_matrix.py`    | 锁顺序 + 中断上下文 + 递归锁检测                 | 硬       |
+| `scripts/audit_coupling.py`           | 跨模块循环依赖 + 公开接口统计                    | 硬       |
+| `scripts/audit_comment_language.py`   | 中文注释强制 (除非豁免)                       | 硬 0     |
+| `scripts/audit_invariants.py`         | 6 安全不变式断言                           | 硬       |
+| `scripts/audit_tcb_ratio.py`          | TCB 占比统计                            | 软 < 30% |
+| `scripts/audit_once_cell.py`          | OnceCell 模式统一                       | 硬       |
+| `scripts/audit_c_naming.py`           | C 命名规范                              | 硬       |
+| `scripts/audit_block_registration.py` | 块设备注册                               | 硬       |
 
 任何一项失败视为本轮未完成.
 
@@ -68,23 +68,24 @@ cargo test -p host-tests           # 等价
 ### 2.4 验证门槛
 
 每轮开发完成, **必须** 全部满足:
+
 1. 双架构 `cargo check --release` 0 error / 0 warning
 2. clippy 0 warning (`cargo clippy --release -- -D warnings`)
-3. 三审计全部通过 (boundary + safety_coverage + deadlock_matrix)
+3. 三审计全部通过 (boundary + safety\_coverage + deadlock\_matrix)
 4. host-tests 全部通过
 5. QEMU 集成测试通过 (如改动 boot/架构相关)
 
----
+***
 
 ## 3. 工具链
 
 - **Rust nightly** 锁定在 `src/rust/rust-toolchain.toml`
 - **Edition:** 2021 (与上游对齐, QueenX 未升 2024)
-- **目标架构:** x86_64 (主) + aarch64 (次)
+- **目标架构:** x86\_64 (主) + aarch64 (次)
 - **`rustfmt.toml`:** 4 空格缩进, 尾逗号允许
 - **Clippy 配置:** `clippy.toml` (cognitive-complexity-threshold = 25, missing-docs-in-crate-items = true)
 
----
+***
 
 ## 4. 架构责任分离 (核心)
 
@@ -96,9 +97,9 @@ cargo test -p host-tests           # 等价
 
 ### 4.2 资源分类 (OSTD 四准则 + 6 不变式)
 
-| 类别 | 定义 | 归属 |
-|------|------|------|
-| 敏感资源 | 被篡改可导致 UB | **framework** (TCB) |
+| 类别    | 定义         | 归属                       |
+| ----- | ---------- | ------------------------ |
+| 敏感资源  | 被篡改可导致 UB  | **framework** (TCB)      |
 | 非敏感资源 | 被篡改仅导致逻辑错误 | **services** (safe Rust) |
 
 详见 `docs/explain/framekernel-nature.md` 与 `docs/explain/framekernel-dev-guide.md`.
@@ -106,6 +107,7 @@ cargo test -p host-tests           # 等价
 ### 4.3 6 安全不变式自检
 
 修改 framework 时逐项确认 (详见 `engineering-discipline-spec.md`):
+
 - I1 内核态 CPU 状态不可被 services 篡改
 - I2 内核内存不可被 services 非法访问
 - I3 用户态 CPU 状态只能通过 framework 安全入口
@@ -115,7 +117,7 @@ cargo test -p host-tests           # 等价
 
 任何一项回答"是" = 违反安全不变式, 必须重新设计.
 
----
+***
 
 ## 5. 编码规范
 
@@ -133,7 +135,7 @@ cargo test -p host-tests           # 等价
 ### 5.2 Rust
 
 - **命名:**
-  - CamelCase 类型与枚举; snake_case 函数与变量; SCREAMING_SNAKE_CASE 常量.
+  - CamelCase 类型与枚举; snake\_case 函数与变量; SCREAMING\_SNAKE\_CASE 常量.
   - 大写首字母缩写 (如 `IoMemory` 而非 `IOMemory`).
   - 闭包变量以 `_fn` 结尾 (如 `compare_fn`).
 - **函数:** 保持小而聚焦; 嵌套 ≤ 3 层; 用 early return, `let...else`, `?`.
@@ -146,7 +148,7 @@ cargo test -p host-tests           # 等价
   - 仅 framework/ 允许 unsafe.
 - **模块:** 默认 `pub(super)`/`pub(crate)`; 导入 free function 与 static 走父模块 (`use std::mem;` + `mem::replace()`, 不 `use std::mem::replace;` + `replace()`).
 - **错误处理:** 传播用 `?`. 禁止 `.unwrap()` 在可失败处. 统一用 `KernelError` (跨子系统) 不可传递子系统内部错误.
-- **日志:** 用 `klog::printk` 或 framework 提供的日志宏. no_std 下无 `println!`.
+- **日志:** 用 `klog::printk` 或 framework 提供的日志宏. no\_std 下无 `println!`.
 - **并发:** 建立并文档化锁顺序. 持锁期禁止 sleep/yield/分配. atomics 不滥用.
 - **属性:** 派生 macro 放最后 (`#[derive(...)]`), 内部 trait 按字母序. `#[expect(...)]` 优于 `#[allow(...)]`.
 - **性能:** 热路径避免 O(n) 扫描; 减少拷贝/分配/`Arc::clone`. 无 benchmark 不优化.
@@ -172,35 +174,35 @@ cargo test -p host-tests           # 等价
 - Rust-callable 函数配 `.type` + `.size`.
 - 标签前缀唯一 (避免 `global_asm!` 冲突).
 
----
+***
 
 ## 6. 硬规则 (零容忍, 违反即拒收)
 
-| # | 规则 | 检查方式 |
-|---|------|----------|
-| F1 | services 层 0 unsafe | `#![deny(unsafe_code)]` + `audit_services_boundary.py` |
-| F2 | services 禁止访问 framework 内部模块 | `audit_services_boundary.py` 黑名单 |
-| F3 | 新增代码禁止引入模块间循环依赖 | `audit_coupling.py` |
-| F4 | framework 任何 unsafe 块必须配 `// SAFETY:` 注释 | `audit_safety_coverage.py` |
-| F5 | 双架构编译 0 warning 0 error | `./ci/build.sh all` |
-| F6 | 三审计全部通过 | boundary + safety + deadlock |
-| F7 | 中文注释强制 | `audit_comment_language.py` 0 violations |
-| F8 | 公共 API 中文文档注释 | clippy `missing_docs_in_crate_items` |
+| #  | 规则                                       | 检查方式                                                   |
+| -- | ---------------------------------------- | ------------------------------------------------------ |
+| F1 | services 层 0 unsafe                      | `#![deny(unsafe_code)]` + `audit_services_boundary.py` |
+| F2 | services 禁止访问 framework 内部模块             | `audit_services_boundary.py` 黑名单                       |
+| F3 | 新增代码禁止引入模块间循环依赖                          | `audit_coupling.py`                                    |
+| F4 | framework 任何 unsafe 块必须配 `// SAFETY:` 注释 | `audit_safety_coverage.py`                             |
+| F5 | 双架构编译 0 warning 0 error                  | `./ci/build.sh all`                                    |
+| F6 | 三审计全部通过                                  | boundary + safety + deadlock                           |
+| F7 | 中文注释强制                                   | `audit_comment_language.py` 0 violations               |
+| F8 | 公共 API 中文文档注释                            | clippy `missing_docs_in_crate_items`                   |
 
----
+***
 
 ## 7. 文档规范说明
 
-`docs/README.md` 中定义的"标题 + 章节 + 条目(描述+方案+状态) + 详情"格式**只适用于 `docs/` 下文档** (`docs/plan/`, `docs/explain/`, `docs/CHANGELOG.md`).
+`docs/README.md` 中定义的"标题 + 章节 + 条目(描述+方案+状态) + 详情"格式**只适用于** **`docs/`** **下文档** (`docs/plan/`, `docs/explain/`, `docs/CHANGELOG.md`).
 
 **AGENTS.md (本文件) 与 CLAUDE.md 是规则/指导文档, 不受该格式约束, 保持自然描述风格**:
 
-- 用 H1/H2/H3 自由组织, 不强制"每条带状态 [X]/[]"
+- 用 H1/H2/H3 自由组织, 不强制"每条带状态 \[X]/\[]"
 - 用表格 + 代码块 + 列表自然描述
 - 引用其他文档的格式仅作为参考, 本身不需要 `描述:` `方案:` `状态:` `详情:` 结构
 - 修改这两份文件时, 优先考虑"可读性 + 可执行性"而非"格式统一"
 
----
+***
 
 ## 8. Git 规范
 
@@ -232,10 +234,10 @@ test(integration): DRIVER-2 QEMU virtio-vga 双层验证
 
 项目用双远程仓库, 语义化命名, 区分主仓库与镜像:
 
-| remote 名 | URL 协议 | 角色 | 默认推送 |
-|-----------|----------|------|----------|
-| `Gitee` | `git@gitee.com:AnferLagbu/QueenX.git` | 主仓库 (推送首发) | ✅ 是 |
-| `GitHub` | `https://github.com/AnferLagbu/QueenX.git` | 镜像 (国际可访问) | 否 |
+| remote 名 | URL 协议                                     | 角色         | 默认推送 |
+| -------- | ------------------------------------------ | ---------- | ---- |
+| `Gitee`  | `git@gitee.com:AnferLagbu/QueenX.git`      | 主仓库 (推送首发) | ✅ 是  |
+| `GitHub` | `https://github.com/AnferLagbu/QueenX.git` | 镜像 (国际可访问) | 否    |
 
 **常用命令:**
 
@@ -273,7 +275,7 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 
 **历史归档例外:** `docs/plan/archive/*` 中 git 命令示例保留 `origin` 字面字符串 (2026-06-13 历史快照), 不得修改. `docs/plan/smoltcp-framekernel-wrapper.md` 中 `git fetch origin` 指 smoltcp 子模块的 origin (非 QueenX remote), 不得修改.
 
----
+***
 
 ## 9. 测试规范
 
@@ -282,21 +284,22 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 - **用 assertion macro**, 不用手动输出检查.
 - **清理资源** (fd, 临时文件, 子进程).
 - 修改跨模块接口必须补充集成测试 (host-tests).
-- 公共 API 必须有单元测试 (no_std 单元 + host-tests 集成).
+- 公共 API 必须有单元测试 (no\_std 单元 + host-tests 集成).
 - 性能基线 (`host-tests/benches/baseline.json`) 每次 PR 更新.
 
----
+***
 
 ## 10. 预存问题处理
 
 开发中遇到与本任务无关的预存问题 (编译告警/死代码/未使用 import/过期 TODO/CI 缺陷/文档不一致) 必须立即修复并补测试或更新文档. 修复后重跑双架构编译、相关审计、相关测试. 不接受:
+
 - 留下 TODO 等下一轮
 - 以不在本任务范围为由略过
 - 删除有意义的测试以让编译通过
 
 存量代码可按渐进式策略修复 (`触及时修复` → `标记待修` → `禁止忽视` → `新代码零容忍`).
 
----
+***
 
 ## 11. 开发规定
 
@@ -314,35 +317,37 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 ### 11.3 实施后
 
 完成开发后, **必须**:
+
 - 双架构编译 0 warning 0 error
 - 所有审计 (clippy + 项目脚本) 通过
 - 所有测试 (host-tests + QEMU 集成) 通过
 - 文档同步更新 (CHANGELOG.md + plan/ + explain/)
 - 代码无新增 services unsafe / 循环依赖 / 跨子系统内部访问
 
----
+***
 
 ## 12. AI 常见踩坑
 
-| 踩坑 | 解决 |
-|------|------|
-| 把 unsafe 写进 services/ | 编译失败, 改用 framework 公开的 safe API |
-| 在 services/ 用 `println!` | no_std 不可用, 改用 `klog::printk` 或 framework 日志 API |
-| 中断上下文持 Mutex 或分配 `GFP_KERNEL` | 死锁, 中断路径只持自旋锁并 disable IRQ |
-| 修 bug 时顺手清理无关代码 | 禁止, 每一行改动追溯到用户请求 |
-| 在 services/ 直接 `use framework::arch::x86_64` | 边界审计拒绝, 走顶层 re-export 公共 API |
-| 跳过 SAFETY 注释 | `audit_safety_coverage.py` 检测, 100% 强制 |
-| 跨子系统硬编码常量 | 走 `framework::config` 或 `services::config` |
-| 测试代码 `unwrap()` | 测试允许, 生产代码禁止 |
-| 提交前忘跑审计 | CI 会拦, 不会合入 |
-| 顺手添加"灵活配置" | 禁止, 准则 §0 严格适用 |
-| 不读 CLAUDE.md | 必读! LLM 行为准则在此 |
+| 踩坑                                           | 解决                                                |
+| -------------------------------------------- | ------------------------------------------------- |
+| 把 unsafe 写进 services/                        | 编译失败, 改用 framework 公开的 safe API                   |
+| 在 services/ 用 `println!`                     | no\_std 不可用, 改用 `klog::printk` 或 framework 日志 API |
+| 中断上下文持 Mutex 或分配 `GFP_KERNEL`                | 死锁, 中断路径只持自旋锁并 disable IRQ                        |
+| 修 bug 时顺手清理无关代码                              | 禁止, 每一行改动追溯到用户请求                                  |
+| 在 services/ 直接 `use framework::arch::x86_64` | 边界审计拒绝, 走顶层 re-export 公共 API                      |
+| 跳过 SAFETY 注释                                 | `audit_safety_coverage.py` 检测, 100% 强制            |
+| 跨子系统硬编码常量                                    | 走 `framework::config` 或 `services::config`        |
+| 测试代码 `unwrap()`                              | 测试允许, 生产代码禁止                                      |
+| 提交前忘跑审计                                      | CI 会拦, 不会合入                                       |
+| 顺手添加"灵活配置"                                   | 禁止, 准则 §0 严格适用                                    |
+| 不读 CLAUDE.md                                 | 必读! LLM 行为准则在此                                    |
 
----
+***
 
 ## 13. CI 状态徽章
 
 本地跑全量 CI:
+
 ```bash
 ./ci/build.sh all
 python3 scripts/audit_services_boundary.py
@@ -356,7 +361,7 @@ make test-host
 
 任何一项失败 → 视为本轮未完成.
 
----
+***
 
 ## 14. 关联文档
 
@@ -387,11 +392,3 @@ make test-host
 
 - `docs/plan/archive/` — 旧维护文档 + 旧审计报告, 保留历史决策
 
----
-
-## 变更历史
-
-| 日期 | 变更 | 来源 |
-|------|------|------|
-| 2026-06-26 | 融合 Asterinas 上游规范 + AntX 项目实际, 重写 AGENTS.md | 当前版本 |
-| 2026-06-14 | 初始版本 (54 行) | 旧版 |
