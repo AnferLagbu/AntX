@@ -10,19 +10,19 @@
 
 ## 1. 仓库布局
 
-| 目录                                        | 用途                                    |
-| ----------------------------------------- | ------------------------------------- |
-| `src/kernel/framework/`                   | TCB 子树 (允许 unsafe, 硬件抽象)              |
-| `src/kernel/services/`                    | 100% safe Rust 子树 (策略与业务)             |
-| `src/kernel/services/net/smoltcp/`        | smoltcp 0.13 vendored (3rd-party, 锁定) |
-| `src/user/`, `src/userland/`, `src/rust/` | 用户态程序与工具                              |
-| `host-tests/`                             | 主机端单元/集成测试 (no\_std + std)            |
-| `docs/plan/`                              | 工程与任务计划                               |
-| `docs/explain/`                           | 项目引导与解释                               |
-| `docs/CHANGELOG.md`                       | 面向用户/接手人的变更日志                         |
-| `scripts/`                                | 审计/构建/集成脚本                            |
-| `ci/`                                     | CI 入口 (build.sh + audit.sh)           |
-| `tools/`                                  | 工具脚本 (track\_todo.py 等)               |
+| 目录                                        | 用途                               |
+| ----------------------------------------- | -------------------------------- |
+| `src/kernel/framework/`                   | TCB 子树 (允许 unsafe, 硬件抽象)         |
+| `src/kernel/services/`                    | 100% safe Rust 子树 (策略与业务)        |
+| `src/kernel/services/net/smoltcp/`        | smoltcp vendored (3rd-party, 锁定) |
+| `src/user/`, `src/userland/`, `src/rust/` | 用户态程序与工具                         |
+| `host-tests/`                             | 主机端单元/集成测试 (no\_std + std)       |
+| `docs/plan/`                              | 工程与任务计划                          |
+| `docs/explain/`                           | 项目引导与解释                          |
+| `docs/CHANGELOG.md`                       | 面向用户/接手人的变更日志                    |
+| `scripts/`                                | 审计/构建/集成脚本                       |
+| `ci/`                                     | CI 入口 (build.sh + audit.sh)      |
+| `tools/`                                  | 工具脚本 (track\_todo.py 等)          |
 
 ***
 
