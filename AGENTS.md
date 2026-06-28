@@ -89,8 +89,6 @@ cargo test -p host-tests           # 等价
 
 ## 4. 架构责任分离 (核心)
 
-> 这是 QueenX 与 Asterinas 最关键的区别: 我们用 `framework/` + `services/`, 不是 `ostd/` + `kernel/`.
-
 ### 4.1 一句话判据
 
 **要 unsafe 吗? 要 → framework. 不要 → services. 进一步: 涉及硬件/MMU/中断/上下文切换? → framework. 纯算法/策略/业务? → services.**
