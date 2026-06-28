@@ -310,28 +310,13 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
     if clockid != CLOCK_REALTIME && clockid != CLOCK_MONOTONIC {
         return Errno::EINVAL.as_ret();
     }
-    if timer_id_ptr == 0 {
-        return Errno::EFAULT.as_ret();
-    }
-    if !crate::kernel::framework::userptr::validate_user_buf(
-        timer_id_ptr,
-        core::mem::size_of::<i32>() as u64,
-    ) {
-        return Errno::EFAULT.as_ret();
-    }
 
     // 解析 sigevent
     let mut sigev = Sigevent::default();
     if sigev_ptr != 0 {
-        if !crate::kernel::framework::userptr::validate_user_buf(
-            sigev_ptr,
-            core::mem::size_of::<Sigevent>() as u64,
-        ) {
+        if !crate::kernel::framework::userptr::read_struct_from_user(sigev_ptr, &mut sigev) {
             return Errno::EFAULT.as_ret();
         }
-        // SAFETY: check_user_buf 已验证 sigev_ptr 指向的 user 缓冲
-        // 至少有 size_of::<Sigevent>() 字节可读
-        sigev = unsafe { core::ptr::read_unaligned(sigev_ptr as *const Sigevent) };
     } else {
         sigev.sigev_notify = SIGEV_NONE;
     }
@@ -371,9 +356,8 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
             slot.timer.init(posix_timer_callback);
 
             let timer_id = (i + 1) as i32;
-            // SAFETY: check_user_buf 已验证 timer_id_ptr 可写 4 字节
-            unsafe {
-                core::ptr::write_unaligned(timer_id_ptr as *mut i32, timer_id);
+            if !crate::kernel::framework::userptr::write_struct_to_user(timer_id_ptr, &timer_id) {
+                return Errno::EFAULT.as_ret();
             }
 
             TIMER_COUNT.fetch_add(1, Ordering::Relaxed);

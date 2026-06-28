@@ -11,23 +11,64 @@
 //!
 //! ## 同步
 //!
-//! 全局哈希表由自旋锁保护, 与 futex 相同模式.
-//! 桶级锁避免全局竞争.
+//! 每个桶由独立的 `IrqSpinLock` 保护, 持锁期间关中断,
+//! 避免与中断上下文死锁. 桶级锁减少全局竞争.
 //!
 //! # Safety
 //!
 //! - 缓存页由 PMM 分配, 通过 KERNEL_BASE 映射访问
 //! - 脏页写回由文件系统负责 (当前阶段仅标记)
+//! - 仅 `pcache_copy_to_user` 保留 unsafe (用户态指针操作)
 
 // 页缓存实现占位, 待文件系统写回路径启用后使用。
 // 保留文件级 allow: PageCacheEntry/PageCacheTable 等内部类型和
 // 查找/插入/脏页标记等函数待 VFS 写回路径启用后使用, 逐项标注会淹没代码。
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicBool, Ordering};
-use core::cell::UnsafeCell;
-
 use crate::kernel::framework::mm::{PhysAddr, PAGE_SIZE, pmm};
+use crate::kernel::framework::sync::IrqSpinLock;
+
+// ============================================================================
+// 物理页 safe 操作封装
+// ============================================================================
+
+/// 将物理页内容清零
+///
+/// 用于新分配的物理页初始化, 防止信息泄漏.
+fn zero_phys_page(phys: PhysAddr) {
+    let virt = phys.to_virt();
+    // SAFETY: phys 由 PMM 分配, to_virt() 返回有效的内核虚拟地址;
+    // 写入 PAGE_SIZE 字节不会越界 (物理页按 PAGE_SIZE 对齐分配).
+    unsafe {
+        core::ptr::write_bytes(virt.0 as *mut u8, 0, PAGE_SIZE as usize);
+    }
+}
+
+/// 将数据复制到物理页
+///
+/// 复制长度取 `min(src.len(), PAGE_SIZE)`, 不足部分保持原值 (通常为零).
+fn copy_to_phys_page(phys: u64, src: &[u8]) {
+    let dst_virt = crate::kernel::framework::mm::phys_to_virt(phys);
+    let copy_len = core::cmp::min(src.len(), PAGE_SIZE as usize);
+    // SAFETY: phys 是 PMM 分配的有效物理页, phys_to_virt 返回有效的内核虚拟地址;
+    // copy_len <= PAGE_SIZE, 不会越界; src 是有效切片.
+    unsafe {
+        core::ptr::copy_nonoverlapping(src.as_ptr(), dst_virt as *mut u8, copy_len);
+    }
+}
+
+/// 从物理页复制数据到目标缓冲区
+///
+/// 复制长度取 `min(dst.len(), PAGE_SIZE)`.
+fn copy_from_phys_page(phys: u64, dst: &mut [u8]) {
+    let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
+    let copy_len = core::cmp::min(dst.len(), PAGE_SIZE as usize);
+    // SAFETY: phys 是 PMM 分配的有效物理页, phys_to_virt 返回有效的内核虚拟地址;
+    // copy_len <= PAGE_SIZE, 不会越界; dst 是有效切片.
+    unsafe {
+        core::ptr::copy_nonoverlapping(src_virt as *const u8, dst.as_mut_ptr(), copy_len);
+    }
+}
 
 // ============================================================================
 // Page Cache Entry
@@ -131,11 +172,7 @@ impl PageCacheBucket {
         let phys = pmm_inst.alloc_page()?;
 
         // 清零 (防止信息泄漏)
-        let virt = phys.to_virt();
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            core::ptr::write_bytes(virt.0 as *mut u8, 0, PAGE_SIZE as usize);
-        }
+        zero_phys_page(phys);
 
         // pcache_get 仅分配全零页; miss 时的文件数据回填由调用方
         // 通过 pcache_fill(inode, page, src) 显式完成 (避免持锁 + 跨层 I/O).
@@ -206,16 +243,7 @@ impl PageCacheBucket {
     fn fill(&mut self, inode_id: u32, page_index: u64, src: &[u8]) -> bool {
         for entry in self.entries.iter() {
             if entry.occupied && entry.inode_id == inode_id && entry.page_index == page_index {
-                let dst_virt = crate::kernel::framework::mm::phys_to_virt(entry.phys);
-                // SAFETY: `dst_virt` 由 pmm 分配的物理页映射, 仅由 PageCache 拥有
-                unsafe {
-                    let copy_len = core::cmp::min(src.len(), PAGE_SIZE as usize);
-                    core::ptr::copy_nonoverlapping(
-                        src.as_ptr(),
-                        dst_virt as *mut u8,
-                        copy_len,
-                    );
-                }
+                copy_to_phys_page(entry.phys, src);
                 return true;
             }
         }
@@ -224,52 +252,77 @@ impl PageCacheBucket {
 }
 
 // ============================================================================
-// 简易自旋锁 (与 futex 相同模式)
-// ============================================================================
-
-struct SimpleSpinLock {
-    locked: AtomicBool,
-}
-
-impl SimpleSpinLock {
-    const fn new() -> Self {
-        SimpleSpinLock {
-            locked: AtomicBool::new(false),
-        }
-    }
-
-    fn lock(&self) {
-        while self
-            .locked
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-    }
-
-    fn unlock(&self) {
-        self.locked.store(false, Ordering::Release);
-    }
-}
-
-// ============================================================================
 // 全局 Page Cache
 // ============================================================================
 
-struct PageCacheTable {
-    locks: [SimpleSpinLock; PCACHE_HASH_BUCKETS],
-    buckets: [UnsafeCell<PageCacheBucket>; PCACHE_HASH_BUCKETS],
-}
-
-// SAFETY: 每个桶由独立的 SimpleSpinLock 保护
-unsafe impl Sync for PageCacheTable {}
-unsafe impl Send for PageCacheTable {}
-
-static PAGE_CACHE: PageCacheTable = PageCacheTable {
-    locks: unsafe { core::mem::zeroed() },
-    buckets: unsafe { core::mem::zeroed() },
-};
+/// 每桶独立 IrqSpinLock, 持锁期间关中断, 避免与中断上下文死锁.
+/// IrqSpinLock<T> 自动实现 Send+Sync, 无需手写 unsafe impl.
+static PAGE_CACHE: [IrqSpinLock<PageCacheBucket>; PCACHE_HASH_BUCKETS] = [
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+    IrqSpinLock::new(PageCacheBucket::new()),
+];
 
 /// 计算哈希桶索引
 fn pcache_hash(inode_id: u32, page_index: u64) -> usize {
@@ -289,53 +342,36 @@ fn pcache_hash(inode_id: u32, page_index: u64) -> usize {
 /// 若未命中, 分配物理页并插入缓存.
 pub fn pcache_get(inode_id: u32, page_index: u64) -> Option<u64> {
     let idx = pcache_hash(inode_id, page_index);
-    PAGE_CACHE.locks[idx].lock();
-    // SAFETY: 持有锁
-    let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
-    let result = bucket.insert(inode_id, page_index);
-    PAGE_CACHE.locks[idx].unlock();
-    result
+    let mut guard = PAGE_CACHE[idx].lock();
+    guard.insert(inode_id, page_index)
 }
 
 /// 查找缓存页 (不增加引用计数)
 pub fn pcache_lookup(inode_id: u32, page_index: u64) -> Option<u64> {
     let idx = pcache_hash(inode_id, page_index);
-    PAGE_CACHE.locks[idx].lock();
-    // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
-    let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
-    let result = bucket.lookup(inode_id, page_index);
-    PAGE_CACHE.locks[idx].unlock();
-    result
+    let guard = PAGE_CACHE[idx].lock();
+    guard.lookup(inode_id, page_index)
 }
 
 /// 标记脏页 (MAP_SHARED 写入后调用)
 pub fn pcache_mark_dirty(inode_id: u32, page_index: u64) {
     let idx = pcache_hash(inode_id, page_index);
-    PAGE_CACHE.locks[idx].lock();
-    // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
-    let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
-    bucket.mark_dirty(inode_id, page_index);
-    PAGE_CACHE.locks[idx].unlock();
+    let mut guard = PAGE_CACHE[idx].lock();
+    guard.mark_dirty(inode_id, page_index);
 }
 
 /// 释放缓存页引用 (munmap 时调用)
 pub fn pcache_put(inode_id: u32, page_index: u64) {
     let idx = pcache_hash(inode_id, page_index);
-    PAGE_CACHE.locks[idx].lock();
-    // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
-    let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
-    bucket.deref(inode_id, page_index);
-    PAGE_CACHE.locks[idx].unlock();
+    let mut guard = PAGE_CACHE[idx].lock();
+    guard.deref(inode_id, page_index);
 }
 
 /// 释放 inode 的所有缓存页 (文件关闭时调用)
 pub fn pcache_invalidate_inode(inode_id: u32) {
     for i in 0..PCACHE_HASH_BUCKETS {
-        PAGE_CACHE.locks[i].lock();
-        // SAFETY: `PAGE_CACHE` 由调用方保证为有效指针; 只读访问
-        let bucket = unsafe { &mut *PAGE_CACHE.buckets[i].get() };
-        bucket.invalidate_inode(inode_id);
-        PAGE_CACHE.locks[i].unlock();
+        let mut guard = PAGE_CACHE[i].lock();
+        guard.invalidate_inode(inode_id);
     }
 }
 
@@ -347,6 +383,7 @@ pub fn pcache_invalidate_inode(inode_id: u32) {
 /// - `phys` 必须是 Page Cache 中的有效物理页
 pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) {
     let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
+    // SAFETY: 调用方保证 dest_virt 指向有效用户空间页, phys 为有效物理页.
     core::ptr::copy_nonoverlapping(
         src_virt as *const u8,
         dest_virt as *mut u8,
@@ -363,12 +400,8 @@ pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) {
 /// (调用方应仅在 pcache_get 成功返回后调用).
 pub fn pcache_fill(inode_id: u32, page_index: u64, src: &[u8]) -> bool {
     let idx = pcache_hash(inode_id, page_index);
-    PAGE_CACHE.locks[idx].lock();
-    // SAFETY: 持有桶锁
-    let bucket = unsafe { &mut *PAGE_CACHE.buckets[idx].get() };
-    let result = bucket.fill(inode_id, page_index, src);
-    PAGE_CACHE.locks[idx].unlock();
-    result
+    let mut guard = PAGE_CACHE[idx].lock();
+    guard.fill(inode_id, page_index, src)
 }
 
 /// 读取缓存页内容到目标缓冲区
@@ -380,16 +413,7 @@ pub fn pcache_read_to_slice(inode_id: u32, page_index: u64, dst: &mut [u8]) -> b
         Some(p) => p,
         None => return false,
     };
-    let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
-    let copy_len = core::cmp::min(dst.len(), PAGE_SIZE as usize);
-    // SAFETY: `src_virt` 指向 pcache 拥有的有效物理页, 长度由物理页大小保证
-    unsafe {
-        core::ptr::copy_nonoverlapping(
-            src_virt as *const u8,
-            dst.as_mut_ptr(),
-            copy_len,
-        );
-    }
+    copy_from_phys_page(phys, dst);
     true
 }
 

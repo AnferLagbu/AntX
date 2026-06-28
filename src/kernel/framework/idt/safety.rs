@@ -220,10 +220,10 @@ pub fn save_frame_pointer() -> u64 {
 /// * `ptr` - 要检查的原始指针
 ///
 /// # Returns
-/// `true` 如果指针为 null 或接近 null (< 0x1000)
+/// `true` 如果指针为 null 或接近 null (< USER_ADDR_FLOOR)
 #[inline]
 pub fn is_null_or_invalid(ptr: u64) -> bool {
-    ptr == 0 || ptr < 0x1000
+    ptr == 0 || ptr < USER_ADDR_FLOOR
 }
 
 /// 验证用户态地址范围

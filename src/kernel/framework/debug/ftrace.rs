@@ -129,6 +129,8 @@ impl FtraceState {
         if n < EVENT_SIZE {
             return None;
         }
+        // SAFETY: `bytes` 是 `[0u8; EVENT_SIZE]`, 各切片长度固定为 8 字节,
+        // `try_into()` 到 `[u8; 8]` 在编译期已证明长度匹配, unwrap 不可能失败.
         let ts = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
         let hash = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let a0 = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
