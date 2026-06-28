@@ -17,8 +17,8 @@
 | `src/kernel/services/net/smoltcp/`        | smoltcp 0.13 vendored (3rd-party, 锁定) |
 | `src/user/`, `src/userland/`, `src/rust/` | 用户态程序与工具                              |
 | `host-tests/`                             | 主机端单元/集成测试 (no\_std + std)            |
-| `docs/plan/`                              | 工程计划 (Phase A-D + 维护周期)               |
-| `docs/explain/`                           | 现状解释 (架构/规范)                          |
+| `docs/plan/`                              | 工程与任务计划                               |
+| `docs/explain/`                           | 项目引导与解释                               |
 | `docs/CHANGELOG.md`                       | 面向用户/接手人的变更日志                         |
 | `scripts/`                                | 审计/构建/集成脚本                            |
 | `ci/`                                     | CI 入口 (build.sh + audit.sh)           |
@@ -375,18 +375,11 @@ make test-host
 
 ### 14.2 进度 (了解状态)
 
-- [docs/CHANGELOG.md](docs/CHANGELOG.md) — 变更日志
-- [docs/plan/kernel-roadmap.md](docs/plan/kernel-roadmap.md) — Phase A-D 路线图
-- [docs/plan/engineering-progress.md](docs/plan/engineering-progress.md) — 主线工程进度
-- [docs/plan/maintenance-cycle-2026-06-19.md](docs/plan/maintenance-cycle-2026-06-19.md) — 当前维护周期
+到 `docs/` 下阅读工程所需的文档, 根据文档的命名语义来进行阅读.
 
 ### 14.3 引用 (按需查阅)
 
-- [docs/plan/smoltcp-framekernel-wrapper.md](docs/plan/smoltcp-framekernel-wrapper.md) — smoltcp REVAL-W
-- [docs/plan/queenx-naming-standpoint.md](docs/plan/queenx-naming-standpoint.md) — queenx 立场书
-- [docs/plan/vfs-policy-extraction.md](docs/plan/vfs-policy-extraction.md) — E6 VFS 策略提取
-- [docs/plan/framekernel-compliance.md](docs/plan/framekernel-compliance.md) — E1-E10 框内核合规
-- [docs/plan/tcb-reduction-plan.md](docs/plan/tcb-reduction-plan.md) — TCB 缩减计划
+到 `docs/plan/` 下按命名语义检索子系统设计文档; 历史设计已归档至 `docs/plan/archive/`, 按主题关键字检索定位.
 
 ### 14.4 归档 (历史决策)
 
