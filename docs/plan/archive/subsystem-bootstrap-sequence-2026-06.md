@@ -19,10 +19,10 @@
   - 描述: 14 类已完成核心子系统
   - 方案: Framekernel 双子树架构 (framework+services) / 内存管理 (Buddy+Slab+Kmalloc+COW+VMA+Demand Paging+OOMD) / 进程调度 (CFS+FIFO/RR/Deadline+Per-CPU+PWID) / 中断 (IDT+ISR+IRQ+APIC/IOAPIC) / 文件系统 (VFS+HvFS+ramfs/devfs/procfs) / 设备驱动 (Chitin+E1000/VirtIO+NVMe/AHCI/XHCI) / 网络 (smoltcp+DHCP+Socket) / 同步 (SpinLock/Mutex/RwLock/SeqLock/RCU) / IPC (Pipe/SHM/MsgQ/Sem) / 安全 (Credo+KASLR+PageTableChecker W^X) / 故障恢复 (Barrier Stack) / 配置 (统一配置中心+启动镜像编码) / WASM (解释器原型) / 构建 (x86_64+aarch64)
   - 状态: [X]
-- **未完成条目 (P0 级关键缺失)**
-  - 描述: 14 类 P0 关键缺失
-  - 方案: Swap/页面回收 (sysinfo 硬编码为 0) / Page Cache (VMA 有 FileBacked 但无实现) / 文件 mmap (仅 MAP_ANONYMOUS) / execve (无 sys_execve) / Futex (完全缺失) / epoll (完全缺失) / initramfs + PID 1 (完全缺失) / hrtimer (仅 PIT tick) / 用户态 ASLR (无) / MSI/MSI-X (仅注释) / ACPI 完整解析 (仅 MADT) / POSIX 信号投递 (类型有, 投递无) / CPU 亲和性 (无) / io_uring/AIO (无)
-  - 状态: []
+- **~~未完成条目 (P0 级关键缺失)~~** — **已全部于 Phase B/C/D 补齐 (2026-06-10)**
+  - 描述: 14 类 P0 关键缺失 (截至 2026-06-07 快照), 后续全部完成
+  - 方案: Swap/页面回收 (B3) / Page Cache (B2) / 文件 mmap (B2) / execve (A3) / Futex (B1) / epoll (C1) / initramfs+PID 1 (A4) / hrtimer (A1) / 用户态 ASLR (A3) / MSI/MSI-X (B4) / ACPI 完整解析 (B4) / POSIX 信号投递 (A2) / CPU 亲和性 (C2) / io_uring/AIO (C4)
+  - 状态: [X]
 
 ## 进度跟踪 (2026-06-08 ~ 2026-06-26)
 - **Phase B 状态: 4/4 完成 (2026-06-08)**
