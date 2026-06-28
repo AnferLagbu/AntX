@@ -1,12 +1,13 @@
 # W4.2.3 socket_open 桥接设计 — buffer 来源策略
 
-> REVAL-W / W4.2.3 buffer 来源策略设计. 2026-06-25 设计评审, 待实施.
+> REVAL-W / W4.2.3 buffer 来源策略设计. 2026-06-25 实装完成.
 
 ## 目标
 - **W4.2.3 socket_open_stub 实装目标**
   - 描述: W4.2.2 已实装 socket_close_stub + dhcp_state_stub. W4.2.3 任务实装 socket_open_stub, 即根据 SocketKind 构造 smoltcp socket (Tcp/Udp 等), 加入 SocketSet, 返回 smol_handle
   - 方案: 核心难点: smoltcp socket 构造需要 rx/tx buffer 来源, 当前 init.rs 中 smoltcp socket 构造在 sm_socket 系统调用路径中, 用 k_malloc 分配 buffer, 记录到 SOCKET_TABLE/TCP_RX_BUFS/TCP_TX_BUFS/UDP_RX_BUFS/UDP_TX_BUFS/UDP_RX_METAS/UDP_TX_METAS, 这些 buffer 与 fd 索引 (0..MAX_SM_FD) 绑定. SmoltcpNetStack 调用 raw stub 时, 需要独立的 buffer 来源, 不与 sm_socket fd 冲突
-  - 状态: []
+  - 状态: [X]
+  - 详情: W4.2.3.1 数组扩展 (`36d1ecd`) + W4.2.3.2 socket_open_stub 实装 (`1599646`) + W4.2.3.3 sm_socket 迁移 (`737e213`) + W4.2.3.4 SmoltcpNetStack safe wrapper + 实际化 (`13d703f` + `9a74582`) 5 子任务全部完成.
 
 ## 工程计划 A: 方案评估
 
@@ -104,7 +105,8 @@
 - **全工程验收**
   - 描述: 9 项验收清单
   - 方案: 6 张数组大小修改为 [T; TOTAL_SLOTS] / socket_open_stub 实装 Tcp + Udp 路径 / sm_socket 路径迁移到 socket_open_stub (删除重复代码) / SmoltcpNetStack::socket_open 改造为委托 raw / 双架构编译 0w0e / 4 审计 PASS / host-tests 全部 PASS (含新增 4 个集成测试) / 0 行为变更 (sm_socket 路径语义保持) / 0 新增 unsafe (复用现有 unsafe 路径)
-  - 状态: []
+  - 状态: [X]
+  - 详情: W4.2.3.1 数组扩展 (`36d1ecd`) + W4.2.3.2 socket_open_stub (`1599646`) + W4.2.3.3 sm_socket 迁移 (`737e213`) + W4.2.3.4 SmoltcpNetStack safe wrapper (`13d703f`) + 实际化 (`9a74582`) 全部实装, 9 项验收清单按 commit 验证.
 
 ## 工作量估算
 - **工作量清单**

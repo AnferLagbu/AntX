@@ -141,8 +141,9 @@
   - 状态: [X]
 - **framework TCB 占比**
   - 描述: framework TCB 占比变化
-  - 方案: 当前 129.7% → 待重测, 含翻译 helper 可能微涨; framework/net/init.rs 行数 2133 → 2620 (含新增翻译 helper, 反增, 但功能完整)
-  - 状态: []
+  - 方案: REVAL-W 前 129.7% → REVAL-W 后实测 64.3% (excl. smoltcp+tests, 2026-06-27 重测), smoltcp 50K 行移至 services/ 后从 self-TCB 排除; framework/net/init.rs 行数 2133 → 2744 (含新增翻译 helper, 反增 611 行, 但 smoltcp 移出抵消)
+  - 状态: [X]
+  - 详情: 实测 framework 100,457 LoC (raw) + services 52,535 LoC (raw) = TCB 64.3% (excl. smoltcp+tests); 比 REVAL-W 起点 (129.7%) 减少 65.4 个百分点; 但仍超目标 <30% (待 Phase D/E 通过 REVAL-6 epoll 策略迁移 + LEGACY-5 HvFS trait 化继续缩减); 详细报告见 `target/audit/tcb-report.json`.
 
 ## 实施时间线
 - **时间线**
