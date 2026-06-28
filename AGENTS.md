@@ -6,23 +6,50 @@
 >
 > **必读** (开始任何任务前): 本文件 + `CLAUDE.md` + `docs/README.md` + `docs/explain/framekernel-nature.md` + `docs/explain/framekernel-dev-guide.md` + `docs/explain/engineering-discipline-spec.md`.
 
+## 目录
+
+### 核心契约 (不可妥协)
+
+- [§1. 仓库布局](#1-仓库布局) — 含决策者-实施者分工
+- [§4. 架构责任分离 (核心)](#4-架构责任分离-核心) — 含 6 安全不变式 (§4.3 核心契约 / §4.4 自检清单)
+- [§6. 硬规则 (零容忍)](#6-硬规则-零容忍违反即拒收) — F1-F8 机器可检查
+
+### 开发流程
+
+- [§2. 构建与测试](#2-构建与测试) — 含 §2.4 验证门槛 5 条
+- [§3. 工具链](#3-工具链) — Rust nightly + 双架构
+- [§5. 编码规范](#5-编码规范) — 软规范 (非拒收条款)
+- [§9. 测试规范](#9-测试规范)
+- [§13. CI 状态徽章](#13-ci-状态徽章-§24-验证门槛的具体命令清单) — §2.4 命令清单
+
+### 协作与决策
+
+- [§7. 文档规范说明](#7-文档规范说明)
+- [§8. Git 规范](#8-git-规范) — 含 §8.4 Remote 命名约定
+- [§10. 预存问题处理](#10-预存问题处理) — 含 §10.2 文档同步 / §10.4 AI 输出审查
+- [§11. 开发规定](#11-开发规定) — 含决策者-实施者分工
+- [§12. AI 常见踩坑](#12-ai-常见踩坑)
+- [§14. 关联文档](#14-关联文档) — 按主题模糊定位
+
 ***
 
 ## 1. 仓库布局
 
-| 目录                                        | 用途                               |
-| ----------------------------------------- | -------------------------------- |
-| `src/kernel/framework/`                   | TCB 子树 (允许 unsafe, 硬件抽象)         |
-| `src/kernel/services/`                    | 100% safe Rust 子树 (策略与业务)        |
-| `src/kernel/services/net/smoltcp/`        | smoltcp vendored (3rd-party, 锁定) |
-| `src/user/`, `src/userland/`, `src/rust/` | 用户态程序与工具                         |
-| `host-tests/`                             | 主机端单元/集成测试 (no\_std + std)       |
-| `docs/plan/`                              | 工程与任务计划                          |
-| `docs/explain/`                           | 项目引导与解释                          |
-| `docs/CHANGELOG.md`                       | 面向用户/接手人的变更日志                    |
-| `scripts/`                                | 审计/构建/集成脚本                       |
-| `ci/`                                     | CI 入口 (build.sh + audit.sh)      |
-| `tools/`                                  | 工具脚本 (track\_todo.py 等)          |
+| 目录                                        | 用途                               | 维护者                  |
+| ----------------------------------------- | -------------------------------- | -------------------- |
+| `src/kernel/framework/`                   | TCB 子树 (允许 unsafe, 硬件抽象)         | 用户 决策 / AI 实施  |
+| `src/kernel/services/`                    | 100% safe Rust 子树 (策略与业务)        | 用户 决策 / AI 实施  |
+| `src/kernel/services/net/smoltcp/`        | smoltcp vendored (3rd-party, 锁定) | 升级时 用户 授权 + AI |
+| `src/user/`, `src/userland/`, `src/rust/` | 用户态程序与工具                         | AI 实施 / 用户 审查  |
+| `host-tests/`                             | 主机端单元/集成测试 (no\_std + std)       | AI 实施 / 用户 审查  |
+| `docs/plan/`                              | 工程与任务计划                          | 用户 决策 + AI 撰写  |
+| `docs/explain/`                           | 项目引导与解释                          | 用户 决策 + AI 撰写  |
+| `docs/CHANGELOG.md`                       | 面向用户/接手人的变更日志                    | AI 起草 / 用户 定稿  |
+| `scripts/`                                | 审计/构建/集成脚本                       | AI 实施 / 用户 审查  |
+| `ci/`                                     | CI 入口 (build.sh + audit.sh)      | AI 实施 / 用户 审查  |
+| `tools/`                                  | 工具脚本 (track\_todo.py 等)          | AI 实施 / 用户 审查  |
+
+> **项目分工**: 用户 负责边界约束与方向决策, AI (LLM agent) 负责具体实施. 见 §10.4 与 §11.2.
 
 ***
 
@@ -102,7 +129,11 @@ cargo test -p host-tests           # 等价
 
 详见 `docs/explain/framekernel-nature.md` 与 `docs/explain/framekernel-dev-guide.md`.
 
-### 4.3 6 安全不变式自检
+### 4.3 6 安全不变式 (核心契约)
+
+> **本节是 AGENTS.md 的核心安全契约. 任何修改 framework 的 PR 必须先逐项自检 §4.4 的 6 条不变式, 再动代码.** 违反任一不变式 = 重新设计 (不允许补丁式补救).
+
+### 4.4 6 安全不变式自检清单
 
 修改 framework 时逐项确认 (详见 `engineering-discipline-spec.md`):
 
@@ -118,6 +149,8 @@ cargo test -p host-tests           # 等价
 ***
 
 ## 5. 编码规范
+
+> **本节是"建议性规范", 违反不直接拒收, 但应在 PR 评审中提出.** 真正的零容忍条款见 §6. 与 §6 关系: §6 是机器可检查的硬约束 (CI 脚本判定), §5 是人可评审的软规范 (代码评审关注).
 
 ### 5.1 通用
 
@@ -289,6 +322,8 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 
 ## 10. 预存问题处理
 
+### 10.1 一般预存问题
+
 开发中遇到任何与本任务无关或有关的预存问题 (例如：编译告警/死代码/未使用 import/过期 TODO/CI 缺陷/文档不一致) 必须立即修复并补测试或更新文档. 修复后重跑双架构编译、相关审计、相关测试. 不接受:
 
 - 留下 TODO 等下一轮
@@ -296,6 +331,34 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 - 删除有意义的测试以让编译通过
 
 存量代码可按渐进式策略修复 (`触及时修复` → `标记待修` → `禁止忽视` → `新代码零容忍`).
+
+### 10.2 文档与代码不同步
+
+当代码实装完成但对应 plan/explain 文档状态仍标 `[]` 或未更新时, 视为预存问题, 立即同步. 流程:
+
+1. `grep '状态: \[\]' docs/plan/*.md` 找未完成项
+2. 对照 git log 验证实装是否完成
+3. 已完成的项改为 `[X]` + 详情列出 commit hash
+4. 重跑 §2.4 全部 5 条验证门槛
+
+### 10.3 决策灰色地带
+
+遇到方案 A vs B 选哪个的决策时, AI 应停下询问 用户 而非自行选择. 这类决策属 §11.2 决策者-实施者分工中的"决策者"职责.
+
+### 10.4 AI 输出审查
+
+> **本节是 AI 实施模型下的特殊处理流程.** 用户 负责最终审查与决策, AI 负责实施. 任何 AI 输出 (代码/文档/脚本) 在合并前必须经用户审查以下清单:
+
+- **架构合规**: 未越过 §6 硬规则 (F1-F8), 未引入 services unsafe
+- **安全注释**: framework `unsafe` 块都有 `// SAFETY:` 注释 (§6 F4)
+- **决策溯源**: 关键设计选择 (方案 A/B) 有对应 commit 消息或 plan 文档记录
+- **测试覆盖**: 新增代码有单元测试, 跨模块接口有集成测试 (host-tests)
+- **文档同步**: API 改动对应 docs/explain 或 docs/plan 同步更新
+- **不留 TODO**: 无 `// TODO(TRACK-...)` 未处理项 (除明确登记在 plan 文档的)
+- **风格一致**: 命名/注释/格式符合 §5 编码规范
+- **不盲目重构**: 未对用户未要求的部分做"顺手优化" (CLAUDE.md 外科手术式修改)
+
+AI 输出若不通过上述审查, 视为预存问题, 必须修复后才能合并.
 
 ***
 
@@ -306,6 +369,8 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 每次开发工作进行前必须深度理解项目源码实现. 除非特殊必要场景, 避免代码高耦合. 开发过程中坚决不允许出现功能不全或功能实现简化导致后期维护难度大的代码. 项目代码仅在必要时参考业界惯例或 Linux 实现, 但**绝不盲从 Linux 实现**.
 
 ### 11.2 实施中
+
+> **项目分工 (见 §1)**: 用户 负责方向决策与边界约束, AI 负责具体实施. 实施中的"外科手术式修改"与"简单优先"由 AI 严格遵守; 决策灰色地带 (§10.3) 由用户拍板.
 
 - **外科手术式修改** (详见 CLAUDE.md): 只改必须改的, 不顺手优化.
 - **简单优先** (详见 CLAUDE.md): 200 行能 50 行写完, 重写.
@@ -342,22 +407,36 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 
 ***
 
-## 13. CI 状态徽章
+## 13. CI 状态徽章 (§2.4 验证门槛的具体命令清单)
 
-本地跑全量 CI:
+> **本节是 §2.4 验证门槛 5 条标准的对应命令清单.** 一一对应: 双架构编译 → build.sh / 审计 → 4 个 audit / clippy → clippy / host-tests → make test-host / QEMU → test\_qemu.sh. 任何一项失败 → 该轮未完成 (见 §2.4).
+
+完整命令:
 
 ```bash
-./ci/build.sh all
-python3 scripts/audit_services_boundary.py
-python3 scripts/audit_safety_coverage.py
-python3 scripts/audit_deadlock_matrix.py
+# §2.4 #1 双架构编译 (替代 cargo check)
+./ci/build.sh all                  # x86_64 + aarch64, 0 error / 0 warning
+
+# §2.4 #2 clippy 0 warning (替代 cargo clippy)
+cargo clippy --release -- -D warnings
+
+# §2.4 #3 三审计 (F6 硬规则, CI 门槛)
+python3 scripts/audit_services_boundary.py    # F1 + F2
+python3 scripts/audit_safety_coverage.py      # F4
+python3 scripts/audit_deadlock_matrix.py      # 锁顺序 + 中断上下文 + 递归锁
+
+# §2.4 #3 扩展审计 (软, 仍建议跑)
 python3 scripts/audit_coupling.py
 python3 scripts/audit_invariants.py
-python3 scripts/audit_comment_language.py
-make test-host
-```
+python3 scripts/audit_comment_language.py     # F7
 
-任何一项失败 → 视为本轮未完成.
+# §2.4 #4 host-tests
+make test-host
+# 或等价: cargo test -p host-tests
+
+# §2.4 #5 QEMU 集成测试 (改动 boot/架构相关时必跑)
+./ci/test_qemu.sh x86_64
+```
 
 ***
 
