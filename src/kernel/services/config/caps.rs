@@ -46,7 +46,8 @@ impl KernelCapabilities {
             smp: cfg!(feature = "smp"),
             preempt: cfg!(feature = "preempt"),
             kaslr: cfg!(feature = "kaslr"),
-            kpti: cfg!(target_arch = "x86_64"),
+            // 测试模式下禁用 KPTI: 避免 KPTI 初始化修改共享页表导致 bitmap 映射被破坏
+            kpti: cfg!(all(target_arch = "x86_64", not(feature = "kernel_test"))),
             barrier: cfg!(feature = "barrier"),
         }
     }

@@ -229,21 +229,11 @@ pub(crate) mod raw {
         #[inline(always)]
         pub fn count_free(&self, bitmap_size: usize) -> u64 {
             let mut free: u64 = 0;
-            // 先读第一个 word 确认 bitmap 可访问
-            unsafe {
-                let first_ptr = self.ptr.as_ptr() as *const AtomicU32;
-                let _first_val = (*first_ptr).load(Ordering::Relaxed);
-            }
-            klog_pmm!("[PMM-DEBUG] count_free bmp_size={} first_ok", bitmap_size);
             for w in 0..bitmap_size {
                 // SAFETY: w < bitmap_size guarantees valid access
                 unsafe {
                     let p = self.ptr.as_ptr().add(w) as *const AtomicU32;
                     free += (!(*p).load(Ordering::Relaxed)).count_ones() as u64;
-                }
-                // 每 256 个 word 打一次进度 (避免大量 log 冲刷)
-                if w % 256 == 255 {
-                    klog_pmm!("[PMM-DEBUG] count_free at w={} free={}", w, free);
                 }
             }
             free
@@ -518,18 +508,22 @@ impl PhysicalMemoryManager {
     }
 
     pub fn alloc_pages(&self, count: usize) -> Option<PhysAddr> {
-        klog_pmm!("[PMM-DEBUG] alloc_pages enter count={}", count);
         if count == 0 {
             return None;
         }
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
-        klog_pmm!("[PMM-DEBUG] order={} npages={}", order, npages);
+        klog_pmm!("[PMM] alloc count={}", count);
 
         // T-02: 分配前策略决策
-        klog_pmm!("[PMM-DEBUG] before count_free_pages");
-        let free = self.count_free_pages();
-        klog_pmm!("[PMM-DEBUG] after count_free_pages free={}", free);
+        // buddy 就绪后使用缓存的 free_pages 统计值, 避免每次分配都遍历 bitmap;
+        // 这既提升性能, 又避免 count_free_pages 遍历 + klog 格式化导致的栈溢出风险.
+        // 统计值在 do_alloc/do_free 的持锁路径中通过 update_stats 更新.
+        let free = if self.buddy_ready.load(Ordering::Relaxed) {
+            self.info.get().free_pages
+        } else {
+            self.count_free_pages()
+        };
         let ctx = super::alloc_trait::AllocContext {
             requested_pages: npages,
             free_pages: free,
@@ -537,7 +531,6 @@ impl PhysicalMemoryManager {
             pressure_level: 0,
             preferred_node: None,
         };
-        klog_pmm!("[PMM-DEBUG] before decide_alloc");
         match super::alloc_trait::current_alloc_decision().decide_alloc(ctx) {
             super::alloc_trait::AllocDecision::Allow => {}
             super::alloc_trait::AllocDecision::Deny => {
@@ -551,12 +544,8 @@ impl PhysicalMemoryManager {
                 return None;
             }
         }
-        klog_pmm!("[PMM-DEBUG] after decide_alloc, before acquire_lock");
-
         let flags = self.acquire_lock();
-        klog_pmm!("[PMM-DEBUG] before do_alloc");
         let result = self.do_alloc(order);
-        klog_pmm!("[PMM-DEBUG] after do_alloc");
         match result {
             Some(_) => {
                 self.total_allocs
@@ -705,14 +694,10 @@ impl PhysicalMemoryManager {
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
         let bmp_size = self.bitmap_size.get();
-        klog_pmm!("[PMM-DEBUG] count_free_pages total={} bmp_size={} bmp={}", total, bmp_size, self.bitmap.get().map(|p| p.as_ptr() as usize).unwrap_or(0));
         let free = if let Some(bmp) = self.bitmap.get() {
-            klog_pmm!("[PMM-DEBUG] calling count_free bmp_size={}", bmp_size);
             let f = BitmapRef::new(bmp).count_free(bmp_size);
-            klog_pmm!("[PMM-DEBUG] count_free returned {}", f);
             f
         } else {
-            klog_pmm!("[PMM-DEBUG] bitmap is None");
             0
         };
         // 截断到 total (bitmap 在 total_pages 之外可能还有剩余位)
@@ -729,6 +714,26 @@ impl PhysicalMemoryManager {
         let mut info = self.info.get();
         info.free_pages = free;
         info.used_pages = info.total_pages - free;
+        self.info.set(info);
+    }
+
+    /// 轻量统计增量: 分配 npages 页后更新 free/used 计数.
+    /// 调用方必须持有 PMM 锁.
+    #[inline]
+    fn stats_alloc(&self, npages: u64) {
+        let mut info = self.info.get();
+        info.free_pages = info.free_pages.saturating_sub(npages);
+        info.used_pages = info.used_pages.saturating_add(npages);
+        self.info.set(info);
+    }
+
+    /// 轻量统计增量: 释放 npages 页后更新 free/used 计数.
+    /// 调用方必须持有 PMM 锁.
+    #[inline]
+    fn stats_free(&self, npages: u64) {
+        let mut info = self.info.get();
+        info.free_pages = info.free_pages.saturating_add(npages);
+        info.used_pages = info.used_pages.saturating_sub(npages);
         self.info.set(info);
     }
 
@@ -925,9 +930,11 @@ impl PhysicalMemoryManager {
 
         let (pfn, _) = self.buddy_alloc(order)?;
         let addr = page_to_phys(pfn);
-        for i in 0..(1usize << order as usize) {
+        let npages = 1u64 << order as u64;
+        for i in 0..(npages as usize) {
             self.set_bit((pfn as usize) + i);
         }
+        self.stats_alloc(npages);
         Some(PhysAddr(addr))
     }
 
@@ -946,9 +953,11 @@ impl PhysicalMemoryManager {
         }
 
         if !self.buddy_ready.load(Ordering::Acquire) {
-            for i in 0..(1usize << order as usize) {
+            let npages = 1u64 << order as u64;
+            for i in 0..(npages as usize) {
                 self.clear_bit(pfn as usize + i);
             }
+            self.stats_free(npages);
             return;
         }
 
@@ -958,13 +967,15 @@ impl PhysicalMemoryManager {
         }
 
         // Clear bitmap
-        for i in 0..(1usize << order as usize) {
+        let npages = 1u64 << order as u64;
+        for i in 0..(npages as usize) {
             self.clear_bit(pfn as usize + i);
         }
 
         // 合并并压入空闲链表
         let (merged_pfn, merged_order) = self.buddy_try_merge(pfn, order);
         self.buddy_list_push(merged_pfn, merged_order);
+        self.stats_free(npages);
     }
 
     /// 扫描所有空闲页 (位未置位), 合并为最大阶的 buddy 块.
@@ -1062,6 +1073,7 @@ impl PhysicalMemoryManager {
                 for j in 0..count {
                     self.set_bit(i + j);
                 }
+                self.stats_alloc(count as u64);
                 return Some(PhysAddr(page_to_phys(i as u64)));
             }
         }

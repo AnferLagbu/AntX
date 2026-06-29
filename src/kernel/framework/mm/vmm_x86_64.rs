@@ -823,6 +823,10 @@ impl VirtualMemoryManager {
         phys: PhysAddr,
         flags: PageFlags,
     ) -> Result<(), &'static str> {
+        crate::klog_boot_info!(
+            "[VMM] map_page: virt={:#X} phys={:#X}",
+            virt.0, phys.0
+        );
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -963,6 +967,10 @@ impl VirtualMemoryManager {
                     let huge_frame = e.frame();
                     let huge_flags = e.flags();
                     let step = if huge_step > 0 { huge_step } else { PAGE_SIZE as u64 };
+                    crate::klog_boot_info!(
+                        "[VMM] 2MB split: entry={:#X} frame={:#X} new_pt={:#X}",
+                        entry as u64, huge_frame.as_u64(), page.as_u64()
+                    );
                     for i in 0..512 {
                         // SAFETY: pt points to a full 4KB page; add(i) stays within bounds
                         let pte = &mut *pt.add(i);
@@ -971,9 +979,13 @@ impl VirtualMemoryManager {
                     }
                 }
 
-                // SAFETY: `entry` is a valid pointer; write atomic via set_frame/set_flags
-                (*entry).set_frame(page);
-                (*entry).set_flags(PageFlags::PRESENT | PageFlags::WRITABLE);
+                // SAFETY: `entry` 是合法 PDE/PDPTE 指针; 使用 set_value 一次性写入
+                // 新帧地址 + 标志, 避免 set_frame→set_flags 两步操作中间出现
+                // "帧=新PT, 标志=旧值(含HUGE)" 的瞬时不一致状态.
+                // 单次原子 store 保证 CPU 页表遍历器不会观察到中间态.
+                let new_val = (page.as_u64() & 0x000FFFFFFFFFF000)
+                    | (PageFlags::PRESENT | PageFlags::WRITABLE).bits();
+                (*entry).set_value(new_val);
 
                 page_virt.0 as *mut PageTableEntry
             } else {

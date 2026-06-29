@@ -6,7 +6,6 @@
 
 use crate::kernel::framework::ipc::types::*;
 use crate::kernel::framework::mm::PAGE_SIZE;
-use crate::slog_info;
 
 /// 查找空闲共享内存段槽位
 pub fn shm_find_free(namespace: &mut IpcNamespace) -> Option<&mut ShmSegment> {
@@ -26,7 +25,6 @@ pub fn shm_create_safe(
     perm: i32,
     current_pid: u32,
 ) -> Result<IpcId, i32> {
-    slog_info!(Kernel, "[SHM-DEBUG] enter shm_create_safe size={}", size);
     // 参数校验
     if size == 0 || size > SHM_MAX_SIZE {
         return Err(-1);
@@ -37,12 +35,10 @@ pub fn shm_create_safe(
         Some(s) => s,
         None => return Err(-2),
     };
-    slog_info!(Kernel, "[SHM-DEBUG] found free slot, calling pmm_alloc_pages");
 
     // 计算需要的页数并分配物理内存 (委托 framework 机制)
     let pages = size.div_ceil(PAGE_SIZE);
     let phys = crate::kernel::framework::mm::pmm_alloc_pages(pages as usize);
-    slog_info!(Kernel, "[SHM-DEBUG] pmm_alloc_pages returned phys={:?}", phys);
     if phys.is_null() {
         return Err(-3);
     }

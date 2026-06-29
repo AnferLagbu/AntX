@@ -277,7 +277,9 @@ pub struct KernelHeap {
     heap_start: VirtAddr,
 
     /// 堆当前尾地址 (虚拟地址)
-    heap_end: VirtAddr,
+    /// SAFETY: 通过 UnsafeCell 包装, 允许在 &self 方法 (expand_heap) 中更新.
+    /// 所有写入都在堆锁 (self.lock) 保护下进行, 保证独占访问.
+    heap_end: UnsafeCell<VirtAddr>,
 
     /// 空闲链表头
     free_list_head: UnsafeCell<*mut HeapHeader>,
@@ -316,7 +318,7 @@ impl KernelHeap {
     pub const fn new() -> Self {
         Self {
             heap_start: VirtAddr(0),
-            heap_end: VirtAddr(0),
+            heap_end: UnsafeCell::new(VirtAddr(0)),
             free_list_head: UnsafeCell::new(core::ptr::null_mut()),
             lock: AtomicBool::new(false),
             initialized: AtomicBool::new(false),
@@ -337,7 +339,10 @@ impl KernelHeap {
     /// Initialize the kernel heap
     pub fn init(&mut self, start: VirtAddr, initial_size: u64) {
         self.heap_start = start;
-        self.heap_end = VirtAddr(start.0 + initial_size);
+        // SAFETY: init 独占调用, 无并发访问
+        unsafe {
+            *self.heap_end.get() = VirtAddr(start.0 + initial_size);
+        }
 
         // SAFETY: 调用方 (kmem_init) 提供的堆区已映射, 长度 >= sizeof(HeapHeader);
         // 起始地址页对齐, 且在持锁状态下独占访问.
@@ -533,9 +538,12 @@ impl KernelHeap {
 
     /// Get heap statistics
     pub fn get_stats(&self) -> HeapStats {
+        // SAFETY: 读取 heap_end, 堆锁未持有时可能读到稍旧的值,
+        // 但对统计信息而言可接受 (best-effort 一致性)
+        let end = unsafe { *self.heap_end.get() };
         HeapStats {
             heap_start: self.heap_start,
-            heap_end: self.heap_end,
+            heap_end: end,
             total_allocated: self.total_allocated.load(Ordering::Relaxed),
             total_freed: self.total_freed.load(Ordering::Relaxed),
             current_usage: self.current_usage.load(Ordering::Relaxed),
@@ -683,9 +691,11 @@ impl KernelHeap {
 
     fn coalesce_forward(&self, header: HeaderRef) {
         let next_addr = header.adjacent_next(header.size() as usize);
-        let heap_end = self.heap_end.0 as *mut u8;
+        // SAFETY: 读取 heap_end, 持有堆锁, 独占访问
+        let heap_end = unsafe { *self.heap_end.get() };
+        let heap_end_ptr = heap_end.0 as *mut u8;
 
-        if next_addr.byte_ptr() < heap_end {
+        if next_addr.byte_ptr() < heap_end_ptr {
             if next_addr.magic() == HEAP_MAGIC && next_addr.is_free() {
                 self.remove_from_free_list(next_addr);
                 header.set_size(header.size() + next_addr.size());
@@ -768,8 +778,10 @@ impl KernelHeap {
 
         let phys = pmm.alloc_pages(pages_needed as usize)?;
 
-        let new_start = self.heap_end;
-        let _new_end = VirtAddr(self.heap_end.0 + expand_by);
+        // SAFETY: 读取 heap_end, 当前持有堆锁, 独占访问
+        let current_end = unsafe { *self.heap_end.get() };
+        let new_start = current_end;
+        let new_end = VirtAddr(current_end.0 + expand_by);
 
         for i in 0..pages_needed {
             let page_phys = PhysAddr(phys.as_u64() + i * PAGE_SIZE);
@@ -796,6 +808,11 @@ impl KernelHeap {
         // new_start 是已映射区的起始; 持锁状态下独占访问.
         let new_block = unsafe { HeaderRef::new_unchecked(new_start.0 as *mut HeapHeader) };
         new_block.write(HeapHeader::new(expand_by, true));
+
+        // SAFETY: 持有堆锁, 独占访问 heap_end; 更新为扩展后的尾地址
+        unsafe {
+            *self.heap_end.get() = new_end;
+        }
 
         self.add_to_free_list(new_block);
 
