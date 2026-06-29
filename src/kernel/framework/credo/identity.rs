@@ -598,7 +598,7 @@ static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<IdentityTable> =
 
 /// 获取全局身份表 (T4-1: OnceLock 包装, 自动初始化, 0 unsafe)
 pub fn get_table() -> &'static IdentityTable {
-    GLOBAL_TABLE.get_or_init(IdentityTable::new)
+    GLOBAL_TABLE.get_or_init(|slot| { slot.write(IdentityTable::new()); })
 }
 
 ///

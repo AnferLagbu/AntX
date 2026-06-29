@@ -106,6 +106,6 @@ pub fn parse_framebuffer_tag(tag_data: *const u8, _tag_size: u32) {
             fb.blue_mask_size = *(tag_data.add(29));
         }
 
-        FB_INFO.get_or_init(|| fb);
+        FB_INFO.get_or_init(|slot| { slot.write(fb); });
     }
 }

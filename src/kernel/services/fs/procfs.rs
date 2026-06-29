@@ -154,7 +154,7 @@ static GLOBAL_PROCFS: OnceCell<SafeProcFs> = OnceCell::new();
 
 /// 初始化全局 ProcFS
 pub fn init_global() {
-    let _ = GLOBAL_PROCFS.get_or_init(SafeProcFs::new);
+    let _ = GLOBAL_PROCFS.get_or_init(|slot| { slot.write(SafeProcFs::new()); });
 }
 
 /// 获取全局 ProcFS 引用

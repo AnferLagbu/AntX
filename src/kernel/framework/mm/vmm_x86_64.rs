@@ -1366,10 +1366,10 @@ impl VirtualMemoryManager {
 static GLOBAL_VMM: OnceLock<VirtualMemoryManager> = OnceLock::new();
 
 pub fn vmm_init() {
-    GLOBAL_VMM.get_or_init(|| {
+    GLOBAL_VMM.get_or_init(|slot| {
         let vmm = VirtualMemoryManager::new();
         vmm.init();
-        vmm
+        slot.write(vmm);
     });
     super::cow::cow_init();
 }

@@ -229,11 +229,21 @@ pub(crate) mod raw {
         #[inline(always)]
         pub fn count_free(&self, bitmap_size: usize) -> u64 {
             let mut free: u64 = 0;
+            // 先读第一个 word 确认 bitmap 可访问
+            unsafe {
+                let first_ptr = self.ptr.as_ptr() as *const AtomicU32;
+                let _first_val = (*first_ptr).load(Ordering::Relaxed);
+            }
+            klog_pmm!("[PMM-DEBUG] count_free bmp_size={} first_ok", bitmap_size);
             for w in 0..bitmap_size {
                 // SAFETY: w < bitmap_size guarantees valid access
                 unsafe {
                     let p = self.ptr.as_ptr().add(w) as *const AtomicU32;
                     free += (!(*p).load(Ordering::Relaxed)).count_ones() as u64;
+                }
+                // 每 256 个 word 打一次进度 (避免大量 log 冲刷)
+                if w % 256 == 255 {
+                    klog_pmm!("[PMM-DEBUG] count_free at w={} free={}", w, free);
                 }
             }
             free
@@ -508,20 +518,26 @@ impl PhysicalMemoryManager {
     }
 
     pub fn alloc_pages(&self, count: usize) -> Option<PhysAddr> {
+        klog_pmm!("[PMM-DEBUG] alloc_pages enter count={}", count);
         if count == 0 {
             return None;
         }
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
+        klog_pmm!("[PMM-DEBUG] order={} npages={}", order, npages);
 
         // T-02: 分配前策略决策
+        klog_pmm!("[PMM-DEBUG] before count_free_pages");
+        let free = self.count_free_pages();
+        klog_pmm!("[PMM-DEBUG] after count_free_pages free={}", free);
         let ctx = super::alloc_trait::AllocContext {
             requested_pages: npages,
-            free_pages: self.count_free_pages(),
+            free_pages: free,
             total_pages: self.info.get().total_pages as u64,
             pressure_level: 0,
             preferred_node: None,
         };
+        klog_pmm!("[PMM-DEBUG] before decide_alloc");
         match super::alloc_trait::current_alloc_decision().decide_alloc(ctx) {
             super::alloc_trait::AllocDecision::Allow => {}
             super::alloc_trait::AllocDecision::Deny => {
@@ -535,9 +551,12 @@ impl PhysicalMemoryManager {
                 return None;
             }
         }
+        klog_pmm!("[PMM-DEBUG] after decide_alloc, before acquire_lock");
 
         let flags = self.acquire_lock();
+        klog_pmm!("[PMM-DEBUG] before do_alloc");
         let result = self.do_alloc(order);
+        klog_pmm!("[PMM-DEBUG] after do_alloc");
         match result {
             Some(_) => {
                 self.total_allocs
@@ -685,9 +704,15 @@ impl PhysicalMemoryManager {
 
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
+        let bmp_size = self.bitmap_size.get();
+        klog_pmm!("[PMM-DEBUG] count_free_pages total={} bmp_size={} bmp={}", total, bmp_size, self.bitmap.get().map(|p| p.as_ptr() as usize).unwrap_or(0));
         let free = if let Some(bmp) = self.bitmap.get() {
-            BitmapRef::new(bmp).count_free(self.bitmap_size.get())
+            klog_pmm!("[PMM-DEBUG] calling count_free bmp_size={}", bmp_size);
+            let f = BitmapRef::new(bmp).count_free(bmp_size);
+            klog_pmm!("[PMM-DEBUG] count_free returned {}", f);
+            f
         } else {
+            klog_pmm!("[PMM-DEBUG] bitmap is None");
             0
         };
         // 截断到 total (bitmap 在 total_pages 之外可能还有剩余位)
@@ -1096,10 +1121,10 @@ impl PhysicalMemoryManager {
 static GLOBAL_PMM: OnceLock<PhysicalMemoryManager> = OnceLock::new();
 
 pub fn pmm_init(mem_size: u64, kernel_end: u64) -> &'static PhysicalMemoryManager {
-    GLOBAL_PMM.get_or_init(|| {
+    GLOBAL_PMM.get_or_init(|slot| {
         let pmm = PhysicalMemoryManager::new();
         pmm.init(mem_size, kernel_end);
-        pmm
+        slot.write(pmm);
     })
 }
 

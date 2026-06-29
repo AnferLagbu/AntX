@@ -124,7 +124,7 @@ impl CasIndex {
 static CAS_INDEX: OnceCell<CasIndex> = OnceCell::new();
 
 pub fn get_cas() -> &'static CasIndex {
-    CAS_INDEX.get_or_init(CasIndex::new)
+    CAS_INDEX.get_or_init(|slot| { slot.write(CasIndex::new()); })
 }
 
 pub fn cas_init() {

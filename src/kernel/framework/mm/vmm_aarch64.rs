@@ -972,10 +972,10 @@ impl Aarch64Vmm {
 static GLOBAL_VMM: OnceLock<Aarch64Vmm> = OnceLock::new();
 
 pub fn vmm_init() {
-    GLOBAL_VMM.get_or_init(|| {
+    GLOBAL_VMM.get_or_init(|slot| {
         let vmm = Aarch64Vmm::new();
         vmm.init();
-        vmm
+        slot.write(vmm);
     });
 }
 

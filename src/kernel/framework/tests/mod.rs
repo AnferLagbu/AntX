@@ -289,7 +289,7 @@ pub fn serial_print_num(mut n: u64) {
 static TEST_RUNNER: OnceLock<TestRunner> = OnceLock::new();
 
 pub fn runner() -> &'static TestRunner {
-    TEST_RUNNER.get_or_init(TestRunner::new)
+    TEST_RUNNER.get_or_init(|slot| { slot.write(TestRunner::new()); })
 }
 
 #[macro_export]

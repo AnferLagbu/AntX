@@ -81,33 +81,35 @@ pub struct HvfsData {
 static HVFS_DATA: OnceCell<HvfsData> = OnceCell::new();
 
 pub fn get_hvfs() -> &'static HvfsData {
-    HVFS_DATA.get_or_init(|| HvfsData {
-        spa: HvSpa::new(),
-        txg_group: Mutex::new(None),
-        datasets: Mutex::new(Vec::new()),
-        snap_mgr: HvSnapshotManager::new(),
-        zil: HvZil::new(),
-        fds: Mutex::new(
-            [HvfsFd {
-                fd: 0,
-                obj_id: 0,
-                ds_id: 0,
-                offset: 0,
-                flags: 0,
-                pwm: 0,
-                used: false,
-            }; HVFS_MAX_FDS],
-        ),
-        next_fd: AtomicU32::new(0),
-        current_pwm: AtomicU64::new(0),
-        current_dir: AtomicU64::new(HV_DMU_OBJ_ROOT),
-        mounted: AtomicBool::new(false),
-        initialized: AtomicBool::new(false),
-        root_ds_id: AtomicU64::new(0),
-        mode: AtomicU8::new(HvfsMode::Memory as u8),
-        drives_discovered: Mutex::new(Vec::new()),
-        disk_drive: AtomicU8::new(0),
-        partition_start: AtomicU32::new(0),
+    HVFS_DATA.get_or_init(|slot| {
+        slot.write(HvfsData {
+            spa: HvSpa::new(),
+            txg_group: Mutex::new(None),
+            datasets: Mutex::new(Vec::new()),
+            snap_mgr: HvSnapshotManager::new(),
+            zil: HvZil::new(),
+            fds: Mutex::new(
+                [HvfsFd {
+                    fd: 0,
+                    obj_id: 0,
+                    ds_id: 0,
+                    offset: 0,
+                    flags: 0,
+                    pwm: 0,
+                    used: false,
+                }; HVFS_MAX_FDS],
+            ),
+            next_fd: AtomicU32::new(0),
+            current_pwm: AtomicU64::new(0),
+            current_dir: AtomicU64::new(HV_DMU_OBJ_ROOT),
+            mounted: AtomicBool::new(false),
+            initialized: AtomicBool::new(false),
+            root_ds_id: AtomicU64::new(0),
+            mode: AtomicU8::new(HvfsMode::Memory as u8),
+            drives_discovered: Mutex::new(Vec::new()),
+            disk_drive: AtomicU8::new(0),
+            partition_start: AtomicU32::new(0),
+        });
     })
 }
 

@@ -102,7 +102,7 @@ impl InnerOnce {
 /// ```ignore
 /// let lock: OnceLock<u32> = OnceLock::new();
 /// assert!(lock.get().is_none());
-/// let v = lock.get_or_init(|| 42);
+/// let v = lock.get_or_init(|slot| slot.write(42));
 /// assert_eq!(*v, 42);
 /// ```
 pub struct OnceLock<T> {
@@ -124,29 +124,44 @@ impl<T> OnceLock<T> {
         }
     }
 
-    /// 若未初始化, 用 `f` 计算并存储; 返回最终值的 `&T` 引用。
-    pub fn get_or_init(&self, f: impl FnOnce() -> T) -> &T {
-        let mut holder: Option<T> = None;
+    /// 若未初始化, 用 `f` 在 cell 上写入并返回 `&T` 引用。
+    ///
+    /// 2026-06-29 修复: 闭包签名改为 `FnOnce(&mut MaybeUninit<T>)`, 强制
+    /// 调用方在 `&mut MaybeUninit<T>` 上**就地构造** T, 避免返回值通过
+    /// x86_64 SysV ABI 大对象返回约定 (隐藏指针 + 调用方栈帧分配) 产生的
+    /// **栈溢出**. 之前签名 `FnOnce() -> T` 在 T 较大时 (如
+    /// `IdentityTable` ≈ 78 KB) 即使闭包体内只 `unsafe { cell.write(f()) }`,
+    /// 编译器仍会为 `f()` 返回值在调用方栈帧 (此处为 64 KB
+    /// KERNEL_STACK_SIZE) 分配 78 KB 槽位, 直接踩栈破坏后续函数 (如
+    /// `pmm_alloc_pages` 的 spin_lock 标志) 导致 QEMU 120s hang.
+    /// 新签名下, `f` 必须显式 `slot.write(value)`, 整个生命周期都在 BSS
+    /// `value` cell 上, 零额外栈开销. SAFETY 不变: `call_once` 互斥保证
+    /// cell 只被写一次.
+    pub fn get_or_init(&self, f: impl FnOnce(&mut MaybeUninit<T>)) -> &T {
         self.once.call_once(|| {
-            holder = Some(f());
+            // SAFETY: call_once 互斥保证本闭包是唯一的 cell 写者. cell 之前是
+            // uninit, 闭包必须确保 `f` 调用后 cell 是 init 状态. 后续
+            // `assume_init_ref` 看到完整有效值.
+            f(unsafe { &mut *self.value.get() });
         });
-        if let Some(v) = holder {
-            // SAFETY: call_once 互斥保证这是唯一的写者; 此后该 cell 视为已初始化。
-            unsafe { (*self.value.get()).write(v) };
-        }
         // SAFETY: 此刻 `self.once.is_completed()` 必为真 (call_once 已返回),
-        // 因此 cell 已被初始化。
+        // 因此 cell 已被初始化.
         unsafe { (*self.value.get()).assume_init_ref() }
     }
 
     /// 直接设置值 (若未初始化)。
     ///
     /// 返回 `Ok(())` 表示首次设置成功, `Err(value)` 表示已初始化, 值被退回。
+    ///
+    /// 2026-06-29 同步修复: 用 stack-local 持有 value (仅在 set 路径上).
+    /// 适用 T 通常较小 (指针/Option/Box), 栈分配可接受. 若 T 较大且需要
+    /// 避免栈分配, 改用 `get_or_init(|slot| slot.write(value))` 配合 cell
+    /// 已有 UNINIT 状态的预检.
     pub fn set(&self, value: T) -> Result<(), T> {
         let mut slot: Option<T> = Some(value);
         self.once.call_once(|| {
             let v = slot.take().expect("OnceLock: set slot empty");
-            // SAFETY: call_once 互斥保证此写独占。
+            // SAFETY: call_once 互斥保证此写独占 cell.
             unsafe { (*self.value.get()).write(v) };
         });
         match slot {

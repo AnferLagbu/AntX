@@ -215,14 +215,14 @@ static IDT_MANAGER_INSTANCE: OnceLock<IdtManager> = OnceLock::new();
 impl IdtManager {
     /// 获取全局 IDT 管理器实例
     pub fn instance() -> &'static IdtManager {
-        IDT_MANAGER_INSTANCE.get_or_init(|| {
-            IdtManager {
+        IDT_MANAGER_INSTANCE.get_or_init(|slot| {
+            slot.write(IdtManager {
                 state: IrqSpinLock::new(IdtState::default()),
                 stats: InterruptStatistics::new(),
                 detailed_stats: DetailedStatistics::new(), // Phase 3
                 nested_count: AtomicU64::new(0),
                 current_vector: AtomicU64::new(0xFFFFFFFFFFFFFFFF),
-            }
+            });
         })
     }
 

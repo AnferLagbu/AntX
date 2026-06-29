@@ -30,6 +30,7 @@
 
 use super::*;
 use core::sync::atomic::AtomicU64;
+use crate::kernel::framework::klog::{log_info, LogCategory};
 
 /// 内核 malloc 统计结构 (C 兼容)
 #[repr(C)]
@@ -103,10 +104,12 @@ pub fn pmm_get_used_pages() -> u64 {
 ///
 #[no_mangle]
 pub fn pmm_alloc_pages(count: usize) -> *mut u8 {
+    log_info(LogCategory::Memory, format_args!("[PMM-DEBUG] enter pmm_alloc_pages count={}", count));
     let result = match get_pmm().alloc_pages(count) {
         Some(addr) => addr.0 as *mut u8,
         None => core::ptr::null_mut(),
     };
+    log_info(LogCategory::Memory, format_args!("[PMM-DEBUG] return pmm_alloc_pages result={:?}", result));
     result
 }
 

@@ -137,10 +137,10 @@ mod tests {
     fn once_cell_lazy() {
         let cell: OnceCell<u32> = OnceCell::new();
         assert!(cell.get().is_none());
-        let v = cell.get_or_init(|| 42);
+        let v = cell.get_or_init(|slot| { slot.write(42); });
         assert_eq!(*v, 42);
         // 第二次调用不应执行闭包
-        let v2 = cell.get_or_init(|| 999);
+        let v2 = cell.get_or_init(|slot| { slot.write(999); });
         assert_eq!(*v2, 42);
     }
 

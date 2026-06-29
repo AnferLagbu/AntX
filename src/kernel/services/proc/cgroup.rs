@@ -491,7 +491,7 @@ static CGROUP_SUBSYSTEM: OnceLock<CgroupSubsystem> = OnceLock::new();
 static CGROUP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 pub fn cgroup_init() {
-    CGROUP_SUBSYSTEM.get_or_init(CgroupSubsystem::new);
+    CGROUP_SUBSYSTEM.get_or_init(|slot| { slot.write(CgroupSubsystem::new()); });
     CGROUP_INITIALIZED.store(true, Ordering::Release);
     serial_write_bytes(b"[CGROUP] subsystem initialized (root cgroup id=0)\n");
 }

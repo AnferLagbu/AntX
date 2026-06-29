@@ -503,7 +503,7 @@ static GLOBAL_DEVFS: OnceCell<SafeDevFs> = OnceCell::new();
 
 /// 初始化全局 DevFS
 pub fn init_global() {
-    let _ = GLOBAL_DEVFS.get_or_init(SafeDevFs::new);
+    let _ = GLOBAL_DEVFS.get_or_init(|slot| { slot.write(SafeDevFs::new()); });
 }
 
 /// 获取全局 DevFS 引用

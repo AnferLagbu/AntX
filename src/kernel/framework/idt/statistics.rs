@@ -416,7 +416,7 @@ static DETAILED_STATS: OnceLock<DetailedStatistics> = OnceLock::new();
 
 /// 获取全局详细统计实例
 pub fn get_detailed_statistics() -> &'static DetailedStatistics {
-    DETAILED_STATS.get_or_init(|| {
+    DETAILED_STATS.get_or_init(|slot| {
         // 手动创建 InterruptHistory
         let history = InterruptHistory {
             events: [const {
@@ -431,7 +431,7 @@ pub fn get_detailed_statistics() -> &'static DetailedStatistics {
             count: 0,
         };
 
-        DetailedStatistics {
+        slot.write(DetailedStatistics {
             total_count: AtomicU64::new(0),
             exception_counts: [const { AtomicU64::new(0) }; 32],
             irq_counts: [const { AtomicU64::new(0) }; 16],
@@ -446,7 +446,7 @@ pub fn get_detailed_statistics() -> &'static DetailedStatistics {
             domain_recoveries: AtomicU64::new(0),
             panics: AtomicU64::new(0),
             history: IrqSpinLock::new(history),
-        }
+        });
     })
 }
 

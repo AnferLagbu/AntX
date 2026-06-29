@@ -396,7 +396,7 @@ pub fn init_global(mount_point: &str) -> FsResult<()> {
     if GLOBAL_RAMFS.get().is_none() {
         let fs = SafeRamFs::new();
         fs.mount(mount_point)?;
-        let _ = GLOBAL_RAMFS.get_or_init(|| fs);
+        let _ = GLOBAL_RAMFS.get_or_init(|slot| { slot.write(fs); });
     }
     Ok(())
 }

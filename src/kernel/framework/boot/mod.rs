@@ -295,7 +295,7 @@ pub fn init() -> BootInfo {
         mmap_entries,
     };
 
-    BOOT_INFO.get_or_init(|| info);
+    BOOT_INFO.get_or_init(|slot| { slot.write(info); });
 
     info
 }
