@@ -40,8 +40,12 @@
 
 ### G2: overlayfs 实装
 - **G2 背景**
-  - 描述: overlayfs 是容器镜像的核心; Docker/containerd/podman/CRI-O 均通过 overlayfs 提供 rootfs
+  - 描述: overlayfs 是容器镜像的核心; Docker/containerd/podman/CRI-O 均通过 overlayfs 提供 rootfs; 缺它则 cgroup/namespace 沦为形式, 容器无法落地
   - 方案: 上层 (upperdir) + 下层 (lowerdir) + 工作层 (workdir) 三目录合并; copy_up 机制; 元数据/dentry/inode 三层结构; readdir 合并去重
+  - 状态: [ ]
+- **G2 实施计划**
+  - 描述: 实施步骤与依赖
+  - 方案: 依赖 G3 tmpfs 完成 (后者先行, 工程量小可快速出成果); 推荐顺序 G3 → G2; G3 完成后启动 G2
   - 状态: [ ]
 - **G2 工作量**
   - 描述: 估算工作量
@@ -51,19 +55,31 @@
   - 描述: overlayfs 实装完成度
   - 方案: mount -t overlay overlay -o lowerdir=A,upperdir=B,workdir=C /merged 工作; touch/read/write/rm 行为正确; 集成 docker run hello-world (远期); 双架构编译 0w0e; 6+ host-test
   - 状态: [ ]
+- **G2 启动条件**
+  - 描述: G2 应在 G3 完成后启动, 不宜并行
+  - 方案: G3 完成 → G2 立即启动
+  - 状态: [ ]
 
 ### G3: tmpfs 实装
 - **G3 背景**
-  - 描述: tmpfs 是基于内存的文件系统, 关键用途 /dev/shm (POSIX 共享内存)、容器临时文件系统、tmp 目录
+  - 描述: tmpfs 是基于内存的文件系统, 关键用途 /dev/shm (POSIX 共享内存)、容器临时文件系统、tmp 目录; 当前 FsType 枚举 (vfs_types.rs:137) 仅含 RamFs/HvFs/DevFs/Unknown, 无 TmpFs, mount.rs 注释声称支持 5 种含 tmpfs 是文档失实
   - 方案: 基于 ramfs 扩展, 加入 size 限制 + 统计已用/可用; 在 VMA 中预分配 page cache; 与 swap 集成 (内存压力时换出)
+  - 状态: [ ]
+- **G3 实施计划**
+  - 描述: 立即启动, 4 步走
+  - 方案: 步骤 1: FsType 枚举新增 TmpFs 变体, from_name/as_str 添加 "tmpfs" 分支; 步骤 2: services/fs/tmpfs.rs 新建 (~500 行), 实现 TmpFsData + size 限制; 步骤 3: framework/fs/vfs/api.rs vfs_mount_internal 添加 FsType::TmpFs 分支; 步骤 4: mount.rs 注释"5 种内置 FS"修正为"4 种已实装 + tmpfs 实装中"
   - 状态: [ ]
 - **G3 工作量**
   - 描述: 估算工作量
-  - 方案: ~500 行 services 层实装, 复用 ramfs inode/dentry 基础设施
+  - 方案: ~500 行 services 层实装, 复用 ramfs inode/dentry 基础设施; 1 周工作量
   - 状态: [ ]
 - **G3 验收**
   - 描述: tmpfs 实装完成度
-  - 方案: mount -t tmpfs tmpfs /dev/shm 工作; df -h 显示容量限制; dd 大文件触发 swap 换出; 5+ host-test
+  - 方案: mount -t tmpfs tmpfs /dev/shm 工作; df -h 显示容量限制; dd 大文件触发 swap 换出; 5+ host-test; FsType 枚举与 mount 注释一致
+  - 状态: [ ]
+- **G3 预期完成时间**
+  - 描述: 启动后可完成时间
+  - 方案: G3 启动后 1 周完成; G3 完成后 G2 立即启动, 总计 4 周完成 G2+G3
   - 状态: [ ]
 
 ## P1 — 功能性缺口 (4 项)
