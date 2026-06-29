@@ -78,9 +78,3 @@ QX 若成功与 OpenHarmony 上层结合, 其项目姿态应**先将重心放在
 - queenx-naming-standpoint.md (务实复用原则)
 - kernel-roadmap.md / archive/subsystem-bootstrap-sequence-2026-06.md (Phase A-D 路线图)
 - asterinas-gap-analysis.md (Asterinas 差距补齐)
-
----
-
-## 变更历史
-
-- **2026-06-28**: 初始版本, 记录 OpenHarmony 上层空间对接的长远期望, 采用自由描述格式而非文档结构化格式.

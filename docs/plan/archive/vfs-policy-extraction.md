@@ -100,12 +100,3 @@
   - 方案: 改造前 pub struct VfsMount { path, fs_type: FsType, used } 枚举硬编码; 改造后 pub struct VfsMount { path, fs: Option<&'static dyn FileSystem>, used } trait object + VfsManager 新增 resolve_mount_fs() 和 mount_with_fs()
   - 状态: [X]
 
-## 变更历史
-- **2026-06-26**
-  - 描述: 按新文档规则重写 (标题+条目(描述+方案+状态)+详情)
-  - 方案: 结构重组, 保留原意
-  - 状态: [X]
-- **2026-06-22**
-  - 描述: E6 VFS 策略提取与文件系统解耦完成 (E6-1~E6-9c 全部 [X])
-  - 方案: 累计 TCB 收益 -4235 行
-  - 状态: [X]

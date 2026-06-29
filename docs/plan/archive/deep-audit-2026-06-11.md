@@ -38,12 +38,3 @@
   - 方案: [maintenance-cycle-2026-06-19.md](../maintenance-cycle-2026-06-19.md) 当前维护周期主文档, 整合本文 54 个追踪问题状态 / [maintenance-2026-06-11.md](./maintenance-2026-06-11.md) 旧版 6 阶段 46 项维护计划 / [framekernel-compliance.md](./framekernel-compliance.md) 框内核合规工程书 / [engineering-discipline.md](./engineering-discipline.md) 工程纪律性专项 / [tcb-reduction-plan.md](./tcb-reduction-plan.md) TCB 缩减计划
   - 状态: [X]
 
-## 变更历史
-- **2026-06-26**
-  - 描述: 按新文档规则重写 (标题+条目(描述+方案+状态)+详情)
-  - 方案: 结构重组, 保留原意; 23 个审计主题 + 54 个追踪问题结论保留
-  - 状态: [X]
-- **2026-06-11**
-  - 描述: 初始版本 (深度审计)
-  - 方案: -
-  - 状态: [X]

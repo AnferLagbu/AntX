@@ -93,9 +93,3 @@
   - 描述: 2 个外部参考
   - 方案: OSTD 官方书 — The Framekernel Architecture (原始定义) / Asterinas USENIX ATC 2025 论文 §3 Framekernel 详细架构
   - 状态: [X]
-
-## 变更历史
-- **2026-06-26**
-  - 描述: 按新文档规则重写 (标题+条目(描述+方案+状态)+详情)
-  - 方案: 结构重组, 保留原意
-  - 状态: [X]

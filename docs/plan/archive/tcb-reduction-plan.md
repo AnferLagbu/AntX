@@ -64,12 +64,3 @@
   - 方案: maintenance-cycle-2026-06-19.md (维护周期主文档) / framekernel-compliance.md (框内核合规工程书) / vfs-policy-extraction.md (VFS 策略提取详细记录) / engineering-discipline.md (工程纪律性专项) / engineering-progress.md (主线工程进度) / kernel-roadmap.md (Phase A-D 路线图) / framekernel-dev-guide.md (架构详解)
   - 状态: [X]
 
-## 变更历史
-- **2026-06-26**
-  - 描述: 按新文档规则重写 (标题+条目(描述+方案+状态)+详情)
-  - 方案: 结构重组, 保留原意; 累计 TCB 收益 -10,400+ LoC
-  - 状态: [X]
-- **2026-06-10**
-  - 描述: 初始版本
-  - 方案: -
-  - 状态: [X]

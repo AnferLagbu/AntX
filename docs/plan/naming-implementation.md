@@ -220,9 +220,3 @@
   - 描述: 关联文档
   - 方案: ../explain/naming-standpoint.md (立场书本体) + ../explain/framekernel-nature.md (framekernel 架构) + ../explain/hope-and-utopia.md (战略愿景)
   - 状态: [X]
-
-## 变更历史
-- **2026-06-28**
-  - 描述: 从 queenx-naming-standpoint.md 拆分, 立场书本体移至 explain/, 本文档专注实装进度跟踪
-  - 方案: 立场书与进度分离, 体现真实状态
-  - 状态: [X]

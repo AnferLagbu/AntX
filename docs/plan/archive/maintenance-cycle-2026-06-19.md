@@ -2446,8 +2446,6 @@ pub unsafe fn new_with_iomem(iomem: IoMem, hpd_reg_offset: usize) -> Self {
 
 ---
 
-## 变更历史
-
 | 日期 | 变更 |
 |------|------|
 | 2026-06-22 | **§九 未完成任务权威清单新增** — SKIP/DEFERRED 算未完成, 9 项 `[ ]` 任务全部 DEFERRED 到 Phase D/E, 已记录在 §9.1 |

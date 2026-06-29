@@ -169,16 +169,3 @@
   - 方案: maintenance-cycle-2026-06-19.md §9.5 REVAL-4 (原始 SKIP 评估) / framekernel-nature.md (框内核五项安全不变式 + ASTD 四准则) / queenx-naming-standpoint.md (务实复用原则) / kernel-roadmap.md (Phase A-D 路线图) / Asterinas OSTD Framekernel 架构 / smoltcp Architecture (deepwiki) / Rust Performance Book: Trait Dispatch / smoltcp-rs/smoltcp 仓库
   - 状态: [X]
 
-## 变更历史
-- **2026-06-26**
-  - 描述: 按新文档规则重写 (标题+条目(描述+方案+状态)+详情)
-  - 方案: 结构重组, 保留原意
-  - 状态: [X]
-- **2026-06-25**
-  - 描述: W1-W7-E 全部完成; G5 0 transmute + 4 个 host-tests 防回归
-  - 方案: -
-  - 状态: [X]
-- **2026-06-24**
-  - 描述: 初始版本草稿
-  - 方案: -
-  - 状态: [X]
