@@ -74,6 +74,7 @@ endif
 RUST_LIB = src/rust/target/$(RUST_TARGET)/release/libqueenx.a
 RUST_LIB_TEST = src/rust/target/test-release/$(RUST_TARGET)/release/libqueenx.a
 RUST_LIB_CHAOS = src/rust/target/chaos-release/$(RUST_TARGET)/release/libqueenx.a
+RUST_LIB_TEST_DEBUG = src/rust/target/test-debug/$(RUST_TARGET)/test-debug/libqueenx.a
 
 RUST_USER_DIR = src/user
 RUST_USER_TARGET = $(RUST_USER_DIR)/target/$(RUST_TARGET)/release
@@ -201,6 +202,11 @@ $(RUST_LIB_TEST):
 $(RUST_LIB_CHAOS):
 	@echo "Building Rust chaos kernel (fault_injection enabled)..."
 	cd src/rust && cargo build --release --target $(RUST_TARGET) --features "kernel_test fault_injection" --target-dir target/chaos-release
+
+# 2026-06-29 新增: 调试构建 (LTO=false + debug info + opt-level=0), 用于排查 OnceLock 静态初始化 hang
+$(RUST_LIB_TEST_DEBUG):
+	@echo "Building Rust test kernel (debug profile)..."
+	cd src/rust && cargo build --profile test-debug --target $(RUST_TARGET) --features kernel_test --target-dir target/test-debug
 
 build/%.o: src/kernel/framework/%.asm
 	@mkdir -p $(dir $@)

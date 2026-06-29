@@ -21,6 +21,12 @@
 //! - 自旋 + yield 等待, 不入调度等待队列
 //! - 不直接修改 Process.priority, 通过回调通知
 //!
+//! ## v2.1 扩展 (2026-06-29)
+//!
+//! - 等待者优先级动态重算: nice/setpriority 变化时通过 [PiMutex::update_waiter_priority]
+//!   更新等待者基线, 自动重算 effective_priority 并触发捐赠/撤销通知
+//! - `recompute_effective` 提取为私有助手, 统一 register/unlock/update 3 路径
+//!
 //! ## 安全契约
 //!
 //! - 全局状态由 `IrqSpinLock` 守护, 持锁期间屏蔽中断
@@ -29,7 +35,8 @@
 //!
 //! ## 评估日期
 //!
-//! 2026-06-08, 关联 DECISION-009/010/011
+//! 2026-06-08 初始化, 2026-06-29 扩展 v2.1
+//! 关联 DECISION-009/010/011/012 (DECISION-012: 等待者动态重算)
 
 extern crate alloc;
 
@@ -288,19 +295,75 @@ impl<T: ?Sized> PiMutex<T> {
             });
         } // waiters 锁释放
 
-        // 计算新的 effective_priority = max(holder_prio, max(waiters_prio))
-        let holder_prio = self.inner.effective_priority.load(Ordering::Acquire);
+        // v2.1: 统一走 recompute_and_notify 助手, 避免重复逻辑
+        self.recompute_and_notify();
+    }
+
+    /// v2.1: 动态更新等待者优先级 (nice/setpriority 变化时由调用方触发)
+    ///
+    /// 行为:
+    /// 1. 在 waiters 队列中找到 pid 匹配的条目, 替换 base_priority
+    /// 2. 重算 effective_priority (新 max = max(holder_base, all_waiters_base))
+    /// 3. 与 prev_effective 比较, 按情况触发 notify_donation 或 notify_revoke
+    ///
+    /// # 调用方约束
+    /// - 当且仅当一个进程/线程的 base_priority 发生变化时调用
+    /// - 若进程不是本 mutex 的等待者, 调用是 no-op (不产生任何通知)
+    ///
+    /// # 返回
+    /// - `true`  : 至少一条 waiter 条目被更新, effective 变化可能发生
+    /// - `false` : 未找到匹配 pid, 状态未变
+    pub fn update_waiter_priority(&self, pid: u32, new_base_priority: u32) -> bool {
+        let mut changed = false;
+        {
+            let mut waiters = self.inner.waiters.lock();
+            for w in waiters.iter_mut() {
+                if w.pid == pid && w.base_priority != new_base_priority {
+                    w.base_priority = new_base_priority;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.recompute_and_notify();
+        }
+        changed
+    }
+
+    /// v2.1: 私有助手 — 统一重算 effective_priority 并按需触发通知
+    ///
+    /// 算法: `new_effective = max(holder_base_priority, max(waiters.base_priority))`
+    ///
+    /// 通知策略:
+    /// - prev < new_effective: notify_donation(holder, new_effective) — 提升
+    /// - prev > new_effective: notify_revoke(holder)              — 撤销
+    /// - 相等: 不通知
+    ///
+    /// 调用方: `register_waiter_and_donate`, `update_waiter_priority`,
+    ///         `unlock_internal` 在找到新持有者后
+    fn recompute_and_notify(&self) {
+        let holder_prio = self.holder_base_priority.load(Ordering::Acquire);
         let max_waiter_prio = {
             let waiters = self.inner.waiters.lock();
             waiters.iter().map(|w| w.base_priority).max().unwrap_or(0)
         };
         let new_effective = holder_prio.max(max_waiter_prio);
+
+        // CAS 风格: 仅在变化时通知
+        let prev = self.inner.effective_priority.load(Ordering::Acquire);
+        if new_effective == prev {
+            return;
+        }
         self.inner.effective_priority.store(new_effective, Ordering::Release);
 
-        // 通知调度器: holder 接受捐赠
         let holder_pid = self.inner.holder.load(Ordering::Acquire);
-        if holder_pid != PID_NONE {
+        if holder_pid == PID_NONE {
+            return;
+        }
+        if new_effective > prev {
             notify_donation(holder_pid, new_effective);
+        } else {
+            notify_revoke(holder_pid);
         }
     }
 
@@ -318,6 +381,36 @@ impl<T: ?Sized> PiMutex<T> {
             // 双重释放 / 非持有者释放: 静默忽略 (v1)
             return;
         }
+
+        self.do_unlock();
+    }
+
+    /// 强制释放 (跳过 holder 检查, 仅供 tests/调试使用)
+    ///
+    /// v2.1 修复: 原 unlock_internal 在 no_std 测试环境中 current_pid() 返回 0,
+    /// 与 try_lock 设置的 holder (如 100) 不等, 提前 return, 导致 unlock 路径
+    /// 不可测. 该方法跳过 holder 检查, 让测试可以直接驱动 unlock 状态机.
+    ///
+    /// 生产代码 (PiMutexGuard::drop) 仍走 unlock_internal, 走 RAII 安全路径.
+    pub(crate) fn force_unlock(&self) {
+        // Lockdep: 通知锁释放
+        #[cfg(debug_assertions)]
+        crate::kernel::framework::sync::release(self.lockdep_class);
+
+        // 跳过 holder 检查: 静默忽略未持锁情况 (无操作)
+        if !self.inner.locked.load(Ordering::Acquire) {
+            return;
+        }
+        let my_pid = self.inner.holder.load(Ordering::Acquire);
+
+        self.do_unlock();
+        // 静默: 防止 my_pid 未使用警告
+        let _ = my_pid;
+    }
+
+    /// 释放锁的实际逻辑 (从 unlock_internal 提取, 避免重复)
+    fn do_unlock(&self) {
+        let my_pid = self.inner.holder.load(Ordering::Acquire);
 
         // 1. 找到下一个最高优先级等待者
         let (next_pid, next_base_prio) = {
@@ -353,7 +446,6 @@ impl<T: ?Sized> PiMutex<T> {
         //    这里采用: 短暂释放 + next 重入, 与 register_waiter_and_donate 配合
 
         // 重置自己的优先级 (基线, 由调度器钩子处理)
-        let my_base = self.holder_base_priority.load(Ordering::Acquire);
         notify_revoke(my_pid); // 通知调度器我自己撤销捐赠
 
         // 短暂 release, 让 next.try_lock 能看到 unlocked
@@ -372,18 +464,9 @@ impl<T: ?Sized> PiMutex<T> {
         // 修正: 重新赋值
         self.holder_base_priority.store(next_base_prio, Ordering::Release);
 
-        // 通知: 仍有等待者, 计算新 effective_priority
-        let new_effective = {
-            let waiters = self.inner.waiters.lock();
-            waiters.iter().map(|w| w.base_priority).max().unwrap_or(next_base_prio)
-        };
-        if new_effective > next_base_prio {
-            self.inner.effective_priority.store(new_effective, Ordering::Release);
-            notify_donation(next_pid, new_effective);
-        }
-
-        // 静默: 防止 my_base 未使用警告
-        let _ = my_base;
+        // v2.1: 统一走 recompute_and_notify 助手, 检查剩余等待者是否需要捐赠
+        //  (recompute 内部会对比 prev 与 new_effective, 仅在升高时通知)
+        self.recompute_and_notify();
     }
 
     /// 查询当前是否被持有
@@ -542,8 +625,8 @@ mod tests {
         assert!(!m.try_lock(200, 10));
         assert!(!m.try_lock(201, 5));
         assert!(!m.try_lock(202, 8));
-        // 模拟 A 释放: 直接调 unlock_internal (测试专用)
-        m.unlock_internal();
+        // v2.1 修复: 用 force_unlock 跳过 current_pid 检查 (host 端 current_pid 也是空)
+        m.force_unlock();
         // 新持有者应是最高优先级等待者 (200, prio=10)
         assert_eq!(m.holder(), 200);
         assert_eq!(m.effective_priority(), 10);
@@ -559,7 +642,8 @@ mod tests {
     #[test]
     fn unlock_with_no_waiters_full_release() {
         let (m, _a_pid, a_prio) = low_prio_holds_high_prio_waits_setup();
-        m.unlock_internal();
+        // v2.1 修复: 同上
+        m.force_unlock();
         assert!(!m.is_locked());
         assert_eq!(m.holder(), 0);
         assert_eq!(m.effective_priority(), 0);
@@ -587,5 +671,120 @@ mod tests {
         // 验证回调能调 (即使绑的是 dummy)
         notify_donation(1, 5);
         notify_revoke(1);
+    }
+
+    // ========================================================================
+    // v2.1 — 等待者优先级动态重算 (DECISION-012)
+    // ========================================================================
+
+    /// v2.1 核心: 单个等待者升级优先级 → effective 跟随提升
+    #[test]
+    fn v2_1_update_waiter_boosts_effective() {
+        let (m, _a_pid, _a_prio) = low_prio_holds_high_prio_waits_setup();
+        // 初始: A 持锁 (prio=1), B 注册为等待者 (prio=10)
+        assert!(!m.try_lock(200, 10));
+        assert_eq!(m.effective_priority(), 10);
+
+        // B 提升到 prio=20 → effective 应跟随到 20
+        assert!(m.update_waiter_priority(200, 20));
+        assert_eq!(m.effective_priority(), 20);
+        assert_eq!(m.holder(), 100); // 持有者仍为 A
+    }
+
+    /// v2.1 边界: 等待者降级优先级 → effective 跟随下降
+    #[test]
+    fn v2_1_update_waiter_drops_effective() {
+        let (m, _a_pid, _a_prio) = low_prio_holds_high_prio_waits_setup();
+        assert!(!m.try_lock(200, 10));
+        assert_eq!(m.effective_priority(), 10);
+
+        // B 降级到 prio=2 → effective 应跟随下降 (但不低于 A.base=1)
+        assert!(m.update_waiter_priority(200, 2));
+        // holder_base=1, max_waiter=2 → new_effective = 2
+        assert_eq!(m.effective_priority(), 2);
+    }
+
+    /// v2.1 边界: 非等待者 PID 更新是 no-op, 不修改 effective
+    #[test]
+    fn v2_1_update_non_waiter_is_noop() {
+        let (m, _a_pid, _a_prio) = low_prio_holds_high_prio_waits_setup();
+        assert!(!m.try_lock(200, 10));
+        let before = m.effective_priority();
+
+        // pid=999 不是等待者
+        assert!(!m.update_waiter_priority(999, 100));
+        assert_eq!(m.effective_priority(), before);
+    }
+
+    /// v2.1 边界: 相同优先级更新返回 false (状态未变)
+    #[test]
+    fn v2_1_update_same_priority_returns_false() {
+        let (m, _a_pid, _a_prio) = low_prio_holds_high_prio_waits_setup();
+        assert!(!m.try_lock(200, 10));
+        // 已是 prio=10, 再次更新到 10 → changed=false
+        assert!(!m.update_waiter_priority(200, 10));
+        assert_eq!(m.effective_priority(), 10);
+    }
+
+    /// v2.1: 多等待者场景, 升级其中一个, max 跟随变化
+    #[test]
+    fn v2_1_update_one_of_many_waiters() {
+        let (m, _a_pid, _a_prio) = low_prio_holds_high_prio_waits_setup();
+        // 4 个等待者, prio = 10, 5, 8, 12 → max = 12 (203)
+        assert!(!m.try_lock(200, 10));
+        assert!(!m.try_lock(201, 5));
+        assert!(!m.try_lock(202, 8));
+        assert!(!m.try_lock(203, 12));
+        assert_eq!(m.effective_priority(), 12);
+
+        // 升级 200: 10 → 20 → 200 现在是 max → effective = max(holder=1, 20) = 20
+        assert!(m.update_waiter_priority(200, 20));
+        assert_eq!(m.effective_priority(), 20);
+
+        // 降级 203: 12 → 3, 但 200=20 仍是 max → effective 仍 20
+        assert!(m.update_waiter_priority(203, 3));
+        assert_eq!(m.effective_priority(), 20);
+
+        // 再次降级 200: 20 → 2 → max 变为 8 (202) → effective = 8
+        assert!(m.update_waiter_priority(200, 2));
+        assert_eq!(m.effective_priority(), 8);
+    }
+
+    /// v2.1: 撤销场景 — 最后高优先级等待者被降级后, 触发撤销通知
+    #[test]
+    fn v2_1_drop_last_high_prio_triggers_revoke() {
+        // 安装计数器型回调, 验证撤销通知被触发
+        static DONATE_CNT: AtomicU32 = AtomicU32::new(0);
+        static REVOKE_CNT: AtomicU32 = AtomicU32::new(0);
+        fn counting_donate(_h: u32, _p: u32) { DONATE_CNT.fetch_add(1, AOrd::SeqCst); }
+        fn counting_revoke(_h: u32) { REVOKE_CNT.fetch_add(1, AOrd::SeqCst); }
+
+        DONATE_CNT.store(0, AOrd::SeqCst);
+        REVOKE_CNT.store(0, AOrd::SeqCst);
+        // SAFETY: 测试作用域内有效
+        unsafe { set_donation_callback(counting_donate) };
+        unsafe { set_revoke_callback(counting_revoke) };
+
+        let (m, _a_pid, _a_prio) = low_prio_holds_high_prio_waits_setup();
+        let before_d = DONATE_CNT.load(AOrd::SeqCst);
+        let before_r = REVOKE_CNT.load(AOrd::SeqCst);
+
+        // B 注册为 prio=10
+        assert!(!m.try_lock(200, 10));
+        // 此时 donate 应被触发至少 1 次
+        assert!(DONATE_CNT.load(AOrd::SeqCst) > before_d);
+
+        // B 降级到 prio=1 (与 A.base 相同) → effective 从 10 降到 1
+        assert!(m.update_waiter_priority(200, 1));
+        assert_eq!(m.effective_priority(), 1);
+        // 撤销应被触发至少 1 次
+        assert!(REVOKE_CNT.load(AOrd::SeqCst) > before_r);
+
+        // 恢复 dummy 回调以免影响其他测试
+        fn dummy_donate(_h: u32, _p: u32) {}
+        // SAFETY: 测试作用域内有效
+        unsafe { set_donation_callback(dummy_donate) };
+        // SAFETY: 同上
+        unsafe { set_revoke_callback(dummy_donate) };
     }
 }

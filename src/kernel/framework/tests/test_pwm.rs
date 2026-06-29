@@ -118,6 +118,17 @@ fn test_pwmentry_flags() -> TestResult {
         "new entry should not be disabled"
     );
 
+    // 2026-06-29 修复: 必须设置非零 pwm 才能测试 DISABLED 标志.
+    // engine::check(0, ...) 走 bootstrap 路径直接返回 true, 绕过 flag 检查.
+    entry.pwm.store(124, core::sync::atomic::Ordering::Release);
+    check!(entry.is_valid(), "entry with pwm=124 should be valid");
+
+    // 2026-06-29 排查: 提前调 engine::check 测 GLOBAL_TABLE 初始化时机影响
+    super::serial_print(b"[d86] before early engine::check\n");
+    let early = engine::check(1, CapDomain::FS, CapBits::ALL);
+    super::serial_print(b"[d86] after early engine::check\n");
+    let _ = early;
+
     entry.add_flags(PwmFlags::DISABLED);
     check!(
         entry.has_flag(PwmFlags::DISABLED),

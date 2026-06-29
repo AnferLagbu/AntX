@@ -58,8 +58,10 @@ fn gdt_selector_values() -> TestResult {
     assert_eq_test!(SELECTOR_NULL, 0x00, "NULL selector");
     assert_eq_test!(SELECTOR_KERNEL_CODE, 0x08, "kernel code selector");
     assert_eq_test!(SELECTOR_KERNEL_DATA, 0x10, "kernel data selector");
-    assert_eq_test!(SELECTOR_USER_CODE, 0x18, "user code selector");
-    assert_eq_test!(SELECTOR_USER_DATA, 0x20, "user data selector");
+    // 2026-06-29 修复: 原测试 USER_CODE/USER_DATA 位置写反 (与实装相反).
+    // 实装: USER_DATA = 0x18, USER_CODE = 0x20 (同 gdt.rs:720-721 内嵌 assert_eq).
+    assert_eq_test!(SELECTOR_USER_DATA, 0x18, "user data selector");
+    assert_eq_test!(SELECTOR_USER_CODE, 0x20, "user code selector");
     assert_eq_test!(SELECTOR_TSS, 0x28, "TSS selector");
     TestResult::Pass
 }
