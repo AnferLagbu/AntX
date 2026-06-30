@@ -364,7 +364,24 @@ pub extern "C" fn kernel_init() {
         unsafe {
             crate::kernel::framework::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
         }
-        crate::kernel::framework::mm::pmm::pmm_init_bitmap(KMALLOC_HEAP_SIZE);
+        // 必须包含 kernel_end 到 heap_start 之间的 2MB 间隙，
+        // 否则 PMM bitmap 会放在 kmalloc 堆内部，导致 bitmap 与堆数据互相覆盖。
+        // 必须包含 heap_end 到 bitmap 之间的 2MB 间隙，
+        // 否则 bitmap 与 heap 共享同一个 2MB 块，heap 扩展拆分 2MB 巨页时会覆盖 bitmap 的 PTE。
+        // GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE = 0x200000 + 16MB + 0x200000 = 20MB
+        const GAP_SIZE: u64 = 0x200000;
+        const BITMAP_GAP_SIZE: u64 = 0x200000;
+        crate::kernel::framework::mm::pmm::pmm_init_bitmap(GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE);
+
+        // I-24 启动顺序契约: GDT/TSS init (set_ist[0..4]) 必须在 IDT init 之前.
+        // cpu_init() 在 gdt_init() 之前调用 (kpti_init 依赖 has_invpcid() → get_cpu_info() → cpu_init).
+        // 正常路径由 interrupt_late_init 处理; 测试模式需显式调用.
+        #[cfg(target_arch = "x86_64")]
+        {
+            crate::kernel::framework::cpu::cpu_init();
+            crate::kernel::framework::arch::x86_64::gdt::gdt_init();
+        }
+
         <crate::kernel::framework::arch::CurrentArch as crate::kernel::framework::arch::Arch>::interrupt_early_init();
         crate::klog_boot_info!("Test mode: interrupt early init done");
 
@@ -431,9 +448,13 @@ pub extern "C" fn kernel_init() {
         // otherwise PMM bitmap will allocate from within the kmalloc heap
         // (pages 7165+), causing heap corruption when alloc_table() zeros
         // newly allocated page table pages.
-        // GAP_SIZE + KMALLOC_HEAP_SIZE = 0x200000 + 16MB = 18MB total reserved after kernel.
+        // Must also include 2MB gap between heap_end and bitmap,
+        // otherwise bitmap shares a 2MB huge page with heap, and heap
+        // expansion's 2MB huge split will overwrite the bitmap PTE.
+        // GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE = 0x200000 + 16MB + 0x200000 = 20MB
         const GAP_SIZE: u64 = 0x200000;
-        let reserved_after_kernel = GAP_SIZE + KMALLOC_HEAP_SIZE;
+        const BITMAP_GAP_SIZE: u64 = 0x200000;
+        let reserved_after_kernel = GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE;
         crate::kernel::framework::mm::pmm::pmm_init_bitmap(reserved_after_kernel);
         crate::klog_boot_info!("PMM bitmap initialized");
 

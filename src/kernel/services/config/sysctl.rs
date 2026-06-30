@@ -278,10 +278,10 @@ fn write_i64(buf: &mut [u8], val: i64) -> usize {
 
 fn write_bool(buf: &mut [u8], val: bool) -> usize {
     if val {
-        if buf.len() >= 1 { buf[0] = b'1'; }
+        if !buf.is_empty() { buf[0] = b'1'; }
         1
     } else {
-        if buf.len() >= 1 { buf[0] = b'0'; }
+        if !buf.is_empty() { buf[0] = b'0'; }
         1
     }
 }

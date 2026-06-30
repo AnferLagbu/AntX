@@ -43,10 +43,13 @@ fn test_pipe_basic() -> TestResult {
 }
 
 fn test_shm_rapid_attach_detach() -> TestResult {
+    crate::klog_ffi!(klog_ffi_info, "[SHM] creating ns");
     let mut ns = create_test_namespace();
+    crate::klog_ffi!(klog_ffi_info, "[SHM] ns ok");
     let mut next_id: IpcId = 1;
     let pid: u32 = 700;
 
+    crate::klog_ffi!(klog_ffi_info, "[SHM] create");
     let id = match shm::shm_create_safe(&mut ns, &mut next_id, 4096, 0o666, pid) {
         Ok(id) => id,
         Err(-1) => return TestResult::Fail("shm_create: invalid size"),
@@ -56,8 +59,9 @@ fn test_shm_rapid_attach_detach() -> TestResult {
         }
         Err(_) => return TestResult::Fail("shm_create: unknown error"),
     };
+    crate::klog_ffi!(klog_ffi_info, "[SHM] create ok");
 
-    for _ in 0..100 {
+    for _i in 0..100 {
         let addr = match shm::shm_attach_safe(&mut ns, id, pid) {
             Ok(a) => a,
             Err(_) => return TestResult::Fail("shm_attach failed"),
@@ -67,8 +71,10 @@ fn test_shm_rapid_attach_detach() -> TestResult {
             return TestResult::Fail("shm_detach failed");
         }
     }
+    crate::klog_ffi!(klog_ffi_info, "[SHM] loop ok");
 
     let _ = shm::shm_destroy_safe(&mut ns, id);
+    crate::klog_ffi!(klog_ffi_info, "[SHM] destroy ok");
     TestResult::Pass
 }
 

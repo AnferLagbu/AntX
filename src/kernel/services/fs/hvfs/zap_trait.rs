@@ -74,6 +74,11 @@ pub trait ZapStore: Send + Sync {
     /// 当前条目数
     fn len(&self) -> usize;
 
+    /// 是否为空
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// 容量上限
     fn capacity(&self) -> usize;
 

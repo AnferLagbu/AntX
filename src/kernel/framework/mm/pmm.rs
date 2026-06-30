@@ -513,7 +513,6 @@ impl PhysicalMemoryManager {
         }
         let order = count_to_order(count);
         let npages = 1usize << order as usize;
-        klog_pmm!("[PMM] alloc count={}", count);
 
         // T-02: 分配前策略决策
         // buddy 就绪后使用缓存的 free_pages 统计值, 避免每次分配都遍历 bitmap;
@@ -534,12 +533,14 @@ impl PhysicalMemoryManager {
         match super::alloc_trait::current_alloc_decision().decide_alloc(ctx) {
             super::alloc_trait::AllocDecision::Allow => {}
             super::alloc_trait::AllocDecision::Deny => {
+                klog_pmm!("[PMM] alloc denied (policy)");
                 self.failed_allocs.fetch_add(1, Ordering::Relaxed);
                 return None;
             }
             super::alloc_trait::AllocDecision::RetryAfterReclaim => {
                 // 策略建议回收后重试, 但 PMM 不执行回收, 直接失败
                 // services 层的 OOMD 会在上层处理回收逻辑
+                klog_pmm!("[PMM] alloc retry-after-reclaim");
                 self.failed_allocs.fetch_add(1, Ordering::Relaxed);
                 return None;
             }
@@ -852,11 +853,6 @@ impl PhysicalMemoryManager {
         let mem_size = self.mem_size.get();
         #[allow(clippy::absurd_extreme_comparisons)]
         if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
-            klog_pmm!(
-                "[PMM] Corrupt free list node at order {}: 0x{:X}",
-                order,
-                node as u64
-            );
             return None;
         }
 
@@ -883,7 +879,8 @@ impl PhysicalMemoryManager {
         let mut avail_order: Option<u8> = None;
         for o in order..=MAX_BUDDY_ORDER {
             let heads = self.buddy_heads_ref();
-            if !heads.head(o).is_null() {
+            let h = heads.head(o);
+            if !h.is_null() {
                 avail_order = Some(o);
                 break;
             }

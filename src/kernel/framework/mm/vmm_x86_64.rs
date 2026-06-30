@@ -168,6 +168,20 @@ impl VirtualMemoryManager {
         // SAFETY: pml4_base = CR3 value, KERNEL_BASE offset produces valid kernel VA
         let pml4_virt = PhysAddr(pml4_base).to_virt();
 
+        // 安全门: KPTI 共享页表防护
+        // 禁止修改 PML4[256..511] (kernel high half).
+        // KPTI init 时复制 PML4[256..512], 底层 PDPT/PD 页物理共享.
+        // 此处 unmap 清零 PDE/PTE 会同时破坏 kernel 和 user 页表,
+        // 导致 PMM free list 等内核数据结构不可访问, 触发 Triple Fault.
+        if virt.pml4_idx() >= 256 {
+            crate::klog_boot_info!(
+                "[VMM] unmap_page: skip kernel-half virt={:#X} pml4_idx={}",
+                virt.0, virt.pml4_idx()
+            );
+            self.release_lock(&_flags);
+            return;
+        }
+
         // SAFETY: VMM_LOCK held. Page table walk with present-bit guards at each level.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
@@ -233,6 +247,19 @@ impl VirtualMemoryManager {
 
         // SAFETY: pml4_base = CR3 value, KERNEL_BASE offset produces valid kernel VA
         let pml4_virt = PhysAddr(pml4_base).to_virt();
+
+        // 安全门: KPTI 共享页表防护
+        // 禁止修改 PML4[256..511] (kernel high half).
+        // KPTI init 时复制 PML4[256..512], 底层 PDPT/PD 页物理共享.
+        // 此处修改权限位会同时影响 kernel 和 user 页表.
+        if virt.pml4_idx() >= 256 {
+            crate::klog_boot_info!(
+                "[VMM] protect_page: skip kernel-half virt={:#X} pml4_idx={}",
+                virt.0, virt.pml4_idx()
+            );
+            self.release_lock(&_flags);
+            return;
+        }
 
         // SAFETY: VMM_LOCK held. Page table walk with present-bit guards at each level.
         unsafe {
@@ -605,6 +632,20 @@ impl VirtualMemoryManager {
             return;
         }
 
+        // 安全门 1: KPTI 共享页表防护
+        // 禁止修改 PML4[256..511] (kernel high half).
+        // KPTI init 时仅复制 PML4 顶层, USER_PDPT/USER_PD/USER_PT 仍与 KERNEL_ 共享
+        // 同一物理页. 此处 map 会把共享的 2MB huge PDE 拆成 4KB PT 指针,
+        // 污染 kernel page table, 触发 Triple Fault.
+        // user half (PML4[0..255]) 不在此限制内, 由 user 自己的 PDPT/PD 承载.
+        if virt.pml4_idx() >= 256 {
+            crate::klog_boot_info!(
+                "[VMM] map_page_in_table: skip kernel-half virt={:#X} pml4_idx={}",
+                virt.0, virt.pml4_idx()
+            );
+            return;
+        }
+
         let _flags = self.acquire_lock();
 
         // SAFETY: pml4 is a valid PML4 address; VMM_LOCK held
@@ -639,7 +680,9 @@ impl VirtualMemoryManager {
             }
 
             if flags.contains(PageFlags::USER) {
-                // SAFETY: ptr.add(idx) stays within the 512-entry table
+                // SAFETY: ptr.add(idx) stays within the 512-entry table.
+                // 此处 pml4_idx < 256 (上方门检查保证), pdpt/PD 是 user 自己的页表,
+                // 不与 kernel 共享, 设 USER 位安全.
                 (*pml4_ptr.add(virt.pml4_idx())).set_user(true);
                 (*pdpt.add(virt.pdpt_idx())).set_user(true);
                 (*pd.add(virt.pd_idx())).set_user(true);
@@ -657,6 +700,19 @@ impl VirtualMemoryManager {
 
     pub fn unmap_page_in_table(&self, pml4: u64, virt: VirtAddr) {
         if pml4 == 0 {
+            return;
+        }
+
+        // 安全门 1: KPTI 共享页表防护
+        // 禁止修改 PML4[256..511] (kernel high half).
+        // KPTI init 时仅复制 PML4 顶层, USER_PDPT/USER_PD/USER_PT 仍与 KERNEL_ 共享
+        // 同一物理页. 此处 unmap 的"递归释放空中间页表"会把共享的 PDE 写 0,
+        // 污染 kernel page table, 触发 Triple Fault.
+        if virt.pml4_idx() >= 256 {
+            crate::klog_boot_info!(
+                "[VMM] unmap_page_in_table: skip kernel-half virt={:#X} pml4_idx={}",
+                virt.0, virt.pml4_idx()
+            );
             return;
         }
 
@@ -963,19 +1019,27 @@ impl VirtualMemoryManager {
                 core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
 
                 if e.is_huge() {
-                    // 拆分巨页: 从巨页帧填充 512 个 4KB 项
+                    // 拆分巨页: 从巨页帧填充 512 个子条目
+                    // step = PAGE_SIZE → PD→PT (2MB→4KB), 新 PT 条目不需要 HUGE_PAGE
+                    // step = HUGE_PAGE_2M_SIZE → PDPT→PD (1GB→2MB), 新 PD 条目需要 HUGE_PAGE
                     let huge_frame = e.frame();
                     let huge_flags = e.flags();
                     let step = if huge_step > 0 { huge_step } else { PAGE_SIZE as u64 };
+                    let mut new_flags = (huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT;
+                    if step == HUGE_PAGE_2M_SIZE {
+                        // PDPT→PD 拆分: 新 PD 条目必须标记为 2MB 巨页,
+                        // 否则 CPU 会将帧地址解释为 PT 指针, 导致页表遍历读取垃圾数据.
+                        new_flags |= PageFlags::HUGE_PAGE;
+                    }
                     crate::klog_boot_info!(
-                        "[VMM] 2MB split: entry={:#X} frame={:#X} new_pt={:#X}",
-                        entry as u64, huge_frame.as_u64(), page.as_u64()
+                        "[VMM] huge split: entry={:#X} frame={:#X} new_pt={:#X} step={:#X}",
+                        entry as u64, huge_frame.as_u64(), page.as_u64(), step
                     );
                     for i in 0..512 {
                         // SAFETY: pt points to a full 4KB page; add(i) stays within bounds
                         let pte = &mut *pt.add(i);
                         pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * step));
-                        pte.set_flags((huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT);
+                        pte.set_flags(new_flags);
                     }
                 }
 

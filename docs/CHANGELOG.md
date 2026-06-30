@@ -2,6 +2,13 @@
 
 > 记录 AntX 内核工程的**面向用户/接手人**的可见变更. 内文按"## YYYY-MM-DD"分节, 时间倒序, 每节内按"新增 / 变更 / 修复 / 移除"4 类聚合. 完整 commit 索引见 `git log`.
 
+## 2026-07-01
+
+### 修复
+- 修复 KPTI 共享页表污染导致的 Triple Fault: `unmap_page` 和 `protect_page` 添加内核高半区安全门 (PML4[256..511] 跳过), 防止清零/修改共享的 PDPT/PD 页表项
+- 修复 VMM 1GB→2MB 巨页拆分丢失 HUGE_PAGE 标志: `get_or_create_table_entry` 在 PDPT→PD 拆分时保留 HUGE_PAGE 位, 避免 CPU 将 PD 项误解释为 PT 指针
+- 修复 PMM bitmap 与 kmalloc 堆重叠: 添加 2MB 隔离间隙 (BITMAP_GAP_SIZE), 防止堆扩展拆分巨页时覆盖 bitmap 页表项
+
 ## 2026-06-26
 
 ### 新增

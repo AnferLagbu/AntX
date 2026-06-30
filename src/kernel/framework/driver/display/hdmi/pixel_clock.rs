@@ -100,11 +100,7 @@ pub(super) fn compute_pixel_clock_mul_div(target_khz: u32, base_khz: u32) -> (u8
             continue;
         }
         let actual = base_khz.saturating_mul(mul) / div;
-        let err = if actual > target_khz {
-            actual - target_khz
-        } else {
-            target_khz - actual
-        };
+        let err = actual.abs_diff(target_khz);
         if err < best_err {
             best_err = err;
             best = (mul as u8, div as u8);

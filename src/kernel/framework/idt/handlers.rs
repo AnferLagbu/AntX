@@ -220,6 +220,16 @@ impl ExceptionHandler for PageFaultHandler {
             return RecoveryAction::TerminateProcess(pid);
         }
 
+        // 内核态缺页诊断: 输出故障地址和错误码
+        klog_err!(
+            Kernel,
+            "[#PF] KERNEL: addr=0x{:X} err=0x{:X} rip=0x{:X} cause={:?}",
+            fault_addr,
+            unsafe { (*frame).err_code },
+            unsafe { (*frame).rip },
+            analysis.cause
+        );
+
         match analysis.cause {
             FaultCause::PageNotPresent => {
                 if fault_addr == 0 || fault_addr < USER_ADDR_FLOOR {
