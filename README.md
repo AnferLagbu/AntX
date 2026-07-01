@@ -7,7 +7,7 @@ QueenX 是一个从零构建的操作系统内核 (Rust + 少量 NASM 汇编, �
 ## 仓库
 
 - 许可证: MIT (见 [LICENSE](file:///home/anfer/Code/QueenX/LICENSE))
-- 协作规范: [AGENTS.md](file:///home/anfer/Code/QueenX/AGENTS.md) (硬约束) 与 [CLAUDE.md](file:///home/anfer/Code/QueenX/CLAUDE.md)
+- 协作规范: [AGENTS.md](file:///home/anfer/Code/QueenX/AGENTS.md) (项目硬约束 + AI 行为准则)
 - 变更记录: [CHANGELOG.md](file:///home/anfer/Code/QueenX/CHANGELOG.md)
 
 
@@ -157,8 +157,7 @@ make test-smp         # SMP 多核测试
 
 ```text
 .
-├── AGENTS.md                项目开发规范 (硬约束)
-├── CLAUDE.md                AI 协作行为准则
+├── AGENTS.md                项目开发规范 (硬约束 + AI 行为准则)
 ├── CHANGELOG.md             变更日志 (按日期 + 子特性代号)
 ├── LICENSE                  MIT
 ├── README.md
@@ -199,8 +198,7 @@ make test-smp         # SMP 多核测试
 
 | 路径 | 内容 |
 |------|------|
-| [AGENTS.md](file:///home/anfer/Code/QueenX/AGENTS.md) | 项目硬约束：编码风格、构建、测试、审计 |
-| [CLAUDE.md](file:///home/anfer/Code/QueenX/CLAUDE.md) | AI 协作行为准则（编码前先思考、简单优先、外科手术式修改、目标驱动） |
+| [AGENTS.md](file:///home/anfer/Code/QueenX/AGENTS.md) | 项目硬约束 + AI 行为准则：编码风格、构建、测试、审计、编码前先思考、简单优先、外科手术式修改、目标驱动 |
 | [CHANGELOG.md](file:///home/anfer/Code/QueenX/CHANGELOG.md) | 全部变更（时间倒序，无项目级版本号） |
 | [docs/README.md](file:///home/anfer/Code/QueenX/docs/README.md) | 文档写作规范 |
 | [docs/explain/framekernel-nature.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-nature.md) | 框内核定义与原理 |
