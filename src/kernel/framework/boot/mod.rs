@@ -250,10 +250,10 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
 
 pub fn init() -> BootInfo {
     // SAFETY: `const` 由调用方保证为有效指针; 只读访问
-    // 修复: &_kernel_end 是虚拟地址 (高半区), 必须减去 KERNEL_BASE 得到物理地址
-    // PMM 需要物理地址来正确标记 reserved 页和保护页表页 (如 pd_high)
-    let kernel_end_virt = unsafe { &_kernel_end as *const u8 as u64 };
-    let kernel_end = kernel_end_virt - crate::kernel::framework::mm::KERNEL_BASE;
+    // NOTE: &_kernel_end 在本链接脚本中的 VMA 等于物理地址 (0x1CF7000),
+    // 因为链接脚本位置计数器 . 从未跳转到 _kernel_text_vma (0xFFFF8000XXXXXXXX).
+    // 因此不需要减去 KERNEL_BASE, 直接使用即可.
+    let kernel_end = unsafe { &_kernel_end as *const u8 as u64 };
 
     #[cfg(target_arch = "x86_64")]
     let (mem_size, mmap_entries) = {

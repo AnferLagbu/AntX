@@ -164,10 +164,11 @@ fn test_kernel_capabilities_detect() -> TestResult {
 
 fn test_kernel_capabilities_kpti_matches_arch() -> TestResult {
     let caps = KernelCapabilities::detect();
-    if cfg!(target_arch = "x86_64") {
-        check!(caps.kpti, "x86_64 should report kpti");
+    // 测试模式下 KPTI 被有意禁用 (避免 KPTI 初始化修改共享页表)
+    if cfg!(target_arch = "x86_64") && !cfg!(feature = "kernel_test") {
+        check!(caps.kpti, "x86_64 (non-test) should report kpti");
     } else {
-        check!(!caps.kpti, "non-x86_64 should not report kpti");
+        check!(!caps.kpti, "test-mode or non-x86_64 should not report kpti");
     }
     TestResult::Pass
 }
