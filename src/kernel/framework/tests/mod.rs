@@ -402,6 +402,20 @@ pub fn test_runner_init() {
     let count = r.registry.lock().count;
     crate::klog_boot_info!("[TEST] Registered {} test cases", count);
 
+    // 诊断: test 运行前检查页表
+    {
+        let read_u64 = |phys: u64, idx: usize| -> u64 {
+            let va = phys + crate::kernel::framework::mm::KERNEL_BASE + idx as u64 * 8;
+            unsafe { core::ptr::read_volatile(va as *const u64) }
+        };
+        let pd24 = read_u64(0x109000, 24);
+        let pd63 = read_u64(0x109000, 63);
+        crate::klog_boot_info!(
+            "[PAGETABLE] before run_all: pd[24]=0x{:016X} pd[63]=0x{:016X}",
+            pd24, pd63
+        );
+    }
+
     r.run_all();
 
     let p = r.passed.load(Ordering::Relaxed);

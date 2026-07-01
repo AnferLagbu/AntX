@@ -364,6 +364,19 @@ pub extern "C" fn kernel_init() {
         unsafe {
             crate::kernel::framework::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
         }
+        // 诊断: kmalloc init 后检查页表
+        {
+            let read_u64 = |phys: u64, idx: usize| -> u64 {
+                let va = phys + crate::kernel::framework::mm::KERNEL_BASE + idx as u64 * 8;
+                unsafe { core::ptr::read_volatile(va as *const u64) }
+            };
+            let pd24 = read_u64(0x109000, 24);
+            let pd63 = read_u64(0x109000, 63);
+            crate::klog_boot_info!(
+                "[PAGETABLE] after kmalloc: pd[24]=0x{:016X} pd[63]=0x{:016X}",
+                pd24, pd63
+            );
+        }
         // 必须包含 kernel_end 到 heap_start 之间的 2MB 间隙，
         // 否则 PMM bitmap 会放在 kmalloc 堆内部，导致 bitmap 与堆数据互相覆盖。
         // 必须包含 heap_end 到 bitmap 之间的 2MB 间隙，
@@ -372,6 +385,23 @@ pub extern "C" fn kernel_init() {
         const GAP_SIZE: u64 = 0x200000;
         const BITMAP_GAP_SIZE: u64 = 0x200000;
         crate::kernel::framework::mm::pmm::pmm_init_bitmap(GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE);
+
+        // 诊断: dump 页表关键条目 (PML4[256]→pdpt_high[0]→pd[24]/[63])
+        {
+            let read_u64 = |phys: u64, idx: usize| -> u64 {
+                let va = phys + crate::kernel::framework::mm::KERNEL_BASE + idx as u64 * 8;
+                unsafe { core::ptr::read_volatile(va as *const u64) }
+            };
+            let pml4_256 = read_u64(0x102000, 256);
+            let pdpt_0   = read_u64(0x104000, 0);
+            let pd24      = read_u64(0x109000, 24);
+            let pd63      = read_u64(0x109000, 63);
+            let pd0       = read_u64(0x109000, 0);
+            crate::klog_boot_info!(
+                "[PAGETABLE] pml4[256]=0x{:016X} pdpt[0]=0x{:016X} pd[0]=0x{:016X} pd[24]=0x{:016X} pd[63]=0x{:016X}",
+                pml4_256, pdpt_0, pd0, pd24, pd63
+            );
+        }
 
         // I-24 启动顺序契约: GDT/TSS init (set_ist[0..4]) 必须在 IDT init 之前.
         // cpu_init() 在 gdt_init() 之前调用 (kpti_init 依赖 has_invpcid() → get_cpu_info() → cpu_init).

@@ -545,11 +545,8 @@ impl PhysicalMemoryManager {
                 return None;
             }
         }
-        // DEBUG: 定位 hang — 锁获取前
         let flags = self.acquire_lock();
-        // DEBUG: 锁获取后, do_alloc 前
         let result = self.do_alloc(order);
-        // DEBUG: do_alloc 返回后
         match result {
             Some(_) => {
                 self.total_allocs

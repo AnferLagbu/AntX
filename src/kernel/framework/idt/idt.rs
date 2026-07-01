@@ -684,6 +684,20 @@ impl IdtManager {
         }
 
         // Kernel-mode PF: 尝试恢复
+        // 诊断: 有限次后 panic 获取完整寄存器状态
+        {
+            static KPF_COUNT: AtomicU64 = AtomicU64::new(0);
+            if KPF_COUNT.fetch_add(1, Ordering::Relaxed) > 200 {
+                // 200+ 次内核 PF → 死循环, panic 拿到诊断信息
+                let rip = frame.rip;
+                let cr3: u64;
+                unsafe { core::arch::asm!("mov {}, cr3", out(reg) cr3); }
+                panic!("[KPF] infinite kernel PF loop: addr=0x{:X} rip=0x{:X} cr3=0x{:X}",
+                    fault_addr, rip, cr3
+                );
+            }
+        }
+
         if is_null_or_invalid(fault_addr) {
             self.attempt_domain_recovery(frame);
             return;

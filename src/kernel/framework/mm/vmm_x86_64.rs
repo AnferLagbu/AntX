@@ -883,6 +883,20 @@ impl VirtualMemoryManager {
             "[VMM] map_page: virt={:#X} phys={:#X}",
             virt.0, phys.0
         );
+
+        // 安全门: 禁止在 KERNEL_PML4 中修改内核高半区页表.
+        // 内核高半区 (PML4[256..511]) 由 boot.asm 建立恒等映射 (1GB),
+        // 后续只允许 map_page_in_table (via user PML4) 操作 user half.
+        // 此门与 map_page_in_table 中的门对称, 防止 map_page/map_huge_page
+        // 间接调用本函数时分裂内核大页导致 PDE 损坏.
+        if virt.pml4_idx() >= 256 {
+            crate::klog_boot_info!(
+                "[VMM] map_page_internal: skip kernel-half virt={:#X} pml4_idx={}",
+                virt.0, virt.pml4_idx()
+            );
+            return Ok(());
+        }
+
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -926,6 +940,10 @@ impl VirtualMemoryManager {
         phys: PhysAddr,
         flags: PageFlags,
     ) -> Result<(), &'static str> {
+        if virt.pml4_idx() >= 256 {
+            return Ok(());
+        }
+
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -966,6 +984,10 @@ impl VirtualMemoryManager {
         phys: PhysAddr,
         flags: PageFlags,
     ) -> Result<(), &'static str> {
+        if virt.pml4_idx() >= 256 {
+            return Ok(());
+        }
+
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
