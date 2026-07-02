@@ -75,7 +75,7 @@
 ## 工程长期调研 (P3)
 
 - **REVIEW-FINDING-013: OnceLock + LTO 交互 deep-dive**
-  - 描述: `docs/CHANGELOG.md [Unreleased]` 记录 2026-06-29 调研结论: LTO 不是 hang 根因, hang 触发点是 `engine::check(...)` 首次调用 `OnceLock<GLOBAL_TABLE>` 静态初始化. 现象是 test runner 的 AtomicU32 计数器被破坏. `test-debug` Cargo profile 是 workaround, 根因待查
+  - 描述: commit message 记录 2026-06-29 调研结论: LTO 不是 hang 根因, hang 触发点是 `engine::check(...)` 首次调用 `OnceLock<GLOBAL_TABLE>` 静态初始化. 现象是 test runner 的 AtomicU32 计数器被破坏. `test-debug` Cargo profile 是 workaround, 根因待查
   - 方案: 长期 deep-dive — 隔离 OnceLock 静态初始化为单独二进制, 加 printk trace 看哪个 atomic write 卡住. 投入产出比低, 接受 workaround, 但记录到此防止遗忘
   - 状态: []
 

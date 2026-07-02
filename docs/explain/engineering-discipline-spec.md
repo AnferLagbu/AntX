@@ -53,7 +53,7 @@
   - 状态: [X]
 - **10 文档**
   - 描述: 4 条文档规则
-  - 方案: 10.1 修改模块接口或依赖关系时, 必须同步更新 framekernel-dev-guide.md 和 audit-*.md / 10.2 公共 API 必中文文档注释 (clippy missing_docs_in_crate_items) / 10.3 plan/ 文档按新规则 (标题+章节+条目描述+方案+状态+详情) / 10.4 CHANGELOG.md 记录"面向用户/接手人"的可见变更
+  - 方案: 10.1 修改模块接口或依赖关系时, 必须同步更新 framekernel-dev-guide.md 和 audit-*.md / 10.2 公共 API 必中文文档注释 (clippy missing_docs_in_crate_items) / 10.3 plan/ 文档按新规则 (标题+章节+条目描述+方案+状态+详情) / 10.4 commit message 记录变更
   - 状态: [X]
 - **11 多架构**
   - 描述: 3 条多架构规则
@@ -61,7 +61,7 @@
   - 状态: [X]
 - **12 提交检查清单**
   - 描述: 14 项提交前确认
-  - 方案: 基础 (4 项): 双架构编译 0w0e / 三审计通过 / host-tests 通过 / 文档同步更新 (CHANGELOG.md); 耦合与编码 (5 项): 无新增 services 层 unsafe / 无新增跨子系统内部访问 / 无新增循环依赖 / 无硬编码跨子系统常量 / 无顺手修改无关代码; 内核安全 (5 项): 中断上下文无 sleep 操作 / 原子操作 Ordering 正确 / 资源获取/释放严格配对 / 失败路径 LIFO 反序回滚 / framework 修改通过 I1-I6 自检
+  - 方案: 基础 (4 项): 双架构编译 0w0e / 三审计通过 / host-tests 通过 / 文档同步更新 (commit message); 耦合与编码 (5 项): 无新增 services 层 unsafe / 无新增跨子系统内部访问 / 无新增循环依赖 / 无硬编码跨子系统常量 / 无顺手修改无关代码; 内核安全 (5 项): 中断上下文无 sleep 操作 / 原子操作 Ordering 正确 / 资源获取/释放严格配对 / 失败路径 LIFO 反序回滚 / framework 修改通过 I1-I6 自检
   - 状态: [X]
 - **13 存量问题处理**
   - 描述: 4 步处理策略
@@ -71,7 +71,7 @@
 ## 工作原理
 - **6 层防护机制**
   - 描述: 6 层防护
-  - 方案: 编译期: services/mod.rs 顶部 #![deny(unsafe_code)] 强制 services 0 unsafe; 静态检查: audit_services_boundary + audit_safety_coverage + audit_deadlock_matrix + audit_comment_language + audit_coupling + audit_tcb_ratio + audit_invariants 7 个审计脚本; 编译验证: 双架构 cargo check 0w0e + clippy 0 warning; 测试: host-tests + QEMU 集成测试 (miri-tests 已于 2026-06-26 删除, UB 检测由 Rust 编译期 + 7 个审计脚本覆盖); 人工审查: PR review 流程覆盖本规范 13 章节; 文档同步: CHANGELOG.md + plan/ + explain/ 三层文档自动维护
+  - 方案: 编译期: services/mod.rs 顶部 #![deny(unsafe_code)] 强制 services 0 unsafe; 静态检查: audit_services_boundary + audit_safety_coverage + audit_deadlock_matrix + audit_comment_language + audit_coupling + audit_tcb_ratio + audit_invariants 7 个审计脚本; 编译验证: 双架构 cargo check 0w0e + clippy 0 warning; 测试: host-tests + QEMU 集成测试 (miri-tests 已于 2026-06-26 删除, UB 检测由 Rust 编译期 + 7 个审计脚本覆盖); 人工审查: PR review 流程覆盖本规范 13 章节; 文档同步: plan/ + explain/ 两层文档自动维护
   - 状态: [X]
 
 ## 注意事项
@@ -99,5 +99,5 @@
   - 状态: [X]
 - **被引用清单**
   - 描述: 1 个被引用源
-  - 方案: docs/CHANGELOG.md (代码变更日志, 本规范的变更也会写进去)
+  - 方案: commit message 记录变更
   - 状态: [X]

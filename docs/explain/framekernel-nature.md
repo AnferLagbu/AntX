@@ -85,7 +85,7 @@
   - 状态: [X]
 - **改 framework 是大改**
   - 描述: 任何 framework 的 unsafe 块改动需重新审视下游 services
-  - 方案: 提交前在 docs/CHANGELOG.md 写明并补 docs/plan/audit-*.md 审计
+  - 方案: 提交前补 docs/plan/audit-*.md 审计
   - 状态: [X]
 - **不要把内层抽象暴露成 framework 公开 API**
   - 描述: 例如 PageTableChecker 之于 services::fs::page_cache
@@ -107,7 +107,7 @@
   - 状态: [X]
 - **被引用清单**
   - 描述: 2 个被引用源
-  - 方案: docs/CHANGELOG.md ## 2026-05-21 (移除项目版本号; 子树"框内核化"迭代) / docs/plan/fix-report-issue1.md (若存在) (进程分配失败回滚修复报告, 框内核"safe API 失败回滚"模式样例)
+  - 方案: docs/plan/fix-report-issue1.md (若存在) (进程分配失败回滚修复报告, 框内核"safe API 失败回滚"模式样例)
   - 状态: [X]
 - **外部参考**
   - 描述: 6 个外部参考

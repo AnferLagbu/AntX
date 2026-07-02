@@ -65,7 +65,7 @@
   - 状态: [X]
 - **改 framework 是大改**
   - 描述: 任何 framework 改动需重新审视下游 services
-  - 方案: 提交前在 docs/CHANGELOG.md 写明并补 docs/plan/audit-*.md 审计
+  - 方案: 提交前补 docs/plan/audit-*.md 审计
   - 状态: [X]
 - **不为将来可能用预留 framework 模块**
   - 描述: 准则 §0 同样适用
@@ -87,7 +87,7 @@
   - 状态: [X]
 - **被引用清单**
   - 描述: 1 个被引用源
-  - 方案: docs/CHANGELOG.md (代码变更日志, 本文档的变更也会写进去)
+  - 方案: commit message 记录变更
   - 状态: [X]
 - **外部参考**
   - 描述: 2 个外部参考
