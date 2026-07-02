@@ -521,7 +521,7 @@ pub fn uds_recv(fd: i32, out: &mut [u8]) -> Result<usize, UdsError> {
     })
 }
 
-pub fn uds_sendto(fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsError> {
+pub fn uds_sendto(_fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsError> {
     UDS_STATE.with_mut(|state| {
         let pidx = state.find_path(dest_path).ok_or(UdsError::ConnRefused)? as usize;
         let target_idx = state.paths[pidx].sock_idx as usize;

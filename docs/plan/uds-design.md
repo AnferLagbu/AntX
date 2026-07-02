@@ -26,8 +26,8 @@
 
 - **后续范围**
   - 描述: v2 实现的子特性
-  - 方案: 抽象命名空间 + SO_PASSCRED 已实施 (2026-07-02); SCM_RIGHTS/SCM_CRED/sendmsg 完整 cmsg 路径 deferred (后续 PR)
-  - 状态: [X] (v2 1/3 完成)
+  - 方案: 抽象命名空间 + SO_PASSCRED + sendmsg cmsg 路径已实施 (2026-07-02); SCM_RIGHTS fd 跨进程传递 deferred (需 fd table 对接)
+  - 状态: [X] (v2 2/3 完成)
 
 ## 关键设计
 - **路径表与 Socket 表分离**
@@ -95,9 +95,9 @@
   - 方案: UnixSocket.passcred 字段 + `uds_setsockopt(fd, enable)` + `sm_setsockopt` 路由 (level=SOL_SOCKET, optname=SO_PASSCRED) + UDS send/recv 自动追加/解析 12 字节凭据
   - 状态: [X]
 - **SCM_RIGHTS / SCM_CRED / sendmsg 完整 cmsg 路径**
-  - 描述: sendmsg 完整 ancillary data 处理 + fd 跨进程传递
-  - 方案: 简化方案: stream/dgram 缓冲中追加固定 12 字节凭据; 不实施完整 sendmsg/msghdr 路径 (Linux msghdr 完整支持需 ~500 行); 后续 PR
-  - 状态: []
+  - 描述: sendmsg/recvmsg 完整 ancillary data 处理 + fd 跨进程传递
+  - 方案: sendmsg: services 层解析 msg_control (cmsg_len/level/type), 注入 SCM_CREDENTIALS (pid/uid/gid 12字节) 到用户区; recvmsg: 写回标准 cmsg 格式. SCM_RIGHTS (fd 跨进程) 简化: 标记已处理, 不实际 dup fd, 后续 PR 对接 fd table.
+  - 状态: [X] (2026-07-02, sendmsg/recvmsg cmsg 路径实施, fd 跨进程传递 deferred)
 
 ## 验证
 - **编译验证**
