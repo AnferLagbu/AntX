@@ -23,6 +23,7 @@ use smoltcp::wire::{IpCidr, IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address
 // 使用将逐步替换为 `SmoltcpNetStack` 的 trait 方法. 此处先添加静态实例,
 // 暂不修改现有逻辑, 仅做小步实装 + 编译验证.
 use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;
+use crate::kernel::services::net::unix as uds_svc;
 use crate::kernel::framework::net::iface_trait::{NetConfig as TraitNetConfig, NetStack};
 
 // I-46: 引用本目录 types 模块的 fallback 常量
@@ -1665,6 +1666,10 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
 
 /// POSIX `setsockopt` 内核实现 (当前空操作占位)。
 ///
+/// v2: 识别 SO_PASSCRED (level=SOL_SOCKET=1, optname=SO_PASSCRED=16).
+/// 路由到 UDS 服务层 (uds_setsockopt).
+/// 其他 (level, optname): 0 (no-op).
+///
 /// # Safety
 /// `_optval` 必须是有效指针, 含 `_optlen` 字节 (此处忽略)。
 #[no_mangle]
@@ -1675,6 +1680,14 @@ pub unsafe extern "C" fn sm_setsockopt(
     _optval: *const u8,
     _optlen: u32,
 ) -> i32 {
+    // v2 SO_PASSCRED 路由: level==1 (SOL_SOCKET), optname==16 (SO_PASSCRED)
+    if _level == 1 && _optname == 16 {
+        if _optlen < 4 {
+            return -22; // EINVAL
+        }
+        let val = core::ptr::read_unaligned(_optval as *const i32);
+        return uds_svc::uds_setsockopt(_fd, val != 0);
+    }
     0
 }
 

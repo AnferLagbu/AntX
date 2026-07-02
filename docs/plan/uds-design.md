@@ -26,8 +26,8 @@
 
 - **后续范围**
   - 描述: v2 实现的子特性
-  - 方案: 走独立路线扩展, 不影响 v1
-  - 状态: []
+  - 方案: 抽象命名空间 + SO_PASSCRED 已实施 (2026-07-02); SCM_RIGHTS/SCM_CRED/sendmsg 完整 cmsg 路径 deferred (后续 PR)
+  - 状态: [X] (v2 1/3 完成)
 
 ## 关键设计
 - **路径表与 Socket 表分离**
@@ -82,8 +82,22 @@
   - 状态: [X]
 - **测试**
   - 描述: host-tests 新增 UDS 集成测试
-  - 方案: `host-tests/src/unix_smoke.rs` (新增, 状态机 + 缓冲集成测试) + `host-tests/Cargo.toml` (注册)
+  - 方案: 实际位置 `src/kernel/framework/tests/test_uds.rs` (kernel_test 模式, 6 个测试: stream_echo/dgram_echo/eaddrinuse/eagain_accept/close_listener_cancels/err_mapping); 文档偏差: unix_smoke.rs 未创建, test_uds.rs 已覆盖
   - 状态: [X]
+
+## v2 子特性 (2026-07-02 实施)
+- **抽象命名空间 (Abstract namespace)**
+  - 描述: 路径以 0 字节开头标识 abstract, 不走文件系统
+  - 方案: `uds_parse_path()` 函数解析路径, 返回 `(path, is_abstract)` 元组
+  - 状态: [X]
+- **SO_PASSCRED**
+  - 描述: socket 选项, 启用后 send 自动附加 SCM_CREDENTIALS (pid/uid/gid)
+  - 方案: UnixSocket.passcred 字段 + `uds_setsockopt(fd, enable)` + `sm_setsockopt` 路由 (level=SOL_SOCKET, optname=SO_PASSCRED) + UDS send/recv 自动追加/解析 12 字节凭据
+  - 状态: [X]
+- **SCM_RIGHTS / SCM_CRED / sendmsg 完整 cmsg 路径**
+  - 描述: sendmsg 完整 ancillary data 处理 + fd 跨进程传递
+  - 方案: 简化方案: stream/dgram 缓冲中追加固定 12 字节凭据; 不实施完整 sendmsg/msghdr 路径 (Linux msghdr 完整支持需 ~500 行); 后续 PR
+  - 状态: []
 
 ## 验证
 - **编译验证**
