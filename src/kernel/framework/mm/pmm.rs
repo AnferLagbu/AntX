@@ -431,8 +431,22 @@ impl PhysicalMemoryManager {
             );
         }
 
-        self.buddy_meta
-            .set(NonNull::new(buddy_meta_virt as *mut u8));
+        // 2026-07-02: turn 28 排查 test 86 hang (LTO 错位 PMM 字段).
+        // GDB dump 显示 `mov 0x8(%rsi), %rax` 在 do_alloc+0x1D2 触发 #PF,
+        // rsi=0xFFFF800007F80000 = buddy_heads 数组中的 head 指针,
+        // 指向非法物理地址 0x7F80000 (heap 范围外). 原因: init_bitmap 时
+        // self.buddy_meta.set() 写错位置 (LTO 把 buddy_meta set 操作错位
+        // 到 buddy_heads 数组). 修复: 用 raw pointer 写 buddy_meta 字段,
+        // 强制 LTO 看到真实字段偏移 (0x1078=4216 字节偏移).
+        unsafe {
+            let p = self as *const Self as *const u8;
+            // buddy_meta 字段在 offset 4216 (= 0x1078), Cell<Option<NonNull<u8>>> 大小 16
+            let nn = NonNull::new(buddy_meta_virt as *mut u8);
+            core::ptr::write_volatile(
+                p.add(0x1078) as *mut Option<core::ptr::NonNull<u8>>,
+                nn
+            );
+        }
         klog_pmm!(
             "[PMM] Buddy meta: {} B at 0x{:X}",
             buddy_meta_bytes,

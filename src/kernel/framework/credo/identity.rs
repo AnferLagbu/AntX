@@ -592,13 +592,28 @@ impl IdentityTable {
 // (note: [AtomicU8; N], password_hash: [AtomicU8; N]), 所有方法改 &self,
 // IdentityTable 整体可被 OnceLock 安全持有, 无需 unsafe.
 //
-// 旧版 raw 子模块 (addr_of!/addr_of_mut!) 保留兼容性, 但已不推荐使用.
-static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<IdentityTable> =
-    crate::kernel::framework::sync::OnceLock::new();
+// 2026-07-02: turn 28 排查 test 86 hang, GDB dump 显示
+// `pc=0x1a22c5 = IdentityTable::new + rep movsb` 从 DEFAULT_ENTRY
+// memcpy 80KB 到 OnceLock slot 位置 (0x118000). **LTO 错位静态 OnceLock
+// 位置到 kernel image 段** (.text 段附近, read-only). 写 0x118000 触发
+// #PF. 修复: 改用 `Box<IdentityTable>` + `Box::leak` 得 `&'static`,
+// 把 95KB IdentityTable 放在堆上, 不预占 .text 段位置. 接口保持
+// `&'static IdentityTable` 不变 (caller 端 API 兼容).
+static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<
+    &'static IdentityTable,
+> = crate::kernel::framework::sync::OnceLock::new();
 
 /// 获取全局身份表 (T4-1: OnceLock 包装, 自动初始化, 0 unsafe)
+///
+/// 2026-07-02: turn 28 改用 Box::leak 模式. 第一次调用 lazy init 分配
+/// 95KB IdentityTable 在堆上, leak 后得到 `&'static IdentityTable`.
+/// 之后调用返回相同引用. 接口保持 `&'static IdentityTable` 不变.
 pub fn get_table() -> &'static IdentityTable {
-    GLOBAL_TABLE.get_or_init(|slot| { slot.write(IdentityTable::new()); })
+    GLOBAL_TABLE.get_or_init(|slot| {
+        let boxed: alloc::boxed::Box<IdentityTable> = alloc::boxed::Box::new(IdentityTable::new());
+        let leaked: &'static IdentityTable = alloc::boxed::Box::leak(boxed);
+        slot.write(leaked);
+    })
 }
 
 ///
