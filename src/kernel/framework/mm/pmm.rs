@@ -432,20 +432,17 @@ impl PhysicalMemoryManager {
         }
 
         // 2026-07-02: turn 28 排查 test 86 hang (LTO 错位 PMM 字段).
-        // GDB dump 显示 `mov 0x8(%rsi), %rax` 在 do_alloc+0x1D2 触发 #PF,
-        // rsi=0xFFFF800007F80000 = buddy_heads 数组中的 head 指针,
-        // 指向非法物理地址 0x7F80000 (heap 范围外). 原因: init_bitmap 时
-        // self.buddy_meta.set() 写错位置 (LTO 把 buddy_meta set 操作错位
-        // 到 buddy_heads 数组). 修复: 用 raw pointer 写 buddy_meta 字段,
-        // 强制 LTO 看到真实字段偏移 (0x1078=4216 字节偏移).
+        // GDB dump 显示 do_alloc 内 `mov 0x8(%rsi), %rax` 触发 #PF,
+        // rsi 来自 buddy_heads 数组中的非法 FreeNode 指针 (0x7F80000
+        // 不在 heap 范围). 原因: init_bitmap 时 self.buddy_meta.set()
+        // LTO 错位到 buddy_heads 数组. 修复: 用 core::ptr::addr_of! 获取
+        // 真实字段地址, 强制编译器在 LTO 之前解析出正确偏移.
+        // SAFETY: 单线程启动期, 无并发写.
+        let nn = core::ptr::NonNull::new(buddy_meta_virt as *mut u8);
         unsafe {
-            let p = self as *const Self as *const u8;
-            // buddy_meta 字段在 offset 4216 (= 0x1078), Cell<Option<NonNull<u8>>> 大小 16
-            let nn = NonNull::new(buddy_meta_virt as *mut u8);
-            core::ptr::write_volatile(
-                p.add(0x1078) as *mut Option<core::ptr::NonNull<u8>>,
-                nn
-            );
+            let meta_ptr: *mut Option<core::ptr::NonNull<u8>> =
+                core::ptr::addr_of!(self.buddy_meta) as *const _ as *mut _;
+            core::ptr::write_volatile(meta_ptr, nn);
         }
         klog_pmm!(
             "[PMM] Buddy meta: {} B at 0x{:X}",
@@ -787,7 +784,14 @@ impl PhysicalMemoryManager {
 
     #[inline]
     fn buddy_meta_ref(&self) -> Option<MetaRef> {
-        self.buddy_meta.get().map(|n| {
+        // 2026-07-02: turn 28 排查. LTO 错位 buddy_meta 字段访问.
+        // 用 core::ptr::addr_of! 获取真实字段地址, 防 LTO 错位.
+        // Cell<T> 是 repr(transparent), 指针 cast 到 T 安全.
+        let meta_field_ptr = core::ptr::addr_of!(self.buddy_meta);
+        let buddy_meta: Option<core::ptr::NonNull<u8>> = unsafe {
+            core::ptr::read_volatile(meta_field_ptr as *const Option<core::ptr::NonNull<u8>>)
+        };
+        buddy_meta.map(|n| {
             // SAFETY: buddy_meta 在 init_bitmap 中设置一次, 此后只读;
             // 所有 buddy 操作都持有 PMM 锁.
             unsafe { MetaRef::new_unchecked(n.as_ptr()) }
@@ -796,9 +800,14 @@ impl PhysicalMemoryManager {
 
     #[inline]
     fn buddy_heads_ref(&self) -> HeadsRef {
-        // SAFETY: buddy_heads 是 UnsafeCell; 在 PMM 锁保护下访问;
-        // init_bitmap 之后数组指针稳定.
-        unsafe { HeadsRef::new_unchecked(self.buddy_heads.get()) }
+        // 2026-07-02: turn 28 排查. LTO 错位 buddy_heads 字段访问.
+        // 用 core::ptr::addr_of! 获取真实字段地址, 防 LTO 错位.
+        // UnsafeCell<T> 是 repr(transparent), 地址 = T 地址.
+        let field_addr = core::ptr::addr_of!(self.buddy_heads) as *const u8;
+        let heads_ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1] =
+            field_addr as *mut _;
+        // SAFETY: buddy_heads 在 PMM 锁保护下访问; init_bitmap 之后稳定.
+        unsafe { HeadsRef::new_unchecked(heads_ptr) }
     }
 
     /// 尝试将 `order` 处释放的 `pfn` 与其上方的 buddy 合并.

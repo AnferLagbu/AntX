@@ -6,7 +6,7 @@ use super::grant;
 use super::sha256;
 use super::types::*;
 use core::sync::atomic::{
-    AtomicBool, AtomicU16, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
+    AtomicBool, AtomicU32, AtomicUsize, Ordering,
 };
 
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -48,7 +48,7 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 
 }
 
 pub struct IdentityTable {
-    pub entries: [PwmEntry; MAX_PWM_ENTRIES],
+    pub entries: alloc::vec::Vec<PwmEntry>,
     pub count: AtomicUsize,
     pub any_identity_exists: AtomicBool,
     pub next_uid: AtomicU32,
@@ -57,44 +57,15 @@ pub struct IdentityTable {
 }
 
 impl IdentityTable {
-    #[allow(clippy::declare_interior_mutable_const)]
-    pub const fn new() -> Self {
-        const DEFAULT_ENTRY: PwmEntry = PwmEntry {
-            pwm: AtomicU64::new(0),
-            posix_uid: AtomicU32::new(0),
-            posix_gid: AtomicU32::new(0),
-            creator_pwm: AtomicU64::new(0),
-            privilege_level: AtomicU8::new(0xFF),
-            flags: AtomicU16::new(0),
-            caps: [
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-                AtomicU64::new(0),
-            ],
-            // T4-1: 全 Atomic 化 (与 services/credo/types.rs 对齐)
-            note: [const { AtomicU8::new(0) }; PWM_NOTE_LEN],
-            password_hash: [const { AtomicU8::new(0) }; PWM_HASH_LEN],
-            created_time: AtomicU64::new(0),
-            expires_at: AtomicU64::new(0),
-            lockout_until: AtomicU64::new(0),
-            failed_attempts: AtomicU32::new(0),
-            last_login_time: AtomicU64::new(0),
-        };
+    /// 2026-07-02: turn 28 排查 test 86 hang. `[DEFAULT_ENTRY; 256]` (100KB)
+    /// 在栈上创建导致栈溢出. 改用 `Vec<PwmEntry>` 直接堆分配.
+    pub fn new() -> Self {
+        let mut entries = alloc::vec::Vec::with_capacity(MAX_PWM_ENTRIES);
+        for _ in 0..MAX_PWM_ENTRIES {
+            entries.push(PwmEntry::new());
+        }
         Self {
-            entries: [DEFAULT_ENTRY; MAX_PWM_ENTRIES],
+            entries,
             count: AtomicUsize::new(0),
             any_identity_exists: AtomicBool::new(false),
             next_uid: AtomicU32::new(1000),
@@ -586,34 +557,16 @@ impl IdentityTable {
 // T4-1 全 Atomic 重构完成 — static mut GLOBAL_TABLE 替换为 OnceLock
 // ============================================================================
 //
-// 此前约束: IdentityTable::new() 是 const fn, 但 PwmEntry 含非 Atomic 字段
-// (note/password_hash) 需要 &mut 写入, 而 `static` + addr_of_mut! 被 Rust 借用
-// 检查禁止 (E0596). 当前方案: PwmEntry 全字段 Atomic 化
-// (note: [AtomicU8; N], password_hash: [AtomicU8; N]), 所有方法改 &self,
-// IdentityTable 整体可被 OnceLock 安全持有, 无需 unsafe.
-//
-// 2026-07-02: turn 28 排查 test 86 hang, GDB dump 显示
-// `pc=0x1a22c5 = IdentityTable::new + rep movsb` 从 DEFAULT_ENTRY
-// memcpy 80KB 到 OnceLock slot 位置 (0x118000). **LTO 错位静态 OnceLock
-// 位置到 kernel image 段** (.text 段附近, read-only). 写 0x118000 触发
-// #PF. 修复: 改用 `Box<IdentityTable>` + `Box::leak` 得 `&'static`,
-// 把 95KB IdentityTable 放在堆上, 不预占 .text 段位置. 接口保持
-// `&'static IdentityTable` 不变 (caller 端 API 兼容).
-static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<
-    &'static IdentityTable,
-> = crate::kernel::framework::sync::OnceLock::new();
+// 2026-07-02: turn 28 排查 test 86 hang. 根因: IdentityTable::new() 创建
+// [DEFAULT_ENTRY; 256] (100KB) 在栈上, 超过 KERNEL_STACK_SIZE (64KB),
+// 导致栈溢出. 修复: IdentityTable.entries 改用 Vec<PwmEntry> 直接
+// 堆分配, IdentityTable 自身仅 ~40 字节, OnceLock 静态可安全容纳.
+static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<IdentityTable> =
+    crate::kernel::framework::sync::OnceLock::new();
 
 /// 获取全局身份表 (T4-1: OnceLock 包装, 自动初始化, 0 unsafe)
-///
-/// 2026-07-02: turn 28 改用 Box::leak 模式. 第一次调用 lazy init 分配
-/// 95KB IdentityTable 在堆上, leak 后得到 `&'static IdentityTable`.
-/// 之后调用返回相同引用. 接口保持 `&'static IdentityTable` 不变.
 pub fn get_table() -> &'static IdentityTable {
-    GLOBAL_TABLE.get_or_init(|slot| {
-        let boxed: alloc::boxed::Box<IdentityTable> = alloc::boxed::Box::new(IdentityTable::new());
-        let leaked: &'static IdentityTable = alloc::boxed::Box::leak(boxed);
-        slot.write(leaked);
-    })
+    GLOBAL_TABLE.get_or_init(|slot| { slot.write(IdentityTable::new()); })
 }
 
 ///
