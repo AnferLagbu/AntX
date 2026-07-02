@@ -291,6 +291,12 @@ pub(crate) mod raw {
 
 use raw::{FreeNodeRef, MetaRef, BitmapRef, HeadsRef};
 
+/// 物理内存管理器 — Buddy 分配器
+///
+/// 2026-07-02: 加 `#[repr(C)]` 防止 LTO 字段重排. 本次会话诊断发现
+/// LTO 在 release 模式错位多个字段 (bitmap_size, buddy_meta, buddy_heads),
+/// 虽有 addr_of! 修复, repr(C) 提供额外防御层.
+#[repr(C)]
 pub struct PhysicalMemoryManager {
     // ---- Bitmap (reserved 跟踪 + 统计) ----
     bitmap: Cell<Option<NonNull<u32>>>,

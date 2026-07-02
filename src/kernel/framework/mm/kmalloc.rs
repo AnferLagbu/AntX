@@ -225,26 +225,27 @@ pub(crate) mod raw {
     }
 
     /// free_list_head 访问的 safe 包装.
-    pub struct FreeListHeadRef<'a> {
-        ptr: &'a UnsafeCell<*mut HeapHeader>,
+    ///
+    /// 2026-07-02: 改用 raw pointer + volatile, 防 LTO 字段错位.
+    /// 调用方通过 `addr_of!(self.free_list_head)` 传入真实字段地址.
+    pub struct FreeListHeadRef {
+        ptr: *const UnsafeCell<*mut HeapHeader>,
     }
 
-    impl<'a> FreeListHeadRef<'a> {
-        #[inline(always)]
-        pub fn new(ptr: &'a UnsafeCell<*mut HeapHeader>) -> Self {
+    impl FreeListHeadRef {
+        pub fn new(ptr: *const UnsafeCell<*mut HeapHeader>) -> Self {
             Self { ptr }
         }
 
-        #[inline(always)]
         pub fn get(&self) -> *mut HeapHeader {
-            // SAFETY: 持有堆锁
-            unsafe { *self.ptr.get() }
+            // SAFETY: 持有堆锁; UnsafeCell 是 repr(transparent).
+            // 用 read_volatile 强制 LTO 不可 cache/错位.
+            unsafe { core::ptr::read_volatile(self.ptr as *const *mut HeapHeader) }
         }
 
-        #[inline(always)]
         pub fn set(&self, val: *mut HeapHeader) {
-            // SAFETY: 持有堆锁
-            unsafe { *self.ptr.get() = val; }
+            // SAFETY: 持有堆锁; 用 write_volatile 强制 LTO 不可错位.
+            unsafe { core::ptr::write_volatile(self.ptr as *mut *mut HeapHeader, val) }
         }
     }
 
@@ -272,6 +273,11 @@ pub(crate) mod raw {
 use raw::{HeaderRef, FreeListHeadRef};
 
 /// 内核堆分配器状态
+///
+/// 2026-07-02: 加 `#[repr(C)]` 防止 LTO 字段重排. 本次会话诊断发现
+/// LTO 在 release 模式错位 free_list_head 字段写入, 虽有 addr_of!
+/// 修复, repr(C) 提供额外防御层.
+#[repr(C)]
 pub struct KernelHeap {
     /// 堆起始地址 (虚拟地址)
     heap_start: VirtAddr,
@@ -349,7 +355,7 @@ impl KernelHeap {
         let header = unsafe { HeaderRef::new_unchecked(start.0 as *mut HeapHeader) };
         header.write(HeapHeader::new(initial_size, true));
 
-        let head = FreeListHeadRef::new(&self.free_list_head);
+        let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
         head.set(header.as_ptr());
 
         self.initialized.store(true, Ordering::Release);
@@ -582,7 +588,7 @@ impl KernelHeap {
         let flags = self.acquire_lock();
 
         let mut count = 0usize;
-        let head = FreeListHeadRef::new(&self.free_list_head);
+        let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
         let mut current = head.get();
 
         while !current.is_null() {
@@ -633,7 +639,7 @@ impl KernelHeap {
 
     /// First-fit 分配算法
     fn allocate_first_fit(&self, size: u64) -> Option<*mut u8> {
-        let head = FreeListHeadRef::new(&self.free_list_head);
+        let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
         let mut current = head.get();
 
         while !current.is_null() {
@@ -704,7 +710,7 @@ impl KernelHeap {
     }
 
     fn coalesce_backward(&self, header: HeaderRef) -> HeaderRef {
-        let head = FreeListHeadRef::new(&self.free_list_head);
+        let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
         let mut current = head.get();
 
         while !current.is_null() {
@@ -727,7 +733,7 @@ impl KernelHeap {
 
     /// 将块加入空闲链表
     fn add_to_free_list(&self, header: HeaderRef) {
-        let head = FreeListHeadRef::new(&self.free_list_head);
+        let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
         let head_ptr = head.get();
 
         if !head_ptr.is_null() {
@@ -747,7 +753,7 @@ impl KernelHeap {
     fn remove_from_free_list(&self, header: HeaderRef) {
         let prev = header.prev();
         let next = header.next();
-        let head = FreeListHeadRef::new(&self.free_list_head);
+        let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
 
         if !prev.is_null() {
             // SAFETY: prev 由 header.prev() 返回, !is_null 分支说明 prev 指向
