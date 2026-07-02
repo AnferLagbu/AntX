@@ -234,7 +234,7 @@ pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
             // 写 SCM_CREDENTIALS cmsghdr (28 字节) 到 msg_control:
             // [0-7]   cmsg_len = 28
             // [8-11]  cmsg_level = 1 (SOL_SOCKET)
-            // [12-15] cmsg_type = 2 (SCM_CREDENTIALS)
+            // [12-15] cmsg_type = 2 (SCM 凭据)
             // [16-19] pid = 1
             // [20-23] uid = 0
             // [24-27] gid = 0
