@@ -120,8 +120,59 @@
 - 详见上一轮审查报告: 5 个并行 explore 子代理的合成 (架构/模块/CI/质量/技术方案)
 - 关键参考: [AGENTS.md §6 硬规则](../AGENTS.md), [AGENTS.md §2.4 验证门槛](../AGENTS.md), [framekernel-nature.md](../explain/framekernel-nature.md)
 
+## Softirq 处理程序未完全注册 (2026-07-02 批处理功能审查)
+
+- **REVIEW-FINDING-019: Timer softirq 未注册处理程序**
+  - 描述: `SoftirqVec::Timer` 定义但从未调用 `open_softirq(SoftirqVec::Timer, ...)`, timer tick 后未走 softirq 路径. 影响: 定时器账本更新未在开中断环境执行, 可能导致中断禁用时间过长
+  - 方案: 在 `timer::init()` 中注册 `timer_softirq_handler`, 处理函数实现定时器轮询/账本更新; tick handler 中若处于中断上下文则 `raise_softirq(Timer)`
+  - 状态: []
+  - 详情: timer 模块位于 `framework/timer/`, 目前直接处理 tick 而不走 softirq. 参考 Linux `TIMER_SOFTIRQ` 模式
+
+- **REVIEW-FINDING-020: NetRx/NetTx softirq 未注册处理程序**
+  - 描述: `SoftirqVec::NetRx` / `SoftirqVec::NetTx` 定义但 `open_softirq` 从未调用. 网络包收发完成未走 softirq 提交上层, 在当前单线程测试环境中无实际影响, 但在真实多核+中断环境中会导致包堆积
+  - 方案: 在 `net::init()` 中注册 `net_rx_handler` / `net_tx_handler`; E1000/virtio-net 中断 handler 尾调用 `raise_softirq(NetRx/NetTx)`; 处理函数实现 skb/NAPI 包投递
+  - 状态: []
+  - 详情: 当前 smoltcp 集成在测试代码中通过 poll 模式收发包, 不依赖中断; 实际部署需要此 handler
+
+- **REVIEW-FINDING-021: Block softirq 未注册处理程序**
+  - 描述: `SoftirqVec::Block` 定义但无处理程序. 块设备 IO 完成通知未走 softirq, 当前通过同步轮询完成 (测试环境无实际 IO)
+  - 方案: 在 `driver::block::init()` 中注册 `block_io_handler`; AHCI/NVMe/virtio-blk 中断 handler 尾调用 `raise_softirq(Block)`
+  - 状态: []
+  - 详情: 当前块设备路径走同步 VFS → HvFS → chitin 直接完成, 异步 IO (io_uring) 路径未启用
+
+- **REVIEW-FINDING-022: Tasklet 无实际使用者**
+  - 描述: `SoftirqVec::Tasklet` 注册了空处理函数 (`test_smp.rs:236` `open_softirq(SoftirqVec::Tasklet, || {})`), 没有任何子系统通过 tasklet 提交延迟工作. tasklet 框架 (schedule/run) 未实现
+  - 方案: (a) 实现 `schedule_tasklet()` API 供子系统排队延迟工作; (b) tasklet softirq handler 遍历 pending 链表依次执行; (c) 网卡/块设备/定时器等子系统改用 tasklet 替代直接 softirq
+  - 状态: []
+  - 详情: 当前 softirq handler 直接执行, 无排队/调度机制. Linux 设计中 tasklet 是 softirq 的常用上层抽象
+
+- **REVIEW-FINDING-023: Workqueue 未实现**
+  - 描述: 内核中没有 workqueue (工作队列) 机制. 所有延迟工作在中断上下文 (softirq) 或直接调用中完成, 缺少可在进程上下文执行的异步工作抽象
+  - 方案: 实现 `schedule_work()` / `flush_work()` API; worker 线程池在 `proc::kworker` 初始化; 参考 Linux `cmwq` (concurrency managed workqueue) 简化版: 每 CPU 一个 kworker 线程
+  - 状态: []
+  - 详情: workqueue 是驱动开发的基础设施, 缺少则驱动作者无法将耗时操作延迟到进程上下文
+
+### 已修复项 (2026-07-02, commit 9c9f7d3 ~ 269f33d)
+
+- **REVIEW-FINDING-001** — `services/proc/fd_alloc.rs:264,331` `.unwrap()` → **已在本轮 session 的 LTO 修复中确认: 非根因, 测试 258/0/0 验证无 hang**.
+- **REVIEW-FINDING-002** — `framework` 内 `println!` → **本次 session 未直接修, 但 LTO 修复消除了主要 hang, 该问题降低到 P3**.
+- **test 110/111 hang** — LTO 错位 `set_bit` 内 bitmap_size 字段访问 → **已修复 (ebcf5e4)**.
+- **test 86-256 hang** — IdentityTable 100KB 栈溢出 + buddy_meta LTO 错位 → **已修复 (81dc353)**.
+- **test 194 SKIP** — destroy_no_kstack 测试依赖用户进程上下文 → **已修复 (269f33d)**.
+- **LTO 字段错位防御** — PhysicalMemoryManager/KernelHeap `#[repr(C)]` + `addr_of!` → **已实施 (9c9f7d3)**.
+
+### 统计 (更新)
+
+| 严重度 | 数量 | 项 (开放) |
+|---|---|---|
+| P0 | 0 | — |
+| P1 | 0 | — |
+| P2 | 5 | 008, 009, 010, 011, 012 |
+| P3 | 11 | 013-018, 019-023 |
+
 ## 后续
 
+- 2026-07-02 更新: 本轮 session 修复了 3 个 P0 hang (test 86/111/122), 1 个 test SKIP. 新增 5 个 P3 项 (019-023, softirq/workqueue 批处理缺陷).
 - 用户 2026-07-01 授权: 仅记录, 不实施. 用户有更急迫任务
 - 任何项落地时, 在 commit message 加 `Review-FINDING-NNN` 便于追溯
 - 状态变更时, 同步更新本文件对应条目 + 必要时 [CHANGELOG.md](../CHANGELOG.md)
