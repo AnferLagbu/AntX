@@ -672,29 +672,60 @@ impl PhysicalMemoryManager {
 
     // ==================== Bitmap 辅助函数 (统计 + reserved) ====================
 
+    // 2026-07-01 test 110 hang 修复: 防止 LTO 字段错位.
+    //
+    // dump 显示 set_bit 汇编 `cmp GLOBAL_PMM+0x1078(%rip),%rdx` 实际读
+    // failed_allocs 字段, 而非 bitmap_size 字段 (差 0x1060 字节).
+    // LTO 在 inline 时把 self.bitmap_size.get() 错位到 self.failed_allocs,
+    // 运行时 cmp 与 failed_allocs 实际值 (~0x3FF) 比较, 几乎总通过 jae,
+    // 导致巨大 page index 的 set_bit 不被跳过, 越界写入触发 #PF.
+    //
+    // 修复: 通过 raw pointer 直接读 self.bitmap_size, 强制 LTO 看到
+    // 真实字段偏移, 不可错位. volatile read 防止任何 caching.
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
-            BitmapRef::new(bmp).set_bit(bit, self.bitmap_size.get());
+            // SAFETY: bitmap 已 init 时 self.bitmap_size 也是已 set 的有效值.
+            let bitmap_size = unsafe {
+                let p = self as *const Self as *const u64;
+                // bitmap 字段在 offset 0, size 16; bitmap_size 字段在 offset 16
+                core::ptr::read_volatile(p.add(2) as *const usize)
+            };
+            BitmapRef::new(bmp).set_bit(bit, bitmap_size);
         }
     }
 
+    // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
     fn clear_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
-            BitmapRef::new(bmp).clear_bit(bit, self.bitmap_size.get());
+            let bitmap_size = unsafe {
+                let p = self as *const Self as *const u64;
+                core::ptr::read_volatile(p.add(2) as *const usize)
+            };
+            BitmapRef::new(bmp).clear_bit(bit, bitmap_size);
         }
     }
 
+    // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
     fn test_bit(&self, bit: usize) -> bool {
         if let Some(bmp) = self.bitmap.get() {
-            BitmapRef::new(bmp).test_bit(bit, self.bitmap_size.get())
+            let bitmap_size = unsafe {
+                let p = self as *const Self as *const u64;
+                core::ptr::read_volatile(p.add(2) as *const usize)
+            };
+            BitmapRef::new(bmp).test_bit(bit, bitmap_size)
         } else {
             false
         }
     }
 
+    // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
-        let bmp_size = self.bitmap_size.get();
+        // SAFETY: bitmap 已 init 时 self.bitmap_size 有效
+        let bmp_size = unsafe {
+            let p = self as *const Self as *const u64;
+            core::ptr::read_volatile(p.add(2) as *const usize)
+        };
         let free = if let Some(bmp) = self.bitmap.get() {
             let f = BitmapRef::new(bmp).count_free(bmp_size);
             f
