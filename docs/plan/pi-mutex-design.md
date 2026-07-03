@@ -42,10 +42,10 @@
   - 方案: notify_donation 钩子实装为真正修改 Process.priority + 触发 CFS 重排; 跨 sync/proc/sched 三大子系统; DECISION-014
   - 状态: [X]
 
-- **v2.4 子特性 (计划中)**
+- **v2.4 子特性 (2026-07-02 实施)**
   - 描述: 优先级天花板协议 (PCP)
   - 方案: 新增独立协议枚举 PiMutexProtocol { Pi, Pcp }; 互斥时二选一; Pcp 模式下取 max(holder.base, ceiling) 一次性提升; DECISION-015
-  - 状态: []
+  - 状态: [X]
 
 - **v2.5 子特性 (计划中)**
   - 描述: 鲁棒 mutex (持有者死亡)
@@ -158,10 +158,10 @@
   - 描述: v2.3 调度器强制集成
   - 方案: 理由: 仅有钩子不够, 必须实装为真正修改 Process.priority + CFS 重排, 否则捐赠只是"账面"行为
   - 状态: [X]
-- **DECISION-015 (计划 2026-Q3)**
+- **DECISION-015 (2026-07-02 实施)**
   - 描述: v2.4 PCP 协议
   - 方案: 理由: POSIX PTHREAD_PRIO_PROTECT 协议对应, 适用于有界临界区
-  - 状态: []
+  - 状态: [X]
 - **DECISION-016 (计划 2026-Q3)**
   - 描述: v2.5 鲁棒 mutex
   - 方案: 理由: 持有者进程死亡时, 锁不释放, 等待者永久阻塞

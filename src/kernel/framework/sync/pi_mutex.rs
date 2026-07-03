@@ -143,11 +143,11 @@ struct PiMutexInner {
     /// 当前有效优先级 (= max(holder_prio, waiters_prio))
     effective_priority: AtomicU32,
     /// v2.2: 链式捐赠追踪 (holder→donor→donor...)
-    /// 当 A 持有 M1, B 持有 M2 且等待 M1, C 等待 M2,
-    /// C→B→A 链路通过此字段传递, unlock 时遍历提升所有链上持有者.
-    /// 栈上小数组 (≤ 8 层), 避免堆分配.
     chain: UnsafeCell<[u32; 8]>,
     chain_len: AtomicU8,
+    /// v2.4: 优先级天花板 (PCP) 协议相关
+    /// 当前持有者的 base_priority (用于解锁后恢复)
+    owner_base_priority: AtomicU32,
 }
 
 impl PiMutexInner {
@@ -159,6 +159,7 @@ impl PiMutexInner {
             effective_priority: AtomicU32::new(0),
             chain: UnsafeCell::new([0; 8]),
             chain_len: AtomicU8::new(0),
+            owner_base_priority: AtomicU32::new(0),
         }
     }
 }
@@ -167,11 +168,25 @@ impl PiMutexInner {
 // PiMutex 公开类型
 // ============================================================================
 
+/// v2.4: 互斥锁协议 — PI (继承) 或 PCP (天花板)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PiMutexProtocol {
+    /// 标准优先级继承 (默认)
+    Pi = 0,
+    /// 优先级天花板协议 (PCP): 所有者升到 ceiling 优先级
+    Pcp = 1,
+}
+
 /// 优先级继承互斥锁
 pub struct PiMutex<T: ?Sized> {
     inner: PiMutexInner,
     /// 初始持有者的 base_priority (用于解锁后通知撤销)
     holder_base_priority: AtomicU32,
+    /// v2.4: 互斥锁协议
+    protocol: PiMutexProtocol,
+    /// v2.4: 优先级天花板 (仅 Pcp 模式使用)
+    ceiling: AtomicU32,
     /// Lockdep 锁类 ID (debug 模式下使用)
     #[cfg(debug_assertions)]
     lockdep_class: LockClassId,
@@ -203,6 +218,8 @@ impl<T> PiMutex<T> {
         Self {
             inner: PiMutexInner::new(),
             holder_base_priority: AtomicU32::new(0),
+            protocol: PiMutexProtocol::Pi,
+            ceiling: AtomicU32::new(0),
             data: UnsafeCell::new(data),
             #[cfg(debug_assertions)]
             lockdep_class: LockClassId::INVALID,
