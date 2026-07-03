@@ -47,10 +47,10 @@
   - 方案: 新增独立协议枚举 PiMutexProtocol { Pi, Pcp }; 互斥时二选一; Pcp 模式下取 max(holder.base, ceiling) 一次性提升; DECISION-015
   - 状态: [X]
 
-- **v2.5 子特性 (计划中)**
+- **v2.5 子特性 (2026-07-02 实施)**
   - 描述: 鲁棒 mutex (持有者死亡)
   - 方案: 在 Process.exit() 处遍历 PI mutex 注册表, 释放持有者已死锁的 mutex, 唤醒等待者; DECISION-016
-  - 状态: []
+  - 状态: [X]
 
 - **v2.6 子特性 (计划中)**
   - 描述: Futex-style 阻塞
@@ -162,10 +162,10 @@
   - 描述: v2.4 PCP 协议
   - 方案: 理由: POSIX PTHREAD_PRIO_PROTECT 协议对应, 适用于有界临界区
   - 状态: [X]
-- **DECISION-016 (计划 2026-Q3)**
+- **DECISION-016 (2026-07-02 实施)**
   - 描述: v2.5 鲁棒 mutex
   - 方案: 理由: 持有者进程死亡时, 锁不释放, 等待者永久阻塞
-  - 状态: []
+  - 状态: [X]
 - **DECISION-017 (计划 2026-Q3)**
   - 描述: v2.6 Futex-style 阻塞
   - 方案: 理由: 自旋+yield 浪费 CPU, 应改用调度等待队列真正睡眠

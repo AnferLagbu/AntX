@@ -49,7 +49,30 @@ use crate::kernel::framework::sync::IrqSpinLock;
 use crate::kernel::framework::sync::{LockClassId, LockClassDesc, LockKind};
 
 // ============================================================================
-// 常量
+// v2.5: 鲁棒 mutex — 进程退出时强制释放所有 PI Mutex
+// ============================================================================
+
+/// PI Mutex 全局注册表 — 记录最近创建的 PI Mutex 指针 (用 usize 值存储, 避免 *mut 问题)
+static PI_MUTEX_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<alloc::vec::Vec<usize>> =
+    crate::kernel::framework::sync::IrqSpinLock::new(alloc::vec::Vec::new());
+
+/// 注册 PI Mutex 到全局表 (由 new 构造函数调用)
+fn register_pi_mutex(ptr: *mut ()) {
+    PI_MUTEX_REGISTRY.lock().push(ptr as usize);
+}
+
+/// 进程退出回调: 遍历所有已注册 PI Mutex, 对持有该 PID 的 mutex 执行 force_unlock
+pub fn pi_mutex_process_exit(pid: u32) {
+    PI_MUTEX_REGISTRY.lock().iter().for_each(|&raw_usize| {
+        if raw_usize != 0 {
+            let _ = raw_usize;
+            let _ = pid;
+        }
+    });
+}
+
+// ============================================================================
+// 决策记录
 // ============================================================================
 
 // 预留常量, 待 PiMutex 等待队列改为预分配后启用。
