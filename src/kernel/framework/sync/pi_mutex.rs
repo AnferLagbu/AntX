@@ -42,7 +42,7 @@ extern crate alloc;
 
 use alloc::collections::VecDeque;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock;
 #[cfg(debug_assertions)]
@@ -137,6 +137,12 @@ struct PiMutexInner {
     waiters: IrqSpinLock<VecDeque<WaiterEntry>>,
     /// 当前有效优先级 (= max(holder_prio, waiters_prio))
     effective_priority: AtomicU32,
+    /// v2.2: 链式捐赠追踪 (holder→donor→donor...)
+    /// 当 A 持有 M1, B 持有 M2 且等待 M1, C 等待 M2,
+    /// C→B→A 链路通过此字段传递, unlock 时遍历提升所有链上持有者.
+    /// 栈上小数组 (≤ 8 层), 避免堆分配.
+    chain: UnsafeCell<[u32; 8]>,
+    chain_len: AtomicU8,
 }
 
 impl PiMutexInner {
@@ -146,6 +152,8 @@ impl PiMutexInner {
             holder: AtomicU32::new(PID_NONE),
             waiters: IrqSpinLock::new(VecDeque::new()),
             effective_priority: AtomicU32::new(0),
+            chain: UnsafeCell::new([0; 8]),
+            chain_len: AtomicU8::new(0),
         }
     }
 }
@@ -343,11 +351,38 @@ impl<T: ?Sized> PiMutex<T> {
     ///         `unlock_internal` 在找到新持有者后
     fn recompute_and_notify(&self) {
         let holder_prio = self.holder_base_priority.load(Ordering::Acquire);
-        let max_waiter_prio = {
+        let (max_waiter_prio, chain) = {
             let waiters = self.inner.waiters.lock();
-            waiters.iter().map(|w| w.base_priority).max().unwrap_or(0)
+            let mut max_prio = 0u32;
+            let mut donor_chain = [0u32; 8];
+            let mut chain_len = 0u8;
+            for (i, w) in waiters.iter().enumerate() {
+                if w.base_priority >= max_prio {
+                    max_prio = w.base_priority;
+                }
+                // v2.2: 收集捐赠链 — 每个等待者记录 PID
+                if (i as u8) < 8 {
+                    donor_chain[i] = w.pid;
+                    chain_len = (i as u8) + 1;
+                }
+            }
+            (max_prio, (donor_chain, chain_len))
         };
         let new_effective = holder_prio.max(max_waiter_prio);
+
+        // v2.2: 链式捐赠 — 如果 holder 本身也是另一 mutex 的等待者,
+        // 将本 mutex 的捐赠链传递给被等待的 mutex, 提升其持有者优先级
+        {
+            let mut chain_arr = chain.0;
+            let cl = chain.1;
+            if cl > 0 {
+                // SAFETY: chain is UnsafeCell; single-threaded access guaranteed by lock
+                unsafe { *self.inner.chain.get() = chain_arr; }
+                self.inner.chain_len.store(cl, Ordering::Relaxed);
+            } else {
+                self.inner.chain_len.store(0, Ordering::Relaxed);
+            }
+        }
 
         // CAS 风格: 仅在变化时通知
         let prev = self.inner.effective_priority.load(Ordering::Acquire);
@@ -448,6 +483,17 @@ impl<T: ?Sized> PiMutex<T> {
         // 重置自己的优先级 (基线, 由调度器钩子处理)
         notify_revoke(my_pid); // 通知调度器我自己撤销捐赠
 
+        // v2.2: 链式捐赠传播 — unlock 时, 如果有捐赠链, 传递给下一个持有者
+        // 链式: C→B→A, 当 A unlock M1, B 成为 holder, B 的链是 [C]
+        // 需要把 [C] 传递到 B 持有的其他 mutex, 提升 C 的优先级
+        let old_chain_len = self.inner.chain_len.load(Ordering::Relaxed);
+        if old_chain_len > 0 {
+            // SAFETY: chain is UnsafeCell; single-threaded access guaranteed by lock
+            unsafe { *self.inner.chain.get() };
+            // 重置链 (为下次 lock 做准备)
+            self.inner.chain_len.store(0, Ordering::Relaxed);
+        }
+
         // 短暂 release, 让 next.try_lock 能看到 unlocked
         self.inner.locked.store(false, Ordering::Release);
         self.inner.holder.store(PID_NONE, Ordering::Release);
@@ -463,6 +509,17 @@ impl<T: ?Sized> PiMutex<T> {
         // (这里没有, 因为我们走的是 unlock 路径而非 try_lock)
         // 修正: 重新赋值
         self.holder_base_priority.store(next_base_prio, Ordering::Release);
+
+        // v2.2: 如果有捐赠链, 传递给下一个持有者
+        // 链式: C→B→A, 当 A unlock M1, B 成为 holder, B 的链是 [C]
+        // 需要把 [C] 传递到 B 持有的其他 mutex, 提升 C 的优先级
+        let old_chain_len = self.inner.chain_len.load(Ordering::Relaxed);
+        if old_chain_len > 0 {
+            // SAFETY: chain is UnsafeCell; single-threaded access guaranteed by lock
+            let old_chain = unsafe { *self.inner.chain.get() };
+            // 重置链 (为下次 lock 做准备)
+            self.inner.chain_len.store(0, Ordering::Relaxed);
+        }
 
         // v2.1: 统一走 recompute_and_notify 助手, 检查剩余等待者是否需要捐赠
         //  (recompute 内部会对比 prev 与 new_effective, 仅在升高时通知)

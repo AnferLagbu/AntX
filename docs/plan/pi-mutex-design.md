@@ -32,10 +32,10 @@
   - 状态: [X]
   - 详情: 算法 O(n) 扫描 waiters 队列; 包含 5 个 host 端单元测试 + 5 个 no_std 单元测试; register/unlock 路径重构为调用 `recompute_and_notify` 助手, 行为不变
 
-- **v2.2 子特性 (计划中)**
+- **v2.2 子特性 (2026-07-02 实施)**
   - 描述: 链式捐赠 A→B→C
   - 方案: 在捐赠追踪中维护 donation_chain 链表 (holder→donor→donor...), 通过遍历链路递归提升; DECISION-013
-  - 状态: []
+  - 状态: [X]
 
 - **v2.3 子特性 (计划中)**
   - 描述: 调度器集成 (强制)
@@ -150,10 +150,10 @@
   - 描述: PI Mutex v2.1 新增 `update_waiter_priority` 公开 API
   - 方案: 理由: nice/setpriority 变化时等待者优先级随之变化, 必须能动态更新 mutex 状态机的 max 计算; 不实现会导致 nice 修改无效, mutex 状态与实际优先级不一致
   - 状态: [X] (2026-06-29)
-- **DECISION-013 (计划 2026-Q3)**
+- **DECISION-013 (2026-07-02 实施)**
   - 描述: v2.2 链式捐赠
   - 方案: 理由: 满足 POSIX PTHREAD_PRIO_INHERIT 完整规范
-  - 状态: []
+  - 状态: [X]
 - **DECISION-014 (计划 2026-Q3)**
   - 描述: v2.3 调度器强制集成
   - 方案: 理由: 仅有钩子不够, 必须实装为真正修改 Process.priority + CFS 重排, 否则捐赠只是"账面"行为
