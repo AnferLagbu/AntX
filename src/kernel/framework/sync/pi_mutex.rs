@@ -92,22 +92,27 @@ pub unsafe fn set_revoke_callback(cb: DonationCallback) {
 
 #[inline]
 fn notify_donation(holder_pid: u32, donated_prio: u32) {
-    let ptr = NOTIFY_DONATION.load(Ordering::Acquire);
-    if !ptr.is_null() {
-        // SAFETY: 调用方契约保证 ptr 由 set_donation_callback 安装且未释放
-        let cb: DonationCallback = unsafe { core::mem::transmute(ptr) };
-        cb(holder_pid, donated_prio);
+    // v2.3: 直接修改 Process.priority, 触发 CFS 重排
+    let table = &crate::kernel::framework::proc::PROCESS_TABLE;
+    if let Some(proc_ptr) = table.get(holder_pid) {
+        // SAFETY: proc_ptr 来自 PROCESS_TABLE, 有效指针; 单线程保证
+        let proc = unsafe { &*proc_ptr };
+        proc.priority.store(donated_prio, Ordering::SeqCst);
     }
+    // 通知调度器有优先级变化
+    crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX.yield_current();
 }
 
 #[inline]
 fn notify_revoke(pid: u32) {
-    let ptr = NOTIFY_REVOKE.load(Ordering::Acquire);
-    if !ptr.is_null() {
-        // SAFETY: 同上
-        let cb: DonationCallback = unsafe { core::mem::transmute(ptr) };
-        cb(pid, 0);
+    // v2.3: 恢复 Process.priority 到 Normal (2)
+    let table = &crate::kernel::framework::proc::PROCESS_TABLE;
+    if let Some(proc_ptr) = table.get(pid) {
+        // SAFETY: proc_ptr 来自 PROCESS_TABLE, 有效指针; 单线程保证
+        let proc = unsafe { &*proc_ptr };
+        proc.priority.store(2, Ordering::SeqCst);
     }
+    crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX.yield_current();
 }
 
 // ============================================================================

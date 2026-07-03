@@ -37,10 +37,10 @@
   - 方案: 在捐赠追踪中维护 donation_chain 链表 (holder→donor→donor...), 通过遍历链路递归提升; DECISION-013
   - 状态: [X]
 
-- **v2.3 子特性 (计划中)**
+- **v2.3 子特性 (2026-07-02 实施)**
   - 描述: 调度器集成 (强制)
   - 方案: notify_donation 钩子实装为真正修改 Process.priority + 触发 CFS 重排; 跨 sync/proc/sched 三大子系统; DECISION-014
-  - 状态: []
+  - 状态: [X]
 
 - **v2.4 子特性 (计划中)**
   - 描述: 优先级天花板协议 (PCP)
@@ -154,10 +154,10 @@
   - 描述: v2.2 链式捐赠
   - 方案: 理由: 满足 POSIX PTHREAD_PRIO_INHERIT 完整规范
   - 状态: [X]
-- **DECISION-014 (计划 2026-Q3)**
+- **DECISION-014 (2026-07-02 实施)**
   - 描述: v2.3 调度器强制集成
   - 方案: 理由: 仅有钩子不够, 必须实装为真正修改 Process.priority + CFS 重排, 否则捐赠只是"账面"行为
-  - 状态: []
+  - 状态: [X]
 - **DECISION-015 (计划 2026-Q3)**
   - 描述: v2.4 PCP 协议
   - 方案: 理由: POSIX PTHREAD_PRIO_PROTECT 协议对应, 适用于有界临界区
