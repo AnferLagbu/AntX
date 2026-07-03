@@ -628,11 +628,8 @@ fn current_pid() -> u32 {
 }
 
 fn scheduler_yield() {
-    extern "C" {
-        fn scheduler_yield();
-    }
-    // SAFETY: scheduler_yield 是有效的 C ABI 函数, 让出 CPU
-    unsafe { scheduler_yield() }
+    // v2.6: 用 SCHEDULER_EX.yield_current() 让出 CPU, 替代旧的 C ABI scheduler_yield
+    crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX.yield_current();
 }
 
 // ============================================================================
