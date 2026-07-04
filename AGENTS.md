@@ -99,7 +99,7 @@ cargo test -p host-tests           # 等价
 
 1. 双架构 `cargo check --release` 0 error / 0 warning
 2. clippy 0 warning (`cargo clippy --release -- -D warnings`)
-3. 三审计全部通过 (boundary + safety\_coverage + deadlock\_matrix)
+3. 审计全部通过: `ci/audit.sh` (边界/不变式/unsafe扫描/块注册/OnceCell/C命名/注释语言) + GitHub Actions (safety_coverage + services_boundary + deadlock_matrix)
 4. host-tests 全部通过
 5. QEMU 集成测试通过 (如改动 boot/架构相关)
 
@@ -217,7 +217,7 @@ cargo test -p host-tests           # 等价
 | F3 | 新增代码禁止引入模块间循环依赖                          | `audit_coupling.py`                                    |
 | F4 | framework 任何 unsafe 块必须配 `// SAFETY:` 注释 | `audit_safety_coverage.py`                             |
 | F5 | 双架构编译 0 warning 0 error                  | `./ci/build.sh all`                                    |
-| F6 | 三审计全部通过                                  | boundary + safety + deadlock                           |
+| F6 | 审计全部通过 | boundary + safety + deadlock + ci/audit.sh 全量 |
 | F7 | 中文注释强制                                   | `audit_comment_language.py` 0 violations               |
 | F8 | 公共 API 中文文档注释                            | clippy `missing_docs_in_crate_items`                   |
 
