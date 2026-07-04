@@ -83,6 +83,10 @@
 | `scripts/audit_once_cell.py`          | OnceCell 模式统一                       | 硬       |
 | `scripts/audit_c_naming.py`           | C 命名规范                              | 硬       |
 | `scripts/audit_block_registration.py` | 块设备注册                               | 硬       |
+| `scripts/audit_repr_c.py`           | LTO 字段错位防线: 关键 struct repr(C) 检查    | 硬       |
+| `scripts/audit_volatile_access.py`  | LTO 字段错位防线: volatile 访问检查        | 硬       |
+| `scripts/audit_static_mut.py`       | framework 层 static mut 使用审查            | 硬       |
+| `scripts/audit_public_api_docs.py`  | pub API 中文文档检查 (informational)          | 软       |
 
 任何一项失败视为本轮未完成.
 
