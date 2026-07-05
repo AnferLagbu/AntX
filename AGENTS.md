@@ -229,7 +229,7 @@ cargo test -p host-tests           # 等价
 
 ## 7. 文档规范说明
 
-`docs/README.md` 中定义的"标题 + 章节 + 条目(描述+方案+状态) + 详情"格式**只适用于** **`docs/`** **下文档** (`docs/plan/`, `docs/explain/`, `docs/CHANGELOG.md`).
+`docs/README.md` 中定义的"标题 + 章节 + 条目(描述+方案+状态) + 详情"格式**只适用于** **`docs/`** **下文档** (`docs/plan/`, `docs/explain/`).
 
 **本文件是规则/指导文档, 不受该格式约束, 保持自然描述风格**:
 
