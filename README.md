@@ -13,19 +13,13 @@ QueenX 是一个从零构建的操作系统内核 (Rust + 少量 NASM 汇编, �
 
 ## 克隆与远程仓库
 
-项目主仓库为 Gitee, GitHub 镜像由 Gitee 自动同步 (无需手动推送). 首次克隆后 3 步配置:
+项目使用 Gitee 作为唯一远程仓库:
 
 ```bash
-git clone git@gitee.com:AnferLagbu/QueenX.git   # 克隆主仓库
+git clone git@gitee.com:AnferLagbu/QueenX.git
 cd QueenX
-git remote rename origin Gitee                  # origin → Gitee
-git remote -v                                   # 验证
-```
-
-常用命令:
-
-```bash
-git push Gitee main     # 推 Gitee 主仓库 (GitHub 镜像自动同步)
+git remote rename origin Gitee
+git push Gitee main
 ```
 
 ## 架构
