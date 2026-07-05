@@ -268,27 +268,20 @@ test(integration): DRIVER-2 QEMU virtio-vga 双层验证
 
 ### 8.4 Remote 命名约定
 
-项目用双远程仓库, 语义化命名, 区分主仓库与镜像:
+项目主仓库为 Gitee, GitHub 镜像由 Gitee 自动同步 (无需手动推送).
 
 | remote 名 | URL 协议                                     | 角色         | 默认推送 |
 | -------- | ------------------------------------------ | ---------- | ---- |
 | `Gitee`  | `git@gitee.com:AnferLagbu/QueenX.git`      | 主仓库 (推送首发) | ✅ 是  |
-| `GitHub` | `https://github.com/AnferLagbu/QueenX.git` | 镜像 (国际可访问) | 否    |
 
 **常用命令:**
 
 ```bash
-# 推两处 (推荐)
-git pushall   # alias: git push Gitee main && git push GitHub main
-
-# 推单处
+# 推送 (仅需推 Gitee, GitHub 镜像自动同步)
 git push Gitee main
-git push GitHub main
 
 # 拉取
 git pull Gitee main --rebase
-git pull GitHub main --rebase
-git pullall   # alias: 优先 Gitee, 尝试 GitHub
 ```
 
 **首次克隆后配置:**
@@ -297,10 +290,7 @@ git pullall   # alias: 优先 Gitee, 尝试 GitHub
 git clone git@gitee.com:AnferLagbu/QueenX.git  # 克隆主仓库 (默认 remote = origin)
 cd QueenX
 git remote rename origin Gitee
-git remote add GitHub https://github.com/AnferLagbu/QueenX.git
 git remote -v  # 验证
-git config alias.pushall '!git push Gitee main && git push GitHub main'
-git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase GitHub main 2>/dev/null; true'
 ```
 
 **禁止:**
@@ -308,6 +298,7 @@ git config alias.pullall '!git pull --rebase Gitee main && git pull --rebase Git
 - 禁止用 `origin` 模糊命名 (无歧义)
 - 禁止假设 GitHub 是主仓库 (网络可达性 + Gitee 是项目作者所属平台)
 - 禁止在脚本/CI 中硬编码 `"origin"` 字面字符串 (用变量或 remote 名)
+- 禁止手动 `git push GitHub` (镜像由 Gitee 自动同步)
 
 **历史归档例外:** `docs/plan/archive/*` 中 git 命令示例保留 `origin` 字面字符串 (2026-06-13 历史快照), 不得修改. `docs/plan/smoltcp-framekernel-wrapper.md` 中 `git fetch origin` 指 smoltcp 子模块的 origin (非 QueenX remote), 不得修改.
 
