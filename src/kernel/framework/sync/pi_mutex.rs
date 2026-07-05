@@ -57,6 +57,7 @@ static PI_MUTEX_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<alloc::vec
     crate::kernel::framework::sync::IrqSpinLock::new(alloc::vec::Vec::new());
 
 /// 注册 PI Mutex 到全局表 (由 new 构造函数调用)
+#[allow(dead_code)]
 fn register_pi_mutex(ptr: *mut ()) {
     PI_MUTEX_REGISTRY.lock().push(ptr as usize);
 }
@@ -170,6 +171,7 @@ struct PiMutexInner {
     chain_len: AtomicU8,
     /// v2.4: 优先级天花板 (PCP) 协议相关
     /// 当前持有者的 base_priority (用于解锁后恢复)
+    #[allow(dead_code)]
     owner_base_priority: AtomicU32,
 }
 
@@ -207,8 +209,10 @@ pub struct PiMutex<T: ?Sized> {
     /// 初始持有者的 base_priority (用于解锁后通知撤销)
     holder_base_priority: AtomicU32,
     /// v2.4: 互斥锁协议
+    #[allow(dead_code)]
     protocol: PiMutexProtocol,
     /// v2.4: 优先级天花板 (仅 Pcp 模式使用)
+    #[allow(dead_code)]
     ceiling: AtomicU32,
     /// Lockdep 锁类 ID (debug 模式下使用)
     #[cfg(debug_assertions)]
@@ -418,7 +422,7 @@ impl<T: ?Sized> PiMutex<T> {
         // v2.2: 链式捐赠 — 如果 holder 本身也是另一 mutex 的等待者,
         // 将本 mutex 的捐赠链传递给被等待的 mutex, 提升其持有者优先级
         {
-            let mut chain_arr = chain.0;
+            let chain_arr = chain.0;
             let cl = chain.1;
             if cl > 0 {
                 // SAFETY: chain is UnsafeCell; single-threaded access guaranteed by lock
@@ -534,7 +538,7 @@ impl<T: ?Sized> PiMutex<T> {
         let old_chain_len = self.inner.chain_len.load(Ordering::Relaxed);
         if old_chain_len > 0 {
             // SAFETY: chain is UnsafeCell; single-threaded access guaranteed by lock
-            unsafe { *self.inner.chain.get() };
+            let _ = unsafe { *self.inner.chain.get() };
             // 重置链 (为下次 lock 做准备)
             self.inner.chain_len.store(0, Ordering::Relaxed);
         }
@@ -561,7 +565,7 @@ impl<T: ?Sized> PiMutex<T> {
         let old_chain_len = self.inner.chain_len.load(Ordering::Relaxed);
         if old_chain_len > 0 {
             // SAFETY: chain is UnsafeCell; single-threaded access guaranteed by lock
-            let old_chain = unsafe { *self.inner.chain.get() };
+            let _old_chain = unsafe { *self.inner.chain.get() };
             // 重置链 (为下次 lock 做准备)
             self.inner.chain_len.store(0, Ordering::Relaxed);
         }

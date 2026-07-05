@@ -1405,7 +1405,7 @@ impl Scheduler {
         }
     }
 
-    /// Set process count limit for a PWM
+    /// 设置 PWM 的进程数上限.
     pub fn set_limit(&self, pwm: u64, max_procs: u32) {
         let mut limits = self.limits.lock();
         for l in limits.iter_mut() {

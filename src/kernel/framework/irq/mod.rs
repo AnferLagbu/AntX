@@ -150,10 +150,83 @@ pub fn pending_softirq() -> bool {
 
 #[no_mangle]
 pub extern "C" fn softirq_init() {
-    // 默认无注册处理器. 子系统在初始化时调用 `open_softirq()`.
+    // 注册 Tasklet softirq 处理程序
+    open_softirq(SoftirqVec::Tasklet, tasklet_softirq_handler);
+    // 默认: Timer/NetRx/NetTx/Block 由各子系统在初始化时注册.
 }
 
 #[no_mangle]
 pub extern "C" fn softirq_do() {
     do_softirq();
+}
+
+// ============================================================================
+// Tasklet 框架 — 轻量级延迟工作执行 (参考 Linux tasklet)
+// ============================================================================
+
+use crate::kernel::framework::sync::IrqSpinLock;
+
+/// Tasklet 回调函数类型
+pub type TaskletFn = fn();
+
+/// Tasklet 条目
+struct TaskletEntry {
+    func: Option<TaskletFn>,
+    scheduled: AtomicBool,
+}
+
+impl TaskletEntry {
+    const fn new() -> Self {
+        Self {
+            func: None,
+            scheduled: AtomicBool::new(false),
+        }
+    }
+}
+
+/// 最大 tasklet 数量
+const MAX_TASKLETS: usize = 32;
+
+/// Tasklet 注册表
+static TASKLETS: IrqSpinLock<[TaskletEntry; MAX_TASKLETS]> =
+    IrqSpinLock::new([const { TaskletEntry::new() }; MAX_TASKLETS]);
+
+/// 注册一个 tasklet 回调, 返回 tasklet ID
+///
+/// # Safety
+/// `func` 必须是有效的函数指针, 且在 softirq 上下文中安全执行.
+pub fn register_tasklet(func: TaskletFn) -> Option<usize> {
+    let mut table = TASKLETS.lock();
+    for (i, entry) in table.iter_mut().enumerate() {
+        if entry.func.is_none() {
+            entry.func = Some(func);
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// 调度一个 tasklet (标记为 pending, 由 softirq 执行)
+pub fn schedule_tasklet(id: usize) {
+    let table = TASKLETS.lock();
+    if let Some(entry) = table.get(id) {
+        entry.scheduled.store(true, Ordering::Release);
+    }
+    drop(table);
+    raise_softirq(SoftirqVec::Tasklet);
+}
+
+/// Tasklet softirq 处理程序 — 遍历所有已注册 tasklet, 执行已调度的
+fn tasklet_softirq_handler() {
+    let table = TASKLETS.lock();
+    for entry in table.iter() {
+        if entry.scheduled.load(Ordering::Acquire) {
+            entry.scheduled.store(false, Ordering::Release);
+            if let Some(func) = entry.func {
+                drop(table);
+                func();
+                return; // 每次 softirq 轮次只执行一个 tasklet, 避免长时间占用
+            }
+        }
+    }
 }

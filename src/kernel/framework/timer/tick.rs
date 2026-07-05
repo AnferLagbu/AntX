@@ -111,7 +111,19 @@ pub fn timer_init(frequency_hz: u32) -> Result<u32, &'static str> {
     // 6. 初始化高精度定时器框架
     super::hrtimer::hrtimer_init();
 
+    // 7. 注册 Timer softirq 处理程序 (预留, 当前 hrtimer 在 hardirq 中直接处理)
+    crate::kernel::framework::irq::open_softirq(
+        crate::kernel::framework::irq::SoftirqVec::Timer,
+        timer_softirq_handler,
+    );
+
     Ok(actual_freq)
+}
+
+/// Timer softirq 处理程序 — 预留: 待将 hrtimer 处理从 hardirq 迁移到 softirq 时启用
+fn timer_softirq_handler() {
+    // 当前 hrtimer_run_queues() 在 on_timer_interrupt() (hardirq) 中已调用.
+    // 此 handler 为后续优化预留: 将 hrtimer 处理移到 softirq 可减少中断禁用时间.
 }
 
 /// 检查 Timer 是否已初始化

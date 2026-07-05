@@ -16,11 +16,11 @@ SMOLTCP_SHA=e347a1e2d3ac33c5ce2c0c114e24b85ae23c4897
 SMOLTCP_UPSTREAM_SRC_HASH=73b9bfae7e0763cb5864d0ca9a10f24fa21121dcf4f49a562024616e1478ec06
 
 # 本地 vendored 实际 src/ 合并 SHA256 (含 12 个本地化)
-# 计算方法: LC_ALL=C find src/kernel/framework/net/smoltcp/src -name '*.rs' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum
-SMOLTCP_LOCAL_SRC_HASH=b6eff20e35fa98c4eb25116398950d01f32c85586217679654d63eebb45d0121
+# 计算方法: LC_ALL=C find src/kernel/services/net/smoltcp/src -name '*.rs' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum
+SMOLTCP_LOCAL_SRC_HASH=ff7c2d73f5fcb55305b26b35d7270cd6761d9ec1f930a45102011de78f2253f3
 
 # 锁定时间 (ISO 8601, 仅供人类阅读, CI 不读取)
-SMOLTCP_LOCKED_AT=2026-06-24T15:30:00Z
+SMOLTCP_LOCKED_AT=2026-07-04T17:30:00Z
 
 # 锁定模式 (LOCALIZED_VENDORED)
 # 含义: vendored 副本在上游基础上包含本地化 (lint + SAFETY 注释)

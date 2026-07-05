@@ -92,7 +92,8 @@ impl BootInfo {
     }
 }
 
-struct MultibootPtr(#[allow(dead_code)] *const u8);
+struct MultibootPtr(#[allow(dead_code)] // 待 boot 协议扩展后使用
+    *const u8);
 // SAFETY: MultibootPtr 包装一个指向启动信息数据的裸指针, 启动早期写入
 // 一次, 之后只读. 访问受 MULTIBOOT_INFO_PTR Mutex 保护.
 unsafe impl Send for MultibootPtr {}

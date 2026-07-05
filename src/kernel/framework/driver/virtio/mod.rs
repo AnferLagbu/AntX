@@ -186,7 +186,7 @@ impl VirtioMmioDevice {
         })
     }
 
-    /// Initialize the device:
+    /// 初始化设备:
     /// 1. Reset
     /// 2. Acknowledge
     /// 3. Negotiate features

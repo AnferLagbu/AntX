@@ -261,7 +261,7 @@ pub fn free_fd(sub: FdSubsystem, fd: i32) -> bool {
 pub fn subsystem_of(fd: i32) -> Option<FdSubsystem> {
     let mut i = 0;
     while i < FdSubsystem::COUNT {
-        let sub = FdSubsystem::from_index(i).unwrap();
+        let sub = FdSubsystem::from_index(i)?;
         if FdPlan::range_for(sub).contains(fd) {
             return Some(sub);
         }
@@ -328,7 +328,7 @@ pub const fn max_slots(sub: FdSubsystem) -> usize {
 pub fn idx_of(fd: i32) -> Option<(FdSubsystem, usize)> {
     let mut i = 0;
     while i < FdSubsystem::COUNT {
-        let sub = FdSubsystem::from_index(i).unwrap();
+        let sub = FdSubsystem::from_index(i)?;
         let range = FdPlan::range_for(sub);
         if range.contains(fd) {
             return Some((sub, (fd - range.base) as usize));

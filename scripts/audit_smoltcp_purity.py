@@ -94,7 +94,7 @@ def compute_vendored_hash() -> str:
             # LC_ALL=C 确保字节序可重现 (避免 locale 差异)
             env = {"LC_ALL": "C", "PATH": "/usr/bin:/bin:/usr/local/bin"}
             result = sp.run(
-                "find src/kernel/framework/net/smoltcp/src -type f -name '*.rs' -print0"
+                f"find {VENDORED_SMOLTCP}/src -type f -name '*.rs' -print0"
                 " | LC_ALL=C sort -z"
                 " | xargs -0 sha256sum",
                 shell=True, capture_output=True, text=True, check=True, env=env,

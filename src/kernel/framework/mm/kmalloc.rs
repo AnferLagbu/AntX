@@ -342,7 +342,7 @@ impl KernelHeap {
         }
     }
 
-    /// Initialize the kernel heap
+    /// 初始化内核堆.
     pub fn init(&mut self, start: VirtAddr, initial_size: u64) {
         self.heap_start = start;
         // SAFETY: init 独占调用, 无并发访问
@@ -542,7 +542,7 @@ impl KernelHeap {
         Some(new_ptr)
     }
 
-    /// Get heap statistics
+    /// 返回堆使用统计.
     pub fn get_stats(&self) -> HeapStats {
         // SAFETY: 读取 heap_end, 堆锁未持有时可能读到稍旧的值,
         // 但对统计信息而言可接受 (best-effort 一致性)

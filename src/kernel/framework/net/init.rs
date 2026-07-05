@@ -799,7 +799,30 @@ pub extern "C" fn qx_net_init() {
             net_restore,
             net_reset,
         );
+
+        // 注册网络 softirq 处理程序
+        crate::kernel::framework::irq::open_softirq(
+            crate::kernel::framework::irq::SoftirqVec::NetRx,
+            net_rx_softirq_handler,
+        );
+        crate::kernel::framework::irq::open_softirq(
+            crate::kernel::framework::irq::SoftirqVec::NetTx,
+            net_tx_softirq_handler,
+        );
     }
+}
+
+/// NetRx softirq 处理程序 — 网络包接收延迟处理
+fn net_rx_softirq_handler() {
+    // 当前 smoltcp 集成使用 poll 模式, 包处理在 poll_network() 中完成.
+    // 此 handler 为多核 + 中断驱动模式预留.
+    // TODO: 待 NAPI/中断驱动模式启用后, 此处实现 skb 投递到 smoltcp.
+}
+
+/// NetTx softirq 处理程序 — 网络发送完成回收
+fn net_tx_softirq_handler() {
+    // 当前发送通过 smoltcp 直接完成, 无异步发送队列.
+    // 此 handler 为多核 + DMA 完成中断模式预留.
 }
 
 // ============================================================================
@@ -1029,7 +1052,7 @@ pub(crate) fn wire_to_smol_v4(a: crate::kernel::framework::net::iface_trait::Ipv
 
 /// 把 trait 抽象的 `NetEndpoint` 翻译成 smoltcp 的 `IpEndpoint`.
 #[inline]
-#[allow(dead_code)]
+#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn endpoint_to_smol(
     e: crate::kernel::framework::net::iface_trait::NetEndpoint,
 ) -> IpEndpoint {
@@ -1041,7 +1064,7 @@ pub(crate) fn endpoint_to_smol(
 
 /// 把 trait 抽象的 `NetListenEndpoint` 翻译成 smoltcp 的 `IpListenEndpoint`.
 #[inline]
-#[allow(dead_code)]
+#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn listen_endpoint_to_smol(
     e: crate::kernel::framework::net::iface_trait::NetListenEndpoint,
 ) -> IpListenEndpoint {
@@ -1056,7 +1079,7 @@ pub(crate) fn listen_endpoint_to_smol(
 
 /// 从 smoltcp `IpAddress` 中提取 IPv4 octets, 翻译为 trait `Ipv4Addr`.
 #[inline]
-#[allow(dead_code)]
+#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn ipaddr_from_smol(a: IpAddress) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Addr> {
     match a {
         IpAddress::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(v4.octets())),
@@ -1066,7 +1089,7 @@ pub(crate) fn ipaddr_from_smol(a: IpAddress) -> Option<crate::kernel::framework:
 
 /// 从 smoltcp `IpEndpoint` 翻译为 trait `NetEndpoint`.
 #[inline]
-#[allow(dead_code)]
+#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn endpoint_from_smol(e: IpEndpoint) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
     Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new(
         ipaddr_from_smol(e.addr)?,
@@ -1076,7 +1099,7 @@ pub(crate) fn endpoint_from_smol(e: IpEndpoint) -> Option<crate::kernel::framewo
 
 /// 从 smoltcp `IpCidr` 翻译为 trait `Ipv4Cidr` (仅 IPv4).
 #[inline]
-#[allow(dead_code)]
+#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn cidr_from_smol(c: IpCidr) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Cidr> {
     match c {
         IpCidr::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Cidr::new(

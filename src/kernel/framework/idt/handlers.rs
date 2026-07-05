@@ -238,12 +238,12 @@ impl ExceptionHandler for PageFaultHandler {
                 }
 
                 // 所有其他内核态 not-present PF → Panic (获取诊断信息)
-                return RecoveryAction::Panic(PanicInfo::new(
+                RecoveryAction::Panic(PanicInfo::new(
                     "Kernel Page Fault: page not present",
                     14,
                     // SAFETY: `frame` 由调用方保证为有效指针
                     unsafe { (*frame).rip },
-                ));
+                ))
             }
 
             FaultCause::ProtectionViolation | FaultCause::ReservedBitSet => {

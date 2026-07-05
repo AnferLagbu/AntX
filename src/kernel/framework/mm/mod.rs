@@ -383,12 +383,12 @@ impl PageTableEntry {
         }
     }
 
-    /// Get raw value
+    /// 返回页表项原始值.
     pub fn value(&self) -> u64 {
         self.bits.load(Ordering::Acquire)
     }
 
-    /// Set raw value
+    /// 设置页表项原始值.
     pub fn set_value(&self, value: u64) {
         self.bits.store(value, Ordering::Release);
     }
@@ -398,7 +398,7 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & PAGE_PRESENT != 0
     }
 
-    /// Set present flag
+    /// 设置 Present 标志位.
     pub fn set_present(&self, present: bool) {
         let mut val = self.bits.load(Ordering::Acquire);
         if present {
@@ -414,7 +414,7 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & PAGE_WRITABLE != 0
     }
 
-    /// Set writable flag
+    /// 设置 Writable 标志位.
     pub fn set_writable(&self, writable: bool) {
         let mut val = self.bits.load(Ordering::Acquire);
         if writable {
@@ -430,7 +430,7 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & PAGE_USER != 0
     }
 
-    /// Set user flag
+    /// 设置 User 标志位.
     pub fn set_user(&self, user: bool) {
         let mut val = self.bits.load(Ordering::Acquire);
         if user {
@@ -446,7 +446,7 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & (1 << 6) != 0
     }
 
-    /// Set dirty flag
+    /// 设置 Dirty 标志位.
     pub fn set_dirty(&self, dirty: bool) {
         let mut val = self.bits.load(Ordering::Acquire);
         if dirty {
@@ -462,7 +462,7 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & (1 << 5) != 0
     }
 
-    /// Set accessed flag
+    /// 设置 Accessed 标志位.
     pub fn set_accessed(&self, accessed: bool) {
         let mut val = self.bits.load(Ordering::Acquire);
         if accessed {
@@ -478,12 +478,12 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & PAGE_HUGE != 0
     }
 
-    /// Get frame address (physical address of the page)
+    /// 返回帧地址 (页的物理地址).
     pub fn frame(&self) -> PhysAddr {
         PhysAddr(self.bits.load(Ordering::Acquire) & 0x000FFFFFFFFFF000)
     }
 
-    /// Set frame address
+    /// 设置帧地址.
     pub fn set_frame(&self, frame: PhysAddr) {
         let mut val = self.bits.load(Ordering::Acquire);
         val = (val & !0x000FFFFFFFFFF000) | (frame.0 & 0x000FFFFFFFFFF000);
@@ -495,7 +495,7 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & PAGE_NX != 0
     }
 
-    /// Set no-execute flag
+    /// 设置 No-Execute 标志位.
     pub fn set_nx(&self, nx: bool) {
         let mut val = self.bits.load(Ordering::Acquire);
         if nx {
@@ -506,12 +506,12 @@ impl PageTableEntry {
         self.bits.store(val, Ordering::Release);
     }
 
-    /// Get all flags as PageFlags
+    /// 返回所有标志位的 `PageFlags` 位掩码.
     pub fn flags(&self) -> PageFlags {
         PageFlags::from_bits_truncate(self.bits.load(Ordering::Acquire))
     }
 
-    /// Set flags
+    /// 从 `PageFlags` 位掩码设置所有标志位.
     pub fn set_flags(&self, flags: PageFlags) {
         let mut val = self.bits.load(Ordering::Acquire);
         val = (val & !(PageFlags::all().bits())) | flags.bits();

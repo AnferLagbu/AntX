@@ -66,7 +66,7 @@
 ./ci/build.sh x86_64
 
 # 集成测试 (QEMU)
-./ci/test_qemu.sh x86_64           # 启动 QEMU 跑 boot + 内核测试
+./scripts/qemu_boot_test.sh x86_64       # 启动 QEMU 跑 boot + 内核测试
 ```
 
 ### 2.2 审计脚本
@@ -102,7 +102,7 @@ cargo test -p host-tests           # 等价
 每轮开发完成, **必须** 全部满足:
 
 1. 双架构 `cargo check --release` 0 error / 0 warning
-2. clippy 0 warning (`cargo clippy --release -- -D warnings`)
+2. clippy 0 warning (`cargo clippy --release -- -D warnings`) (当前 CI 仅强制 `unsafe_code` lint, 全量 `-D warnings` 是中长期目标)
 3. 审计全部通过: `ci/audit.sh` (边界/不变式/unsafe扫描/块注册/OnceCell/C命名/注释语言) + GitHub Actions (safety_coverage + services_boundary + deadlock_matrix)
 4. host-tests 全部通过
 5. QEMU 集成测试通过 (如改动 boot/架构相关)
@@ -440,7 +440,7 @@ make test-host
 # 或等价: cargo test -p host-tests
 
 # §2.4 #5 QEMU 集成测试 (改动 boot/架构相关时必跑)
-./ci/test_qemu.sh x86_64
+./scripts/qemu_boot_test.sh x86_64
 ```
 
 ***

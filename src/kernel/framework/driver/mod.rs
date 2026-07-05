@@ -197,6 +197,18 @@ pub fn init_all() {
     hotplug::hotplug_init();
 
     let _ = crate::kernel::framework::chitin::devtree_probe_composites();
+
+    // 注册 Block softirq 处理程序
+    crate::kernel::framework::irq::open_softirq(
+        crate::kernel::framework::irq::SoftirqVec::Block,
+        block_softirq_handler,
+    );
+}
+
+/// Block softirq 处理程序 — 块设备 IO 完成延迟处理
+fn block_softirq_handler() {
+    // 当前块设备路径走同步 VFS → HvFS → chitin 直接完成.
+    // 此 handler 为异步 IO (io_uring) + DMA 完成中断模式预留.
 }
 
 /// 关闭所有设备驱动

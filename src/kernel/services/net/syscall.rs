@@ -306,7 +306,7 @@ pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
         // 写回 SCM_CREDENTIALS cmsghdr + 12 字节凭据 (与 send 路径相同编码)
         raw::write_u64_to_user(msg_control_ptr, 28u64);
         raw::write_u64_to_user(msg_control_ptr + 8, (2u64 << 32) | 1u64);
-        raw::write_u64_to_user(msg_control_ptr + 16, 1u64 << 32 | 0u64);
+        raw::write_u64_to_user(msg_control_ptr + 16, 1u64 << 32);
         raw::write_u64_to_user(msg_control_ptr + 24, 0u64);
         raw::write_u64_to_user(msg_ptr + 40, 28u64);
     }
