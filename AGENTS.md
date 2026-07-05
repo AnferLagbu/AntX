@@ -4,7 +4,7 @@
 >
 > **硬规则**: 见 [§6 硬规则 (零容忍)](#6-硬规则-零容忍违反即拒收). 违反任一即拒收 PR.
 >
-> **必读** (开始任何任务前): 本文件 + `docs/README.md` + `docs/explain/framekernel-nature.md` + `docs/explain/framekernel-dev-guide.md` + `docs/explain/engineering-discipline-spec.md`.
+> **必读** (开始任何任务前): 本文件 + `docs/README.md` + `docs/explain/` 下所有文档.
 
 ## 目录
 
@@ -419,9 +419,7 @@ make test-host
 ### 14.1 依赖 (开发必读)
 
 - [docs/README.md](docs/README.md) — 文档写作规范
-- [docs/explain/framekernel-nature.md](docs/explain/framekernel-nature.md) — 框内核原理 + 6 不变式
-- [docs/explain/framekernel-dev-guide.md](docs/explain/framekernel-dev-guide.md) — 架构开发场景
-- [docs/explain/engineering-discipline-spec.md](docs/explain/engineering-discipline-spec.md) — 工程纪律规范
+- [docs/explain/](docs/explain/) — 项目引导与架构文档 (全部必读)
 
 ### 14.2 进度 (了解状态)
 
