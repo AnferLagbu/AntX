@@ -1,139 +1,79 @@
-# ext2 文件系统实现工程文档
+# ext2 文件系统实现
 
-> 附属文档: [naming-implementation.md](naming-implementation.md) §六 Linux 兼容
-> 基于 2026-07-05 源码调研, 规划 QueenX ext2 文件系统实现路径.
+> QueenX 缺少传统磁盘文件系统. ext2 是 Linux 互操作的基础, 也是直接 ABI 兼容的关键组件.
 
-## 背景
+## 工程计划: ext2 只读实现
 
-QueenX 当前有 5 种文件系统 (ramfs/hvfs/devfs/procfs/initramfs), 缺少传统磁盘文件系统. ext2 是 Linux 互操作的基础, 也是 linuxulator 路线 B 的关键组件.
+### 背景
+- **ext2 缺失导致无法挂载 Linux 磁盘**
+  - 描述: QueenX 当前有 ramfs/hvfs/devfs/procfs/initramfs 5 种 FS, 无传统磁盘 FS
+  - 方案: 实现 ext2 只读支持, 支持 mount -t ext2 /dev/sdX /mnt
+  - 状态: []
 
-### 现有 VFS 接口
+- **VFS 接口已就绪**
+  - 描述: FsType 枚举 + mount 分发模式可直接扩展
+  - 方案: 新增 FsType::Ext2 变体, 在 vfs_mount_internal 添加分发
+  - 状态: []
 
-QueenX VFS 采用 **FsType 枚举 + 分发** 模式:
-
-```rust
-// services/fs/vfs_types.rs
-pub enum FsType {
-    RamFs,
-    HvFs,
-    DevFs,
-    Unknown,
-}
-```
-
-挂载流程: `vfs_mount_internal` → `FsType::from_name` → 分发到对应 FS 的 `init()`.
-
-### 参考实现
-
-Asterinas ext2: 10K 行, 23 个文件, 完整实现 (super_block/inode/block_group/dir/xattr).
+- **块设备层已就绪**
+  - 描述: framework::driver::block 提供 read_sectors/write_sectors
+  - 方案: ext2 通过块设备层访问磁盘, 无需直接操作硬件
+  - 状态: []
 
 ### 目标
+- **只读 ext2**
+  - 描述: mount + ls + cat + read 正确
+  - 方案: 解析 super_block/inode/block_group, 实现数据块读取
+  - 状态: []
 
-- 实现 ext2 文件系统核心 (只读优先, 读写后续)
-- 集成到 QueenX VFS
-- 支持 mount -t ext2 /dev/sdX /mnt
-- host-tests 验证
+- **host-tests 验证**
+  - 描述: 5+ 测试覆盖挂载/读取/目录
+  - 方案: 在 host-tests/ 中创建 ext2 测试镜像 + 测试用例
+  - 状态: []
 
-## 架构设计
+### 方案
+- **模块结构**
+  - 描述: 8 个模块组织
+  - 方案: services/fs/ext2/ 下: mod.rs + super_block.rs + block_group.rs + inode.rs + dir.rs + bitmap.rs + read.rs + mount.rs
+  - 状态: []
 
-### 模块结构
+- **数据结构**
+  - 描述: ext2 磁盘布局 (super_block 1024字节偏移, inode 128字节, block_group 32字节)
+  - 方案: 参考 Asterinas ext2 super_block.rs/inode/mod.rs, 适配 QueenX 块设备层
+  - 状态: []
 
-```text
-services/fs/ext2/
-├── mod.rs              模块入口 + FsType 注册
-├── super_block.rs      超级块解析 (磁盘布局 + 内存表示)
-├── block_group.rs      块组描述符
-├── inode.rs            inode 操作 (读/写/属性)
-├── dir.rs              目录项操作 (lookup/readdir)
-├── bitmap.rs           位图管理 (inode/block 分配)
-├── mount.rs            挂载/卸载逻辑
-└── read.rs             数据读取 (直接/间接/双重间接块)
-```
+- **参考实现**
+  - 描述: Asterinas ext2 10K 行, 23 个文件
+  - 方案: 借鉴数据结构设计, 用 QueenX VFS 接口重新实现, 约 2K 行
+  - 状态: []
 
-### 核心数据结构
+### 工作量
+- **Phase 1 只读**
+  - 描述: 预计 2 周
+  - 方案: super_block + inode + dir + bitmap + read + mount + tests
+  - 状态: []
 
-```rust
-// super_block.rs — 磁盘布局 (1024 字节偏移)
-#[repr(C)]
-pub struct RawSuperBlock {
-    pub s_inodes_count: u32,
-    pub s_blocks_count: u32,
-    pub s_r_blocks_count: u32,
-    pub s_free_blocks_count: u32,
-    pub s_free_inodes_count: u32,
-    pub s_first_data_block: u32,
-    pub s_log_block_size: u32,  // log2(block_size) - 10
-    pub s_blocks_per_group: u32,
-    pub s_inodes_per_group: u32,
-    pub s_magic: u16,           // 0xEF53
-    // ...
-}
+## 工程计划: ext2 读写实现
 
-// inode.rs — 磁盘布局 (128 字节)
-#[repr(C)]
-pub struct RawInode {
-    pub i_mode: u16,
-    pub i_uid: u16,
-    pub i_size: u32,
-    pub i_atime: u32,
-    pub i_ctime: u32,
-    pub i_mtime: u32,
-    pub i_dtime: u32,
-    pub i_gid: u16,
-    pub i_links_count: u16,
-    pub i_blocks: u32,
-    pub i_flags: u32,
-    pub i_block: [u32; 15],  // 12 direct + 1 indirect + 1 double + 1 triple
-    // ...
-}
-```
+### 背景
+- **只读完成后需支持写入**
+  - 描述: touch/mkdir/rm/write 需要 ext2 写入能力
+  - 方案: 在只读基础上添加 inode 分配/释放、块分配/释放、超级块更新
+  - 状态: []
 
-### 与 QueenX VFS 集成
+### 目标
+- **读写 ext2**
+  - 描述: mount + write + sync → 重新 mount 数据持久化
+  - 方案: 实现 ext2 写入路径
+  - 状态: []
 
-1. `FsType` 枚举新增 `Ext2` 变体
-2. `FsType::from_name("ext2")` 返回 `FsType::Ext2`
-3. `vfs_mount_internal` 添加 `FsType::Ext2` 分发分支
-4. 通过块设备层 `block::read_sectors` / `block::write_sectors` 访问磁盘
+- **host-tests 验证**
+  - 描述: 10+ 测试覆盖写入/删除/同步
+  - 方案: 验证数据持久化正确性
+  - 状态: []
 
-## 实施步骤
-
-### Phase 1: 只读 ext2 (2 周)
-
-| 步骤 | 内容 | 行数 |
-|------|------|------|
-| 1 | FsType 枚举新增 Ext2 | ~10 |
-| 2 | super_block.rs: 解析超级块 | ~200 |
-| 3 | block_group.rs: 块组描述符 | ~100 |
-| 4 | inode.rs: inode 读取 + 属性 | ~300 |
-| 5 | dir.rs: 目录项 lookup/readdir | ~200 |
-| 6 | bitmap.rs: inode/block 位图 | ~150 |
-| 7 | read.rs: 数据块读取 (直接/间接) | ~200 |
-| 8 | mount.rs: 挂载逻辑 | ~100 |
-| 9 | host-tests: 5+ 测试 | ~200 |
-
-**验收**: mount -t ext2 /dev/sda /mnt → ls/cat/read 正确.
-
-### Phase 2: 读写 ext2 (2 周)
-
-| 步骤 | 内容 | 行数 |
-|------|------|------|
-| 1 | inode 写入 + 分配 | ~300 |
-| 2 | 目录项创建/删除 | ~200 |
-| 3 | 块分配/释放 | ~200 |
-| 4 | 超级块更新 | ~100 |
-| 5 | fsync/sync | ~100 |
-| 6 | host-tests: 10+ 测试 | ~300 |
-
-**验收**: touch/mkdir/rm/write → mount 后数据持久化.
-
-## 依赖
-
-- 块设备层: `framework::driver::block` (read_sectors/write_sectors)
-- VFS: `services::fs::vfs_types` (FsType 枚举)
-- 内存: `framework::mm` (页分配)
-
-## 参考
-
-- Asterinas ext2: `tmp/asterinas-main/kernel/src/fs/fs_impls/ext2/` (10K 行)
-- Linux ext2 spec: `ext2.doc`
-- QueenX ramfs: `services/fs/ramfs_core.rs` (参考 VFS 集成模式)
+### 工作量
+- **Phase 2 读写**
+  - 描述: 预计 2 周
+  - 方案: inode 写入 + 目录项创建删除 + 块分配释放 + fsync
+  - 状态: []
