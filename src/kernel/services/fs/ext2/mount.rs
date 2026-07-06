@@ -47,7 +47,6 @@ impl FileSystem for Ext2FileSystem {
     }
 
     fn fs_close(&self, _handle: u32) -> KernelResult<()> {
-        // ext2 只读, 不需要特殊关闭操作
         Ok(())
     }
 
@@ -58,9 +57,11 @@ impl FileSystem for Ext2FileSystem {
         fs.read_file(handle, offset, buf)
     }
 
-    fn fs_write(&self, _handle: u32, _offset: u64, _buf: &[u8], _pwm: u64) -> KernelResult<usize> {
-        // 只读文件系统
-        Err(KernelError::ReadOnly)
+    fn fs_write(&self, handle: u32, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let mut fs_guard = EXT2_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        fs.write_file(handle, offset, buf)
     }
 
     fn fs_stat(&self, rel_path: &str, _pwm: u64) -> KernelResult<VfsStat> {
@@ -88,33 +89,93 @@ impl FileSystem for Ext2FileSystem {
     }
 
     fn fs_chmod(&self, _rel_path: &str, _mode: u16, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
         Err(KernelError::ReadOnly)
     }
 
     fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
         Err(KernelError::ReadOnly)
     }
 
-    fn fs_mkdir(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
-        Err(KernelError::ReadOnly)
+    fn fs_mkdir(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = EXT2_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        // 解析路径
+        let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
+            if pos == 0 {
+                ("/", &rel_path[1..])
+            } else {
+                (&rel_path[..pos], &rel_path[pos + 1..])
+            }
+        } else {
+            ("/", rel_path)
+        };
+
+        fs.mkdir(parent_path, name)?;
+        Ok(())
     }
 
-    fn fs_unlink(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
-        Err(KernelError::ReadOnly)
+    fn fs_unlink(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = EXT2_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        // 解析路径
+        let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
+            if pos == 0 {
+                ("/", &rel_path[1..])
+            } else {
+                (&rel_path[..pos], &rel_path[pos + 1..])
+            }
+        } else {
+            ("/", rel_path)
+        };
+
+        // 获取父目录 inode
+        let parent_inode_num = fs.lookup_path(parent_path)?;
+        let inode_num = fs.remove_dir_entry(parent_inode_num, name)?;
+
+        // 释放 inode 和块
+        let inode = fs.read_inode(inode_num)?;
+        for i in 0..12 {
+            if inode.i_block[i] != 0 {
+                fs.deallocate_block(inode.i_block[i])?;
+            }
+        }
+
+        let group_idx = (inode_num - fs.super_block.first_inode()) / fs.super_block.s_inodes_per_group;
+        if (group_idx as usize) < fs.block_groups.len() {
+            super::alloc::free_inode(
+                fs.device_idx,
+                &fs.super_block,
+                &fs.block_groups[group_idx as usize],
+                inode_num,
+            )?;
+        }
+
+        Ok(())
     }
 
-    fn fs_rmdir(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
-        Err(KernelError::ReadOnly)
+    fn fs_rmdir(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = EXT2_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        // 解析路径
+        let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
+            if pos == 0 {
+                ("/", &rel_path[1..])
+            } else {
+                (&rel_path[..pos], &rel_path[pos + 1..])
+            }
+        } else {
+            ("/", rel_path)
+        };
+
+        fs.rmdir(parent_path, name)?;
+        Ok(())
     }
 
     fn fs_rename(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
-        Err(KernelError::ReadOnly)
+        Err(KernelError::NotSupported)
     }
 
     fn fs_readdir(&self, handle: u32, offset: u64, entry: &mut VfsDirEntry) -> KernelResult<bool> {
@@ -136,19 +197,33 @@ impl FileSystem for Ext2FileSystem {
         Ok(true)
     }
 
-    fn fs_symlink(&self, _target: &str, _link_path: &str, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
-        Err(KernelError::ReadOnly)
+    fn fs_symlink(&self, target: &str, link_path: &str, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = EXT2_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        fs.symlink(target, link_path)?;
+        Ok(())
     }
 
-    fn fs_readlink(&self, _rel_path: &str, _buf: &mut [u8]) -> KernelResult<usize> {
-        // 只读文件系统, 暂不支持符号链接读取
-        Err(KernelError::NotSupported)
+    fn fs_readlink(&self, rel_path: &str, buf: &mut [u8]) -> KernelResult<usize> {
+        let mut fs_guard = EXT2_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        let inode_num = fs.lookup_path(rel_path)?;
+        let target = fs.readlink(inode_num)?;
+
+        let copy_len = target.len().min(buf.len());
+        buf[..copy_len].copy_from_slice(&target[..copy_len]);
+
+        Ok(copy_len)
     }
 
-    fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
-        // 只读文件系统
-        Err(KernelError::ReadOnly)
+    fn fs_link(&self, old_path: &str, new_path: &str, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = EXT2_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        fs.link(old_path, new_path)?;
+        Ok(())
     }
 }
 
