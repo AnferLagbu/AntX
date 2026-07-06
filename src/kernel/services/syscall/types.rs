@@ -221,6 +221,123 @@ pub const SYS_timerfd_create: u64 = 283;
 pub const SYS_timerfd_settime: u64 = 286;
 pub const SYS_timerfd_gettime: u64 = 287;
 
+// 内存建议 / 锁定 / mincore (Linux x86_64 标准编号)
+pub const SYS_madvise: u64 = 28;
+pub const SYS_mincore: u64 = 27;
+pub const SYS_mlock: u64 = 149;
+pub const SYS_munlock: u64 = 150;
+pub const SYS_mlockall: u64 = 151;
+pub const SYS_munlockall: u64 = 152;
+
+// inotify (Linux x86_64 标准编号)
+pub const SYS_inotify_init: u64 = 253;
+pub const SYS_inotify_add_watch: u64 = 254;
+pub const SYS_inotify_rm_watch: u64 = 255;
+pub const SYS_inotify_init1: u64 = 294;
+
+// POSIX Timer (Linux x86_64 标准编号)
+pub const SYS_timer_create: u64 = 222;
+pub const SYS_timer_settime: u64 = 223;
+pub const SYS_timer_gettime: u64 = 224;
+pub const SYS_timer_getoverrun: u64 = 225;
+pub const SYS_timer_delete: u64 = 226;
+pub const SYS_clock_getres: u64 = 229;
+
+// 熵源 (Linux x86_64 标准编号)
+pub const SYS_getrandom: u64 = 318;
+
+// NUMA (Linux x86_64 标准编号)
+pub const SYS_get_mempolicy: u64 = 237;
+pub const SYS_set_mempolicy: u64 = 238;
+pub const SYS_migrate_pages: u64 = 256;
+pub const SYS_getcpu: u64 = 309;
+
+// 文件 I/O 扩展 (Linux x86_64 标准编号)
+pub const SYS_readv: u64 = 19;
+pub const SYS_writev: u64 = 20;
+pub const SYS_pread64: u64 = 17;
+pub const SYS_pwrite64: u64 = 18;
+pub const SYS_sendfile: u64 = 40;
+pub const SYS_preadv: u64 = 295;
+pub const SYS_pwritev: u64 = 296;
+pub const SYS_preadv2: u64 = 327;
+pub const SYS_pwritev2: u64 = 328;
+pub const SYS_flock: u64 = 73;
+pub const SYS_fchmodat: u64 = 268;
+pub const SYS_fchownat: u64 = 260;
+pub const SYS_newfstatat: u64 = 262;
+pub const SYS_unlinkat: u64 = 263;
+pub const SYS_renameat: u64 = 264;
+pub const SYS_renameat2: u64 = 316;
+pub const SYS_linkat: u64 = 265;
+pub const SYS_symlinkat: u64 = 266;
+pub const SYS_readlinkat: u64 = 267;
+pub const SYS_faccessat: u64 = 269;
+pub const SYS_faccessat2: u64 = 439;
+pub const SYS_fchmodat2: u64 = 452;
+pub const SYS_statx: u64 = 332;
+pub const SYS_fallocate: u64 = 285;
+pub const SYS_utimensat: u64 = 280;
+pub const SYS_openat: u64 = 257;
+pub const SYS_openat2: u64 = 437;
+pub const SYS_close_range: u64 = 436;
+
+// FD 扩展 (Linux x86_64 标准编号)
+pub const SYS_dup3: u64 = 292;
+pub const SYS_pipe2: u64 = 293;
+pub const SYS_epoll_create1: u64 = 291;
+pub const SYS_epoll_pwait: u64 = 281;
+pub const SYS_epoll_pwait2: u64 = 441;
+
+// select / pselect / ppoll (Linux x86_64 标准编号)
+pub const SYS_pselect6: u64 = 270;
+pub const SYS_ppoll: u64 = 271;
+
+// 进程扩展 (Linux x86_64 标准编号)
+pub const SYS_set_robust_list: u64 = 273;
+pub const SYS_get_robust_list: u64 = 274;
+pub const SYS_pidfd_open: u64 = 434;
+pub const SYS_pidfd_getfd: u64 = 438;
+pub const SYS_pidfd_send_signal: u64 = 424;
+pub const SYS_clone3: u64 = 435;
+pub const SYS_execveat: u64 = 322;
+pub const SYS_waitid: u64 = 247;
+pub const SYS_process_vm_readv: u64 = 310;
+pub const SYS_process_vm_writev: u64 = 311;
+
+// 内存扩展 (Linux x86_64 标准编号)
+pub const SYS_memfd_create: u64 = 319;
+pub const SYS_userfaultfd: u64 = 323;
+
+// 网络扩展 (Linux x86_64 标准编号)
+pub const SYS_recvmmsg: u64 = 299;
+pub const SYS_sendmmsg: u64 = 307;
+pub const SYS_socketpair: u64 = 53;
+pub const SYS_accept4: u64 = 288;
+
+// 事件扩展 (Linux x86_64 标准编号)
+
+// Seccomp / prctl (Linux x86_64 标准编号)
+pub const SYS_seccomp: u64 = 317;
+pub const SYS_prctl: u64 = 157;
+pub const SYS_arch_prctl: u64 = 158;
+
+// 安全 / 权限 (Linux x86_64 标准编号)
+pub const SYS_capget: u64 = 125;
+pub const SYS_capset: u64 = 126;
+pub const SYS_pivot_root: u64 = 155;
+pub const SYS_chroot: u64 = 161;
+
+// 时间扩展 (Linux x86_64 标准编号)
+pub const SYS_clock_nanosleep: u64 = 230;
+pub const SYS_settimeofday: u64 = 164;
+pub const SYS_adjtimex: u64 = 159;
+
+// 杂项 (Linux x86_64 标准编号)
+pub const SYS_reboot: u64 = 169;
+pub const SYS_sethostname: u64 = 170;
+pub const SYS_setdomainname: u64 = 171;
+
 // ==================== Credo 私有 syscall (400+ 不与 POSIX 冲突) ====================
 
 pub const SYS_CREDO_LOGIN: u64 = 400;

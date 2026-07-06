@@ -188,10 +188,7 @@ pub unsafe extern "C" fn syscall_dispatch(num: u64, a0: u64, a1: u64, a2: u64, a
 }
 
 fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
-    // 翻译 Linux 架构特定编号为 QueenX 原生编号
-    // QX_*/Credo/FB 编号直接透传
-    let translated = linuxulator::translate_syscall(num);
-    let num = translated;
+    // 直接 Linux ABI: syscall 编号直接使用 Linux 标准编号, 无需翻译
 
     // C7: Seccomp 过滤检查 (在 dispatch 之前)
     let args = [a0, a1, a2, a3, a4, a5];
@@ -209,13 +206,13 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
     // framework 回退: 处理尚未迁移到 services 的 syscall
     match num {
         // ==================== 文件 I/O ====================
-        QX_READ => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
-        QX_WRITE => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
-        // 已迁移: QX_POLL, QX_LSEEK
+        SYS_read => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
+        SYS_write => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
+        // 已迁移: SYS_poll, SYS_lseek
 
         // ==================== 内存管理 ====================
-        // 已迁移: QX_MMAP, QX_MUNMAP
-        QX_MREMAP => {
+        // 已迁移: SYS_mmap, SYS_munmap
+        SYS_mremap => {
             // 从当前 task 取 MmStruct; 验证后委托 services/mm/mremap
             use crate::kernel::framework::mm::vma_get_current_mm;
             match vma_get_current_mm() {
