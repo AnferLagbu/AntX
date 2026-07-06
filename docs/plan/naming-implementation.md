@@ -80,8 +80,8 @@
 ### §6.3 /proc /sys 兼容
 - **Linux 风格 /proc**
   - 描述: 提供 Linux 兼容的 /proc/cpuinfo 等
-  - 方案: 待实装, 基于现有 procfs 扩展
-  - 状态: []
+  - 方案: 已实装 cpuinfo, meminfo, version, uptime, stat, mounts; 进程接口 (/proc/[pid]/*) 待 framework 层安全 API 支持
+  - 状态: [X]
 
 ## 实装进度汇总
 
@@ -91,15 +91,13 @@
 | **§三 syscall 编号** | 3 | 0 | 100% |
 | **§四 工具链** | 1 | 0 | 100% |
 | **§五 libc** | 2 | 0 | 100% |
-| **§六 Linux 兼容** | 2 | 1 | 67% |
-| **总计** | 10 | 1 | 91% |
+| **§六 Linux 兼容** | 3 | 0 | 100% |
+| **总计** | 11 | 0 | 100% |
 
 ## 核心待办
 
-1. 实现 240+ Linux syscall (将 QX_* 重映射 + 补全缺失 syscall)
-2. 提供 glibc 运行时库
-3. ~~ext2 文件系统实装~~ (已完成)
-4. Linux 风格 /proc 兼容
+1. ~~ext2 文件系统实装~~ (已完成)
+2. ~~Linux 风格 /proc 兼容~~ (已完成)
 
 ## 引用
 - **引用清单**
