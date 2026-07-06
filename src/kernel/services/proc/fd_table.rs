@@ -94,6 +94,18 @@ impl FdTable {
             false
         }
     }
+
+    /// 获取所有已分配的 FD 列表
+    ///
+    /// 返回 (local_fd, global_fd) 对的 Vec
+    pub fn get_all_fds(&self) -> alloc::vec::Vec<(usize, i32)> {
+        let entries = self.entries.lock();
+        entries.iter()
+            .enumerate()
+            .filter(|(_, &gfd)| gfd != -1)
+            .map(|(local, &global)| (local, global))
+            .collect()
+    }
 }
 
 impl Default for FdTable {

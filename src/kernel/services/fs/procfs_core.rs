@@ -316,6 +316,22 @@ impl ProcfsData {
             }
         }
 
+        // 检查进程文件描述符 /proc/[pid]/fd
+        if name.starts_with('/') && name.ends_with("/fd") {
+            let pid_str = &name[1..name.len() - 3];
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                return self.read_process_fd(pid, buf);
+            }
+        }
+
+        // 检查进程统计 /proc/[pid]/stat
+        if name.starts_with('/') && name.ends_with("/stat") && !name.ends_with("/status") {
+            let pid_str = &name[1..name.len() - 5];
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                return self.read_process_stat(pid, buf);
+            }
+        }
+
         if name == "sys/cpu" {
             let mut pos = 0usize;
             let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
@@ -522,6 +538,74 @@ impl ProcfsData {
             buf[len] = 0;
 
             (len + 1) as i32
+        });
+
+        result.unwrap_or(-1)
+    }
+
+    /// 读取进程文件描述符 /proc/[pid]/fd
+    fn read_process_fd(&self, pid: u32, buf: &mut [u8]) -> i32 {
+        use crate::kernel::framework::proc::api::process_with;
+
+        let result = process_with(pid, |proc| {
+            let fds = proc.fd_table.get_all_fds();
+            let mut pos = 0usize;
+            let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
+                let b = s.as_bytes();
+                let end = (*pos + b.len()).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&b[..len]);
+                *pos += len;
+            };
+
+            for (local_fd, global_fd) in &fds {
+                write_str(buf, &mut pos, &alloc::format!("{} -> [{}]\n", local_fd, global_fd));
+            }
+
+            pos as i32
+        });
+
+        result.unwrap_or(-1)
+    }
+
+    /// 读取进程统计 /proc/[pid]/stat
+    fn read_process_stat(&self, pid: u32, buf: &mut [u8]) -> i32 {
+        use crate::kernel::framework::proc::api::process_with;
+
+        let result = process_with(pid, |proc| {
+            let name_guard = proc.name.lock();
+            let name = name_guard.clone();
+            drop(name_guard);
+
+            // Linux /proc/[pid]/stat 格式:
+            // pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt
+            // utime stime cutime cstime priority nice num_threads itrealvalue starttime vsize rss
+            let state = match proc.state.load(core::sync::atomic::Ordering::SeqCst) {
+                0 => "R",  // Created
+                1 => "R",  // Ready
+                2 => "R",  // Running
+                3 => "S",  // Blocked
+                4 => "T",  // Frozen
+                5 => "Z",  // Zombie
+                _ => "X",  // Terminated
+            };
+
+            let ppid = proc.parent.map(|p| p.0).unwrap_or(0);
+            let utime = proc.user_time.load(core::sync::atomic::Ordering::SeqCst);
+            let stime = proc.sys_time.load(core::sync::atomic::Ordering::SeqCst);
+            let start = proc.start_jiffies.load(core::sync::atomic::Ordering::SeqCst);
+            let vsize = 0u64; // 暂时返回 0
+            let _rss = 0u64;   // 暂时返回 0
+
+            let s = alloc::format!(
+                "{} ({}) {} {} {} 0 0 0 0 0 0 {} {} 0 0 0 {} 1 0 0 {} 0 0 0 0 0 0 0 0 0 0\n",
+                pid, name, state, ppid, pid, utime, stime, start, vsize
+            );
+
+            let bytes = s.as_bytes();
+            let len = bytes.len().min(buf.len());
+            buf[..len].copy_from_slice(&bytes[..len]);
+            len as i32
         });
 
         result.unwrap_or(-1)
