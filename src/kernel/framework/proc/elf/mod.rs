@@ -57,6 +57,8 @@ pub struct Elf64Phdr {
 }
 
 const PT_LOAD: u32 = 1;
+/// PT_INTERP: 动态链接器路径 (指向 ELF 解释器)
+const PT_INTERP: u32 = 3;
 #[allow(dead_code)] // 规范定义, 待 GNU_STACK 段处理启用后使用。
 const PT_GNU_STACK: u32 = 0x6474E551;
 const PF_X: u32 = 1;
@@ -250,6 +252,109 @@ pub fn elf_load_with_bias(
     crate::kernel::framework::mm::vma_set_current_mm(mm as *const MmStruct);
 
     Ok(result)
+}
+
+/// queenx 动态链接器路径 (替代 Linux ld-linux-*.so.2)
+const QUEENX_INTERP: &[u8] = b"/usr/libexec/elfld.so\0";
+
+/// Linux 动态链接器路径前缀 (用于检测)
+const LINUX_INTERP_PREFIXES: &[&[u8]] = &[
+    b"/lib64/ld-linux-x86-64.so.2",
+    b"/lib/ld-linux-x86-64.so.2",
+    b"/lib/ld-linux-aarch64.so.1",
+    b"/lib/ld-linux.so.2",
+    b"/lib/ld-linux.so.3",
+    b"/lib/ld-musl-x86_64.so.1",
+    b"/lib/ld-musl-aarch64.so.1",
+];
+
+/// 扫描 ELF program headers, 检测 PT_INTERP 是否为 Linux 动态链接器.
+///
+/// 返回 true 表示需要改写 PT_INTERP (Linux 二进制).
+pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
+    let header = match elf_validate(elf_data, elf_size) {
+        Some(h) => h,
+        None => return false,
+    };
+
+    if header.e_phoff == 0 || header.e_phnum == 0 {
+        return false;
+    }
+
+    let phdr_base = unsafe { elf_data.add(header.e_phoff as usize) };
+
+    for i in 0..header.e_phnum {
+        let phdr = unsafe {
+            &*(phdr_base.add(i as usize * core::mem::size_of::<Elf64Phdr>()) as *const Elf64Phdr)
+        };
+
+        if phdr.p_type != PT_INTERP || phdr.p_filesz == 0 {
+            continue;
+        }
+
+        // 读取 interp 路径字符串
+        let interp_offset = phdr.p_offset as usize;
+        let interp_len = phdr.p_filesz as usize;
+        if interp_offset + interp_len > elf_size as usize {
+            continue;
+        }
+        let interp_path = unsafe {
+            core::slice::from_raw_parts(elf_data.add(interp_offset), interp_len)
+        };
+
+        // 检查是否为 Linux 动态链接器
+        for prefix in LINUX_INTERP_PREFIXES {
+            if interp_path.starts_with(prefix) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// 改写 ELF 数据中的 PT_INTERP 路径为 queenx 动态链接器.
+///
+/// # Safety
+/// `elf_data` 必须指向可写的有效 ELF 数据 (内核拷贝缓冲区).
+pub unsafe fn rewrite_interp_path(elf_data: *mut u8, elf_size: u64) {
+    let header = match elf_validate(elf_data as *const u8, elf_size) {
+        Some(h) => h,
+        None => return,
+    };
+
+    if header.e_phoff == 0 || header.e_phnum == 0 {
+        return;
+    }
+
+    let phdr_base = elf_data.add(header.e_phoff as usize);
+
+    for i in 0..header.e_phnum {
+        let phdr = &*(phdr_base.add(i as usize * core::mem::size_of::<Elf64Phdr>()) as *const Elf64Phdr);
+
+        if phdr.p_type != PT_INTERP || phdr.p_filesz == 0 {
+            continue;
+        }
+
+        let interp_offset = phdr.p_offset as usize;
+        let interp_len = phdr.p_filesz as usize;
+        if interp_offset + interp_len > elf_size as usize {
+            continue;
+        }
+
+        let interp_dst = elf_data.add(interp_offset);
+
+        // 计算可写入长度 (不超过原 interp 段大小)
+        let write_len = QUEENX_INTERP.len().min(interp_len);
+
+        // SAFETY: elf_data 是内核拷贝缓冲区, interp_offset+interp_len 在 ELF 范围内
+        core::ptr::copy_nonoverlapping(QUEENX_INTERP.as_ptr(), interp_dst, write_len);
+
+        // 如果 queenx interp 比原 interp 短, 用 null 填充剩余空间
+        if write_len < interp_len {
+            core::ptr::write_bytes(interp_dst.add(write_len), 0, interp_len - write_len);
+        }
+    }
 }
 
 #[cfg(test)]

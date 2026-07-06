@@ -627,6 +627,14 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
+    // PT_INTERP 改写: 检测 Linux 二进制, 将动态链接器路径改为 queenx elfld.so
+    if super::elf::needs_interp_rewrite(buffer as *const u8, bytes_read as u64) {
+        // SAFETY: buffer 是刚分配的内核页, bytes_read 有效范围内可写
+        unsafe {
+            super::elf::rewrite_interp_path(buffer as *mut u8, bytes_read as u64);
+        }
+    }
+
     let result =
         USER_PROC_MANAGER.load_elf_from_memory(buffer as *const u8, bytes_read as u64, pwm);
 

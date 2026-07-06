@@ -263,6 +263,8 @@ impl<T> PiMutex<T> {
         Self {
             inner: PiMutexInner::new(),
             holder_base_priority: AtomicU32::new(0),
+            protocol: PiMutexProtocol::Pi,
+            ceiling: AtomicU32::new(0),
             data: UnsafeCell::new(data),
             lockdep_class: class_id,
         }
