@@ -450,17 +450,81 @@ impl ProcfsData {
     }
 
     /// 读取进程状态 /proc/[pid]/status
-    fn read_process_status(&self, _pid: u32, _buf: &mut [u8]) -> i32 {
-        // services 层无法直接访问 PROCESS_TABLE (需要 unsafe)
-        // 返回 -1 表示暂不支持
-        -1
+    fn read_process_status(&self, pid: u32, buf: &mut [u8]) -> i32 {
+        use crate::kernel::framework::proc::api::process_with;
+
+        let result = process_with(pid, |proc| {
+            let mut pos = 0usize;
+            let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
+                let b = s.as_bytes();
+                let end = (*pos + b.len()).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&b[..len]);
+                *pos += len;
+            };
+
+            write_str(buf, &mut pos, "Name:\t");
+            let name_guard = proc.name.lock();
+            write_str(buf, &mut pos, &name_guard);
+            drop(name_guard);
+
+            write_str(buf, &mut pos, "\nState:\tR (running)\n");
+            write_str(buf, &mut pos, &alloc::format!("\nTgid:\t{}\n", pid));
+            write_str(buf, &mut pos, &alloc::format!("Pid:\t{}\n", pid));
+            let ppid = proc.parent.map(|p| p.0).unwrap_or(0);
+            write_str(buf, &mut pos, &alloc::format!("PPid:\t{}\n", ppid));
+            write_str(buf, &mut pos, "TracerPid:\t0\n");
+            write_str(buf, &mut pos, "Uid:\t0\t0\t0\t0\n");
+            write_str(buf, &mut pos, "Gid:\t0\t0\t0\t0\n");
+            write_str(buf, &mut pos, "FDSize:\t256\n");
+            write_str(buf, &mut pos, "Groups:\t0 \n");
+            write_str(buf, &mut pos, &alloc::format!("NStgid:\t{}\n", pid));
+            write_str(buf, &mut pos, &alloc::format!("NSpid:\t{}\n", pid));
+            write_str(buf, &mut pos, &alloc::format!("NSpgid:\t{}\n", pid));
+            write_str(buf, &mut pos, &alloc::format!("NSsid:\t{}\n", pid));
+            write_str(buf, &mut pos, "VmPeak:\t   1024 kB\nVmSize:\t   1024 kB\nVmRSS:\t     256 kB\nVmSwap:\t       0 kB\n");
+            write_str(buf, &mut pos, "Threads:\t1\n");
+            write_str(buf, &mut pos, "SigQ:\t0/30670\n");
+            write_str(buf, &mut pos, "SigPnd:\t0000000000000000\n");
+            write_str(buf, &mut pos, "SigBlk:\t0000000000000000\n");
+            write_str(buf, &mut pos, "SigIgn:\t0000000000000000\n");
+            write_str(buf, &mut pos, "SigCgt:\t0000000000000000\n");
+            write_str(buf, &mut pos, "CapInh:\t0000000000000000\n");
+            write_str(buf, &mut pos, "CapPrm:\t0000000000000000\n");
+            write_str(buf, &mut pos, "CapEff:\t0000000000000000\n");
+            write_str(buf, &mut pos, "CapBnd:\t0000000000000000\n");
+            write_str(buf, &mut pos, "CapAmb:\t0000000000000000\n");
+            write_str(buf, &mut pos, "Seccomp:\t0\n");
+            write_str(buf, &mut pos, "Seccomp_filters:\t0\n");
+            write_str(buf, &mut pos, "Cpus_allowed:\t1\n");
+            write_str(buf, &mut pos, "Cpus_allowed_list:\t0\n");
+            write_str(buf, &mut pos, "voluntary_ctxt_switches:\t0\n");
+            write_str(buf, &mut pos, "nonvoluntary_ctxt_switches:\t0\n");
+
+            pos as i32
+        });
+
+        result.unwrap_or(-1)
     }
 
     /// 读取进程命令行 /proc/[pid]/cmdline
-    fn read_process_cmdline(&self, _pid: u32, _buf: &mut [u8]) -> i32 {
-        // services 层无法直接访问 PROCESS_TABLE (需要 unsafe)
-        // 返回 -1 表示暂不支持
-        -1
+    fn read_process_cmdline(&self, pid: u32, buf: &mut [u8]) -> i32 {
+        use crate::kernel::framework::proc::api::process_with;
+
+        let result = process_with(pid, |proc| {
+            let name_guard = proc.name.lock();
+            let name = name_guard.clone();
+            drop(name_guard);
+
+            let bytes = name.as_bytes();
+            let len = bytes.len().min(buf.len() - 1);
+            buf[..len].copy_from_slice(&bytes[..len]);
+            buf[len] = 0;
+
+            (len + 1) as i32
+        });
+
+        result.unwrap_or(-1)
     }
 }
 
