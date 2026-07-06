@@ -123,6 +123,9 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
         FsType::DevFs => {
             // DevFS 初始化由 init()/init_with_chitin_bridge() 完成
         }
+        FsType::Ext2 => {
+            // ext2 挂载由 Ext2FileSystem::fs_mount 处理
+        }
 
         FsType::Unknown => return -1,
     }

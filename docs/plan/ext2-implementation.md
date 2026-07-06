@@ -8,50 +8,50 @@
 - **ext2 缺失导致无法挂载 Linux 磁盘**
   - 描述: QueenX 当前有 ramfs/hvfs/devfs/procfs/initramfs 5 种 FS, 无传统磁盘 FS
   - 方案: 实现 ext2 只读支持, 支持 mount -t ext2 /dev/sdX /mnt
-  - 状态: []
+  - 状态: [X]
 
 - **VFS 接口已就绪**
   - 描述: FsType 枚举 + mount 分发模式可直接扩展
   - 方案: 新增 FsType::Ext2 变体, 在 vfs_mount_internal 添加分发
-  - 状态: []
+  - 状态: [X]
 
 - **块设备层已就绪**
   - 描述: framework::driver::block 提供 read_sectors/write_sectors
   - 方案: ext2 通过块设备层访问磁盘, 无需直接操作硬件
-  - 状态: []
+  - 状态: [X]
 
 ### 目标
 - **只读 ext2**
   - 描述: mount + ls + cat + read 正确
   - 方案: 解析 super_block/inode/block_group, 实现数据块读取
-  - 状态: []
+  - 状态: [X]
 
 - **host-tests 验证**
   - 描述: 5+ 测试覆盖挂载/读取/目录
   - 方案: 在 host-tests/ 中创建 ext2 测试镜像 + 测试用例
-  - 状态: []
+  - 状态: [X]
 
 ### 方案
 - **模块结构**
   - 描述: 8 个模块组织
   - 方案: services/fs/ext2/ 下: mod.rs + super_block.rs + block_group.rs + inode.rs + dir.rs + bitmap.rs + read.rs + mount.rs
-  - 状态: []
+  - 状态: [X]
 
 - **数据结构**
   - 描述: ext2 磁盘布局 (super_block 1024字节偏移, inode 128字节, block_group 32字节)
   - 方案: 参考 Asterinas ext2 super_block.rs/inode/mod.rs, 适配 QueenX 块设备层
-  - 状态: []
+  - 状态: [X]
 
 - **参考实现**
   - 描述: Asterinas ext2 10K 行, 23 个文件
   - 方案: 借鉴数据结构设计, 用 QueenX VFS 接口重新实现, 约 2K 行
-  - 状态: []
+  - 状态: [X]
 
 ### 工作量
 - **Phase 1 只读**
   - 描述: 预计 2 周
   - 方案: super_block + inode + dir + bitmap + read + mount + tests
-  - 状态: []
+  - 状态: [X]
 
 ## 工程计划: ext2 读写实现
 
