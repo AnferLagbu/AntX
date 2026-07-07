@@ -141,6 +141,7 @@ pub enum FsType {
     Ext2,
     ExFat,
     TmpFs,
+    OverlayFs,
     Unknown,
 }
 
@@ -153,6 +154,7 @@ impl FsType {
             "ext2" => FsType::Ext2,
             "exfat" => FsType::ExFat,
             "tmpfs" => FsType::TmpFs,
+            "overlay" => FsType::OverlayFs,
             _ => FsType::Unknown,
         }
     }
@@ -165,6 +167,7 @@ impl FsType {
             FsType::Ext2 => "ext2",
             FsType::ExFat => "exfat",
             FsType::TmpFs => "tmpfs",
+            FsType::OverlayFs => "overlay",
             FsType::Unknown => "unknown",
         }
     }

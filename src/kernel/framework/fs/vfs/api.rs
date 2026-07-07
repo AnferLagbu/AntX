@@ -132,6 +132,9 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
         FsType::TmpFs => {
             // tmpfs 挂载由 TmpFsFileSystem::fs_mount 处理
         }
+        FsType::OverlayFs => {
+            // overlayfs 挂载由 OverlayFsFileSystem::fs_mount 处理
+        }
 
         FsType::Unknown => return -1,
     }

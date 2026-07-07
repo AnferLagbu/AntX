@@ -29,22 +29,22 @@
   - 方案: framework 107K → 拆分后最大 crate < 15K; TCB 64% → <30%; cargo clean 后冷编译 <60s; 双架构 cargo check 0 error 0 warning
   - 状态: []
 
-### G2: overlayfs 实装
+### G2: overlayfs 实装 ✅
 - **描述**
   - 容器镜像核心，Docker/containerd/podman/CRI-O 均通过 overlayfs 提供 rootfs
   - 方案: 上层 (upperdir) + 下层 (lowerdir) + 工作层 (workdir) 三目录合并；copy_up 机制；readdir 合并去重
   - 依赖: G3 tmpfs 完成后启动
-  - 状态: []
+  - 状态: [X]
 
 - **工作量**
   - 描述: 参考 Linux ovl_lookup/ovl_copy_up/ovl_iterate 路径
   - 方案: services 层实现 ~1500 行，包含 5-8 个 host-tests；预计 2-3 周
-  - 状态: []
+  - 状态: [X]
 
 - **验收**
   - 描述: overlayfs 功能完整度
   - 方案: mount -t overlay overlay -o lowerdir=A,upperdir=B,workdir=C /merged 工作；touch/read/write/rm 行为正确；双架构编译 0w0e；6+ host-test
-  - 状态: []
+  - 状态: [X]
 
 ### G3: tmpfs 实装 ✅
 - **描述**
