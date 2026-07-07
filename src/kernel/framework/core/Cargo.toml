@@ -1,0 +1,12 @@
+[package]
+name = "queenx-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "queenx_core"
+crate-type = ["lib"]
+
+[dependencies]
+spin = "0.9"
+bitflags = "2.4"
