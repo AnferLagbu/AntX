@@ -1,0 +1,258 @@
+#![deny(unsafe_code)]
+//! @SAFE: 本文件不含 unsafe 代码。
+//! tmpfs 基于内存的文件系统
+
+use crate::kernel::framework::fs::KernelError;
+use crate::kernel::services::fs::ramfs_core::RamFsData;
+use crate::kernel::services::fs::vfs_types::*;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+
+/// tmpfs 默认最大大小 (64MB)
+const TMPFS_DEFAULT_MAX_SIZE: u64 = 64 * 1024 * 1024;
+
+/// tmpfs 数据结构
+pub struct TmpFsData {
+    /// 内部 ramfs 数据
+    pub inner: RamFsData,
+    /// 最大容量限制 (字节)
+    max_size: u64,
+    /// 当前已用空间 (字节)
+    used_size: u64,
+}
+
+impl TmpFsData {
+    /// 创建新的 tmpfs 数据结构
+    pub fn new(max_size: u64) -> Self {
+        Self {
+            inner: RamFsData::new(),
+            max_size,
+            used_size: 0,
+        }
+    }
+
+    /// 创建默认 tmpfs (64MB 限制)
+    pub fn new_default() -> Self {
+        Self::new(TMPFS_DEFAULT_MAX_SIZE)
+    }
+
+    /// 获取最大容量
+    pub fn max_size(&self) -> u64 {
+        self.max_size
+    }
+
+    /// 获取已用空间
+    pub fn used_size(&self) -> u64 {
+        self.used_size
+    }
+
+    /// 获取可用空间
+    pub fn free_size(&self) -> u64 {
+        self.max_size.saturating_sub(self.used_size)
+    }
+
+    /// 检查是否有足够空间
+    pub fn has_space(&self, size: u64) -> bool {
+        self.used_size + size <= self.max_size
+    }
+
+    /// 增加已用空间
+    pub fn add_used(&mut self, size: u64) {
+        self.used_size = self.used_size.saturating_add(size);
+    }
+
+    /// 减少已用空间
+    pub fn sub_used(&mut self, size: u64) {
+        self.used_size = self.used_size.saturating_sub(size);
+    }
+}
+
+/// tmpfs 文件系统实例 (全局单例)
+static TMPFS_DATA: Mutex<Option<TmpFsData>> = Mutex::new(None);
+
+/// tmpfs FileSystem trait 实现
+pub struct TmpFsFileSystem;
+
+impl FileSystem for TmpFsFileSystem {
+    fn name(&self) -> &'static str {
+        "tmpfs"
+    }
+
+    fn fs_init(&self) -> KernelResult<()> {
+        Ok(())
+    }
+
+    fn fs_mount(&self, _path: &str) -> KernelResult<()> {
+        let mut guard = TMPFS_DATA.lock();
+        *guard = Some(TmpFsData::new_default());
+        Ok(())
+    }
+
+    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<FsOpenResult> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        let result = fs.inner.open(rel_path, 0, _pwm)
+            .ok_or(KernelError::NotFound)?;
+
+        Ok(FsOpenResult {
+            handle: result.0,
+            offset: result.1,
+            file_type: result.2,
+        })
+    }
+
+    fn fs_close(&self, _handle: u32) -> KernelResult<()> {
+        Ok(())
+    }
+
+    fn fs_read(&self, handle: u32, offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        let result = fs.inner.read(handle, &mut (offset as i32), buf, _pwm);
+        if result < 0 {
+            Err(KernelError::IoError)
+        } else {
+            Ok(result as usize)
+        }
+    }
+
+    fn fs_write(&self, handle: u32, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        // 检查空间限制
+        if !fs.has_space(buf.len() as u64) {
+            return Err(KernelError::NoSpace);
+        }
+
+        let result = fs.inner.write(handle, &mut (offset as i32), buf, _pwm);
+        if result < 0 {
+            Err(KernelError::IoError)
+        } else {
+            fs.add_used(result as u64);
+            Ok(result as usize)
+        }
+    }
+
+    fn fs_stat(&self, rel_path: &str, _pwm: u64) -> KernelResult<VfsStat> {
+        let fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+
+        let node_id = fs.inner.resolve_path(rel_path)
+            .ok_or(KernelError::NotFound)?;
+
+        let node = &fs.inner.nodes[node_id as usize];
+        if !node.used {
+            return Err(KernelError::NotFound);
+        }
+
+        Ok(VfsStat {
+            node_id,
+            mode: node.perm,
+            uid: 0,
+            gid: 0,
+            size: node.size,
+            atime: node.atime,
+            mtime: node.mtime,
+            ctime: node.ctime,
+            owner_pwm: node.owner_pwm,
+            group_pwm: node.group_pwm,
+            perm: node.perm,
+            file_type: node.file_type,
+            sensitivity: 0,
+        })
+    }
+
+    fn fs_chmod(&self, _rel_path: &str, _mode: u16, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::ReadOnly)
+    }
+
+    fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::ReadOnly)
+    }
+
+    fn fs_mkdir(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        let result = fs.inner.mkdir(rel_path, _pwm);
+        if result < 0 {
+            Err(KernelError::AlreadyExists)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn fs_unlink(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+
+        let result = fs.inner.unlink(rel_path, _pwm);
+        if result < 0 {
+            Err(KernelError::NotFound)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn fs_rmdir(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_rename(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_readdir(&self, handle: u32, offset: u64, entry: &mut VfsDirEntry) -> KernelResult<bool> {
+        let fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+
+        let node = &fs.inner.nodes[handle as usize];
+        if !node.used || node.file_type != VfsFileType::Dir as u8 {
+            return Err(KernelError::NotADirectory);
+        }
+
+        let block_num = node.direct_blocks[0];
+        if block_num == 0 {
+            return Ok(false);
+        }
+
+        let dirent_size = core::mem::size_of::<crate::kernel::services::fs::ramfs_core::RamFsDirEntry>();
+        let num_entries = node.size as usize / dirent_size;
+        let idx = offset as usize;
+
+        if idx >= num_entries {
+            return Ok(false);
+        }
+
+        let block_offset = block_num as usize * crate::kernel::framework::mm::PAGE_SIZE as usize + idx * dirent_size;
+
+        // 从 data_area 读取目录项
+        let entry_data = &fs.inner.data_area[block_offset..block_offset + dirent_size];
+        let ramfs_entry = crate::kernel::services::fs::ramfs_core::RamFsDirEntry::read_at(entry_data, 0);
+
+        entry.node = ramfs_entry.node;
+        entry.file_type = ramfs_entry.file_type;
+        entry.set_name(core::str::from_utf8(&ramfs_entry.name.iter().take_while(|&&b| b != 0).collect::<alloc::vec::Vec<_>>()).unwrap_or(""));
+
+        Ok(true)
+    }
+
+    fn fs_symlink(&self, _target: &str, _link_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_readlink(&self, _rel_path: &str, _buf: &mut [u8]) -> KernelResult<usize> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+}
+
+/// 初始化 tmpfs 文件系统
+pub fn init() {
+    // tmpfs 需要手动挂载
+}

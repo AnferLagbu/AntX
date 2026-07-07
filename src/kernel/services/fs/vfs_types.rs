@@ -140,6 +140,7 @@ pub enum FsType {
     DevFs,
     Ext2,
     ExFat,
+    TmpFs,
     Unknown,
 }
 
@@ -151,6 +152,7 @@ impl FsType {
             "devfs" => FsType::DevFs,
             "ext2" => FsType::Ext2,
             "exfat" => FsType::ExFat,
+            "tmpfs" => FsType::TmpFs,
             _ => FsType::Unknown,
         }
     }
@@ -162,6 +164,7 @@ impl FsType {
             FsType::DevFs => "devfs",
             FsType::Ext2 => "ext2",
             FsType::ExFat => "exfat",
+            FsType::TmpFs => "tmpfs",
             FsType::Unknown => "unknown",
         }
     }

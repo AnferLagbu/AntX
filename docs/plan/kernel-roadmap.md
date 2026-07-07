@@ -46,21 +46,21 @@
   - 方案: mount -t overlay overlay -o lowerdir=A,upperdir=B,workdir=C /merged 工作；touch/read/write/rm 行为正确；双架构编译 0w0e；6+ host-test
   - 状态: []
 
-### G3: tmpfs 实装
+### G3: tmpfs 实装 ✅
 - **描述**
   - 基于内存的文件系统，关键用途 /dev/shm (POSIX 共享内存)、容器临时文件系统、tmp 目录
   - 方案: 基于 ramfs 扩展，加入 size 限制 + 统计已用/可用；FsType 枚举新增 TmpFs 变体
-  - 状态: []
+  - 状态: [X]
 
 - **工作量**
   - 描述: services/fs/tmpfs.rs 新建
   - 方案: ~500 行 services 层实装，复用 ramfs inode/dentry 基础设施；1 周工作量
-  - 状态: []
+  - 状态: [X]
 
 - **验收**
   - 描述: tmpfs 功能完整度
   - 方案: mount -t tmpfs tmpfs /dev/shm 工作；df -h 显示容量限制；5+ host-test；FsType 枚举与 mount 注释一致
-  - 状态: []
+  - 状态: [X]
 
 ---
 
