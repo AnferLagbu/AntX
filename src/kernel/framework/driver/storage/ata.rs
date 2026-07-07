@@ -616,7 +616,7 @@ impl AtaController {
 static ATA_DEVICE: Mutex<Option<Box<AtaController>>> = Mutex::new(None);
 
 /// 初始化 ATA 子系统 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_init() {
     let mut controller = Box::new(AtaController::new());
@@ -636,7 +636,7 @@ pub extern "C" fn ata_init() {
 }
 
 /// 检查磁盘是否存在 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
     let guard = ATA_DEVICE.lock();
     match &*guard {
@@ -652,7 +652,7 @@ pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
 }
 
 /// 读取扇区 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
     if buffer.is_null() {
@@ -678,7 +678,7 @@ pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
 }
 
 /// 写入扇区 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn ata_write_sector(drive: u8, lba: u32, buffer: *const u8) -> i32 {
     if buffer.is_null() {

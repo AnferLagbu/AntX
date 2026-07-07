@@ -42,21 +42,21 @@ pub(crate) mod raw {
     /// # Safety
     /// - `ptr` 必须是合法的 `*const Process` 或 0
     #[inline(always)]
-    pub unsafe fn update_current_process_ptr(ptr: u64) {
-        extern "C" {
+    pub unsafe fn update_current_process_ptr(ptr: u64) { unsafe {
+        unsafe extern "C" {
             fn update_current_process_ptr(ptr: u64);
         }
         update_current_process_ptr(ptr);
-    }
+    }}
 
     /// 从 `Option` 守护对象得到 `&'static PerCpuSched`.
     ///
     /// # Safety
     /// - `guard` 必须为 `Some` 且指针在 `'static` 内保持有效
     #[inline(always)]
-    pub unsafe fn per_cpu_from_option<T>(guard: &Option<T>) -> &T {
+    pub unsafe fn per_cpu_from_option<T>(guard: &Option<T>) -> &T { unsafe {
         guard.as_ref().unwrap_unchecked()
-    }
+    }}
 }
 
 use raw::update_current_process_ptr;

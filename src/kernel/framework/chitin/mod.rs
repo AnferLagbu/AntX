@@ -267,9 +267,9 @@ impl ChitinDevice {
     ///
     /// `self.driver_data` 由驱动在 probe 阶段设置. 调用方必须保证
     /// `T` 与 `set_driver_data` 写入时的具体类型一致.
-    pub unsafe fn driver_as_mut<T>(&self) -> &mut T {
+    pub unsafe fn driver_as_mut<T>(&self) -> &mut T { unsafe {
         &mut *(self.driver_data as *mut T)
-    }
+    }}
 
     #[inline]
     ///
@@ -277,9 +277,9 @@ impl ChitinDevice {
     ///
     /// `self.driver_data` 由驱动在 probe 阶段设置. 调用方必须保证
     /// `T` 与 `set_driver_data` 写入时的具体类型一致.
-    pub unsafe fn driver_as_ref<T>(&self) -> &T {
+    pub unsafe fn driver_as_ref<T>(&self) -> &T { unsafe {
         &*(self.driver_data as *const T)
-    }
+    }}
 
     pub fn block_ops(&self) -> Option<&'static BlockOps> {
         match &self.ops {

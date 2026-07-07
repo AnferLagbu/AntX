@@ -579,13 +579,13 @@ impl SerialPort {
 static mut SERIAL_PORTS: [Option<SerialPort>; MAX_COM_PORTS] = [None, None, None, None];
 
 /// 初始化指定串口 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serial_init(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             SERIAL_PORTS[com as usize] = SerialPort::new(com as u8);
-            if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
+            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
                 let _ = port.init();
             }
         }
@@ -593,12 +593,12 @@ pub extern "C" fn serial_init(com: u32) {
 }
 
 /// 发送字符到串口 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serial_putc(com: u32, ch: i32) {
     if (com as usize) < MAX_COM_PORTS {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
+            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
                 let _ = port.send_byte(ch as u8);
             }
         }
@@ -606,12 +606,12 @@ pub extern "C" fn serial_putc(com: u32, ch: i32) {
 }
 
 /// 发送字符串到串口 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serial_puts(com: u32, s: *const u8) {
     if (com as usize) < MAX_COM_PORTS && !s.is_null() {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
+            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
                 let mut ptr = s;
                 while *ptr != 0 {
                     let _ = port.send_byte(*ptr as u8);
@@ -623,7 +623,7 @@ pub extern "C" fn serial_puts(com: u32, s: *const u8) {
 }
 
 /// 从串口读取字符 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serial_getc(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -642,7 +642,7 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
 }
 
 /// 检查串口是否有数据 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -664,12 +664,12 @@ pub extern "C" fn serial_has_char(com: u32) -> i32 {
 }
 
 /// 处理串口中断 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serial_irq_handler(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            if let Some(ref mut port) = &mut SERIAL_PORTS[com as usize] {
+            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
                 port.handle_interrupt();
             }
         }
@@ -677,23 +677,23 @@ pub extern "C" fn serial_irq_handler(com: u32) {
 }
 
 /// C 兼容别名: serial_has_data
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serial_has_data(com: i32) -> bool {
     serial_has_char(com as u32) != 0
 }
 
 /// C 兼容别名: serial_write(buf, count 参数交换以匹配旧 C API)
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// 串口已通过 `serial_init()` 初始化。仅在内核上下文中有效。
-pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) {
+pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { unsafe {
     let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
     for &b in bytes {
         serial_putc(com as u32, b as i32);
     }
-}
+}}
 
 // ============================================================================
 // 单元测试

@@ -372,9 +372,9 @@ impl HdmiController {
     ///
     /// 同 [`HdmiController::new_with_iomem`], 默认偏移见 [`HPD_STATUS_REG_OFFSET`].
     /// 即 `iomem.len() >= REQUIRED_IOMEM_SIZE` (0x07A).
-    pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self {
+    pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self { unsafe {
         Self::new_with_iomem(iomem, HPD_STATUS_REG_OFFSET)
-    }
+    }}
 
     /// 创建 HDMI 控制器实例 (真实硬件, 含自定义像素时钟寄存器偏移)。
     ///

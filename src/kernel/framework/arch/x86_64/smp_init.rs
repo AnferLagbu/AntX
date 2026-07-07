@@ -48,22 +48,22 @@ struct ApPerCpu {
 static mut AP_PER_CPU: [Option<*mut ApPerCpu>; super::acpi::MAX_CPUS] =
     [None; super::acpi::MAX_CPUS];
 
-extern "C" {
+unsafe extern "C" {
     fn ap_trampoline_start();
     fn ap_trampoline_end();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_init_bsp() {
     init();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_ready() -> bool {
     SMP_FULLY_INITIALIZED.load(Ordering::Acquire)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_get_ap_count() -> u32 {
     AP_STARTED_COUNT.load(Ordering::Acquire)
 }
@@ -117,7 +117,7 @@ pub fn init() {
 }
 
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn copy_trampoline() {
+unsafe fn copy_trampoline() { unsafe {
     let src = ap_trampoline_start as *const u8;
     let end = ap_trampoline_end as *const u8;
     let size = end as usize - src as usize;
@@ -126,11 +126,11 @@ unsafe fn copy_trampoline() {
     for i in 0..size {
         dst.add(i).write_volatile(src.add(i).read_volatile());
     }
-}
+}}
 
 #[inline(never)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
+unsafe fn start_ap(lapic_id: u32, cpu_index: u32) { unsafe {
     if cpu_index as usize >= super::acpi::MAX_CPUS {
         return;
     }
@@ -196,7 +196,7 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
     }
 
     core::arch::asm!("sti", options(nomem, nostack));
-}
+}}
 
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn send_init_ipi(lapic_id: u32, assert: bool) {
@@ -216,11 +216,11 @@ unsafe fn send_sipi(lapic_id: u32, vector: u8) {
 }
 
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn timer_udelay(us: u32) {
+unsafe fn timer_udelay(us: u32) { unsafe {
     for _ in 0..us {
         core::arch::asm!("out dx, al", in("dx") 0x80u16, in("al") 0u8, options(nomem, nostack));
     }
-}
+}}
 
 extern "C" fn ap_entry(lapic_id: u32) -> ! {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)

@@ -172,13 +172,13 @@ static INIT_PROCESS_CREATED: AtomicU32 = AtomicU32::new(0);
 static CURRENT_IN_KERN: AtomicU64 = AtomicU64::new(0);
 
 /// TD-10: 设置当前 CPU 是否处于内核态.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_set_in_kern(v: u32) {
     CURRENT_IN_KERN.store(v as u64, Ordering::SeqCst);
 }
 
 /// TD-10: 读取当前 CPU 是否处于内核态.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_in_kern() -> u32 {
     CURRENT_IN_KERN.load(Ordering::SeqCst) as u32
 }
@@ -219,7 +219,7 @@ use crate::kernel::framework::racy_cell::RacyCell;
 
 static C_CURRENT_PROCESS: RacyCell<CProcess> = RacyCell::new(CProcess::zero());
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_get_current() -> u64 {
     let ptr = CURRENT_PROCESS_PTR.load(Ordering::SeqCst);
     if ptr == 0 {
@@ -248,7 +248,7 @@ fn create_init_process() {
     );
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn update_current_process_ptr(ptr: u64) {
     CURRENT_PROCESS_PTR.store(ptr, Ordering::SeqCst);
     if ptr != 0 {
@@ -264,7 +264,7 @@ pub fn update_current_process_ptr(ptr: u64) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_get_current_pid() -> u32 {
     SCHEDULER.current().unwrap_or(0)
 }
@@ -403,7 +403,7 @@ pub fn scheduler_add_to_run_queue(pid: u32) {
     SCHEDULER.add_to_run_queue(pid);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_get_by_pid(_pid: u32) -> u64 {
     if _pid as u64 == C_CURRENT_PROCESS.map(|p| p.pid) {
         C_CURRENT_PROCESS.as_ptr() as u64
@@ -412,7 +412,7 @@ pub fn process_get_by_pid(_pid: u32) -> u64 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_get_current_pwm() -> u64 {
     let pid = SCHEDULER.current().unwrap_or(0);
     if pid == 0 {
@@ -421,7 +421,7 @@ pub fn process_get_current_pwm() -> u64 {
     PROCESS_TABLE.with_process(pid, |p| p.get_pwm()).unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_get_pwm_by_pid(pid: u32) -> u64 {
     if pid == 0 {
         return 0;
@@ -429,12 +429,12 @@ pub fn process_get_pwm_by_pid(pid: u32) -> u64 {
     PROCESS_TABLE.with_process(pid, |p| p.get_pwm()).unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_create(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     proc_create_internal(name, parent_pid, pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
     if current_pid != 0 {
@@ -456,7 +456,7 @@ pub fn process_exit(exit_code: u32) {
 ///
 /// 将当前进程状态设为 Blocked, 并设置阻塞原因.
 /// 下次调度时会切换到其他就绪进程.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_block(pid: u32) {
     use super::types::BlockReason;
     if pid == 0 {
@@ -475,7 +475,7 @@ pub fn process_block(pid: u32) {
 /// 解除进程阻塞 (用于 futex wake / I/O 完成等)
 ///
 /// 将指定进程从 Blocked 状态恢复为 Ready, 允许调度器重新调度它.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_unblock(pid: u32) {
     if pid == 0 {
         return;
@@ -483,7 +483,7 @@ pub fn process_unblock(pid: u32) {
     SCHEDULER.unblock(pid);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_kill(pid: u32, exit_code: u32) {
     if pid == 0 {
         return;
@@ -508,12 +508,12 @@ pub fn process_kill(pid: u32, exit_code: u32) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_find_by_pid(pid: Pid) -> u64 {
     PROCESS_TABLE.get(pid).map(|p| p as u64).unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_has_runnable() -> i32 {
     if SCHEDULER.has_any_runnable() {
         1
@@ -522,49 +522,49 @@ pub fn proc_has_runnable() -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn thread_get_current() -> u64 {
     THREAD_MANAGER.get_current_thread().unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_yield_ex() {
     SCHEDULER_EX.yield_current();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_yield() {
     SCHEDULER.yield_current();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_schedule() -> Pid {
     SCHEDULER.schedule().unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_add(pid: Pid) {
     SCHEDULER.add(pid);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn wait_queue_init(_wq: *mut u8) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn wait_queue_add(_wq: *mut u8, _thread: u64) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn wait_queue_wake_one(_wq: *mut u8) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn wait_queue_wake_all(_wq: *mut u8) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn session_init() {
     SESSION_MANAGER.init();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn user_proc_init() {
     USER_PROC_MANAGER.init();
 }
@@ -588,7 +588,7 @@ fn set_init_status(s: u32) {
 
 const ELF_MAX_SIZE: usize = 1024 * 1024;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     if path.is_null() {
         return -1;
@@ -643,7 +643,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn user_proc_load_elf_from_memory(
     elf_data: *const u8,
     elf_size: u64,
@@ -653,7 +653,7 @@ pub fn user_proc_load_elf_from_memory(
 }
 
 /// 在 ELF 加载完成后, 在用户栈上建立 argv/envp (供 exec 系统调用使用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -664,7 +664,7 @@ pub unsafe fn user_proc_setup_argv(
     argc: u32,
     envp: *const *const u8,
     envc: u32,
-) -> i32 {
+) -> i32 { unsafe {
     let proc = match USER_PROC_MANAGER.get(pid) {
         Some(p) => p,
         None => return -1,
@@ -677,9 +677,9 @@ pub unsafe fn user_proc_setup_argv(
     } else {
         0
     }
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
     let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER
         .with_process(pid, |proc| {
@@ -716,7 +716,7 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
@@ -886,12 +886,12 @@ pub fn launch_first_user_process() -> ! {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_tick() {
     SCHEDULER_EX.tick();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_init() {
     super::scheduler::init();
     SCHEDULER_EX.init();
@@ -938,15 +938,15 @@ pub fn scheduler_init() {
     crate::kernel::framework::driver::uefi_init(0);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn process_init() {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn thread_init() {
     super::thread::init();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     if name.is_null() {
         return 0;
@@ -966,55 +966,55 @@ pub fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     SCHEDULER.create_process(name_str, parent, pwm).unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_get_current_pwm() -> u64 {
     SCHEDULER.current()
         .and_then(|pid| PROCESS_TABLE.with_process(pid, |p| p.get_pwm()))
         .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_set_quota(pwm: u64, max_runtime: u64, period: u64) {
     SCHEDULER.set_quota(pwm, max_runtime, period);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_remove_quota(pwm: u64) {
     SCHEDULER.remove_quota(pwm);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
     SCHEDULER.set_limit(pwm, max_procs);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_exit_internal(exit_code: u32) {
     SCHEDULER.exit(exit_code);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_current_pid_internal() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_yield_internal() {
     SCHEDULER.yield_current();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_block(reason: u32) {
     let block_reason = BlockReason::from_u8(reason as u8);
     SCHEDULER.block(block_reason);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_unblock(pid: Pid) {
     SCHEDULER.unblock(pid);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
     if PROCESS_TABLE.with_process(pid, |p| {
         p.set_priority(ProcessPriority::from_u32(priority));
@@ -1026,28 +1026,28 @@ pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_state(pid: Pid) -> u32 {
     PROCESS_TABLE.with_process(pid, |p| p.get_state() as u32)
         .unwrap_or(ProcessState::Terminated as u32)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sched_init_internal() {
     SCHEDULER.init();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sched_add_internal(pid: Pid) {
     SCHEDULER.add(pid);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sched_schedule_internal() -> Pid {
     SCHEDULER.schedule().unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sched_should_reschedule() -> i32 {
     if SCHEDULER.should_reschedule() {
         1
@@ -1056,23 +1056,23 @@ pub fn sched_should_reschedule() -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sched_set_current(pid: Pid) {
     SCHEDULER.set_current(pid);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sched_get_current() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_exit_code(pid: Pid) -> i32 {
     PROCESS_TABLE.with_process(pid, |p| p.exit_code.load(Ordering::SeqCst) as i32)
         .unwrap_or(-1)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_is_initialized() -> i32 {
     if SCHEDULER.is_initialized() {
         1
@@ -1081,39 +1081,39 @@ pub fn proc_is_initialized() -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_get_time_slice() -> u64 {
     SCHEDULER.get_time_slice()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_get_current_level() -> u32 {
     SCHEDULER.get_current_level()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_tick_mlfq() {
     let cpu = crate::kernel::framework::smp::get_current_cpu() as usize;
     SCHEDULER.tick(cpu)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_boost_priority() {
     SCHEDULER.boost_priority()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_add_with_priority(pid: Pid, level: usize) {
     SCHEDULER.add_with_priority(pid, level)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
     use super::scheduler::SchedPolicy;
     SCHEDULER.add_rt_task(pid, rt_priority, SchedPolicy::from_u32(policy))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32 {
     use super::scheduler::SchedPolicy;
     if SCHEDULER.set_sched_policy(pid, SchedPolicy::from_u32(policy), rt_priority) {
@@ -1123,12 +1123,12 @@ pub fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn scheduler_get_rt_count() -> usize {
     SCHEDULER.get_rt_count()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_create_user(
     path: *const u8,
     argv: *const *const u8,
@@ -1199,7 +1199,7 @@ pub fn proc_create_user(
     child_pid
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> i32 {
     if path.is_null() {
         return -1;
@@ -1290,7 +1290,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_wait_child(pid: Pid) -> i32 {
     if pid == 0 {
         return -1;
@@ -1322,7 +1322,7 @@ pub fn proc_wait_child(pid: Pid) -> i32 {
     -2
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_sleep_ms(ms: u64) {
     // ✅ 修复: 阻塞式睡眠, 不再忙等 (Fix 6)
     if ms == 0 {
@@ -1357,7 +1357,7 @@ pub fn proc_sleep_ms(ms: u64) {
 /// 父进程物理页标记只读 + 2 引用，子进程共享
 /// 父进程返回 >0 (子进程 PID), 子进程返回 0
 /// 失败返回 0
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     if parent_pid == 0 {
@@ -1566,13 +1566,13 @@ pub fn sys_fork() -> Pid {
     child_pid
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_ppid(pid: Pid) -> Pid {
     PROCESS_TABLE.with_process(pid, |p| p.parent.map(|p| p.0).unwrap_or(0))
         .unwrap_or(0)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
     if PROCESS_TABLE.with_process(pid, |p| p.pwm.store(pwm, Ordering::SeqCst)).is_some() {
         0
@@ -1588,7 +1588,7 @@ pub fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
 /// 累加当前进程的 user/sys 时间 (调度器每 tick 调用, in_kern 区分用户/内核).
 /// Framekernel 调度器在 `tick_accounting` 中会调用此函数; 若调度器未启用统计,
 /// 则 user_time/sys_time 一直为 0, times() 返回 0 是真实结果而非占位.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_account_tick(in_kern: u32) {
     let pid = CURRENT_PROCESS_PTR.load(Ordering::SeqCst);
     if pid == 0 {
@@ -1606,7 +1606,7 @@ pub fn proc_account_tick(in_kern: u32) {
 
 /// 取得进程的 user/sys 时间 (jiffies 累积), services 层写入 tms.
 /// 真实实现: 通过 PROCESS_TABLE.with_process 读 Atomic; 若 process 不存在返 -1.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_times(pid: u32, out_user: *mut u64, out_sys: *mut u64) -> i32 {
     if out_user.is_null() || out_sys.is_null() {
         return -1;
@@ -1628,7 +1628,7 @@ pub fn proc_get_times(pid: u32, out_user: *mut u64, out_sys: *mut u64) -> i32 {
 }
 
 /// 取得当前进程启动时刻 jiffies.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_start_jiffies(pid: u32) -> u64 {
     PROCESS_TABLE
         .with_process(pid as Pid, |p| p.start_jiffies.load(Ordering::SeqCst))
@@ -1636,7 +1636,7 @@ pub fn proc_get_start_jiffies(pid: u32) -> u64 {
 }
 
 /// 标记进程启动时刻 (process_create 后调用).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_set_start_jiffies(pid: u32, j: u64) {
     PROCESS_TABLE.with_process(pid as Pid, |p| {
         p.start_jiffies.store(j, Ordering::SeqCst);
@@ -1645,7 +1645,7 @@ pub fn proc_set_start_jiffies(pid: u32, j: u64) {
 
 /// alarm(seconds) — 设置 alarm 剩余秒数对应的 jiffies 到期时刻.
 /// 返回旧剩余时间 (秒).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_alarm(pid: u32, seconds: u32) -> u32 {
     let hz = crate::kernel::framework::timer::get_frequency() as u64;
     if hz == 0 {
@@ -1676,7 +1676,7 @@ pub fn proc_alarm(pid: u32, seconds: u32) -> u32 {
 
 /// 调度器 tick 时检查 alarm 是否到期; 到期则触发 SIGALRM 并清零.
 /// 返回 1 表示有 alarm 触发 (供调度器唤醒/投递信号).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_check_alarm(pid: u32) -> i32 {
     let now = crate::kernel::framework::timer::get_ticks();
     let triggered = PROCESS_TABLE
@@ -1700,7 +1700,7 @@ pub fn proc_check_alarm(pid: u32) -> i32 {
 }
 
 /// setitimer(ITIMER_REAL, new, old) — Framekernel 只实现 ITIMER_REAL.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_setitimer_real(
     pid: u32,
     new_seconds: u64,
@@ -1743,7 +1743,7 @@ pub fn proc_setitimer_real(
 }
 
 /// getitimer(ITIMER_REAL, value) — 读取当前 ITIMER_REAL 剩余.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_getitimer_real(pid: u32, out_remaining_seconds: *mut u64) -> i32 {
     if out_remaining_seconds.is_null() {
         return -1;
@@ -1767,7 +1767,7 @@ pub fn proc_getitimer_real(pid: u32, out_remaining_seconds: *mut u64) -> i32 {
 }
 
 /// 调度器 tick 时检查 itimer_real 是否到期, 到期则触发 SIGALRM 并按 interval 重置.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_check_itimer_real(pid: u32) -> i32 {
     let now = crate::kernel::framework::timer::get_ticks();
     let mut triggered = false;
@@ -1807,7 +1807,7 @@ pub fn proc_check_itimer_real(pid: u32) -> i32 {
 /// - 偏移 16: `ru_stime.tv_sec`  (i64)
 /// - 偏移 24: `ru_stime.tv_usec` (i64)
 /// - 偏移 32 起: 其他 16 个 long, 写 0.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
     if out.is_null() || out_len < 32 {
         return -1;

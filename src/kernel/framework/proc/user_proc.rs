@@ -8,13 +8,13 @@ use crate::kernel::framework::mm::KERNEL_BASE;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::klog_error;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static user_entry_cr3: AtomicU64 = AtomicU64::new(0);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static user_entry_target: AtomicU64 = AtomicU64::new(0);
 
-extern "C" {
+unsafe extern "C" {
     fn pmm_alloc_page() -> *mut u8;
     fn pmm_alloc_pages(count: u64) -> *mut u8;
     fn pmm_free_page(page: *mut u8);
@@ -1416,14 +1416,14 @@ pub fn init() {
 }
 
 /// 分配一个新的 PID（供 sys_fork 使用）
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn proc_alloc_pid() -> u32 {
     PROCESS_TABLE.allocate_pid().unwrap_or(0)
 }
 
 /// 克隆父进程的 UserProcess 给子进程（供 sys_fork 使用）
 /// 子进程的 CR3 和内核栈已在 sys_fork 中分配好，此处仅创建 UserProcess 记录
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
     let parent_proc = match USER_PROC_MANAGER.get(parent_pid) {
         Some(p) => p,

@@ -119,20 +119,20 @@ fn rcu_read_unlock_impl() {
 /// # Safety
 /// 调用者必须在 RCU 读临界区内
 #[inline(always)]
-pub unsafe fn rcu_dereference<T>(ptr: *const T) -> *const T {
+pub unsafe fn rcu_dereference<T>(ptr: *const T) -> *const T { unsafe {
     fence(Ordering::Acquire);
     ptr::read_volatile(&ptr)
-}
+}}
 
 /// 安全更新 RCU 保护的指针
 ///
 /// # Safety
 /// 调用者确保旧值在所有 RCU 读者退出前不被释放
 #[inline(always)]
-pub unsafe fn rcu_assign_pointer<T>(slot: *mut *const T, new_val: *const T) {
+pub unsafe fn rcu_assign_pointer<T>(slot: *mut *const T, new_val: *const T) { unsafe {
     fence(Ordering::Release);
     ptr::write_volatile(slot, new_val);
-}
+}}
 
 /// 阻塞直到所有 CPU 上已有 RCU 读者退出
 ///
@@ -364,22 +364,22 @@ pub fn rcu_callback_count() -> u32 {
     rcu_data(cpu).callback_count.load(Ordering::Relaxed)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn rcu_read_lock() {
     rcu_read_lock_impl();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn rcu_read_unlock() {
     rcu_read_unlock_impl();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn synchronize_rcu() {
     synchronize_rcu_impl();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rcu_init() {
     RCU_GP_COUNTER.store(1, Ordering::Release);
 }

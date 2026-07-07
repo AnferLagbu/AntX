@@ -91,35 +91,35 @@ pub fn broadcast_reschedule() {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_init() {
     init();
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_is_enabled() -> bool {
     is_enabled()
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_get_cpu_count() -> u32 {
     get_cpu_count()
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_get_current_cpu() -> u32 {
     get_current_cpu()
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_register_cpu(apic_id: u32) -> bool {
     register_cpu(apic_id)
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_send_tlb_invalidate_ipi(target_apic_id: u8) {
     send_tlb_invalidate_ipi(target_apic_id);
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_broadcast_tlb_invalidate() {
     broadcast_tlb_invalidate();
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn smp_send_reschedule_ipi(target_apic_id: u8) {
     send_reschedule_ipi(target_apic_id);
 }

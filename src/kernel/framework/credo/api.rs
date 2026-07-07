@@ -53,7 +53,7 @@ macro_rules! klog_pwm {
 
 static INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_init() {
     if INITIALIZED
         .compare_exchange(
@@ -71,17 +71,17 @@ pub fn pwm_init() {
     klog_pwm!("PWM v5 initialized");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_try_load() -> i32 {
     storage::load_database()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_any_identity_exists() -> bool {
     identity::get_table().any_identity_exists()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_try_genesis(password: *const u8) -> i64 {
     let pwd = password.as_kstr();
     match identity::get_table().bootstrap(pwd, "root") {
@@ -90,7 +90,7 @@ pub fn pwm_try_genesis(password: *const u8) -> i64 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_create(
     password: *const u8,
     note: *const u8,
@@ -104,7 +104,7 @@ pub fn pwm_create(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_delete(pwm: u64) -> i32 {
     match identity::get_table().delete(pwm) {
         Ok(()) => 0,
@@ -112,7 +112,7 @@ pub fn pwm_delete(pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_disable(pwm: u64) -> i32 {
     match identity::get_table().disable(pwm) {
         Ok(()) => 0,
@@ -120,7 +120,7 @@ pub fn pwm_disable(pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_enable(pwm: u64) -> i32 {
     match identity::get_table().enable(pwm) {
         Ok(()) => 0,
@@ -128,7 +128,7 @@ pub fn pwm_enable(pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_verify_password(pwm: u64, password: *const u8) -> bool {
     if password.is_null() {
         return false;
@@ -137,7 +137,7 @@ pub fn pwm_verify_password(pwm: u64, password: *const u8) -> bool {
     identity::get_table().verify_password(pwm, pwd)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_change_password(
     pwm: u64,
     old: *const u8,
@@ -151,12 +151,12 @@ pub fn pwm_change_password(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_find(pwm: u64) -> bool {
     identity::find(pwm).is_some()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_find_entry(pwm: u64) -> *const PwmEntry {
     match identity::find(pwm) {
         Some(e) => e as *const PwmEntry,
@@ -164,12 +164,12 @@ pub fn pwm_find_entry(pwm: u64) -> *const PwmEntry {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_has_cap_raw(pwm: u64, domain: u16, _cap_bit: u8) -> u64 {
     engine::get_caps(pwm, CapDomain(domain)).as_u64()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_create_first_identity(password: *const u8) -> i64 {
     let pwd = password.as_kstr();
     match identity::get_table().bootstrap(pwd, "root") {
@@ -178,32 +178,32 @@ pub fn pwm_create_first_identity(password: *const u8) -> i64 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_fs_capability(pwm: u64) -> u64 {
     engine::get_caps(pwm, CapDomain::FS).as_u64()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_has_capability(pwm: u64, domain: u16, required: u64) -> bool {
     engine::check(pwm, CapDomain(domain), CapBits(required))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_capability_raw(pwm: u64, domain: u16) -> u64 {
     engine::get_caps(pwm, CapDomain(domain)).as_u64()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_privilege_level(pwm: u64) -> u8 {
     engine::get_privilege_level(pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_creator(pwm: u64) -> u64 {
     engine::get_creator(pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_grant(grantor_pwm: u64, grantee_pwm: u64, domain: u16, caps: u64) -> i32 {
     match identity::get_table().grant(grantor_pwm, grantee_pwm, CapDomain(domain), CapBits(caps)) {
         Ok(()) => 0,
@@ -211,7 +211,7 @@ pub fn pwm_grant(grantor_pwm: u64, grantee_pwm: u64, domain: u16, caps: u64) -> 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_revoke(revoker_pwm: u64, target_pwm: u64, domain: u16, caps: u64) -> i32 {
     match identity::get_table().revoke(revoker_pwm, target_pwm, CapDomain(domain), CapBits(caps)) {
         Ok(()) => 0,
@@ -219,7 +219,7 @@ pub fn pwm_revoke(revoker_pwm: u64, target_pwm: u64, domain: u16, caps: u64) -> 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_transfer_creator(current_creator: u64, target: u64, new_creator: u64) -> i32 {
     match identity::get_table().transfer_creator(current_creator, target, new_creator) {
         Ok(()) => 0,
@@ -227,12 +227,12 @@ pub fn pwm_transfer_creator(current_creator: u64, target: u64, new_creator: u64)
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_check_privilege(operator: u64, target: u64) -> bool {
     engine::check_privilege(operator, target)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_login(
     note: *const u8,
     password: *const u8,
@@ -245,67 +245,67 @@ pub fn pwm_login(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_logout() {
     session::logout();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_current() -> u64 {
     session::get_current_pwm()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_current_entry() -> *const PwmEntry {
     session::get_current_entry()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_is_logged_in() -> bool {
     session::is_logged_in()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_current_uid() -> u32 {
     session::get_current_uid()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_current_gid() -> u32 {
     session::get_current_gid()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_euid() -> u32 {
     session::get_euid()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_egid() -> u32 {
     session::get_egid()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_elevate_for_suid(target_pwm: u64) -> bool {
     session::elevate_for_suid(target_pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_drop_elevation() -> bool {
     session::drop_elevation()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_has_elevation_authority(target_pwm: u64) -> bool {
     session::has_elevation_authority(target_pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_try_setuid(target_uid: u32) -> bool {
     session::try_setuid(target_uid)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_uid(pwm: u64) -> u32 {
     match identity::find(pwm) {
         Some(e) => e.get_uid(),
@@ -313,7 +313,7 @@ pub fn pwm_get_uid(pwm: u64) -> u32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_get_gid(pwm: u64) -> u32 {
     match identity::find(pwm) {
         Some(e) => e.get_gid(),
@@ -321,7 +321,7 @@ pub fn pwm_get_gid(pwm: u64) -> u32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_clear_lockout(pwm: u64) -> i32 {
     match session::clear_lockout(pwm) {
         Ok(()) => 0,
@@ -329,22 +329,22 @@ pub fn pwm_clear_lockout(pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_save_to_disk() -> i32 {
     storage::save_database()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_load_from_disk() -> i32 {
     storage::load_database()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_is_modified() -> bool {
     identity::get_table().is_modified()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_set_modified() {
     identity::get_table().set_modified();
 }
@@ -367,7 +367,7 @@ pub fn umask_get() -> u32 {
     UMASK.load(Ordering::SeqCst)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_audit_log(pwm: u64, action: u32, target: u64, details: u64) {
     let act = match action {
         1 => AuditAction::Login,
@@ -385,12 +385,12 @@ pub fn pwm_audit_log(pwm: u64, action: u32, target: u64, details: u64) {
     audit::log(pwm, act, target, 0, details);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_audit_dump() {
     audit::dump();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn pwm_recover_first(
     password: *const u8,
     note: *const u8,

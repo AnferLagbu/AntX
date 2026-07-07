@@ -383,7 +383,7 @@ pub fn tickless_is_initialized() -> bool {
 ///   3 = get_cpu_stats(cpu: a1) → (enter 位于高 32 位 | exit 位于低 32 位) 或 idle_time
 ///   4 = set_hz(cpu: a1, hz: a2)
 ///   5 = is_initialized() → bool (是否已初始化)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sys_tickless(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !tickless_is_initialized() && cmd != 5 {
         return -(11i64); // EAGAIN

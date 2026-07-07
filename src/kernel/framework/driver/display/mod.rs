@@ -361,15 +361,15 @@ pub fn display_init() -> framework::Result<()> {
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn port_outw(port: u16, val: u16) {
+unsafe fn port_outw(port: u16, val: u16) { unsafe {
     core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
-}
+}}
 
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn port_inw(port: u16) -> u16 {
+unsafe fn port_inw(port: u16) -> u16 { unsafe {
     let ret: u16;
     core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
     ret
-}
+}}

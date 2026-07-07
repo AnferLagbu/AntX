@@ -529,7 +529,7 @@ impl Default for VgaDriver {
 static mut VGA_DRIVER: Option<VgaDriver> = None;
 
 /// 初始化全局 VGA 驱动
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vga_init() {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -541,7 +541,7 @@ pub extern "C" fn vga_init() {
 }
 
 /// 向 VGA 输出字符 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vga_putchar(ch: i32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -552,7 +552,7 @@ pub extern "C" fn vga_putchar(ch: i32) {
 }
 
 /// 向 VGA 输出字符串 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vga_puts(s: *const u8) {
     if s.is_null() {
         return;
@@ -571,7 +571,7 @@ pub extern "C" fn vga_puts(s: *const u8) {
 }
 
 /// 清屏 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vga_clear() {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -582,7 +582,7 @@ pub extern "C" fn vga_clear() {
 }
 
 /// 设置颜色 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vga_set_color(fg: u8, bg: u8) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {

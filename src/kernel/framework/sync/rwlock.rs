@@ -329,7 +329,7 @@ impl<T: Default> Default for RwLock<T> {
 
 /// 让出 CPU 给调度器
 fn scheduler_yield() {
-    extern "C" {
+    unsafe extern "C" {
         fn scheduler_yield();
     }
     // SAFETY: FFI call to scheduler; guaranteed to be a valid C-ABI function

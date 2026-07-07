@@ -412,12 +412,12 @@ pub fn get_lapic_base() -> u64 {
     madt.local_apic_addr as u64
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn acpi_parse_madt(mb2_ptr: u64) -> bool {
     parse_madt(mb2_ptr)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn acpi_get_ap_count() -> u32 {
     get_ap_count()
 }
@@ -824,17 +824,17 @@ pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
 // C-ABI 兼容接口
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn acpi_parse_all(mb2_ptr: u64) -> bool {
     parse_all_tables(mb2_ptr)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn acpi_shutdown_system() -> ! {
     acpi_shutdown()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn acpi_reboot_system() -> ! {
     acpi_reboot()
 }

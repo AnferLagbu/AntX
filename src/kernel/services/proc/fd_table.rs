@@ -102,7 +102,7 @@ impl FdTable {
         let entries = self.entries.lock();
         entries.iter()
             .enumerate()
-            .filter(|(_, &gfd)| gfd != -1)
+            .filter(|&(_, &gfd)| gfd != -1)
             .map(|(local, &global)| (local, global))
             .collect()
     }

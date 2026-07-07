@@ -280,7 +280,7 @@ pub(super) unsafe fn write_timing_register_u16(iomem: &IoMem, reg_offset: usize,
 /// 调用方必须保证:
 /// - `iomem` 已映射到有效 HDMI 控制器 MMIO 区域
 /// - `HDMI_V_SYNC_PW_REG_OFFSET + 2 <= iomem.len()` (最后一个寄存器结束)
-pub(super) unsafe fn configure_hdmi_timing(iomem: &IoMem, timing: &VideoTiming) {
+pub(super) unsafe fn configure_hdmi_timing(iomem: &IoMem, timing: &VideoTiming) { unsafe {
     write_timing_register_u16(iomem, HDMI_H_TOTAL_REG_OFFSET, timing.h_total);
     write_timing_register_u16(iomem, HDMI_H_ACTIVE_REG_OFFSET, timing.h_active);
     write_timing_register_u16(iomem, HDMI_V_TOTAL_REG_OFFSET, timing.v_total);
@@ -305,7 +305,7 @@ pub(super) unsafe fn configure_hdmi_timing(iomem: &IoMem, timing: &VideoTiming) 
         HDMI_V_SYNC_PW_REG_OFFSET,
         timing.v_sync_pulse_width,
     );
-}
+}}
 
 // 抑制未使用导入警告 (DriverError 由后续模块使用, 此处预留).
 #[allow(dead_code)]

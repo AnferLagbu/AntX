@@ -105,7 +105,7 @@ impl VirtQueue {
         let total_size = align_up(used_off + used_size, PAGE_SIZE as usize);
 
         let pages = total_size.div_ceil(PAGE_SIZE as usize);
-        extern "C" {
+        unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
         // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效

@@ -52,14 +52,14 @@ pub unsafe fn inb(port: u16) -> u8 {
 /// # Safety
 ///
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
-pub unsafe fn outw(port: u16, value: u16) {
+pub unsafe fn outw(port: u16, value: u16) { unsafe {
     core::arch::asm!(
         "out dx, ax",
         in("dx") port,
         in("ax") value,
         options(nomem, nostack, preserves_flags),
     );
-}
+}}
 
 /// 从指定端口读入字 (x86_64 特有, 无 Arch trait 等价方法)
 #[inline(always)]
@@ -68,7 +68,7 @@ pub unsafe fn outw(port: u16, value: u16) {
 /// # Safety
 ///
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
-pub unsafe fn inw(port: u16) -> u16 {
+pub unsafe fn inw(port: u16) -> u16 { unsafe {
     let value: u16;
     core::arch::asm!(
         "in ax, dx",
@@ -77,7 +77,7 @@ pub unsafe fn inw(port: u16) -> u16 {
         options(nomem, nostack, preserves_flags),
     );
     value
-}
+}}
 
 /// 向指定端口写入双字 (架构无关: x86_64 → out, AArch64 → MMIO)
 #[inline(always)]

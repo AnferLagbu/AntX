@@ -252,7 +252,7 @@ fn read_mac_address(dev: &mut E1000Device) {
 
 #[cfg(not(feature = "kernel_test"))]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
-    extern "C" {
+    unsafe extern "C" {
         fn kmalloc_align(size: u64, align: u64) -> *mut u8;
     }
 
@@ -534,7 +534,7 @@ impl E1000Device {
 
     #[cfg(not(feature = "kernel_test"))]
     pub fn probe(&mut self) -> DriverResult<()> {
-        extern "C" {
+        unsafe extern "C" {
             fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16;
             fn pci_read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32;
             fn pci_write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32);
@@ -905,7 +905,7 @@ pub extern "C" fn e1000_net_irq(driver_data: *mut u8) {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn e1000_irq_entry(_frame: *mut u8) {
     // IRQ 上下文使用 try_lock 避免与主代码路径死锁
     if let Some(mut guard) = E1000_DEVICE.try_lock() {
@@ -916,7 +916,7 @@ pub extern "C" fn e1000_irq_entry(_frame: *mut u8) {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn e1000_probe() -> i32 {
     let mut need_probe = false;
     {
@@ -961,16 +961,16 @@ pub extern "C" fn e1000_probe() -> i32 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn get_e1000_instance() -> *mut u8 {
     match &mut *E1000_DEVICE.lock() {
-        Some(ref mut dev) => dev as *mut _ as *mut u8,
+        Some(dev) => dev as *mut _ as *mut u8,
         None => core::ptr::null_mut(),
     }
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn e1000_dump_regs() {
     #[cfg(feature = "e1000-verbose")]
     {
@@ -1022,7 +1022,7 @@ pub extern "C" fn e1000_dump_regs() {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn e1000_dump_stats() {
     #[cfg(feature = "e1000-verbose")]
     {
@@ -1061,12 +1061,12 @@ static mut KALLOC_BUF: AlignedKallocBuf = AlignedKallocBuf { data: [0; 1048576] 
 static mut KALLOC_OFF: usize = 0;
 
 #[cfg(not(feature = "kernel_test"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `reg` 是 BAR0 区域内的有效 MMIO 寄存器偏移。设备已探测且 MMIO 区域已映射。
-pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
+pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 { unsafe {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };
     let base = KALLOC_BUF.data.as_mut_ptr() as usize;
@@ -1080,7 +1080,7 @@ pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let ptr = KALLOC_BUF.data.as_mut_ptr().add(KALLOC_OFF) as *mut u8;
     KALLOC_OFF += s;
     ptr
-}
+}}
 
 #[cfg(test)]
 mod tests {

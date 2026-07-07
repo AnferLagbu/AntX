@@ -243,7 +243,7 @@ impl<T> Mutex<T> {
         self.inner.locked.store(1, Ordering::Release);
 
         // 设置持有者 PID (从 C 函数获取)
-        extern "C" {
+        unsafe extern "C" {
             fn process_get_current_pid() -> u32;
         }
         // SAFETY: `process_get_current_pid` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -330,7 +330,7 @@ impl CondVar {
         self.waiters.fetch_add(1, Ordering::AcqRel);
         mutex.raw_unlock();
 
-        extern "C" {
+        unsafe extern "C" {
             fn timer_sleep_busy(ms: u64);
         }
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -376,7 +376,7 @@ fn rdtsc() -> u64 {
 
 /// 让出 CPU 给调度器
 fn scheduler_yield() {
-    extern "C" {
+    unsafe extern "C" {
         fn scheduler_yield();
     }
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)

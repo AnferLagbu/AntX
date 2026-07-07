@@ -93,24 +93,24 @@ impl GrantTable {
         if self.used.load(Ordering::Acquire) as usize >= MAX_GRANT_RECORDS {
             return None;
         }
-        let gen = self.next_gen.fetch_add(1, Ordering::AcqRel);
-        record.generation = gen;
+        let r#gen = self.next_gen.fetch_add(1, Ordering::AcqRel);
+        record.generation = r#gen;
         // 线性查找空槽 (generation == 0)
         for i in 0..MAX_GRANT_RECORDS {
             if self.records[i].generation == 0 {
                 self.records[i] = record;
                 self.used.fetch_add(1, Ordering::AcqRel);
-                return Some(gen);
+                return Some(r#gen);
             }
         }
         None
     }
 
     /// 按 generation 查找
-    pub fn get(&self, gen: u32) -> Option<&GrantRecord> {
-        if gen == 0 { return None; }
+    pub fn get(&self, r#gen: u32) -> Option<&GrantRecord> {
+        if r#gen == 0 { return None; }
         for r in &self.records {
-            if r.generation == gen {
+            if r.generation == r#gen {
                 return Some(r);
             }
         }
@@ -118,9 +118,9 @@ impl GrantTable {
     }
 
     /// 标记撤销 (释放槽)
-    pub fn mark_revoked(&mut self, gen: u32) -> bool {
+    pub fn mark_revoked(&mut self, r#gen: u32) -> bool {
         for i in 0..MAX_GRANT_RECORDS {
-            if self.records[i].generation == gen {
+            if self.records[i].generation == r#gen {
                 if self.records[i].flags.contains(GrantFlags::REVOKED) {
                     return false;
                 }
@@ -134,8 +134,8 @@ impl GrantTable {
     }
 
     /// 检查委托是否仍有效
-    pub fn is_valid(&self, gen: u32, current_tick: u64) -> bool {
-        match self.get(gen) {
+    pub fn is_valid(&self, r#gen: u32, current_tick: u64) -> bool {
+        match self.get(r#gen) {
             Some(r) => {
                 if r.flags.contains(GrantFlags::REVOKED) {
                     return false;
@@ -163,9 +163,9 @@ impl GrantTable {
             }
             g
         };
-        for &gen in &gens {
-            if gen == 0 { break; }
-            if self.mark_revoked(gen) {
+        for &r#gen in &gens {
+            if r#gen == 0 { break; }
+            if self.mark_revoked(r#gen) {
                 count += 1;
             }
         }
@@ -184,7 +184,7 @@ impl GrantTable {
 /// 委托操作结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelegationResult {
-    Granted { gen: u32 },
+    Granted { r#gen: u32 },
     Denied(DelegationDeny),
 }
 
@@ -247,7 +247,7 @@ impl<'a> DelegationEngine<'a> {
                     flags,
                 };
                 match self.table.add(rec) {
-                    Some(gen) => DelegationResult::Granted { gen },
+                    Some(r#gen) => DelegationResult::Granted { r#gen },
                     None => DelegationResult::Denied(DelegationDeny::TableFull),
                 }
             }
@@ -259,14 +259,14 @@ impl<'a> DelegationEngine<'a> {
     pub fn revoke<M: CapabilityMatrix>(
         &mut self,
         matrix: &mut M,
-        gen: u32,
+        r#gen: u32,
     ) -> bool {
-        if let Some(rec) = self.table.get(gen).copied() {
+        if let Some(rec) = self.table.get(r#gen).copied() {
             if rec.flags.contains(GrantFlags::REVOKED) {
                 return false;
             }
             let _ = self.policy.revoke(matrix, rec.domain, rec.bits);
-            self.table.mark_revoked(gen);
+            self.table.mark_revoked(r#gen);
             true
         } else {
             false
@@ -297,10 +297,10 @@ mod tests {
             parent_gen: 0,
             flags: GrantFlags::NONE,
         };
-        let gen = t.add(rec).unwrap();
-        assert!(gen > 0);
+        let r#gen = t.add(rec).unwrap();
+        assert!(r#gen > 0);
         assert_eq!(t.len(), 1);
-        let got = t.get(gen).unwrap();
+        let got = t.get(r#gen).unwrap();
         assert_eq!(got.from_pwm, 1);
         assert_eq!(got.to_pwm, 2);
     }
@@ -340,9 +340,9 @@ mod tests {
             created_tick: 0, expires_tick: 0,
             generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
         };
-        let gen = t.add(rec).unwrap();
+        let r#gen = t.add(rec).unwrap();
         assert_eq!(t.len(), 1);
-        assert!(t.mark_revoked(gen));
+        assert!(t.mark_revoked(r#gen));
         assert_eq!(t.len(), 0);
 
         let rec2 = GrantRecord {
@@ -363,10 +363,10 @@ mod tests {
             created_tick: 100, expires_tick: 200,
             generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
         };
-        let gen = t.add(rec).unwrap();
-        assert!(t.is_valid(gen, 150));
-        assert!(!t.is_valid(gen, 200));
-        assert!(!t.is_valid(gen, 300));
+        let r#gen = t.add(rec).unwrap();
+        assert!(t.is_valid(r#gen, 150));
+        assert!(!t.is_valid(r#gen, 200));
+        assert!(!t.is_valid(r#gen, 300));
     }
 
     #[test]
@@ -378,8 +378,8 @@ mod tests {
             created_tick: 0, expires_tick: 0,
             generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
         };
-        let gen = t.add(rec).unwrap();
-        assert!(t.is_valid(gen, u64::MAX));
+        let r#gen = t.add(rec).unwrap();
+        assert!(t.is_valid(r#gen, u64::MAX));
     }
 
     #[test]
@@ -469,12 +469,12 @@ mod tests {
         from.set(CapDomain::FS, CapBits(0xFF)).unwrap();
         let mut eng = DelegationEngine::new(&mut table, &policy);
         let r = eng.delegate(&from, &mut to, 1, 2, CapDomain::FS, CapBits(0b1000), 100, 0, false);
-        let gen = match r {
-            DelegationResult::Granted { gen } => gen,
+        let r#gen = match r {
+            DelegationResult::Granted { r#gen } => r#gen,
             _ => panic!("expected Granted"),
         };
         assert_eq!(to.get(CapDomain::FS), Some(CapBits(0b1000)));
-        assert!(eng.revoke(&mut to, gen));
+        assert!(eng.revoke(&mut to, r#gen));
         // 0b1000 非 floor (FS floor = 0b0101), 应被撤销
         assert_eq!(to.get(CapDomain::FS), Some(CapBits::NONE));
     }

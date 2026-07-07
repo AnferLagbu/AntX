@@ -25,7 +25,7 @@ impl AtaBlockDevice {
     /// 返回 None 如果指定的驱动器上没有磁盘。
     pub fn new(drive: u8) -> Option<Self> {
         // FFI declarations
-        extern "C" {
+        unsafe extern "C" {
             fn ata_disk_present(disk: u8) -> i32;
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
@@ -72,7 +72,7 @@ impl BlockDevice for AtaBlockDevice {
         if buf.len() < 512 || sector > u32::MAX as u64 {
             return -1;
         }
-        extern "C" {
+        unsafe extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
         // SAFETY: `as_mut_ptr` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -83,7 +83,7 @@ impl BlockDevice for AtaBlockDevice {
         if buf.len() < 512 || sector > u32::MAX as u64 {
             return -1;
         }
-        extern "C" {
+        unsafe extern "C" {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         }
         // SAFETY: `as_ptr` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -91,7 +91,7 @@ impl BlockDevice for AtaBlockDevice {
     }
 
     fn blk_is_present(&self) -> bool {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_disk_present(disk: u8) -> i32;
         }
         // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效

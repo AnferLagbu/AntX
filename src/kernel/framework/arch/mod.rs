@@ -349,7 +349,7 @@ pub type CurrentArch = aarch64::Aarch64;
 /// 形如 `<CurrentArch as Arch>::tlb_flush_all()`.
 #[macro_export]
 macro_rules! arch {
-    ($method:ident ( $($arg:expr),* $(,)? )) => {
+    ($method:ident ( $($arg:expr_2021),* $(,)? )) => {
         <$crate::kernel::framework::arch::CurrentArch as $crate::kernel::framework::arch::Arch>::$method($($arg),*)
     };
     ($method:ident ()) => {

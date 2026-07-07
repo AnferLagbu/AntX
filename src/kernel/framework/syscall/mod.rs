@@ -66,7 +66,7 @@ pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
     crate::kernel::framework::userptr::validate_user_buf(ptr, len)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -95,12 +95,12 @@ pub unsafe extern "C" fn syscall_init() {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// 调用者处于内核上下文. `ptr` 是已校验的用户态字符串指针.
-pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) {
+pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) { unsafe {
     if frame.is_null() {
         return;
     }
@@ -152,10 +152,10 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     // 返回用户态前检查待投递信号
     // SAFETY: frame 有效, 当前在当前 CPU 的 syscall 上下文
     crate::kernel::framework::proc::do_signal_deliver(frame);
-}
+}}
 
 macro_rules! dispatch {
-    ($num:expr, $name:expr) => {{
+    ($num:expr_2021, $name:expr_2021) => {{
         let ret = $num;
         // SAFETY: klog_write 是 C-ABI 日志函数，$name 是 Rust 静态字符串
         // (字节切片)，传给 C 时按指针 + 长度传递。
@@ -173,7 +173,7 @@ macro_rules! dispatch {
     }};
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -558,7 +558,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 // 此处保留 #[no_mangle] 符号由 api.rs 的实现提供.
 
 // ============================================================================
@@ -1304,7 +1304,7 @@ fn sys_fb_release(_vaddr: u64) -> i64 {
 
 pub(crate) mod raw {
     // ============= 集中 FFI 声明 =============
-    extern "C" {
+    unsafe extern "C" {
         // 时间
         fn timer_get_ticks() -> u64;
         // 串口 (COM1/COM2)
@@ -1347,7 +1347,7 @@ pub(crate) mod raw {
 
     // x86_64 专属: 键盘
     #[cfg(target_arch = "x86_64")]
-    extern "C" {
+    unsafe extern "C" {
         fn keyboard_has_data() -> bool;
         fn keyboard_get_char() -> i32;
     }
@@ -1736,7 +1736,7 @@ pub(crate) mod raw {
     /// 加载空 IDT 后触发异常，重启 CPU（x86_64）。
     /// # SAFETY: 不返回；调用方须确保已关闭其他 CPU。
     #[cfg(target_arch = "x86_64")]
-    pub unsafe fn reboot_via_idt() -> ! {
+    pub unsafe fn reboot_via_idt() -> ! { unsafe {
         core::arch::asm!(
             "lidt [rdi]",
             "int 0",
@@ -1744,13 +1744,13 @@ pub(crate) mod raw {
             options(nostack, nomem)
         );
         loop {}
-    }
+    }}
 
     /// 通过 SVC 触发 PSCI reset（aarch64）。
     /// # SAFETY: 不返回；调用方须确保已关闭其他 CPU。
     #[cfg(target_arch = "aarch64")]
-    pub unsafe fn reboot_via_psci() -> ! {
+    pub unsafe fn reboot_via_psci() -> ! { unsafe {
         core::arch::asm!("svc #0", in("x0") 0u64, options(nostack));
         loop {}
-    }
+    }}
 }

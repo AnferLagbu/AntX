@@ -77,7 +77,7 @@ impl<'a> core::fmt::Write for CursorWriter<'a> {
 #[macro_export]
 macro_rules! klog_ffi {
     ($ffi_fn:ident, $($arg:tt)*) => {{
-        extern "C" { fn $ffi_fn(msg: *const u8); }
+        unsafe extern "C" { fn $ffi_fn(msg: *const u8); }
         let mut buf: [u8; 256] = [0u8; 256];
         let mut cursor = 0;
         let _ = core::fmt::write(
@@ -494,7 +494,7 @@ impl LogCategory {
 // ============================================================================
 
 // SAFETY: `const` 由调用方保证为有效指针; 只读访问
-unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] {
+unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] { unsafe {
     if ptr.is_null() {
         return b"(null)";
     }
@@ -506,7 +506,7 @@ unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] {
         }
     }
     core::slice::from_raw_parts(ptr, len)
-}
+}}
 
 fn rdtsc() -> u64 {
     crate::arch!(timestamp())
@@ -649,7 +649,7 @@ pub fn klog_get_level() -> LogLevel {
 // FFI 桩 → 全部实现在此
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -662,7 +662,7 @@ pub unsafe extern "C" fn klog_init() {
     klog_output(LogLevel::Info, LogCategory::Boot, b"KLog initialized");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -674,7 +674,7 @@ pub unsafe extern "C" fn klog_write(
     _func: *const u8,
     _line: u32,
     fmt: *const u8,
-) -> i32 {
+) -> i32 { unsafe {
     if fmt.is_null() {
         return -1;
     }
@@ -716,121 +716,121 @@ pub unsafe extern "C" fn klog_write(
     let msg = cstr_slice(fmt as *const u8);
     klog_output(lvl, category, msg);
     0
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
+pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) { unsafe {
     if msg.is_null() {
         return;
     }
     let s = cstr_slice(msg);
     klog_output(LogLevel::Info, LogCategory::Kernel, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
+pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) { unsafe {
     if msg.is_null() {
         return;
     }
     let s = cstr_slice(msg);
     klog_output(LogLevel::Warn, LogCategory::Kernel, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
+pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) { unsafe {
     if msg.is_null() {
         return;
     }
     let s = cstr_slice(msg);
     klog_output(LogLevel::Error, LogCategory::Kernel, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_net(fmt: *const u8) {
+pub unsafe extern "C" fn klog_net(fmt: *const u8) { unsafe {
     if fmt.is_null() {
         return;
     }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Net, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_net_err(fmt: *const u8) {
+pub unsafe extern "C" fn klog_net_err(fmt: *const u8) { unsafe {
     if fmt.is_null() {
         return;
     }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Error, LogCategory::Net, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
+pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) { unsafe {
     if fmt.is_null() {
         return;
     }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Boot, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
+pub unsafe extern "C" fn klog_kern(fmt: *const i8) { unsafe {
     if fmt.is_null() {
         return;
     }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Kernel, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
+pub unsafe extern "C" fn klog_syscall(fmt: *const i8) { unsafe {
     if fmt.is_null() {
         return;
     }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Syscall, s);
-}
+}}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_info(fmt: *const i8) {
+pub unsafe extern "C" fn klog_info(fmt: *const i8) { unsafe {
     if fmt.is_null() {
         return;
     }
     let s = cstr_slice(fmt as *const u8);
     klog_output(LogLevel::Info, LogCategory::Kernel, s);
-}
+}}

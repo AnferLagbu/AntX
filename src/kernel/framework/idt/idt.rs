@@ -97,13 +97,13 @@ unsafe fn read_8259_isr(slave: bool) -> u8 {
 /// I/O 等待
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn io_wait() {
+unsafe fn io_wait() { unsafe {
     port_outb(0x80, 0);
-}
+}}
 
 /// 重映射 8259A PIC: IRQ0-7→vec32-39, IRQ8-15→vec40-47
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn remap_pic() {
+unsafe fn remap_pic() { unsafe {
     let m = port_inb(0x21);
     let s = port_inb(0xA1);
     port_outb(0x20, 0x11);
@@ -125,7 +125,7 @@ unsafe fn remap_pic() {
     port_outb(0x21, 0xFF);
     port_outb(0xA1, 0xFF);
     let _ = (m, s);
-}
+}}
 
 /// 禁用中断
 #[inline(always)]
@@ -368,7 +368,7 @@ impl IdtManager {
     /// # Safety
     /// 必须确保 IDT 表已正确初始化
     #[cfg(target_arch = "x86_64")]
-    unsafe fn load_idt(&self) {
+    unsafe fn load_idt(&self) { unsafe {
         let state = self.state.lock();
         let base_addr = state.entries.as_ptr() as u64;
 
@@ -379,7 +379,7 @@ impl IdtManager {
             in(reg) &idt_ptr,
             options(nostack, preserves_flags)
         );
-    }
+    }}
 
     /// 注册异常处理函数
     pub fn set_exception_handler(&self, vector: u8, handler: extern "C" fn(*mut InterruptFrame)) {
@@ -570,10 +570,10 @@ impl IdtManager {
 
             RecoveryAction::TerminateProcess(exit_code) => {
                 // User-mode 异常：终止进程
-                extern "C" {
+                unsafe extern "C" {
                     fn process_exit(code: u32);
                 }
-                extern "C" {
+                unsafe extern "C" {
                     fn scheduler_yield();
                 }
 
@@ -586,7 +586,7 @@ impl IdtManager {
 
             RecoveryAction::DomainRecovery => {
                 // 尝试域级恢复 (barrier-stack)
-                extern "C" {
+                unsafe extern "C" {
                     fn recovery_try_recover_from_idt() -> i32;
                 }
 
@@ -731,7 +731,7 @@ impl IdtManager {
 
         if count <= 3 {
             // 尝试调度切换恢复
-            extern "C" {
+            unsafe extern "C" {
                 fn scheduler_yield();
             }
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -746,10 +746,10 @@ impl IdtManager {
 
     /// 终止 user 进程
     fn terminate_user_process(&self, _frame: &InterruptFrame, exit_code: u32) {
-        extern "C" {
+        unsafe extern "C" {
             fn process_exit(code: u32);
         }
-        extern "C" {
+        unsafe extern "C" {
             fn scheduler_yield();
         }
 
@@ -763,7 +763,7 @@ impl IdtManager {
     /// 尝试域级恢复
     fn attempt_domain_recovery(&self, frame: &InterruptFrame) {
         crate::kernel::framework::barrier::CRASH_RIP.store(frame.rip, core::sync::atomic::Ordering::SeqCst);
-        extern "C" {
+        unsafe extern "C" {
             fn recovery_try_recover_from_idt() -> i32;
         }
 

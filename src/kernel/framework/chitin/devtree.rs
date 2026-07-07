@@ -351,17 +351,17 @@ fn devtree_print_impl() {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn devtree_print() {
     devtree_print_impl();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn devtree_init() {
     devtree_init_impl();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn devtree_create_node(
     name: *const u8,
     proto: u32,

@@ -203,7 +203,7 @@ macro_rules! vga_set_color {
 // 外部函数声明 (FFI)
 // ============================================================================
 
-extern "C" {
+unsafe extern "C" {
     // VGA 函数
     fn vga_init();
     fn vga_putchar(ch: i32);

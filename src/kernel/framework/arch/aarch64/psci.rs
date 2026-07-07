@@ -14,7 +14,7 @@ const PSCI_VERSION: u32 = 0x84000000;
 /// 返回: x0 = return value
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn smc(func: u32) -> i64 {
+unsafe fn smc(func: u32) -> i64 { unsafe {
     let ret: i64;
     core::arch::asm!(
         "smc #0",
@@ -23,7 +23,7 @@ unsafe fn smc(func: u32) -> i64 {
         options(nostack),
     );
     ret
-}
+}}
 
 /// 检查 PSCI 版本。返回 (major, minor) 或 None。
 fn psci_version() -> Option<(u32, u32)> {

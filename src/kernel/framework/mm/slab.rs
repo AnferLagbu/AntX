@@ -237,9 +237,9 @@ pub(crate) mod raw {
     /// # Safety
     /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
-    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) { unsafe {
         core::ptr::write_bytes(ptr, 0, len);
-    }
+    }}
 
     /// 不重叠地复制内存.
     ///
@@ -248,9 +248,9 @@ pub(crate) mod raw {
     /// - dst 必须可写 `len` 字节
     #[inline(always)]
     #[allow(dead_code)] // 待 slab 数据搬移路径启用后使用。
-    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
+    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) { unsafe {
         core::ptr::copy_nonoverlapping(src, dst, len);
-    }
+    }}
 }
 
 use raw::SlabRef;
@@ -544,7 +544,7 @@ impl KmemCache {
 
     /// 创建新的 Slab (分配一页物理内存)
     fn new_slab(&self) -> Option<*mut SlabHeader> {
-        extern "C" {
+        unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
         let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(PAGE_SIZE as usize);
@@ -580,7 +580,7 @@ impl KmemCache {
         let page_end = unsafe { page.add(SLAB_DEFAULT_SIZE) } as *mut u8;
 
         if bitmap_end > page_end {
-            extern "C" {
+            unsafe extern "C" {
                 fn pmm_free_pages(addr: *mut u8, count: u64);
             }
             // SAFETY: page was just allocated; freeing on layout overflow
@@ -609,7 +609,7 @@ impl KmemCache {
         // 释放同等数量页. 调用方保证 slab 已不在任何链表中且不持有活动对象.
         unsafe {
             let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(PAGE_SIZE as usize);
-            extern "C" {
+            unsafe extern "C" {
                 fn pmm_free_pages(addr: *mut u8, count: u64);
             }
             pmm_free_pages(slab as *mut u8, pages_needed as u64);
@@ -842,7 +842,7 @@ static mut SLAB_INITIALIZED: bool = false;
 /// 初始化 Slab 系统 (创建通用缓存池)
 ///
 /// **必须在内核启动早期调用一次**, 在任何 slab_alloc/slab_free 之前。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn slab_system_init() -> i32 {
     klog_slab!("[SLAB] Initializing Slab allocator...");
 
@@ -878,7 +878,7 @@ pub(crate) fn find_general_cache_index(size: usize) -> Option<usize> {
 /// # Returns
 /// 成功: 分配的内存指针
 /// 失败: NULL
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
     if size == 0 || size > SLAB_MAX_OBJECT_SIZE {
         return core::ptr::null_mut();
@@ -905,7 +905,7 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn slab_free(ptr: *mut u8) {
     if ptr.is_null() {
         return;
@@ -930,7 +930,7 @@ pub extern "C" fn slab_free(ptr: *mut u8) {
 }
 
 /// 获取系统级统计信息 (FFI 兼容)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn slab_get_system_stats(
     total_memory: *mut u64,
     used_memory: *mut u64,
@@ -961,7 +961,7 @@ pub extern "C" fn slab_get_system_stats(
 }
 
 /// 打印所有缓存的状态 (调试用途)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn slab_dump_all_caches() {
     klog_slab!("[SLAB] === Slab Allocator Status ===");
 

@@ -222,13 +222,13 @@ impl RecoveryDomain {
     }
 
     pub fn push_barrier_snapshot(&self, tick: u64) {
-        let gen = self.barrier_generation.load(Ordering::SeqCst);
+        let r#gen = self.barrier_generation.load(Ordering::SeqCst);
         let undo_count = self.undo.lock().count;
         let mut stack = self.barrier_stack.lock();
         let top = self.barrier_stack_top.load(Ordering::SeqCst) as usize;
         let idx = top % MAX_BARRIER_SNAPSHOTS;
         stack[idx] = BarrierSnapshot {
-            generation: gen,
+            generation: r#gen,
             tick,
             undo_offset: undo_count,
         };

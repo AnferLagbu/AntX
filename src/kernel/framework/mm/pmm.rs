@@ -275,18 +275,18 @@ pub(crate) mod raw {
     /// # Safety
     /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
-    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) { unsafe {
         core::ptr::write_bytes(ptr, 0, len);
-    }
+    }}
 
     /// 用指定字节值填充一段内存.
     ///
     /// # Safety
     /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
-    pub unsafe fn fill_memory(ptr: *mut u8, val: u8, len: usize) {
+    pub unsafe fn fill_memory(ptr: *mut u8, val: u8, len: usize) { unsafe {
         core::ptr::write_bytes(ptr, val, len);
-    }
+    }}
 }
 
 use raw::{FreeNodeRef, MetaRef, BitmapRef, HeadsRef};

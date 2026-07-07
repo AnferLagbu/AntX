@@ -18,7 +18,7 @@ use super::types::*;
 // 详见 [docs/plan/maintenance-2026-06-11.md] (P1-I-01).
 pub use crate::kernel::services::proc::fd_table::{FdTable, MAX_FDS_PER_PROCESS};
 
-extern "C" {
+unsafe extern "C" {
     fn pmm_alloc_pages(count: u64) -> *mut u8;
     fn vmm_create_user_page_table() -> u64;
     fn vmm_destroy_page_table(cr3: u64);

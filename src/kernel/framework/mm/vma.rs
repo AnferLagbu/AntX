@@ -1114,7 +1114,7 @@ pub fn mm_struct_new() -> MmStruct {
     MmStruct::new()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vma_find(mm_ptr: *const MmStruct, addr: u64) -> u64 {
     if mm_ptr.is_null() {
         return 0;

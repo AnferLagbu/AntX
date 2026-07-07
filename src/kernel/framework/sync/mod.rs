@@ -103,7 +103,7 @@ pub use lockdep::{LockClassId, LockClassDesc, LockKind, register_class, acquire,
 // ============================================================================
 
 /// 初始化自旋锁 (FFI 导出)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_init(lock: *mut SpinLockInner) {
     if !lock.is_null() {
         raw::spin_locked_mut(lock).store(0, Ordering::Relaxed);
@@ -111,7 +111,7 @@ pub extern "C" fn spin_init(lock: *mut SpinLockInner) {
 }
 
 /// 获取自旋锁 (原始版本)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
     if !lock.is_null() {
         // Fast path: 尝试立即获取
@@ -138,7 +138,7 @@ pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
 }
 
 /// 释放自旋锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_unlock(lock: *const SpinLockInner) {
     if !lock.is_null() {
         core::sync::atomic::fence(Ordering::SeqCst);
@@ -147,7 +147,7 @@ pub extern "C" fn spin_unlock(lock: *const SpinLockInner) {
 }
 
 /// 尝试获取自旋锁 (非阻塞)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_trylock(lock: *const SpinLockInner) -> i32 {
     if lock.is_null() {
         return 0; // 失败
@@ -162,7 +162,7 @@ pub extern "C" fn spin_trylock(lock: *const SpinLockInner) -> i32 {
 }
 
 /// 检查自旋锁是否被持有
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_is_locked(lock: *const SpinLockInner) -> i32 {
     if lock.is_null() {
         return 0;
@@ -172,7 +172,7 @@ pub extern "C" fn spin_is_locked(lock: *const SpinLockInner) -> i32 {
 }
 
 /// 初始化互斥锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mutex_init(m: *mut MutexInner) {
     if !m.is_null() {
         raw::mutex_locked(m as *const MutexInner).store(0, Ordering::Relaxed);
@@ -186,7 +186,7 @@ pub extern "C" fn mutex_init(m: *mut MutexInner) {
 }
 
 /// 获取互斥锁 (阻塞)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mutex_lock(m: *const MutexInner) {
     if m.is_null() {
         return;
@@ -234,7 +234,7 @@ pub extern "C" fn mutex_lock(m: *const MutexInner) {
 }
 
 /// 释放互斥锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mutex_unlock(m: *const MutexInner) {
     if m.is_null() {
         return;
@@ -260,7 +260,7 @@ pub extern "C" fn mutex_unlock(m: *const MutexInner) {
 }
 
 /// 尝试获取互斥锁 (非阻塞)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mutex_trylock(m: *const MutexInner) -> i32 {
     if m.is_null() {
         return 0;
@@ -284,7 +284,7 @@ pub extern "C" fn mutex_trylock(m: *const MutexInner) -> i32 {
 }
 
 /// 检查互斥锁是否被持有
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mutex_is_locked(m: *const MutexInner) -> i32 {
     if m.is_null() {
         return 0;
@@ -294,7 +294,7 @@ pub extern "C" fn mutex_is_locked(m: *const MutexInner) -> i32 {
 }
 
 /// 初始化读写锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rwlock_init(rw: *mut RwLockInner) {
     if !rw.is_null() {
         raw::rwlock_readers(rw as *const RwLockInner).store(0, Ordering::Relaxed);
@@ -309,7 +309,7 @@ pub extern "C" fn rwlock_init(rw: *mut RwLockInner) {
 }
 
 /// 获取读锁 (阻塞)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn read_lock(rw: *const RwLockInner) {
     if rw.is_null() {
         return;
@@ -346,7 +346,7 @@ pub extern "C" fn read_lock(rw: *const RwLockInner) {
 }
 
 /// 释放读锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn read_unlock(rw: *const RwLockInner) {
     if !rw.is_null() {
         raw::rwlock_readers(rw).fetch_sub(1, Ordering::AcqRel);
@@ -354,7 +354,7 @@ pub extern "C" fn read_unlock(rw: *const RwLockInner) {
 }
 
 /// 获取写锁 (阻塞)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn write_lock(rw: *const RwLockInner) {
     if rw.is_null() {
         return;
@@ -390,7 +390,7 @@ pub extern "C" fn write_lock(rw: *const RwLockInner) {
 }
 
 /// 释放写锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn write_unlock(rw: *const RwLockInner) {
     if !rw.is_null() {
         raw::rwlock_writer(rw).store(0, Ordering::Release);
@@ -402,7 +402,7 @@ pub extern "C" fn write_unlock(rw: *const RwLockInner) {
 // ============================================================================
 
 /// 获取自旋锁并禁用中断 (返回中断标志)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_lock_irqsave_raw(lock: *const SpinLockInner) -> IrqSaveFlags {
     let flags = disable_interrupts();
     spin_lock_raw(lock);
@@ -410,21 +410,21 @@ pub extern "C" fn spin_lock_irqsave_raw(lock: *const SpinLockInner) -> IrqSaveFl
 }
 
 /// 释放自旋锁并恢复中断
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_unlock_irqrestore(lock: *const SpinLockInner, flags: &IrqSaveFlags) {
     spin_unlock(lock);
     restore_interrupts(flags);
 }
 
 /// 获取自旋锁并禁用中断 (不保存标志)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_lock_irq(lock: *const SpinLockInner) {
     disable_interrupts();
     spin_lock_raw(lock);
 }
 
 /// 释放自旋锁并启用中断
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn spin_unlock_irq(lock: *const SpinLockInner) {
     spin_unlock(lock);
     crate::arch!(interrupt_enable());
@@ -435,7 +435,7 @@ pub extern "C" fn spin_unlock_irq(lock: *const SpinLockInner) {
 // ============================================================================
 
 /// 尝试获取读锁 (非阻塞)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn read_trylock(rw: *const RwLockInner) -> i32 {
     if rw.is_null() {
         return 0; // 失败
@@ -458,7 +458,7 @@ pub extern "C" fn read_trylock(rw: *const RwLockInner) -> i32 {
 }
 
 /// 获取读锁并禁用中断
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn read_lock_irqsave(rw: *const RwLockInner) -> IrqSaveFlags {
     let flags = disable_interrupts();
     read_lock(rw);
@@ -466,14 +466,14 @@ pub extern "C" fn read_lock_irqsave(rw: *const RwLockInner) -> IrqSaveFlags {
 }
 
 /// 释放读锁并恢复中断
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn read_unlock_irqrestore(rw: *const RwLockInner, flags: &IrqSaveFlags) {
     read_unlock(rw);
     restore_interrupts(flags);
 }
 
 /// 获取写锁并禁用中断
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn write_lock_irqsave(rw: *const RwLockInner) -> IrqSaveFlags {
     let flags = disable_interrupts();
     write_lock(rw);
@@ -481,14 +481,14 @@ pub extern "C" fn write_lock_irqsave(rw: *const RwLockInner) -> IrqSaveFlags {
 }
 
 /// 释放写锁并恢复中断
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn write_unlock_irqrestore(rw: *const RwLockInner, flags: &IrqSaveFlags) {
     write_unlock(rw);
     restore_interrupts(flags);
 }
 
 /// 尝试获取写锁 (非阻塞)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn write_trylock(rw: *const RwLockInner) -> i32 {
     if rw.is_null() {
         return 0; // 失败
@@ -516,7 +516,7 @@ pub extern "C" fn write_trylock(rw: *const RwLockInner) -> i32 {
 // ============================================================================
 
 /// 获取互斥锁持有者 PID
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mutex_owner(m: *const MutexInner) -> i32 {
     if m.is_null() {
         return -1;
@@ -526,7 +526,7 @@ pub extern "C" fn mutex_owner(m: *const MutexInner) -> i32 {
 }
 
 /// 带超时的互斥锁获取 (简化版，暂不支持超时)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mutex_lock_timeout(m: *const MutexInner, _timeout_ms: u64) -> i32 {
     if m.is_null() {
         return -1;
@@ -553,7 +553,7 @@ pub use mutex::CondVar;
 // 辅助函数声明
 // ============================================================================
 
-extern "C" {
+unsafe extern "C" {
     fn process_get_current_pid() -> u32;
     fn scheduler_yield();
 }

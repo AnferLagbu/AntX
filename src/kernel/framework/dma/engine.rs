@@ -500,9 +500,9 @@ pub fn get_dma() -> &'static DmaEngine {
 /// # Safety
 ///
 /// 在 DMA 子系统尚未生效前的初始化阶段调用. 调用方保证 `count` > 0.
-pub unsafe fn get_dma_mut() -> &'static mut DmaEngine {
+pub unsafe fn get_dma_mut() -> &'static mut DmaEngine { unsafe {
     &mut GLOBAL_DMA
-}
+}}
 
 /// FFI 层使用的访问器
 pub(crate) fn dma() -> &'static DmaEngine {

@@ -652,13 +652,13 @@ pub unsafe fn gdt_set_user_cr3(user_cr3: u64) {
 /// # Safety
 /// 此函数修改 GDTR 寄存器, 会立即影响内存分段行为。
 #[inline(always)]
-unsafe fn gdt_flush(gdt_ptr: &GdtPtr) {
+unsafe fn gdt_flush(gdt_ptr: &GdtPtr) { unsafe {
     core::arch::asm!(
         "lgdt [{0}]",
         in(reg) gdt_ptr,
         options(nostack, preserves_flags),
     );
-}
+}}
 
 /// 执行 LTR 指令 (Load Task Register)
 ///
@@ -668,13 +668,13 @@ unsafe fn gdt_flush(gdt_ptr: &GdtPtr) {
 /// # Safety
 /// 此函数加载新的 TSS 到任务寄存器, 会标记 TSS 为 busy。
 #[inline(always)]
-unsafe fn tss_flush(selector: u16) {
+unsafe fn tss_flush(selector: u16) { unsafe {
     core::arch::asm!(
         "ltr {0:x}",
         in(reg) selector,
         options(nostack, preserves_flags),
     );
-}
+}}
 
 // ============================================================================
 // 单元测试

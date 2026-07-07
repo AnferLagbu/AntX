@@ -283,7 +283,7 @@ fn panic(info: &PanicInfo) -> ! {
     #[cfg(target_arch = "aarch64")]
     {
         // AArch64 栏栈恢复: 直接调用恢复逻辑进行域回滚
-        extern "C" {
+        unsafe extern "C" {
             fn recovery_try_recover_from_idt() -> i32;
         }
         let result = unsafe { recovery_try_recover_from_idt() };
@@ -332,7 +332,7 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
     panic!("Allocation error: {:?}", layout);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kernel_init() {
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
     unsafe {

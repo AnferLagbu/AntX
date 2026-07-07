@@ -15,7 +15,7 @@ use crate::kernel::framework::arch::uart;
 // 启动入口
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// AArch64 启动入口。
 ///
 /// # Safety
@@ -24,7 +24,7 @@ use crate::kernel::framework::arch::uart;
 /// - 栈指针 (SP) 已设置
 /// - BSS 段可写
 /// - 运行在 EL1（内核特权级）
-pub unsafe extern "C" fn entry() -> ! {
+pub unsafe extern "C" fn entry() -> ! { unsafe {
     // 0. 启用 FP/SIMD (编译器会生成 NEON 指令如 movi v0.2d)
     //    CPACR_EL1.FPEN[21:20] = 0b11 → 不 trap FP/SIMD
     core::arch::asm!("mrs x0, cpacr_el1", "orr x0, x0, #(0x3 << 20)", "msr cpacr_el1, x0", out("x0") _);
@@ -62,19 +62,19 @@ pub unsafe extern "C" fn entry() -> ! {
     loop {
         crate::arch!(halt());
     }
-}
+}}
 
 // ============================================================================
 // BSS 清零
 // ============================================================================
 
-extern "C" {
+unsafe extern "C" {
     static mut __bss_start: u8;
     static _kernel_end: u8;
 }
 
 // SAFETY: `clear_bss` 是有效的 C ABI 函数指针; 参数列表与声明一致
-unsafe fn clear_bss() {
+unsafe fn clear_bss() { unsafe {
     let bss_start = &mut __bss_start as *mut u8;
     let bss_end = &_kernel_end as *const u8 as usize;
 
@@ -84,4 +84,4 @@ unsafe fn clear_bss() {
 
     let size = bss_end - bss_start as usize;
     core::ptr::write_bytes(bss_start, 0, size);
-}
+}}

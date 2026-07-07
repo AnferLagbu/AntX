@@ -57,9 +57,9 @@ mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     #[allow(dead_code)] // 待 PCI 配置空间 16 位 I/O 启用后使用。
-    pub unsafe fn outw(port: u16, val: u16) {
+    pub unsafe fn outw(port: u16, val: u16) { unsafe {
         core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
-    }
+    }}
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -78,11 +78,11 @@ mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     #[allow(dead_code)] // 待 PCI 配置空间 16 位读取启用后使用。
-    pub unsafe fn inw(port: u16) -> u16 {
+    pub unsafe fn inw(port: u16) -> u16 { unsafe {
         let ret: u16;
         core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
         ret
-    }
+    }}
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -564,10 +564,10 @@ impl fmt::Display for PciDevice {
 /// C FFI: Rust PCI 初始化. 成功返回 0.
 /// 由 `kernel_main()` 调用, 替代原 C `pci_init()`.
 /// 原 C 版 `pci_init()` 保留在 `pci.c` 中, 仅供测试套件使用.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pci_rust_init() -> i32 {
     let count = init();
-    extern "C" {
+    unsafe extern "C" {
         fn klog_ffi_info(msg: *const u8);
     }
     let msg = alloc::format!("PCI: Rust subsystem initialised — {} device(s)", count);
@@ -579,31 +579,31 @@ pub extern "C" fn pci_rust_init() -> i32 {
 }
 
 /// C FFI: get device count
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pci_get_device_count() -> i32 {
     device_count() as i32
 }
 
 /// C FFI: 读取配置字 (供 e1000 兜底兼容使用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
     read_config_word(bus, dev, func, offset)
 }
 
 /// C FFI: read config dword
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pci_read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
     read_config_dword(bus, dev, func, offset)
 }
 
 /// C FFI: write config word
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pci_write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
     write_config_word(bus, dev, func, offset, val)
 }
 
 /// C FFI: write config dword
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pci_write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
     write_config_dword(bus, dev, func, offset, val)
 }

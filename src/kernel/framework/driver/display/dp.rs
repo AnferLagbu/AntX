@@ -446,9 +446,9 @@ impl DpController {
     ///
     /// 同 [`DpController::new_with_iomem`], 默认偏移见 [`DP_HPD_REG_OFFSET`].
     /// 即 `iomem.len() >= REQUIRED_IOMEM_SIZE` (0x041).
-    pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self {
+    pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self { unsafe {
         Self::new_with_iomem(iomem, DP_HPD_REG_OFFSET)
-    }
+    }}
 
     /// 检测热插拔。
     ///
@@ -505,7 +505,7 @@ impl DpController {
         iomem: &IoMem,
         address: u16,
         length: u8,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<Vec<u8>> { unsafe {
         // 1. 等待控制器空闲
         self.aux_wait_not_busy(iomem)?;
 
@@ -577,7 +577,7 @@ impl DpController {
         unsafe { iomem.write_u8(AUX_STA_REG_OFFSET, AUX_STA_REPLY_READY_BIT) };
 
         Ok(data)
-    }
+    }}
 
     /// AUX 无硬件 fallback 读取 (保持原行为, 兼容 QEMU).
     fn aux_read_fallback(&mut self, address: u16, length: u8) -> Result<Vec<u8>> {
@@ -632,7 +632,7 @@ impl DpController {
         iomem: &IoMem,
         address: u16,
         data: &[u8],
-    ) -> Result<()> {
+    ) -> Result<()> { unsafe {
         // 1. 等待控制器空闲
         self.aux_wait_not_busy(iomem)?;
 
@@ -694,7 +694,7 @@ impl DpController {
 
         // length 参数语义: 真实硬件的 `length` 由数据填充字节数隐式决定.
         Ok(())
-    }
+    }}
 
     /// 等待 AUX 控制器进入空闲状态 (busy == 0).
     ///

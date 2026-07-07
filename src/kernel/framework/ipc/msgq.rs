@@ -105,7 +105,7 @@ pub mod raw {
 // ============================================================================
 
 /// FFI: 创建消息队列
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn ipc_msgq_create(perm: i32) -> IpcId {
     let ns = super::IPC_NAMESPACE.get_mut();
     let next_id = super::NEXT_IPC_ID.get_mut();
@@ -121,7 +121,7 @@ pub fn ipc_msgq_create(perm: i32) -> IpcId {
 /// # Safety
 /// `data` 必须是有效可读指针, 至少 `size` 字节, 内存必须在调用期间保持有效。
 /// 由 `sys_msgsnd` 分发, cred 校验已通过。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     let pid = process_get_current_pid();
@@ -148,7 +148,7 @@ pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -
 /// # Safety
 /// `data` 必须是有效可写指针, 至少 `size` 字节; `type_out` 用于返回消息类型。
 /// 由 `sys_msgrcv` 分发, cred 校验已通过。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe fn ipc_msgq_recv(
     id: IpcId,
     type_out: *mut u64,
@@ -193,7 +193,7 @@ pub unsafe fn ipc_msgq_recv(
 }
 
 /// FFI: 销毁消息队列
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn ipc_msgq_destroy(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     match crate::kernel::services::ipc::msgq::msgq_destroy_safe(ns, id) {

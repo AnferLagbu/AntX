@@ -206,7 +206,7 @@ fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
 /// SAFETY: 调用方持有 NET_LOCK, 独占访问 NET_STACK_TRAIT
 /// write/read 在 no_std 不稳定, 用裸指针替换
 #[allow(dead_code)] // W4.2+ 接入后移除此 allow
-pub unsafe fn init_net_stack_trait(cfg: TraitNetConfig) -> Result<(), ()> {
+pub unsafe fn init_net_stack_trait(cfg: TraitNetConfig) -> Result<(), ()> { unsafe {
     let mut stack = SmoltcpNetStack::new();
     match stack.init(cfg) {
         Ok(()) => {
@@ -221,7 +221,7 @@ pub unsafe fn init_net_stack_trait(cfg: TraitNetConfig) -> Result<(), ()> {
             Err(())
         }
     }
-}
+}}
 
 /// 查询 NET_STACK_TRAIT 是否已初始化.
 #[allow(dead_code)] // W4.2+ 接入后移除此 allow
@@ -246,10 +246,10 @@ pub fn is_net_stack_trait_ready() -> bool {
 ///
 /// SAFETY: 通过裸指针解引用获取 &mut, 调用方保证 NET_LOCK 互斥.
 #[allow(dead_code)] // W4.2+ 接入后移除此 allow
-pub unsafe fn net_stack_trait_mut() -> Option<&'static mut SmoltcpNetStack> {
+pub unsafe fn net_stack_trait_mut() -> Option<&'static mut SmoltcpNetStack> { unsafe {
     let ptr = &mut NET_STACK_TRAIT as *mut Option<SmoltcpNetStack>;
     (*ptr).as_mut()
-}
+}}
 
 fn set_failed() {
     G_INIT_STATE.store(InitState::Failed as u8, Ordering::Release);
@@ -260,7 +260,7 @@ fn set_failed() {
 /// - 仅在内核启动网络子系统的临界区内调用一次
 /// - `SOCKET_STORAGE` 是 `MaybeUninit<[SocketStorage; MAX_SOCKETS]>` 静态变量, 由本函数独占初始化
 /// - `SOCKET_SET` 是 `UninitCell<SocketSet<'static>>`, 初始化后只读
-unsafe fn init_sockets() {
+unsafe fn init_sockets() { unsafe {
     if SOCKETS_INITIALIZED.load(Ordering::Acquire) {
         return;
     }
@@ -272,15 +272,15 @@ unsafe fn init_sockets() {
     let storage = SOCKET_STORAGE.assume_init_mut();
     SOCKET_SET.write(SocketSet::new(&mut storage[..]));
     SOCKETS_INITIALIZED.store(true, Ordering::Release);
-}
+}}
 
 /// # Safety
 ///
 /// - 调用前必须已执行 `init_sockets` 完成 `SOCKET_SET` 初始化
 /// - 返回的指针仅在同一线程的 socket 调度上下文内使用, 不得跨线程共享
-unsafe fn socket_set() -> *mut SocketSet<'static> {
+unsafe fn socket_set() -> *mut SocketSet<'static> { unsafe {
     SOCKET_SET.as_mut_ptr()
-}
+}}
 
 /// # Safety
 ///
@@ -361,7 +361,7 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 /// # Safety
 /// - `try_lock` 保证 ISR 安全 (不阻塞)。
 /// - 内部 raw::device_mut / raw::stack_mut 通过 NET_LOCK 互斥保护。
-pub unsafe fn poll_network() {
+pub unsafe fn poll_network() { unsafe {
     let _guard = match NET_LOCK.try_lock() {
         Some(g) => g,
         None => return,
@@ -414,7 +414,7 @@ pub unsafe fn poll_network() {
             q.try_wake(reason);
         }
     }
-}
+}}
 
 // ============================================================================
 // 多网卡探测 (按优先级依次尝试)
@@ -425,7 +425,7 @@ pub unsafe fn poll_network() {
 /// - 在网络子系统初始化入口被调用, 期间无其他并发探测
 /// - 依赖的 chitin/driver 框架 (`Driver::init`) 自身保证设备独占
 #[cfg(not(feature = "kernel_test"))]
-unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
+unsafe fn nic_probe_all() -> Option<ChitinNetDevice> { unsafe {
     // I-53 修复: 去除编译时架构互斥, 双架构二进制按运行时探测顺序
     // 尝试 e1000 (PCI 设备) 与 virtio-net (MMIO 设备). 两者驱动代码
     // 均架构无关, 仅依赖 IoMem / PCI 抽象. QEMU 配置决定哪一个会成功.
@@ -466,7 +466,7 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
     }
 
     None
-}
+}}
 
 #[cfg(not(feature = "kernel_test"))]
 static E1000_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
@@ -500,7 +500,7 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
 /// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
 ///
 /// SAFETY: 见上方 # Safety 章节, 调用方保证单线程 + 关中断; NET_LOCK 由本函数内部获取
-unsafe fn net_save() {
+unsafe fn net_save() { unsafe {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::net::save as snap;
 
@@ -544,7 +544,7 @@ unsafe fn net_save() {
         s.sockets_initialized = SOCKETS_INITIALIZED.load(Ordering::Acquire);
         s.init_state = G_INIT_STATE.load(Ordering::Acquire);
     });
-}
+}}
 
 /// SocketHandle → u32 (smoltcp SocketHandle 是 `pub struct SocketHandle(usize)` 单字段
 /// Copy newtype, 用 transmute_copy 替代 transmute: 编译期强制 size 匹配, 不依赖
@@ -579,7 +579,7 @@ unsafe fn smol_handle_from_u32(raw: u32) -> smoltcp::iface::SocketHandle {
 /// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
 ///
 /// SAFETY: 见上方 # Safety 章节, 调用方保证 socket fd 已无人持有 + 关中断; NET_LOCK 由本函数内部获取
-unsafe fn net_restore() {
+unsafe fn net_restore() { unsafe {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::net::save as snap;
 
@@ -646,7 +646,7 @@ unsafe fn net_restore() {
     crate::arch!(interrupt_enable());
     raw::klog_msg("--- Network Recovered ---");
     snap::clear();
-}
+}}
 
 /// # Safety
 ///
@@ -672,7 +672,7 @@ unsafe fn net_reset() {
 // timer ISR 异步完成。协议栈在硬件就绪后即可收发原始帧。
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn qx_net_init() {
     // SAFETY: 网络初始化由启动流程串行调用, 无并发访问全局状态。
     unsafe {
@@ -837,14 +837,14 @@ fn net_tx_softirq_handler() {
 /// # Safety
 /// 调用方保证 NET 已初始化 (通过 `qx_net_init` 注册)，
 /// `NET_READY` 由网络栈在链路就绪后置位。
-#[no_mangle]
-pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 { unsafe {
     if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
         return -1;
     }
     poll_network();
     0
-}
+}}
 
 /// 设置静态 IP (x.x.x.x/prefix, gateway)
 ///
@@ -855,8 +855,8 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
 /// - `cidr_str` 与 `gw_str` 必须是有效的 C 字符串指针 (NUL 终止),
 ///   指向的内存必须在调用期间保持有效。
 /// - 调用方保证 NET 已初始化。
-#[no_mangle]
-pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 { unsafe {
     if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
         return -1;
     }
@@ -941,13 +941,13 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
 
     raw::klog_msg("Static IP configured");
     0
-}
+}}
 
 // ============================================================================
 // Socket 系统调用注册
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn qx_socket_register_syscalls() -> i32 {
     0
 }
@@ -981,8 +981,8 @@ const E_NODEV: i32 = 19;
 /// # Safety
 /// - 由 `sys_socket` 系统调用分发, 参数由 syscall 层校验 (cred 检查)。
 /// - 必须 NET_LOCK 持有。
-#[no_mangle]
-pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) -> i32 { unsafe {
     if !is_network_initialized() {
         return -E_NODEV;
     }
@@ -1024,7 +1024,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
     } else {
         -E_AFNOSUPPORT
     }
-}
+}}
 
 // ============================================================================
 // W4.4: smoltcp wire 类型 ↔ NetStack trait 抽象类型的翻译 helper
@@ -1128,7 +1128,7 @@ struct SockaddrIn {
 /// `addr` 必须指向有效的 `SockaddrIn` 结构体, 至少含 8 字节已初始化。
 unsafe fn parse_ipv4_endpoint_trait(
     addr: *const u8,
-) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
+) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> { unsafe {
     if addr.is_null() {
         return None;
     }
@@ -1142,7 +1142,7 @@ unsafe fn parse_ipv4_endpoint_trait(
         crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(octets),
         port,
     ))
-}
+}}
 
 /// 旧版 `parse_ipv4_endpoint` 包装, 保持向后兼容 (smoltcp wire 类型返回).
 ///
@@ -1150,9 +1150,9 @@ unsafe fn parse_ipv4_endpoint_trait(
 ///
 /// # Safety
 /// 同 `parse_ipv4_endpoint_trait`.
-unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
+unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> { unsafe {
     parse_ipv4_endpoint_trait(addr).map(endpoint_to_smol)
-}
+}}
 
 /// POSIX `bind(fd, addr, addrlen)` 内核实现。
 ///
@@ -1160,8 +1160,8 @@ unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> {
 /// - `addr` 必须是有效的 sockaddr 指针, 含 `_addrlen` 字节已初始化。
 /// - 由 `sys_bind` 系统调用分发, 调用方验证权限。
 /// - NET_LOCK 持有。
-#[no_mangle]
-pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1191,14 +1191,14 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
         }
         _ => -E_NOTSUPP,
     }
-}
+}}
 
 /// POSIX `listen(fd, backlog)` 内核实现。
 ///
 /// # Safety
 /// NET_LOCK 持有; 由 `sys_listen` 分发, 调用方验证权限。
-#[no_mangle]
-pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1224,15 +1224,15 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 {
         Ok(()) => 0,
         Err(_) => -E_ADDRINUSE,
     }
-}
+}}
 
 /// POSIX `accept(fd, addr, addrlen)` 内核实现。
 ///
 /// # Safety
 /// - `addr`/`_addrlen` 必须是有效的 sockaddr 指针 (此处忽略)。
 /// - NET_LOCK 持有; 由 `sys_accept` 分发, 调用方验证权限。
-#[no_mangle]
-pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1255,15 +1255,15 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
     } else {
         -E_AGAIN
     }
-}
+}}
 
 /// POSIX `connect(fd, addr, addrlen)` 内核实现。
 ///
 /// # Safety
 /// `addr` 必须指向有效的 sockaddr 结构, 至少 `_addrlen` 字节。
 /// NET_LOCK 持有。
-#[no_mangle]
-pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1303,15 +1303,15 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         Ok(()) => 0,
         Err(_) => -E_CONNREFUSED,
     }
-}
+}}
 
 /// POSIX `send(fd, buf, len, flags)` 内核实现。
 ///
 /// # Safety
 /// `buf` 必须指向至少 `len` 字节的有效可读内存, 内存必须在调用期间保持有效。
 /// NET_LOCK 持有; 由 `sys_send` 分发, cred 校验已通过。
-#[no_mangle]
-pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1343,15 +1343,15 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
         }
         _ => -E_NOTSUPP,
     }
-}
+}}
 
 /// POSIX `recv(fd, buf, len, flags)` 内核实现。
 ///
 /// # Safety
 /// `buf` 必须指向至少 `len` 字节的有效可写内存, 内存必须在调用期间保持有效。
 /// NET_LOCK 持有; 由 `sys_recv` 分发。
-#[no_mangle]
-pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1391,14 +1391,14 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
         }
         _ => -E_NOTSUPP,
     }
-}
+}}
 
 /// POSIX `sendto(fd, buf, len, flags, addr, addrlen)` 内核实现。
 ///
 /// # Safety
 /// `buf`/`addr` 必须是有效指针, 内存至少含 `len`/`_addrlen` 字节。
 /// NET_LOCK 持有; 由 `sys_sendto` 分发。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_sendto(
     fd: i32,
     buf: *const u8,
@@ -1406,7 +1406,7 @@ pub unsafe extern "C" fn sm_sendto(
     _flags: i32,
     addr: *const u8,
     _addrlen: u32,
-) -> i32 {
+) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1445,14 +1445,14 @@ pub unsafe extern "C" fn sm_sendto(
         }
         _ => -E_NOTSUPP,
     }
-}
+}}
 
 /// POSIX `recvfrom(fd, buf, len, flags, addr, addrlen)` 内核实现。
 ///
 /// # Safety
 /// `buf` 必须是有效可写指针, 至少 `len` 字节; `addr`/`_addrlen` 可选地写入对端地址。
 /// NET_LOCK 持有; 由 `sys_recvfrom` 分发。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_recvfrom(
     fd: i32,
     buf: *mut u8,
@@ -1460,7 +1460,7 @@ pub unsafe extern "C" fn sm_recvfrom(
     _flags: i32,
     _addr: *mut u8,
     _addrlen: *mut u32,
-) -> i32 {
+) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1500,7 +1500,7 @@ pub unsafe extern "C" fn sm_recvfrom(
         }
         _ => -E_NOTSUPP,
     }
-}
+}}
 
 /// POSIX `sendmsg(fd, msghdr, flags)` 内核实现 (SG 拼接, 栈缓冲 4KB 上限).
 ///
@@ -1508,8 +1508,8 @@ pub unsafe extern "C" fn sm_recvfrom(
 /// `msg` 必须是有效用户指针, 含完整 `Msghdr { msg_iov, msg_iovlen, ... }`.
 /// 调用方 (services) 须先校验可读范围.
 /// NET_LOCK 持有; 由 `sys_sendmsg` 分发.
-#[no_mangle]
-pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
     }
@@ -1563,15 +1563,15 @@ pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32
     }
     let rc = sm_send(fd, region.as_mut_ptr(), total as u32, 0);
     rc
-}
+}}
 
 /// POSIX `recvmsg(fd, msghdr, flags)` 内核实现 (SG 拆分, 栈缓冲 4KB 上限).
 ///
 /// # Safety
 /// `msg` 必须是有效可写用户指针, services 校验.
 /// NET_LOCK 持有; 由 `sys_recvmsg` 分发.
-#[no_mangle]
-pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
     }
@@ -1631,14 +1631,14 @@ pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
         left -= cp;
     }
     n
-}
+}}
 
 /// POSIX `close(fd)` 内核实现。
 ///
 /// # Safety
 /// NET_LOCK 持有; 由 `sys_close` 分发, cred 校验已通过。
-#[no_mangle]
-pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1685,7 +1685,7 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
     SOCKET_TABLE.0[fd as usize] = None;
     FD_TYPES.0[fd as usize] = 0;
     0
-}
+}}
 
 /// POSIX `setsockopt` 内核实现 (当前空操作占位)。
 ///
@@ -1695,14 +1695,14 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 {
 ///
 /// # Safety
 /// `_optval` 必须是有效指针, 含 `_optlen` 字节 (此处忽略)。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_setsockopt(
     _fd: i32,
     _level: i32,
     _optname: i32,
     _optval: *const u8,
     _optlen: u32,
-) -> i32 {
+) -> i32 { unsafe {
     // v2 SO_PASSCRED 路由: level==1 (SOL_SOCKET), optname==16 (SO_PASSCRED)
     if _level == 1 && _optname == 16 {
         if _optlen < 4 {
@@ -1712,13 +1712,13 @@ pub unsafe extern "C" fn sm_setsockopt(
         return uds_svc::uds_setsockopt(_fd, val != 0);
     }
     0
-}
+}}
 
 /// POSIX `getsockopt` 内核实现 (当前空操作占位)。
 ///
 /// # Safety
 /// `_optval` 必须是有效可写指针, `_optlen` 必须是有效可写 u32 指针 (此处忽略)。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_getsockopt(
     _fd: i32,
     _level: i32,
@@ -1738,8 +1738,8 @@ pub unsafe extern "C" fn sm_getsockopt(
 /// - `addr` 必须是可写 sockaddr 指针, 至少 `_addrlen` 字节.
 /// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
 /// - NET_LOCK 持有; 由 `sys_getsockname` 分发.
-#[no_mangle]
-pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1791,7 +1791,7 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
     core::ptr::write_unaligned(addr as *mut SockaddrIn, sin);
     *addrlen = core::mem::size_of::<SockaddrIn>() as u32;
     0
-}
+}}
 
 /// POSIX `getpeername(fd, addr, addrlen)` 内核实现。
 ///
@@ -1801,8 +1801,8 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
 /// - `addr` 必须是可写 sockaddr 指针, 至少 `_addrlen` 字节.
 /// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
 /// - NET_LOCK 持有; 由 `sys_getpeername` 分发.
-#[no_mangle]
-pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
@@ -1847,14 +1847,14 @@ pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u3
     core::ptr::write_unaligned(addr as *mut SockaddrIn, sin);
     *addrlen = core::mem::size_of::<SockaddrIn>() as u32;
     0
-}
+}}
 
 /// 轮询所有 socket 状态 (驱动 `select/poll` 内核实现)。
 ///
 /// # Safety
 /// NET_LOCK 持有; 由 `sys_poll`/`sys_select` 分发。
-#[no_mangle]
-pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sm_poll_sockets() -> i32 { unsafe {
     let _guard = NET_LOCK.lock();
 
     let sockets = &mut *socket_set();
@@ -1869,7 +1869,7 @@ pub unsafe extern "C" fn sm_poll_sockets() -> i32 {
         }
     }
     0
-}
+}}
 
 // ============================================================================
 // 公共 API
@@ -1933,7 +1933,7 @@ static mut UDP_TX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS] =
 ///
 /// - 直接访问 `static mut` 全局表 (`FD_TYPES`, `SOCKET_TABLE`)
 /// - 调用方须保证在持有 `SM_FD_TABLE_LOCK` 时调用
-unsafe fn sm_alloc_fd() -> i32 {
+unsafe fn sm_alloc_fd() -> i32 { unsafe {
     for i in 0..MAX_SM_FD {
         if FD_TYPES.0[i] == 0 && SOCKET_TABLE.0[i].is_none() {
             // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
@@ -1944,7 +1944,7 @@ unsafe fn sm_alloc_fd() -> i32 {
         }
     }
     -1
-}
+}}
 
 pub fn is_network_initialized() -> bool {
     crate::kernel::framework::net::NET_READY.load(Ordering::Acquire)

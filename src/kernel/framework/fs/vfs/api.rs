@@ -94,12 +94,12 @@ fn split_parent_name(rel_path: &str) -> (&str, &str) {
 // VFS 核心接口 (内部)
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_init_internal() {
     super::vfs::init();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     let path = ptr_to_str(path);
     let fs_name = ptr_to_str(fs_name);
@@ -154,13 +154,13 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     VFS_MANAGER.mount_with_fs(path, fs_name, fs).as_i32()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_unmount_internal(path: *const u8) -> i32 {
     let path = ptr_to_str(path);
     VFS_MANAGER.unmount(path).as_i32()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
 
@@ -211,7 +211,7 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     let fd_idx_us = fd_idx as usize;
     if fd_idx_us >= VFS_MAX_FDS {
@@ -256,7 +256,7 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
@@ -347,7 +347,7 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 ///   0 表示无会话,framework 层 ramfs.read 应当返回 EACCES 而非降级为管理员。
 ///
 /// 返回: 实际读取字节数, 负数表示错误.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
     let mut user_buf = unsafe { UserWritePtr::new(dst.as_mut_ptr(), dst.len()) };
@@ -377,7 +377,7 @@ pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64,
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -427,7 +427,7 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
 // 调整 framework 实现即可. 当前未保留 stub, 避免假实现.
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     let fd_idx = fd as usize;
     if fd_idx >= VFS_MAX_FDS {
@@ -459,7 +459,7 @@ pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
@@ -495,7 +495,7 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
 
@@ -526,7 +526,7 @@ pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -547,7 +547,7 @@ pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let _pwm = pwm;
@@ -590,7 +590,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     if entry.is_null() {
         return -1;
@@ -628,13 +628,13 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_set_cwd_internal(path: *const u8) {
     let path = ptr_to_str(path);
     VFS_MANAGER.set_cwd(path);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
         return -1;
@@ -658,12 +658,12 @@ pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
 // Barrier 接口
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_barrier_capture() {
     VFS_MANAGER.capture_snapshot();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_barrier_restore() -> i32 {
     VFS_MANAGER.restore_from_snapshot();
     1
@@ -673,12 +673,12 @@ pub fn vfs_barrier_restore() -> i32 {
 // 公共 VFS API
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_init() {
     vfs_init_internal();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
     vfs_mount_internal(path, fs_name)
 }
@@ -698,7 +698,7 @@ pub fn vfs_mount_safe(path: &str, fs_name: &str) -> i32 {
     vfs_mount_internal(path_buf.as_ptr(), fs_buf.as_ptr())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
     if path.is_null() {
         return -22; // -EINVAL
@@ -710,32 +710,32 @@ pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_umount(path: *const u8, flags: i32) -> i32 {
     vfs_umount_internal(path, flags)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {
     vfs_open_internal(path, flags, pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_close(fd: u32) -> i32 {
     vfs_close_internal(fd)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
     vfs_read_internal(fd, buf, count)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
     vfs_write_internal(fd, buf, count)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     vfs_stat_internal(path, st, pwm)
 }
@@ -757,12 +757,12 @@ pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
     vfs_mkdir_internal(path, pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -783,12 +783,12 @@ pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_chown(path: *const u8, owner_pwm: u64, pwm: u64) -> i32 {
     vfs_chown_ext(path, owner_pwm, 0, pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_chown_ext(
     path: *const u8,
     owner_pwm: u64,
@@ -818,7 +818,7 @@ pub fn vfs_chown_ext(
 // fchmod — 按 fd 修改文件权限
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
     let fd_usize = fd as usize;
     if fd_usize >= 256 {
@@ -854,7 +854,7 @@ pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
 // fchown — 按 fd 修改文件所有者
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     let fd_usize = fd as usize;
     if fd_usize >= 256 {
@@ -886,14 +886,14 @@ pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
     vfs_unlink_internal(path, pwm)
 }
 
 /// link(oldpath, newpath) — 创建硬链接.
 /// E6-5: 通过 trait object 分发
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(oldpath);
     let new_path = ptr_to_str(newpath);
@@ -918,7 +918,7 @@ pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
 
 /// symlink(target, linkpath) — 创建符号链接.
 /// E6-5: 通过 trait object 分发
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
     let tgt = ptr_to_str(target);
     let link_path = ptr_to_str(linkpath);
@@ -943,7 +943,7 @@ pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
 
 /// readlink(path, buf, bufsiz) — 读取符号链接目标.
 /// E6-5: 通过 trait object 分发
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
     let _ = pwm;
     let p = ptr_to_str(path);
@@ -970,7 +970,7 @@ pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(old);
     let new_path = ptr_to_str(new);
@@ -1004,17 +1004,17 @@ pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_rmdir(path: *const u8, pwm: u64) -> i32 {
     vfs_rmdir_internal(path, pwm)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     vfs_readdir_internal(fd, entry)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_sync() -> i32 {
     // P3-I-18: 遍历所有挂载点, 通过 FileSystem trait 的 fs_sync 分发.
     // 替换原 hvfs_sync_internal() 单 FS 写死的实现.
@@ -1047,17 +1047,17 @@ pub fn vfs_sync() -> i32 {
     last_err
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_get_cwd(buf: *mut u8, size: u32) -> i32 {
     vfs_get_cwd_internal(buf, size)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_set_cwd(path: *const u8) {
     vfs_set_cwd_internal(path);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let whence = VfsSeekWhence::from_u32(whence);
     let fd_info = VFS_MANAGER.get_fd_info(fd as usize);
@@ -1088,12 +1088,12 @@ pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_fd_table() -> *const u8 {
     VFS_MANAGER.fd_table.lock().as_ptr() as *const u8
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
     let fs_type_str = ptr_to_str(fs_type);
     let _path = ptr_to_str(path);
@@ -1128,7 +1128,7 @@ pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
 // fstat — 从 fd 获取文件属性
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
     let fd_usize = fd as usize;
     if fd_usize >= 256 {
@@ -1201,7 +1201,7 @@ pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
 // dup / dup2 — 文件描述符复制
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_dup(oldfd: u32) -> i32 {
     let old_usize = oldfd as usize;
     if old_usize >= 256 {
@@ -1220,7 +1220,7 @@ pub fn vfs_dup(oldfd: u32) -> i32 {
     -24 // EMFILE
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
     let old_usize = oldfd as usize;
     let new_usize = newfd as usize;

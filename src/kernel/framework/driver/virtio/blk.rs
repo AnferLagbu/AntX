@@ -184,7 +184,7 @@ impl VirtioBlk {
         // 分配 IO 缓冲区: 512 字节扇区数据 + 请求头 + 状态字节
         let buf_size = 512 + core::mem::size_of::<BlkRequest>() + 1;
         let buf_pages = buf_size.div_ceil(PAGE_SIZE as usize);
-        extern "C" {
+        unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
         // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
@@ -400,7 +400,7 @@ impl VirtioBlk {
 // 多实例限制: 同一时刻只能有一个 virtio-blk 设备的 ISR 被分发到此函数,
 // 因为 IDT 按 IRQ 号分发, 每个 IRQ 有独立的 handler 槽位.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn virtio_blk_irq_handler(frame: *mut InterruptFrame) {
     // SAFETY: 注册表由 enable_irq() 在启动时单线程写入, ISR 只读, 无数据竞争.
     unsafe {

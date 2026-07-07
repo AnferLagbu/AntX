@@ -279,7 +279,7 @@ impl VirtioNet {
 
             // 为该 RX 槽位分配缓冲区
             let pages = RX_BUFFER_SIZE.div_ceil(PAGE_SIZE as usize);
-            extern "C" {
+            unsafe extern "C" {
                 fn pmm_alloc_pages(count: u64) -> *mut u8;
             }
             // SAFETY: extern 函数的参数/返回值类型与 C ABI 声明一致; 调用方保证指针有效
@@ -467,7 +467,7 @@ pub fn take_device() -> Option<Box<VirtioNet>> {
 }
 
 /// C FFI: 探测 virtio-net 设备. 成功返回 0, 失败返回 -1.
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///

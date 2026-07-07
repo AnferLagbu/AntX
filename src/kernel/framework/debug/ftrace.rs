@@ -208,31 +208,31 @@ pub fn rd_timestamp() -> u64 {
 /// 宏: 记录一个事件, 在关闭时为 no-op
 #[macro_export]
 macro_rules! trace_event {
-    ($name:expr) => {{
+    ($name:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
             0, 0, 0, 0,
         );
     }};
-    ($name:expr, $a0:expr) => {{
+    ($name:expr_2021, $a0:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
             $a0 as u64, 0, 0, 0,
         );
     }};
-    ($name:expr, $a0:expr, $a1:expr) => {{
+    ($name:expr_2021, $a0:expr_2021, $a1:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
             $a0 as u64, $a1 as u64, 0, 0,
         );
     }};
-    ($name:expr, $a0:expr, $a1:expr, $a2:expr) => {{
+    ($name:expr_2021, $a0:expr_2021, $a1:expr_2021, $a2:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
             $a0 as u64, $a1 as u64, $a2 as u64, 0,
         );
     }};
-    ($name:expr, $a0:expr, $a1:expr, $a2:expr, $a3:expr) => {{
+    ($name:expr_2021, $a0:expr_2021, $a1:expr_2021, $a2:expr_2021, $a3:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
             $a0 as u64, $a1 as u64, $a2 as u64, $a3 as u64,

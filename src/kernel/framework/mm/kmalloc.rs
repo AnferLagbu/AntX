@@ -95,9 +95,9 @@ impl HeapHeader {
     ///
     /// # Safety
     /// 调用方须保证 `data` 由某次合法分配返回
-    pub unsafe fn from_data_ptr(data: *mut u8) -> *mut Self {
+    pub unsafe fn from_data_ptr(data: *mut u8) -> *mut Self { unsafe {
         data.sub(core::mem::size_of::<Self>()) as *mut Self
-    }
+    }}
 }
 
 // === E4: unsafe 集中 — 原始子模块 ===
@@ -128,9 +128,9 @@ pub(crate) mod raw {
         /// - `data` 必须由先前的分配返回
         /// - 必须持有堆锁
         #[inline(always)]
-        pub unsafe fn from_data_ptr(data: *mut u8) -> Self {
+        pub unsafe fn from_data_ptr(data: *mut u8) -> Self { unsafe {
             Self(HeapHeader::from_data_ptr(data))
-        }
+        }}
 
         #[inline(always)]
         pub fn as_ptr(self) -> *mut HeapHeader {
@@ -254,9 +254,9 @@ pub(crate) mod raw {
     /// # Safety
     /// - `ptr` 必须指向 `len` 字节的合法可写区域
     #[inline(always)]
-    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) { unsafe {
         core::ptr::write_bytes(ptr, 0, len);
-    }
+    }}
 
     /// 不重叠内存复制.
     ///
@@ -265,9 +265,9 @@ pub(crate) mod raw {
     /// - dst 必须可写 `len` 字节
     /// - 两区不得重叠
     #[inline(always)]
-    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
+    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) { unsafe {
         core::ptr::copy_nonoverlapping(src, dst, len);
-    }
+    }}
 }
 
 use raw::{HeaderRef, FreeListHeadRef};
@@ -920,9 +920,9 @@ pub fn get_kmalloc() -> &'static KernelHeap {
 ///
 /// # Safety
 /// 仅在内核初始化期间调用
-pub unsafe fn get_kmalloc_mut() -> &'static mut KernelHeap {
+pub unsafe fn get_kmalloc_mut() -> &'static mut KernelHeap { unsafe {
     &mut GLOBAL_KMALLOC
-}
+}}
 
 // ==================== 辅助函数 ====================
 

@@ -626,7 +626,7 @@ impl<'a, T: ?Sized> core::ops::DerefMut for PiMutexGuard<'a, T> {
 // ============================================================================
 
 fn current_pid() -> u32 {
-    extern "C" {
+    unsafe extern "C" {
         fn process_get_current_pid() -> u32;
     }
     // SAFETY: process_get_current_pid 是有效的 C ABI 函数, 无副作用

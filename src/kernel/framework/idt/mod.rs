@@ -121,7 +121,7 @@ pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 /// # Returns
 /// - `MODULE_INIT_SUCCESS` (0): 成功
 /// - `MODULE_INIT_FAILURE` (-1): 失败
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn idt_init() -> i32 {
     use crate::klog_error;
@@ -129,7 +129,7 @@ pub extern "C" fn idt_init() -> i32 {
     let manager = IdtManager::instance();
 
     // 获取 ISR 地址表 (从 isr.asm 导出的符号, 使用 fn 指针)
-    extern "C" {
+    unsafe extern "C" {
         fn isr0();
         fn isr1();
         fn isr2();
@@ -273,7 +273,7 @@ pub extern "C" fn idt_init() -> i32 {
 ///
 /// # Safety
 /// 此函数在中断上下文中调用，必须快速执行
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
     let manager = IdtManager::instance();
     manager.handle_exception(frame);
@@ -286,9 +286,9 @@ pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
 ///
 /// # Safety
 /// 此函数在中断上下文中调用，需要发送 EOI
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
-pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) {
+pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
     if frame.is_null() {
         return;
     }
@@ -298,7 +298,7 @@ pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) {
     let vector = frame_ref.int_no as u8;
 
     manager.handle_irq(frame, vector);
-}
+}}
 
 /// 设置 IDT 门描述符 (FFI 兼容接口)
 ///
@@ -307,7 +307,7 @@ pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) {
 /// * `handler` - handler 地址
 /// * `selector` - 代码段选择子
 /// * `type_attr` - 类型属性标志
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: u8) {
     let manager = IdtManager::instance();
 
@@ -329,7 +329,7 @@ pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: 
 /// # Returns
 /// - `0`: 成功
 /// - `-1`: 参数无效
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_register_irq(
     irq: u8,
     handler: CIrqHandler,
@@ -354,7 +354,7 @@ pub extern "C" fn idt_register_irq(
 }
 
 /// 注销 IRQ handler (FFI 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_unregister_irq(irq: u8, handler: CIrqHandler) -> i32 {
     let manager = IdtManager::instance();
 
@@ -365,35 +365,35 @@ pub extern "C" fn idt_unregister_irq(irq: u8, handler: CIrqHandler) -> i32 {
 }
 
 /// 启用指定 IRQ
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_enable_irq(irq: u8) {
     let manager = IdtManager::instance();
     manager.enable_irq(irq);
 }
 
 /// 禁用指定 IRQ
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_disable_irq(irq: u8) {
     let manager = IdtManager::instance();
     manager.disable_irq(irq);
 }
 
 /// 导出 IDT 状态 (用于调试)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_dump_state() {
     let manager = IdtManager::instance();
     manager.dump_state();
 }
 
 /// 获取中断计数统计
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_get_interrupt_count(vector: u8) -> u64 {
     let manager = IdtManager::instance();
     manager.get_interrupt_count(vector)
 }
 
 /// 打印详细的中断统计信息
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn idt_print_interrupt_stats() {
     let manager = IdtManager::instance();
     manager.print_statistics();

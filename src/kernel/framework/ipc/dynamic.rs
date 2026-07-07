@@ -258,17 +258,17 @@ pub fn get_dyn_ipc() -> &'static DynIpcNamespace {
     DYN_IPC.get_ref()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn dyn_ipc_init() {
     dyn_ipc_init_impl();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn dyn_ipc_pipe_create(read_pid: u32, write_pid: u32) -> u32 {
     get_dyn_ipc().pipe_create(read_pid, write_pid)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn dyn_ipc_pipe_destroy(id: u32) -> i32 {
     match get_dyn_ipc().pipe_destroy(id) {
         Ok(()) => 0,
@@ -276,7 +276,7 @@ pub fn dyn_ipc_pipe_destroy(id: u32) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn dyn_ipc_msgq_create(owner_pid: u32, max_msgs: u32, max_size: u32) -> u32 {
     match get_dyn_ipc().msgq_create(owner_pid, max_msgs, max_size) {
         Ok(id) => id,
@@ -284,7 +284,7 @@ pub fn dyn_ipc_msgq_create(owner_pid: u32, max_msgs: u32, max_size: u32) -> u32 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn dyn_ipc_shm_create(owner_pid: u32, size: u64) -> u32 {
     match get_dyn_ipc().shm_create(owner_pid, size) {
         Ok(id) => id,
@@ -292,7 +292,7 @@ pub fn dyn_ipc_shm_create(owner_pid: u32, size: u64) -> u32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn dyn_ipc_sem_create(owner_pid: u32, count: u32, max_count: u32) -> u32 {
     match get_dyn_ipc().sem_create(owner_pid, count, max_count) {
         Ok(id) => id,

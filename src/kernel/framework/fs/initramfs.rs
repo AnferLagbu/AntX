@@ -169,7 +169,7 @@ fn parse_next_entry(data: &[u8], offset: usize) -> Option<(CpioEntry<'_>, usize)
 /// # Safety
 ///
 /// `data` 必须指向有效的、至少 `len` 字节的可读内存区域.
-pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str> {
+pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str> { unsafe {
     if data.is_null() || len == 0 {
         return Err("initramfs: empty or null data");
     }
@@ -253,7 +253,7 @@ pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str>
     );
 
     Ok(file_count)
-}
+}}
 
 // ============================================================================
 // 内核测试

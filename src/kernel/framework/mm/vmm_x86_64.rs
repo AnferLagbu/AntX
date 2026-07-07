@@ -1023,7 +1023,7 @@ impl VirtualMemoryManager {
         entry: *mut PageTableEntry,
         create: bool,
         huge_step: u64,
-    ) -> *mut PageTableEntry {
+    ) -> *mut PageTableEntry { unsafe {
         // SAFETY: 调用方保证 `entry` 指向 PMM 分配的页表页内合法 PageTableEntry.
         // 解引用通过 512 项表大小做边界检查.
         let e = &*entry;
@@ -1080,7 +1080,7 @@ impl VirtualMemoryManager {
         } else {
             core::ptr::null_mut()
         }
-    }
+    }}
 
     pub fn split_2mb_page(&self, virt: u64) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);

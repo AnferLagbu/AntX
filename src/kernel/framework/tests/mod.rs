@@ -294,7 +294,7 @@ pub fn runner() -> &'static TestRunner {
 
 #[macro_export]
 macro_rules! check {
-    ($cond:expr, $msg:literal $(,)?) => {
+    ($cond:expr_2021, $msg:literal $(,)?) => {
         if !($cond) {
             return $crate::kernel::framework::tests::TestResult::Fail($msg);
         }
@@ -303,7 +303,7 @@ macro_rules! check {
 
 #[macro_export]
 macro_rules! assert_eq_test {
-    ($left:expr, $right:expr, $msg:literal $(,)?) => {
+    ($left:expr_2021, $right:expr_2021, $msg:literal $(,)?) => {
         let l = $left;
         let r = $right;
         if l != r {

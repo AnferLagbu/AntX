@@ -585,7 +585,7 @@ impl KeyboardDriver {
             #[cfg(not(feature = "kernel_test"))]
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
-                extern "C" {
+                unsafe extern "C" {
                     fn scheduler_yield_ex();
                 }
                 scheduler_yield_ex();
@@ -629,7 +629,7 @@ impl KeyboardDriver {
 static KEYBOARD_DEVICE: Mutex<Option<Box<KeyboardDriver>>> = Mutex::new(None);
 
 /// 初始化键盘 (C 兼容接口)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn keyboard_init() {
     let mut driver = Box::new(KeyboardDriver::new());
     let _ = driver.init();
@@ -649,7 +649,7 @@ pub extern "C" fn keyboard_init() {
 
 /// 处理键盘中断 (C 兼容接口)
 /// IRQ 上下文使用 try_lock 避免与主代码路径死锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn keyboard_irq_handler() {
     if let Some(mut guard) = KEYBOARD_DEVICE.try_lock() {
         if let Some(ref mut driver) = *guard {
@@ -659,7 +659,7 @@ pub extern "C" fn keyboard_irq_handler() {
 }
 
 /// 读取字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn keyboard_read_char() -> i32 {
     match crate::kernel::framework::chitin::chitin_input_read() {
         Some(ch) => ch as i32,
@@ -668,7 +668,7 @@ pub extern "C" fn keyboard_read_char() -> i32 {
 }
 
 /// 检查是否有可读字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn keyboard_has_char() -> i32 {
     if crate::kernel::framework::chitin::chitin_input_has_data() {
         1
@@ -678,13 +678,13 @@ pub extern "C" fn keyboard_has_char() -> i32 {
 }
 
 /// C 兼容别名: keyboard_has_data (旧C代码/FFI调用的名称)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn keyboard_has_data() -> bool {
     keyboard_has_char() != 0
 }
 
 /// C 兼容别名: keyboard_get_char
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn keyboard_get_char() -> i32 {
     keyboard_read_char()
 }

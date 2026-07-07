@@ -48,7 +48,7 @@ pub fn busy_wait_ns(ns: u64) {
 
     let start = read_tsc();
 
-    extern "C" {
+    unsafe extern "C" {
         fn cpu_get_tsc_frequency() -> u64;
     }
     // SAFETY: `cpu_get_tsc_frequency` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -230,7 +230,7 @@ fn timer_sleep_yield(ms: u64) -> Result<(), i32> {
         let start_tick = get_ticks();
         let target_ticks = ms_to_ticks(ms);
 
-        extern "C" {
+        unsafe extern "C" {
             fn scheduler_yield_ex();
         }
 
@@ -272,7 +272,7 @@ where
         while !condition() {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
-                extern "C" {
+                unsafe extern "C" {
                     fn scheduler_yield_ex();
                 }
                 scheduler_yield_ex();
@@ -297,7 +297,7 @@ where
 
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            extern "C" {
+            unsafe extern "C" {
                 fn scheduler_yield_ex();
             }
             scheduler_yield_ex();
@@ -341,7 +341,7 @@ pub fn adaptive_sleep(ms: u64) {
 ///
 /// # Arguments
 /// * `ms` - 睡眠时间 (毫秒)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn timer_sleep_compat(ms: u64) {
     adaptive_sleep(ms);
 }
@@ -352,7 +352,7 @@ pub extern "C" fn timer_sleep_compat(ms: u64) {
 ///
 /// # Arguments
 /// * `ms` - 忙等待时间 (毫秒)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn timer_sleep_busy_compat(ms: u64) {
     busy_wait_ms(ms);
 }

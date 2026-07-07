@@ -44,8 +44,8 @@
 ///
 /// # Safety
 /// 此函数通过 FFI 暴露给 C 代码使用
-#[no_mangle]
-pub unsafe extern "C" fn strlen(s: *const i8) -> usize {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn strlen(s: *const i8) -> usize { unsafe {
     if s.is_null() {
         return 0;
     }
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn strlen(s: *const i8) -> usize {
     }
 
     len
-}
+}}
 
 /// 计算字符串长度 (Rust 安全版本)
 ///
@@ -92,12 +92,12 @@ pub fn strlen_safe(s: &[i8]) -> usize {
 /// * `0` - 相等
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `src` 是指向以 NUL 结尾的 C 字符串的有效指针. `dst` 至少有 `max_len` 字节可写内存.
-pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
+pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 { unsafe {
     if s1.is_null() || s2.is_null() {
         if s1.is_null() && s2.is_null() {
             return 0;
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
         p1 = p1.add(1);
         p2 = p2.add(1);
     }
-}
+}}
 
 /// 字符串比较（限制长度）(C 风格 FFI 接口)
 ///
@@ -132,12 +132,12 @@ pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
 /// * `0` - 相等
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `src` 与 `dst` 均为有效指针. `dst` 至少有 `n` 字节可写内存. 两个区域不可重叠.
-pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 {
+pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 { unsafe {
     if n == 0 {
         return 0;
     }
@@ -167,7 +167,7 @@ pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 
     }
 
     0
-}
+}}
 
 /// 字符串拷贝 (C 风格 FFI 接口)
 ///
@@ -180,8 +180,8 @@ pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 
 ///
 /// # Safety
 /// 调用者必须确保 dest 有足够的空间
-#[no_mangle]
-pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 { unsafe {
     if dest.is_null() || src.is_null() {
         return dest;
     }
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 {
     }
 
     ret
-}
+}}
 
 /// 字符串拷贝（限制长度）(C 风格 FFI 接口)
 ///
@@ -217,8 +217,8 @@ pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 {
 ///
 /// # Safety
 /// 调用者必须确保 dest 有至少 n 字节的空间
-#[no_mangle]
-pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mut i8 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mut i8 { unsafe {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
     }
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mu
     }
 
     ret
-}
+}}
 
 /// 字符串连接 (C 风格 FFI 接口)
 ///
@@ -265,8 +265,8 @@ pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mu
 ///
 /// # Safety
 /// 调用者必须确保 dest 有足够的空间容纳结果
-#[no_mangle]
-pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 { unsafe {
     if dest.is_null() || src.is_null() {
         return dest;
     }
@@ -294,7 +294,7 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
     }
 
     ret
-}
+}}
 
 /// 查找字符首次出现位置 (C 风格 FFI 接口)
 ///
@@ -304,12 +304,12 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
 ///
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `ptr` 是有效指针. 若 `n` 非零, 则从 `ptr` 起至少有 `n` 字节可读.
-pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
+pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {
         return core::ptr::null_mut();
     }
@@ -330,7 +330,7 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
 
         p = p.add(1);
     }
-}
+}}
 
 /// 查找字符最后出现位置 (C 风格 FFI 接口)
 ///
@@ -340,12 +340,12 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
 ///
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `a` 与 `b` 均为有效指针. 各自至少有 `n` 字节可读.
-pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
+pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {
         return core::ptr::null_mut();
     }
@@ -373,7 +373,7 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
     } else {
         last as *mut i8
     }
-}
+}}
 
 /// 查找子串 (C 风格 FFI 接口)
 ///
@@ -385,12 +385,12 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
 ///
 /// # Returns
 /// 找到的子串指针，或 NULL 如果未找到
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `ptr` 是有效指针. `value` 将被写入从 `ptr` 起 `n` 个连续字节.
-pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8 {
+pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8 { unsafe {
     if haystack.is_null() {
         return core::ptr::null_mut();
     }
@@ -430,7 +430,7 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 
         h = h.add(1);
     }
-}
+}}
 
 // ============================================================================
 // 内存操作函数 (Memory Operations)
@@ -451,12 +451,12 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 /// - dest 和 src 都有效
 /// - 区域不能重叠（否则应使用 memmove）
 /// - dest 有足够空间
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn memcpy(
     dest: *mut u8,
     src: *const u8,
     n: usize,
-) -> *mut u8 {
+) -> *mut u8 { unsafe {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
     }
@@ -469,7 +469,7 @@ pub unsafe extern "C" fn memcpy(
     }
 
     dest
-}
+}}
 
 /// 内存移动（处理重叠区域）(C 风格 FFI 接口)
 ///
@@ -482,7 +482,7 @@ pub unsafe extern "C" fn memcpy(
 ///
 /// # Returns
 /// 目标地址
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -491,7 +491,7 @@ pub unsafe extern "C" fn memmove(
     dest: *mut u8,
     src: *const u8,
     n: usize,
-) -> *mut u8 {
+) -> *mut u8 { unsafe {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
     }
@@ -513,7 +513,7 @@ pub unsafe extern "C" fn memmove(
     }
 
     dest
-}
+}}
 
 /// 内存设置 (C 风格 FFI 接口)
 ///
@@ -526,7 +526,7 @@ pub unsafe extern "C" fn memmove(
 ///
 /// # Returns
 /// 目标地址
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -535,7 +535,7 @@ pub unsafe extern "C" fn memset(
     s: *mut u8,
     c: i32,
     n: usize,
-) -> *mut u8 {
+) -> *mut u8 { unsafe {
     if s.is_null() || n == 0 {
         return s;
     }
@@ -548,7 +548,7 @@ pub unsafe extern "C" fn memset(
     }
 
     s
-}
+}}
 
 /// 优化的内存设置（使用 x86 汇编指令）
 ///
@@ -561,7 +561,7 @@ pub unsafe extern "C" fn memset(
 ///
 /// # Returns
 /// 目标地址
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 ///
 /// # Safety
@@ -571,7 +571,7 @@ pub unsafe extern "C" fn memset_optimized(
     s: *mut u8,
     c: i32,
     n: usize,
-) -> *mut u8 {
+) -> *mut u8 { unsafe {
     if s.is_null() || n == 0 {
         return s;
     }
@@ -589,7 +589,7 @@ pub unsafe extern "C" fn memset_optimized(
     );
 
     s
-}
+}}
 
 /// 内存比较 (C 风格 FFI 接口)
 ///
@@ -602,7 +602,7 @@ pub unsafe extern "C" fn memset_optimized(
 /// * `0` - 相等
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -611,7 +611,7 @@ pub unsafe extern "C" fn memcmp(
     s1: *const u8,
     s2: *const u8,
     n: usize,
-) -> i32 {
+) -> i32 { unsafe {
     if n == 0 {
         return 0;
     }
@@ -636,7 +636,7 @@ pub unsafe extern "C" fn memcmp(
     }
 
     0
-}
+}}
 
 /// 在内存中查找字符 (C 风格 FFI 接口)
 ///
@@ -647,7 +647,7 @@ pub unsafe extern "C" fn memcmp(
 ///
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
@@ -656,7 +656,7 @@ pub unsafe extern "C" fn memchr(
     s: *const u8,
     c: i32,
     n: usize,
-) -> *mut u8 {
+) -> *mut u8 { unsafe {
     if s.is_null() || n == 0 {
         return core::ptr::null_mut();
     }
@@ -671,7 +671,7 @@ pub unsafe extern "C" fn memchr(
     }
 
     core::ptr::null_mut()
-}
+}}
 
 // ============================================================================
 // 安全函数 (Secure Functions)
@@ -685,12 +685,12 @@ pub unsafe extern "C" fn memchr(
 /// # Arguments
 /// * `ptr` - 要清零的内存区域
 /// * `len` - 清零的字节数
-#[no_mangle]
+#[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// `src` 是合法指针, 至少指向 `max_len` 字节可读内存.
-pub unsafe extern "C" fn secure_zero(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn secure_zero(ptr: *mut u8, len: usize) { unsafe {
     if ptr.is_null() || len == 0 {
         return;
     }
@@ -701,7 +701,7 @@ pub unsafe extern "C" fn secure_zero(ptr: *mut u8, len: usize) {
     for i in 0..len {
         (*p.add(i)).store(0, core::sync::atomic::Ordering::Relaxed);
     }
-}
+}}
 
 // ============================================================================
 // Rust 原生安全接口 (Safe Wrappers)

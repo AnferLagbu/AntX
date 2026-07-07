@@ -53,9 +53,9 @@ impl GfxConsole {
 
     #[inline]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe fn fb_mut(&self) -> &mut Framebuffer {
+    unsafe fn fb_mut(&self) -> &mut Framebuffer { unsafe {
         &mut *self.fb
-    }
+    }}
 
     pub fn set_margin(&mut self, top: u32) {
         self.top_margin = top.min(self.rows);

@@ -50,7 +50,7 @@ pub struct ExceptionTableEntry {
 
 /// 全局异常表 (在链接脚本中定义)
 #[used]
-#[link_section = ".exception_table"]
+#[unsafe(link_section = ".exception_table")]
 static EXCEPTION_TABLE_START: ExceptionTableEntry = ExceptionTableEntry {
     insn_addr: 0,
     fixup_addr: 0,
@@ -201,7 +201,7 @@ pub fn is_user_buf(ptr: u64, len: usize) -> bool {
 ///
 // SAFETY: 调用方需保证在异常恢复有意义的上下文中调用 (即即将访问用户内存).
 #[inline(never)]
-unsafe fn setup_recovery() -> (u64, Option<u64>) {
+unsafe fn setup_recovery() -> (u64, Option<u64>) { unsafe {
     clear_exception_flag();
 
     let recovery_label: u64;
@@ -225,7 +225,7 @@ unsafe fn setup_recovery() -> (u64, Option<u64>) {
 
     let old_recovery = set_exception_recovery(recovery_label as u64);
     (recovery_label, old_recovery)
-}
+}}
 
 /// 撤销异常恢复点, 若有旧恢复点则还原.
 ///

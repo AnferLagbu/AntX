@@ -116,7 +116,7 @@ pub fn pcid_is_enabled() -> bool {
 // KPTI trampoline 代码范围: _kernel_text_start ~ _kpti_trampoline_end
 // 这些页在 USER_PML4 中需要保持可执行 (X), 其余代码页设为 NX.
 
-extern "C" {
+unsafe extern "C" {
     static _kernel_text_start: u8;
     static _kpti_trampoline_end: u8;
     static _kernel_text_end: u8;

@@ -26,7 +26,7 @@ use crate::kernel::framework::idt::InterruptFrame;
 /// Timer IRQ0 中断处理程序 (仅 x86_64)
 /// aarch64 定时器中断由 exception.rs 的 irq_handler_el1 处理
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     // I-50: hrtimer_run_queues 已在 on_timer_interrupt 内统一触发 (tick.rs),
     // 此处不再显式调用, 避免重复处理 (hrtimer 自身有去重, 但统一入口更清晰).
@@ -47,7 +47,7 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     // 5. 触发调度器 tick (统一入口: MLFQ 进程调度器负责线程记账 + 调度决策)
     // ✅ 安全检查: 仅当调度器已初始化时才触发 tick (与 ARM 版本一致, 避免竞态崩溃)
     if crate::kernel::framework::proc::SCHEDULER_READY.load(core::sync::atomic::Ordering::Acquire) {
-        extern "C" {
+        unsafe extern "C" {
             fn scheduler_tick_mlfq();
         }
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)

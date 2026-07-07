@@ -80,7 +80,7 @@ pub fn barrier_trigger_recovery() {
 /// 此函数在 IRQ 上下文 (EL1h) 执行, 不需要额外压栈/出栈.
 /// 如果恢复成功, IRQ handler 正常返回 (eret), 调用点继续执行.
 pub fn barrier_sgi_handler() -> i32 {
-    extern "C" {
+    unsafe extern "C" {
         fn recovery_try_recover_from_idt() -> i32;
     }
     // SAFETY: `recovery_try_recover_from_idt` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -96,10 +96,10 @@ pub fn barrier_sgi_handler() -> i32 {
 /// # Safety
 ///
 /// 调用前需确保 GICv3 已初始化，Redistributor 寄存器 (GICR_SGI_BASE) 可访问。
-pub unsafe fn enable_barrier_sgi() {
+pub unsafe fn enable_barrier_sgi() { unsafe {
     // SGI 7 在 GICR_ISENABLER0 的第 7 位
     // GICv3 规范: SGI 始终使能, 但显式设置确保万无一失
     let enable_reg = super::gic::GICR_ISENABLER0;
     let current = super::gic::gicr_sgi_read(enable_reg);
     super::gic::gicr_sgi_write(enable_reg, current | (1u32 << 7));
-}
+}}

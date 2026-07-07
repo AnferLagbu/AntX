@@ -317,7 +317,7 @@ pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
 ///
 /// # Safety
 /// `elf_data` 必须指向可写的有效 ELF 数据 (内核拷贝缓冲区).
-pub unsafe fn rewrite_interp_path(elf_data: *mut u8, elf_size: u64) {
+pub unsafe fn rewrite_interp_path(elf_data: *mut u8, elf_size: u64) { unsafe {
     let header = match elf_validate(elf_data as *const u8, elf_size) {
         Some(h) => h,
         None => return,
@@ -355,7 +355,7 @@ pub unsafe fn rewrite_interp_path(elf_data: *mut u8, elf_size: u64) {
             core::ptr::write_bytes(interp_dst.add(write_len), 0, interp_len - write_len);
         }
     }
-}
+}}
 
 #[cfg(test)]
 mod tests {

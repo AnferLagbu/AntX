@@ -18,7 +18,7 @@ fn as_cstr(p: &[u8]) -> *const u8 {
 const ENTRY_SZ: usize = 8 + 8 + 1 + 2 + 128 + PWM_NOTE_LEN + PWM_HASH_LEN + 8 + 8;
 const HDR_SZ: usize = 4 + 2 + 2 + 4;
 
-extern "C" {
+unsafe extern "C" {
     fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32;
     fn vfs_close_internal(fd_idx: u32) -> i32;
     fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32;

@@ -536,7 +536,7 @@ impl AhciPort {
         buffer_phys: PhysAddr,
         byte_count: u32,
         is_write: bool,
-    ) -> Result<()> {
+    ) -> Result<()> { unsafe {
         let regs = &mut *self.regs;
         let slot = 0u32; // 使用 slot 0
 
@@ -623,7 +623,7 @@ impl AhciPort {
         }
 
         Ok(())
-    }
+    }}
 
     /// 读取扇区 (DMA)
     pub fn read(&mut self, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {

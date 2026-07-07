@@ -1,6 +1,6 @@
 use core::alloc::{GlobalAlloc, Layout};
 
-extern "C" {
+unsafe extern "C" {
     fn pmm_alloc_page() -> *mut u8;
     fn pmm_free_page(addr: *mut u8);
     fn pmm_alloc_pages(count: u64) -> *mut u8;
@@ -25,7 +25,7 @@ const TAG_PMM_PAGES: u64 = 0xA115_504D_4D50_4703;
 const TAG_SIZE: usize = core::mem::size_of::<u64>();
 
 unsafe impl GlobalAlloc for KernelAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 { unsafe {
         let size = layout.size();
         let tag_offset = if size <= PAGE_THRESHOLD { TAG_SIZE } else { 0 };
 
@@ -67,9 +67,9 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 virt
             }
         }
-    }
+    }}
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) { unsafe {
         if ptr.is_null() {
             return;
         }
@@ -104,7 +104,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 pmm_free_pages(phys_addr as *mut u8, pages);
             }
         }
-    }
+    }}
 }
 
 #[global_allocator]

@@ -434,7 +434,7 @@ pub struct ExceptionFrame {
 // 异常向量表导出 (供 boot 入口设置 VBAR_EL1)
 // ============================================================================
 
-extern "C" {
+unsafe extern "C" {
     /// 异常向量表起始地址 (定义在 asm)
     pub static exception_vector_table: u8;
 }
@@ -448,7 +448,7 @@ extern "C" {
 /// EL0 SVC 系统调用处理器。
 /// 从 EL0 通过 `svc #0` 进入。
 /// QueenX aarch64 系统调用约定: x0=syscall_num, x1-x4=args, 返回 x0。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     let syscall_num = frame.x0;
 
@@ -488,7 +488,7 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
 }
 
 /// EL0 IRQ 处理器
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
     // GIC ACK + handle + EOI
     let intid = super::gic::acknowledge();
@@ -526,7 +526,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
         // 仅当 scheduler 已初始化时触发调度
         if crate::kernel::framework::proc::SCHEDULER_READY.load(Ordering::Acquire) {
-            extern "C" {
+            unsafe extern "C" {
                 fn scheduler_tick_mlfq();
             }
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -542,7 +542,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 }
 
 /// 默认同步异常处理 (EL1h)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     let esr: u64;
     let far: u64;
@@ -595,7 +595,7 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
 
 /// 辅助函数: 通过 UART 以十六进制输出 u64
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn exc_puthex(val: u64) {
+unsafe fn exc_puthex(val: u64) { unsafe {
     for shift in (0..16).rev() {
         let nibble = ((val >> (shift * 4)) & 0xF) as u8;
         let c = if nibble < 10 {
@@ -605,10 +605,10 @@ unsafe fn exc_puthex(val: u64) {
         };
         super::uart::putc(c);
     }
-}
+}}
 
 /// 默认 IRQ 处理 (EL1h)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
     // GIC ACK
     let intid = super::gic::acknowledge();
@@ -665,7 +665,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         if crate::kernel::framework::proc::SCHEDULER_READY
             .load(core::sync::atomic::Ordering::Acquire)
         {
-            extern "C" {
+            unsafe extern "C" {
                 fn scheduler_tick_mlfq();
             }
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -679,11 +679,11 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
 }
 
 /// 默认 FIQ 处理 (EL1h)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn fiq_handler(_frame: &ExceptionFrame) {}
 
 /// 默认 SError 处理 (EL1h)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
     loop {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -698,7 +698,7 @@ pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
 /// # Safety
 ///
 /// 仅在启动阶段调用，调用前需确保向量表已链接到内核镜像中。
-pub unsafe fn init() {
+pub unsafe fn init() { unsafe {
     let vbar = &exception_vector_table as *const u8 as u64;
     core::arch::asm!("msr vbar_el1, {}", in(reg) vbar);
 
@@ -707,4 +707,4 @@ pub unsafe fn init() {
 
     // ISB 确保写 VBAR 在取指前完成
     core::arch::asm!("isb");
-}
+}}

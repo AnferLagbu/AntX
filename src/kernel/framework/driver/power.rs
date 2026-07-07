@@ -170,7 +170,7 @@ fn arch_shutdown() {
 // ============================================================================
 
 /// sys_pm — 电源管理系统调用
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn sys_pm(cmd: u64, a1: u64, a2: u64) -> i64 {
     crate::kernel::services::driver::power::sys_pm_dispatch(&PM_SUBSYSTEM, cmd, a1, a2)
 }

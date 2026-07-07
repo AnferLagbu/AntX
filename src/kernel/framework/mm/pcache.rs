@@ -381,7 +381,7 @@ pub fn pcache_invalidate_inode(inode_id: u32) {
 ///
 /// - `dest_virt` 必须指向有效的、已映射的用户空间页
 /// - `phys` 必须是 Page Cache 中的有效物理页
-pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) {
+pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) { unsafe {
     let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
     // SAFETY: 调用方保证 dest_virt 指向有效用户空间页, phys 为有效物理页.
     core::ptr::copy_nonoverlapping(
@@ -389,7 +389,7 @@ pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) {
         dest_virt as *mut u8,
         PAGE_SIZE as usize,
     );
-}
+}}
 
 /// 填充指定缓存页内容 (解决 TRACK-A7DE25)
 ///

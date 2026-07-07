@@ -423,7 +423,7 @@ pub fn devtree_probe_composites() -> usize {
     created
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn composite_probe() -> u32 {
     devtree_probe_composites() as u32
 }

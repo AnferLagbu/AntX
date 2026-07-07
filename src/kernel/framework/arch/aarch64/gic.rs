@@ -63,37 +63,37 @@ const TIMER_PPI: u32 = 30; // CNTPNSIRQ
 #[allow(dead_code)] // 待 GICD 寄存器诊断读取路径启用后使用。
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicd_read(offset: u64) -> u32 {
+unsafe fn gicd_read(offset: u64) -> u32 { unsafe {
     core::arch::asm!("dsb sy");
     let val = read_volatile((GICD_BASE + offset) as *const u32);
     core::arch::asm!("dsb sy");
     val
-}
+}}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicd_write(offset: u64, val: u32) {
+unsafe fn gicd_write(offset: u64, val: u32) { unsafe {
     core::arch::asm!("dsb sy");
     write_volatile((GICD_BASE + offset) as *mut u32, val);
     core::arch::asm!("dsb sy");
-}
+}}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicr_read(offset: u64) -> u32 {
+unsafe fn gicr_read(offset: u64) -> u32 { unsafe {
     core::arch::asm!("dsb sy");
     let val = read_volatile((GICR_BASE + offset) as *const u32);
     core::arch::asm!("dsb sy");
     val
-}
+}}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicr_write(offset: u64, val: u32) {
+unsafe fn gicr_write(offset: u64, val: u32) { unsafe {
     core::arch::asm!("dsb sy");
     write_volatile((GICR_BASE + offset) as *mut u32, val);
     core::arch::asm!("dsb sy");
-}
+}}
 
 #[inline(always)]
 /// 读取 GICv3 Redistributor SGI 帧寄存器。
@@ -101,12 +101,12 @@ unsafe fn gicr_write(offset: u64, val: u32) {
 /// # Safety
 ///
 /// 调用者需确保 GICR_SGI_BASE (0x080B_0000) 已映射且 Redistributor 已唤醒。
-pub unsafe fn gicr_sgi_read(offset: u64) -> u32 {
+pub unsafe fn gicr_sgi_read(offset: u64) -> u32 { unsafe {
     core::arch::asm!("dsb sy");
     let val = read_volatile((GICR_SGI_BASE + offset) as *const u32);
     core::arch::asm!("dsb sy");
     val
-}
+}}
 
 #[inline(always)]
 /// 写入 GICv3 Redistributor SGI 帧寄存器。
@@ -114,11 +114,11 @@ pub unsafe fn gicr_sgi_read(offset: u64) -> u32 {
 /// # Safety
 ///
 /// 调用者需确保 GICR_SGI_BASE (0x080B_0000) 已映射且 Redistributor 已唤醒。
-pub unsafe fn gicr_sgi_write(offset: u64, val: u32) {
+pub unsafe fn gicr_sgi_write(offset: u64, val: u32) { unsafe {
     core::arch::asm!("dsb sy");
     write_volatile((GICR_SGI_BASE + offset) as *mut u32, val);
     core::arch::asm!("dsb sy");
-}
+}}
 
 // ============================================================================
 // GICv3 初始化
@@ -133,7 +133,7 @@ pub unsafe fn gicr_sgi_write(offset: u64, val: u32) {
 /// # Safety
 ///
 /// 调用前需确保 GICD_BASE (0x08000000) 已正确映射，MMU 已启用。
-pub unsafe fn init_distributor() {
+pub unsafe fn init_distributor() { unsafe {
     // 1. 禁用 Distributor
     gicd_write(GICD_CTLR, 0);
 
@@ -153,7 +153,7 @@ pub unsafe fn init_distributor() {
     // 5. 设置 CPU interface target: PPIs to CPU0
     gicd_write(GICD_ITARGETSR, 0x0101_0101);
     gicd_write(GICD_ITARGETSR + 4, 0x0101_0101);
-}
+}}
 
 /// 初始化 GICv3 Redistributor (当前 CPU):
 /// 1. 唤醒 redistributor
@@ -162,7 +162,7 @@ pub unsafe fn init_distributor() {
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化，GICR_BASE 已映射。
-pub unsafe fn init_redistributor() {
+pub unsafe fn init_redistributor() { unsafe {
     // 1. 唤醒 redistributor
     let waker = gicr_read(GICR_WAKER);
     gicr_write(GICR_WAKER, waker & !(1 << 1)); // 清除 ProcessorSleep (bit 1)
@@ -184,14 +184,14 @@ pub unsafe fn init_redistributor() {
 
     // 4. Enable redistributor
     gicr_write(GICR_CTLR, 0x1); // Enable
-}
+}}
 
 /// 使能 CPU Interface (ICC_* 系统寄存器)
 ///
 /// # Safety
 ///
 /// 仅在 EL1 或更高特权级调用，需确保 Redistributor 已初始化。
-pub unsafe fn init_cpu_interface() {
+pub unsafe fn init_cpu_interface() { unsafe {
     // 设置中断优先级掩码 (PMR): 允许所有优先级
     core::arch::asm!("msr icc_pmr_el1, {}", in(reg) 0xFFu64);
 
@@ -206,18 +206,18 @@ pub unsafe fn init_cpu_interface() {
     let ctlr: u64;
     core::arch::asm!("mrs {}, icc_ctlr_el1", out(reg) ctlr);
     core::arch::asm!("msr icc_ctlr_el1, {}", in(reg) ctlr & !(1 << 1));
-}
+}}
 
 /// 使能 Timer PPI 中断
 ///
 /// # Safety
 ///
 /// 调用前需确保 CPU Interface 已初始化。
-pub unsafe fn enable_timer_ppi() {
+pub unsafe fn enable_timer_ppi() { unsafe {
     let enable_offset = GICR_ISENABLER0;
     let bit = 1u32 << (TIMER_PPI % 32);
     gicr_sgi_write(enable_offset, bit);
-}
+}}
 
 /// 获取中断 ID (IAR) — 用于 IRQ handler
 pub fn acknowledge() -> u32 {
@@ -250,9 +250,9 @@ pub fn deactivate(intid: u32) {
 /// # Safety
 ///
 /// 仅在启动阶段调用，需确保 MMU 已启用且 GIC MMIO 区域已映射。
-pub unsafe fn init() {
+pub unsafe fn init() { unsafe {
     init_distributor();
     init_redistributor();
     init_cpu_interface();
     enable_timer_ppi();
-}
+}}

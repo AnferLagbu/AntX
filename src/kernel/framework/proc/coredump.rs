@@ -28,7 +28,7 @@ use crate::kernel::framework::proc::{process_get_current_pid, process_with, RLIM
 use crate::kernel::framework::mm;
 use crate::kernel::framework::mm::{PageFlags, PAGE_SIZE};
 
-extern "C" {
+unsafe extern "C" {
     fn klog_ffi_info(msg: *const u8);
 }
 

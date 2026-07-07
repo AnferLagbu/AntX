@@ -35,15 +35,15 @@ const UARTLCR_8N1: u32 = 0b11 << 5;
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn read(offset: u64) -> u32 {
+unsafe fn read(offset: u64) -> u32 { unsafe {
     read_volatile((PL011_BASE + offset) as *const u32)
-}
+}}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn write(offset: u64, val: u32) {
+unsafe fn write(offset: u64, val: u32) { unsafe {
     write_volatile((PL011_BASE + offset) as *mut u32, val);
-}
+}}
 
 // ============================================================================
 // UART 初始化
@@ -54,7 +54,7 @@ unsafe fn write(offset: u64, val: u32) {
 /// # Safety
 ///
 /// 调用者必须确保在初始化 MMU 之后调用，且 PL011_BASE (0x09000000) 已映射。
-pub unsafe fn init() {
+pub unsafe fn init() { unsafe {
     // 1. 禁用 UART
     write(UARTCR, 0);
 
@@ -73,7 +73,7 @@ pub unsafe fn init() {
 
     // 5. 启用 UART: TX + RX + UART
     write(UARTCR, UARTCR_UARTEN | UARTCR_TXE | UARTCR_RXE);
-}
+}}
 
 // ============================================================================
 // 数据收发
@@ -85,13 +85,13 @@ pub unsafe fn init() {
 ///
 /// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
-pub unsafe fn putc(c: u8) {
+pub unsafe fn putc(c: u8) { unsafe {
     // 等待 TX FIFO 非满
     while read(UARTFR) & UARTFR_TXFF != 0 {
         core::hint::spin_loop();
     }
     write(UARTDR, c as u32);
-}
+}}
 
 /// 接收单字节 (阻塞)
 ///
@@ -99,13 +99,13 @@ pub unsafe fn putc(c: u8) {
 ///
 /// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
-pub unsafe fn getc() -> u8 {
+pub unsafe fn getc() -> u8 { unsafe {
     // 等待 RX FIFO 非空
     while read(UARTFR) & UARTFR_RXFE != 0 {
         core::hint::spin_loop();
     }
     read(UARTDR) as u8
-}
+}}
 
 /// 发送字符串
 pub fn puts(s: &str) {

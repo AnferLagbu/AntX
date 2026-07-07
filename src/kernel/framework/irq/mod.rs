@@ -148,14 +148,14 @@ pub fn pending_softirq() -> bool {
     SOFTIRQ.pending.load(Ordering::Acquire) != 0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn softirq_init() {
     // 注册 Tasklet softirq 处理程序
     open_softirq(SoftirqVec::Tasklet, tasklet_softirq_handler);
     // 默认: Timer/NetRx/NetTx/Block 由各子系统在初始化时注册.
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn softirq_do() {
     do_softirq();
 }

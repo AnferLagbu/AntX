@@ -16,7 +16,7 @@ use crate::kernel::framework::proc::process_get_current_pid;
 // ============================================================================
 
 /// FFI: 创建共享内存段
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
     let ns = super::IPC_NAMESPACE.get_mut();
     let next_id = super::NEXT_IPC_ID.get_mut();
@@ -32,7 +32,7 @@ pub fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
 /// # Safety
 /// `addr` 必须是有效可写指针, 用于返回映射的虚拟地址。
 /// 由 `sys_shmat` 分发, cred 校验已通过。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     let pid = process_get_current_pid();
@@ -51,7 +51,7 @@ pub unsafe fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
 }
 
 /// FFI: 分离共享内存段
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn ipc_shm_detach(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     let pid = process_get_current_pid();
@@ -62,7 +62,7 @@ pub fn ipc_shm_detach(id: IpcId) -> i32 {
 }
 
 /// FFI: 销毁共享内存段
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn ipc_shm_destroy(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     match crate::kernel::services::ipc::shm::shm_destroy_safe(ns, id) {

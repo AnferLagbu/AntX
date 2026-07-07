@@ -578,7 +578,7 @@ impl NvmeController {
 
     /// 提交 Admin 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> {
+    unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> { unsafe {
         let cid = self.admin_cid;
         self.admin_cid = self.admin_cid.wrapping_add(1);
 
@@ -621,7 +621,7 @@ impl NvmeController {
             }
             core::hint::spin_loop();
         }
-    }
+    }}
 
     /// 初始化控制器
     pub fn init_controller(&mut self) -> Result<()> {
@@ -815,7 +815,7 @@ impl NvmeController {
 
     /// 提交 I/O 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> {
+    unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> { unsafe {
         let cid = self.io_cid;
         self.io_cid = self.io_cid.wrapping_add(1);
 
@@ -855,7 +855,7 @@ impl NvmeController {
             }
             core::hint::spin_loop();
         }
-    }
+    }}
 
     /// 构造 NVMe PRP 地址对, 使用 per-controller PRP 列表页
     ///
@@ -891,11 +891,11 @@ impl NvmeController {
 
     /// 填充 NVMe 命令的 PRP1/PRP2 字段 (与 build_prp 配套)
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
+    unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) { unsafe {
         let (prp1, prp2) = self.build_prp(phys_base, byte_count);
         cmd.mptr = prp1;
         cmd.prp2 = prp2;
-    }
+    }}
 
     pub fn read(&mut self, nsid: u32, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {
         if !self.initialized {

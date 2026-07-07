@@ -606,7 +606,7 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 /// # Safety
 /// 此函数执行内联汇编和 MSR 写入, 必须在特权级(Ring 0)调用.
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 #[cfg(target_arch = "x86_64")]
 pub extern "C" fn cpu_init() -> i32 {
@@ -735,7 +735,7 @@ pub extern "C" fn cpu_init() -> i32 {
 
 /// AArch64 CPU 初始化 stub — ARMv8-A 在启动代码中已完成 EL 初始化。
 #[cfg(not(target_arch = "x86_64"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn cpu_init() -> i32 {
     // AArch64 的 CPU 特性初始化在 boot/aarch64/start.S 和 entry.rs 中完成
     // (EL3→EL2→EL1, FP/SIMD/Timer enable)，无需此 x86 CR0/CR4/FPU 初始化
@@ -748,7 +748,7 @@ pub extern "C" fn cpu_init() -> i32 {
 /// * 非 NULL - 指向全局 CpuInfo 的指针
 /// * NULL - 未初始化
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -760,7 +760,7 @@ pub extern "C" fn cpu_get_info() -> *const CpuInfo {
 
 /// 检查 CPU 是否支持指定特性 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -774,7 +774,7 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 
 /// 检查是否为 Intel CPU (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_intel() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -786,7 +786,7 @@ pub extern "C" fn cpu_is_intel() -> bool {
 
 /// 检查是否为 AMD CPU (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_amd() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -798,7 +798,7 @@ pub extern "C" fn cpu_is_amd() -> bool {
 
 /// 检查是否在虚拟化环境中 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_virtualized() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -810,7 +810,7 @@ pub extern "C" fn cpu_is_virtualized() -> bool {
 
 /// 获取最大标准 CPUID leaf 号 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -822,7 +822,7 @@ pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
 
 /// 获取最大扩展 CPUID leaf 号 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -834,7 +834,7 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 
 /// 获取 APIC ID (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_apic_id() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -846,7 +846,7 @@ pub extern "C" fn cpu_get_apic_id() -> u32 {
 
 /// 获取逻辑线程数 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_logical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -858,7 +858,7 @@ pub extern "C" fn cpu_get_logical_cores() -> u8 {
 
 /// 获取物理核心数 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_physical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -870,7 +870,7 @@ pub extern "C" fn cpu_get_physical_cores() -> u8 {
 
 /// 获取 CPU 签名 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_signature() -> CpuSignature {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -882,7 +882,7 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 
 /// 获取缓存信息指针 (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -894,7 +894,7 @@ pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
 
 /// 获取 TSC 频率 (Hz) (FFI兼容)
 /// FFI 导出函数 (C 可调用)
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_tsc_frequency() -> u64 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -1304,7 +1304,7 @@ const IA32_LSTAR: u32 = 0xC0000082;
 const IA32_SFMASK: u32 = 0xC0000084;
 
 #[cfg(target_arch = "x86_64")]
-extern "C" {
+unsafe extern "C" {
     fn syscall_entry();
 }
 

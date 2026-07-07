@@ -104,7 +104,7 @@ static MULTIBOOT_INFO_PTR: IrqSpinLock<MultibootPtr> =
     IrqSpinLock::new(MultibootPtr(core::ptr::null()));
 static MULTIBOOT_MAGIC: IrqSpinLock<u32> = IrqSpinLock::new(0);
 
-extern "C" {
+unsafe extern "C" {
     static _kernel_end: u8;
 }
 
@@ -114,7 +114,7 @@ pub fn get_boot_info() -> &'static BootInfo {
         .expect("[BOOT] accessed before initialization")
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
     *MULTIBOOT_MAGIC.lock() = magic;
     *MULTIBOOT_INFO_PTR.lock() = MultibootPtr(ptr);
@@ -304,12 +304,12 @@ pub fn init() -> BootInfo {
     info
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn boot_get_mem_size() -> u64 {
     get_boot_info().mem_size
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn boot_get_kernel_end() -> u64 {
     get_boot_info().kernel_end
 }

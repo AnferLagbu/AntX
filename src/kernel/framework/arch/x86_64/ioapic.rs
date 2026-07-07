@@ -142,23 +142,23 @@ pub fn route_irq_to_cpu(irq: u8, apic_id: u8) {
     ioapic_write_redirection(irq, new_entry);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ioapic_init(base_addr: u64) {
     init(base_addr);
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ioapic_mask_irq(irq: u8) {
     mask_irq(irq);
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ioapic_unmask_irq(irq: u8) {
     unmask_irq(irq);
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ioapic_set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
     set_irq(irq, vector, apic_id, masked);
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ioapic_route_irq_to_cpu(irq: u8, apic_id: u8) {
     route_irq_to_cpu(irq, apic_id);
 }

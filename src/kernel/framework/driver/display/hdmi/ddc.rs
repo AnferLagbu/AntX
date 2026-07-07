@@ -117,7 +117,7 @@ unsafe fn ddc_i2c_start(
     iomem: &IoMem,
     ctrl_reg_offset: usize,
     elapsed_iters: &mut usize,
-) -> core::result::Result<(), DriverError> {
+) -> core::result::Result<(), DriverError> { unsafe {
     if *elapsed_iters + DDC_I2C_DELAY_ITERS * 2 > DDC_TRANSACTION_TIMEOUT_ITERS {
         return Err(DriverError::Timeout);
     }
@@ -126,7 +126,7 @@ unsafe fn ddc_i2c_start(
     ddc_set_sda_scl(iomem, ctrl_reg_offset, false, true);
     ddc_delay_with_counter(elapsed_iters);
     Ok(())
-}
+}}
 
 /// I2C STOP 条件: SDA 在 SCL 高电平时由低变高 (P1-3 带 timeout)。
 ///
@@ -137,7 +137,7 @@ unsafe fn ddc_i2c_stop(
     iomem: &IoMem,
     ctrl_reg_offset: usize,
     elapsed_iters: &mut usize,
-) -> core::result::Result<(), DriverError> {
+) -> core::result::Result<(), DriverError> { unsafe {
     if *elapsed_iters + DDC_I2C_DELAY_ITERS * 2 > DDC_TRANSACTION_TIMEOUT_ITERS {
         return Err(DriverError::Timeout);
     }
@@ -146,7 +146,7 @@ unsafe fn ddc_i2c_stop(
     ddc_set_sda_scl(iomem, ctrl_reg_offset, true, true);
     ddc_delay_with_counter(elapsed_iters);
     Ok(())
-}
+}}
 
 /// I2C 写 1 字节 (MSB first) 并采样 ACK (P1-3 带 timeout)。
 ///
@@ -164,7 +164,7 @@ unsafe fn ddc_i2c_write_byte(
     status_reg_offset: usize,
     byte: u8,
     elapsed_iters: &mut usize,
-) -> core::result::Result<bool, DriverError> {
+) -> core::result::Result<bool, DriverError> { unsafe {
     // 预算检查: 8 bit 传输 + ACK = 10 ddc_delay() 调用
     if *elapsed_iters + DDC_I2C_DELAY_ITERS * 10 > DDC_TRANSACTION_TIMEOUT_ITERS {
         return Err(DriverError::Timeout);
@@ -185,7 +185,7 @@ unsafe fn ddc_i2c_write_byte(
     let sda = iomem.read_u8(status_reg_offset) & DDC_SDA_IN_BIT;
     ddc_set_sda_scl(iomem, ctrl_reg_offset, true, false);
     Ok(sda == 0)
-}
+}}
 
 /// I2C 读 1 字节 (MSB first), 由主机发送 ACK/NACK (P1-3 带 timeout)。
 ///
@@ -201,7 +201,7 @@ unsafe fn ddc_i2c_read_byte(
     status_reg_offset: usize,
     send_ack: bool,
     elapsed_iters: &mut usize,
-) -> core::result::Result<u8, DriverError> {
+) -> core::result::Result<u8, DriverError> { unsafe {
     // 预算检查: 8 bit 读 + ACK = 10 ddc_delay() 调用
     if *elapsed_iters + DDC_I2C_DELAY_ITERS * 10 > DDC_TRANSACTION_TIMEOUT_ITERS {
         return Err(DriverError::Timeout);
@@ -228,7 +228,7 @@ unsafe fn ddc_i2c_read_byte(
     ddc_set_sda_scl(iomem, ctrl_reg_offset, !send_ack, false);
 
     Ok(byte)
-}
+}}
 
 // ============================================================================
 // EDID 块读取事务
@@ -252,7 +252,7 @@ pub(super) unsafe fn read_edid_block_via_ddc(
     ctrl_reg_offset: usize,
     status_reg_offset: usize,
     block: u8,
-) -> core::result::Result<[u8; 128], DriverError> {
+) -> core::result::Result<[u8; 128], DriverError> { unsafe {
     let mut data = [0u8; 128];
     // P1-3: 事务级超时计数器, 跨 I2C 调用累加
     let mut elapsed_iters: usize = 0;
@@ -329,4 +329,4 @@ pub(super) unsafe fn read_edid_block_via_ddc(
 
     ddc_i2c_stop(iomem, ctrl_reg_offset, &mut elapsed_iters)?;
     Ok(data)
-}
+}}

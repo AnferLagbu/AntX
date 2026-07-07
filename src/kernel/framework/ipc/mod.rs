@@ -105,7 +105,7 @@ pub static NEXT_IPC_ID: RacyCell<IpcId> = RacyCell::new(1);
 ///
 /// 必须在内核启动早期调用，初始化所有资源槽位。
 /// 此函数只能调用一次，且必须在多核启动前完成。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn ipc_init() {
     // 重置 ID 分配器
     NEXT_IPC_ID.map_mut(|id| *id = 1);

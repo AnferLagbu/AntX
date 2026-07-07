@@ -210,7 +210,7 @@ impl InterruptArch for X8664 {
                 crate::kernel::framework::cpu::msr::write_msr(IA32_STAR, star);
 
                 // LSTAR: syscall 入口点 (高半部分地址, KPTI 用户页表只映射高半区)
-                extern "C" { fn syscall_entry(); }
+                unsafe extern "C" { fn syscall_entry(); }
                 let entry_hi = syscall_entry as *const () as u64
                     + crate::kernel::framework::mm::KERNEL_BASE as u64;
                 crate::kernel::framework::cpu::msr::write_msr(IA32_LSTAR, entry_hi);
@@ -304,7 +304,7 @@ impl MmuArch for X8664 {
     /// 进程上下文切换 (process_switch_asm)。
     #[inline(always)]
     fn context_switch(from: *mut u8, to: *const u8) {
-        extern "C" {
+        unsafe extern "C" {
             fn process_switch_asm(prev: *mut u8, next: *const u8);
         }
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)

@@ -75,7 +75,7 @@ static mut TTBR1_L1: AlignedPageTable = AlignedPageTable([0; 512]);
 /// - 运行在 EL1 或更高特权级
 /// - 页表所在物理内存 (BSS) 可访问
 /// - 在设置 TTBR0/TTBR1 前已确保旧映射一致性
-pub unsafe fn init() {
+pub unsafe fn init() { unsafe {
     // 清零页表
     ptr::write_bytes(L0_TABLE.0.as_mut_ptr(), 0, 512);
     ptr::write_bytes(L1_IDMAP.0.as_mut_ptr(), 0, 512);
@@ -140,7 +140,7 @@ pub unsafe fn init() {
 
     // 设置 TTBR1 内核页表 (映射高地址 → 物理地址)
     init_kernel_ttbr1();
-}
+}}
 
 /// 初始化 TTBR1_EL1 内核页表。
 ///
@@ -152,7 +152,7 @@ pub unsafe fn init() {
 ///   TTBR1_L1[i]  → 2MB 块映射 (i * 2MB → i * 2MB 物理)
 #[allow(clippy::identity_op)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn init_kernel_ttbr1() {
+unsafe fn init_kernel_ttbr1() { unsafe {
     ptr::write_bytes(TTBR1_L0.0.as_mut_ptr(), 0, 512);
     ptr::write_bytes(TTBR1_L1.0.as_mut_ptr(), 0, 512);
 
@@ -168,7 +168,7 @@ unsafe fn init_kernel_ttbr1() {
 
     // 设置 TTBR1_EL1
     set_ttbr1(TTBR1_L0.0.as_ptr() as u64);
-}
+}}
 
 /// 分配用户空间页表 (返回 TTBR0 值)。
 ///
@@ -187,37 +187,37 @@ pub fn alloc_user_page_table() -> u64 {
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_ttbr0(val: u64) {
+unsafe fn set_ttbr0(val: u64) { unsafe {
     core::arch::asm!("msr ttbr0_el1, {}", in(reg) val);
     core::arch::asm!("isb");
-}
+}}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_ttbr1(val: u64) {
+unsafe fn set_ttbr1(val: u64) { unsafe {
     core::arch::asm!("msr ttbr1_el1, {}", in(reg) val);
     core::arch::asm!("isb");
-}
+}}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_tcr(val: u64) {
+unsafe fn set_tcr(val: u64) { unsafe {
     core::arch::asm!("msr tcr_el1, {}", in(reg) val);
     core::arch::asm!("isb");
-}
+}}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_mair(val: u64) {
+unsafe fn set_mair(val: u64) { unsafe {
     core::arch::asm!("msr mair_el1, {}", in(reg) val);
     core::arch::asm!("isb");
-}
+}}
 
 /// 启用 MMU: 设置 SCTLR_EL1.M (bit 0)
 /// 暂不启用缓存 (C bit 2, I bit 12), 后续单独处理
 #[inline(never)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn enable_mmu() {
+unsafe fn enable_mmu() { unsafe {
     // ARM ARM D5.10.2: 启用 MMU 前需要 DSB 确保所有之前操作可见,
     // 启用后需要 ISB 使 MMU 对后续指令生效.
     core::arch::asm!(
@@ -228,7 +228,7 @@ unsafe fn enable_mmu() {
         "isb",
         out("x0") _,
     );
-}
+}}
 
 // ============================================================================
 // Arch trait 辅助函数 (供 Arch impl 调用)

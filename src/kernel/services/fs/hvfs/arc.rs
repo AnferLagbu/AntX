@@ -429,7 +429,7 @@ impl HvArc {
         let inner = self.inner.lock();
         let mut count = 0;
         for slot in inner.buffers.iter() {
-            if let Some(ref buf) = slot {
+            if let Some(buf) = slot {
                 if buf.dirty {
                     count += 1;
                 }

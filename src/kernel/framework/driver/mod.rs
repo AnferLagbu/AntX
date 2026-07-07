@@ -312,13 +312,13 @@ pub fn list_devices() -> alloc::string::String {
 // ============================================================================
 
 /// C 兼容的初始化函数
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn driver_init() {
     let _ = init_all();
 }
 
 /// C 兼容的关闭函数
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn driver_shutdown() {
     let _ = shutdown_all();
 }
