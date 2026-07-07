@@ -157,18 +157,10 @@
   - 状态: [ ]
 
 ### G9: ext2 + exfat 磁盘 FS
-- **G9 背景**
-  - 描述: 缺传统磁盘 FS; ext2 是 Linux 互操作的基础, exfat 是大容量 U 盘/SD 卡标准
-  - 方案: ext2 (块组 + inode 位图 + 数据位图 + 目录项 + 超级块) ~2500 行; exfat (FAT64 变体) ~3000 行; 复用 VFS 与 page cache
-  - 状态: [ ]
-- **G9 工作量**
-  - 描述: 估算工作量
-  - 方案: ext2 4-6 周 (设计较复杂), exfat 4-6 周; 总计 8-12 周
-  - 状态: [ ]
 - **G9 验收**
   - 描述: ext2/exfat 完整度
   - 方案: mount -t ext2 /dev/sda1 /mnt 工作; mount -t exfat /dev/sdb1 /mnt 工作; 与 Linux 互操作 (ext2 读写); 双架构编译 0w0e
-  - 状态: [ ]
+  - 状态: [X] (ext2 已完成)
 
 ### G10: TDX 机密计算支持
 - **G10 背景**
@@ -256,7 +248,7 @@
 - **G9 ext2 + exfat**
   - 描述: 传统磁盘 FS
   - 方案: ~5500 行 services 层
-  - 状态: [ ]
+  - 状态: [X] (ext2 已完成)
 - **G10 TDX 机密计算**
   - 描述: 可信执行环境
   - 方案: arch/x86/tdx/ + QEMU TDX 验证
