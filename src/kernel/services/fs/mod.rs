@@ -28,6 +28,7 @@ pub mod procfs;
 pub mod procfs_core;
 pub mod hvfs;
 pub mod ext2;
+pub mod exfat;
 pub mod sysfs;
 pub mod io;
 pub mod path;

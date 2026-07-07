@@ -160,7 +160,7 @@
 - **G9 验收**
   - 描述: ext2/exfat 完整度
   - 方案: mount -t ext2 /dev/sda1 /mnt 工作; mount -t exfat /dev/sdb1 /mnt 工作; 与 Linux 互操作 (ext2 读写); 双架构编译 0w0e
-  - 状态: [X] (ext2 已完成)
+  - 状态: [X]
 
 ### G10: TDX 机密计算支持
 - **G10 背景**
@@ -248,7 +248,7 @@
 - **G9 ext2 + exfat**
   - 描述: 传统磁盘 FS
   - 方案: ~5500 行 services 层
-  - 状态: [X] (ext2 已完成)
+  - 状态: [X]
 - **G10 TDX 机密计算**
   - 描述: 可信执行环境
   - 方案: arch/x86/tdx/ + QEMU TDX 验证

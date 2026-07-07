@@ -1,0 +1,99 @@
+#![deny(unsafe_code)]
+//! @SAFE: 本文件不含 unsafe 代码。
+//! exFAT FAT 表操作
+
+use crate::kernel::framework::fs::KernelError;
+use crate::kernel::framework::driver::block::{read_sectors, with_device};
+use super::super_block::ExfatSuperBlock;
+
+/// FAT 表条目常量
+pub const FAT_FREE: u32 = 0x00000000;
+pub const FAT_BAD: u32 = 0xFFFFFFF7;
+pub const FAT_END: u32 = 0x0FFFFFFF;
+
+/// 从 FAT 表读取簇链
+pub fn read_fat_chain(
+    device_idx: u8,
+    super_block: &ExfatSuperBlock,
+    start_cluster: u32,
+) -> Result<alloc::vec::Vec<u32>, KernelError> {
+    let mut chain = alloc::vec::Vec::new();
+    let mut current = start_cluster;
+
+    loop {
+        if current < 2 || current >= super_block.cluster_count + 2 {
+            break;
+        }
+
+        chain.push(current);
+
+        // 读取 FAT 表条目
+        let bytes_per_sector = super_block.bytes_per_sector();
+        let fat_sector = super_block.fat_offset + (current * 4) / bytes_per_sector;
+        let fat_offset = (current * 4) % bytes_per_sector;
+
+        let mut sector_data = alloc::vec![0u8; bytes_per_sector as usize];
+        let result = with_device(device_idx as usize, |dev| {
+            read_sectors(dev, fat_sector as u64, 1, &mut sector_data)
+        });
+
+        if !matches!(result, Some(Ok(()))) {
+            break;
+        }
+
+        let entry = u32::from_le_bytes([
+            sector_data[fat_offset as usize],
+            sector_data[fat_offset as usize + 1],
+            sector_data[fat_offset as usize + 2],
+            sector_data[fat_offset as usize + 3],
+        ]);
+
+        if entry >= 0x0FFFFFF8 || entry == FAT_END {
+            break;
+        }
+
+        if entry == FAT_FREE || entry == FAT_BAD {
+            break;
+        }
+
+        current = entry;
+    }
+
+    Ok(chain)
+}
+
+/// 写入 FAT 表条目
+pub fn write_fat_entry(
+    device_idx: u8,
+    super_block: &ExfatSuperBlock,
+    cluster: u32,
+    value: u32,
+) -> Result<(), KernelError> {
+    let bytes_per_sector = super_block.bytes_per_sector();
+    let fat_sector = super_block.fat_offset + (cluster * 4) / bytes_per_sector;
+    let fat_offset = (cluster * 4) % bytes_per_sector;
+
+    let mut sector_data = alloc::vec![0u8; bytes_per_sector as usize];
+    let result = with_device(device_idx as usize, |dev| {
+        read_sectors(dev, fat_sector as u64, 1, &mut sector_data)
+    });
+
+    if !matches!(result, Some(Ok(()))) {
+        return Err(KernelError::IoError);
+    }
+
+    let bytes = value.to_le_bytes();
+    sector_data[fat_offset as usize] = bytes[0];
+    sector_data[fat_offset as usize + 1] = bytes[1];
+    sector_data[fat_offset as usize + 2] = bytes[2];
+    sector_data[fat_offset as usize + 3] = bytes[3];
+
+    let result = with_device(device_idx as usize, |dev| {
+        crate::kernel::framework::driver::block::write_sectors(dev, fat_sector as u64, 1, &sector_data)
+    });
+
+    match result {
+        Some(Ok(())) => Ok(()),
+        _ => Err(KernelError::IoError),
+    }
+}
