@@ -1,44 +1,36 @@
 # QueenX 内核工程路线图
 
-> 基于 2026-07-07 代码现状，识别 QueenX 相对 Asterinas 的结构性差距，作为工程路线图。
+> 基于 2026-07-08 代码现状，识别 QueenX 相对 Asterinas 的结构性差距，作为工程路线图。
 
 ## 总体进度
 
 - **总体进度**
   - 描述: 内核功能完整度与工程化水平
-  - 方案: 12 项工程任务，已完成 2 项 (G9 ext2+exfat, G12 systree 部分)，完成率 16.7%
-  - 状态: []
+  - 方案: 12 项工程任务，已完成 3 项 (G2 overlayfs, G3 tmpfs, G9 ext2+exfat)，部分完成 1 项 (G12 systree)
+  - 状态: [X]
 
 ---
 
 ## P0 — 容器落地关键路径 (3 项)
 
-### G1: Cargo workspace 组件化拆分
+### G1: workspace 组件化拆分
 - **描述**
-  - framework 单体 107K 行，TCB 占比 64%；Asterinas 通过 48 个 workspace members 拆解，TCB 占比 19%
-  - 方案: 拆分为 ~15 个独立 crate: arch/mm/sched/sync/fs/net/driver/credo/barrier/syscall/ipc/timer/idt/klog/boot
-  - 状态: []
+  - framework 单体 107K 行，TCB 占比 62.4%
+  - 曾尝试拆分 framework crate (2026-07-08)，发现拆分 framework 不会降低 TCB (62.4% → 63.4%)
+  - TCB = framework 层 unsafe 代码，拆分只是改变组织方式，不减少 unsafe 代码量
+  - 参考 Asterinas: ostd 也是单体 TCB，他们拆分的是 services (kernel/comps/ + kernel/libs/)
+  - 状态: [X] 已验证方向 — 应转向 services 组件化，而非 framework 拆分
 
-- **工作量**
-  - 描述: 每个 crate 拆解 + 调整依赖图 + 修复循环依赖 + 重构 import 路径
-  - 方案: 预计 2-3 周；分阶段: Phase 1 低风险 (timer/idt/klog/boot) → Phase 2 中风险 (sync/credo/barrier) → Phase 3 高风险 (mm/proc/fs/net)
-  - 状态: []
-
-- **验收**
-  - 描述: TCB 占比 + 编译时间 + workspace 结构
-  - 方案: framework 107K → 拆分后最大 crate < 15K; TCB 64% → <30%; cargo clean 后冷编译 <60s; 双架构 cargo check 0 error 0 warning
-  - 状态: []
+- **经验教训**
+  - 拆分 framework crate 增加了项目复杂度 (11 个 Cargo.toml, feature flags 传播, 路径双轨)
+  - workspace 基础设施可保留，但目标应调整为 services 组件化
+  - TCB 占比目标 (<30%) 在 framekernel 架构下不切实际，应改为 TCB 质量指标
 
 ### G2: overlayfs 实装 ✅
 - **描述**
   - 容器镜像核心，Docker/containerd/podman/CRI-O 均通过 overlayfs 提供 rootfs
   - 方案: 上层 (upperdir) + 下层 (lowerdir) + 工作层 (workdir) 三目录合并；copy_up 机制；readdir 合并去重
   - 依赖: G3 tmpfs 完成后启动
-  - 状态: [X]
-
-- **工作量**
-  - 描述: 参考 Linux ovl_lookup/ovl_copy_up/ovl_iterate 路径
-  - 方案: services 层实现 ~1500 行，包含 5-8 个 host-tests；预计 2-3 周
   - 状态: [X]
 
 - **验收**
@@ -50,11 +42,6 @@
 - **描述**
   - 基于内存的文件系统，关键用途 /dev/shm (POSIX 共享内存)、容器临时文件系统、tmp 目录
   - 方案: 基于 ramfs 扩展，加入 size 限制 + 统计已用/可用；FsType 枚举新增 TmpFs 变体
-  - 状态: [X]
-
-- **工作量**
-  - 描述: services/fs/tmpfs.rs 新建
-  - 方案: ~500 行 services 层实装，复用 ramfs inode/dentry 基础设施；1 周工作量
   - 状态: [X]
 
 - **验收**
@@ -178,26 +165,29 @@
 ## 实施优先级路线图
 
 ```text
-Week 1-2:   G3 tmpfs (1w) + G7 CI 拆分 (1w)           ← 并行
-Week 3-5:   G2 overlayfs (3w)                          ← 依赖 G3
-Week 4-7:   G4 syscall pidfd+memfd (2w) + signalfd/timerfd (1w) + name_to_handle (1w)
-Week 6-8:   G1 workspace Phase 1-2 (3w)                ← 低/中风险模块
-Week 9-14:  G9 ext2 (6w)                               ← 已完成
-Week 12-14: G6 mdBook (2w)                             ← 可与 G9 并行
-Week 15-16: G8 fsx (1w) + G11 容器 FS (4w 并行部分)
-Week 17-20: G1 workspace Phase 3 (4w)                  ← 高风险模块
-Week 21+:   G5 RISC-V / G10 TDX / G12 systree         ← 远期
+已完成:
+  G2 overlayfs ✅
+  G3 tmpfs ✅
+  G9 ext2 + exfat ✅
+
+待实施:
+  Week 1-2:   G7 CI 拆分 (1w) + G4 syscall pidfd+memfd (2w)  ← 并行
+  Week 3-4:   G4 signalfd/timerfd (1w) + name_to_handle (1w)
+  Week 5-6:   G6 mdBook (2w) + G8 fsx (1w)
+  Week 7-10:  G11 容器 FS (4w)
+  Week 11-14: G12 systree (3-4w)
+  Week 15+:   G5 RISC-V / G10 TDX / G1 服务组件化  ← 远期
 ```
 
 ## 工作量汇总
 
 | 优先级 | 任务 | 状态 | 预计工期 |
 |--------|------|------|----------|
-| P0 | G1 + G2 + G3 | 0% | 8-10 周 |
-| P1 | G4 + G5 + G6 + G7 | 0% | 12-15 周 |
-| P2 | G8 + G9 + G10 | 33% | 6-10 周 |
-| P3 | G11 + G12 | 10% | 7-10 周 |
-| **总计** | | **16.7%** | **33-45 周** |
+| P0 | G1 + G2 + G3 | G2✅ G3✅ G1已验证方向 | 0 周 (G1 转向) |
+| P1 | G4 + G5 + G6 + G7 | G4-G7 未开始 | 12-15 周 |
+| P2 | G8 + G9 + G10 | G9✅ G8 G10 未开始 | 6-10 周 |
+| P3 | G11 + G12 | G12 部分完成 | 7-10 周 |
+| **总计** | | **3 项完成, 1 项部分完成** | **25-35 周** |
 
 ## 引用
 - **引用清单**
