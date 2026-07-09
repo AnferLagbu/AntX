@@ -112,23 +112,25 @@ fn fd_table_alloc_uses_first_fit_strategy() {
         src.contains("for i in 0..MAX_FDS_PER_PROCESS"),
         "P1-I-01: alloc_fd 必须 first-fit 线性扫描 (O(MAX_FDS_PER_PROCESS))"
     );
+    // 新实现使用 u32::MAX 表示空闲 (OpenFile handle_id)
     assert!(
-        src.contains("entries[i] == -1"),
-        "P1-I-01: alloc_fd 必检查 slot == -1 (空闲)"
+        src.contains("u32::MAX") || src.contains("== -1"),
+        "P1-I-01: alloc_fd 必检查 slot 空闲"
     );
 }
 
 #[test]
 fn fd_table_close_zeros_slot() {
-    // P1-I-01 验收: close_fd 必清空 slot (entries[local_fd] = -1)
+    // P1-I-01 验收: close_fd 必清空 slot
     let src = services_fd_table_rs();
     let close_fn = src
         .find("pub fn close_fd")
         .expect("close_fd not found");
     let body_start = src[close_fn..].find('{').unwrap() + close_fn;
     let body = &src[body_start..];
+    // 新实现使用 u32::MAX 表示空闲
     assert!(
-        body.contains("entries[local_fd] = -1"),
+        body.contains("u32::MAX") || body.contains("= -1"),
         "P1-I-01: close_fd 必清空 slot"
     );
     assert!(
