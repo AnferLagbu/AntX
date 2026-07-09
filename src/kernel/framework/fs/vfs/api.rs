@@ -1300,9 +1300,19 @@ pub fn vfs_dup(oldfd: u32) -> i32 {
     if !fd_table[old_usize].used {
         return -9;
     }
+
+    // POSIX dup: 共享 OpenFile (offset/flags 共享)
+    let handle_id = fd_table[old_usize].handle_id;
+
     for i in 0..256usize {
         if !fd_table[i].used {
+            // 复制 fd 表条目, 但共享同一个 OpenFile
             fd_table[i] = fd_table[old_usize].clone();
+            fd_table[i].fd = i as u32;
+            // 增加 OpenFile 引用计数
+            if handle_id != u32::MAX {
+                OPEN_FILE_TABLE.inc_ref(handle_id);
+            }
             return i as i32;
         }
     }
@@ -1323,6 +1333,26 @@ pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
     if new_usize == old_usize {
         return newfd as i32;
     }
+
+    // POSIX dup2: 关闭旧 newfd (如果有), 然后共享 OpenFile
+    let old_handle_id = fd_table[old_usize].handle_id;
+
+    // 如果 newfd 已使用, 先关闭它
+    if fd_table[new_usize].used {
+        let old_new_handle_id = fd_table[new_usize].handle_id;
+        if old_new_handle_id != u32::MAX {
+            OPEN_FILE_TABLE.close(old_new_handle_id);
+        }
+    }
+
+    // 复制 fd 表条目, 共享同一个 OpenFile
     fd_table[new_usize] = fd_table[old_usize].clone();
+    fd_table[new_usize].fd = new_usize as u32;
+
+    // 增加 OpenFile 引用计数
+    if old_handle_id != u32::MAX {
+        OPEN_FILE_TABLE.inc_ref(old_handle_id);
+    }
+
     newfd as i32
 }
