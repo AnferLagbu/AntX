@@ -12,13 +12,12 @@ use super::vfs_types::OpenFile;
 const MAX_OPEN_FILES: usize = 256;
 
 /// 全局 OpenFile 表
-///
-/// 存储所有打开的文件描述, 通过 handle_id 引用.
-/// handle_id 是全局唯一的, 跨进程共享.
 pub struct OpenFileTable {
-    /// OpenFile 条目
-    entries: IrqSpinLock<[Option<OpenFile>; MAX_OPEN_FILES]>,
-    /// 下一个可用的 handle_id
+    /// OpenFile 条目 (Option 包装以支持空槽)
+    entries: IrqSpinLock<[usize; MAX_OPEN_FILES]>, // handle_id (0 = 空闲)
+    /// OpenFile 存储 (通过 handle_id 索引)
+    files: IrqSpinLock<[Option<OpenFile>; MAX_OPEN_FILES]>,
+    /// 下一个可用的 handle_id (从 1 开始, 0 保留为空闲标记)
     next_id: AtomicU32,
 }
 
@@ -26,7 +25,8 @@ impl OpenFileTable {
     /// 创建未初始化的 OpenFileTable
     pub const fn new() -> Self {
         Self {
-            entries: IrqSpinLock::new([None; MAX_OPEN_FILES]),
+            entries: IrqSpinLock::new([0; MAX_OPEN_FILES]),
+            files: IrqSpinLock::new([const { None }; MAX_OPEN_FILES]),
             next_id: AtomicU32::new(1),
         }
     }
@@ -38,19 +38,20 @@ impl OpenFileTable {
             return None;
         }
 
-        let mut entries = self.entries.lock();
-        entries[handle_id as usize] = Some(file);
+        let mut files = self.files.lock();
+        files[handle_id as usize] = Some(file);
         Some(handle_id)
     }
 
-    /// 获取 OpenFile 的不可变引用
-    pub fn get(&self, handle_id: u32) -> Option<core::cell::Ref<'_, OpenFile>> {
-        let entries = self.entries.lock();
+    /// 获取 OpenFile 的引用 (通过闭包安全访问)
+    pub fn with_file<F, R>(&self, handle_id: u32, f: F) -> Option<R>
+    where
+        F: FnOnce(&OpenFile) -> R,
+    {
+        let files = self.files.lock();
         if (handle_id as usize) < MAX_OPEN_FILES {
-            if entries[handle_id as usize].is_some() {
-                // 由于 IrqSpinLock 不支持 RefCell 风格的借用,
-                // 我们直接返回一个包装器
-                Some(OpenFileRef { entries, handle_id })
+            if let Some(file) = files[handle_id as usize].as_ref() {
+                Some(f(file))
             } else {
                 None
             }
@@ -61,44 +62,26 @@ impl OpenFileTable {
 
     /// 增加引用计数 (dup 时调用)
     pub fn inc_ref(&self, handle_id: u32) {
-        let entries = self.entries.lock();
-        if let Some(file) = entries[handle_id as usize].as_ref() {
+        let files = self.files.lock();
+        if let Some(file) = files[handle_id as usize].as_ref() {
             file.inc_ref();
         }
     }
 
     /// 减少引用计数 (close 时调用)
-    /// 如果引用计数降为 0, 移除 OpenFile
     pub fn dec_ref(&self, handle_id: u32) {
-        let mut entries = self.entries.lock();
-        if let Some(file) = entries[handle_id as usize].as_ref() {
+        let mut files = self.files.lock();
+        if let Some(file) = files[handle_id as usize].as_ref() {
             let remaining = file.dec_ref();
             if remaining == 0 {
-                entries[handle_id as usize] = None;
+                files[handle_id as usize] = None;
             }
         }
     }
 
-    /// 关闭 handle (减少引用计数, 如果为 0 则释放)
+    /// 关闭 handle (减少引用计数)
     pub fn close(&self, handle_id: u32) {
         self.dec_ref(handle_id);
-    }
-}
-
-/// OpenFile 不可变引用包装器
-///
-/// 由于 IrqSpinLock 不支持 RefCell 风格借用,
-/// 我们使用这个包装器提供安全的引用访问.
-pub struct OpenFileRef<'a> {
-    entries: core::cell::Ref<'a, [Option<OpenFile>; MAX_OPEN_FILES]>,
-    handle_id: u32,
-}
-
-impl<'a> core::ops::Deref for OpenFileRef<'a> {
-    type Target = OpenFile;
-
-    fn deref(&self) -> &Self::Target {
-        self.entries[self.handle_id as usize].as_ref().unwrap()
     }
 }
 

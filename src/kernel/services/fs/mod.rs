@@ -49,6 +49,8 @@ pub mod file_ops;
 pub mod dir_ops;
 /// VFS 管理器 (挂载表 + FD 表 + 路径解析)
 pub mod vfs_manager;
+/// 全局 OpenFile 表 (POSIX 打开文件描述)
+pub mod open_file_table;
 
 // ============================================================================
 // T-05: VFS 后端决策策略

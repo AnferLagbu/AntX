@@ -26,6 +26,8 @@ use crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA;
 use crate::kernel::services::fs::devfs::DevfsData;
 use crate::kernel::framework::mm::{pcache, PAGE_SIZE};
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
+use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
+use crate::kernel::services::fs::vfs_types::OpenFile;
 use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::fd_notify;
 
@@ -178,14 +180,36 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
 
     // E6-4: trait object 分发 (优先于 fs_type match)
     if let Some(fs) = fs_opt {
-        let fd_idx = match VFS_MANAGER.alloc_fd() {
-            Some(i) => i,
-            None => return -1,
-        };
-
         match fs.fs_open(rel_path, flags, pwm) {
             Ok(result) => {
-                VFS_MANAGER.set_fd(fd_idx, result.handle, result.offset, flags, pwm, result.file_type, path);
+                // 创建 OpenFile (POSIX 打开文件描述)
+                let open_file = OpenFile::new(
+                    result.handle,
+                    mount_idx as u32,
+                    flags,
+                    pwm,
+                    result.file_type,
+                );
+
+                // 插入全局 OpenFile 表
+                let handle_id = match OPEN_FILE_TABLE.alloc(open_file) {
+                    Some(id) => id,
+                    None => return -1,
+                };
+
+                // 在进程 fd 表中分配 fd (TODO: 使用 per-process fd 表)
+                // 当前简化: 使用全局 fd 索引
+                let fd_idx = match VFS_MANAGER.alloc_fd() {
+                    Some(i) => i,
+                    None => {
+                        OPEN_FILE_TABLE.close(handle_id);
+                        return -1;
+                    }
+                };
+
+                // 存储 handle_id 到 fd 表
+                VFS_MANAGER.set_fd_handle(fd_idx, handle_id);
+
                 fd_idx as i32
             }
             Err(KernelError::NotFound) if (flags & VfsOpenFlags::CREAT.bits()) != 0 => {
@@ -193,7 +217,29 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
                 let (parent_path, name) = split_parent_name(rel_path);
                 match fs.fs_create(parent_path, name, pwm) {
                     Ok(create_result) => {
-                        VFS_MANAGER.set_fd(fd_idx, create_result.handle, create_result.offset, flags, pwm, create_result.file_type, path);
+                        let open_file = OpenFile::new(
+                            create_result.handle,
+                            mount_idx as u32,
+                            flags,
+                            pwm,
+                            create_result.file_type,
+                        );
+
+                        let handle_id = match OPEN_FILE_TABLE.alloc(open_file) {
+                            Some(id) => id,
+                            None => return -1,
+                        };
+
+                        let fd_idx = match VFS_MANAGER.alloc_fd() {
+                            Some(i) => i,
+                            None => {
+                                OPEN_FILE_TABLE.close(handle_id);
+                                return -1;
+                            }
+                        };
+
+                        VFS_MANAGER.set_fd_handle(fd_idx, handle_id);
+
                         // inotify: 父目录 IN_CREATE + 新文件 IN_OPEN
                         let parent_ino = fs.fs_resolve_path(parent_path).unwrap_or(0);
                         super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, false);
@@ -201,13 +247,11 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
                         fd_idx as i32
                     }
                     Err(_) => {
-                        VFS_MANAGER.free_fd(fd_idx);
                         -1
                     }
                 }
             }
             Err(e) => {
-                VFS_MANAGER.free_fd(fd_idx);
                 e.as_i32()
             }
         }

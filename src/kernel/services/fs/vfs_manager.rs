@@ -94,6 +94,9 @@ pub struct VfsFile {
     pub used: bool,
     pub file_type: u8,
     pub path: [u8; VFS_MAX_PATH],
+    /// OpenFile handle_id (POSIX 打开文件描述)
+    /// u32::MAX 表示未使用 OpenFile
+    pub handle_id: u32,
 }
 
 impl Clone for VfsFile {
@@ -107,6 +110,7 @@ impl Clone for VfsFile {
             used: self.used,
             file_type: self.file_type,
             path: self.path,
+            handle_id: self.handle_id,
         }
     }
 }
@@ -122,6 +126,7 @@ impl VfsFile {
             used: false,
             file_type: 0,
             path: [0; VFS_MAX_PATH],
+            handle_id: u32::MAX,
         }
     }
 
@@ -372,6 +377,29 @@ impl VfsManager {
             fd_table[idx].pwm = pwm;
             fd_table[idx].file_type = file_type;
             fd_table[idx].set_path(path);
+        }
+    }
+
+    /// 设置 fd 的 OpenFile handle_id (POSIX 打开文件描述)
+    pub fn set_fd_handle(&self, idx: usize, handle_id: u32) {
+        let mut fd_table = self.fd_table.lock();
+        if idx < VFS_MAX_FDS {
+            fd_table[idx].handle_id = handle_id;
+        }
+    }
+
+    /// 获取 fd 的 OpenFile handle_id
+    pub fn get_fd_handle(&self, idx: usize) -> Option<u32> {
+        let fd_table = self.fd_table.lock();
+        if idx < VFS_MAX_FDS && fd_table[idx].used {
+            let hid = fd_table[idx].handle_id;
+            if hid != u32::MAX {
+                Some(hid)
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 
