@@ -1,0 +1,58 @@
+# QueenX 远期工程规划
+
+> 远期任务规划，当前阶段不实施。待核心功能稳定后启动。
+
+---
+
+## F1: RISC-V 架构支持
+
+- **描述**
+  - Asterinas 支持 x86_64 + riscv64 + loongarch64；QueenX 仅 x86_64 + aarch64
+  - 方案: RISC-V 64 启动 (OpenSBI) + 页表 (Sv39) + 异常 (stvec/sepc/scause) + 中断 (PLIC/CLINT) + 调度切换
+
+- **工作量**: ~3000-5000 行；预计 6-8 周
+
+---
+
+## F2: TDX 机密计算支持
+
+- **描述**
+  - 方案: TDX module 检测 (CPUID 0x21) + tdcall 指令封装 + attest quote + 内存加密
+
+- **工作量**: ~2300 行；预计 4-6 周
+
+---
+
+## F3: NFS 网络文件共享
+
+- **描述**
+  - 网络文件共享支持, 允许 QueenX 作为 NFS 客户端/服务器
+  - 采用 QueenX 原生方式 (非 Linux 通用 syscall)
+
+- **实现方式: QueenX 原生 (推荐)**
+  - NFS 协议解析和业务逻辑在 **services 层** (safe Rust)
+  - 文件操作通过 **FileSystem trait** 委托给 VFS
+  - 网络 I/O 通过框架层安全代理
+  - 即使 NFS 逻辑 panic, 框架层可捕获并恢复
+  - 不需要 name_to_handle_at / open_by_handle_at syscall
+
+- **与 FreeBSD 方式的对比**
+  - FreeBSD: NFS 内核模块在内核态运行, 模块崩溃 = 内核 panic
+  - QueenX: NFS 在 services 层 (safe Rust), panic = 进程终止, 更安全
+
+- **前提条件**
+  - OpenFile 基础设施 ✅
+  - FileSystem trait ✅
+  - 网络 socket API ✅
+  - 用户态通信接口 (可选, 用于 nfsiod)
+
+- **工作量**: 预计 6-8 周
+
+---
+
+## 实施时间线
+
+```text
+Week 13+:  F1 RISC-V / F2 TDX
+Week 20+:  F3 NFS (需内核模块框架)
+```
