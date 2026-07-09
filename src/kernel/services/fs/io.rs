@@ -51,3 +51,85 @@ pub fn fcntl_syscall(fd: i32, cmd: i32, arg: u64) -> Result<usize, Errno> {
     let ret = crate::kernel::framework::syscall::io::sys_fcntl(fd, cmd, arg);
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
 }
+
+/// copy_file_range — 在两个文件描述符之间复制数据
+///
+/// 简化实现: 使用 read/write 循环 (非零拷贝)
+///
+/// # Arguments
+/// * `fd_in` - 源文件描述符
+/// * `off_in` - 源偏移量指针
+/// * `fd_out` - 目标文件描述符
+/// * `off_out` - 目标偏移量指针
+/// * `len` - 复制长度
+///
+/// # Returns
+/// 成功返回复制的字节数，失败返回 Errno
+pub fn copy_file_range_syscall(
+    fd_in: i32,
+    off_in: u64,
+    fd_out: i32,
+    off_out: u64,
+    len: usize,
+) -> Result<usize, Errno> {
+    // 参数验证
+    if fd_in < 0 || fd_out < 0 {
+        return Err(Errno::EBADF);
+    }
+    if len == 0 {
+        return Ok(0);
+    }
+
+    // 限制单次复制大小 (避免栈溢出)
+    let chunk_size = len.min(4096);
+    let mut buf = alloc::vec![0u8; chunk_size];
+    let mut total_copied = 0usize;
+
+    loop {
+        let remaining = len - total_copied;
+        if remaining == 0 {
+            break;
+        }
+
+        let to_read = remaining.min(chunk_size);
+
+        // 从源 fd 读取
+        let read_ret = crate::kernel::framework::fs::api::vfs_read(
+            fd_in as u32,
+            buf.as_mut_ptr(),
+            to_read as u32,
+        );
+        if read_ret < 0 {
+            if total_copied > 0 {
+                return Ok(total_copied);
+            }
+            return Err(Errno::from_ret(read_ret as i64));
+        }
+        let bytes_read = read_ret as usize;
+        if bytes_read == 0 {
+            break; // EOF
+        }
+
+        // 写入目标 fd
+        let write_ret = crate::kernel::framework::fs::api::vfs_write(
+            fd_out as u32,
+            buf.as_ptr(),
+            bytes_read as u32,
+        );
+        if write_ret < 0 {
+            if total_copied > 0 {
+                return Ok(total_copied);
+            }
+            return Err(Errno::from_ret(write_ret as i64));
+        }
+
+        total_copied += bytes_read as usize;
+
+        // 如果写入的字节数少于读取的, 停止
+        if (write_ret as usize) < bytes_read {
+            break;
+        }
+    }
+
+    Ok(total_copied)
+}

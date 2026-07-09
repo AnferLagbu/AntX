@@ -232,14 +232,8 @@ impl SyscallDispatch for ServicesSyscallDispatch {
             SYS_eventfd => as_ret(crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32)),
             SYS_eventfd2 => as_ret(crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32)),
 
-            // memfd_create — 暂存根
-            SYS_memfd_create => {
-                let _name_ptr = a0;
-                let _flags = a1 as u32;
-                // TODO: 实现 memfd_create
-                // 需要: 创建匿名文件, 支持 ftruncate/fseek, 可 mmap
-                Errno::ENOSYS.as_ret()
-            },
+            // memfd_create
+            SYS_memfd_create => as_ret(crate::kernel::services::proc::memfd::memfd_create_syscall(a0, a1 as u32)),
             SYS_signalfd => as_ret(crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32)),
             SYS_signalfd4 => as_ret(crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32)),
             SYS_timerfd_create => as_ret(crate::kernel::services::sync::timerfd::timerfd_create_syscall(a0 as i32, a1 as i32)),
@@ -315,6 +309,21 @@ impl SyscallDispatch for ServicesSyscallDispatch {
             SYS_set_mempolicy => crate::kernel::services::mm::numa::sys_set_mempolicy(a0, a1),
             SYS_migrate_pages => crate::kernel::services::mm::numa::sys_migrate_pages(a0),
             SYS_getcpu => crate::kernel::services::mm::numa::sys_getcpu(),
+
+            // ==================== copy_file_range / name_to_handle ====================
+            SYS_copy_file_range => as_ret(crate::kernel::services::fs::io::copy_file_range_syscall(
+                a0 as i32, a1, a2 as i32, a3, a4 as usize,
+            )),
+            SYS_name_to_handle_at => {
+                // TODO: 实现 name_to_handle_at
+                // 需要: 文件句柄系统
+                Errno::ENOSYS.as_ret()
+            },
+            SYS_open_by_handle_at => {
+                // TODO: 实现 open_by_handle_at
+                // 需要: 文件句柄系统
+                Errno::ENOSYS.as_ret()
+            },
 
             // 未迁移的 syscall — 返回 -ENOSYS 让 framework 回退处理
             _ => -38,

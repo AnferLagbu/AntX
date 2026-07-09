@@ -64,6 +64,8 @@ pub mod proc_mgmt;
 pub mod lifecycle;
 /// pidfd 系统调用 — pidfd_open / pidfd_send_signal / pidfd_getfd
 pub mod pidfd;
+/// memfd_create — 匿名内存文件
+pub mod memfd;
 
 // ============================================================================
 // ID 与状态 (直接 re-export 本地 types 模块)
