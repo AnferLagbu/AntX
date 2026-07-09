@@ -62,6 +62,8 @@ pub mod sysinfo;
 pub mod proc_mgmt;
 /// 进程生命周期策略 — fork / exit / sched_yield
 pub mod lifecycle;
+/// pidfd 系统调用 — pidfd_open / pidfd_send_signal / pidfd_getfd
+pub mod pidfd;
 
 // ============================================================================
 // ID 与状态 (直接 re-export 本地 types 模块)

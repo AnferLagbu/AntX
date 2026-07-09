@@ -223,6 +223,11 @@ impl SyscallDispatch for ServicesSyscallDispatch {
             SYS_timerfd_settime => as_ret(crate::kernel::services::sync::timerfd::timerfd_settime_syscall(a0 as i32, a1 as i32, a2, a3)),
             SYS_timerfd_gettime => as_ret(crate::kernel::services::sync::timerfd::timerfd_gettime_syscall(a0 as i32, a1)),
 
+            // ==================== pidfd 系统调用 (已迁移) ====================
+            SYS_pidfd_open => as_ret(crate::kernel::services::proc::pidfd::pidfd_open(a0 as u32, a1 as u32)),
+            SYS_pidfd_send_signal => as_ret(crate::kernel::services::proc::pidfd::pidfd_send_signal(a0 as u32, a1 as i32, a2, a3 as u32)),
+            SYS_pidfd_getfd => as_ret(crate::kernel::services::proc::pidfd::pidfd_getfd(a0 as u32, a1 as u32, a2 as u32)),
+
             // ==================== Credo 私有 syscall (已迁移) ====================
             SYS_CREDO_LOGIN => crate::kernel::services::credo::auth::auth_login_syscall(a0, a1),
             SYS_CREDO_LOGOUT => crate::kernel::services::credo::auth::auth_logout_syscall(),
