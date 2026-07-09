@@ -51,6 +51,8 @@ pub mod dir_ops;
 pub mod vfs_manager;
 /// 全局 OpenFile 表 (POSIX 打开文件描述)
 pub mod open_file_table;
+/// 匿名文件系统 (memfd 基础)
+pub mod anonymous;
 
 // ============================================================================
 // T-05: VFS 后端决策策略

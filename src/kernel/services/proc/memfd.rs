@@ -1,9 +1,13 @@
 //! memfd_create 系统调用实现
 //!
 //! 创建匿名内存文件，可用于 mmap 共享内存。
-//! 简化实现: 在 tmpfs 中创建临时文件。
+//! 使用 AnonymousFs 实现真正的匿名文件 (不依赖 tmpfs)。
 
 use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::services::fs::anonymous::ANONYMOUS_FS;
+use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
+use crate::kernel::services::fs::vfs_types::OpenFile;
+use core::sync::atomic::{AtomicU32, AtomicU64};
 
 /// MFD_CLOEXEC 标志位
 const MFD_CLOEXEC: u32 = 0x0001;
@@ -11,6 +15,9 @@ const MFD_CLOEXEC: u32 = 0x0001;
 const MFD_ALLOW_SEALING: u32 = 0x0002;
 /// MFD_HUGE_16GB 标志位 (简化: 不支持大页)
 const MFD_HUGE_MASK: u32 = 0x3F << 26;
+
+/// 匿名文件 inode ID (特殊标记)
+const ANONYMOUS_INODE: u32 = u32::MAX;
 
 /// memfd_create — 创建匿名内存文件
 pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> {
@@ -25,25 +32,45 @@ pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> 
         return Err(Errno::EINVAL);
     }
 
-    // 构造路径: /dev/shm/memfd_<pid>
-    let current_pid = crate::kernel::framework::proc::process_get_current_pid();
-    let path = alloc::format!("/dev/shm/memfd_{}", current_pid);
+    // 在 AnonymousFs 中分配 inode
+    let inode_id = ANONYMOUS_FS.alloc_inode()
+        .ok_or(Errno::ENOMEM)?;
 
-    // 获取当前 PWM
-    let pwm = crate::kernel::framework::credo::session::get_current_pwm();
+    // 创建 OpenFile (匿名文件)
+    let open_file = OpenFile {
+        inode_id,
+        mount_idx: 0,  // AnonymousFs 不需要 mount_idx
+        offset: AtomicU64::new(0),
+        flags: 0x0003, // O_RDWR
+        pwm: crate::kernel::framework::credo::session::get_current_pwm(),
+        refcount: AtomicU32::new(1),
+        file_type: 0, // File
+        is_anonymous: true,
+    };
 
-    // 尝试在 tmpfs 中创建文件
+    // 插入全局 OpenFile 表
+    let handle_id = OPEN_FILE_TABLE.alloc(open_file)
+        .ok_or(Errno::ENOMEM)?;
+
+    // 在当前进程 fd 表中分配 fd
+    // TODO: 使用 per-process fd 表
     let fd = crate::kernel::framework::fs::api::vfs_open(
-        path.as_ptr() as *const u8,
-        0x241, // O_RDWR | O_CREAT | O_EXCL
-        pwm,
+        b"/dev/null\0".as_ptr() as *const u8,
+        0x0003, // O_RDWR
+        0,
     );
 
     if fd < 0 {
-        return Err(Errno::ENOSYS);
+        OPEN_FILE_TABLE.close(handle_id);
+        return Err(Errno::ENOMEM);
     }
 
+    // 设置 handle_id
+    crate::kernel::framework::fs::api::vfs_set_fd_handle(fd as usize, handle_id);
+
+    // 如果设置了 CLOEXEC, 标记 fd
     let _ = flags & MFD_CLOEXEC;
     // TODO: 设置 fd 的 CLOEXEC 标记
+
     Ok(fd as usize)
 }

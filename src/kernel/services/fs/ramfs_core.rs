@@ -752,7 +752,7 @@ impl RamFsData {
         Some((node_id, 0, self.nodes[node_id as usize].file_type))
     }
 
-    fn alloc_node(&mut self, file_type: u8, pwm: u64) -> Option<u32> {
+    pub fn alloc_node(&mut self, file_type: u8, pwm: u64) -> Option<u32> {
         for i in 1..RAMFS_MAX_NODES {
             if !self.nodes[i].used {
                 let block = self.block_alloc();

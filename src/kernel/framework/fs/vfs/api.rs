@@ -1287,6 +1287,20 @@ pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
 }
 
 // ============================================================================
+// fd handle_id 操作 (POSIX 打开文件描述)
+// ============================================================================
+
+/// 设置 fd 的 OpenFile handle_id
+pub fn vfs_set_fd_handle(fd_idx: usize, handle_id: u32) {
+    VFS_MANAGER.set_fd_handle(fd_idx, handle_id);
+}
+
+/// 获取 fd 的 OpenFile handle_id
+pub fn vfs_get_fd_handle(fd_idx: usize) -> Option<u32> {
+    VFS_MANAGER.get_fd_handle(fd_idx)
+}
+
+// ============================================================================
 // dup / dup2 — 文件描述符复制
 // ============================================================================
 
