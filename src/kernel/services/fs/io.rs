@@ -67,9 +67,9 @@ pub fn fcntl_syscall(fd: i32, cmd: i32, arg: u64) -> Result<usize, Errno> {
 /// 成功返回复制的字节数，失败返回 Errno
 pub fn copy_file_range_syscall(
     fd_in: i32,
-    off_in: u64,
+    _off_in: u64,
     fd_out: i32,
-    off_out: u64,
+    _off_out: u64,
     len: usize,
 ) -> Result<usize, Errno> {
     // 参数验证
