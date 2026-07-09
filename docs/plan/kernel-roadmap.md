@@ -106,20 +106,30 @@
 
 - **工作量**: ~2500 行；预计 3-4 周
 
-### G13: NFS 内核模块 (远期)
+### G13: NFS 网络文件共享 (远期)
 - **描述**
-  - 网络文件共享支持 (FreeBSD 风格, 非 Linux 通用 syscall 方式)
-  - 前提: 需要内核模块系统 + 用户态通信接口
-  - 文件句柄由 NFS 模块内部管理, 不暴露给用户态
+  - 网络文件共享支持, 允许 QueenX 作为 NFS 客户端/服务器
+  - 采用 QueenX 原生方式 (非 Linux 通用 syscall)
+
+- **实现方式: QueenX 原生 (推荐)**
+  - NFS 协议解析和业务逻辑在 **services 层** (safe Rust)
+  - 文件操作通过 **FileSystem trait** 委托给 VFS
+  - 网络 I/O 通过框架层安全代理
+  - 即使 NFS 逻辑 panic, 框架层可捕获并恢复
   - 不需要 name_to_handle_at / open_by_handle_at syscall
-  - 状态: []
+
+- **与 FreeBSD 方式的对比**
+  - FreeBSD: NFS 内核模块在内核态运行, 模块崩溃 = 内核 panic
+  - QueenX: NFS 在 services 层 (safe Rust), panic = 进程终止, 不影响内核
+  - QueenX 方式更安全, 但需要更多框架层 API 支持
 
 - **前提条件**
-  - 内核模块加载/卸载机制
-  - 用户态通信接口 (nfsiod 通道)
   - OpenFile 基础设施 ✅
+  - FileSystem trait ✅
+  - 网络 socket API ✅
+  - 用户态通信接口 (可选, 用于 nfsiod)
 
-- **工作量**: 预计 6-8 周 (含内核模块框架)
+- **工作量**: 预计 6-8 周
 
 ---
 
