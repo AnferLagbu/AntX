@@ -68,10 +68,17 @@ fn get_fd_info(fd_idx: u32) -> Option<(u32, u64, u64, alloc::string::String)> {
     }
     let fd_table = VFS_MANAGER.fd_table.lock();
     if fd_idx < VFS_MAX_FDS && fd_table[fd_idx].used {
+        // 优先使用 OpenFile 的共享 offset (POSIX dup 语义)
+        let offset = if fd_table[fd_idx].handle_id != u32::MAX {
+            OPEN_FILE_TABLE.with_file(fd_table[fd_idx].handle_id, |f| f.get_offset())
+                .unwrap_or(fd_table[fd_idx].offset)
+        } else {
+            fd_table[fd_idx].offset
+        };
         let path = alloc::string::String::from(fd_table[fd_idx].get_path());
         Some((
             fd_table[fd_idx].node_id,
-            fd_table[fd_idx].offset,
+            offset,
             fd_table[fd_idx].pwm,
             path,
         ))
@@ -267,7 +274,7 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     if fd_idx_us >= VFS_MAX_FDS {
         return -1;
     }
-    // TD-03: 原子 claim-and-clear — 同一把锁内同时快照 node_id/flags 并清 used,
+    // TD-03: 原子 claim-and-clear — 同一把锁内同时快照 node_id/flags/handle_id 并清 used,
     // 避免双核同时 close 同一 fd 导致 pcache/inotify 二次触发.
     let snapshot = {
         let mut fd_table = VFS_MANAGER.fd_table.lock();
@@ -277,19 +284,27 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
             let snap = (
                 fd_table[fd_idx_us].node_id,
                 fd_table[fd_idx_us].flags,
+                fd_table[fd_idx_us].handle_id,
             );
             // 在锁内清零 used 标志 — 后续 alloc 不会复用, 杜绝双 close 穿透
             fd_table[fd_idx_us].used = false;
             fd_table[fd_idx_us].fd = 0;
             fd_table[fd_idx_us].node_id = 0;
             fd_table[fd_idx_us].offset = 0;
+            fd_table[fd_idx_us].handle_id = u32::MAX;
             Some(snap)
         }
     };
-    let (node_id, flags) = match snapshot {
+    let (node_id, flags, handle_id) = match snapshot {
         Some(s) => s,
         None => return 0,
     };
+
+    // 减少 OpenFile 引用计数 (POSIX dup 语义)
+    if handle_id != u32::MAX {
+        OPEN_FILE_TABLE.close(handle_id);
+    }
+
     // B2: 释放该 fd 关联 inode 的全部 pcache 缓存页, 避免内存泄漏
     pcache::pcache_invalidate_inode(node_id);
     // inotify: 文件关闭通知
@@ -363,7 +378,12 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
                         }
                     }
                     if all_ok {
-                        VFS_MANAGER.set_fd_offset(fd_idx as usize, offset + count as u64);
+                        let new_offset = offset + count as u64;
+                        VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
+                        // 更新 OpenFile 共享 offset
+                        if let Some(hid) = VFS_MANAGER.get_fd_handle(fd_idx as usize) {
+                            OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
+                        }
                         return count as i32;
                     }
                 }
@@ -373,7 +393,12 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
         // 慢速路径: trait object 分发
         match fs.fs_read(node_id, offset, user_buf.as_mut_slice(), pwm) {
             Ok(n) => {
-                VFS_MANAGER.set_fd_offset(fd_idx as usize, offset + n as u64);
+                let new_offset = offset + n as u64;
+                VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
+                // 更新 OpenFile 共享 offset
+                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd_idx as usize) {
+                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
+                }
                 n as i32
             }
             Err(_) => -1,
@@ -532,7 +557,12 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if let Some(fs) = fs_opt {
         match fs.fs_write(node_id, offset, user_buf.as_slice(), pwm) {
             Ok(n) => {
-                VFS_MANAGER.set_fd_offset(fd_idx as usize, offset + n as u64);
+                let new_offset = offset + n as u64;
+                VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
+                // 更新 OpenFile 共享 offset
+                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd_idx as usize) {
+                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
+                }
                 fd_notify::notify_fd_close(fd_idx as i32);
                 super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
                 n as i32
@@ -667,7 +697,12 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
                 // SAFETY: 调用方保证指针/类型有效
                 let mut entry_ref = unsafe { UserRefMut::new(entry) };
                 *entry_ref.as_mut() = dir_entry;
-                VFS_MANAGER.set_fd_offset(fd as usize, offset + core::mem::size_of::<crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry>() as u64);
+                let new_offset = offset + core::mem::size_of::<crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry>() as u64;
+                VFS_MANAGER.set_fd_offset(fd as usize, new_offset);
+                // 更新 OpenFile 共享 offset
+                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd as usize) {
+                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
+                }
                 1
             }
             Err(_) => -1,
@@ -1128,6 +1163,10 @@ pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
         match fs.fs_seek(node_id, offset as i64, whence, current_offset) {
             Ok(new_offset) => {
                 VFS_MANAGER.set_fd_offset(fd as usize, new_offset);
+                // 更新 OpenFile 共享 offset
+                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd as usize) {
+                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
+                }
                 new_offset as i32
             }
             Err(_) => KernelError::InvalidArgument.as_i32(),
