@@ -380,3 +380,87 @@ pub trait FileSystem: Send + Sync {
         Err(KernelError::NotSupported)
     }
 }
+
+// ============================================================================
+// OpenFile — 打开文件描述 (POSIX open file description)
+// ============================================================================
+//
+// 对应 POSIX "打开文件描述", 多个 fd 可共享 (dup 语义).
+// offset 和 flags 在所有共享者之间共享.
+
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+/// 打开文件描述 — POSIX open file description 的 QueenX 实现
+///
+/// 多个 fd 可以指向同一个 OpenFile (通过 dup).
+/// offset 和 flags 在所有共享者之间共享.
+pub struct OpenFile {
+    /// 文件系统内部 inode ID
+    pub inode_id: u32,
+    /// 挂载点索引 (用于 FileSystem trait 分发)
+    pub mount_idx: u32,
+    /// 共享文件偏移 (原子操作, dup 共享)
+    pub offset: AtomicU64,
+    /// 共享状态标志 (O_RDONLY, O_APPEND 等, dup 共享)
+    pub flags: u32,
+    /// 权限凭证
+    pub pwm: u64,
+    /// 引用计数 (dup 增加, close 减少)
+    pub refcount: AtomicU32,
+    /// 文件类型 (VfsFileType::as_u8)
+    pub file_type: u8,
+    /// 是否匿名文件 (memfd)
+    pub is_anonymous: bool,
+}
+
+impl OpenFile {
+    /// 创建新的 OpenFile
+    pub fn new(inode_id: u32, mount_idx: u32, flags: u32, pwm: u64, file_type: u8) -> Self {
+        Self {
+            inode_id,
+            mount_idx,
+            offset: AtomicU64::new(0),
+            flags,
+            pwm,
+            refcount: AtomicU32::new(1),
+            file_type,
+            is_anonymous: false,
+        }
+    }
+
+    /// 增加引用计数 (dup 时调用)
+    pub fn inc_ref(&self) {
+        self.refcount.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 减少引用计数 (close 时调用)
+    /// 返回减少前的值, 如果返回 1 说明这是最后一个引用
+    pub fn dec_ref(&self) -> u32 {
+        self.refcount.fetch_sub(1, Ordering::Release)
+    }
+
+    /// 获取当前引用计数
+    pub fn ref_count(&self) -> u32 {
+        self.refcount.load(Ordering::Acquire)
+    }
+
+    /// 获取当前文件偏移
+    pub fn get_offset(&self) -> u64 {
+        self.offset.load(Ordering::Acquire)
+    }
+
+    /// 设置文件偏移
+    pub fn set_offset(&self, offset: u64) {
+        self.offset.store(offset, Ordering::Release);
+    }
+
+    /// 获取状态标志
+    pub fn get_flags(&self) -> u32 {
+        self.flags
+    }
+
+    /// 设置状态标志
+    pub fn set_flags(&mut self, flags: u32) {
+        self.flags = flags;
+    }
+}
