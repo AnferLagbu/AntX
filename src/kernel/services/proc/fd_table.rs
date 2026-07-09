@@ -1,78 +1,75 @@
 #![deny(unsafe_code)]
-//! Per-process 文件描述符表 (FD 分配策略) — services 层
+//! Per-process 文件描述符表 — services 层
 //!
-//! ## 框架责任分离
+//! ## 设计
 //!
-//! - **framework**: 进程结构、上下文切换、IRQ 安全锁原语
-//! - **services** (本模块): FD 分配策略 — 上限、选择算法 (first-fit)
+//! FD 表仅存储指向 OpenFile 的 handle_id, 不存储 offset/flags.
+//! dup() 通过共享 OpenFile 实现 offset 共享 (POSIX 合规).
 //!
-//! ## 与 Linux 差异
+//! ## 与旧实现的差异
 //!
-//! - Linux 默认上限 1024, 本项目 v1 上限 64 (嵌入式轻量基线)
-//! - 分配策略: first-fit (找第一个空闲 slot). 不实现 O(log N) 位图
-//!   是因为 64 slot 线性扫描成本 O(64) < 位图查找的间接开销
-//!
-//! ## 关联
-//!
-//! - TCB 减面: [docs/plan/maintenance-2026-06-11.md](../../../../../../docs/plan/maintenance-2026-06-11.md) I-01
-//! - 移出: framework::proc::process::FdTable (2026-06-11)
+//! 旧: entries[i] = global_fd (i32)
+//! 新: entries[i] = handle_id (u32) → OpenFile (共享 offset)
 
 use crate::kernel::framework::sync::IrqSpinLock;
 
 /// 每进程 FD 表上限
-///
-/// v1 嵌入式轻量基线: 64 slot. 后续可按进程配置或扩容.
 pub const MAX_FDS_PER_PROCESS: usize = 64;
 
 /// Per-process FD 表
 ///
-/// `entries[local_fd] = global_fd` (Linux 风格的本地 FD 抽象)
-/// -1 表示 slot 空闲.
+/// `entries[local_fd] = handle_id` (指向全局 OpenFile 表)
+/// `u32::MAX` 表示 slot 空闲.
 #[derive(Debug)]
 pub struct FdTable {
-    entries: IrqSpinLock<[i32; MAX_FDS_PER_PROCESS]>,
+    /// handle_id 映射 (指向 OpenFile)
+    entries: IrqSpinLock<[u32; MAX_FDS_PER_PROCESS]>,
+    /// CLOEXEC 标志 (per-FD, 不随 dup 共享)
+    cloexec: IrqSpinLock<[bool; MAX_FDS_PER_PROCESS]>,
 }
 
 impl FdTable {
-    /// 创建未初始化的 FdTable (const fn, 用于 static).
+    /// 创建未初始化的 FdTable
     pub const fn new() -> Self {
         Self {
-            entries: IrqSpinLock::new([-1; MAX_FDS_PER_PROCESS]),
+            entries: IrqSpinLock::new([u32::MAX; MAX_FDS_PER_PROCESS]),
+            cloexec: IrqSpinLock::new([false; MAX_FDS_PER_PROCESS]),
         }
     }
 
-    /// 初始化 FD 表 (清空所有 slot).
+    /// 初始化 FD 表 (清空所有 slot)
     pub fn init(&self) {
         let mut entries = self.entries.lock();
-        for e in entries.iter_mut() {
-            *e = -1;
+        let mut cloexec = self.cloexec.lock();
+        for i in 0..MAX_FDS_PER_PROCESS {
+            entries[i] = u32::MAX;
+            cloexec[i] = false;
         }
     }
 
     /// 分配 per-process FD slot, 返回本地 fd 编号.
     ///
-    /// 策略: first-fit (线性扫描, O(MAX_FDS_PER_PROCESS) = O(64)).
-    /// 分配失败返回 None (进程已达 FD 上限).
-    pub fn alloc_fd(&self, global_fd: i32) -> Option<usize> {
+    /// 策略: first-fit.
+    pub fn alloc_fd(&self, handle_id: u32, cloexec: bool) -> Option<usize> {
         let mut entries = self.entries.lock();
+        let mut cloexec_lock = self.cloexec.lock();
         for i in 0..MAX_FDS_PER_PROCESS {
-            if entries[i] == -1 {
-                entries[i] = global_fd;
+            if entries[i] == u32::MAX {
+                entries[i] = handle_id;
+                cloexec_lock[i] = cloexec;
                 return Some(i);
             }
         }
         None
     }
 
-    /// 通过本地 fd 获取全局 FD 编号.
-    ///
-    /// 越界或空闲 slot 返回 None.
-    pub fn get_global_fd(&self, local_fd: usize) -> Option<i32> {
+    /// 通过本地 fd 获取 handle_id.
+    pub fn get_handle_id(&self, local_fd: usize) -> Option<u32> {
         let entries = self.entries.lock();
         if local_fd < MAX_FDS_PER_PROCESS {
-            let gfd = entries[local_fd];
-            if gfd != -1 {
-                Some(gfd)
+            let hid = entries[local_fd];
+            if hid != u32::MAX {
+                Some(hid)
             } else {
                 None
             }
@@ -81,29 +78,57 @@ impl FdTable {
         }
     }
 
-    /// 关闭本地 fd. 成功 (关闭了有效 slot) 返回 true.
-    pub fn close_fd(&self, local_fd: usize) -> bool {
+    /// 关闭本地 fd, 返回被关闭的 handle_id.
+    pub fn close_fd(&self, local_fd: usize) -> Option<u32> {
         if local_fd >= MAX_FDS_PER_PROCESS {
-            return false;
+            return None;
         }
         let mut entries = self.entries.lock();
-        if entries[local_fd] != -1 {
-            entries[local_fd] = -1;
-            true
+        let mut cloexec = self.cloexec.lock();
+        let hid = entries[local_fd];
+        if hid != u32::MAX {
+            entries[local_fd] = u32::MAX;
+            cloexec[local_fd] = false;
+            Some(hid)
         } else {
-            false
+            None
         }
     }
 
+    /// 获取 CLOEXEC 标志
+    pub fn is_cloexec(&self, local_fd: usize) -> bool {
+        if local_fd >= MAX_FDS_PER_PROCESS {
+            return false;
+        }
+        let cloexec = self.cloexec.lock();
+        cloexec[local_fd]
+    }
+
+    /// 设置 CLOEXEC 标志
+    pub fn set_cloexec(&self, local_fd: usize, cloexec: bool) {
+        if local_fd >= MAX_FDS_PER_PROCESS {
+            return;
+        }
+        let mut cloexec_lock = self.cloexec.lock();
+        cloexec_lock[local_fd] = cloexec;
+    }
+
     /// 获取所有已分配的 FD 列表
-    ///
-    /// 返回 (local_fd, global_fd) 对的 Vec
-    pub fn get_all_fds(&self) -> alloc::vec::Vec<(usize, i32)> {
+    pub fn get_all_fds(&self) -> alloc::vec::Vec<(usize, u32)> {
         let entries = self.entries.lock();
         entries.iter()
             .enumerate()
-            .filter(|&(_, &gfd)| gfd != -1)
-            .map(|(local, &global)| (local, global))
+            .filter(|&(_, &hid)| hid != u32::MAX)
+            .map(|(local, &handle)| (local, handle))
+            .collect()
+    }
+
+    /// 获取所有 CLOEXEC 的 FD (用于 exec 时关闭)
+    pub fn get_cloexec_fds(&self) -> alloc::vec::Vec<usize> {
+        let entries = self.entries.lock();
+        let cloexec = self.cloexec.lock();
+        (0..MAX_FDS_PER_PROCESS)
+            .filter(|&i| entries[i] != u32::MAX && cloexec[i])
             .collect()
     }
 }
