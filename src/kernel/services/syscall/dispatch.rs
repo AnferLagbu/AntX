@@ -75,6 +75,17 @@ impl SyscallDispatch for ServicesSyscallDispatch {
             SYS_rename => as_ret(crate::kernel::services::fs::misc::rename_syscall(a0, a1)),
             SYS_symlink => as_ret(crate::kernel::services::fs::link::symlink_syscall(a0, a1)),
             SYS_readlink => as_ret(crate::kernel::services::fs::link::readlink_syscall(a0, a1, a2)),
+
+            // *at() 系列 (简化: dirfd 暂不支持, 行为同基本版本)
+            SYS_openat => as_ret(crate::kernel::services::fs::open::open_syscall(a1, a2 as i32, a3 as i32)),
+            SYS_newfstatat => as_ret(crate::kernel::services::fs::stat::fstat_syscall(a1 as i32, a2)),
+            SYS_unlinkat => as_ret(crate::kernel::services::fs::access::unlink_syscall(a1)),
+            SYS_renameat => as_ret(crate::kernel::services::fs::misc::rename_syscall(a1, a3)),
+            SYS_linkat => as_ret(crate::kernel::services::fs::link::link_syscall(a1, a3)),
+            SYS_symlinkat => as_ret(crate::kernel::services::fs::link::symlink_syscall(a0, a2)),
+            SYS_readlinkat => as_ret(crate::kernel::services::fs::link::readlink_syscall(a1, a2, a3)),
+            SYS_fchmodat => as_ret(crate::kernel::services::fs::mode::chmod_syscall(a1, a2 as u32)),
+            SYS_faccessat => as_ret(crate::kernel::services::fs::access::faccessat_syscall(a0 as i32, a1, a2 as i32, a3 as i32)),
             SYS_fchown => as_ret(crate::kernel::services::fs::misc::fchown_syscall(a0 as i32, a1, a2)),
             SYS_sync => as_ret(crate::kernel::services::fs::misc::sync_syscall()),
             SYS_fsync => as_ret(crate::kernel::services::fs::misc::fsync_syscall(a0 as i32)),
@@ -85,8 +96,10 @@ impl SyscallDispatch for ServicesSyscallDispatch {
 
             // ==================== 文件描述符操作 (已迁移) ====================
             SYS_pipe => as_ret(crate::kernel::services::fs::io::pipe_syscall(a0)),
+            SYS_pipe2 => as_ret(crate::kernel::services::fs::io::pipe_syscall(a0)),
             SYS_dup => as_ret(crate::kernel::services::fs::io::dup_syscall(a0 as i32)),
             SYS_dup2 => as_ret(crate::kernel::services::fs::io::dup2_syscall(a0 as i32, a1 as i32)),
+            SYS_dup3 => as_ret(crate::kernel::services::fs::io::dup2_syscall(a0 as i32, a1 as i32)),
             SYS_fcntl => as_ret(crate::kernel::services::fs::io::fcntl_syscall(a0 as i32, a1 as i32, a2)),
 
             // ==================== 内存管理 (已迁移) ====================
@@ -211,12 +224,22 @@ impl SyscallDispatch for ServicesSyscallDispatch {
 
             // ==================== 事件轮询 (已迁移) ====================
             SYS_epoll_create => as_ret(crate::kernel::services::sync::epoll::epoll_create_syscall(a0 as i32)),
+            SYS_epoll_create1 => as_ret(crate::kernel::services::sync::epoll::epoll_create_syscall(a0 as i32)),
             SYS_epoll_ctl => as_ret(crate::kernel::services::sync::epoll::epoll_ctl_syscall(a0 as i64, a1 as i32, a2 as i32, a3)),
             SYS_epoll_wait => as_ret(crate::kernel::services::sync::epoll::epoll_wait_syscall(a0 as i64, a1, a2 as i32, a3 as i32)),
 
             // ==================== eventfd / signalfd / timerfd (已迁移) ====================
             SYS_eventfd => as_ret(crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32)),
             SYS_eventfd2 => as_ret(crate::kernel::services::sync::eventfd::eventfd_syscall(a0, a1 as i32)),
+
+            // memfd_create — 暂存根
+            SYS_memfd_create => {
+                let _name_ptr = a0;
+                let _flags = a1 as u32;
+                // TODO: 实现 memfd_create
+                // 需要: 创建匿名文件, 支持 ftruncate/fseek, 可 mmap
+                Errno::ENOSYS.as_ret()
+            },
             SYS_signalfd => as_ret(crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32)),
             SYS_signalfd4 => as_ret(crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32)),
             SYS_timerfd_create => as_ret(crate::kernel::services::sync::timerfd::timerfd_create_syscall(a0 as i32, a1 as i32)),
