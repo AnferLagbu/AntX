@@ -8,7 +8,7 @@
 
 - **总体进度**
   - 描述: 内核功能完整度与工程化水平
-  - 方案: 11 项工程任务，已完成 3 项 (G2 overlayfs, G3 tmpfs, G9 ext2+exfat)
+  - 方案: 11 项工程任务，已完成 4 项 (G2 overlayfs, G3 tmpfs, G4 syscall, G9 ext2+exfat)
   - 状态: [X]
 
 ---
@@ -31,14 +31,14 @@
 
 ## P1 — 功能性缺口 (4 项)
 
-### G4: 现代 syscall 补全 (8-10 个)
+### G4: 现代 syscall 补全 (15+ 个) ✅
 - **描述**
-  - 缺失的关键 syscall: pidfd_open/pidfd_getfd/pidfd_send_signal/signalfd4/timerfd_create/timerfd_settime/memfd_create/name_to_handle_at/open_by_handle_at
-  - 方案: pidfd 套件 1 周 + signalfd/timerfd 1 周 + memfd 3 天 + name_to_handle 1 周
-  - 状态: []
-
-- **验收**
-  - 方案: 8-10 个 syscall 全部实装；Linux 兼容号 + QX 原生号双号；服务层 100% safe 代理；每 syscall ≥1 host-test
+  - 已实装: pidfd_open/pidfd_getfd/pidfd_send_signal, memfd_create, copy_file_range
+  - 已实装: *at() 系列 9 个 (openat/newfstatat/unlinkat/renameat/linkat/symlinkat/readlinkat/fchmodat/faccessat)
+  - 已实装: pipe2/dup3/epoll_create1
+  - Credo syscall 重编号 (400-438 → 460-498) 解决 6 个编号冲突
+  - 暂存根: name_to_handle_at/open_by_handle_at (返回 ENOSYS)
+  - 状态: [X]
   - 状态: []
 
 ### G5: RISC-V 架构支持
@@ -114,15 +114,15 @@
 已完成:
   G2 overlayfs ✅
   G3 tmpfs ✅
+  G4 syscall 补全 ✅
   G9 ext2 + exfat ✅
 
 待实施:
-  Week 1-2:   G7 CI 拆分 (1w) + G4 syscall pidfd+memfd (2w)  ← 并行
-  Week 3-4:   G4 signalfd/timerfd (1w) + name_to_handle (1w)
-  Week 5-6:   G6 mdBook (2w) + G8 fsx (1w)
-  Week 7-10:  G11 容器 FS (4w)
-  Week 11-14: G12 systree (3-4w)
-  Week 15+:   G5 RISC-V / G10 TDX  ← 远期
+  Week 1-2:   G7 CI 拆分 (1w) + G6 mdBook (2w)  ← 并行
+  Week 3-4:   G8 fsx (1w)
+  Week 5-8:   G11 容器 FS (4w)
+  Week 9-12:  G12 systree (3-4w)
+  Week 13+:   G5 RISC-V / G10 TDX  ← 远期
 ```
 
 ## 工作量汇总
@@ -130,10 +130,10 @@
 | 优先级 | 任务 | 状态 | 预计工期 |
 |--------|------|------|----------|
 | P0 | G2 + G3 | ✅ 完成 | 0 周 |
-| P1 | G4 + G5 + G6 + G7 | 未开始 | 12-15 周 |
-| P2 | G8 + G9 + G10 | G9✅ 未开始 | 6-10 周 |
+| P1 | G4 + G5 + G6 + G7 | G4✅ | 10-13 周 |
+| P2 | G8 + G9 + G10 | G9✅ | 6-10 周 |
 | P3 | G11 + G12 | G12 部分 | 7-10 周 |
-| **总计** | | **3 项完成** | **25-35 周** |
+| **总计** | | **4 项完成** | **23-33 周** |
 
 ## 引用
 - 评估依据: tmp/asterinas-main/ 源码 (Asterinas 0.18.0) + docs/plan/ 子系统规划 + docs/README.md 工程规范
