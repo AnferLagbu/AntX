@@ -56,10 +56,6 @@ impl VmFlags {
     pub const MADV_SEQUENTIAL: Self = Self(1 << 8);
     /// `MADV_WILLNEED`: 预读 (触发 readahead)
     pub const MADV_WILLNEED: Self = Self(1 << 9);
-    /// 内部标记: PAGEOUT 完成 (回收路径)
-    pub const _PAGEOUT_DONE: Self = Self(1 << 20);
-    /// 内部标记: DONTNEED 完成 (回收路径)
-    pub const _DONTNEED_DONE: Self = Self(1 << 21);
 
     #[inline]
     pub const fn bits(&self) -> u32 {
@@ -813,7 +809,7 @@ impl MmStruct {
     /// madvise 触发的页面回收 (PAGEOUT 走 swap, DONTNEED 走 free)
     ///
     /// 仅回收 locked=false 的页 (受 VmFlags.MLOCKED 保护).
-    fn madvise_evict_range(&self, start: usize, end: usize, dontneed: bool) -> Result<(), crate::kernel::framework::syscall::Errno> {
+    fn madvise_evict_range(&self, start: usize, end: usize, _dontneed: bool) -> Result<(), crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
         use crate::kernel::framework::mm::swap;
 
@@ -831,15 +827,6 @@ impl MmStruct {
         // 触发 kswapd 周期回收
         swap::kswapd_wakeup();
 
-        // 标记 _DONTNEED_DONE / _PAGEOUT_DONE 让后续回收路径知晓
-        let mut vmas = self.vmas.lock();
-        let flag = if dontneed { VmFlags::_DONTNEED_DONE } else { VmFlags::_PAGEOUT_DONE };
-        for v in vmas.iter_mut() {
-            if v.end <= start || v.start >= end {
-                continue;
-            }
-            v.vm_flags = v.vm_flags.insert(flag);
-        }
         Ok(())
     }
 

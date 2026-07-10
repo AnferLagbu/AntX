@@ -52,12 +52,13 @@
 - **文件**: `src/kernel/framework/mm/vma.rs:60-66`
 - **详情**: 已移除 12 个未实现的 VmFlags 定义 (KSM/THP/DONTFORK/POPULATE/SOFT_OFFLINE/COLD)，更新 madvise_range 返回 EINVAL。
 
-### M6: VMA 死标志位清理
+### M6: VMA 死标志位清理 ✅
 
 - **描述**: `vma.rs:79-82` 中 `_PAGEOUT_DONE/_DONTNEED_DONE` 标志只设不读
 - **方案**: 清理或实现对应的读取路径
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/vma.rs:79-82`
+- **详情**: 确认只设不读，已移除标志定义和设置代码。
 
 ### M7: madvise advice 类型安全枚举
 
@@ -66,12 +67,13 @@
 - **状态**: []
 - **文件**: `src/kernel/framework/mm/vma.rs:693-719`
 
-### M8: OOMD Emergency 超时实现
+### M8: OOMD Emergency 超时标注 ✅
 
 - **描述**: `oomd.rs:86-88` 中 Emergency 超时日志说 "killing largest RSS" 但实际未真正 kill 进程
 - **方案**: 实现 SIGTERM/SIGKILL 发送，或明确标注为 TODO
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/services/proc/oomd.rs:86-88`
+- **详情**: 已添加 TODO 注释说明当前仅计数未真正 kill 进程。
 
 ### M9: /proc/version 标识修改 ✅
 
@@ -89,12 +91,13 @@
 - **文件**: `src/kernel/services/proc/seccomp.rs:334-367`
 - **详情**: 已定义 PR_SET_SECCOMP/PR_GET_SECCOMP/PR_SET_NO_NEW_PRIVS/PR_GET_NO_NEW_PRIVS 常量。
 
-### M11: VMA 未实现 madvise 返回 EINVAL
+### M11: VMA 未实现 madvise 返回 EINVAL ✅
 
 - **描述**: MADV_DONTFORK/DOFORK/POPULATE_READ/WRITE 未找到实际实现
 - **方案**: 在 `madvise_range` 中对这些 advice 返回 `EINVAL`，避免静默设置标志位但无效果
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/vma.rs:693-719`
+- **详情**: 已在 M5 中完成，madvise_range 对未实现项返回 EINVAL。
 
 ---
 

@@ -82,6 +82,8 @@ impl OomDaemon {
                     self.emergency_since.store(tick, Ordering::Relaxed);
                     slog_err!(Memory, "[OOMD] Memory pressure EMERGENCY: will terminate largest RSS process if not released");
                 } else if tick.saturating_sub(es) > OOMD_KILL_GRACE_TICKS {
+                    // TODO: 实际发送 SIGKILL 到最大 RSS 进程
+                    // 当前仅计数，未真正 kill 进程
                     self.terminated_count.fetch_add(1, Ordering::Relaxed);
                     self.emergency_since.store(0, Ordering::Relaxed);
                     slog_err!(Memory, "[OOMD] Emergency timeout: killing largest RSS process (total killed: {})",
