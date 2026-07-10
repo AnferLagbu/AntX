@@ -41,7 +41,7 @@ QueenX 采用 Asterinas 框内核 (Framekernel) 范式：单一地址空间，�
 - 静态扫描 `scripts/audit_safety_coverage.py` 校验 framework 每个 `unsafe` 块配 `// SAFETY:` 注释
 - 静态扫描 `scripts/audit_deadlock_matrix.py` 标记锁顺序与中断上下文风险
 
-完整规范见 [docs/explain/framekernel-nature.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-nature.md) 与 [docs/explain/framekernel-dev-guide.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-dev-guide.md)。
+完整规范见 [docs/explain/explain-framekernel.md](file:///home/anfer/Code/QueenX/docs/explain/explain-framekernel.md) 与 [docs/explain/guide-dev.md](file:///home/anfer/Code/QueenX/docs/explain/guide-dev.md)。
 
 ## 子系统
 
@@ -162,8 +162,8 @@ make test-smp         # SMP 多核测试
 ├── docs/
 │   ├── README.md            文档写作规范
 │   ├── explain/             架构与子系统解释
-│   │   ├── framekernel-nature.md
-│   │   └── framekernel-dev-guide.md
+│   │   ├── explain-framekernel.md
+│   │   └── guide-dev.md
 │   └── plan/                路线图与立场书
 │       ├── kernel-roadmap.md
 │       └── queenx-naming-standpoint.md
@@ -192,7 +192,7 @@ make test-smp         # SMP 多核测试
 | [AGENTS.md](file:///home/anfer/Code/QueenX/AGENTS.md) | 项目硬约束 + AI 行为准则：编码风格、构建、测试、审计、编码前先思考、简单优先、外科手术式修改、目标驱动 |
 | [CHANGELOG.md](file:///home/anfer/Code/QueenX/CHANGELOG.md) | 全部变更（时间倒序，无项目级版本号） |
 | [docs/README.md](file:///home/anfer/Code/QueenX/docs/README.md) | 文档写作规范 |
-| [docs/explain/framekernel-nature.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-nature.md) | 框内核定义与原理 |
-| [docs/explain/framekernel-dev-guide.md](file:///home/anfer/Code/QueenX/docs/explain/framekernel-dev-guide.md) | 框内核开发与维护指导 |
+| [docs/explain/explain-framekernel.md](file:///home/anfer/Code/QueenX/docs/explain/explain-framekernel.md) | 框内核定义与原理 |
+| [docs/explain/guide-dev.md](file:///home/anfer/Code/QueenX/docs/explain/guide-dev.md) | 框内核开发与维护指导 |
 | [docs/plan/kernel-roadmap.md](file:///home/anfer/Code/QueenX/docs/plan/kernel-roadmap.md) | 四阶段路线图与进度跟踪 |
-| [docs/plan/queenx-naming-standpoint.md](file:///home/anfer/Code/QueenX/docs/plan/queenx-naming-standpoint.md) | 命名、syscall 编号、libc 选型、linuxulator 立场 |
+| [docs/explain/ref-naming.md](file:///home/anfer/Code/QueenX/docs/explain/ref-naming.md) | 命名、syscall 编号、libc 选型、linuxulator 立场 |
