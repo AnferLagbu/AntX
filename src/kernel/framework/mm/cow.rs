@@ -221,7 +221,7 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
                             child_pt_virt.add(l).write_volatile(child_pte);
                         }
 
-                        cow_inc_ref(parent_phys);
+                        // fork: 父子各持引用, count 从 1 变为 2
                         cow_inc_ref(parent_phys);
                     } else {
                         // SAFETY: 已只读的页直接共享 PTE 内容

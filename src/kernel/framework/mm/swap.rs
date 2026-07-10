@@ -47,6 +47,7 @@ use core::cell::UnsafeCell;
 use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE, pmm, vmm};
 use crate::kernel::framework::mm::PfResult;
 use crate::kernel::framework::irq::{self, SoftirqVec};
+use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
 // Swap Entry 编码
@@ -461,34 +462,8 @@ impl LruList {
 // 全局 Swap 状态
 // ============================================================================
 
-struct SimpleSpinLock {
-    locked: AtomicBool,
-}
-
-impl SimpleSpinLock {
-    const fn new() -> Self {
-        SimpleSpinLock {
-            locked: AtomicBool::new(false),
-        }
-    }
-
-    fn lock(&self) {
-        while self
-            .locked
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-    }
-
-    fn unlock(&self) {
-        self.locked.store(false, Ordering::Release);
-    }
-}
-
 struct SwapState {
-    lock: SimpleSpinLock,
+    lock: IrqSpinLock<()>,
     area: UnsafeCell<SwapArea>,
     lru: UnsafeCell<LruList>,
 }
@@ -498,7 +473,7 @@ unsafe impl Sync for SwapState {}
 unsafe impl Send for SwapState {}
 
 static SWAP: SwapState = SwapState {
-    lock: SimpleSpinLock::new(),
+    lock: IrqSpinLock::new(()),
     area: UnsafeCell::new(SwapArea::new()),
     lru: UnsafeCell::new(LruList::new()),
 };
@@ -509,12 +484,10 @@ static SWAP: SwapState = SwapState {
 
 /// 初始化 swap 子系统
 pub fn swap_init() -> bool {
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let area = unsafe { &mut *SWAP.area.get() };
-    let result = area.init();
-    SWAP.lock.unlock();
-    result
+    area.init()
 }
 
 /// 换出页面: 将物理页写入 swap, 返回 swap entry
@@ -525,28 +498,20 @@ pub fn swap_init() -> bool {
 /// - `phys_addr` 必须是对应的有效物理地址
 /// - **不更新 PTE** — 调用方需自行将 PTE 替换为 swap entry 或 unmap
 pub fn swap_out(virt_addr: u64, phys_addr: u64, _dirty: bool) -> Option<SwapEntry> {
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     let area = unsafe { &mut *SWAP.area.get() };
 
     if !area.initialized {
-        SWAP.lock.unlock();
         return None;
     }
 
-    let slot = match area.alloc_slot() {
-        Some(s) => s,
-        None => {
-            SWAP.lock.unlock();
-            return None;
-        }
-    };
+    let slot = area.alloc_slot()?;
 
     // 将页面数据写入 swap slot
     let src_virt = phys_addr + crate::kernel::framework::mm::KERNEL_BASE;
     area.write_slot(slot, src_virt);
 
     let entry = SwapEntry::new(slot);
-    SWAP.lock.unlock();
 
     crate::klog_debug!(Swap, "[SWAP] Out: vaddr={:#x} paddr={:#x} -> slot={}",
         virt_addr, phys_addr, slot);
@@ -601,11 +566,10 @@ pub fn swap_out_to_pte(pml4: u64, virt_addr: u64) -> Option<SwapEntry> {
 pub fn swap_in(entry: SwapEntry) -> Option<PhysAddr> {
     let slot = entry.slot();
 
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     let area = unsafe { &mut *SWAP.area.get() };
 
     if !area.initialized {
-        SWAP.lock.unlock();
         return None;
     }
 
@@ -620,8 +584,6 @@ pub fn swap_in(entry: SwapEntry) -> Option<PhysAddr> {
     // 释放 swap slot
     area.free_slot(slot);
 
-    SWAP.lock.unlock();
-
     crate::klog_debug!(Swap, "[SWAP] In: slot={} -> paddr={:#x}", slot, new_phys.as_u64());
 
     Some(new_phys)
@@ -630,11 +592,10 @@ pub fn swap_in(entry: SwapEntry) -> Option<PhysAddr> {
 /// 释放 swap slot (页面被修改写回时调用)
 pub fn swap_free(entry: SwapEntry) {
     let slot = entry.slot();
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let area = unsafe { &mut *SWAP.area.get() };
     area.free_slot(slot);
-    SWAP.lock.unlock();
 }
 
 /// 检测 PTE 是否为 swap entry
@@ -652,11 +613,10 @@ pub fn pte_to_swap_entry(pte: u64) -> Option<SwapEntry> {
 /// pml4 必须为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
 /// `locked` 表示该页是否被 mlock 锁定 (由调用方根据 VMA vm_flags.MLOCKED 推导).
 pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let lru = unsafe { &mut *SWAP.lru.get() };
     lru.add_active(pml4, virt_addr, phys_addr, dirty, locked);
-    SWAP.lock.unlock();
 }
 
 /// 设置某虚拟地址对应 LRU 条目的 mlock 锁定状态
@@ -670,24 +630,20 @@ pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked:
 /// - `munlock` 系统调用: 对 VMA 内每页调用 `set_page_locked(virt, false)`
 /// - 保留的 locked 状态对 get_victim 不可见, 不会被 swap-out
 pub fn set_page_locked(virt_addr: u64, locked: bool) -> bool {
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let lru = unsafe { &mut *SWAP.lru.get() };
-    let result = lru.set_locked(virt_addr, locked);
-    SWAP.lock.unlock();
-    result
+    lru.set_locked(virt_addr, locked)
 }
 
 /// 查询某虚拟地址对应 LRU 条目的 mlock 锁定状态
 ///
 /// 返回 Some(true/false) 表示 LRU 中存在该条目, None 表示该页未在 LRU 跟踪.
 pub fn is_page_locked(virt_addr: u64) -> Option<bool> {
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let lru = unsafe { &*SWAP.lru.get() };
-    let result = lru.is_locked(virt_addr);
-    SWAP.lock.unlock();
-    result
+    lru.is_locked(virt_addr)
 }
 
 /// 回收页面 (从 LRU inactive 链表选取并换出)
@@ -698,12 +654,10 @@ pub fn reclaim_pages(max_count: u32) -> u32 {
 
     while reclaimed < max_count {
         let victim = {
-            SWAP.lock.lock();
+            let _guard = SWAP.lock.lock();
             // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
             let lru = unsafe { &mut *SWAP.lru.get() };
-            let v = lru.get_victim();
-            SWAP.lock.unlock();
-            v
+            lru.get_victim()
         };
 
         match victim {
@@ -745,12 +699,11 @@ pub fn reclaim_pages(max_count: u32) -> u32 {
 
 /// 获取 swap 信息
 pub fn swap_info() -> (u64, u64) {
-    SWAP.lock.lock();
+    let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let area = unsafe { &mut *SWAP.area.get() };
     let total = SWAP_MAX_SLOTS as u64;
     let free = area.free_slots();
-    SWAP.lock.unlock();
     (total * PAGE_SIZE, free * PAGE_SIZE)
 }
 
@@ -828,7 +781,7 @@ fn kswapd_softirq_handler() {
 
     // T2-4: 回收批量大小委托给 SwapPolicy
     let ctx = {
-        SWAP.lock.lock();
+        let _guard = SWAP.lock.lock();
         // SAFETY: SWAP.lock 已加锁, area 和 lru 的内部可变性受锁保护
         let area = unsafe { &*SWAP.area.get() };
         let lru = unsafe { &*SWAP.lru.get() };
@@ -841,7 +794,6 @@ fn kswapd_softirq_handler() {
             total_pages: pmm::get_pmm().get_total_pages(),
         }
     };
-    SWAP.lock.unlock();
 
     let batch = super::swap_trait::current_swap_policy().reclaim_batch_size(ctx);
     let reclaimed = reclaim_pages(batch);
@@ -872,7 +824,7 @@ pub fn kswapd_wakeup() {
 
     // 策略决策: 是否应该唤醒
     let ctx = {
-        SWAP.lock.lock();
+        let _guard = SWAP.lock.lock();
         // SAFETY: SWAP.lock 已加锁, area 和 lru 的内部可变性受锁保护
         let area = unsafe { &*SWAP.area.get() };
         let lru = unsafe { &*SWAP.lru.get() };
@@ -885,7 +837,6 @@ pub fn kswapd_wakeup() {
             total_pages: pmm::get_pmm().get_total_pages(),
         }
     };
-    SWAP.lock.unlock();
 
     if !super::swap_trait::current_swap_policy().should_wakeup_kswapd(ctx) {
         return;

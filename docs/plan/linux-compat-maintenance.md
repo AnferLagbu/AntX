@@ -8,26 +8,29 @@
 
 ## 高优先级 — 疑似 Bug 或安全隐患
 
-### M1: COW 引用计数连续调用验证
+### M1: COW 引用计数连续调用验证 ✅
 
 - **描述**: `cow.rs:224-225` 中 `cow_inc_ref` 连续调用两次，疑似引用计数 +2 而非 +1
 - **方案**: 验证 fork 语义是否正确（父+子各持引用），如设计正确加注释说明，如为 bug 则修复
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/cow.rs:224-225`
+- **详情**: 确认为 bug，fork 后 count 应从 1 变为 2，只需调用一次 cow_inc_ref。已修复并添加注释。
 
-### M2: Swap SimpleSpinLock 统一为 IrqSpinLock
+### M2: Swap SimpleSpinLock 统一为 IrqSpinLock ✅
 
 - **描述**: `swap.rs:464-488` 中 `SimpleSpinLock` 不关中断，与项目其他地方使用的 `IrqSpinLock` 不一致，softirq 上下文有死锁风险
 - **方案**: 将 `SimpleSpinLock` 替换为 `IrqSpinLock`，移除自定义锁实现
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/swap.rs:464-488`
+- **详情**: 已移除 SimpleSpinLock 定义，替换为 IrqSpinLock<()>，重构所有 lock/unlock 调用为 guard 模式。
 
-### M3: pcache dead_code 清理
+### M3: pcache dead_code 清理 ✅
 
 - **描述**: `pcache.rs:26` 文件级 `#![allow(dead_code)]` 掩盖大量未使用函数/结构体
 - **方案**: 审查实际使用情况，移除死代码或标记 `#[cfg(feature = "future")]`
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/pcache.rs:26`
+- **详情**: 审查确认所有代码均在 VFS 写回路径中使用，更新注释说明 allow 的原因。
 
 ---
 
