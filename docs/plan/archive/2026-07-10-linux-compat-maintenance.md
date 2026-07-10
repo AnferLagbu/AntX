@@ -128,12 +128,13 @@
 - **文件**: `src/kernel/services/proc/namespace.rs:733-747`
 - **详情**: 优化项，当前实现正确，暂不简化。
 
-### M15: QueenX 特定 magic 标记
+### M15: QueenX 特定 magic 标记 ✅
 
 - **描述**: `process.rs:27`/`canary.rs:18-19`/`kmalloc.rs:27` 使用 `0xDEADBEEF` 经典 Linux magic
 - **方案**: 改为 QueenX 特定标记 (如 `0x51414E58` = "QXAN") 以便 crash dump 识别来源
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/proc/process.rs:27`, `canary.rs:18-19`, `mm/kmalloc.rs:27`
+- **详情**: 保留经典标记 0xDEADBEEF（用户决策：经典标记通用性强，无需改为 QX 特定值）。
 
 ### M16: pcache 桶初始化简化 ✅
 

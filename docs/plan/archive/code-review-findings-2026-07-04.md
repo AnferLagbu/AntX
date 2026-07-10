@@ -47,7 +47,7 @@
 
 - **REVIEW-FINDING-008: 缺全局锁顺序文档**
   - 描述: `framework/sync/lockdep.rs:171-322` 是运行时检测器, 但全局锁顺序 (PMM↔kmalloc↔slab↔VMM↔VMA 等) 仅散落在文件内注释 (如 `framework/mm/vmm_x86_64.rs:30-41` VMM↔VMA 顺序). 已引用 Linux `Documentation/locking/lockdep-design.txt` (`lockdep.rs:51`) 但无对应本地文档
-  - 方案: 新建 `docs/explain/lock-order.md` 集中记录全局锁顺序, 引用 `lockdep.rs` 为运行时检查. 列举至少: (1) PMM 锁 vs kmalloc 锁 vs slab free-list 锁; (2) VMM 锁 vs VMA 锁; (3) proc 锁 vs sched 锁; (4) net stack 锁 vs IRQ 锁; (5) 各 IRQ handler 自身持锁纪律
+  - 方案: 新建 `docs/explain/ref-lock-order.md` 集中记录全局锁顺序, 引用 `lockdep.rs` 为运行时检查. 列举至少: (1) PMM 锁 vs kmalloc 锁 vs slab free-list 锁; (2) VMM 锁 vs VMA 锁; (3) proc 锁 vs sched 锁; (4) net stack 锁 vs IRQ 锁; (5) 各 IRQ handler 自身持锁纪律
   - 状态: [X]
 
 - **REVIEW-FINDING-009: 文档 doc 注释动词形式不一致**
@@ -118,7 +118,7 @@
 ## 依赖
 
 - 详见上一轮审查报告: 5 个并行 explore 子代理的合成 (架构/模块/CI/质量/技术方案)
-- 关键参考: [AGENTS.md §6 硬规则](../AGENTS.md), [AGENTS.md §2.4 验证门槛](../AGENTS.md), [framekernel-nature.md](../explain/framekernel-nature.md)
+- 关键参考: [AGENTS.md §6 硬规则](../AGENTS.md), [AGENTS.md §2.4 验证门槛](../AGENTS.md), [explain-framekernel.md](../explain/explain-framekernel.md)
 
 ## Softirq 处理程序未完全注册 (2026-07-02 批处理功能审查)
 
@@ -165,7 +165,7 @@
 - **test 86-256 hang** — IdentityTable 100KB 栈溢出 + buddy_meta LTO 错位 → **已修复 (81dc353)**.
 - **test 194 SKIP** — destroy_no_kstack 测试依赖用户进程上下文 → **已修复 (269f33d)**.
 - **LTO 字段错位防御** — PhysicalMemoryManager/KernelHeap `#[repr(C)]` + `addr_of!` → **已实施 (9c9f7d3)**.
-- **REVIEW-FINDING-008** — 全局锁顺序文档 → **已创建 `docs/explain/lock-order.md`**.
+- **REVIEW-FINDING-008** — 全局锁顺序文档 → **已创建 `docs/explain/ref-lock-order.md`**.
 - **REVIEW-FINDING-009** — doc 注释动词形式 → **已修复 16 处 (mm/mod.rs, kmalloc.rs, scheduler.rs, virtio/mod.rs)**.
 - **REVIEW-FINDING-011** — deny.toml 增强 → **已添加 advisories/bans/sources 策略 + license 字段**.
 - **REVIEW-FINDING-012** — smoltcp 清理 → **已剥离 tests/benches/examples/fuzz/.github/utils + 修复 audit 脚本路径 bug**.

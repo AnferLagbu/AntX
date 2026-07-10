@@ -5,9 +5,9 @@
 ## 背景
 - **背景条目**
   - 描述: smoltcp Interface/SocketHandle/SocketSet 等第三方类型在 framework/ 中深度绑定, 现状 framework/net/init.rs 2133 行包含 55 处 unsafe, smoltcp::iface::Interface::new/poll/poll_at 与 smoltcp::socket::Socket 构造/析构路径上, 第三方类型无法被 services 隐藏
-  - 方案: 选一种方式**包装 smoltcp**, 在以下三项硬约束下实施: (1) 包装 — 引入适配层, 不让 smoltcp 第三方类型直接暴露; (2) 纯洁性 — smoltcp 源永不修改, 可直接 git pull 同步上游; (3) FK 合规 — unsafe 留在 framework, services 100% safe, 符合 framekernel-nature.md 五项安全不变式 + ASTD 四准则
+  - 方案: 选一种方式**包装 smoltcp**, 在以下三项硬约束下实施: (1) 包装 — 引入适配层, 不让 smoltcp 第三方类型直接暴露; (2) 纯洁性 — smoltcp 源永不修改, 可直接 git pull 同步上游; (3) FK 合规 — unsafe 留在 framework, services 100% safe, 符合 explain-framekernel.md 五项安全不变式 + ASTD 四准则
   - 状态: [X]
-  - 详情: 关联: REVAL-4 (原 SKIP) + DECISION-025/027 失败回滚 + ASTD 四准则; 关联文档: maintenance-cycle-2026-06-19.md §9.5 + framekernel-nature.md §TCB 度量
+  - 详情: 关联: REVAL-4 (原 SKIP) + DECISION-025/027 失败回滚 + ASTD 四准则; 关联文档: maintenance-cycle-2026-06-19.md §9.5 + explain-framekernel.md §TCB 度量
 
 ## 目标 (G1-G5)
 - **G1 services 不直接 import smoltcp**
@@ -160,12 +160,12 @@
 ## 哲学依据
 - **原则依据**
   - 描述: 6 条原则出处 + 体现
-  - 方案: Soundness (framekernel-nature.md ASTD 四准则) safe API 不触发 UB, transmute 消除 / Expressiveness (ASTD 四准则) trait 足够表达网络栈全部能力 / Minimalism (ASTD 四准则) framework 仅保留 trait, smoltcp 移 services / Efficiency (ASTD 四准则 + 零成本抽象) 静态分发 0 开销 / 务实复用 (queenx-naming-standpoint.md §4.2) 不重写 smoltcp 整体 vendored 复用 / 不盲从任何 OS (naming-standpoint.md §1) 借鉴 Asterinas OSTD 但不照搬
+  - 方案: Soundness (explain-framekernel.md ASTD 四准则) safe API 不触发 UB, transmute 消除 / Expressiveness (ASTD 四准则) trait 足够表达网络栈全部能力 / Minimalism (ASTD 四准则) framework 仅保留 trait, smoltcp 移 services / Efficiency (ASTD 四准则 + 零成本抽象) 静态分发 0 开销 / 务实复用 (queenx-ref-naming.md §4.2) 不重写 smoltcp 整体 vendored 复用 / 不盲从任何 OS (ref-naming.md §1) 借鉴 Asterinas OSTD 但不照搬
   - 状态: [X]
 
 ## 引用
 - **引用清单**
   - 描述: 8 个引用源
-  - 方案: maintenance-cycle-2026-06-19.md §9.5 REVAL-4 (原始 SKIP 评估) / framekernel-nature.md (框内核五项安全不变式 + ASTD 四准则) / queenx-naming-standpoint.md (务实复用原则) / kernel-roadmap.md (Phase A-D 路线图) / Asterinas OSTD Framekernel 架构 / smoltcp Architecture (deepwiki) / Rust Performance Book: Trait Dispatch / smoltcp-rs/smoltcp 仓库
+  - 方案: maintenance-cycle-2026-06-19.md §9.5 REVAL-4 (原始 SKIP 评估) / explain-framekernel.md (框内核五项安全不变式 + ASTD 四准则) / queenx-ref-naming.md (务实复用原则) / kernel-roadmap.md (Phase A-D 路线图) / Asterinas OSTD Framekernel 架构 / smoltcp Architecture (deepwiki) / Rust Performance Book: Trait Dispatch / smoltcp-rs/smoltcp 仓库
   - 状态: [X]
 

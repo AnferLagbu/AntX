@@ -5,7 +5,7 @@
 ## 文档元信息
 - **元信息条目**
   - 描述: 文档基础信息
-  - 方案: 起始日期 2026-06-16; 当前 TCB 比率 50.0% (自研, excl. smoltcp+tests); 初始 framework 跨模块引用 402 处 → 当前 352 处 (↓ 12.4%); 初始 services→framework 依赖 215 处 → 当前 215 处; 初始双向依赖 16 对 → 当前 0 对 (↓ 100%); 允许紧耦合 5 对 (arch↔sync, arch↔klog, proc↔tests, fs↔tests, mm↔tests, credo↔proc); 内部访问违规 0 处 (初始 133, ↓ 100%); 关联规范 AGENTS.md + framekernel-dev-guide.md; 关联审计 audit_services_boundary.py + audit_coupling.py
+  - 方案: 起始日期 2026-06-16; 当前 TCB 比率 50.0% (自研, excl. smoltcp+tests); 初始 framework 跨模块引用 402 处 → 当前 352 处 (↓ 12.4%); 初始 services→framework 依赖 215 处 → 当前 215 处; 初始双向依赖 16 对 → 当前 0 对 (↓ 100%); 允许紧耦合 5 对 (arch↔sync, arch↔klog, proc↔tests, fs↔tests, mm↔tests, credo↔proc); 内部访问违规 0 处 (初始 133, ↓ 100%); 关联规范 AGENTS.md + guide-dev.md; 关联审计 audit_services_boundary.py + audit_coupling.py
   - 状态: [X]
 
 ## 耦合现状分析 (2026-06-16 基线)
@@ -59,7 +59,7 @@
 ## 代码审查规范
 - **CR-01 ~ CR-08 审查检查项**
   - 描述: 8 项审查检查
-  - 方案: CR-01 跨模块依赖合理性 (新增 use 语句必须审查必要/API/循环) 完成 2026-06-16 / CR-02 接口稳定性 (修改公开 API 需检查调用方影响) 完成 / CR-03 unsafe 边界 (新增 unsafe 必须说明 + SAFETY 注释) 完成 验证 audit_safety_coverage.py / CR-04 模块归属正确性 (按 framekernel-dev-guide.md 决策) 完成 / CR-05 依赖声明一致性 (修改依赖同步更新 mod.rs 头部) 完成 / CR-06 错误处理一致性 (统一 KernelError) 完成 / CR-07 测试覆盖 (修改跨模块接口补集成测试) 完成 / CR-08 文档同步 (framekernel-dev-guide.md + 本文档) 完成
+  - 方案: CR-01 跨模块依赖合理性 (新增 use 语句必须审查必要/API/循环) 完成 2026-06-16 / CR-02 接口稳定性 (修改公开 API 需检查调用方影响) 完成 / CR-03 unsafe 边界 (新增 unsafe 必须说明 + SAFETY 注释) 完成 验证 audit_safety_coverage.py / CR-04 模块归属正确性 (按 guide-dev.md 决策) 完成 / CR-05 依赖声明一致性 (修改依赖同步更新 mod.rs 头部) 完成 / CR-06 错误处理一致性 (统一 KernelError) 完成 / CR-07 测试覆盖 (修改跨模块接口补集成测试) 完成 / CR-08 文档同步 (guide-dev.md + 本文档) 完成
   - 状态: [X]
 
 ## 执行进度

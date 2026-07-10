@@ -92,7 +92,7 @@
 ## 关键文档与脚本索引
 - **7.1 文档**
   - 描述: 9 个文档
-  - 方案: AGENTS.md 框架/服务责任分离 必读 / CLAUDE.md 编码行为准则 必读 / docs/plan/maintenance-2026-06-11.md 6 阶段 46 项维护计划 必读 / docs/plan/engineering-progress.md 主线工程进度 (A/B/C/D) 必读 / docs/plan/deep-audit-2026-06-11.md 54 项审计源 引用查阅 / docs/plan/kernel-roadmap.md 长期路线图 选读 / docs/explain/framekernel-dev-guide.md Framekernel 架构详解 选读 / docs/explain/framekernel-nature.md 安全契约 选读 / docs/CHANGELOG.md 累积变更日志 选读
+  - 方案: AGENTS.md 框架/服务责任分离 必读 / CLAUDE.md 编码行为准则 必读 / docs/plan/maintenance-2026-06-11.md 6 阶段 46 项维护计划 必读 / docs/plan/engineering-progress.md 主线工程进度 (A/B/C/D) 必读 / docs/plan/deep-audit-2026-06-11.md 54 项审计源 引用查阅 / docs/plan/kernel-roadmap.md 长期路线图 选读 / docs/explain/guide-dev.md Framekernel 架构详解 选读 / docs/explain/explain-framekernel.md 安全契约 选读 / docs/CHANGELOG.md 累积变更日志 选读
   - 状态: [X]
 - **7.2 脚本 (CI 与审计)**
   - 描述: 11 个脚本

@@ -1,6 +1,6 @@
 # QueenX 命名立场实装进度
 
-> 跟踪 [../explain/naming-standpoint.md](../explain/naming-standpoint.md) 立场书各项设计决策的实际实装进度. 2026-07-05 修订: 采用直接 Linux ABI 路径.
+> 跟踪 [../explain/ref-naming.md](../explain/ref-naming.md) 立场书各项设计决策的实际实装进度. 2026-07-05 修订: 采用直接 Linux ABI 路径.
 
 ## 总体进度
 
@@ -102,5 +102,5 @@
 ## 引用
 - **引用清单**
   - 描述: 关联文档
-  - 方案: ../explain/naming-standpoint.md (立场书) + ../explain/framekernel-nature.md (framekernel 架构)
+  - 方案: ../explain/ref-naming.md (立场书) + ../explain/explain-framekernel.md (framekernel 架构)
   - 状态: [X]

@@ -61,6 +61,6 @@
 ## 关联文档
 - **引用清单**
   - 描述: 7 个关联文档
-  - 方案: maintenance-cycle-2026-06-19.md (维护周期主文档) / framekernel-compliance.md (框内核合规工程书) / vfs-policy-extraction.md (VFS 策略提取详细记录) / engineering-discipline.md (工程纪律性专项) / engineering-progress.md (主线工程进度) / kernel-roadmap.md (Phase A-D 路线图) / framekernel-dev-guide.md (架构详解)
+  - 方案: maintenance-cycle-2026-06-19.md (维护周期主文档) / framekernel-compliance.md (框内核合规工程书) / vfs-policy-extraction.md (VFS 策略提取详细记录) / engineering-discipline.md (工程纪律性专项) / engineering-progress.md (主线工程进度) / kernel-roadmap.md (Phase A-D 路线图) / guide-dev.md (架构详解)
   - 状态: [X]
 
