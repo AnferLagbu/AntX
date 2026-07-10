@@ -131,12 +131,13 @@
 - **状态**: []
 - **文件**: `src/kernel/framework/proc/process.rs:27`, `canary.rs:18-19`, `mm/kmalloc.rs:27`
 
-### M16: pcache 桶初始化宏简化
+### M16: pcache 桶初始化简化 ✅
 
 - **描述**: `pcache.rs:260-325` 中 64 桶手动展开为重复代码
 - **方案**: 用宏简化初始化
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/pcache.rs:260-325`
+- **详情**: 使用 `const { }` 内联常量表达式简化为 1 行。
 
 ### M17: 配置常量统一管理
 
