@@ -67,9 +67,6 @@ macro_rules! klog_sched_warn {
     };
 }
 
-const MLFQ_LEVELS: usize = 4;
-const TIME_SLICES: [u64; MLFQ_LEVELS] = [10, 20, 40, 80];
-
 const RT_PRIORITY_MAX: u8 = 99;
 const RT_TIME_SLICE: u64 = 5;
 const RT_FIFO_WATCHDOG: u64 = 500;
@@ -149,14 +146,11 @@ pub struct RtTaskInfo {
 }
 
 struct PerCpuSched {
-    queues: [Mutex<VecDeque<Pid>>; MLFQ_LEVELS],
     rt_queue: Mutex<VecDeque<RtTaskInfo>>,
     cfs_rq: Mutex<CfsRunQueue>,
     dl_rq: Mutex<DlRunQueue>,
     current: AtomicU32,
     need_reschedule: AtomicBool,
-    current_level: AtomicU32,
-    time_remaining: AtomicU64,
     rt_running: AtomicBool,
     dl_running: AtomicBool,
     fifo_watchdog: AtomicU64,
@@ -174,19 +168,11 @@ pub fn init_per_cpu_sched(cpu_id: u32) {
         return;
     }
     guard.replace(PerCpuSched {
-        queues: [
-            Mutex::new(VecDeque::new()),
-            Mutex::new(VecDeque::new()),
-            Mutex::new(VecDeque::new()),
-            Mutex::new(VecDeque::new()),
-        ],
         rt_queue: Mutex::new(VecDeque::new()),
         cfs_rq: Mutex::new(CfsRunQueue::new()),
         dl_rq: Mutex::new(DlRunQueue::new()),
         current: AtomicU32::new(0),
         need_reschedule: AtomicBool::new(false),
-        current_level: AtomicU32::new(0),
-        time_remaining: AtomicU64::new(TIME_SLICES[0]),
         rt_running: AtomicBool::new(false),
         dl_running: AtomicBool::new(false),
         fifo_watchdog: AtomicU64::new(0),
@@ -464,11 +450,6 @@ impl Scheduler {
                     })
                     .unwrap_or(false);
                 if schedulable {
-                    let weight = PROCESS_TABLE
-                        .with_process(pid, |p| p.cfs_weight.load(Ordering::Acquire))
-                        .unwrap_or(NICE0_WEIGHT);
-                    let time_slice = cfs_rq.calc_time_slice(weight);
-                    per_cpu.time_remaining.store(time_slice, Ordering::SeqCst);
                     PROCESS_TABLE.with_process(pid, |p| {
                         p.cfs_on_rq.store(false, Ordering::Release);
                     });
@@ -930,25 +911,12 @@ impl Scheduler {
         if !per_cpu.cfs_rq.lock().is_empty() {
             return true;
         }
-        for l in 0..MLFQ_LEVELS {
-            if !per_cpu.queues[l].lock().is_empty() {
-                return true;
-            }
-        }
         false
     }
 
-    /// 便捷: 检查是否存在任意可运行任务 (level 0 队列).
+    /// 便捷: 检查是否存在任意可运行任务.
     pub fn has_any_runnable(&self) -> bool {
         self.has_runnable()
-    }
-
-    pub fn get_time_slice(&self) -> u64 {
-        per_cpu().time_remaining.load(Ordering::SeqCst)
-    }
-
-    pub fn get_current_level(&self) -> u32 {
-        per_cpu().current_level.load(Ordering::SeqCst)
     }
 
     pub fn tick(&self, cpu_id: usize) {
@@ -988,11 +956,6 @@ impl Scheduler {
         if new_tick.is_multiple_of(CFS_BOOST_INTERVAL_TICKS) {
             let mut cfs_rq = per_cpu.cfs_rq.lock();
             cfs_rq.boost_all_vruntime();
-        }
-
-        // 周期性 MLFQ 提升 —— 长时间等待的任务迁回 level 0
-        if new_tick.is_multiple_of(SCHED_BOOST_INTERVAL) {
-            self.boost_priority();
         }
 
         let current_pid = per_cpu.current.load(Ordering::SeqCst);
@@ -1039,37 +1002,24 @@ impl Scheduler {
                     per_cpu.need_reschedule.store(true, Ordering::SeqCst);
                 }
             } else if is_rt {
-                let old_remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
-                let new_remaining = old_remaining - 1;
+                // RT FIFO watchdog
+                let policy = PROCESS_TABLE
+                    .with_process(current_pid, |proc| proc.get_sched_policy())
+                    .unwrap_or(SchedPolicy::Normal);
 
-                if new_remaining == 0 {
-                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
-                    let policy = PROCESS_TABLE
-                        .with_process(current_pid, |proc| proc.get_sched_policy())
-                        .unwrap_or(SchedPolicy::Normal);
-
-                    if policy == SchedPolicy::Fifo {
-                        let old_watchdog = per_cpu.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
-                        if old_watchdog - 1 == 0 {
-                            per_cpu.need_reschedule.store(true, Ordering::SeqCst);
-                            crate::klog_crit!(
-                                Kernel,
-                                "[SCHEDULER] RT-FIFO watchdog triggered for pid={}",
-                                current_pid
-                            );
-                        }
-                    } else {
-                        per_cpu
-                            .time_remaining
-                            .store(RT_TIME_SLICE, Ordering::SeqCst);
+                if policy == SchedPolicy::Fifo {
+                    let old_watchdog = per_cpu.fifo_watchdog.fetch_sub(1, Ordering::SeqCst);
+                    if old_watchdog - 1 == 0 {
+                        per_cpu.need_reschedule.store(true, Ordering::SeqCst);
+                        crate::klog_crit!(
+                            Kernel,
+                            "[SCHEDULER] RT-FIFO watchdog triggered for pid={}",
+                            current_pid
+                        );
                     }
                 }
             } else if current_pid != 0 {
-                // CFS —— 时间片与基于 vruntime 的抢占.
-                let old_remaining = per_cpu.time_remaining.fetch_sub(1, Ordering::SeqCst);
-                if old_remaining == 1 {
-                    per_cpu.need_reschedule.store(true, Ordering::SeqCst);
-                }
+                // CFS —— 基于 vruntime 的抢占.
 
                 // 重要: 不要在此把运行中任务重新插入树.
                 // 运行中任务保持在树外, 仅在停止运行时
@@ -1193,16 +1143,6 @@ impl Scheduler {
         crate::kernel::framework::sync::restore_interrupts(&flags);
     }
 
-    pub fn boost_priority(&self) {
-        let per_cpu = per_cpu();
-        for level in 1..MLFQ_LEVELS {
-            let mut queue = per_cpu.queues[level].lock();
-            while let Some(pid) = queue.pop_front() {
-                per_cpu.queues[0].lock().push_back(pid);
-            }
-        }
-    }
-
     pub fn set_sched_policy(&self, pid: Pid, policy: SchedPolicy, rt_priority: u8) -> bool {
         PROCESS_TABLE.with_process(pid, |proc| {
             proc.set_sched_policy(policy);
@@ -1273,9 +1213,6 @@ impl Scheduler {
         let mut count = sched.cfs_rq.lock().nr_running as usize;
         count += sched.dl_rq.lock().nr_running as usize;
         count += sched.rt_queue.lock().len();
-        for level in 0..MLFQ_LEVELS {
-            count += sched.queues[level].lock().len();
-        }
         // 统计运行中的任务
         if sched.current.load(Ordering::SeqCst) != 0 {
             count += 1;

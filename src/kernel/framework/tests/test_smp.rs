@@ -52,14 +52,6 @@ fn test_per_cpu_has_runnable() -> TestResult {
     TestResult::Pass
 }
 
-fn test_per_cpu_time_slice_positive() -> TestResult {
-    use crate::kernel::framework::proc::SCHEDULER;
-    let slice = SCHEDULER.get_time_slice();
-    check!(slice > 0, "time slice > 0");
-    check!(slice <= 80, "time slice within quantum range");
-    TestResult::Pass
-}
-
 fn test_per_cpu_rt_count() -> TestResult {
     use crate::kernel::framework::proc::SCHEDULER;
     let count = SCHEDULER.get_rt_count();
@@ -150,12 +142,6 @@ fn test_rt_invalid_pid() -> TestResult {
 fn test_load_balance_no_panic() -> TestResult {
     use crate::kernel::framework::proc::SCHEDULER;
     SCHEDULER.load_balance();
-    TestResult::Pass
-}
-
-fn test_boost_priority_no_panic() -> TestResult {
-    use crate::kernel::framework::proc::SCHEDULER;
-    SCHEDULER.boost_priority();
     TestResult::Pass
 }
 
@@ -272,7 +258,6 @@ pub fn register_smp_tests() {
             "init": test_per_cpu_sched_init,
             "current_valid": test_per_cpu_current_valid,
             "has_runnable": test_per_cpu_has_runnable,
-            "time_slice_positive": test_per_cpu_time_slice_positive,
             "rt_count_init": test_per_cpu_rt_count,
         },
         "sched_policy": {
@@ -291,9 +276,6 @@ pub fn register_smp_tests() {
         },
         "load_balance": {
             "no_panic": test_load_balance_no_panic,
-        },
-        "priority_boost": {
-            "no_panic": test_boost_priority_no_panic,
         },
         "proc_exit": {
             "kernel_pml4_exists": test_kernel_pml4_exists,

@@ -1082,24 +1082,9 @@ pub fn proc_is_initialized() -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub fn scheduler_get_time_slice() -> u64 {
-    SCHEDULER.get_time_slice()
-}
-
-#[unsafe(no_mangle)]
-pub fn scheduler_get_current_level() -> u32 {
-    SCHEDULER.get_current_level()
-}
-
-#[unsafe(no_mangle)]
 pub fn scheduler_tick_mlfq() {
     let cpu = crate::kernel::framework::smp::get_current_cpu() as usize;
     SCHEDULER.tick(cpu)
-}
-
-#[unsafe(no_mangle)]
-pub fn scheduler_boost_priority() {
-    SCHEDULER.boost_priority()
 }
 
 #[unsafe(no_mangle)]
