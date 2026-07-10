@@ -146,12 +146,13 @@
 - **文件**: `src/kernel/framework/mm/pcache.rs:110-113`, `swap.rs:107`
 - **详情**: 优化项，当前常量已定义在各自模块中，暂不移动。后续重构时统一。
 
-### M18: Swap 状态枚举化
+### M18: Swap 状态枚举化 ✅
 
 - **描述**: `swap.rs:110-111` 中 `SLOT_FREE/SLOT_USED` 使用裸常量
 - **方案**: 使用 enum 提升类型安全
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/swap.rs:110-111`
+- **详情**: 已定义 `enum SlotState { Free, Used }`，替换裸常量。
 
 ---
 

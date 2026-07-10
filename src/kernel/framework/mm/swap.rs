@@ -108,8 +108,12 @@ impl SwapEntry {
 const SWAP_MAX_SLOTS: usize = 4096;
 
 /// Swap slot 状态
-const SLOT_FREE: u8 = 0;
-const SLOT_USED: u8 = 1;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum SlotState {
+    Free = 0,
+    Used = 1,
+}
 
 /// Swap 区: 使用预留内存区域模拟
 struct SwapArea {
@@ -126,7 +130,7 @@ struct SwapArea {
 impl SwapArea {
     const fn new() -> Self {
         SwapArea {
-            bitmap: [SLOT_FREE; SWAP_MAX_SLOTS],
+            bitmap: [SlotState::Free as u8; SWAP_MAX_SLOTS],
             used_count: 0,
             storage_virt: 0,
             initialized: false,
@@ -175,8 +179,8 @@ impl SwapArea {
     /// 分配一个空闲 slot, 返回 slot 索引
     fn alloc_slot(&mut self) -> Option<u64> {
         for (i, slot) in self.bitmap.iter_mut().enumerate() {
-            if *slot == SLOT_FREE {
-                *slot = SLOT_USED;
+            if *slot == SlotState::Free as u8 {
+                *slot = SlotState::Used as u8;
                 self.used_count += 1;
                 return Some(i as u64);
             }
@@ -187,8 +191,8 @@ impl SwapArea {
     /// 释放 slot
     fn free_slot(&mut self, slot: u64) {
         let idx = slot as usize;
-        if idx < SWAP_MAX_SLOTS && self.bitmap[idx] == SLOT_USED {
-            self.bitmap[idx] = SLOT_FREE;
+        if idx < SWAP_MAX_SLOTS && self.bitmap[idx] == SlotState::Used as u8 {
+            self.bitmap[idx] = SlotState::Free as u8;
             self.used_count -= 1;
         }
     }
