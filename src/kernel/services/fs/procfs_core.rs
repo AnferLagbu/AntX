@@ -239,7 +239,7 @@ impl ProcfsData {
 
         // /proc/version
         if name == "version" {
-            let version = "Linux version 6.1.0-queenx (queenx@build) (gcc (Ubuntu 11.3.0) 11.3.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #1 SMP PREEMPT Mon Jul  6 00:00:00 UTC 2026\n";
+            let version = "QueenX version 0.1.0 (queenx@build) (rustc 1.78.0) #1 SMP PREEMPT Mon Jul  6 00:00:00 UTC 2026\n";
             let bytes = version.as_bytes();
             let len = bytes.len().min(buf.len());
             buf[..len].copy_from_slice(&bytes[..len]);

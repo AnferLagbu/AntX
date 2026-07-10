@@ -32,21 +32,7 @@ pub const MADV_WILLNEED: u32 = 3;
 pub const MADV_DONTNEED: u32 = 4;
 pub const MADV_FREE: u32 = 5;
 pub const MADV_REMOVE: u32 = 9;
-pub const MADV_DONTFORK: u32 = 10;
-pub const MADV_DOFORK: u32 = 11;
-pub const MADV_MERGEABLE: u32 = 12;
-pub const MADV_UNMERGEABLE: u32 = 13;
-pub const MADV_HUGEPAGE: u32 = 14;
-pub const MADV_NOHUGEPAGE: u32 = 15;
-pub const MADV_DONTDUMP: u32 = 16;
-pub const MADV_DODUMP: u32 = 17;
-pub const MADV_WIPEONFORK: u32 = 18;
-pub const MADV_KEEPONFORK: u32 = 19;
-pub const MADV_SOFT_OFFLINE: u32 = 101;
-pub const MADV_COLD: u32 = 20;
 pub const MADV_PAGEOUT: u32 = 21;
-pub const MADV_POPULATE_READ: u32 = 22;
-pub const MADV_POPULATE_WRITE: u32 = 23;
 
 // ============================================================================
 // mlockall 标志
@@ -69,13 +55,10 @@ pub fn sys_madvise(addr: u64, len: u64, advice: u64) -> i64 {
     if addr & (PAGE_SIZE - 1) != 0 {
         return Errno::EINVAL.as_ret();
     }
-    if advice > 23 && advice != MADV_SOFT_OFFLINE {
+    if advice > 21 {
         return Errno::EINVAL.as_ret();
     }
     if advice == MADV_REMOVE {
-        return 0;
-    }
-    if advice == MADV_POPULATE_READ || advice == MADV_POPULATE_WRITE {
         return 0;
     }
 

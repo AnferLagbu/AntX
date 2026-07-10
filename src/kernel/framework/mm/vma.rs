@@ -56,26 +56,6 @@ impl VmFlags {
     pub const MADV_SEQUENTIAL: Self = Self(1 << 8);
     /// `MADV_WILLNEED`: 预读 (触发 readahead)
     pub const MADV_WILLNEED: Self = Self(1 << 9);
-    /// `MADV_MERGEABLE`: 允许 KSM 合并同内容页
-    pub const MADV_MERGEABLE: Self = Self(1 << 10);
-    /// `MADV_UNMERGEABLE`: 禁止 KSM 合并
-    pub const MADV_UNMERGEABLE: Self = Self(1 << 11);
-    /// `MADV_HUGEPAGE`: 提示优先 THP 大页
-    pub const MADV_HUGEPAGE: Self = Self(1 << 12);
-    /// `MADV_NOHUGEPAGE`: 禁止 THP
-    pub const MADV_NOHUGEPAGE: Self = Self(1 << 13);
-    /// `MADV_DONTFORK`: fork 时不复制 (排空 mmap 区)
-    pub const MADV_DONTFORK: Self = Self(1 << 14);
-    /// `MADV_DOFORK`: 取消 DONTFORK
-    pub const MADV_DOFORK: Self = Self(1 << 15);
-    /// `MADV_POPULATE_READ`: 预触达读 (mmap_populate)
-    pub const MADV_POPULATE_READ: Self = Self(1 << 16);
-    /// `MADV_POPULATE_WRITE`: 预触达写
-    pub const MADV_POPULATE_WRITE: Self = Self(1 << 17);
-    /// `MADV_SOFT_OFFLINE`: 软下线 (poison page)
-    pub const MADV_SOFT_OFFLINE: Self = Self(1 << 18);
-    /// `MADV_COLD`: 标记冷 (Linux 5.15+)
-    pub const MADV_COLD: Self = Self(1 << 19);
     /// 内部标记: PAGEOUT 完成 (回收路径)
     pub const _PAGEOUT_DONE: Self = Self(1 << 20);
     /// 内部标记: DONTNEED 完成 (回收路径)
@@ -698,6 +678,8 @@ impl MmStruct {
         }
 
         // advice → VmFlags bit
+        // 已移除未实现项: KSM (7/8), THP (14/15), DONTFORK (10/11),
+        // POPULATE (22/23), SOFT_OFFLINE (19), COLD (20)
         let flag = match advice {
             4 => VmFlags::MADV_DONTNEED,
             5 => VmFlags::MADV_PAGEOUT,
@@ -705,16 +687,6 @@ impl MmStruct {
             1 => VmFlags::MADV_RANDOM,
             2 => VmFlags::MADV_SEQUENTIAL,
             3 => VmFlags::MADV_WILLNEED,
-            7 => VmFlags::MADV_MERGEABLE,
-            8 => VmFlags::MADV_UNMERGEABLE,
-            14 => VmFlags::MADV_HUGEPAGE,
-            15 => VmFlags::MADV_NOHUGEPAGE,
-            10 => VmFlags::MADV_DONTFORK,
-            11 => VmFlags::MADV_DOFORK,
-            22 => VmFlags::MADV_POPULATE_READ,
-            23 => VmFlags::MADV_POPULATE_WRITE,
-            19 => VmFlags::MADV_SOFT_OFFLINE,
-            20 => VmFlags::MADV_COLD,
             _ => return Err(Errno::EINVAL),
         };
 

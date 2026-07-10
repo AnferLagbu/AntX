@@ -331,24 +331,30 @@ pub fn sys_seccomp(operation: u32, _flags: u32, _args_ptr: u64) -> i64 {
     }
 }
 
+// prctl option 常量 (Linux ABI)
+const PR_SET_SECCOMP: i64 = 22;
+const PR_GET_SECCOMP: i64 = 21;
+const PR_SET_NO_NEW_PRIVS: i64 = 38;
+const PR_GET_NO_NEW_PRIVS: i64 = 39;
+
 pub fn sys_prctl_prctl(option: i64, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u64) -> i64 {
     let pid = process_get_current_pid();
 
     match option {
-        22 => {
+        PR_SET_SECCOMP => {
             match arg2 {
                 1 => sys_seccomp(0, 0, 0),
                 2 => sys_seccomp(1, 0, 0),
                 _ => -(Errno::EINVAL as i64),
             }
         }
-        21 => {
+        PR_GET_SECCOMP => {
             let mode = PROCESS_TABLE
                 .with_process(pid, |p| p.seccomp.get_mode())
                 .unwrap_or(SeccompMode::Disabled);
             mode as i64
         }
-        38 => {
+        PR_SET_NO_NEW_PRIVS => {
             if arg2 != 1 {
                 return -(Errno::EINVAL as i64);
             }
@@ -357,7 +363,7 @@ pub fn sys_prctl_prctl(option: i64, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u6
                 .unwrap_or(());
             0
         }
-        39 => {
+        PR_GET_NO_NEW_PRIVS => {
             PROCESS_TABLE
                 .with_process(pid, |p| p.seccomp.is_no_new_privs() as i64)
                 .unwrap_or(0)
