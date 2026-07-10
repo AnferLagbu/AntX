@@ -577,9 +577,11 @@ impl ProcfsData {
             let name = name_guard.clone();
             drop(name_guard);
 
-            // Linux /proc/[pid]/stat 格式:
-            // pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt
-            // utime stime cutime cstime priority nice num_threads itrealvalue starttime vsize rss
+            // Linux /proc/[pid]/stat 格式 (字段顺序):
+            // 进程标识, 进程名, 状态, 父进程, 进程组, 会话, 终端, 前台进程组,
+            // 标志, 次缺页, 次缺页累计, 主缺页, 主缺页累计,
+            // 用户时间, 系统时间, 子用户时间, 子系统时间, 优先级, nice值,
+            // 线程数, 虚拟启动时间, 虚拟内存大小, 常驻集大小
             let state = match proc.state.load(core::sync::atomic::Ordering::SeqCst) {
                 0 => "R",  // Created
                 1 => "R",  // Ready

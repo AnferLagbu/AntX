@@ -41,6 +41,7 @@ mod sha256;
 
 // ── 公共库代码 (供 tests/ 与 bin/ 引用) ──
 pub mod framekernel_bench;
+pub mod fsx;
 pub mod hvfs;
 pub mod hvfs_mock;
 

@@ -1,0 +1,146 @@
+name: CI x86_64
+
+on:
+  push:
+    branches: [main, master, develop, feature/**]
+  pull_request:
+    branches: [main, master, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ========================================================================
+  # Job 1: cargo check (x86_64)
+  # ========================================================================
+  cargo-check:
+    name: cargo check (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-none
+          components: rust-src
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/rust/target
+          key: ${{ runner.os }}-cargo-x86_64-${{ hashFiles('src/rust/Cargo.toml', 'src/rust/Cargo.lock') }}
+
+      - name: cargo check
+        working-directory: src/rust
+        run: |
+          cargo check --target x86_64-unknown-none 2>&1 | tee build/log/cargo_check.txt
+          if grep -q "error\[" build/log/cargo_check.txt; then
+            echo "::error::cargo check 失败"
+            exit 1
+          fi
+
+  # ========================================================================
+  # Job 2: clippy -D unsafe-code (services 层 fail-fast)
+  # ========================================================================
+  clippy-no-unsafe-services:
+    name: clippy -D unsafe-code (services)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-none
+          components: rust-src, clippy, rustfmt
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/rust/target
+          key: ${{ runner.os }}-clippy-x86_64-${{ hashFiles('src/rust/Cargo.toml', 'src/rust/Cargo.lock') }}
+
+      - name: 静态断言 — services/ 所有 .rs 都有 #![deny(unsafe_code)]
+        run: |
+          missing=0
+          for f in $(find src/kernel/services -name '*.rs'); do
+            first_line=$(head -1 "$f")
+            if ! echo "$first_line" | grep -q 'deny(unsafe_code)'; then
+              echo "  ❌ $f 首行缺少 #![deny(unsafe_code)]: $first_line"
+              missing=$((missing+1))
+            fi
+          done
+          if [ $missing -gt 0 ]; then
+            echo "::error::共 $missing 个 services 文件未声明 #![deny(unsafe_code)]"
+            exit 1
+          fi
+          echo "✅ 全部 services/ .rs 已声明 #![deny(unsafe_code)]"
+
+      - name: cargo build (services 层编译期 unsafe 拦截)
+        working-directory: src/rust
+        run: |
+          mkdir -p build/log
+          cargo build --target x86_64-unknown-none --lib 2>&1 | tee build/log/build_services.txt | tail -5
+          if grep -E "error.*unsafe|services/.*\.rs.*unsafe" build/log/build_services.txt >/dev/null; then
+            echo "::error::services 层检测到 unsafe 代码 (编译期 fail-fast 失败)"
+            grep -E "error.*unsafe|services/.*\.rs" build/log/build_services.txt | head -20
+            exit 1
+          fi
+          echo "✅ services 层编译通过 (编译期 unsafe 拦截 OK)"
+
+      - name: 上传编译报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-services-unsafe-report
+          path: build/log/build_services.txt
+          retention-days: 14
+
+  # ========================================================================
+  # Job 3: host-tests (单元 + 集成测试)
+  # ========================================================================
+  host-tests:
+    name: host-tests (单元 + 集成)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            host-tests/target
+          key: ${{ runner.os }}-host-tests-${{ hashFiles('host-tests/Cargo.toml', 'host-tests/Cargo.lock') }}
+
+      - name: 运行 host-tests
+        working-directory: host-tests
+        run: |
+          cargo test 2>&1 | tee ../build/log/host_tests.txt
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "::error::host-tests 失败"
+            exit 1
+          fi
+          echo "✅ host-tests 全部通过"
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-tests-report
+          path: build/log/host_tests.txt
+          retention-days: 14

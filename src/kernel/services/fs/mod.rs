@@ -30,6 +30,13 @@ pub mod hvfs;
 pub mod ext2;
 pub mod exfat;
 pub mod sysfs;
+/// G8: 容器辅助文件系统
+pub mod devpts;
+pub mod cgroupfs;
+pub mod configfs;
+pub mod virtiofs;
+/// G9: 动态系统树
+pub mod systree;
 pub mod io;
 pub mod path;
 pub mod mode;

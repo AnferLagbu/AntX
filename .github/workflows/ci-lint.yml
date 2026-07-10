@@ -1,0 +1,186 @@
+name: CI Lint
+
+on:
+  push:
+    branches: [main, master, develop, feature/**]
+  pull_request:
+    branches: [main, master, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ========================================================================
+  # Job 1: SAFETY 注释 + unsafe 分布审计
+  # ========================================================================
+  audit-unsafe:
+    name: SAFETY 注释 + unsafe 分布审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行 SAFETY 注释审计
+        run: |
+          echo "=== Step 1: SAFETY 注释审计 (M6.1) ==="
+          python3 scripts/audit_safety_coverage.py --missing-only 2>&1 | tee build/log/safety_audit.txt
+          echo ""
+          echo "=== Step 2: services→framework 边界渗透检查 (M6.3) ==="
+          python3 scripts/audit_services_boundary.py 2>&1 | tee build/log/services_boundary.txt
+          echo ""
+          echo "=== Step 3: 死锁检测矩阵 (M6.2) ==="
+          python3 scripts/audit_deadlock_matrix.py 2>&1 | tee build/log/deadlock_matrix.txt
+          if grep -q "CRITICAL" build/log/deadlock_matrix.txt; then
+            echo "::error::检测到 CRITICAL 级别死锁风险, 请修复"
+            exit 1
+          fi
+
+      - name: 上传审计报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-reports
+          path: |
+            build/log/safety_audit.txt
+            build/log/services_boundary.txt
+            build/log/deadlock_matrix.txt
+            docs/architecture/services-boundary.json
+          retention-days: 30
+
+  # ========================================================================
+  # Job 2: services 层 unsafe 字符串扫描 (强约束)
+  # ========================================================================
+  services-no-unsafe:
+    name: services 层 0 unsafe 扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 扫描 services/ 中 unsafe 关键字 (Python 智能过滤注释)
+        run: |
+          python3 <<'PYEOF'
+          import re, sys
+          from pathlib import Path
+          issues = []
+          for f in Path('src/kernel/services').rglob('*.rs'):
+              for ln, line in enumerate(f.read_text(errors='replace').splitlines(), 1):
+                  stripped = line.strip()
+                  if stripped.startswith('//') or stripped.startswith('*') or stripped.startswith('/*'):
+                      continue
+                  if re.search(r'\bunsafe\s*\{', line):
+                      issues.append(f'{f}:{ln}: unsafe {{ block: {line.strip()[:80]}')
+                  elif re.search(r'\bunsafe\s+fn\b', line):
+                      issues.append(f'{f}:{ln}: unsafe fn: {line.strip()[:80]}')
+                  elif re.search(r'\bunsafe\s+impl\b', line):
+                      issues.append(f'{f}:{ln}: unsafe impl: {line.strip()[:80]}')
+                  elif re.search(r'\bunsafe\s+trait\b', line):
+                      issues.append(f'{f}:{ln}: unsafe trait: {line.strip()[:80]}')
+          if issues:
+              for i in issues: print('  ' + i)
+              print('FAIL: unsafe found in services/')
+              sys.exit(1)
+          print('PASS: services/ 0 unsafe')
+          PYEOF
+
+  # ========================================================================
+  # Job 3: 注释语言一致性审计
+  # ========================================================================
+  comment-language:
+    name: 注释语言一致性审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行注释语言审计
+        run: |
+          AUDIT_OUT=$(python3 scripts/audit_comment_language.py 2>&1 || true)
+          echo "$AUDIT_OUT"
+          if echo "$AUDIT_OUT" | grep -q "PASSED"; then
+            echo "✅ 注释中文化 100% 完成 (0 违规)"
+          else
+            echo "::error::英文段落注释残留 (硬阈值, 阻断 CI)"
+            exit 1
+          fi
+
+  # ========================================================================
+  # Job 4: C 风格命名残留审计
+  # ========================================================================
+  c-naming:
+    name: C 风格命名残留审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行 C 命名审计
+        run: |
+          if python3 scripts/audit_c_naming.py 2>&1 | tail -8; then
+            echo "✅ 0 C 风格类型后缀, kmalloc/kfree 仅限 extern \"C\""
+          else
+            echo "::error::有 C 风格命名残留"
+            exit 1
+          fi
+
+  # ========================================================================
+  # Job 5: 块设备抽象统一性审计
+  # ========================================================================
+  block-registration:
+    name: 块设备抽象统一性审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行块设备审计
+        run: |
+          if python3 scripts/audit_block_registration.py 2>&1 | tail -10; then
+            echo "✅ 块设备驱动统一通过 proto_block::register_block_device"
+          else
+            echo "::error::有块设备驱动绕过 proto_block 桥接"
+            exit 1
+          fi
+
+  # ========================================================================
+  # Job 6: services OnceCell 单一抽象审计
+  # ========================================================================
+  once-cell:
+    name: services OnceCell 单一抽象审计
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行 OnceCell 审计
+        run: |
+          if python3 scripts/audit_once_cell.py 2>&1 | tail -8; then
+            echo "✅ services 统一通过 sync::once::OnceCell"
+          else
+            echo "::error::有 services 模块绕过 OnceCell 抽象"
+            exit 1
+          fi

@@ -13,8 +13,6 @@ const MAX_OPEN_FILES: usize = 256;
 
 /// 全局 OpenFile 表
 pub struct OpenFileTable {
-    /// OpenFile 条目 (Option 包装以支持空槽)
-    entries: IrqSpinLock<[usize; MAX_OPEN_FILES]>, // handle_id (0 = 空闲)
     /// OpenFile 存储 (通过 handle_id 索引)
     files: IrqSpinLock<[Option<OpenFile>; MAX_OPEN_FILES]>,
     /// 下一个可用的 handle_id (从 1 开始, 0 保留为空闲标记)
@@ -25,7 +23,6 @@ impl OpenFileTable {
     /// 创建未初始化的 OpenFileTable
     pub const fn new() -> Self {
         Self {
-            entries: IrqSpinLock::new([0; MAX_OPEN_FILES]),
             files: IrqSpinLock::new([const { None }; MAX_OPEN_FILES]),
             next_id: AtomicU32::new(1),
         }

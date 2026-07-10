@@ -16,9 +16,6 @@ const MFD_ALLOW_SEALING: u32 = 0x0002;
 /// MFD_HUGE_16GB 标志位 (简化: 不支持大页)
 const MFD_HUGE_MASK: u32 = 0x3F << 26;
 
-/// 匿名文件 inode ID (特殊标记)
-const ANONYMOUS_INODE: u32 = u32::MAX;
-
 /// memfd_create — 创建匿名内存文件
 pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> {
     // 检查 flags 有效性

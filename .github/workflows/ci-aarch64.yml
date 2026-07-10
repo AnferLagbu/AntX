@@ -1,0 +1,45 @@
+name: CI aarch64
+
+on:
+  push:
+    branches: [main, master, develop, feature/**]
+  pull_request:
+    branches: [main, master, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ========================================================================
+  # Job 1: cargo check (aarch64)
+  # ========================================================================
+  cargo-check-aarch64:
+    name: cargo check (aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust nightly + aarch64 target
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: aarch64-unknown-none
+          components: rust-src
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/rust/target
+          key: ${{ runner.os }}-cargo-aarch64-${{ hashFiles('src/rust/Cargo.toml', 'src/rust/Cargo.lock') }}
+
+      - name: cargo check
+        working-directory: src/rust
+        run: |
+          cargo check --target aarch64-unknown-none 2>&1 | tee build/log/cargo_check_aarch64.txt
+          if grep -q "error\[" build/log/cargo_check_aarch64.txt; then
+            echo "::error::cargo check 失败"
+            exit 1
+          fi

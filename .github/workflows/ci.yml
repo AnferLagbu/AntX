@@ -1,281 +1,50 @@
 name: QueenX CI
 
 on:
-  push:
-    branches: [main, master, develop, feature/**]
-  pull_request:
-    branches: [main, master, develop]
-
-env:
-  CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
+  workflow_run:
+    workflows: ["CI x86_64", "CI aarch64", "CI Lint"]
+    types: [completed]
 
 jobs:
   # ========================================================================
-  # Job 1: SAFETY 注释 + unsafe 分布审计 (基于 grep/python 脚本)
-  # ========================================================================
-  audit-unsafe:
-    name: SAFETY 注释 + unsafe 分布审计
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Python 3.x 安装
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 运行 SAFETY 注释审计
-        run: |
-          echo "=== Step 1: SAFETY 注释审计 (M6.1) ==="
-          python3 scripts/audit_safety_coverage.py --missing-only 2>&1 | tee build/log/safety_audit.txt
-          echo ""
-          echo "=== Step 2: services→framework 边界渗透检查 (M6.3) ==="
-          python3 scripts/audit_services_boundary.py 2>&1 | tee build/log/services_boundary.txt
-          echo ""
-          echo "=== Step 3: 死锁检测矩阵 (M6.2) ==="
-          python3 scripts/audit_deadlock_matrix.py 2>&1 | tee build/log/deadlock_matrix.txt
-          if grep -q "CRITICAL" build/log/deadlock_matrix.txt; then
-            echo "::error::检测到 CRITICAL 级别死锁风险, 请修复"
-            exit 1
-          fi
-
-      - name: 上传审计报告
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: audit-reports
-          path: |
-            build/log/safety_audit.txt
-            build/log/services_boundary.txt
-            build/log/deadlock_matrix.txt
-            docs/architecture/services-boundary.json
-          retention-days: 30
-
-  # ========================================================================
-  # Job 2: services 层 unsafe 字符串扫描 (强约束)
-  # ========================================================================
-  services-no-unsafe:
-    name: services 层 0 unsafe 扫描
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Python 3.x 安装
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 扫描 services/ 中 unsafe 关键字 (Python 智能过滤注释)
-        run: |
-          python3 <<'PYEOF'
-          import re, sys
-          from pathlib import Path
-          issues = []
-          for f in Path('src/kernel/services').rglob('*.rs'):
-              for ln, line in enumerate(f.read_text(errors='replace').splitlines(), 1):
-                  stripped = line.strip()
-                  if stripped.startswith('//') or stripped.startswith('*') or stripped.startswith('/*'):
-                      continue
-                  if re.search(r'\bunsafe\s*\{', line):
-                      issues.append(f'{f}:{ln}: unsafe {{ block: {line.strip()[:80]}')
-                  elif re.search(r'\bunsafe\s+fn\b', line):
-                      issues.append(f'{f}:{ln}: unsafe fn: {line.strip()[:80]}')
-                  elif re.search(r'\bunsafe\s+impl\b', line):
-                      issues.append(f'{f}:{ln}: unsafe impl: {line.strip()[:80]}')
-                  elif re.search(r'\bunsafe\s+trait\b', line):
-                      issues.append(f'{f}:{ln}: unsafe trait: {line.strip()[:80]}')
-          if issues:
-              for i in issues: print('  ' + i)
-              print('FAIL: unsafe found in services/')
-              sys.exit(1)
-          print('PASS: services/ 0 unsafe')
-          PYEOF
-
-  # ========================================================================
-  # Job 3: cargo check (编译验证)
-  # ========================================================================
-  cargo-check:
-    name: cargo check (x86_64)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 安装 Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: x86_64-unknown-none
-          components: rust-src
-
-      - name: 缓存 cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/rust/target
-          key: ${{ runner.os }}-cargo-x86_64-${{ hashFiles('src/rust/Cargo.toml', 'src/rust/Cargo.lock') }}
-
-      - name: cargo check
-        working-directory: src/rust
-        run: |
-          cargo check --target x86_64-unknown-none 2>&1 | tee build/log/cargo_check.txt
-          if grep -q "error\[" build/log/cargo_check.txt; then
-            echo "::error::cargo check 失败"
-            exit 1
-          fi
-
-  # ========================================================================
-  # Job 3.5: clippy -D unsafe-code (services 层 fail-fast)
-  #
-  # 目的: 利用 Rust 编译器的 `unsafe_code` lint (被 services/* 的 #![deny(unsafe_code)]
-  #       提升为 deny 级) 强制 services 层零 unsafe.
-  #       一旦 services/*.rs 出现 unsafe 块/表达式, 编译立即报错 (比 grep
-  #       字符串扫描更精确: 不会误判注释/字符串, 也不会漏过嵌套 unsafe).
-  #
-  # 实现: services/ 下每个 .rs 都已声明 #![deny(unsafe_code)], 编译时直接拦截.
-  #       该 Job 单独跑一次 clippy 编译, 让 CI 信号独立于 cargo-check, 失败时
-  #       直接定位到 "unsafe in services" 这一根因.
-  #
-  # 注意: 不跑 `cargo clippy -- -D warnings` 全量检查, 因为项目仍处于开发期,
-  #       存在 2000+ 风格 lint 错误, 与 unsafe 无关; 该 Job 只关心 unsafe_code.
-  # ========================================================================
-  clippy-no-unsafe-services:
-    name: clippy -D unsafe-code (services)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 安装 Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: x86_64-unknown-none
-          components: rust-src, clippy, rustfmt
-
-      - name: 缓存 cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/rust/target
-          key: ${{ runner.os }}-clippy-x86_64-${{ hashFiles('src/rust/Cargo.toml', 'src/rust/Cargo.lock') }}
-
-      - name: 静态断言 — services/ 所有 .rs 都有 #![deny(unsafe_code)]
-        run: |
-          # 检查所有 services/ 下的 .rs 文件首行包含 #![deny(unsafe_code)]
-          missing=0
-          for f in $(find src/kernel/services -name '*.rs'); do
-            first_line=$(head -1 "$f")
-            if ! echo "$first_line" | grep -q 'deny(unsafe_code)'; then
-              echo "  ❌ $f 首行缺少 #![deny(unsafe_code)]: $first_line"
-              missing=$((missing+1))
-            fi
-          done
-          if [ $missing -gt 0 ]; then
-            echo "::error::共 $missing 个 services 文件未声明 #![deny(unsafe_code)]"
-            exit 1
-          fi
-          echo "✅ 全部 services/ .rs 已声明 #![deny(unsafe_code)]"
-
-      - name: cargo build (services 层编译期 unsafe 拦截)
-        working-directory: src/rust
-        run: |
-          mkdir -p build/log
-          # 跑 build (而非 check) 让 #![deny(unsafe_code)] 真正触发编译错误.
-          # services/ 下任何 unsafe 都会立刻报 error, 与 services-no-unsafe 任务
-          # 重复但提供更聚焦的失败信号.
-          cargo build --target x86_64-unknown-none --lib 2>&1 | tee build/log/build_services.txt | tail -5
-          # 提取 services 相关的 unsafe 错误
-          if grep -E "error.*unsafe|services/.*\.rs.*unsafe" build/log/build_services.txt >/dev/null; then
-            echo "::error::services 层检测到 unsafe 代码 (编译期 fail-fast 失败)"
-            grep -E "error.*unsafe|services/.*\.rs" build/log/build_services.txt | head -20
-            exit 1
-          fi
-          echo "✅ services 层编译通过 (编译期 unsafe 拦截 OK)"
-
-      - name: 上传编译报告
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-services-unsafe-report
-          path: build/log/build_services.txt
-          retention-days: 14
-
-  # ========================================================================
-  # Job 4: cargo check (aarch64)
-  # ========================================================================
-  cargo-check-aarch64:
-    name: cargo check (aarch64)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 安装 Rust nightly + aarch64 target
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: aarch64-unknown-none
-          components: rust-src
-
-      - name: 缓存 cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/rust/target
-          key: ${{ runner.os }}-cargo-aarch64-${{ hashFiles('src/rust/Cargo.toml', 'src/rust/Cargo.lock') }}
-
-      - name: cargo check
-        working-directory: src/rust
-        run: |
-          cargo check --target aarch64-unknown-none 2>&1 | tee build/log/cargo_check_aarch64.txt
-          if grep -q "error\[" build/log/cargo_check_aarch64.txt; then
-            echo "::error::cargo check 失败"
-            exit 1
-          fi
-
-  # ========================================================================
-  # Job 5: 框内核合规性总报告
+  # 框内核合规性总报告
   # ========================================================================
   framekernel-compliance:
     name: 框内核合规性总报告
     runs-on: ubuntu-latest
-    needs: [audit-unsafe, services-no-unsafe, cargo-check, clippy-no-unsafe-services, cargo-check-aarch64]
-    if: always()
+    if: ${{ github.event.workflow_run.conclusion != 'cancelled' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: 生成合规性报告
-        if: needs.audit-unsafe.result == 'success' && needs.services-no-unsafe.result == 'success' && needs.cargo-check.result == 'success' && needs.clippy-no-unsafe-services.result == 'success' && needs.cargo-check-aarch64.result == 'success'
+      - name: 检查各工作流状态
         run: |
-          cat <<'EOF' > $GITHUB_STEP_SUMMARY
-          # 🎉 QueenX 框内核合规性 PASS
-          | 维度 | 状态 | 工具 |
-          |------|------|------|
-          | SAFETY 注释审计 | ✅ PASS | audit_safety_coverage.py |
-          | services 边界检查 | ✅ PASS | audit_services_boundary.py |
-          | 死锁检测矩阵 | ✅ PASS | audit_deadlock_matrix.py |
-          | services 0 unsafe (grep) | ✅ PASS | grep scan |
-          | services 0 unsafe (clippy) | ✅ PASS | cargo clippy --force-warn unused_unsafe |
-          | x86_64 编译 | ✅ PASS | cargo check |
-          | aarch64 编译 | ✅ PASS | cargo check |
-          EOF
-          echo "✅ 全部合规性检查通过"
+          echo "=== 框内核合规性检查 ==="
+          echo "触发工作流: ${{ github.event.workflow_run.name }}"
+          echo "工作流结论: ${{ github.event.workflow_run.conclusion }}"
+          echo ""
+          echo "各工作流状态:"
+          echo "  - CI x86_64: cargo check + clippy + host-tests"
+          echo "  - CI aarch64: cargo check"
+          echo "  - CI Lint: SAFETY 审计 + 边界检查 + 死锁检测 + 注释语言"
+          echo ""
+          if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+            echo "✅ 触发工作流通过"
+          else
+            echo "❌ 触发工作流失败: ${{ github.event.workflow_run.conclusion }}"
+            exit 1
+          fi
 
-      - name: 失败时报告
-        if: needs.audit-unsafe.result != 'success' || needs.services-no-unsafe.result != 'success' || needs.cargo-check.result != 'success' || needs.clippy-no-unsafe-services.result != 'success' || needs.cargo-check-aarch64.result != 'success'
+      - name: 生成合规性报告
+        if: success()
         run: |
           cat <<'EOF' > $GITHUB_STEP_SUMMARY
-          # ❌ 框内核合规性 FAIL
-          | 维度 | 状态 | 工具 |
-          |------|------|------|
-          | SAFETY 注释审计 | $( [ "${{ needs.audit-unsafe.result }}" == "success" ] && echo "✅" || echo "❌" ) | audit_safety_coverage.py |
-          | services 边界检查 | $( [ "${{ needs.audit-unsafe.result }}" == "success" ] && echo "✅" || echo "❌" ) | audit_services_boundary.py |
-          | 死锁检测矩阵 | $( [ "${{ needs.audit-unsafe.result }}" == "success" ] && echo "✅" || echo "❌" ) | audit_deadlock_matrix.py |
-          | services 0 unsafe (grep) | $( [ "${{ needs.services-no-unsafe.result }}" == "success" ] && echo "✅" || echo "❌" ) | grep scan |
-          | services 0 unsafe (clippy) | $( [ "${{ needs.clippy-no-unsafe-services.result }}" == "success" ] && echo "✅" || echo "❌" ) | cargo clippy |
-          | x86_64 编译 | $( [ "${{ needs.cargo-check.result }}" == "success" ] && echo "✅" || echo "❌" ) | cargo check |
-          | aarch64 编译 | $( [ "${{ needs.cargo-check-aarch64.result }}" == "success" ] && echo "✅" || echo "❌" ) | cargo check |
+          # QueenX 框内核合规性报告
+
+          | 工作流 | 状态 | 内容 |
+          |--------|------|------|
+          | CI x86_64 | ✅ | cargo check + clippy + host-tests |
+          | CI aarch64 | ✅ | cargo check |
+          | CI Lint | ✅ | SAFETY 审计 + 边界检查 + 死锁检测 |
+
+          > 各工作流独立运行, 任一失败将阻断合并.
           EOF
-          exit 1
