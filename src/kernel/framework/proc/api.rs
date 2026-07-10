@@ -1082,11 +1082,6 @@ pub fn proc_is_initialized() -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub fn scheduler_add_with_priority(pid: Pid, level: usize) {
-    SCHEDULER.add_with_priority(pid, level)
-}
-
-#[unsafe(no_mangle)]
 pub fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
     use super::scheduler::SchedPolicy;
     SCHEDULER.add_rt_task(pid, rt_priority, SchedPolicy::from_u32(policy))

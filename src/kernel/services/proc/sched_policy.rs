@@ -70,17 +70,6 @@ pub fn weight_to_nice(weight: u64) -> i8 {
     best
 }
 
-#[inline]
-pub fn mlfq_level_to_nice(level: usize) -> i8 {
-    match level {
-        0 => -10,
-        1 => -4,
-        2 => 0,
-        3 => 8,
-        _ => 0,
-    }
-}
-
 // ============================================================================
 // Deadline 调度 (EDF + CBS)
 // ============================================================================
@@ -454,18 +443,7 @@ mod tests {
         assert!(nice >= -20 && nice <= 19);
     }
 
-    /// 3. mlfq_level_to_nice
-    #[test]
-    fn test_sched_mlfq_level_to_nice() {
-        assert_eq!(mlfq_level_to_nice(0), -10);
-        assert_eq!(mlfq_level_to_nice(1), -4);
-        assert_eq!(mlfq_level_to_nice(2), 0);
-        assert_eq!(mlfq_level_to_nice(3), 8);
-        assert_eq!(mlfq_level_to_nice(4), 0);  // 默认 fallback
-        assert_eq!(mlfq_level_to_nice(99), 0);
-    }
-
-    /// 4. DeadlineParams: is_valid 边界
+    /// 3. DeadlineParams: is_valid 边界
     #[test]
     fn test_sched_deadline_is_valid() {
         // 默认: 全 0 → invalid

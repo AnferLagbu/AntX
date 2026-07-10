@@ -123,13 +123,10 @@ unsafe impl Sync for Task {}
 /// 调度器策略 trait。
 ///
 /// services 层通过此 trait 将任务入队/出队,
-/// 而不直接操作 MLFQ/CFS/RT 的具体实现。
+/// 而不直接操作 CFS/RT 的具体实现。
 pub trait Scheduler: Send + Sync {
     /// 将任务加入就绪队列。
     fn enqueue(&self, pid: Pid);
-
-    /// 带优先级入队。
-    fn enqueue_with_priority(&self, pid: Pid, level: usize);
 
     /// 设置 nice 值 (-20..19)。
     fn set_nice(&self, pid: Pid, nice: i8);
@@ -171,10 +168,6 @@ pub struct QueenXScheduler;
 impl Scheduler for QueenXScheduler {
     fn enqueue(&self, pid: Pid) {
         crate::kernel::framework::proc::SCHEDULER.add(pid);
-    }
-
-    fn enqueue_with_priority(&self, pid: Pid, level: usize) {
-        crate::kernel::framework::proc::SCHEDULER.add_with_priority(pid, level);
     }
 
     fn set_nice(&self, pid: Pid, nice: i8) {

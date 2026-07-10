@@ -25,7 +25,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 
 use super::cfs::{
-    calc_vruntime_delta, cfs_should_preempt, mlfq_level_to_nice, nice_to_weight, CfsRunQueue,
+    calc_vruntime_delta, cfs_should_preempt, nice_to_weight, CfsRunQueue,
     DeadlineParams, DlRunQueue, CFS_BOOST_INTERVAL_TICKS, DL_MAX_UTILIZATION_PCT,
     LOAD_BALANCE_THRESHOLD, NICE0_WEIGHT, TARGET_LATENCY_TICKS,
 };
@@ -308,12 +308,6 @@ impl Scheduler {
     }
 
     pub fn add(&self, pid: Pid) {
-        self.cfs_enqueue(pid);
-    }
-
-    pub fn add_with_priority(&self, pid: Pid, level: usize) {
-        let nice = mlfq_level_to_nice(level);
-        self.set_nice(pid, nice);
         self.cfs_enqueue(pid);
     }
 

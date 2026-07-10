@@ -11,7 +11,7 @@ pub use crate::kernel::services::proc::sched_policy::{
     CFS_BOOST_INTERVAL_TICKS, DL_MIN_RUNTIME_TICKS, DL_MIN_PERIOD_TICKS,
     DL_MAX_UTILIZATION_PCT, LOAD_BALANCE_THRESHOLD,
     NICE_TO_WEIGHT,
-    nice_to_weight, weight_to_nice, mlfq_level_to_nice,
+    nice_to_weight, weight_to_nice,
     DeadlineParams,
     CfsRunQueue, DlRunQueue,
     calc_vruntime_delta, cfs_should_preempt,
