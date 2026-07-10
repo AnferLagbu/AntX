@@ -87,6 +87,7 @@
 | `scripts/audit_volatile_access.py`  | LTO 字段错位防线: volatile 访问检查        | 硬       |
 | `scripts/audit_static_mut.py`       | framework 层 static mut 使用审查            | 硬       |
 | `scripts/audit_public_api_docs.py`  | pub API 中文文档检查 (informational)          | 软       |
+| `scripts/audit_dead_code.py`        | dead_code 禁止 (硬件规范常量豁免)             | 硬 0     |
 
 任何一项失败视为本轮未完成.
 
@@ -132,7 +133,7 @@ cargo test -p host-tests           # 等价
 | 敏感资源  | 被篡改可导致 UB  | **framework** (TCB)      |
 | 非敏感资源 | 被篡改仅导致逻辑错误 | **services** (safe Rust) |
 
-详见 `docs/explain/framekernel-nature.md` 与 `docs/explain/framekernel-dev-guide.md`.
+详见 `docs/explain/explain-framekernel.md` 与 `docs/explain/guide-dev.md`.
 
 ### 4.3 6 安全不变式 (核心契约)
 
@@ -140,7 +141,7 @@ cargo test -p host-tests           # 等价
 
 ### 4.4 6 安全不变式自检清单
 
-修改 framework 时逐项确认 (详见 `engineering-discipline-spec.md`):
+修改 framework 时逐项确认 (详见 `spec-engineering.md`):
 
 - I1 内核态 CPU 状态不可被 services 篡改
 - I2 内核内存不可被 services 非法访问
@@ -224,6 +225,7 @@ cargo test -p host-tests           # 等价
 | F6 | 审计全部通过 | boundary + safety + deadlock + ci/audit.sh 全量 |
 | F7 | 中文注释强制                                   | `audit_comment_language.py` 0 violations               |
 | F8 | 公共 API 中文文档注释                            | clippy `missing_docs_in_crate_items`                   |
+| F9 | 新增代码禁止 `#[allow(dead_code)]`                | `audit_dead_code.py` 硬阈值 0 (硬件规范常量豁免)          |
 
 ***
 
