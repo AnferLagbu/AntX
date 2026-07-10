@@ -159,6 +159,55 @@
 **前置条件**: 理解 credo 能力系统和 PWM 存储。
 **预估**: 2.5 天。
 
+### 4.6 Filesystem 模块 dead_code
+
+| 项 | 文件 | 功能 | 实施方案 |
+|----|------|------|----------|
+| `dcache.rs` | `services/fs/dcache.rs` | 目录缓存 | 在 VFS 路径解析中启用缓存 |
+| `flock.rs` | `services/fs/flock.rs` | 文件锁 | 在 flock/fcntl syscall 中接入 |
+| `inotify.rs` | `services/fs/inotify.rs` | 文件系统事件通知 | 在 VFS 操作中触发事件 |
+| `ramfs_core.rs` | `services/fs/ramfs_core.rs` | RamFS 核心 | 审查模块内未使用项 |
+| `hvfs/hvfs.rs` | `services/fs/hvfs/hvfs.rs` | HvFS 核心 | 审查模块内未使用项 |
+| `hvfs/spa.rs` | `services/fs/hvfs/spa.rs` | HvFS SPA | 审查模块内未使用项 |
+
+**前置条件**: 理解 VFS 架构和各文件系统实现。
+**预估**: 3 天。
+
+### 4.7 Sync 模块 dead_code
+
+| 项 | 文件 | 功能 | 实施方案 |
+|----|------|------|----------|
+| `barrier.rs` | `services/sync/barrier.rs` | 同步屏障 | 在多核同步场景中使用 |
+| `irq_lock.rs` | `services/sync/irq_lock.rs` | IRQ 锁封装 | 审查模块内未使用项 |
+| `once.rs` | `services/sync/once.rs` | 一次性初始化 | 审查模块内未使用项 |
+| `scoped.rs` | `services/sync/scoped.rs` | 作用域锁 | 审查模块内未使用项 |
+
+**前置条件**: 理解 framework 层同步原语。
+**预估**: 1.5 天。
+
+### 4.8 其他 services 模块 dead_code
+
+| 项 | 文件 | 功能 | 实施方案 |
+|----|------|------|----------|
+| `fd_alloc.rs` | `services/proc/fd_alloc.rs` | FD 分配器 | 审查模块内未使用项 |
+| `ebpf_verifier.rs` | `services/debug/ebpf_verifier.rs` | eBPF 验证器 | MapKey/MapValue/is_zero 预留 |
+| `char/vga.rs` | `services/driver/char/vga.rs` | VGA 驱动 | crt 字段 (aarch64 特定) |
+
+**前置条件**: 各模块独立。
+**预估**: 1 天。
+
+### 4.9 Smoltcp 内部 dead_code（不动 smoltcp 源码）
+
+| 项 | 文件 | 功能 | 实施方案 |
+|----|------|------|----------|
+| `wire/dns.rs` | `services/net/smoltcp/src/wire/dns.rs` | DNS 解析器 | 保留（smoltcp 内部） |
+| `wire/ipv6.rs` | `services/net/smoltcp/src/wire/ipv6.rs` | IPv6 字段 | 保留（smoltcp 内部） |
+| `wire/udp.rs` | `services/net/smoltcp/src/wire/udp.rs` | UDP 字段 | 保留（smoltcp 内部） |
+| `iface/packet.rs` | `services/net/smoltcp/src/iface/packet.rs` | 包处理 | 保留（smoltcp 内部） |
+| `iface/interface/ipv6.rs` | `services/net/smoltcp/src/iface/interface/ipv6.rs` | IPv6 接口 | 保留（smoltcp 内部） |
+
+**说明**: smoltcp 源码不动，这些 dead_code 保留。
+
 ---
 
 ## 五、P3: 大工作量（> 3 天）
@@ -211,7 +260,8 @@ Phase 2 (Week 2-3): P2 中等工作量
   - NVMe 中断路径
   - Barrier 恢复策略集成
   - Credo 策略引擎集成
-  - 预估: 10 天
+  - Services 模块 dead_code (fs/sync/debug/driver)
+  - 预估: 14 天
 
 Phase 3 (Week 4-6): P3 大工作量
   - 进程调度器上下文切换集成
@@ -228,9 +278,9 @@ Phase 3 (Week 4-6): P3 大工作量
 |--------|------|----------|------|
 | P0 | 2 | 0.5 天 | 已实装，仅移除注解 |
 | P1 | 12 | 3 天 | 小工作量，直接接入 |
-| P2 | 15 | 10 天 | 中工作量，需设计 |
+| P2 | 24 | 14 天 | 中工作量，需设计（含 services 模块） |
 | P3 | 5 | 13 天 | 大工作量，需架构设计 |
-| **总计** | **34** | **26.5 天** | 可实现的死代码启用 |
+| **总计** | **43** | **30.5 天** | 可实现的死代码启用 |
 
 ---
 
@@ -240,6 +290,6 @@ Phase 3 (Week 4-6): P3 大工作量
 |------|------|------|
 | 硬件规范定义 | ~60 | 规范要求保留 |
 | 调试/诊断预留 | ~30 | 功能预留，按需启用 |
-| smoltcp 相关 | ~20 | 固定使用 smoltcp |
-| 文件级 allow | ~20 | 模块内部分项 |
-| **保留总计** | **~130** | 设计预留 |
+| smoltcp 内部 | ~10 | 固定使用 smoltcp，不动源码 |
+| 文件级 allow | ~10 | 模块内部分项 |
+| **保留总计** | **~110** | 设计预留 |
