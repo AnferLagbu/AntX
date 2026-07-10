@@ -19,7 +19,7 @@
 
 ### 2. 内核内部层 — 使用 QX 自己的方式
 
-内核内部实现保持 Rust 纯净，不盲目复制 Linux 内部实现：
+内核内部实现保持 Rust 纯净，借鉴 Linux 但融入 QX 自己风格：
 
 - **进程状态**: 使用 7 状态模型 (Created/Ready/Running/Blocked/Zombie/Terminated/Frozen)，比 Linux 的 TASK_RUNNING/TASK_INTERRUPTIBLE/TASK_UNINTERRUPTIBLE 更简洁
 - **COW 实现**: 简化为全局 BTreeMap 跟踪引用计数，不引入 Linux 的 per-VMA anon_vma + rmap 反向映射
@@ -42,26 +42,70 @@ Linux 验证过的成熟算法和设计模式可以在 QueenX 中使用：
 
 **理由**: 不重复造轮子。Linux 社区投入了大量工程精力验证的算法，直接借鉴比从零实现更可靠。
 
-## 二、判断标准
+## 二、具体判断规则
 
-遇到"是否采用 Linux 方式"的决策时，按以下标准判断：
+### 数据结构 — 允许简化借鉴，融入 QX 风格
 
-| 场景 | 决策 | 理由 |
+| 类型 | 决策 | 示例 |
 |------|------|------|
-| 对外 ABI (syscall/文件格式/信号语义) | ✅ 保持 Linux 兼容 | 生态兼容性 |
-| 内核内部数据结构 | ⚠️ 优先用 QX 自己的方式 | 降低复杂度 |
-| 内核内部算法 | 📋 借鉴 Linux 验证过的 | 避免重复造轮子 |
-| Linux 特有功能 (KSM/THP/MGLRU) | ❌ 不引入，除非有明确需求 | 避免不必要的复杂度 |
-| Linux 风格的 debug 标记 (0xDEADBEEF) | ⚠️ 改为 QX 特定标记 | 便于 crash dump 识别来源 |
+| 对外 ABI 兼容的数据结构 | ✅ 保持 Linux 布局 | PrStatus (core dump)、sigaction、sockaddr |
+| 内核内部数据结构 | ⚠️ 借鉴核心思想，简化实现 | VMA (保留标志位但简化字段)、页表 (保留四级结构但简化遍历) |
+| Linux 高级数据结构 | ❌ 不引入 | xarray、radix tree、per-VMA anon_vma |
 
-## 三、与 ref-naming.md 的关系
+### 算法 — 允许简化借鉴，融入 QX 风格
+
+| 类型 | 决策 | 示例 |
+|------|------|------|
+| 经典算法 | ✅ 直接借鉴核心思想 | CFS vruntime、伙伴分配、Slab、COW |
+| Linux 高级优化 | ❌ 不引入 | load_weight、rmap 反向映射、zone-based LRU |
+| 硬件相关算法 | ⚠️ 借鉴但简化 | IOMMU 映射 (保留核心，简化 cache flush) |
+
+### Linux 特有功能 — 移除未实现项
+
+| 类型 | 决策 | 示例 |
+|------|------|------|
+| 已实现的 Linux 功能 | ✅ 保留 | CFS、epoll、futex、namespace |
+| 定义但未实现的标志位 | ❌ 移除 | MADV_COLD、MADV_SOFT_OFFLINE、MADV_MERGEABLE |
+| 定义但未实现的接口 | ❌ 移除或返回 EINVAL | MADV_DONTFORK、MADV_POPULATE_READ/WRITE |
+
+### Debug 标记 — 保留经典标记
+
+| 类型 | 决策 | 示例 |
+|------|------|------|
+| 堆 magic | ✅ 保留 0xDEADBEEF | kmalloc 检测 |
+| 栈 canary | ✅ 保留经典值 | 进程栈保护 |
+| 哈希常量 | ✅ 保留通用值 | 黄金比例、Murmur3 常量 |
+
+### 代码风格 — 避免 Linux 命名
+
+| 类型 | 决策 | 示例 |
+|------|------|------|
+| 对外接口命名 | ✅ 使用 Linux 命名 | SYS_open、EPOLLIN、AF_UNIX |
+| 内核内部命名 | ❌ 避免 Linux 命名 | 用 Blocked 而非 TASK_INTERRUPTIBLE，用 QX 前缀常量 |
+| 魔数 | ⚠️ 具名常量优先 | PR_SET_SECCOMP = 22 而非直接写 22 |
+
+## 三、新功能决策流程
+
+遇到新功能实现时，按以下步骤决策：
+
+```
+1. 先按 QX 需求设计 → 明确功能目标和接口
+2. 检查是否涉及对外 ABI → 如果是，保持 Linux 兼容
+3. 检查是否涉及内核内部 → 如果是，优先用 QX 自己的方式
+4. 如果 QX 方案不确定 → 再参考 Linux 实现，简化后融入
+5. 检查是否引入 Linux 特有复杂度 → 如果是，评估是否真正需要
+```
+
+**原则**: 先设计再参考，而非先查 Linux 再简化。
+
+## 四、与 ref-naming.md 的关系
 
 - `ref-naming.md`: 定义 ABI 层面的兼容策略 (syscall 编号/路径/libc/工具链)
 - 本文档: 定义内核实现层面的兼容策略 (内部实现/算法借鉴/复杂度控制)
 
 两者共同构成 QueenX 的 Linux 兼容性完整立场。
 
-## 四、交叉引用
+## 五、交叉引用
 
 - [ref-naming.md](./ref-naming.md) — 命名与 ABI 兼容立场
 - [explain-framekernel.md](./explain-framekernel.md) — 框内核架构 (framework/services 分层)
