@@ -1,11 +1,11 @@
 # 框内核开发与维护指导
 
-> 本文档给本项目 (QueenX) 维护者与贡献者: 在框内核 (framework/ + services/) 双子树架构下, 新代码放哪里, 改代码先改哪里, 何时两边都改. 配套 [framekernel-nature.md](./framekernel-nature.md) 阅读. 适用读者: 维护 framework/ 与 services/ 的内核开发者, 以及首次提 PR 的新贡献者. 2026-06-26 按新文档规则重写.
+> 本文档给本项目 (QueenX) 维护者与贡献者: 在框内核 (framework/ + services/) 双子树架构下, 新代码放哪里, 改代码先改哪里, 何时两边都改. 配套 [explain-framekernel.md](./explain-framekernel.md) 阅读. 适用读者: 维护 framework/ 与 services/ 的内核开发者, 以及首次提 PR 的新贡献者. 2026-06-26 按新文档规则重写.
 
 ## 这是什么
 - **范围与配套**
   - 描述: 本项目内核代码的归属决策与变更流程
-  - 方案: 范围: 本项目内核代码的归属决策与变更流程; 不讨论 OSTD/Asterinas 理论; 不涵盖: 用户态工具链, 构建系统, 测试工具 (另有文档); 配套: framekernel-nature.md (框内核是什么, 为什么这样设计) / README.md §1 文件归属规则 (文档归属, 本文是代码归属) / scripts/audit_services_boundary.py (边界审计脚本的精确白/黑名单)
+  - 方案: 范围: 本项目内核代码的归属决策与变更流程; 不讨论 OSTD/Asterinas 理论; 不涵盖: 用户态工具链, 构建系统, 测试工具 (另有文档); 配套: explain-framekernel.md (框内核是什么, 为什么这样设计) / README.md §1 文件归属规则 (文档归属, 本文是代码归属) / scripts/audit_services_boundary.py (边界审计脚本的精确白/黑名单)
   - 状态: [X]
 
 ## 为什么这样设计
@@ -25,7 +25,7 @@
 ## 如何使用
 - **决策流程 (5 步)**
   - 描述: 5 步决策流程
-  - 方案: (1) 判定资源敏感性: 涉及硬件/中断/上下文切换? → framework / 否则 services; (2) 不变式自检: 6 条安全不变式是否满足? 不满足 → 必须重新设计; (3) 现有架构搜索: 类似功能是否已存在? 如果存在, 复用; (4) 边界审计: 完成后跑 audit_services_boundary.py; (5) 文档同步: 改模块接口或依赖关系时, 必须同步更新 framekernel-dev-guide.md 和 audit-*.md
+  - 方案: (1) 判定资源敏感性: 涉及硬件/中断/上下文切换? → framework / 否则 services; (2) 不变式自检: 6 条安全不变式是否满足? 不满足 → 必须重新设计; (3) 现有架构搜索: 类似功能是否已存在? 如果存在, 复用; (4) 边界审计: 完成后跑 audit_services_boundary.py; (5) 文档同步: 改模块接口或依赖关系时, 必须同步更新 guide-dev.md 和 audit-*.md
   - 状态: [X]
 - **6 安全不变式自检清单**
   - 描述: 每次修改 framework 代码时逐项确认
@@ -83,7 +83,7 @@
 ## 交叉引用
 - **依赖清单**
   - 描述: 6 个依赖源
-  - 方案: framekernel-nature.md (框内核定义与原理, 必读背景) / engineering-discipline-spec.md (工程纪律性规范, 权威规则定义) / docs/README.md (文档格式规范) / src/kernel/framework/mod.rs (framework 入口与 SAFETY 规范) / src/kernel/services/mod.rs (services 入口与 Safe Rust 契约) / scripts/audit_services_boundary.py (边界审计, 白/黑名单权威源)
+  - 方案: explain-framekernel.md (框内核定义与原理, 必读背景) / spec-engineering.md (工程纪律性规范, 权威规则定义) / docs/README.md (文档格式规范) / src/kernel/framework/mod.rs (framework 入口与 SAFETY 规范) / src/kernel/services/mod.rs (services 入口与 Safe Rust 契约) / scripts/audit_services_boundary.py (边界审计, 白/黑名单权威源)
   - 状态: [X]
 - **被引用清单**
   - 描述: 1 个被引用源

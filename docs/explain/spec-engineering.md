@@ -5,7 +5,7 @@
 ## 这是什么
 - **范围与配套**
   - 描述: 工程纪律性规范的范畴
-  - 方案: 范围: 约束后续新代码的工程规范; 配套: docs/plan/engineering-discipline.md (已有代码解耦进度) / framekernel-dev-guide.md (架构开发场景) / framekernel-nature.md (安全不变式 I1-I6) / AGENTS.md (项目硬约束); 0 铁律 + 13 章节 + 1 提交检查清单 + 1 存量问题处理策略
+  - 方案: 范围: 约束后续新代码的工程规范; 配套: docs/plan/engineering-discipline.md (已有代码解耦进度) / guide-dev.md (架构开发场景) / explain-framekernel.md (安全不变式 I1-I6) / AGENTS.md (项目硬约束); 0 铁律 + 13 章节 + 1 提交检查清单 + 1 存量问题处理策略
   - 状态: [X]
 
 ## 为什么这样设计
@@ -53,7 +53,7 @@
   - 状态: [X]
 - **10 文档**
   - 描述: 4 条文档规则
-  - 方案: 10.1 修改模块接口或依赖关系时, 必须同步更新 framekernel-dev-guide.md 和 audit-*.md / 10.2 公共 API 必中文文档注释 (clippy missing_docs_in_crate_items) / 10.3 plan/ 文档按新规则 (标题+章节+条目描述+方案+状态+详情) / 10.4 commit message 记录变更
+  - 方案: 10.1 修改模块接口或依赖关系时, 必须同步更新 guide-dev.md 和 audit-*.md / 10.2 公共 API 必中文文档注释 (clippy missing_docs_in_crate_items) / 10.3 plan/ 文档按新规则 (标题+章节+条目描述+方案+状态+详情) / 10.4 commit message 记录变更
   - 状态: [X]
 - **11 多架构**
   - 描述: 3 条多架构规则
@@ -95,7 +95,7 @@
 ## 交叉引用
 - **依赖清单**
   - 描述: 4 个依赖源
-  - 方案: framekernel-dev-guide.md (架构开发场景指导) / framekernel-nature.md (安全不变式 I1-I6 定义) / engineering-discipline.md (已有代码解耦进度) / AGENTS.md (项目硬约束)
+  - 方案: guide-dev.md (架构开发场景指导) / explain-framekernel.md (安全不变式 I1-I6 定义) / engineering-discipline.md (已有代码解耦进度) / AGENTS.md (项目硬约束)
   - 状态: [X]
 - **被引用清单**
   - 描述: 1 个被引用源

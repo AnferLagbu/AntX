@@ -28,7 +28,7 @@ QueenX 是一个从零开发的自研操作系统内核, 采用 framekernel 架�
 
 ## 哲学依据
 
-**务实复用 (naming-standpoint.md §4.2)** — 不重复造轮子, 借用既有生态. smoltcp 借上游, OpenHarmony 用户态借上游, 仅自研核心 TCB 与差异化部分.
+**务实复用 (ref-naming.md §4.2)** — 不重复造轮子, 借用既有生态. smoltcp 借上游, OpenHarmony 用户态借上游, 仅自研核心 TCB 与差异化部分.
 
 **蚁群世界观** — QueenX (蚁后) 统治 HiveFS (蚁巢), AntX (工蚁) 分发, OpenHarmony 是外部生态. 生态系统中每个角色都有明确分工, 内核不必全包全揽.
 
@@ -69,12 +69,12 @@ QX 若成功与 OpenHarmony 上层结合, 其项目姿态应**先将重心放在
 
 这一姿态与 Asterinas NixOS 形成互补: Asterinas 走桌面/服务器/容器 (大计算资源), QueenX 走嵌入式/IoT/边缘 (小计算资源); 两个项目共同验证"通用内核 + 借力上层生态"路径在不同算力规模下的可行性.
 
-**风险 2: 内核 ABI 差异** — QueenX 主动错开 syscall 编号 (naming-standpoint.md), 这与 OpenHarmony 用户态预期不符. 缓解: 提供 syscall 翻译层 (类似 linuxulator), 将 OpenHarmony syscall 编号映射到 QX 原生编号.
+**风险 2: 内核 ABI 差异** — QueenX 主动错开 syscall 编号 (ref-naming.md), 这与 OpenHarmony 用户态预期不符. 缓解: 提供 syscall 翻译层 (类似 linuxulator), 将 OpenHarmony syscall 编号映射到 QX 原生编号.
 
 **风险 3: 生态冷启动** — 即便与 OpenHarmony 结合, QueenX 仍是新进入者. 缓解: 以 OpenHarmony 设备为应用场景 (IoT/嵌入式), 避开与 Linux 直接竞争的服务器/桌面领域.
 
 ## 引用
 
-- queenx-naming-standpoint.md (务实复用原则)
+- queenx-ref-naming.md (务实复用原则)
 - kernel-roadmap.md / archive/subsystem-bootstrap-sequence-2026-06.md (Phase A-D 路线图)
 - asterinas-gap-analysis.md (Asterinas 差距补齐)
