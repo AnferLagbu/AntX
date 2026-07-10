@@ -136,9 +136,6 @@ impl CpuIdleStats {
 pub struct CpuIdleDriver {
     /// Per-CPU 空闲统计
     pub per_cpu_stats: IrqSpinLock<Vec<CpuIdleStats>>,
-    /// 全局最深 C-state 限制
-    #[allow(dead_code)] // 待 C-state 策略路径启用后使用。
-    pub global_max_cstate: AtomicU32,
     /// 是否启用 idle governor
     pub enabled: AtomicBool,
 }
@@ -147,7 +144,6 @@ impl CpuIdleDriver {
     pub const fn new() -> Self {
         Self {
             per_cpu_stats: IrqSpinLock::new(Vec::new()),
-            global_max_cstate: AtomicU32::new(CpuIdleState::C2DeepHalt as u32),
             enabled: AtomicBool::new(false),
         }
     }

@@ -84,10 +84,9 @@ static mut NET_STACK_TRAIT: Option<SmoltcpNetStack> = None;
 // 编译期覆盖: 修改本常量或通过未来 build.rs 注入 cfg_flag 覆盖.
 // 每个 socket 携带 TCP/UDP 静态缓冲, BSS 占用 ≈ 6 KB/连接 (TCP_RX 4K + UDP_RX 2K).
 // 256 → ≈ 1.5 MB BSS; 生产环境按物理内存调整.
-// TD-06: 编译期容量从 `fd_alloc::cfg_smoltcp_cap()` 派生, 默认 256, 用户可手动
-// 切换至 1024 / 4096. 改本值后须同步 SOCKET_STORAGE / TCP_*_BUFS / UDP_*_BUFS /
+// 改本值后须同步 SOCKET_STORAGE / TCP_*_BUFS / UDP_*_BUFS /
 // FD_TYPES / SOCKET_TABLE 的所有 8 张大表尺寸, 否则全表越界.
-const MAX_SOCKETS: usize = crate::kernel::services::proc::cfg_smoltcp_cap() as usize;
+const MAX_SOCKETS: usize = 256;
 static mut SOCKET_STORAGE: core::mem::MaybeUninit<[SocketStorage<'static>; MAX_SOCKETS]> =
     core::mem::MaybeUninit::uninit();
 static mut SOCKET_SET: core::mem::MaybeUninit<SocketSet<'static>> =

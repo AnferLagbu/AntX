@@ -80,9 +80,6 @@ pub use types::ProcessState;
 /// 进程优先级
 pub use types::ProcessPriority;
 
-// fd_alloc 公共接口 re-export — 避免跨层直接访问 services::proc::fd_alloc 内部
-pub use fd_alloc::cfg_smoltcp_cap;
-
 // sched_policy 公共接口 re-export — 策略-机制分离
 pub use sched_policy::{DefaultPolicy, register_default_policy};
 
