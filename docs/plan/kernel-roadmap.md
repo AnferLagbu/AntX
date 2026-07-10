@@ -33,13 +33,7 @@
 - **描述**: 15+ syscall 实装 (pidfd/*at/memfd/copy_file_range/pipe2/dup3/epoll_create1)
 - **状态**: [X]
 
-### G5: mdBook 文档体系
-- **描述**: docs/book/ 拆分 kernel-handbook + services-handbook + architecture + rfcs + contributing
-- **状态**: []
-
-- **工作量**: 预计 2 周
-
-### G6: CI/CD 流水线完善
+### G5: CI/CD 流水线完善
 - **描述**: 拆分为 ci-x86.yml + ci-aarch64.yml + ci-lint.yml + ci-bench.yml
 - **状态**: []
 
@@ -49,13 +43,13 @@
 
 ## P2 — 工程化提升 (2 项)
 
-### G7: fsx 集成测试
+### G6: fsx 集成测试
 - **描述**: 引入 fsx-linux 测试程序，针对 ext2/exfat/overlayfs/tmpfs 各 1 轮
 - **状态**: []
 
 - **验收**: fsx-linux 跑通；100 万次操作无崩溃
 
-### G8: ext2 + exfat 磁盘 FS ✅
+### G7: ext2 + exfat 磁盘 FS ✅
 - **描述**: ext2 ~2500 行 + exfat ~3000 行
 - **状态**: [X]
 
@@ -63,13 +57,13 @@
 
 ## P3 — 锦上添花 (2 项)
 
-### G9: 容器辅助 FS 补全
+### G8: 容器辅助 FS 补全
 - **描述**: devpts + cgroupfs + configfs + virtiofs
 - **状态**: []
 
 - **工作量**: 总计 4 周
 
-### G10: systree 动态系统树 (部分完成)
+### G9: systree 动态系统树 (部分完成)
 - **描述**: Tree + Node + Attr 三元组；节点支持属性读写回调
 - **状态**: []
 
@@ -84,13 +78,13 @@
   G2 overlayfs ✅
   G3 tmpfs ✅
   G4 syscall 补全 ✅
-  G8 ext2 + exfat ✅
+  G7 ext2 + exfat ✅
 
 待实施:
-  Week 1-2:   G6 CI 拆分 (1w) + G5 mdBook (2w)  ← 并行
-  Week 3-4:   G7 fsx (1w)
-  Week 5-8:   G9 容器 FS (4w)
-  Week 9-12:  G10 systree (3-4w)
+  Week 1-2:   G5 CI 拆分 (1-2w)
+  Week 3-4:   G6 fsx (1w)
+  Week 5-8:   G8 容器 FS (4w)
+  Week 9-12:  G9 systree (3-4w)
 ```
 
 ## 工作量汇总
@@ -98,10 +92,10 @@
 | 优先级 | 任务 | 状态 | 预计工期 |
 |--------|------|------|----------|
 | P0 | G2 + G3 | ✅ 完成 | 0 周 |
-| P1 | G4 + G5 + G6 | G4✅ | 3-4 周 |
-| P2 | G7 + G8 | G8✅ | 1 周 |
-| P3 | G9 + G10 | G10 部分 | 7-8 周 |
-| **总计** | | **4 项完成** | **11-13 周** |
+| P1 | G4 + G5 | G4✅ | 1-2 周 |
+| P2 | G6 + G7 | G7✅ | 1 周 |
+| P3 | G8 + G9 | G9 部分 | 7-8 周 |
+| **总计** | | **4 项完成** | **9-11 周** |
 
 ## 引用
 - 评估依据: tmp/asterinas-main/ 源码 (Asterinas 0.18.0) + docs/plan/ 子系统规划

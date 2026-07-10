@@ -4,7 +4,20 @@
 
 ---
 
-## F1: RISC-V 架构支持
+## F1: mdBook 文档体系
+
+- **描述**: 建立完整的内核文档体系
+- **内容**: 5 个部分
+  - kernel-handbook (内核使用手册: 构建/架构/内存/进程/文件系统/网络/驱动)
+  - services-handbook (服务层 API: syscall/VFS/Error)
+  - architecture (架构说明: 迁移 docs/explain/)
+  - rfcs (设计文档: 迁移 docs/plan/)
+  - contributing (贡献指南: 从 AGENTS.md 提取)
+- **工作量**: 预计 2 周
+
+---
+
+## F2: RISC-V 架构支持
 
 - **描述**
   - Asterinas 支持 x86_64 + riscv64 + loongarch64；QueenX 仅 x86_64 + aarch64
@@ -14,7 +27,17 @@
 
 ---
 
-## F2: TDX 机密计算支持
+## F2: RISC-V 架构支持
+
+- **描述**
+  - Asterinas 支持 x86_64 + riscv64 + loongarch64；QueenX 仅 x86_64 + aarch64
+  - 方案: RISC-V 64 启动 (OpenSBI) + 页表 (Sv39) + 异常 (stvec/sepc/scause) + 中断 (PLIC/CLINT) + 调度切换
+
+- **工作量**: ~3000-5000 行；预计 6-8 周
+
+---
+
+## F3: TDX 机密计算支持
 
 - **描述**
   - 方案: TDX module 检测 (CPUID 0x21) + tdcall 指令封装 + attest quote + 内存加密
@@ -23,7 +46,16 @@
 
 ---
 
-## F3: NFS 网络文件共享
+## F3: TDX 机密计算支持
+
+- **描述**
+  - 方案: TDX module 检测 (CPUID 0x21) + tdcall 指令封装 + attest quote + 内存加密
+
+- **工作量**: ~2300 行；预计 4-6 周
+
+---
+
+## F4: NFS 网络文件共享
 
 - **描述**
   - 网络文件共享支持, 允许 QueenX 作为 NFS 客户端/服务器
@@ -53,6 +85,7 @@
 ## 实施时间线
 
 ```text
-Week 13+:  F1 RISC-V / F2 TDX
-Week 20+:  F3 NFS (需内核模块框架)
+Week 1-2:   F1 mdBook 文档体系
+Week 3-10:  F2 RISC-V / F3 TDX
+Week 11+:   F4 NFS (需内核模块框架)
 ```
