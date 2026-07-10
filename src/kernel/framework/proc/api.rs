@@ -1082,12 +1082,6 @@ pub fn proc_is_initialized() -> i32 {
 }
 
 #[unsafe(no_mangle)]
-pub fn scheduler_tick_mlfq() {
-    let cpu = crate::kernel::framework::smp::get_current_cpu() as usize;
-    SCHEDULER.tick(cpu)
-}
-
-#[unsafe(no_mangle)]
 pub fn scheduler_add_with_priority(pid: Pid, level: usize) {
     SCHEDULER.add_with_priority(pid, level)
 }

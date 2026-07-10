@@ -527,11 +527,11 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
         // 仅当 scheduler 已初始化时触发调度
         if crate::kernel::framework::proc::SCHEDULER_READY.load(Ordering::Acquire) {
             unsafe extern "C" {
-                fn scheduler_tick_mlfq();
+                fn scheduler_tick();
             }
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
-                scheduler_tick_mlfq();
+                scheduler_tick();
             }
         }
     }
@@ -666,11 +666,11 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
             .load(core::sync::atomic::Ordering::Acquire)
         {
             unsafe extern "C" {
-                fn scheduler_tick_mlfq();
+                fn scheduler_tick();
             }
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
-                scheduler_tick_mlfq();
+                scheduler_tick();
             }
         }
     }

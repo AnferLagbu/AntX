@@ -45,13 +45,13 @@ pub trait SchedDecision: Send + Sync {
 // 默认回退策略 (早期启动阶段, services 尚未注册时使用)
 // ============================================================================
 
-/// 框架内建 MLFQ 回退策略
+/// 框架内建回退策略
 ///
 /// 在 services 注册策略之前, 调度器使用此策略.
-/// 逻辑与原 `SchedulerEx` 硬编码行为一致.
-pub struct FallbackMlfqPolicy;
+/// 逻辑与原硬编码行为一致.
+pub struct FallbackPolicy;
 
-impl SchedDecision for FallbackMlfqPolicy {
+impl SchedDecision for FallbackPolicy {
     fn pick_next_priority(&self, queue_lengths: [u32; 5]) -> Option<usize> {
         for prio in (0..5).rev() {
             if queue_lengths[prio] > 0 {
@@ -85,7 +85,7 @@ impl SchedDecision for FallbackMlfqPolicy {
     }
 }
 
-static FALLBACK_POLICY: FallbackMlfqPolicy = FallbackMlfqPolicy;
+static FALLBACK_POLICY: FallbackPolicy = FallbackPolicy;
 
 /// 全局策略注册表 — services 通过 `register_sched_decision` 注册
 static SCHED_DECISION: OnceLock<&'static dyn SchedDecision> = OnceLock::new();

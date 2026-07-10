@@ -116,8 +116,8 @@ pub use namespace::{sys_unshare, sys_setns, NamespaceSet};
 // cgroup 公共接口 re-export — 避免跨子系统直接访问 proc::cgroup 内部
 pub use cgroup::{sys_cgroup_create, sys_cgroup_destroy, sys_cgroup_attach, sys_cgroup_set_limit, sys_cgroup_get_stat, cgroup_is_initialized, cgroup_subsystem};
 
-// sched_trait 公共接口 re-export — T-01 策略-机制分离
-pub use sched_trait::{SchedDecision, FallbackMlfqPolicy, register_sched_decision, current_sched_decision};
+// sched_trait 公共接口 re-export — 策略-机制分离
+pub use sched_trait::{SchedDecision, FallbackPolicy, register_sched_decision, current_sched_decision};
 
 // mechanism 模块供 services 层通过 framework::proc::mechanism::* 访问机制 API
 // 不使用 glob re-export 因与现有 api re-export 产生歧义
