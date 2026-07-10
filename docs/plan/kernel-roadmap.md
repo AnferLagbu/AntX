@@ -1,10 +1,8 @@
 # QueenX 内核工程路线图
 
-> 基于 2026-07-08 代码现状，作为工程路线图。
+> 基于 2026-07-08 代码现状，作为近期工程路线图。
 >
-> **G1 (workspace 组件化拆分)** 已于 2026-07-08 验证后搁置: 拆分 framework crate 不会降低 TCB (62.4% → 63.4%)，应转向 services 组件化。
->
-> **远期任务** (RISC-V / TDX / NFS) 已独立至 [future-roadmap.md](future-roadmap.md)。
+> 远期任务 (RISC-V / TDX / NFS / mdBook) 独立至 [future-roadmap.md](future-roadmap.md)。
 
 ## 总体进度
 
@@ -63,7 +61,7 @@
 
 - **工作量**: 总计 4 周
 
-### G9: systree 动态系统树 (部分完成)
+### G9: systree 动态系统树
 - **描述**: Tree + Node + Attr 三元组；节点支持属性读写回调
 - **状态**: []
 
