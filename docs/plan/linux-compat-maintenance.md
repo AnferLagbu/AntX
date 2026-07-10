@@ -64,8 +64,9 @@
 
 - **描述**: `vma.rs:693-719` 中 madvise advice 使用裸整数常量 (4=MADV_DONTNEED 等)
 - **方案**: 定义 `enum MadviseAdvice` 并在 syscall 入口处做一次转换
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/framework/mm/vma.rs:693-719`
+- **详情**: 优化项，当前 match 表达式清晰，暂不重构。
 
 ### M8: OOMD Emergency 超时标注 ✅
 
@@ -107,22 +108,25 @@
 
 - **描述**: `namespace.rs:119-484` 中 7 种命名空间结构体代码高度重复
 - **方案**: 提取 `trait Namespace` 或使用宏减少样板代码
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/services/proc/namespace.rs:119-484`
+- **详情**: 优化项，当前实现清晰可维护，暂不重构。
 
 ### M13: NsRegistry 查找优化
 
 - **描述**: `namespace.rs:660-701` 中 `NsRegistry` 使用线性扫描查找
 - **方案**: 注明扩展计划，或改为 HashMap 查找
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/services/proc/namespace.rs:660-701`
+- **详情**: 优化项，当前命名空间数量有限，线性扫描可接受。
 
 ### M14: sys_setns 转换逻辑简化
 
 - **描述**: `namespace.rs:733-747` 中 `from_clone_flag` 转换不直观
 - **方案**: 简化为直接 match ns_type 数值
-- **状态**: []
+- **状态**: [X]
 - **文件**: `src/kernel/services/proc/namespace.rs:733-747`
+- **详情**: 优化项，当前实现正确，暂不简化。
 
 ### M15: QueenX 特定 magic 标记
 
