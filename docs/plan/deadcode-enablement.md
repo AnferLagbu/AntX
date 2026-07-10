@@ -196,17 +196,12 @@
 **前置条件**: 各模块独立。
 **预估**: 1 天。
 
-### 4.9 Smoltcp 内部 dead_code（不动 smoltcp 源码）
+### 4.9 Smoltcp — 第三方库豁免
 
-| 项 | 文件 | 功能 | 实施方案 |
-|----|------|------|----------|
-| `wire/dns.rs` | `services/net/smoltcp/src/wire/dns.rs` | DNS 解析器 | 保留（smoltcp 内部） |
-| `wire/ipv6.rs` | `services/net/smoltcp/src/wire/ipv6.rs` | IPv6 字段 | 保留（smoltcp 内部） |
-| `wire/udp.rs` | `services/net/smoltcp/src/wire/udp.rs` | UDP 字段 | 保留（smoltcp 内部） |
-| `iface/packet.rs` | `services/net/smoltcp/src/iface/packet.rs` | 包处理 | 保留（smoltcp 内部） |
-| `iface/interface/ipv6.rs` | `services/net/smoltcp/src/iface/interface/ipv6.rs` | IPv6 接口 | 保留（smoltcp 内部） |
-
-**说明**: smoltcp 源码不动，这些 dead_code 保留。
+smoltcp 是 vendored 的第三方网络栈库，**完全豁免** dead_code 审计：
+- 不修改 smoltcp 源码（避免上游更新冲突）
+- 审计脚本已跳过 `smoltcp/` 目录
+- 工程计划不纳入 smoltcp 内部 dead_code
 
 ---
 
@@ -290,6 +285,6 @@ Phase 3 (Week 4-6): P3 大工作量
 |------|------|------|
 | 硬件规范定义 | ~60 | 规范要求保留 |
 | 调试/诊断预留 | ~30 | 功能预留，按需启用 |
-| smoltcp 内部 | ~10 | 固定使用 smoltcp，不动源码 |
+| smoltcp 内部 | ~10 | **第三方库豁免**，不动源码 |
 | 文件级 allow | ~10 | 模块内部分项 |
 | **保留总计** | **~110** | 设计预留 |
