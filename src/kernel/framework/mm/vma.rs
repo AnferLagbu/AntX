@@ -675,7 +675,7 @@ impl MmStruct {
 
         // advice → VmFlags bit
         // 已移除未实现项: KSM (7/8), THP (14/15), DONTFORK (10/11),
-        // POPULATE (22/23), SOFT_OFFLINE (19), COLD (20)
+        // 预触达 (22/23), 软下线 (19), 冷标记 (20)
         let flag = match advice {
             4 => VmFlags::MADV_DONTNEED,
             5 => VmFlags::MADV_PAGEOUT,
