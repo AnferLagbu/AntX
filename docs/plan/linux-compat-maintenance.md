@@ -70,8 +70,8 @@
 
 ### M9: /proc/version 标识修改
 
-- **描述**: `procfs_core.rs:242` 输出 `"Linux version 6.1.0-queenx"` 伪装为 Linux
-- **方案**: 改为 `"QueenX version X.Y.Z"`，保留 `uname -r` 返回兼容值；移除假编译器信息
+- **描述**: `procfs_core.rs:242` 硬编码假的 Ubuntu 编译器信息: `"gcc (Ubuntu 11.3.0) 11.3.0, GNU ld (GNU Binutils for Ubuntu) 2.38"`
+- **方案**: 改为 `"QueenX version X.Y.Z"`，移除假的 Ubuntu/gcc/ld 信息；保留 `uname -r` 返回兼容值
 - **状态**: []
 - **文件**: `src/kernel/services/fs/procfs_core.rs:242`
 
