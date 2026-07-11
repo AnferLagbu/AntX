@@ -39,6 +39,8 @@ pub mod virtiofs;
 pub mod systree;
 /// 文件句柄系统 (name_to_handle_at / open_by_handle_at)
 pub mod file_handle;
+/// Per-process FD 表
+pub mod process_fd_table;
 pub mod io;
 pub mod path;
 pub mod mode;
