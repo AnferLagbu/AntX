@@ -329,10 +329,8 @@ pub struct XhciController {
     /// 已分配设备地址位图 (USB-1.4).
     /// Bit 0 = 地址 0 (保留给 default address), bit 1..=254 = 设备地址.
     /// 当前最大 256 槽位 = 256 位 / 8 = 32 字节.
-    #[allow(dead_code)] // 待 USB-1.4 启用
     address_bitmap: [u8; 32],
     /// 下一个待分配地址扫描起点 (USB-1.4, 避免每次从 0 扫描).
-    #[allow(dead_code)] // 待 USB-1.4 启用
     next_address_hint: u8,
 }
 
