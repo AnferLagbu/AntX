@@ -19,8 +19,6 @@
 //! ## @SAFE
 //! 不含 `unsafe`. 委托 `framework::sync` 的 Guard 实现.
 
-#![allow(dead_code)]
-
 use core::ops::{Deref, DerefMut};
 
 use crate::kernel::framework::sync::{

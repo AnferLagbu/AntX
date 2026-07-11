@@ -26,8 +26,6 @@
 //! 保持 API 兼容 (历史代码使用 `OnceCell` 名)。`Once` 是独立原语, 简单闭包
 //! 一次性执行, 用 Mutex 串行化 (无锁自旋式实现见 `framework::sync::once_lock::InnerOnce`)。
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use crate::kernel::framework::sync::Mutex;

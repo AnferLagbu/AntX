@@ -24,8 +24,6 @@
 //! data.with_mut(|g| *g += 1);
 //! ```
 
-#![allow(dead_code)]
-
 /// 中断安全自旋锁 (类型别名, 指向 framework 提供的 TCB 实现)。
 pub type IrqSpinLock<T> = crate::kernel::framework::sync::IrqSpinLock<T>;
 
