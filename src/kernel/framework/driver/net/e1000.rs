@@ -1,5 +1,5 @@
 #[cfg(not(feature = "kernel_test"))]
-use core::sync::atomic::AtomicU32;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::driver::DriverError;
@@ -25,8 +25,7 @@ use alloc::boxed::Box;
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[cfg(not(feature = "kernel_test"))]
-// POLL_COUNT: 预留统计计数器, 待网络性能监控特性启用后使用。
-#[allow(dead_code)] // 待网络性能监控特性启用后使用。
+// 网络性能统计: 接收包计数
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
 pub const E1000_TX_RING_SIZE: usize = 64;
@@ -751,6 +750,9 @@ impl E1000Device {
         if !self.is_ready() {
             return None;
         }
+
+        // 网络性能统计: 递增接收计数
+        POLL_COUNT.fetch_add(1, Ordering::Relaxed);
 
         let rx_descs = self.rx_descs?;
 

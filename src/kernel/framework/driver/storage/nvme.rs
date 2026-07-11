@@ -56,8 +56,7 @@ const MAX_SECTORS_PER_CMD: u16 = 128;
 
 // NVMe 控制器寄存器偏移 (BAR0)  // 硬件寄存器描述
 const NVME_REG_CAP: usize = 0x00;    // u64: 控制器能力
-#[allow(dead_code)] // NVMe 规范 §3.1.2 — 启动时用于探测控制器版本 (待实现)
-const NVME_REG_VS: usize = 0x08;     // u32: 版本
+const NVME_REG_VS: usize = 0x08;     // u32: 版本 (NVMe 规范 §3.1.2)
 #[allow(dead_code)] // NVMe 规范 §3.1.6 — 中断屏蔽设置 (待实现 IRQ 路径)
 const NVME_REG_INTMS: usize = 0x0C;  // u32: 中断掩码设置
 #[allow(dead_code)] // NVMe 规范 §3.1.6 — 中断屏蔽清除 (待实现 IRQ 路径)
@@ -639,6 +638,13 @@ impl NvmeController {
         let cap = iomem.read_u64(NVME_REG_CAP);
         let dstrd = ((cap >> 32) & 0xF) as u32;
         self.db_stride = 1 << dstrd;
+
+        // 读取控制器版本 (NVMe 规范 §3.1.2)
+        let vs = iomem.read_u32(NVME_REG_VS);
+        let major = (vs >> 16) & 0xFFFF;
+        let minor = (vs >> 8) & 0xFF;
+        let patch = vs & 0xFF;
+        crate::klog_info!(Driver, "[NVMe] controller version: {}.{}.{}", major, minor, patch);
 
         // MPS: 使用 4KB (= 0)
         let mps: u32 = 0; // 2^(12 + 0) = 4096
