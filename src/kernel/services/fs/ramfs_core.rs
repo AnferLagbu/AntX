@@ -881,6 +881,145 @@ impl RamFsData {
         bytes_written as i32
     }
 
+    // ========================================================================
+    // Inode 适配: offset-by-value 方法 (供 Inode adapter 调用)
+    // ========================================================================
+    //
+    // 与 read/write 的区别: offset 按值传入而非 &mut, 由调用者 (OpenFile) 管理偏移.
+    // 适用于 Plan B Inode trait 的 read/write 实现.
+
+    /// 读取文件数据 (offset-by-value 版本, 供 Inode adapter 使用)
+    ///
+    /// 返回 (实际读取字节数, 新偏移).
+    pub fn read_at_offset(&mut self, node_id: u32, offset: u64, buf: &mut [u8], pwm: u64) -> (usize, u64) {
+        let node = &self.nodes[node_id as usize];
+
+        if !self.check_permission(node, pwm, FS_CAP_READ) {
+            return (0, offset);
+        }
+
+        let mut bytes_read = 0usize;
+        let node_size = node.size as u64;
+        let mut current_offset = offset;
+
+        while bytes_read < buf.len() && current_offset < node_size {
+            let block_idx = (current_offset as usize) / RAMFS_BLOCK_SIZE;
+            let block_offset = (current_offset as usize) % RAMFS_BLOCK_SIZE;
+            let mut bytes_to_read = RAMFS_BLOCK_SIZE - block_offset;
+
+            if bytes_to_read > buf.len() - bytes_read {
+                bytes_to_read = buf.len() - bytes_read;
+            }
+            if bytes_to_read > (node_size - current_offset) as usize {
+                bytes_to_read = (node_size - current_offset) as usize;
+            }
+
+            let block_num = Self::get_or_alloc_block(
+                &mut self.nodes[node_id as usize],
+                &mut self.data_area,
+                &mut self.block_bitmap,
+                &self.free_blocks,
+                block_idx,
+            );
+
+            if let Some(block_num) = block_num {
+                let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
+                if start + bytes_to_read <= self.data_area.len() {
+                    buf[bytes_read..bytes_read + bytes_to_read]
+                        .copy_from_slice(&self.data_area[start..start + bytes_to_read]);
+                }
+            }
+
+            bytes_read += bytes_to_read;
+            current_offset += bytes_to_read as u64;
+        }
+
+        self.nodes[node_id as usize].atime = Self::get_time();
+
+        (bytes_read, current_offset)
+    }
+
+    /// 写入文件数据 (offset-by-value 版本, 供 Inode adapter 使用)
+    ///
+    /// 返回 (实际写入字节数, 新偏移).
+    pub fn write_at_offset(&mut self, node_id: u32, offset: u64, buf: &[u8], pwm: u64) -> (usize, u64) {
+        if !self.check_permission(&self.nodes[node_id as usize], pwm, FS_CAP_CREATE) {
+            return (0, offset);
+        }
+
+        let mut bytes_written = 0usize;
+        let mut current_offset = offset;
+
+        while bytes_written < buf.len() {
+            let block_idx = (current_offset as usize) / RAMFS_BLOCK_SIZE;
+            let block_offset = (current_offset as usize) % RAMFS_BLOCK_SIZE;
+            let mut bytes_to_write = RAMFS_BLOCK_SIZE - block_offset;
+
+            if bytes_to_write > buf.len() - bytes_written {
+                bytes_to_write = buf.len() - bytes_written;
+            }
+
+            let block_num = Self::get_or_alloc_block(
+                &mut self.nodes[node_id as usize],
+                &mut self.data_area,
+                &mut self.block_bitmap,
+                &self.free_blocks,
+                block_idx,
+            );
+
+            match block_num {
+                Some(block_num) => {
+                    let start = (block_num as usize) * RAMFS_BLOCK_SIZE + block_offset;
+                    if start + bytes_to_write <= self.data_area.len() {
+                        self.data_area[start..start + bytes_to_write]
+                            .copy_from_slice(&buf[bytes_written..bytes_written + bytes_to_write]);
+                    }
+                }
+                None => break,
+            }
+
+            bytes_written += bytes_to_write;
+            current_offset += bytes_to_write as u64;
+
+            if current_offset > self.nodes[node_id as usize].size as u64 {
+                self.nodes[node_id as usize].size = current_offset as u32;
+            }
+        }
+
+        self.nodes[node_id as usize].mtime = Self::get_time();
+
+        dcache::icache_invalidate(node_id);
+
+        (bytes_written, current_offset)
+    }
+
+    /// 获取节点 stat 信息 (供 Inode stat 使用)
+    pub fn get_stat(&self, node_id: u32, _pwm: u64) -> super::vfs_types::KernelResult<VfsStat> {
+        use super::vfs_types::KernelError as KE;
+        if node_id as usize >= RAMFS_MAX_NODES {
+            return Err(KE::InvalidArgument);
+        }
+        let node = &self.nodes[node_id as usize];
+        if !node.used {
+            return Err(KE::NotFound);
+        }
+        Ok(VfsStat {
+            node_id: node.node_id,
+            mode: node.perm,
+            uid: 0,
+            gid: 0,
+            size: node.size,
+            atime: node.atime,
+            mtime: node.mtime,
+            ctime: node.ctime,
+            owner_pwm: node.owner_pwm,
+            group_pwm: node.group_pwm,
+            perm: node.perm,
+            file_type: node.file_type,
+            sensitivity: node.sensitivity,
+        })
+    }
+
     pub fn truncate(&mut self, node_id: u32, new_size: u64, pwm: u64) -> i32 {
         if node_id as usize >= RAMFS_MAX_NODES {
             return KernelError::InvalidArgument.as_i32();
@@ -1597,14 +1736,16 @@ impl FileSystem for RamFsData {
         Ok(())
     }
 
-    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> KernelResult<FsOpenResult> {
+    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        let mount_idx = 0; // RamFs 默认挂载索引
         let mut ramfs = RAMFS_DATA.lock();
         match ramfs.open(rel_path, flags, pwm) {
-            Some((node_id, offset, file_type)) => {
+            Some((node_id, _offset, _file_type)) => {
                 if (flags & VfsOpenFlags::TRUNC.bits()) != 0 {
                     ramfs.truncate(node_id, 0, pwm);
                 }
-                Ok(FsOpenResult { handle: node_id, offset, file_type })
+                drop(ramfs);
+                Ok(alloc::sync::Arc::new(crate::kernel::services::fs::inode::RamFsInode::new(node_id, mount_idx)))
             }
             None => Err(KernelError::NotFound),
         }
@@ -1806,14 +1947,19 @@ impl FileSystem for RamFsData {
         ramfs.resolve_path(rel_path)
     }
 
-    fn fs_create(&self, parent_path: &str, name: &str, pwm: u64) -> KernelResult<FsOpenResult> {
+    fn fs_create(&self, parent_path: &str, name: &str, pwm: u64) -> KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        let mount_idx = 0;
         let mut ramfs = RAMFS_DATA.lock();
         match ramfs.create_file(parent_path, name, pwm) {
             Some(new_inode) => {
-                let file_type = ramfs.stat(new_inode).map(|s| s.file_type).unwrap_or(0);
-                Ok(FsOpenResult { handle: new_inode, offset: 0, file_type })
+                drop(ramfs);
+                Ok(alloc::sync::Arc::new(crate::kernel::services::fs::inode::RamFsInode::new(new_inode, mount_idx)))
             }
             None => Err(KernelError::NoSpace),
         }
+    }
+
+    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        Some(alloc::sync::Arc::new(crate::kernel::services::fs::inode::RamFsInode::new(inode_id, mount_idx)))
     }
 }

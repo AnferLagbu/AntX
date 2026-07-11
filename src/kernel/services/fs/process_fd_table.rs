@@ -1,166 +1,169 @@
 #![deny(unsafe_code)]
-//! Per-process FD 表 — 进程级文件描述符管理
+//! Per-process FD 表 — 进程级文件描述符管理 (Plan B)
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::fs::vfs::api。
 //!
 //! ## 职责
 //!
 //! - 管理每个进程的文件描述符表
-//! - 支持 POSIX dup 语义 (共享 OpenFile)
+//! - 直接持有 `Arc<OpenFile>` 引用 (替代全局 OPEN_FILE_TABLE 间接引用)
+//! - 支持 POSIX dup 语义 (共享 Arc<OpenFile>)
 //! - 支持 fork 时 FD 表复制
 //! - 支持 exec 时 FD 表清理 (CLOEXEC)
 //!
 //! ## 设计
 //!
-//! 使用固定大小数组存储 FD 条目, 每个条目包含:
-//! - handle_id: 指向全局 OpenFile 表的索引
-//! - cloexec: FD 级标志 (CLOEXEC)
-//! - used: 是否使用中
-//!
-//! dup() 通过复制 handle_id 实现, 增加 OpenFile 引用计数.
+//! Plan B: 使用 `Vec<Option<Arc<OpenFile>>>` 替代固定数组.
+//! 每个 FD 直接持有 `Arc<OpenFile>`, dup 通过 `Arc::clone` 共享,
+//! close 通过 `Arc::drop` 减少引用计数.
 
+extern crate alloc;
+
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::Errno;
+use super::vfs_types::OpenFile;
 
-/// 每进程 FD 表上限
-const MAX_FD_PER_PROCESS: usize = 256;
-
-/// FD 条目
-#[derive(Debug, Clone, Copy)]
+/// FD 条目 — Plan B: 直接持有 Arc<OpenFile>
+#[derive(Debug)]
 pub struct FdEntry {
-    /// 指向全局 OpenFile 表的索引 (0 = 空闲)
-    pub handle_id: u32,
+    /// 打开文件描述 (共享引用)
+    pub open_file: Arc<OpenFile>,
     /// FD 级标志 (CLOEXEC, 不随 dup 共享)
     pub cloexec: bool,
-    /// 是否使用中
-    pub used: bool,
 }
 
-impl FdEntry {
-    pub const fn new() -> Self {
-        Self {
-            handle_id: 0,
-            cloexec: false,
-            used: false,
-        }
-    }
-}
-
-/// Per-process FD 表
+/// Per-process FD 表 (Plan B: Vec 动态扩展)
 pub struct ProcessFdTable {
-    /// FD 条目数组
-    entries: Mutex<[FdEntry; MAX_FD_PER_PROCESS]>,
-    /// 下一个可用 FD 编号 (从 3 开始, 0/1/2 保留给 stdin/stdout/stderr)
-    next_fd: core::sync::atomic::AtomicU32,
+    /// FD 条目数组, index = fd 编号
+    entries: Mutex<Vec<Option<FdEntry>>>,
+    /// 最大 FD 编号上限
+    max_fds: usize,
 }
 
 impl ProcessFdTable {
     /// 创建新的 FD 表
-    pub fn new() -> Self {
+    pub fn new(max_fds: usize) -> Self {
+        let mut entries = Vec::with_capacity(max_fds);
+        entries.resize_with(max_fds, || None);
         Self {
-            entries: Mutex::new([FdEntry::new(); MAX_FD_PER_PROCESS]),
-            next_fd: core::sync::atomic::AtomicU32::new(3),
+            entries: Mutex::new(entries),
+            max_fds,
         }
     }
 
-    /// 分配一个新的 FD
-    pub fn alloc_fd(&self, handle_id: u32, cloexec: bool) -> Option<u32> {
-        let fd = self.next_fd.fetch_add(1, core::sync::atomic::Ordering::AcqRel);
-        if fd as usize >= MAX_FD_PER_PROCESS {
-            return None;
-        }
+    /// 创建默认大小的 FD 表 (256 个 FD)
+    pub fn new_default() -> Self {
+        Self::new(256)
+    }
 
+    /// 分配一个新的 FD ( lowest-available 策略)
+    pub fn alloc_fd(&self, open_file: Arc<OpenFile>, cloexec: bool) -> Option<u32> {
         let mut entries = self.entries.lock();
-        entries[fd as usize] = FdEntry {
-            handle_id,
-            cloexec,
-            used: true,
-        };
-        Some(fd)
+        // 从 3 开始搜索 (0/1/2 保留给 stdin/stdout/stderr)
+        for fd in 3..entries.len() {
+            if entries[fd].is_none() {
+                entries[fd] = Some(FdEntry { open_file, cloexec });
+                return Some(fd as u32);
+            }
+        }
+        None
     }
 
-    /// 获取 FD 条目
-    pub fn get_fd(&self, fd: u32) -> Option<FdEntry> {
+    /// 分配指定编号的 FD (dup2 用)
+    pub fn alloc_fd_at(&self, fd: u32, open_file: Arc<OpenFile>, cloexec: bool) -> Result<u32, Errno> {
+        let fd_usize = fd as usize;
+        let mut entries = self.entries.lock();
+        if fd_usize >= entries.len() {
+            return Err(Errno::EBADF);
+        }
+        // 如果该 FD 已打开, 先关闭
+        if let Some(old) = entries[fd_usize].take() {
+            drop(old); // Arc 引用计数自动减少
+        }
+        entries[fd_usize] = Some(FdEntry { open_file, cloexec });
+        Ok(fd)
+    }
+
+    /// 获取 FD 的 OpenFile 引用
+    pub fn get_fd(&self, fd: u32) -> Option<Arc<OpenFile>> {
         let entries = self.entries.lock();
-        if (fd as usize) < MAX_FD_PER_PROCESS && entries[fd as usize].used {
-            Some(entries[fd as usize])
+        let fd_usize = fd as usize;
+        if fd_usize < entries.len() {
+            entries[fd_usize].as_ref().map(|e| e.open_file.clone())
         } else {
             None
         }
     }
 
-    /// 关闭 FD
-    pub fn close_fd(&self, fd: u32) -> Option<u32> {
+    /// 获取 FD 的 CLOEXEC 标志
+    pub fn get_cloexec(&self, fd: u32) -> bool {
+        let entries = self.entries.lock();
+        let fd_usize = fd as usize;
+        if fd_usize < entries.len() {
+            entries[fd_usize].as_ref().map(|e| e.cloexec).unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 关闭 FD, 返回被关闭的 OpenFile 引用
+    pub fn close_fd(&self, fd: u32) -> Option<Arc<OpenFile>> {
         let mut entries = self.entries.lock();
-        if (fd as usize) < MAX_FD_PER_PROCESS && entries[fd as usize].used {
-            let handle_id = entries[fd as usize].handle_id;
-            entries[fd as usize] = FdEntry::new();
-            Some(handle_id)
+        let fd_usize = fd as usize;
+        if fd_usize < entries.len() {
+            entries[fd_usize].take().map(|e| e.open_file)
         } else {
             None
         }
     }
 
-    /// 复制 FD (dup 语义)
+    /// 复制 FD (dup 语义) — 共享同一个 Arc<OpenFile>
     pub fn dup_fd(&self, old_fd: u32) -> Option<u32> {
-        let entries = self.entries.lock();
-        if (old_fd as usize) < MAX_FD_PER_PROCESS && entries[old_fd as usize].used {
-            let handle_id = entries[old_fd as usize].handle_id;
-            let cloexec = entries[old_fd as usize].cloexec;
-            drop(entries);
-
-            // 增加 OpenFile 引用计数
-            crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE.inc_ref(handle_id);
-
-            // 分配新 FD
-            self.alloc_fd(handle_id, cloexec)
-        } else {
-            None
-        }
+        let open_file = {
+            let entries = self.entries.lock();
+            let old_usize = old_fd as usize;
+            if old_usize >= entries.len() {
+                return None;
+            }
+            entries[old_usize].as_ref()?.open_file.clone()
+        };
+        let cloexec = self.get_cloexec(old_fd);
+        self.alloc_fd(open_file, cloexec)
     }
 
     /// 复制 FD 到指定编号 (dup2 语义)
     pub fn dup2_fd(&self, old_fd: u32, new_fd: u32) -> Result<u32, Errno> {
-        if new_fd as usize >= MAX_FD_PER_PROCESS {
+        if old_fd == new_fd {
+            // dup2(fd, fd) 是 no-op, 但检查 fd 是否有效
+            let entries = self.entries.lock();
+            if (new_fd as usize) < entries.len() && entries[new_fd as usize].is_some() {
+                return Ok(new_fd);
+            }
             return Err(Errno::EBADF);
         }
 
-        let entries = self.entries.lock();
-        if (old_fd as usize) < MAX_FD_PER_PROCESS && entries[old_fd as usize].used {
-            let handle_id = entries[old_fd as usize].handle_id;
-            let cloexec = entries[old_fd as usize].cloexec;
-
-            // 如果 new_fd 已打开, 先关闭
-            if entries[new_fd as usize].used {
-                let old_handle_id = entries[new_fd as usize].handle_id;
-                crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE.dec_ref(old_handle_id);
+        let open_file = {
+            let entries = self.entries.lock();
+            let old_usize = old_fd as usize;
+            if old_usize >= entries.len() {
+                return Err(Errno::EBADF);
             }
-
-            // 增加 OpenFile 引用计数
-            crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE.inc_ref(handle_id);
-
-            // 设置新 FD
-            let mut entries = self.entries.lock();
-            entries[new_fd as usize] = FdEntry {
-                handle_id,
-                cloexec,
-                used: true,
-            };
-
-            Ok(new_fd)
-        } else {
-            Err(Errno::EBADF)
-        }
+            entries[old_usize].as_ref().ok_or(Errno::EBADF)?.open_file.clone()
+        };
+        let cloexec = self.get_cloexec(old_fd);
+        self.alloc_fd_at(new_fd, open_file, cloexec)
     }
 
     /// 关闭所有 CLOEXEC FD
     pub fn close_cloexec_fds(&self) {
         let mut entries = self.entries.lock();
-        for fd in entries.iter_mut() {
-            if fd.used && fd.cloexec {
-                crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE.dec_ref(fd.handle_id);
-                *fd = FdEntry::new();
+        for entry in entries.iter_mut() {
+            if let Some(e) = entry {
+                if e.cloexec {
+                    *entry = None; // Arc drop
+                }
             }
         }
     }
@@ -168,10 +171,11 @@ impl ProcessFdTable {
     /// 清空 FD 表 (exec 时调用, 保留 CLOEXEC FD)
     pub fn clear_non_cloexec(&self) {
         let mut entries = self.entries.lock();
-        for fd in entries.iter_mut() {
-            if fd.used && !fd.cloexec {
-                crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE.dec_ref(fd.handle_id);
-                *fd = FdEntry::new();
+        for entry in entries.iter_mut() {
+            if let Some(e) = entry {
+                if !e.cloexec {
+                    *entry = None; // Arc drop
+                }
             }
         }
     }
@@ -179,12 +183,11 @@ impl ProcessFdTable {
     /// 获取已使用的 FD 数量
     pub fn used_count(&self) -> u32 {
         let entries = self.entries.lock();
-        entries.iter().filter(|fd| fd.used).count() as u32
+        entries.iter().filter(|e| e.is_some()).count() as u32
+    }
+
+    /// 获取最大 FD 数量
+    pub fn max_fds(&self) -> usize {
+        self.max_fds
     }
 }
-
-/// 全局默认 FD 表 (用于初始化)
-pub static DEFAULT_FD_TABLE: ProcessFdTable = ProcessFdTable {
-    entries: Mutex::new([FdEntry::new(); MAX_FD_PER_PROCESS]),
-    next_fd: core::sync::atomic::AtomicU32::new(3),
-};

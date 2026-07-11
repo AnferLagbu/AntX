@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+
+extern crate alloc;
+
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::driver::block;
 use crate::kernel::services::fs::hvfs::arc::{HvArcBufType, HvArcKey};
@@ -1809,6 +1812,90 @@ impl HvfsData {
 }
 
 // ============================================================================
+// HvfsInode — HvFS 文件 Inode 实现
+// ============================================================================
+
+use crate::kernel::services::fs::inode::Inode;
+use crate::kernel::framework::fs::{KernelResult, VfsStat, VfsSeekWhence, VfsFileType};
+
+/// HvFS 文件 Inode — 直接持有 fd 编号
+pub struct HvfsInode {
+    fd: u32,
+    mount_idx: u32,
+    rel_path: alloc::string::String,
+}
+
+impl HvfsInode {
+    pub fn new(fd: u32, mount_idx: u32, rel_path: &str) -> Self {
+        Self { fd, mount_idx, rel_path: alloc::string::String::from(rel_path) }
+    }
+}
+
+impl Inode for HvfsInode {
+    fn read(&self, _offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        let hvfs = get_hvfs();
+        let result = hvfs.read(self.fd, buf, buf.len() as u32);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn write(&self, _offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let hvfs = get_hvfs();
+        let result = hvfs.write(self.fd, buf, buf.len() as u32);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
+        let hvfs = get_hvfs();
+        match hvfs.stat(&self.rel_path, pwm) {
+            Some(obj) => {
+                let st = VfsStat {
+                    node_id: obj.obj_id as u32,
+                    mode: obj.pwm_perm,
+                    size: obj.size as u32,
+                    owner_pwm: obj.owner_pwm,
+                    group_pwm: obj.group_pwm,
+                    perm: obj.pwm_perm,
+                    sensitivity: obj.sensitivity,
+                    file_type: if obj.is_dir() {
+                        VfsFileType::Dir.as_u8()
+                    } else {
+                        VfsFileType::File.as_u8()
+                    },
+                    ..Default::default()
+                };
+                Ok(st)
+            }
+            None => Err(KernelError::NotFound),
+        }
+    }
+
+    fn truncate(&self, _size: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
+        let new_offset = match whence {
+            VfsSeekWhence::Set => offset as u64,
+            VfsSeekWhence::Cur => current_offset.saturating_add(offset as u64),
+            VfsSeekWhence::End => current_offset.saturating_add(offset as u64),
+        };
+        Ok(new_offset)
+    }
+
+    fn is_dir(&self) -> bool {
+        false
+    }
+
+    fn node_id(&self) -> u32 {
+        self.fd
+    }
+
+    fn mount_idx(&self) -> u32 {
+        self.mount_idx
+    }
+}
+
+// ============================================================================
 // E6-4: FileSystem trait 实现
 // ============================================================================
 
@@ -1831,13 +1918,9 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
         Ok(())
     }
 
-    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> crate::kernel::framework::fs::KernelResult<crate::kernel::framework::fs::FsOpenResult> {
+    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> crate::kernel::framework::fs::KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
         match self.open(rel_path, flags, pwm) {
-            Ok(fd) => Ok(crate::kernel::framework::fs::FsOpenResult {
-                handle: fd as u32,
-                offset: 0,
-                file_type: 0,
-            }),
+            Ok(fd) => Ok(alloc::sync::Arc::new(HvfsInode::new(fd as u32, 0, rel_path))),
             Err(e) => Err(e),
         }
     }
@@ -1941,5 +2024,9 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
     fn fs_sync(&self) -> crate::kernel::framework::fs::KernelResult<()> {
         let r = self.sync();
         if r == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        Some(alloc::sync::Arc::new(HvfsInode::new(inode_id, mount_idx, "")))
     }
 }

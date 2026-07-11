@@ -2,6 +2,8 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! overlayfs 文件系统实现
 
+extern crate alloc;
+
 use crate::kernel::framework::fs::KernelError;
 use crate::kernel::services::fs::vfs_types::*;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
@@ -127,6 +129,87 @@ impl OverlayFsData {
 /// overlayfs 文件系统实例 (全局单例)
 static OVERLAY_FS: Mutex<Option<OverlayFsData>> = Mutex::new(None);
 
+// ============================================================================
+// OverlayFsInode — OverlayFS 文件 Inode 实现
+// ============================================================================
+
+use alloc::sync::Arc;
+use crate::kernel::services::fs::inode::Inode;
+
+/// OverlayFS 文件 Inode — 委托给 upperdir 的 RamFsData
+pub struct OverlayFsInode {
+    node_id: u32,
+    mount_idx: u32,
+    file_type: u8,
+    rel_path: alloc::string::String,
+}
+
+impl OverlayFsInode {
+    pub fn new(node_id: u32, mount_idx: u32, file_type: u8, rel_path: &str) -> Self {
+        Self { node_id, mount_idx, file_type, rel_path: alloc::string::String::from(rel_path) }
+    }
+}
+
+impl Inode for OverlayFsInode {
+    fn read(&self, offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        let fs_guard = OVERLAY_FS.lock();
+        let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+        let mut offset_i32 = offset as i32;
+        let result = fs.upper_data.read(self.node_id, &mut offset_i32, buf, _pwm);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn write(&self, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let mut fs_guard = OVERLAY_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+        let mut offset_i32 = offset as i32;
+        let result = fs.upper_data.write(self.node_id, &mut offset_i32, buf, _pwm);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
+        let fs_guard = OVERLAY_FS.lock();
+        let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+        match fs.upper_data.get_stat(self.node_id, _pwm) {
+            Ok(s) => Ok(s),
+            Err(_) => Err(KernelError::NotFound),
+        }
+    }
+
+    fn truncate(&self, size: u64, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = OVERLAY_FS.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+        let rc = fs.upper_data.truncate(self.node_id, size, 0);
+        if rc == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
+        let file_size = {
+            let fs_guard = OVERLAY_FS.lock();
+            let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+            fs.upper_data.get_file_size(self.node_id).unwrap_or(0) as u64
+        };
+        let new_offset = match whence {
+            VfsSeekWhence::Set => offset as u64,
+            VfsSeekWhence::Cur => current_offset.saturating_add(offset as u64),
+            VfsSeekWhence::End => file_size.saturating_add(offset as u64),
+        };
+        Ok(new_offset)
+    }
+
+    fn is_dir(&self) -> bool {
+        self.file_type == 1
+    }
+
+    fn node_id(&self) -> u32 {
+        self.node_id
+    }
+
+    fn mount_idx(&self) -> u32 {
+        self.mount_idx
+    }
+}
+
 /// overlayfs FileSystem trait 实现
 pub struct OverlayFsFileSystem;
 
@@ -154,32 +237,24 @@ impl FileSystem for OverlayFsFileSystem {
         Ok(())
     }
 
-    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<FsOpenResult> {
+    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
         let mut fs_guard = OVERLAY_FS.lock();
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
 
-        // 解析路径，确定文件来源
         let entry = fs.resolve_layer(rel_path);
 
         if entry.is_whiteout {
             return Err(KernelError::NotFound);
         }
 
-        // 如果文件在 lowerdir 且需要写入，执行 copy_up
         if !entry.in_upper && (_flags & 0x0003 != 0) {
             fs.copy_up(rel_path)?;
         }
 
-        // 打开文件 (从 upperdir 或 lowerdir)
         if entry.in_upper {
             let node_id = entry.upper_inode.unwrap_or(0);
-            Ok(FsOpenResult {
-                handle: node_id,
-                offset: 0,
-                file_type: entry.file_type,
-            })
+            Ok(alloc::sync::Arc::new(OverlayFsInode::new(node_id, 0, entry.file_type, rel_path)))
         } else {
-            // 从 lowerdir 打开 (需要通过 VFS)
             Err(KernelError::NotSupported)
         }
     }
@@ -325,6 +400,10 @@ impl FileSystem for OverlayFsFileSystem {
 
     fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::NotSupported)
+    }
+
+    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        Some(alloc::sync::Arc::new(OverlayFsInode::new(inode_id, mount_idx, 0, "")))
     }
 }
 

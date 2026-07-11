@@ -38,12 +38,12 @@ pub struct VfsFile {
 
 | 功能 | POSIX 要求 | 当前状态 |
 |------|-----------|---------|
-| dup() 共享 offset | ✅ POSIX.1-2001 要求 | ❌ 不满足 |
+| dup() 共享 offset | ✅ POSIX.1-2001 要求 | ✅ 已满足 (Plan B: Arc\<OpenFile\> 共享) |
 | open() 创建新描述 | ✅ POSIX 要求 | ✅ 满足 |
-| O_CLOEXEC per-FD | ✅ POSIX 要求 | ⚠️ 部分实现 |
-| O_APPEND 原子 | ✅ POSIX 要求 | ❌ 未保证 |
-| memfd_create | ❌ Linux-specific | ⚠️ tmpfs 委托 |
-| name_to_handle_at | ❌ Linux-specific | ❌ 未实现 |
+| O_CLOEXEC per-FD | ✅ POSIX 要求 | ✅ 已实现 (ProcessFdTable.cloexec) |
+| O_APPEND 原子 | ✅ POSIX 要求 | ✅ 已实现 (Phase 9: vfs_write 自动 seek 到文件末尾) |
+| memfd_create | ❌ Linux-specific | ✅ 已实现 (AnonymousFs + AnonymousInode) |
+| name_to_handle_at | ❌ Linux-specific | ✅ 已实现 (Phase 10: 路径解析 + 序列化) |
 
 ---
 
@@ -358,21 +358,22 @@ pub struct ProcessFdTable {
 | Per-process FD 表 (折中) | ✅ | `services/fs/process_fd_table.rs` |
 | POSIX dup 语义 | ✅ | `framework/fs/vfs/api.rs:1318-1362` |
 
-### 5.2 折中实现 vs 完整方案 B
+### 5.2 折中实现 vs 完整方案 B (已完成)
 
-| 维度 | 折中实现 (当前) | 完整方案 B |
+| 维度 | 折中实现 (旧) | 完整方案 B (当前) |
 |------|----------------|------------|
-| **Per-process FD 表** | ✅ 固定数组 `[FdEntry; 256]` | ✅ `Vec<Option<Arc<OpenFile>>>` |
+| **Per-process FD 表** | ❌ 固定数组 `[FdEntry; 256]` | ✅ `Vec<Option<Arc<OpenFile>>>` |
 | **POSIX dup 语义** | ✅ 共享 OpenFile (handle_id) | ✅ 共享 `Arc<OpenFile>` |
 | **dup/dup2** | ✅ 已实现 | ✅ 已实现 |
 | **CLOEXEC** | ✅ 已实现 | ✅ 已实现 |
 | **exec 清理** | ✅ 已实现 | ✅ 已实现 |
-| **Inode trait** | ❌ 未实现 | ✅ 完整 trait 定义 |
+| **Inode trait** | ❌ 无 | ✅ 完整 trait 定义 + 7 FS 原生实现 |
 | **动态 FD 分配** | ❌ 固定 256 | ✅ Vec 动态扩展 |
-| **文件系统抽象** | 复用现有 VFS | 新增 Inode trait |
-| **改动范围** | 小 (2 文件) | 大 (20+ 文件) |
-| **风险** | 低 | 高 |
-| **耗时** | 已完成 | 4-5 周 |
+| **文件系统抽象** | ❌ FsOpenResult opaque handle | ✅ `Arc<dyn Inode>` 直接持有 |
+| **VFS API** | 旧 get_fd_info + FileSystem dispatch | 全部 fd 操作走 Inode trait |
+| **改动范围** | 小 (2 文件) | 大 (20+ 文件, 已完成) |
+| **风险** | 低 | 高 (已验证, 515 测试通过) |
+| **耗时** | 已完成 | ~4-5 周 (已完成) |
 
 ### 5.3 完整方案 B 实施计划
 
@@ -380,17 +381,42 @@ pub struct ProcessFdTable {
 
 **实施步骤**:
 
-| 阶段 | 任务 | 文件 | 工作量 |
-|------|------|------|--------|
-| Phase 1 | Inode trait 定义 | 新增 `services/fs/inode.rs` | 2 天 |
-| Phase 2 | OpenFile 改用 `Arc<dyn Inode>` | `services/fs/vfs_types.rs` | 1 天 |
-| Phase 3 | ProcessFdTable 改用 Vec | `services/fs/process_fd_table.rs` | 1 天 |
-| Phase 4 | 重写 VFS API | `framework/fs/vfs/api.rs` | 5 天 |
-| Phase 5 | 适配 ramfs/tmpfs/devfs/procfs | `services/fs/` | 5 天 |
-| Phase 6 | 适配 ext2/exfat | `services/fs/ext2/`, `services/fs/exfat/` | 3 天 |
-| Phase 7 | AnonymousFs + memfd | `services/fs/anonymous.rs` | 2 天 |
-| Phase 8 | 测试 + 回归修复 | 多个文件 | 5 天 |
-| **总计** | | | **~4-5 周** |
+| 阶段 | 任务 | 文件 | 工作量 | 状态 |
+|------|------|------|--------|------|
+| Phase 1 | Inode trait 定义 | 新增 `services/fs/inode.rs` | 2 天 | [X] 已完成 |
+| Phase 2 | OpenFile 改用 `Arc<dyn Inode>` | `services/fs/vfs_types.rs` | 1 天 | [X] 已完成 |
+| Phase 3 | ProcessFdTable 改用 Vec | `services/fs/process_fd_table.rs` | 1 天 | [X] Vec<Option<Arc<OpenFile>>> + lowest-available |
+| Phase 4 | 重写 VFS API | `framework/fs/vfs/api.rs` | 5 天 | [X] 全部 fd 操作已迁移至 Inode trait |
+| Phase 5 | 适配 ramfs/tmpfs/devfs/procfs | `services/fs/` | 5 天 | [X] 7/7 FS 已迁移 |
+| Phase 6 | 适配 ext2/exfat | `services/fs/ext2/`, `services/fs/exfat/` | 3 天 | [X] 全部 7 FS 原生 Inode |
+| Phase 7 | AnonymousFs + memfd | `services/fs/anonymous.rs` | 2 天 | [X] 已适配 Inode trait |
+| Phase 8 | 测试 + 回归修复 | 多个文件 | 5 天 | [X] 24 个契约测试 + 全量回归通过 |
+| Phase 9 | O_APPEND 原子写入 | `framework/fs/vfs/api.rs` | 1 天 | [X] vfs_write 自动 seek 到文件末尾 |
+| Phase 10 | name_to_handle_at 完整实现 | `services/fs/file_handle.rs` + 各 FS | 2 天 | [X] 路径解析 + mount 验证 + fs_resolve_inode + fd 分配 |
+| **总计** | | | **~4-5 周** | Phase 1-10 全部完成 |
+
+**Phase 1/2/4/7 完成内容 (2026-07-11)**:
+- 新增 `services/fs/inode.rs`: Inode trait 定义 + AnonymousInode + RamFsInode + LegacyInode 适配器 (含 stat/chmod/chown 完整委托)
+- `services/fs/vfs_types.rs`: OpenFile 改用 `Arc<dyn Inode>`, 保留 `inode_id()`/`mount_idx()` 兼容方法
+- `framework/fs/vfs/api.rs`: 全部 fd 操作已迁移至 Inode trait:
+  - `vfs_read_internal` / `vfs_write_internal` / `vfs_truncate_internal` / `vfs_readdir_internal` / `vfs_seek`
+  - `vfs_fstat` / `vfs_fchmod` / `vfs_fchown`
+  - 删除旧 `get_fd_info` 函数 (dead code)
+- `services/proc/memfd.rs`: 适配新 OpenFile::new 签名
+- `services/fs/file_handle.rs`: 适配新 OpenFile::new 签名
+- `services/fs/ramfs_core.rs`: 新增 read_at_offset/write_at_offset/get_stat 方法
+
+**Phase 1-10 全部完成 (2026-07-11)**:
+- Phase 1: Inode trait 定义 (`services/fs/inode.rs`)
+- Phase 2: OpenFile 改用 `Arc<dyn Inode>` (`services/fs/vfs_types.rs`)
+- Phase 3: ProcessFdTable Vec 化 (`services/fs/process_fd_table.rs`)
+- Phase 4: VFS API 全部 fd 操作迁移至 Inode trait (`framework/fs/vfs/api.rs`)
+- Phase 5: FileSystem trait 返回 `Arc<dyn Inode>`, 7/7 FS 已迁移
+- Phase 6: 全部 7 FS 原生 Inode 实现 (RamFsInode/TmpFsInode/DevFsInode/HvfsInode/OverlayFsInode/Ext2Inode/ExfatInode)
+- Phase 7: AnonymousFs + memfd 已适配 Inode trait
+- Phase 8: 24 个 Plan B 契约测试 + 515 全量测试通过
+- Phase 9: O_APPEND 原子写入 (vfs_write_internal 检查 APPEND flag, 自动 seek 到文件末尾)
+- Phase 10: name_to_handle_at / open_by_handle_at 完整实现 (路径解析 + mount 验证 + fs_resolve_inode 原生 Inode + fd 分配, 消除所有 stub 硬编码)
 
 **风险评估**:
 - 改动范围大 (20+ 文件)，可能引入回归

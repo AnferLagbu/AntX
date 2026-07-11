@@ -25,7 +25,7 @@ pub fn pidfd_open(pid: u32, flags: u32) -> Result<usize, Errno> {
 
 /// pidfd_send_signal — 通过 pidfd 发送信号
 pub fn pidfd_send_signal(pidfd: u32, sig: i32, _siginfo: u64, _flags: u32) -> Result<usize, Errno> {
-    if sig < 1 || sig > 64 {
+    if !(1..=64).contains(&sig) {
         return Err(Errno::EINVAL);
     }
 

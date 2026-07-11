@@ -29,6 +29,8 @@ pub const DEVFS_MAX_NAME: usize = 32;
 // 设备类型
 // ============================================================================
 
+extern crate alloc;
+
 /// 设备类型 (强类型枚举, 替代裸 `u8`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -546,11 +548,80 @@ pub fn register_standard() {
 }
 
 // ============================================================================
+// DevFs Inode — 设备文件 Inode 实现
+// ============================================================================
+
+use alloc::sync::Arc;
+use crate::kernel::services::fs::inode::Inode;
+
+/// 设备文件 Inode — DevFS 的 Inode 实现
+pub struct DevFsInode {
+    dev_type: u8,
+    mount_idx: u32,
+}
+
+impl DevFsInode {
+    pub fn new(dev_type: u8, mount_idx: u32) -> Self {
+        Self { dev_type, mount_idx }
+    }
+}
+
+impl Inode for DevFsInode {
+    fn read(&self, _offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        let result = DEVFS_DATA.read(self.dev_type, buf);
+        if result < 0 {
+            Err(KernelError::IoError)
+        } else {
+            Ok(result as usize)
+        }
+    }
+
+    fn write(&self, _offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let result = DEVFS_DATA.write(self.dev_type, buf);
+        if result < 0 {
+            Err(KernelError::IoError)
+        } else {
+            Ok(result as usize)
+        }
+    }
+
+    fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
+        Ok(VfsStat {
+            node_id: self.dev_type as u32,
+            mode: 0o20666,
+            file_type: crate::kernel::framework::fs::VfsFileType::Dev.as_u8(),
+            perm: 0o666,
+            ..VfsStat::default()
+        })
+    }
+
+    fn truncate(&self, _size: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn seek(&self, _offset: i64, _whence: crate::kernel::framework::fs::VfsSeekWhence, _current_offset: u64) -> KernelResult<u64> {
+        Err(KernelError::InvalidArgument)
+    }
+
+    fn is_dir(&self) -> bool {
+        false
+    }
+
+    fn node_id(&self) -> u32 {
+        self.dev_type as u32
+    }
+
+    fn mount_idx(&self) -> u32 {
+        self.mount_idx
+    }
+}
+
+// ============================================================================
 // FileSystem trait 实现 (E6-9c: VFS 分发接入)
 // ============================================================================
 
 use crate::kernel::framework::fs::{
-    FileSystem, FsOpenResult, KernelError, KernelResult, VfsDirEntry, VfsStat,
+    FileSystem, KernelError, KernelResult, VfsDirEntry, VfsStat,
 };
 
 impl FileSystem for DevfsData {
@@ -570,13 +641,9 @@ impl FileSystem for DevfsData {
         Ok(())
     }
 
-    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<FsOpenResult> {
+    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<Arc<dyn Inode>> {
         match self.open(rel_path) {
-            Some((index, _dev_type)) => Ok(FsOpenResult {
-                handle: index,
-                offset: 0,
-                file_type: 0, // 设备文件
-            }),
+            Some((_index, dev_type)) => Ok(Arc::new(DevFsInode::new(dev_type, 0))),
             None => Err(KernelError::NotFound),
         }
     }
@@ -675,5 +742,9 @@ impl FileSystem for DevfsData {
 
     fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::NotSupported)
+    }
+
+    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        Some(alloc::sync::Arc::new(DevFsInode::new(inode_id as u8, mount_idx)))
     }
 }

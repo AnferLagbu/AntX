@@ -47,11 +47,7 @@ impl OpenFileTable {
     {
         let files = self.files.lock();
         if (handle_id as usize) < MAX_OPEN_FILES {
-            if let Some(file) = files[handle_id as usize].as_ref() {
-                Some(f(file))
-            } else {
-                None
-            }
+            files[handle_id as usize].as_ref().map(f)
         } else {
             None
         }

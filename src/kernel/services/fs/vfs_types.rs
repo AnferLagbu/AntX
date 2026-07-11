@@ -13,6 +13,8 @@ pub const VFS_MAX_NAME: usize = 64;
 pub const VFS_MAX_FDS: usize = 32;
 pub const VFS_MAX_MOUNTS: usize = 8;
 
+extern crate alloc;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KernelError {
     NotFound,
@@ -297,8 +299,11 @@ pub trait FileSystem: Send + Sync {
 
     // ---- 文件操作 ----
 
-    /// 打开文件, 返回不透明 handle
-    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> KernelResult<FsOpenResult>;
+    /// 打开文件, 返回 Inode trait object
+    ///
+    /// Plan B: 返回 `Arc<dyn Inode>` 替代原来的 `FsOpenResult`.
+    /// 调用者 (VFS API) 直接将返回的 Inode 封装为 `OpenFile`.
+    fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> KernelResult<Arc<dyn Inode>>;
     /// 关闭文件
     fn fs_close(&self, handle: u32) -> KernelResult<()>;
     /// 读文件, 返回实际读取字节数
@@ -357,8 +362,16 @@ pub trait FileSystem: Send + Sync {
         None
     }
 
-    /// 创建文件 (CREAT 语义)
-    fn fs_create(&self, parent_path: &str, name: &str, pwm: u64) -> KernelResult<FsOpenResult> {
+    /// 从 inode_id + mount_idx 构造 Inode trait object (用于 open_by_handle_at)
+    ///
+    /// 各 FS 应 override 此方法, 返回原生 Inode.
+    /// 默认实现返回 None, 调用方应回退到 LegacyInode.
+    fn fs_resolve_inode(&self, _inode_id: u32, _mount_idx: u32) -> Option<Arc<dyn Inode>> {
+        None
+    }
+
+    /// 创建文件 (CREAT 语义), 返回 Inode trait object
+    fn fs_create(&self, parent_path: &str, name: &str, pwm: u64) -> KernelResult<Arc<dyn Inode>> {
         let _ = (parent_path, name, pwm);
         Err(KernelError::NotSupported)
     }
@@ -389,16 +402,19 @@ pub trait FileSystem: Send + Sync {
 // offset 和 flags 在所有共享者之间共享.
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use alloc::sync::Arc;
+use super::inode::Inode;
 
 /// 打开文件描述 — POSIX open file description 的 QueenX 实现
 ///
 /// 多个 fd 可以指向同一个 OpenFile (通过 dup).
 /// offset 和 flags 在所有共享者之间共享.
+///
+/// Plan B: 持有 `Arc<dyn Inode>` 替代原来的 `inode_id: u32`,
+/// 实现完全的 POSIX 打开文件描述语义.
 pub struct OpenFile {
-    /// 文件系统内部 inode ID
-    pub inode_id: u32,
-    /// 挂载点索引 (用于 FileSystem trait 分发)
-    pub mount_idx: u32,
+    /// Inode trait object — 文件级 I/O 操作
+    inode: Arc<dyn Inode>,
     /// 共享文件偏移 (原子操作, dup 共享)
     pub offset: AtomicU64,
     /// 共享状态标志 (O_RDONLY, O_APPEND 等, dup 共享)
@@ -413,12 +429,24 @@ pub struct OpenFile {
     pub is_anonymous: bool,
 }
 
+impl core::fmt::Debug for OpenFile {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("OpenFile")
+            .field("inode_id", &self.inode.node_id())
+            .field("offset", &self.offset)
+            .field("flags", &self.flags)
+            .field("refcount", &self.refcount)
+            .field("file_type", &self.file_type)
+            .field("is_anonymous", &self.is_anonymous)
+            .finish()
+    }
+}
+
 impl OpenFile {
-    /// 创建新的 OpenFile
-    pub fn new(inode_id: u32, mount_idx: u32, flags: u32, pwm: u64, file_type: u8) -> Self {
+    /// 创建新的 OpenFile (Plan B: 使用 Inode trait object)
+    pub fn new(inode: Arc<dyn Inode>, flags: u32, pwm: u64, file_type: u8) -> Self {
         Self {
-            inode_id,
-            mount_idx,
+            inode,
             offset: AtomicU64::new(0),
             flags,
             pwm,
@@ -426,6 +454,37 @@ impl OpenFile {
             file_type,
             is_anonymous: false,
         }
+    }
+
+    /// 创建匿名文件 OpenFile (memfd 用)
+    pub fn new_anonymous(inode: Arc<dyn Inode>, flags: u32, pwm: u64, file_type: u8) -> Self {
+        let mut of = Self::new(inode, flags, pwm, file_type);
+        of.is_anonymous = true;
+        of
+    }
+
+    // ---- 兼容旧 API (折中实现过渡期) ----
+
+    /// 获取底层 inode_id (兼容旧代码, 供 pcache 等使用)
+    ///
+    /// 注意: 新代码应优先使用 `inode()` 方法.
+    pub fn inode_id(&self) -> u32 {
+        self.inode.node_id()
+    }
+
+    /// 获取挂载点索引 (兼容旧代码)
+    pub fn mount_idx(&self) -> u32 {
+        self.inode.mount_idx()
+    }
+
+    /// 获取 Inode trait object 引用
+    pub fn inode(&self) -> &dyn Inode {
+        &*self.inode
+    }
+
+    /// 获取 Inode Arc 引用 (用于 dup 时克隆)
+    pub fn inode_arc(&self) -> &Arc<dyn Inode> {
+        &self.inode
     }
 
     /// 增加引用计数 (dup 时调用)

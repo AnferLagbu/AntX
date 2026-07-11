@@ -61,32 +61,6 @@ fn ptr_to_str<'a>(ptr: *const u8) -> &'a str {
     ptr.as_kstr()
 }
 
-fn get_fd_info(fd_idx: u32) -> Option<(u32, u64, u64, alloc::string::String)> {
-    let fd_idx = fd_idx as usize;
-    if fd_idx >= VFS_MAX_FDS {
-        return None;
-    }
-    let fd_table = VFS_MANAGER.fd_table.lock();
-    if fd_idx < VFS_MAX_FDS && fd_table[fd_idx].used {
-        // 优先使用 OpenFile 的共享 offset (POSIX dup 语义)
-        let offset = if fd_table[fd_idx].handle_id != u32::MAX {
-            OPEN_FILE_TABLE.with_file(fd_table[fd_idx].handle_id, |f| f.get_offset())
-                .unwrap_or(fd_table[fd_idx].offset)
-        } else {
-            fd_table[fd_idx].offset
-        };
-        let path = alloc::string::String::from(fd_table[fd_idx].get_path());
-        Some((
-            fd_table[fd_idx].node_id,
-            offset,
-            fd_table[fd_idx].pwm,
-            path,
-        ))
-    } else {
-        None
-    }
-}
-
 fn split_parent_name(rel_path: &str) -> (&str, &str) {
     if let Some(pos) = rel_path.rfind('/') {
         if pos == 0 {
@@ -188,14 +162,14 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     // E6-4: trait object 分发 (优先于 fs_type match)
     if let Some(fs) = fs_opt {
         match fs.fs_open(rel_path, flags, pwm) {
-            Ok(result) => {
-                // 创建 OpenFile (POSIX 打开文件描述)
+            Ok(inode) => {
+                // Plan B: fs_open 直接返回 Inode trait object
+                let file_type = inode.stat(pwm).map(|s| s.file_type).unwrap_or(0);
                 let open_file = OpenFile::new(
-                    result.handle,
-                    mount_idx as u32,
+                    inode,
                     flags,
                     pwm,
-                    result.file_type,
+                    file_type,
                 );
 
                 // 插入全局 OpenFile 表
@@ -223,13 +197,14 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
                 // CREAT: 文件不存在, 尝试创建
                 let (parent_path, name) = split_parent_name(rel_path);
                 match fs.fs_create(parent_path, name, pwm) {
-                    Ok(create_result) => {
+                    Ok(inode) => {
+                        let file_type = inode.stat(pwm).map(|s| s.file_type).unwrap_or(0);
+                        let inode_id = inode.node_id();
                         let open_file = OpenFile::new(
-                            create_result.handle,
-                            mount_idx as u32,
+                            inode,
                             flags,
                             pwm,
-                            create_result.file_type,
+                            file_type,
                         );
 
                         let handle_id = match OPEN_FILE_TABLE.alloc(open_file) {
@@ -250,7 +225,7 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
                         // inotify: 父目录 IN_CREATE + 新文件 IN_OPEN
                         let parent_ino = fs.fs_resolve_path(parent_path).unwrap_or(0);
                         super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, false);
-                        super::inotify::inotify_notify(create_result.handle, super::inotify::IN_OPEN, "", false);
+                        super::inotify::inotify_notify(inode_id, super::inotify::IN_OPEN, "", false);
                         fd_idx as i32
                     }
                     Err(_) => {
@@ -327,86 +302,74 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
         return -1;
     }
 
-    let (node_id, offset, pwm, full_path) = match get_fd_info(fd_idx) {
-        Some(info) => info,
+    // Plan B: 通过 OpenFile 的 Inode trait 执行 I/O
+    // 获取 handle_id
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd_idx as usize) {
+        Some(hid) => hid,
         None => return -1,
     };
 
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
 
-    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
-        Some(r) => r,
-        None => return -1,
-    };
+    // 通过 OpenFile 获取 offset 和 Inode
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        let offset = open_file.get_offset();
+        let pwm = open_file.pwm;
 
-    // E6-4: trait object 分发 (优先于 fs_type match)
-    // 但 pcache 快路径仅 RamFS 支持, 需要特殊处理
-    if let Some(fs) = fs_opt {
-        // B2: RamFS pcache 快路径 (仅 RamFS + 4KB 对齐)
-        if fs.name() == "ramfs" {
-            let is_aligned_4k = (count as u64) >= PCACHE_FAST_MIN_BYTES as u64
-                && (count as u64) <= PCACHE_FAST_MAX_BYTES as u64
-                && (count as u64).is_multiple_of(PAGE_SIZE)
-                && (offset as u64).is_multiple_of(PAGE_SIZE);
+        // B2: pcache 快路径 (仅 node_id 已知时, 通过兼容方法获取)
+        let node_id = open_file.inode_id();
+        // 检查是否是 4KB 对齐读取 (pcache 快路径)
+        let is_aligned_4k = (count as u64) >= PCACHE_FAST_MIN_BYTES as u64
+            && (count as u64) <= PCACHE_FAST_MAX_BYTES as u64
+            && (count as u64).is_multiple_of(PAGE_SIZE)
+            && offset.is_multiple_of(PAGE_SIZE);
 
-            if is_aligned_4k {
-                let npages = (count as u64 / PAGE_SIZE) as usize;
-                let first_pi = offset / PAGE_SIZE;
+        if is_aligned_4k {
+            let npages = (count as u64 / PAGE_SIZE) as usize;
+            let first_pi = offset / PAGE_SIZE;
 
-                let mut all_hit = true;
+            let mut all_hit = true;
+            for i in 0..npages {
+                if pcache::pcache_lookup(node_id, first_pi + i as u64).is_none() {
+                    all_hit = false;
+                    break;
+                }
+            }
+
+            if all_hit {
+                let mut all_ok = true;
                 for i in 0..npages {
-                    if pcache::pcache_lookup(node_id, first_pi + i as u64).is_none() {
-                        all_hit = false;
+                    // SAFETY: 4KB 对齐保证 buf.add(i*PAGE_SIZE) 落在 [buf, buf+count) 内
+                    let dst = unsafe {
+                        core::slice::from_raw_parts_mut(
+                            buf.add(i * PAGE_SIZE as usize),
+                            PAGE_SIZE as usize,
+                        )
+                    };
+                    if !pcache::pcache_read_to_slice(node_id, first_pi + i as u64, dst) {
+                        all_ok = false;
                         break;
                     }
                 }
-
-                if all_hit {
-                    let mut all_ok = true;
-                    for i in 0..npages {
-                        // SAFETY: 4KB 对齐保证 buf.add(i*PAGE_SIZE) 落在 [buf, buf+count) 内
-                        let dst = unsafe {
-                            core::slice::from_raw_parts_mut(
-                                buf.add(i * PAGE_SIZE as usize),
-                                PAGE_SIZE as usize,
-                            )
-                        };
-                        if !pcache::pcache_read_to_slice(node_id, first_pi + i as u64, dst) {
-                            all_ok = false;
-                            break;
-                        }
-                    }
-                    if all_ok {
-                        let new_offset = offset + count as u64;
-                        VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
-                        // 更新 OpenFile 共享 offset
-                        if let Some(hid) = VFS_MANAGER.get_fd_handle(fd_idx as usize) {
-                            OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
-                        }
-                        return count as i32;
-                    }
+                if all_ok {
+                    return count as i32;
                 }
             }
         }
 
-        // 慢速路径: trait object 分发
-        match fs.fs_read(node_id, offset, user_buf.as_mut_slice(), pwm) {
+        // 慢速路径: Inode trait 分发
+        match open_file.inode().read(offset, user_buf.as_mut_slice(), pwm) {
             Ok(n) => {
                 let new_offset = offset + n as u64;
-                VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
-                // 更新 OpenFile 共享 offset
-                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd_idx as usize) {
-                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
-                }
+                open_file.set_offset(new_offset);
                 n as i32
             }
             Err(_) => -1,
         }
-    } else {
-        // E6-5: fallback 已移除, 所有文件系统均通过 trait object 分发
-        KernelError::NotSupported.as_i32()
-    }
+    });
+
+    result.unwrap_or(-1)
 }
 
 /// 按 inode_id 直接读取文件数据 (B2: mmap prewarm 用)
@@ -509,29 +472,25 @@ pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
         return -1;
     }
 
-    let (_node_id, _offset, pwm, full_path) = match get_fd_info(fd) {
-        Some(info) => info,
+    // Plan B: 通过 OpenFile 的 Inode trait 执行
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd_idx as usize) {
+        Some(hid) => hid,
         None => return -1,
     };
 
-    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
-        Some(r) => r,
-        None => return -1,
-    };
-
-    // E6-4: trait object 分发
-    if let Some(fs) = fs_opt {
-        match fs.fs_truncate(_node_id, size, pwm) {
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        let pwm = open_file.pwm;
+        match open_file.inode().truncate(size, pwm) {
             Ok(()) => {
-                super::inotify::inotify_notify(_node_id, super::inotify::IN_MODIFY, "", false);
+                let node_id = open_file.inode_id();
+                super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
                 0
             }
             Err(_) => -1,
         }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    }
+    });
+
+    result.unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]
@@ -540,39 +499,42 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
         return -1;
     }
 
-    let (node_id, offset, pwm, full_path) = match get_fd_info(fd_idx) {
-        Some(info) => info,
+    // Plan B: 通过 OpenFile 的 Inode trait 执行 I/O
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd_idx as usize) {
+        Some(hid) => hid,
         None => return -1,
     };
 
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
 
-    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
-        Some(r) => r,
-        None => return -1,
-    };
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        // O_APPEND: 写入前自动 seek 到文件末尾 (POSIX 原子 append)
+        let offset = if (open_file.get_flags() & crate::kernel::services::fs::vfs_types::VfsOpenFlags::APPEND.bits()) != 0 {
+            match open_file.inode().stat(open_file.pwm) {
+                Ok(stat) => stat.size as u64,
+                Err(_) => open_file.get_offset(),
+            }
+        } else {
+            open_file.get_offset()
+        };
+        let pwm = open_file.pwm;
+        let node_id = open_file.inode_id();
 
-    // E6-4: trait object 分发 (优先于 fs_type match)
-    if let Some(fs) = fs_opt {
-        match fs.fs_write(node_id, offset, user_buf.as_slice(), pwm) {
+        match open_file.inode().write(offset, user_buf.as_slice(), pwm) {
             Ok(n) => {
                 let new_offset = offset + n as u64;
-                VFS_MANAGER.set_fd_offset(fd_idx as usize, new_offset);
-                // 更新 OpenFile 共享 offset
-                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd_idx as usize) {
-                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
-                }
+                open_file.set_offset(new_offset);
+                // inotify + fd_notify 通知
                 fd_notify::notify_fd_close(fd_idx as i32);
                 super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
                 n as i32
             }
             Err(_) => -1,
         }
-    } else {
-        // E6-5: fallback 已移除
-        KernelError::NotSupported.as_i32()
-    }
+    });
+
+    result.unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]
@@ -676,41 +638,35 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
         return -1;
     }
 
-    let (_node_id, offset, _pwm, full_path) = match get_fd_info(fd) {
-        Some(info) => info,
+    // Plan B: 通过 OpenFile 的 Inode trait 执行
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
+        Some(hid) => hid,
         None => return -1,
     };
 
-    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
-        Some(r) => r,
-        None => return -1,
-    };
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        let offset = open_file.get_offset();
 
-    // E6-4: trait object 分发
-    if let Some(fs) = fs_opt {
-        let mut dir_entry = VfsDirEntry::default();
-        match fs.fs_readdir(_node_id, offset, &mut dir_entry) {
-            Ok(has_more) => {
+        match open_file.inode().readdir(offset) {
+            Ok((name, file_type, has_more)) => {
                 if !has_more {
                     return 0;
                 }
+                let mut dir_entry = VfsDirEntry::default();
+                dir_entry.set_name(&name);
+                dir_entry.file_type = file_type.as_u8();
                 // SAFETY: 调用方保证指针/类型有效
                 let mut entry_ref = unsafe { UserRefMut::new(entry) };
                 *entry_ref.as_mut() = dir_entry;
                 let new_offset = offset + core::mem::size_of::<crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry>() as u64;
-                VFS_MANAGER.set_fd_offset(fd as usize, new_offset);
-                // 更新 OpenFile 共享 offset
-                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd as usize) {
-                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
-                }
+                open_file.set_offset(new_offset);
                 1
             }
             Err(_) => -1,
         }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    }
+    });
+
+    result.unwrap_or(-1)
 }
 
 #[unsafe(no_mangle)]
@@ -905,34 +861,20 @@ pub fn vfs_chown_ext(
 
 #[unsafe(no_mangle)]
 pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
-    let fd_usize = fd as usize;
-    if fd_usize >= 256 {
-        return -9;
-    }
-    let (used, _node_id, full_path) = {
-        let fd_table = VFS_MANAGER.fd_table.lock();
-        if fd_usize < fd_table.len() && fd_table[fd_usize].used {
-            (true, fd_table[fd_usize].node_id, alloc::string::String::from(fd_table[fd_usize].get_path()))
-        } else {
-            (false, 0, alloc::string::String::new())
-        }
+    // Plan B: 通过 OpenFile 的 Inode trait 执行
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
+        Some(hid) => hid,
+        None => return -9,
     };
-    if !used {
-        return -9;
-    }
-    // E6-5: 通过 trait object 分发
-    let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
-        Some(r) => r,
-        None => return -1,
-    };
-    if let Some(fs) = fs_opt {
-        match fs.fs_chmod(&full_path, mode, 0) {
+
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        match open_file.inode().chmod(mode, open_file.pwm) {
             Ok(()) => 0,
             Err(_) => -1,
         }
-    } else {
-        -1
-    }
+    });
+
+    result.unwrap_or(-9)
 }
 
 // ============================================================================
@@ -941,34 +883,20 @@ pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
 
 #[unsafe(no_mangle)]
 pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
-    let fd_usize = fd as usize;
-    if fd_usize >= 256 {
-        return -9;
-    }
-    let (used, _node_id, full_path) = {
-        let fd_table = VFS_MANAGER.fd_table.lock();
-        if fd_usize < fd_table.len() && fd_table[fd_usize].used {
-            (true, fd_table[fd_usize].node_id, alloc::string::String::from(fd_table[fd_usize].get_path()))
-        } else {
-            (false, 0, alloc::string::String::new())
-        }
+    // Plan B: 通过 OpenFile 的 Inode trait 执行
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
+        Some(hid) => hid,
+        None => return -9,
     };
-    if !used {
-        return -9;
-    }
-    // E6-5: 通过 trait object 分发
-    let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
-        Some(r) => r,
-        None => return -1,
-    };
-    if let Some(fs) = fs_opt {
-        match fs.fs_chown(&full_path, owner_pwm, group_pwm, pwm) {
+
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        match open_file.inode().chown(owner_pwm, group_pwm, pwm) {
             Ok(()) => 0,
             Err(_) => -1,
         }
-    } else {
-        -1
-    }
+    });
+
+    result.unwrap_or(-9)
 }
 
 #[unsafe(no_mangle)]
@@ -1145,36 +1073,25 @@ pub fn vfs_set_cwd(path: *const u8) {
 #[unsafe(no_mangle)]
 pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let whence = VfsSeekWhence::from_u32(whence);
-    let fd_info = VFS_MANAGER.get_fd_info(fd as usize);
-    let current_offset = fd_info.map(|(_, off, _)| off).unwrap_or(0);
 
-    let path = {
-        let fd_table = VFS_MANAGER.fd_table.lock();
-        alloc::string::String::from(fd_table[fd as usize].get_path())
-    };
-    let (_, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&path) {
-        Some(r) => r,
+    // Plan B: 通过 OpenFile 的 Inode trait 执行
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
+        Some(hid) => hid,
         None => return KernelError::InvalidArgument.as_i32(),
     };
 
-    // E6-4: trait object 分发
-    if let Some(fs) = fs_opt {
-        let node_id = fd_info.map(|(ino, _, _)| ino).unwrap_or(0);
-        match fs.fs_seek(node_id, offset as i64, whence, current_offset) {
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        let current_offset = open_file.get_offset();
+        match open_file.inode().seek(offset as i64, whence, current_offset) {
             Ok(new_offset) => {
-                VFS_MANAGER.set_fd_offset(fd as usize, new_offset);
-                // 更新 OpenFile 共享 offset
-                if let Some(hid) = VFS_MANAGER.get_fd_handle(fd as usize) {
-                    OPEN_FILE_TABLE.with_file(hid, |f| f.set_offset(new_offset));
-                }
+                open_file.set_offset(new_offset);
                 new_offset as i32
             }
             Err(_) => KernelError::InvalidArgument.as_i32(),
         }
-    } else {
-        // E6-5: fallback 已移除
-        KernelError::InvalidArgument.as_i32()
-    }
+    });
+
+    result.unwrap_or(KernelError::InvalidArgument.as_i32())
 }
 
 #[unsafe(no_mangle)]
@@ -1218,49 +1135,32 @@ pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
 // ============================================================================
 
 #[unsafe(no_mangle)]
-pub fn vfs_fstat(fd: u32, st: *mut VfsStat, pwm: u64) -> i32 {
-    let fd_usize = fd as usize;
-    if fd_usize >= 256 {
-        return -9;
+pub fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
+    if st.is_null() {
+        return -1;
     }
-    let used = {
-        let fd_table = VFS_MANAGER.fd_table.lock();
-        fd_table[fd_usize].used
+
+    // Plan B: 通过 OpenFile 的 Inode trait 执行
+    let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
+        Some(hid) => hid,
+        None => return -9,
     };
-    if !used {
-        return -9;
-    }
-    let (_node_id, _mount_idx, full_path) = {
-        let fd_table = VFS_MANAGER.fd_table.lock();
-        if fd_usize < fd_table.len() && fd_table[fd_usize].used {
-            (fd_table[fd_usize].node_id, 0, alloc::string::String::from(fd_table[fd_usize].get_path()))
-        } else {
-            (0, 0, alloc::string::String::new())
-        }
-    };
+
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     let mut st_ref = unsafe { UserRefMut::new(st) };
 
-    // E6-5: 通过 trait object 分发
-    let result = if !full_path.is_empty() {
-        let (_, _, fs_opt) = match VFS_MANAGER.resolve_mount_fs(&full_path) {
-            Some(r) => r,
-            None => return -1,
-        };
-        if let Some(fs) = fs_opt {
-            match fs.fs_stat(&full_path, pwm) {
-                Ok(stat) => {
-                    *st_ref.as_mut() = stat;
-                    0
-                }
-                Err(_) => -1,
+    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+        let pwm = open_file.pwm;
+        match open_file.inode().stat(pwm) {
+            Ok(stat) => {
+                *st_ref.as_mut() = stat;
+                0
             }
-        } else {
-            -1
+            Err(_) => -1,
         }
-    } else {
-        -1
-    };
+    });
+
+    let result = result.unwrap_or(-1);
 
     if result == 0 {
         let tbl = crate::kernel::framework::credo::identity::get_table();

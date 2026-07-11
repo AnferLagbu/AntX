@@ -7,7 +7,6 @@ use crate::kernel::framework::syscall::types::Errno;
 use crate::kernel::services::fs::anonymous::ANONYMOUS_FS;
 use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
 use crate::kernel::services::fs::vfs_types::OpenFile;
-use core::sync::atomic::{AtomicU32, AtomicU64};
 
 /// MFD_CLOEXEC 标志位
 const MFD_CLOEXEC: u32 = 0x0001;
@@ -33,17 +32,16 @@ pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> 
     let inode_id = ANONYMOUS_FS.alloc_inode()
         .ok_or(Errno::ENOMEM)?;
 
+    // 创建匿名 Inode
+    let inode = crate::kernel::services::fs::inode::new_anonymous_inode(inode_id);
+
     // 创建 OpenFile (匿名文件)
-    let open_file = OpenFile {
-        inode_id,
-        mount_idx: 0,  // AnonymousFs 不需要 mount_idx
-        offset: AtomicU64::new(0),
-        flags: 0x0003, // O_RDWR
-        pwm: crate::kernel::framework::credo::session::get_current_pwm(),
-        refcount: AtomicU32::new(1),
-        file_type: 0, // File
-        is_anonymous: true,
-    };
+    let open_file = OpenFile::new_anonymous(
+        inode,
+        0x0003, // O_RDWR
+        crate::kernel::framework::credo::session::get_current_pwm(),
+        0, // File
+    );
 
     // 插入全局 OpenFile 表
     let handle_id = OPEN_FILE_TABLE.alloc(open_file)

@@ -22,6 +22,8 @@ pub mod ramfs;
 pub mod ramfs_core;
 /// T6-9: VFS 公共类型 (原 framework/fs/vfs/types.rs)
 pub mod vfs_types;
+/// Plan B: Inode trait — 文件级操作抽象
+pub mod inode;
 pub mod vfs_poll_policy;
 pub mod devfs;
 pub mod procfs;

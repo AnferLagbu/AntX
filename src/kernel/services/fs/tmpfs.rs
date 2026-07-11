@@ -2,10 +2,99 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! tmpfs 基于内存的文件系统
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use crate::kernel::framework::fs::KernelError;
 use crate::kernel::services::fs::ramfs_core::RamFsData;
 use crate::kernel::services::fs::vfs_types::*;
+use crate::kernel::services::fs::inode::Inode;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+
+// ============================================================================
+// TmpFs Inode — 临时文件 Inode 实现
+// ============================================================================
+
+/// 临时文件 Inode — TmpFS 的 Inode 实现
+pub struct TmpFsInode {
+    node_id: u32,
+    mount_idx: u32,
+}
+
+impl TmpFsInode {
+    pub fn new(node_id: u32, mount_idx: u32) -> Self {
+        Self { node_id, mount_idx }
+    }
+}
+
+impl Inode for TmpFsInode {
+    fn read(&self, offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+        let mut offset_i32 = offset as i32;
+        let result = fs.inner.read(self.node_id, &mut offset_i32, buf, 0);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn write(&self, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+        let mut offset_i32 = offset as i32;
+        let result = fs.inner.write(self.node_id, &mut offset_i32, buf, 0);
+        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+    }
+
+    fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
+        let fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+        match fs.inner.get_stat(self.node_id, pwm) {
+            Ok(s) => Ok(s),
+            Err(_) => Err(KernelError::NotFound),
+        }
+    }
+
+    fn truncate(&self, size: u64, _pwm: u64) -> KernelResult<()> {
+        let mut fs_guard = TMPFS_DATA.lock();
+        let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
+        let rc = fs.inner.truncate(self.node_id, size, 0);
+        if rc == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
+        let file_size = {
+            let fs_guard = TMPFS_DATA.lock();
+            let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+            fs.inner.get_file_size(self.node_id).unwrap_or(0) as u64
+        };
+        let new_offset = match whence {
+            VfsSeekWhence::Set => offset as u64,
+            VfsSeekWhence::Cur => current_offset.saturating_add(offset as u64),
+            VfsSeekWhence::End => file_size.saturating_add(offset as u64),
+        };
+        Ok(new_offset)
+    }
+
+    fn is_dir(&self) -> bool {
+        let fs_guard = TMPFS_DATA.lock();
+        if let Some(fs) = fs_guard.as_ref() {
+            if (self.node_id as usize) < 256 {
+                fs.inner.nodes[self.node_id as usize].file_type == 1
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn node_id(&self) -> u32 {
+        self.node_id
+    }
+
+    fn mount_idx(&self) -> u32 {
+        self.mount_idx
+    }
+}
 
 /// tmpfs 默认最大大小 (64MB)
 const TMPFS_DEFAULT_MAX_SIZE: u64 = 64 * 1024 * 1024;
@@ -87,18 +176,14 @@ impl FileSystem for TmpFsFileSystem {
         Ok(())
     }
 
-    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<FsOpenResult> {
+    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<Arc<dyn Inode>> {
         let mut fs_guard = TMPFS_DATA.lock();
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
 
         let result = fs.inner.open(rel_path, 0, _pwm)
             .ok_or(KernelError::NotFound)?;
 
-        Ok(FsOpenResult {
-            handle: result.0,
-            offset: result.1,
-            file_type: result.2,
-        })
+        Ok(Arc::new(TmpFsInode::new(result.0, 0)))
     }
 
     fn fs_close(&self, _handle: u32) -> KernelResult<()> {
@@ -249,6 +334,10 @@ impl FileSystem for TmpFsFileSystem {
 
     fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::NotSupported)
+    }
+
+    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<Arc<dyn Inode>> {
+        Some(Arc::new(TmpFsInode::new(inode_id, mount_idx)))
     }
 }
 

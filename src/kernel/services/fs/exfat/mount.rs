@@ -2,6 +2,8 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! exFAT FileSystem trait 实现
 
+extern crate alloc;
+
 use crate::kernel::framework::fs::KernelError;
 use crate::kernel::services::fs::vfs_types::*;
 use super::read::ExfatFs;
@@ -9,6 +11,73 @@ use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 
 /// exFAT 文件系统实例 (全局单例)
 static EXFAT_FS: Mutex<Option<ExfatFs>> = Mutex::new(None);
+
+// ============================================================================
+// ExfatInode — exFAT 文件 Inode 实现
+// ============================================================================
+
+use crate::kernel::services::fs::inode::Inode;
+
+/// exFAT 文件 Inode — 直接持有 cluster 编号
+pub struct ExfatInode {
+    cluster: u32,
+    mount_idx: u32,
+}
+
+impl ExfatInode {
+    pub fn new(cluster: u32, mount_idx: u32) -> Self {
+        Self { cluster, mount_idx }
+    }
+}
+
+impl Inode for ExfatInode {
+    fn read(&self, offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        let fs_guard = EXFAT_FS.lock();
+        let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+        fs.read_file(self.cluster, offset, buf)
+    }
+
+    fn write(&self, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
+        let fs_guard = EXFAT_FS.lock();
+        let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
+        fs.write_file(self.cluster, offset, buf)
+    }
+
+    fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
+        Ok(VfsStat {
+            node_id: self.cluster,
+            mode: 0o777,
+            perm: 0o777,
+            file_type: 0,
+            ..VfsStat::default()
+        })
+    }
+
+    fn truncate(&self, _size: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
+        let new_offset = match whence {
+            VfsSeekWhence::Set => offset as u64,
+            VfsSeekWhence::Cur => current_offset.saturating_add(offset as u64),
+            VfsSeekWhence::End => current_offset.saturating_add(offset as u64), // exFAT 简化: 无 size 信息
+        };
+        Ok(new_offset)
+    }
+
+    fn is_dir(&self) -> bool {
+        false // 简化: exFAT 目录判断需查 FAT 表
+    }
+
+    fn node_id(&self) -> u32 {
+        self.cluster
+    }
+
+    fn mount_idx(&self) -> u32 {
+        self.mount_idx
+    }
+}
 
 /// exFAT FileSystem trait 实现
 pub struct ExfatFileSystem;
@@ -29,17 +98,13 @@ impl FileSystem for ExfatFileSystem {
         Ok(())
     }
 
-    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<FsOpenResult> {
+    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
         let fs_guard = EXFAT_FS.lock();
         let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
 
         let cluster = fs.lookup_path(rel_path)?;
 
-        Ok(FsOpenResult {
-            handle: cluster,
-            offset: 0,
-            file_type: 0,
-        })
+        Ok(alloc::sync::Arc::new(ExfatInode::new(cluster, 0)))
     }
 
     fn fs_close(&self, _handle: u32) -> KernelResult<()> {
@@ -136,6 +201,10 @@ impl FileSystem for ExfatFileSystem {
 
     fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::ReadOnly)
+    }
+
+    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        Some(alloc::sync::Arc::new(ExfatInode::new(inode_id, mount_idx)))
     }
 }
 
