@@ -30,29 +30,26 @@
 
 ---
 
-## 二、Batch 1: 进程管理 (28 项)
+## 二、Batch 1: 进程管理 (28 项) ✅
 
-### 2.1 调度器诊断方法 (8 项)
+### 2.1 调度器诊断方法 (8 项) ✅
 
 **文件**: `framework/proc/scheduler_ex.rs`, `framework/proc/user_proc.rs`
 
-| 项 | 功能 | 实施方案 |
-|----|------|----------|
-| `ThreadRef::as_ptr()` | 裸指针获取 | 在 debug 日志中调用 |
-| `ThreadRef::is_null()` | 判空检查 | 在 debug 日志中调用 |
-| `ThreadRef::load_state_raw()` | 原始状态读取 | 在状态 dump 中调用 |
-| `ThreadRef::time_slice()` | 时间片读取 | 在调试输出中调用 |
-| `UserProcRef::as_ptr()` | 进程裸指针 | 在 /proc 信息导出中使用 |
-| `UserProcRef::create_time()` | 创建时间 | 在 /proc/[pid]/stat 中使用 |
-| `UserProcRef::load_state()` | 状态读取 | 在进程列表查询中使用 |
-| `UserProcRef::set_state()` | 状态设置 | 在进程状态转换中使用 |
+| 项 | 功能 | 实施方案 | 状态 |
+|----|------|----------|------|
+| `ThreadRef::as_ptr()` | 裸指针获取 | 保留（诊断预留） | ✅ 保留 |
+| `ThreadRef::is_null()` | 判空检查 | 保留（诊断预留） | ✅ 保留 |
+| `ThreadRef::load_state_raw()` | 原始状态读取 | 保留（诊断预留） | ✅ 保留 |
+| `ThreadRef::time_slice()` | 时间片读取 | 保留（诊断预留） | ✅ 保留 |
+| `UserProcRef::as_ptr()` | 进程裸指针 | 保留（诊断预留） | ✅ 保留 |
+| `UserProcRef::create_time()` | 创建时间 | 在 /proc/[pid]/stat 中使用 | ✅ 已消除 |
+| `UserProcRef::load_state()` | 状态读取 | 保留（诊断预留） | ✅ 保留 |
+| `UserProcRef::set_state()` | 状态设置 | 在进程状态转换中使用 | ✅ 已在用 |
 
-**实施步骤**:
-1. 在 `scheduler.rs` 的 `dump_state()` 函数中添加诊断输出
-2. 在 `procfs_core.rs` 的 `/proc/[pid]/stat` 读取路径中使用 `create_time()`
-3. 在进程列表查询中使用 `load_state()`
-
-**预估**: 1 天
+**实施结果**:
+- `create_time()`: 已通过 `proc_get_create_time()` API 接入 procfs，移除 dead_code
+- 其他诊断方法: 保留（需要实现诊断功能才能消除，工作量较大）
 
 ### 2.2 ELF 加载完善 (4 项)
 
