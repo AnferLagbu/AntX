@@ -315,14 +315,14 @@ impl SyscallDispatch for ServicesSyscallDispatch {
                 a0 as i32, a1, a2 as i32, a3, a4 as usize,
             )),
             SYS_name_to_handle_at => {
-                // TODO: 实现 name_to_handle_at
-                // 需要: 文件句柄系统
-                Errno::ENOSYS.as_ret()
+                crate::kernel::services::fs::file_handle::name_to_handle_at_syscall(
+                    a0 as i32, a1, a2 as i32, a3, a4 as u64, a5 as u32,
+                ).unwrap_or_else(|e| e.as_ret())
             },
             SYS_open_by_handle_at => {
-                // TODO: 实现 open_by_handle_at
-                // 需要: 文件句柄系统
-                Errno::ENOSYS.as_ret()
+                crate::kernel::services::fs::file_handle::open_by_handle_at_syscall(
+                    a0 as i32, a1, a2 as i32, a3 as u32,
+                ).unwrap_or_else(|e| e.as_ret())
             },
 
             // 未迁移的 syscall — 返回 -ENOSYS 让 framework 回退处理

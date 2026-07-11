@@ -37,6 +37,8 @@ pub mod configfs;
 pub mod virtiofs;
 /// G9: 动态系统树
 pub mod systree;
+/// 文件句柄系统 (name_to_handle_at / open_by_handle_at)
+pub mod file_handle;
 pub mod io;
 pub mod path;
 pub mod mode;
