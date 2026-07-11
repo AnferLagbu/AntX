@@ -1617,6 +1617,14 @@ pub fn proc_set_start_jiffies(pid: u32, j: u64) {
     });
 }
 
+/// 获取用户进程创建时间戳 (ticks).
+#[unsafe(no_mangle)]
+pub fn proc_get_create_time(pid: u32) -> u64 {
+    USER_PROC_MANAGER
+        .with_process(pid, |p| p.create_time)
+        .unwrap_or(0)
+}
+
 /// alarm(seconds) — 设置 alarm 剩余秒数对应的 jiffies 到期时刻.
 /// 返回旧剩余时间 (秒).
 #[unsafe(no_mangle)]

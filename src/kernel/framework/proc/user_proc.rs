@@ -152,14 +152,6 @@ pub(crate) mod raw {
             }
         }
 
-        /// 访问 create_time 字段 (读写, 待进程统计路径启用后使用)。
-        #[inline(always)]
-        #[allow(dead_code)] // 待进程统计路径启用后使用。
-        pub fn create_time(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).create_time }
-        }
-
         #[inline(always)]
         pub fn set_create_time(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)

@@ -595,7 +595,8 @@ impl ProcfsData {
             let ppid = proc.parent.map(|p| p.0).unwrap_or(0);
             let utime = proc.user_time.load(core::sync::atomic::Ordering::SeqCst);
             let stime = proc.sys_time.load(core::sync::atomic::Ordering::SeqCst);
-            let start = proc.start_jiffies.load(core::sync::atomic::Ordering::SeqCst);
+            // 使用 create_time 作为进程启动时间 (ticks)
+            let start = crate::kernel::framework::proc::api::proc_get_create_time(pid);
             let vsize = 0u64; // 暂时返回 0
             let _rss = 0u64;   // 暂时返回 0
 
