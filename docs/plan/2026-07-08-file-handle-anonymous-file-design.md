@@ -340,3 +340,64 @@ pub struct ProcessFdTable {
 **如果目标是长期架构质量：** 方案 B
 
 **如果两者都要：** 先 A 后 B (先实现功能, 后续重构)
+
+---
+
+## [S5] 实施进度
+
+### 5.1 已完成项 (折中实现)
+
+| 任务 | 状态 | 文件 |
+|------|------|------|
+| OpenFile 结构 | ✅ | `services/fs/vfs_types.rs:397` |
+| OpenFileTable (全局表) | ✅ | `services/fs/open_file_table.rs` |
+| AnonymousFs | ✅ | `services/fs/anonymous.rs` |
+| memfd_create | ✅ | `services/proc/memfd.rs` |
+| name_to_handle_at | ✅ | `services/fs/file_handle.rs` |
+| open_by_handle_at | ✅ | `services/fs/file_handle.rs` |
+| Per-process FD 表 (折中) | ✅ | `services/fs/process_fd_table.rs` |
+| POSIX dup 语义 | ✅ | `framework/fs/vfs/api.rs:1318-1362` |
+
+### 5.2 折中实现 vs 完整方案 B
+
+| 维度 | 折中实现 (当前) | 完整方案 B |
+|------|----------------|------------|
+| **Per-process FD 表** | ✅ 固定数组 `[FdEntry; 256]` | ✅ `Vec<Option<Arc<OpenFile>>>` |
+| **POSIX dup 语义** | ✅ 共享 OpenFile (handle_id) | ✅ 共享 `Arc<OpenFile>` |
+| **dup/dup2** | ✅ 已实现 | ✅ 已实现 |
+| **CLOEXEC** | ✅ 已实现 | ✅ 已实现 |
+| **exec 清理** | ✅ 已实现 | ✅ 已实现 |
+| **Inode trait** | ❌ 未实现 | ✅ 完整 trait 定义 |
+| **动态 FD 分配** | ❌ 固定 256 | ✅ Vec 动态扩展 |
+| **文件系统抽象** | 复用现有 VFS | 新增 Inode trait |
+| **改动范围** | 小 (2 文件) | 大 (20+ 文件) |
+| **风险** | 低 | 高 |
+| **耗时** | 已完成 | 4-5 周 |
+
+### 5.3 完整方案 B 实施计划
+
+**目标**: 从折中实现升级到完整方案 B，引入 Inode trait + Vec + Arc<dyn Inode>
+
+**实施步骤**:
+
+| 阶段 | 任务 | 文件 | 工作量 |
+|------|------|------|--------|
+| Phase 1 | Inode trait 定义 | 新增 `services/fs/inode.rs` | 2 天 |
+| Phase 2 | OpenFile 改用 `Arc<dyn Inode>` | `services/fs/vfs_types.rs` | 1 天 |
+| Phase 3 | ProcessFdTable 改用 Vec | `services/fs/process_fd_table.rs` | 1 天 |
+| Phase 4 | 重写 VFS API | `framework/fs/vfs/api.rs` | 5 天 |
+| Phase 5 | 适配 ramfs/tmpfs/devfs/procfs | `services/fs/` | 5 天 |
+| Phase 6 | 适配 ext2/exfat | `services/fs/ext2/`, `services/fs/exfat/` | 3 天 |
+| Phase 7 | AnonymousFs + memfd | `services/fs/anonymous.rs` | 2 天 |
+| Phase 8 | 测试 + 回归修复 | 多个文件 | 5 天 |
+| **总计** | | | **~4-5 周** |
+
+**风险评估**:
+- 改动范围大 (20+ 文件)，可能引入回归
+- 需要全面测试覆盖
+- 建议分阶段实施，每阶段验证编译和测试
+
+**前置条件**:
+- 当前折中实现已验证 POSIX dup 语义正确
+- host-tests 全部通过
+- 双架构编译 0w0e
