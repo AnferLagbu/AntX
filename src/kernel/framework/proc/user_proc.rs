@@ -1219,8 +1219,9 @@ impl UserProcManager {
             let cr3 = proc_ref.load_cr3();
 
             // P1-I-32 修复: 改用栈上局部数组, 消除 RacyCell 静态分配器在 SMP 下
-            // 多核 execve 并发的数据竞争. 8KB 临时缓冲在 USER_KSTACK_SIZE=16KB 上
-            // 安全 (剩余 8KB 仍够 syscall handler 路径), 退出函数后自动释放, 无锁.
+            // 多核 execve 并发的数据竞争. 8KB 临时缓冲 (1024×u64) 在调用方栈上
+            // 分配. launch_first_user_process 路径运行在 boot 栈 (128KB) 上,
+            // 剩余空间充足; 退出函数后自动释放, 无锁.
             // 仍按 phnum>256 截断保护, 单 PT_LOAD 段最大 1024 页.
             let mut allocated_pages = [0u64; 1024];
             let allocated_pages: &mut [u64] = &mut allocated_pages;

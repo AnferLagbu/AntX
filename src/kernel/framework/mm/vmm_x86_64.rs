@@ -1116,6 +1116,18 @@ impl VirtualMemoryManager {
             return Err("VMM not initialized");
         }
 
+        // 安全门: KPTI 共享页表防护
+        // 禁止拆分内核高半区的 2MB 巨页 (PML4[256..511]).
+        // KPTI 下 USER_PML4 与 KERNEL_PML4 共享底层 PDPT/PD 物理页,
+        // 拆分内核 2MB 页会修改共享 PDE, 同时破坏 kernel 和 user 页表.
+        if VirtAddr(virt).pml4_idx() >= 256 {
+            crate::klog_boot_info!(
+                "[VMM] split_2mb_page: skip kernel-half virt={:#X} pml4_idx={}",
+                virt, VirtAddr(virt).pml4_idx()
+            );
+            return Err("Cannot split kernel-half 2MB page (KPTI shared)");
+        }
+
         let _flags = self.acquire_lock();
 
         let result: Result<(), &'static str> = (|| {
@@ -1183,10 +1195,18 @@ impl VirtualMemoryManager {
             return;
         }
 
-        let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
 
+        // 安全门: KPTI 权限隔离
+        // 禁止对内核高半区 (PML4[256..511]) 设置 USER 位.
+        // 内核页表条目设 USER 位会允许用户态代码访问内核内存,
+        // 破坏 Meltdown 缓解 (KPTI) 的安全边界.
+        if v.pml4_idx() >= 256 {
+            return;
+        }
+
         // SAFETY: Setting USER bit on PML4 entry; KERNEL_PML4 valid, index in range
+        let pml4_virt = PhysAddr(pml4_base).to_virt();
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
             let entry = &mut *pml4.add(v.pml4_idx());
@@ -1203,8 +1223,17 @@ impl VirtualMemoryManager {
             return;
         }
 
-        let pml4_virt = PhysAddr(pml4_base).to_virt();
         let v = VirtAddr(virt);
+
+        // 安全门: KPTI 权限隔离
+        // 禁止对内核高半区 (PML4[256..511]) 设置 USER 位.
+        // 内核页表条目设 USER 位会允许用户态代码访问内核内存,
+        // 破坏 Meltdown 缓解 (KPTI) 的安全边界.
+        if v.pml4_idx() >= 256 {
+            return;
+        }
+
+        let pml4_virt = PhysAddr(pml4_base).to_virt();
 
         // SAFETY: 遍历 PML4 → PDPT → PD, 各级设 USER 位.
         // 各级都有存在位保护. 索引由 VA 位计算.
@@ -1501,9 +1530,15 @@ pub fn vmm_init() {
 }
 
 pub fn get_vmm() -> &'static VirtualMemoryManager {
-    GLOBAL_VMM
-        .get()
-        .expect("[VMM] accessed before initialization")
+    GLOBAL_VMM.get_or_panic("VMM")
+}
+
+/// 返回 GLOBAL_VMM OnceLock 的内部状态机原始值 (仅用于诊断).
+///
+/// 返回值: 0=未初始化, 1=初始化中, 2=已完成.
+/// 与 `get_vmm()` 不同, 本函数不会 panic, 可在 VMM 初始化前安全调用.
+pub fn vmm_debug_state() -> u8 {
+    GLOBAL_VMM.debug_state()
 }
 
 pub fn get_kernel_pml4() -> u64 {

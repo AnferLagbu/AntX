@@ -51,6 +51,11 @@ impl InnerOnce {
     }
 
     /// 仅当尚未完成时执行闭包 (执行后可重入调用, 但闭包本身只跑一次)。
+    ///
+    /// ## panic 安全性
+    ///
+    /// 若 `f()` panic, 状态机从 `IN_PROGRESS` 重置为 `UNINITIALIZED`,
+    /// 允许后续调用者重试初始化. 通过 `PanicGuard` 在 drop 时自动重置.
     fn call_once<F: FnOnce()>(&self, f: F) {
         // 快速路径
         if self.state.load(Ordering::Acquire) == DONE {
@@ -71,14 +76,34 @@ impl InnerOnce {
         match prev {
             DONE => {}
             UNINITIALIZED => {
-                // 我们赢得了执行权
+                // 我们赢得了执行权.
+                // 守卫: 若 f() panic, drop 时将状态重置为 UNINITIALIZED,
+                // 避免 OnceLock 永久毒化.
+                struct PanicGuard<'a> {
+                    state: &'a AtomicU8,
+                }
+                impl<'a> Drop for PanicGuard<'a> {
+                    fn drop(&mut self) {
+                        self.state.store(UNINITIALIZED, Ordering::Release);
+                    }
+                }
+                let guard = PanicGuard { state: &self.state };
                 f();
+                // f() 成功 → 解除守卫, 设置 DONE
+                core::mem::forget(guard);
                 self.state.store(DONE, Ordering::Release);
             }
             IN_PROGRESS => {
-                // 别的线程正在执行, 自旋等待完成
-                while self.state.load(Ordering::Acquire) != DONE {
+                // 别的线程正在执行, 自旋等待完成.
+                // 注: 若执行线程 panic, PanicGuard 将状态重置为 UNINITIALIZED,
+                // 本线程可能看到 UNINITIALIZED 后再次竞争执行权.
+                while self.state.load(Ordering::Acquire) == IN_PROGRESS {
                     core::hint::spin_loop();
+                }
+                // 退出循环后状态可能是 DONE (成功) 或 UNINITIALIZED (panic 后重置).
+                // 若为 UNINITIALIZED, 递归调用自身重试一次.
+                if self.state.load(Ordering::Acquire) == UNINITIALIZED {
+                    return self.call_once(f);
                 }
             }
             _ => unreachable!("Once: unknown state"),
@@ -184,6 +209,43 @@ impl<T> OnceLock<T> {
             Some(unsafe { (*self.value.get()).assume_init_ref() })
         } else {
             None
+        }
+    }
+
+    /// 获取值, 若未初始化则 panic 并给出诊断信息.
+    ///
+    /// 与 `get()` 不同, 本方法区分三种状态:
+    /// - `DONE` → 返回值
+    /// - `IN_PROGRESS` → panic 提示重入 (初始化过程中被递归调用)
+    /// - `UNINITIALIZED` → panic 提示未初始化
+    ///
+    /// `name` 参数用于 panic 消息标识子系统 (如 "VMM", "PMM").
+    #[inline]
+    pub fn get_or_panic(&self, name: &str) -> &T {
+        let state = self.once.debug_state();
+        match state {
+            DONE => {
+                // SAFETY: state == DONE 保证 cell 已初始化
+                unsafe { (*self.value.get()).assume_init_ref() }
+            }
+            IN_PROGRESS => {
+                panic!(
+                    "[{}] accessed during initialization (reentrant call). \
+                     A page fault or interrupt handler called get_{}() \
+                     while {}::init() is still running. \
+                     Check: 1) page table corruption during init, \
+                     2) interrupt enabled before init complete, \
+                     3) stack overflow corrupting init state.",
+                    name, name.to_lowercase(), name
+                );
+            }
+            _ => {
+                panic!(
+                    "[{}] accessed before initialization. \
+                     {}::init() was never called or failed.",
+                    name, name
+                );
+            }
         }
     }
 

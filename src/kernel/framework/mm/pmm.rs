@@ -1205,7 +1205,7 @@ pub fn pmm_init_bitmap(reserved_after_kernel: u64) {
 }
 
 pub fn get_pmm() -> &'static PhysicalMemoryManager {
-    GLOBAL_PMM.get().expect("[PMM] accessed before init")
+    GLOBAL_PMM.get_or_panic("PMM")
 }
 
 // ==================== 屏障与回滚 ====================

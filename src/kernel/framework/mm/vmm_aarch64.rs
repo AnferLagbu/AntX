@@ -980,9 +980,15 @@ pub fn vmm_init() {
 }
 
 pub fn get_vmm() -> &'static Aarch64Vmm {
-    GLOBAL_VMM
-        .get()
-        .expect("[VMM] aarch64 VMM accessed before initialization")
+    GLOBAL_VMM.get_or_panic("VMM")
+}
+
+/// 返回 GLOBAL_VMM OnceLock 的内部状态机原始值 (仅用于诊断).
+///
+/// 返回值: 0=未初始化, 1=初始化中, 2=已完成.
+/// 与 `get_vmm()` 不同, 本函数不会 panic, 可在 VMM 初始化前安全调用.
+pub fn vmm_debug_state() -> u8 {
+    GLOBAL_VMM.debug_state()
 }
 
 pub fn get_kernel_pml4() -> u64 {

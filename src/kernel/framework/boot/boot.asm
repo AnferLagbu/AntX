@@ -67,8 +67,9 @@ pd_high:
 gdt64:
     resb 30
 align 16
+global stack_bottom
 stack_bottom:
-    resb 65536
+    resb 131072
 global stack_top
 stack_top:
 
@@ -326,6 +327,11 @@ trampoline64:
 BITS 64
 trampoline64_high:
     lea rsp, [rbx + (stack_top - _start)]
+
+    ; 写入 boot 栈 canary 到 stack_bottom (栈溢出检测)
+    ; 若栈溢出至 stack_bottom, canary 被覆盖, Rust 侧 check_boot_stack_canary() 可检测.
+    mov rax, 0xDEADBEEFCAFEBABE
+    mov qword [rbx + (stack_bottom - _start)], rax
 
     mov edi, dword [rbx + (saved_multiboot_magic - _start)]
     mov esi, dword [rbx + (saved_multiboot_info - _start)]

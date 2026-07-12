@@ -61,7 +61,7 @@ pub trait Inode: Send + Sync {
     /// 计算 seek 后的新偏移
     ///
     /// - `offset`: seek 偏移量 (字节)
-    /// - `whence`: SEEK_SET/SEEK_CUR/SEEK_END
+    /// - `whence`: 定位基准 (SEEK_SET/SEEK_CUR/SEEK_END)
     /// - `current_offset`: 当前文件偏移
     /// 返回: 新的文件偏移
     fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64>;

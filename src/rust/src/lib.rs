@@ -340,6 +340,18 @@ pub extern "C" fn kernel_init() {
     }
     crate::klog_boot_info!("QueenX starting");
 
+    // 0.05. Boot 栈 canary 验证 — 检测 trampoline → kernel_init 路径上的栈溢出.
+    // canary 在 boot.asm trampoline64_high 中写入 stack_bottom,
+    // 若被覆盖则说明 boot 栈已溢出至栈底, 内核状态不可信, 立即 panic.
+    if !crate::kernel::framework::proc::check_boot_stack_canary() {
+        panic!(
+            "[BOOT] stack canary corrupted! Boot stack overflow detected. \
+             Stack size=128KB, canary at stack_bottom was overwritten \
+             during trampoline→kernel_init transition."
+        );
+    }
+    crate::klog_boot_info!("Boot stack canary verified");
+
     // 0.1. Config validation — 验证系统配置一致性
     // Must be called after klog_init for error reporting
     crate::kernel::framework::config::init();
@@ -455,6 +467,18 @@ pub extern "C" fn kernel_init() {
         // 3. VMM — 虚拟内存管理器初始化 (必须在PMM之后)
         crate::kernel::framework::mm::vmm::vmm_init();
         crate::klog_boot_info!("VMM initialized");
+
+        // 3.1 VMM 初始化后验证: 确保 GLOBAL_VMM OnceLock 已正确完成初始化.
+        // 若 VMM init 内部静默失败 (如页错误导致 OnceLock 状态停留在 IN_PROGRESS),
+        // 此处提前 panic 并给出明确诊断信息, 避免后续 get_vmm() 时信息不足.
+        let vmm_state = crate::kernel::framework::mm::vmm::vmm_debug_state();
+        if vmm_state != 2 {
+            panic!(
+                "[VMM] initialization verification failed: OnceLock state={} (expected 2=DONE). \
+                 VMM init may have panicked or been interrupted.",
+                vmm_state
+            );
+        }
 
         // 4. kmalloc — 内核堆初始化
         const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
@@ -621,6 +645,18 @@ pub extern "C" fn kernel_init() {
         // 11b. services 层: 系统调用分发策略注册
         crate::kernel::services::syscall::init();
         crate::klog_boot_info!("Syscall subsystem ready");
+
+        // 11.5. 进入 Ring 3 前最终 boot 栈 canary 验证.
+        // 内核初始化全程 (PMM→VMM→kmalloc→中断→调度→网络→VFS→驱动→syscall)
+        // 均在 boot 栈上运行, 此处做最终溢出检测, 确保进入用户态前栈完整性.
+        if !crate::kernel::framework::proc::check_boot_stack_canary() {
+            panic!(
+                "[BOOT] stack canary corrupted before Ring 3 entry! \
+                 Boot stack overflow during kernel init sequence. \
+                 Stack size=128KB."
+            );
+        }
+        crate::klog_boot_info!("Boot stack canary verified (pre-Ring3)");
 
         // 12. Launch first user process
         unsafe {
