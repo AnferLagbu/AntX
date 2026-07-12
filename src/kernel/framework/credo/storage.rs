@@ -353,6 +353,12 @@ pub fn load_database() -> i32 {
     if t.count.load(Ordering::Acquire) > 0 {
         t.any_identity_exists.store(true, Ordering::Release);
     }
+    // 交叉验证: 加载后条目计数应与头部声明的 count 一致
+    debug_assert_eq!(
+        t.count.load(Ordering::Acquire), count,
+        "Credo 存储加载: 条目计数不一致 (header={}, loaded={})",
+        count, t.count.load(Ordering::Acquire),
+    );
     t.clear_modified();
     0
 }

@@ -159,6 +159,35 @@ pub fn kpti_kernel_pml4() -> u64 {
     LAST_KERNEL_PML4.load(Ordering::Acquire)
 }
 
+/// 将 KERNEL_PML4[pml4_idx] 同步到 USER_PML4[pml4_idx].
+///
+/// 当 VMM 在内核高半区创建新的 PML4 条目 (如帧缓冲 MMIO 映射) 时,
+/// 必须同步到 USER_PML4, 否则 KPTI 模式下 CPU 使用 user CR3 时
+/// 访问该地址会触发 Page Fault.
+///
+/// # Safety
+///
+/// 调用方保证: KERNEL_PML4 已初始化; pml4_idx 在 [256, 512) 范围内;
+/// VMM_LOCK 已持有 (防止并发修改).
+pub unsafe fn kpti_sync_pml4_entry(pml4_idx: usize) {
+    if !KPTI_READY.load(Ordering::Acquire) {
+        return;
+    }
+    let user_pml4_phys = USER_PML4.load(Ordering::Acquire);
+    if user_pml4_phys == 0 {
+        return;
+    }
+    // SAFETY: KERNEL_PML4 和 USER_PML4 均已初始化, phys_to_virt 产生有效内核 VA.
+    // VMM_LOCK 由调用方持有, 防止并发修改页表.
+    unsafe {
+        let kernel_pml4_phys = crate::kernel::framework::mm::vmm::KERNEL_PML4.load(Ordering::Acquire);
+        let src = crate::kernel::framework::mm::PhysAddr(kernel_pml4_phys).to_virt().0 as *const u64;
+        let dst = crate::kernel::framework::mm::PhysAddr(user_pml4_phys).to_virt().0 as *mut u64;
+        let entry = core::ptr::read_volatile(src.add(pml4_idx));
+        core::ptr::write_volatile(dst.add(pml4_idx), entry);
+    }
+}
+
 // ── 切换原语 (entry/exit trampoline 调用) ────────────────────────
 
 /// 进入内核态: CR3 切换 USER_PML4 → KERNEL_PML4。

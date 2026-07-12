@@ -379,15 +379,6 @@ pub fn process_insert(process: *mut super::process::Process) -> bool {
     PROCESS_TABLE.insert(process)
 }
 
-/// 写入内核栈金丝雀值.
-/// NOTE: 此函数在 process.rs 中也有定义, 通过 process::* glob re-export.
-/// 此处保留以保持 api 兼容性, 但 proc/mod.rs 的 glob re-export 会产生歧义.
-/// 调用方应使用 process::kernel_stack_write_canary 或通过 proc::kernel_stack_write_canary.
-#[allow(dead_code)] // 保留以保持 API 兼容性, 实际调用方使用 process::* 路径。
-fn kernel_stack_write_canary_delegated(stack_top: u64) {
-    super::process::kernel_stack_write_canary(stack_top);
-}
-
 /// 解除进程阻塞 (加入就绪队列).
 pub fn scheduler_unblock(pid: u32) {
     SCHEDULER.unblock(pid);

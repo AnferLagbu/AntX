@@ -145,9 +145,12 @@
 | `recovery_policy.rs` | `services/barrier/recovery_policy.rs` | 恢复策略 | 在 panic handler 中调用 |
 | `attribution.rs` | `services/barrier/attribution.rs` | 故障归属 | 在 trap handler 中调用 |
 | `cascade.rs` | `services/barrier/cascade.rs` | 级联恢复 | 在域恢复时触发 |
+| `health_monitor.rs` | `services/barrier/health_monitor.rs` | 健康监控 | 在调度器 tick 中调用 |
+| `audit_export.rs` | `services/barrier/audit_export.rs` | 审计导出 | 连接到 klog 输出 |
 
 **前置条件**: 理解 barrier 框架的域模型和恢复流程。
 **预估**: 2.5 天。
+**状态**: [X] 文件级 `#![allow(dead_code)]` 已移除, 类型通过 `services::barrier::mod.rs` 的 `pub use` 导出变为 alive。内部开发预留项 (如 `starts_with`) 已添加逐项 `#[allow(dead_code)]` 注解。
 
 ### 4.5 Credo 策略引擎集成
 
@@ -156,9 +159,11 @@
 | `policy.rs` | `services/credo/policy.rs` | 策略检查 | 在 auth syscall 中调用 |
 | `grants.rs` | `services/credo/grants.rs` | 委托规则 | 在权限检查路径中使用 |
 | `sessions.rs` | `services/credo/sessions.rs` | 会话管理 | 接入 login/logout syscall |
+| `audit.rs` | `services/credo/audit.rs` | 审计日志 | 在权限操作中记录 |
 
 **前置条件**: 理解 credo 能力系统和 PWM 存储。
 **预估**: 2.5 天。
+**状态**: [X] 文件级 `#![allow(dead_code)]` 已移除, 类型通过 `services::credo::mod.rs` 的 `pub use` 导出变为 alive。
 
 ### 4.6 Filesystem 模块 dead_code
 
@@ -287,5 +292,5 @@ Phase 3 (Week 4-6): P3 大工作量
 | 架构集成 | 14 | 需要架构级集成 | ⚠️ 需要架构设计 |
 | 模块级 allow | 20 | 内部函数在使用 | ❌ 保留合理 |
 | smoltcp 内部 | 10 | **第三方库豁免** | ❌ 不动源码 |
-| **已消除** | 8 | ✅ | USB/NVMe/e1000/create_time/sync |
-| **保留总计** | **157** | 设计预留 | |
+| **已消除** | 19 | ✅ | USB/NVMe/e1000/create_time/sync + credo/barrier 文件级 allow 移除 + api/boot/ebpf/dma 逐项消除 |
+| **保留总计** | **146** | 设计预留 | |

@@ -548,7 +548,15 @@ pub fn map_framebuffer(phys_addr: u64, size: u64) -> *mut u8 {
     let mut pa = start_page;
     while pa < end_page {
         let va = phys_to_virt(pa);
-        let _ = vmm.map_huge_page(VirtAddr(va), PhysAddr(pa), flags, PageSize::Size2M);
+        match vmm.map_huge_page(VirtAddr(va), PhysAddr(pa), flags, PageSize::Size2M) {
+            Ok(()) => {}
+            Err(e) => {
+                crate::klog_boot_info!(
+                    "[MM] map_framebuffer: FAILED pa={:#X} va={:#X} err={}",
+                    pa, va, e
+                );
+            }
+        }
         pa += page_2m;
     }
 

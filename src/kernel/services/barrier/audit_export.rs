@@ -12,8 +12,6 @@
 //! 本文件不含 `unsafe`. 通过 framework::barrier::types 的 RollbackEvent
 //! 与 TCB 交互.
 
-#![allow(dead_code)]
-
 use crate::kernel::framework::barrier::{
     recovery_rollback_log_count, ROLLBACK_LOG,
 };

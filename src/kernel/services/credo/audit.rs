@@ -19,8 +19,6 @@
 //! ## @SAFE
 //! 本文件不含 `unsafe`. 哈希由 framework 提供.
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// 审计事件类型

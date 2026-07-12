@@ -89,6 +89,12 @@ impl InnerOnce {
     fn is_completed(&self) -> bool {
         self.state.load(Ordering::Acquire) == DONE
     }
+
+    /// 返回原始状态值 (仅用于调试诊断).
+    #[inline]
+    fn debug_state(&self) -> u8 {
+        self.state.load(Ordering::Relaxed)
+    }
 }
 
 // ============================================================================
@@ -179,6 +185,13 @@ impl<T> OnceLock<T> {
         } else {
             None
         }
+    }
+
+    /// 返回内部状态机的原始值 (仅用于调试诊断).
+    /// 返回值: 0=未初始化, 1=初始化中, 2=已完成.
+    #[inline]
+    pub fn debug_state(&self) -> u8 {
+        self.once.debug_state()
     }
 }
 

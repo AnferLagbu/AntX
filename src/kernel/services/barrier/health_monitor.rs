@@ -15,8 +15,6 @@
 //! 本文件不含 `unsafe`. 通过 `framework::barrier::types::*` 与
 //! `framework::barrier::recoverable::Snapshot` 与 TCB 交互.
 
-#![allow(dead_code)]
-
 use super::attribution::DomainFailureRecord;
 use super::recovery_policy::{FaultSignal, RecoveryAction, RecoveryPolicy};
 

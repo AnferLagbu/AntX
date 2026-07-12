@@ -29,8 +29,6 @@
 //! ## @SAFE
 //! 本文件不含 `unsafe`. 地址范围来自 framework::barrier 暴露的安全接口.
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::kernel::services::credo::policy::{CapBits, InMemoryMatrix};
@@ -69,6 +67,8 @@ impl TcbModule {
     }
 }
 
+/// 前缀匹配 (当前未使用, 保留供域名称严格匹配路径启用后使用)
+#[allow(dead_code)] // 待域名严格匹配路径启用后使用。
 const fn starts_with(haystack: &[u8], needle: &[u8]) -> bool {
     if haystack.len() < needle.len() { return false; }
     let mut i = 0;

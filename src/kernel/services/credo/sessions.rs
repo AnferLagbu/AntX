@@ -26,8 +26,6 @@
 //! ## @SAFE
 //! 本文件不含 `unsafe`.
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::policy::{CapBits, CapDomain, PolicyEngine, PolicyResult, CAP_DOMAINS};

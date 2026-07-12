@@ -969,10 +969,14 @@ impl BpfSubsystem {
             klog_ffi_info,
             "[BPF] verifier registered"
         );
+        // 注册后验证: 确认 verifier 可读回 (交叉校验)
+        debug_assert!(
+            self.verifier().is_some(),
+            "BPF set_verifier: 注册后验证失败"
+        );
     }
 
-    /// T4-3: 获取已注册的 verifier (用于测试)
-    #[allow(dead_code)]
+    /// T4-3: 获取已注册的 verifier
     pub fn verifier(&self) -> Option<&'static dyn BpfVerifier> {
         *self.verifier.lock()
     }

@@ -25,8 +25,6 @@
 //! ## @SAFE
 //! 本文件不含 `unsafe`. 时间由 framework::time 提供.
 
-#![allow(dead_code)]
-
 use super::policy::{CapBits, CapDomain, CapabilityMatrix, GrantResult, PolicyEngine};
 use core::sync::atomic::{AtomicU32, Ordering};
 

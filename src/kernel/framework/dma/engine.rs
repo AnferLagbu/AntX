@@ -232,6 +232,13 @@ impl DmaEngine {
 
         let dma_addr = get_vmm().get_physical(buffer)?;
 
+        // 交叉验证: 通过 virt_to_phys 独立路径确认物理地址一致性
+        debug_assert_eq!(
+            dma_addr.0,
+            super::virt_to_phys(buffer.0 as *const u8),
+            "DMA map_single: get_physical 与 virt_to_phys 结果不一致"
+        );
+
         let mut mappings = self.mappings.lock();
 
         let mapping = DmaMapping {

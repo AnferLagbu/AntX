@@ -31,8 +31,6 @@
 //! (`recoverable::Recoverable`, `reset::RecoveryLayer`, `reset::RecoveryResult`)
 //! 与 TCB 交互, 不直接接触 `spin::Mutex`/`AtomicU64`.
 
-#![allow(dead_code)]
-
 use super::attribution::{FaultAttribution, TcbModule};
 
 /// 决策动作

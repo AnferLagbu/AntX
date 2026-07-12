@@ -47,7 +47,7 @@ use crate::kernel::framework::sync::{disable_interrupts, restore_interrupts, Irq
 
 
 use crate::kernel::framework::sync::OnceLock;
-static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
+pub(crate) static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 static VMM_LOCK: AtomicBool = AtomicBool::new(false);
 
@@ -940,10 +940,6 @@ impl VirtualMemoryManager {
         phys: PhysAddr,
         flags: PageFlags,
     ) -> Result<(), &'static str> {
-        if virt.pml4_idx() >= 256 {
-            return Ok(());
-        }
-
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -954,10 +950,28 @@ impl VirtualMemoryManager {
         // SAFETY: 2MB huge page mapping at PD level. VMM_LOCK held by caller.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
+            let pml4_idx = virt.pml4_idx();
 
-            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
+            // 记录 PML4E 是否已存在 — 新建的 PDPT 需同步到 USER_PML4
+            let pml4e_existed = (*pml4.add(pml4_idx)).is_present();
+
+            let pdpt = self.get_or_create_table_entry(pml4.add(pml4_idx), true, 0);
             if pdpt.is_null() {
                 return Err("Failed to allocate PDPT");
+            }
+
+            // 内核高半区: 新建 PML4 条目需同步到 USER_PML4 (KPTI)
+            if pml4_idx >= 256 && !pml4e_existed {
+                // SAFETY: VMM_LOCK 已持有, pml4_idx 在 [256, 512) 内, KERNEL_PML4 已初始化
+                super::kpti::kpti_sync_pml4_entry(pml4_idx);
+            }
+
+            // 安全门: 如果 PDPT 条目是 1GB 大页且已映射, 禁止覆盖
+            // (2MB 映射到已有 1GB 页的区域会拆分共享页表, KPTI 下导致 Triple Fault)
+            let pdpte = &*pdpt.add(virt.pdpt_idx());
+            if pdpte.is_present() && pdpte.is_huge() {
+                // 已有 1GB 大页覆盖此范围, 无需再映射 2MB
+                return Ok(());
             }
 
             let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
@@ -968,6 +982,10 @@ impl VirtualMemoryManager {
             let pde = &mut *pd.add(virt.pd_idx());
             if pde.is_present() && !pde.is_huge() {
                 return Err("PD entry already split to PT, cannot map 2MB page");
+            }
+            if pde.is_present() && pde.is_huge() {
+                // 已有 2MB 映射, 不覆盖 (避免破坏 KPTI 共享页表)
+                return Ok(());
             }
             pde.set_frame(phys);
             pde.set_flags(flags);
@@ -984,10 +1002,6 @@ impl VirtualMemoryManager {
         phys: PhysAddr,
         flags: PageFlags,
     ) -> Result<(), &'static str> {
-        if virt.pml4_idx() >= 256 {
-            return Ok(());
-        }
-
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
             return Err("VMM not initialized");
@@ -998,15 +1012,29 @@ impl VirtualMemoryManager {
         // SAFETY: 1GB huge page mapping at PDPT level. VMM_LOCK held by caller.
         unsafe {
             let pml4 = pml4_virt.0 as *mut PageTableEntry;
+            let pml4_idx = virt.pml4_idx();
 
-            let pdpt = self.get_or_create_table_entry(pml4.add(virt.pml4_idx()), true, 0);
+            // 记录 PML4E 是否已存在 — 新建的 PDPT 需同步到 USER_PML4
+            let pml4e_existed = (*pml4.add(pml4_idx)).is_present();
+
+            let pdpt = self.get_or_create_table_entry(pml4.add(pml4_idx), true, 0);
             if pdpt.is_null() {
                 return Err("Failed to allocate PDPT");
+            }
+
+            // 内核高半区: 新建 PML4 条目需同步到 USER_PML4 (KPTI)
+            if pml4_idx >= 256 && !pml4e_existed {
+                // SAFETY: VMM_LOCK 已持有, pml4_idx 在 [256, 512) 内, KERNEL_PML4 已初始化
+                super::kpti::kpti_sync_pml4_entry(pml4_idx);
             }
 
             let pdpte = &mut *pdpt.add(virt.pdpt_idx());
             if pdpte.is_present() && !pdpte.is_huge() {
                 return Err("PDPT entry already split, cannot map 1GB page");
+            }
+            if pdpte.is_present() && pdpte.is_huge() {
+                // 已有 1GB 映射, 不覆盖
+                return Ok(());
             }
             pdpte.set_frame(phys);
             pdpte.set_flags(flags);

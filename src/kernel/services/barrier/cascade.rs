@@ -18,8 +18,6 @@
 //!
 //! 本文件不含 `unsafe`. 拓扑由 services 层静态定义.
 
-#![allow(dead_code)]
-
 use super::attribution::FaultAttribution;
 use super::recovery_policy::{FaultSignal, RecoveryAction, RecoveryPolicy};
 

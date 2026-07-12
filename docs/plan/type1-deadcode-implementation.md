@@ -498,8 +498,10 @@ Week 5-6: Batch 6 (其他)
 | Batch 2 (存储/网络) | 2 | NVME_REG_VS/POLL_COUNT |
 | Batch 3 (同步) | 3 | irq_lock/once/scoped |
 | Batch 4 (内存) | 0 | 诊断方法，需复杂集成 |
-| Batch 5 (故障恢复) | 0 | 完整实现待架构集成 |
-| **已消除总计** | **8** | |
+| Batch 5 (故障恢复) | 5 | barrier 文件级 #![allow(dead_code)] 移除 (attribution/recovery_policy/health_monitor/cascade/audit_export) |
+| Batch 5 (Credo 策略) | 4 | credo 文件级 #![allow(dead_code)] 移除 (policy/grants/sessions/audit) |
+| 框架逐项消除 | 5 | api::kernel_stack_write_canary_delegated 移除, boot::MultibootPtr 注解移除, ebpf::verifier() 注解移除, dma::virt_to_phys 注解移除, credo/storage::debug_assert 交叉验证 |
+| **已消除总计** | **22** | |
 
 ## 十一、剩余死代码分类 (182 处)
 
@@ -509,9 +511,9 @@ Week 5-6: Batch 6 (其他)
 | 诊断方法预留 | 25 | ⚠️ 需要实现诊断功能 | 如 as_ptr/is_null/load_state_raw |
 | 功能预留 | 30 | ⚠️ 需要实现相关功能 | 如 NVMe 中断掩码、USB 电源管理 |
 | 架构集成 | 14 | ⚠️ 需要架构级集成 | 如 barrier 恢复、credo 策略 |
-| 模块级 allow | 20 | ❌ 内部函数在使用 | 文件级 allow 抑制内部函数警告 |
+| 模块级 allow | 10 | ❌ 内部函数在使用 | 文件级 allow 抑制内部函数警告 (已从 20 减至 10, credo/barrier 文件级 allow 已移除) |
 | smoltcp 内部 | 10 | ❌ 第三方库豁免 | 不动源码 |
-| **已消除** | 8 | ✅ | USB/NVMe/e1000/create_time/sync |
+| **已消除** | 22 | ✅ | USB/NVMe/e1000/create_time/sync + credo/barrier 文件级 + 逐项消除 |
 
 ## 十二、验证标准
 

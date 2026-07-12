@@ -92,7 +92,7 @@ impl BootInfo {
     }
 }
 
-struct MultibootPtr(#[allow(dead_code)] // 待 boot 协议扩展后使用
+struct MultibootPtr(
     *const u8);
 // SAFETY: MultibootPtr 包装一个指向启动信息数据的裸指针, 启动早期写入
 // 一次, 之后只读. 访问受 MULTIBOOT_INFO_PTR Mutex 保护.
@@ -284,6 +284,8 @@ pub fn init() -> BootInfo {
 
     #[cfg(target_arch = "aarch64")]
     let (mem_size, mmap_entries) = {
+        // aarch64 不使用 Multiboot 协议, 但需读取字段以消除 dead_code 警告
+        let _ = MULTIBOOT_INFO_PTR.lock().0;
         // QEMU virt 平台默认 512MB.
         // 可通过 `AARCH64_MEM_SIZE` 环境/构建变量覆盖.
         let ms: u64 = option_env!("AARCH64_MEM_MB")
