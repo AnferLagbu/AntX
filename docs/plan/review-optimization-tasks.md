@@ -104,10 +104,17 @@
 | `/proc/slabinfo` 逐缓存数据 | slab_get_cache_infos() safe 包装 + procfs 逐缓存输出 | +1 功能 |
 | `/proc/fs/dcache` | dcache/icache 统计接口 | +1 功能 |
 | future-roadmap.md 重复条目 | 删除 F2/F3 重复段落 | 清理 |
+| aarch64 stack_bottom 符号别名 + boot canary | start.S 添加符号, entry.rs 写入 canary | +1 修复 |
+| PMM bitmap_size 偏移修复 | p.add(2)→p.add(1) 修正 struct layout 读取 | +1 修复 |
+| e1000 probe 运行时安全 | aarch64 返回 -1 而非 cfg-gate 排除 | +1 修复 |
+| canary 检查恢复 | aarch64 移除 cfg 跳过, 完整运行 canary 检查 | +1 修复 |
+| slab copy_nonoverlapping 移除 | 未使用函数删除 | -1 |
+| smoltcp features 扩展 | proto-ipv4-fragmentation + socket-tcp-cubic | +2 功能 |
+| smoltcp ipv4.rs mut 修复 | 修复 vendored 代码编译错误 | +1 修复 |
 
-**framework 消除: 32 项, services 消除: 5 项, 总计: 37 项**
+**framework 消除: 27 项, services 消除: 5 项, 总计: 32 项 (+8 功能/修复)**
 
-### 剩余项 (framework 127 + services 71 item-level)
+### 剩余项 (framework 126 + services 71 item-level)
 
 | 类别 | 数量 | 消除条件 |
 |------|------|----------|
