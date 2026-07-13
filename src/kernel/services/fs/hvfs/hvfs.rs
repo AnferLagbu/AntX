@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 extern crate alloc;
 
@@ -38,9 +37,11 @@ fn hvfs_reset() {
     crate::slog_warn!(FS, "[HvFS] Recovery: domain hard reset");
 }
 
+#[allow(dead_code)] // 待 HvFS FD 管理集成后使用
 pub const HVFS_MAX_FDS: usize = 256;
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)] // 待 HvFS FD 管理集成后使用
 pub struct HvfsFd {
     pub fd: u32,
     pub obj_id: u64,
@@ -53,6 +54,7 @@ pub struct HvfsFd {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[allow(dead_code)] // 待 HvFS 模式切换集成后使用
 pub enum HvfsMode {
     Memory = 0,
     Disk = 1,
@@ -117,10 +119,12 @@ pub fn get_hvfs() -> &'static HvfsData {
 }
 
 impl HvfsData {
+    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
     fn check_disk(&self) -> bool {
         block::hdd_is_present(self.disk_drive.load(Ordering::Acquire))
     }
 
+    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 {
             return KernelError::InvalidArgument.as_i32();
@@ -133,6 +137,7 @@ impl HvfsData {
         )
     }
 
+    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
         if buf.len() < 512 {
             return KernelError::InvalidArgument.as_i32();
@@ -317,6 +322,7 @@ impl HvfsData {
     ///
     /// 自动探测 QueenX 签名以获取 partition_start。如果磁盘未格式化则使用默认值。
     /// 返回 true 表示成功添加。
+    #[allow(dead_code)] // 待热插拔路径集成后使用
     pub fn hotplug_add_disk(&self, drive: u8) -> bool {
         if !block::hdd_is_present(drive) {
             crate::slog_warn!(FS, "[HvFS] HOTPLUG: drive not present, skip");
@@ -362,6 +368,7 @@ impl HvfsData {
     /// 不移除 vdev (保持 uberblock 一致性)，仅标记状态为 Removed，
     /// 后续 I/O 将跳过该设备。
     /// 返回 true 表示找到并标记成功。
+    #[allow(dead_code)] // 待热插拔路径集成后使用
     pub fn hotplug_remove_disk(&self, drive: u8) -> bool {
         let mut vdevs = self.spa.vdevs.lock();
         if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == drive as u16) {
@@ -373,6 +380,7 @@ impl HvfsData {
         false
     }
 
+    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
     fn read_partition_start(&self) -> u32 {
         let mut cfg = [0u8; 512];
         let r = block::hdd_read_sector(self.disk_drive.load(Ordering::Acquire), 2046, &mut cfg);
@@ -408,6 +416,7 @@ impl HvfsData {
         }
     }
 
+    #[allow(dead_code)] // 待块设备挂载路径集成后使用
     pub fn mount_drive(&self, drive_id: u8, part_start: u32) -> bool {
         if !block::hdd_is_present(drive_id) {
             return false;
@@ -496,6 +505,7 @@ impl HvfsData {
         None
     }
 
+    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
     fn free_fd(&self, idx: usize) {
         let mut fds = self.fds.lock();
         if idx < HVFS_MAX_FDS {
@@ -1085,6 +1095,7 @@ impl HvfsData {
         KernelError::IoError.as_i32()
     }
 
+    #[allow(dead_code)] // 待扩展属性路径集成后使用
     pub fn setxattr(&self, path: &str, name: &str, value: &[u8], pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1131,6 +1142,7 @@ impl HvfsData {
         KernelError::NotSupported.as_i32()
     }
 
+    #[allow(dead_code)] // 待扩展属性路径集成后使用
     pub fn getxattr(&self, path: &str, name: &str, buf: &mut [u8], pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1171,6 +1183,7 @@ impl HvfsData {
         KernelError::NotFound.as_i32()
     }
 
+    #[allow(dead_code)] // 待扩展属性路径集成后使用
     pub fn listxattr(&self, path: &str, buf: &mut [u8], pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1212,6 +1225,7 @@ impl HvfsData {
         offset as i32
     }
 
+    #[allow(dead_code)] // 待扩展属性路径集成后使用
     pub fn removexattr(&self, path: &str, name: &str, pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1303,6 +1317,7 @@ impl HvfsData {
     }
 
     fn serialize_dataset_metadata(&self, txg: u64) -> Option<HvBlockPointer> {
+        #[allow(dead_code)] // 待块指针序列化路径集成后使用
         const BP_BYTES: usize = 128;
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_SERIALIZE_OBJECTS: usize = 65536;
@@ -1457,6 +1472,7 @@ impl HvfsData {
     }
 
     fn deserialize_dataset_metadata(&self, bp: &HvBlockPointer) -> bool {
+        #[allow(dead_code)] // 待块指针序列化路径集成后使用
         const BP_BYTES: usize = 128;
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_DESERIALIZE_OBJECTS: usize = 65536;
@@ -1723,6 +1739,7 @@ impl HvfsData {
         ]))
     }
 
+    #[allow(dead_code)] // 待快照功能集成后使用
     pub fn snapshot_create(&self, name: &str) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1736,6 +1753,7 @@ impl HvfsData {
         }
     }
 
+    #[allow(dead_code)] // 待快照功能集成后使用
     pub fn snapshot_destroy(&self, snap_id: u64) -> i32 {
         if self.snap_mgr.destroy_snapshot(snap_id) {
             0
@@ -1744,6 +1762,7 @@ impl HvfsData {
         }
     }
 
+    #[allow(dead_code)] // 待快照功能集成后使用
     pub fn snapshot_rollback(&self, snap_id: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1757,6 +1776,7 @@ impl HvfsData {
         }
     }
 
+    #[allow(dead_code)] // 待克隆功能集成后使用
     pub fn clone_create(&self, snap_id: u64, name: &str) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1802,6 +1822,7 @@ impl HvfsData {
         new_offset as i64
     }
 
+    #[allow(dead_code)] // 待统计接口集成后使用
     pub fn get_stats(&self) -> (u64, u64, u64, u64) {
         if !self.is_initialized() {
             return (0, 0, 0, 0);

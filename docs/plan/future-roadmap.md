@@ -27,25 +27,6 @@
 
 ---
 
-## F2: RISC-V 架构支持
-
-- **描述**
-  - Asterinas 支持 x86_64 + riscv64 + loongarch64；QueenX 仅 x86_64 + aarch64
-  - 方案: RISC-V 64 启动 (OpenSBI) + 页表 (Sv39) + 异常 (stvec/sepc/scause) + 中断 (PLIC/CLINT) + 调度切换
-
-- **工作量**: ~3000-5000 行；预计 6-8 周
-
----
-
-## F3: TDX 机密计算支持
-
-- **描述**
-  - 方案: TDX module 检测 (CPUID 0x21) + tdcall 指令封装 + attest quote + 内存加密
-
-- **工作量**: ~2300 行；预计 4-6 周
-
----
-
 ## F3: TDX 机密计算支持
 
 - **描述**

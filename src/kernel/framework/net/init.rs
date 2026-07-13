@@ -95,7 +95,6 @@ static mut DHCP_HANDLE: Option<SocketHandle> = None;
 // `set_max_sockets` 调整, 不超过 MAX_SOCKETS. 编译期可通过 ANT_MAX_SOCKETS
 // 环境变量覆盖 (Cargo build.rs 读取并写入 cfg).
 // ============================================================================
-#[allow(dead_code)] // 待 socket 容量动态调整路径启用后使用。
 const DEFAULT_MAX_SOCKETS: usize = 1024;
 
 /// 运行时活动 socket 数上限 (≤ MAX_SOCKETS).
@@ -359,7 +358,8 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> { unsafe {
     //
     // 失败: 全部探测返回非 0 / Box::into_raw 失败 / Driver::init 失败.
 
-    // 1) e1000 探测 (PCI 设备, 走 PCI 总线, 架构无关)
+    // 1) e1000 探测 (PCI 设备, 走 PCI 总线)
+    // aarch64: e1000_probe() 内部安全返回 -1 (无 PCI ECAM)
     {
         let probe_result = crate::kernel::framework::driver::e1000_probe();
         if probe_result == 0 {
@@ -490,7 +490,6 @@ fn as_u32_handle(h: smoltcp::iface::SocketHandle) -> u32 {
 /// 跨 smoltcp 版本混用会破坏 SocketSet 索引语义. 0 是 INVALID 句柄,
 /// 不应被分配, 但 `SocketSet` 内部允许 0 (因为 `add` 一定返回非零索引).
 #[inline]
-#[allow(dead_code)] // W5+ 阶段逐步替换
 unsafe fn smol_handle_from_u32(raw: u32) -> smoltcp::iface::SocketHandle {
     // SAFETY: 同 `as_u32_handle`, 字段类型 usize, transmute_copy 安全.
     let raw_usize = raw as usize;
@@ -968,7 +967,6 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
 
 /// 把 trait 抽象的 `Ipv4Addr` 翻译成 smoltcp 的 `Ipv4Address`.
 #[inline(always)]
-#[allow(dead_code)] // W4.4+ 阶段替换逐步接入
 pub(crate) fn wire_to_smol_v4(a: crate::kernel::framework::net::iface_trait::Ipv4Addr) -> Ipv4Address {
     let o = a.octets();
     Ipv4Address::new(o[0], o[1], o[2], o[3])
@@ -976,7 +974,6 @@ pub(crate) fn wire_to_smol_v4(a: crate::kernel::framework::net::iface_trait::Ipv
 
 /// 把 trait 抽象的 `NetEndpoint` 翻译成 smoltcp 的 `IpEndpoint`.
 #[inline]
-#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn endpoint_to_smol(
     e: crate::kernel::framework::net::iface_trait::NetEndpoint,
 ) -> IpEndpoint {
@@ -988,7 +985,6 @@ pub(crate) fn endpoint_to_smol(
 
 /// 把 trait 抽象的 `NetListenEndpoint` 翻译成 smoltcp 的 `IpListenEndpoint`.
 #[inline]
-#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn listen_endpoint_to_smol(
     e: crate::kernel::framework::net::iface_trait::NetListenEndpoint,
 ) -> IpListenEndpoint {
@@ -1003,7 +999,6 @@ pub(crate) fn listen_endpoint_to_smol(
 
 /// 从 smoltcp `IpAddress` 中提取 IPv4 octets, 翻译为 trait `Ipv4Addr`.
 #[inline]
-#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn ipaddr_from_smol(a: IpAddress) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Addr> {
     match a {
         IpAddress::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(v4.octets())),
@@ -1013,7 +1008,6 @@ pub(crate) fn ipaddr_from_smol(a: IpAddress) -> Option<crate::kernel::framework:
 
 /// 从 smoltcp `IpEndpoint` 翻译为 trait `NetEndpoint`.
 #[inline]
-#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn endpoint_from_smol(e: IpEndpoint) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
     Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new(
         ipaddr_from_smol(e.addr)?,
@@ -1023,7 +1017,6 @@ pub(crate) fn endpoint_from_smol(e: IpEndpoint) -> Option<crate::kernel::framewo
 
 /// 从 smoltcp `IpCidr` 翻译为 trait `Ipv4Cidr` (仅 IPv4).
 #[inline]
-#[allow(dead_code)] // 待网络栈 trait 完整迁移后启用
 pub(crate) fn cidr_from_smol(c: IpCidr) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Cidr> {
     match c {
         IpCidr::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Cidr::new(
@@ -2106,7 +2099,6 @@ pub unsafe fn reset_network_state() {
 ///
 /// - `Some(u32)`: smoltcp handle (用于 smol_socket_get)
 /// - `None`: 创建失败 (k_malloc 失败 / 槽位已占用 / slot_idx 越界)
-#[allow(dead_code)] // W4.2.3.4 整合后移除
 pub fn smoltcp_net_stack_socket_open(
     kind: crate::kernel::framework::net::iface_trait::SocketKind,
     slot_idx: usize,
@@ -2280,7 +2272,6 @@ pub(crate) mod raw {
     /// - 暂不实装 Icmp/Raw/Dhcpv4/Dns (返回 None)
     /// - sm_socket 路径暂不调用本函数 (W4.2.3.3 迁移)
     /// - SmoltcpNetStack 路径暂不调用本函数 (W4.2.3.4 整合)
-    #[allow(dead_code)] // W4.2.3.3+ 接入后移除
     pub fn socket_open_stub(
         sockets: &mut SocketSet<'_>,
         kind: crate::kernel::framework::net::iface_trait::SocketKind,
@@ -2384,7 +2375,6 @@ pub(crate) mod raw {
     /// ## 返回值
     ///
     /// 始终返回 `true` (smoltcp 0.13.1 的 `SocketSet::remove` 不会失败).
-    #[allow(dead_code)] // W4.2.4+ 接入后移除
     pub fn socket_close_stub(
         sockets: &mut SocketSet<'_>,
         smol_handle: smoltcp::iface::SocketHandle,
@@ -2416,7 +2406,6 @@ pub(crate) mod raw {
     ///
     /// 我们翻译为 trait DhcpState, 简化 lease_expires_at = u64::MAX
     /// (实际租约管理在 init flow 中通过 G_IPV4 / G_GATEWAY 跟踪).
-    #[allow(dead_code)] // W4.2.4+ 接入后移除
     pub fn dhcp_state_stub(
         sockets: &mut SocketSet<'_>,
         dhcp_handle: Option<smoltcp::iface::SocketHandle>,

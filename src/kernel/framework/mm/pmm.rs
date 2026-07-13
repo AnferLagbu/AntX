@@ -702,10 +702,11 @@ impl PhysicalMemoryManager {
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: bitmap 已 init 时 self.bitmap_size 也是已 set 的有效值.
+            // #[repr(C)] 保证字段布局: bitmap(offset 0, 8B) → bitmap_size(offset 8, 8B)
+            // LTO 曾错位 self.bitmap_size.get() → self.failed_allocs, 用 raw pointer 绕过.
             let bitmap_size = unsafe {
                 let p = self as *const Self as *const u64;
-                // bitmap 字段在 offset 0, size 16; bitmap_size 字段在 offset 16
-                core::ptr::read_volatile(p.add(2) as *const usize)
+                core::ptr::read_volatile(p.add(1) as *const usize)
             };
             BitmapRef::new(bmp).set_bit(bit, bitmap_size);
         }
@@ -716,7 +717,7 @@ impl PhysicalMemoryManager {
         if let Some(bmp) = self.bitmap.get() {
             let bitmap_size = unsafe {
                 let p = self as *const Self as *const u64;
-                core::ptr::read_volatile(p.add(2) as *const usize)
+                core::ptr::read_volatile(p.add(1) as *const usize)
             };
             BitmapRef::new(bmp).clear_bit(bit, bitmap_size);
         }
@@ -727,7 +728,7 @@ impl PhysicalMemoryManager {
         if let Some(bmp) = self.bitmap.get() {
             let bitmap_size = unsafe {
                 let p = self as *const Self as *const u64;
-                core::ptr::read_volatile(p.add(2) as *const usize)
+                core::ptr::read_volatile(p.add(1) as *const usize)
             };
             BitmapRef::new(bmp).test_bit(bit, bitmap_size)
         } else {
@@ -739,9 +740,10 @@ impl PhysicalMemoryManager {
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
         // SAFETY: bitmap 已 init 时 self.bitmap_size 有效
+        // #[repr(C)] 保证字段布局: bitmap(offset 0, 8B) → bitmap_size(offset 8, 8B)
         let bmp_size = unsafe {
             let p = self as *const Self as *const u64;
-            core::ptr::read_volatile(p.add(2) as *const usize)
+            core::ptr::read_volatile(p.add(1) as *const usize)
         };
         let free = if let Some(bmp) = self.bitmap.get() {
             let f = BitmapRef::new(bmp).count_free(bmp_size);

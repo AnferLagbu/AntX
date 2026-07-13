@@ -105,7 +105,7 @@ el1_entry:
     add  x1, x1, #:lo12:_fdt_addr
     str  x0, [x1]
 
-    // 4.3 跳转 Rust entry()
+    // 4.4 跳转 Rust entry()
     bl   entry
 
     // entry() should never return
@@ -128,3 +128,8 @@ _fdt_addr:
 _boot_stack_bottom:
     .space 262144            // 256KB boot stack
 _boot_stack_top:
+
+// stack_bottom 符号别名 — 与 x86_64 boot.asm 对齐,
+// 供 Rust 侧 process.rs 的 stack canary 检测使用.
+.global stack_bottom
+stack_bottom = _boot_stack_bottom

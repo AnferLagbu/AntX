@@ -36,7 +36,6 @@
 //! - 本文件 0 unsafe, 从 framework 迁移而来
 
 #![deny(unsafe_code)]
-#![allow(dead_code)]
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -95,6 +94,7 @@ impl Default for DCacheEntry {
 }
 
 impl DCacheEntry {
+    #[allow(dead_code)] // 待 dcache 调试路径启用后使用
     fn name_str(&self) -> &str {
         let len = self.name_len as usize;
         if len == 0 || len > DCACHE_NAME_LEN {
@@ -103,6 +103,7 @@ impl DCacheEntry {
         core::str::from_utf8(&self.name[..len]).unwrap_or("")
     }
 
+    #[allow(dead_code)] // 待 dcache 调试路径启用后使用
     fn set_name(&mut self, name: &str) {
         let bytes = name.as_bytes();
         let len = bytes.len().min(DCACHE_NAME_LEN);
@@ -535,6 +536,7 @@ impl ICache {
     }
 
     /// 减少引用计数
+    #[allow(dead_code)] // 待 dcache 条目驱逐策略启用后使用
     fn ref_dec(&mut self, ino: u32) {
         if let Some(idx) = self.lookup_index(ino) {
             self.entries[idx].ref_count = self.entries[idx].ref_count.saturating_sub(1);
@@ -601,6 +603,7 @@ pub enum DCacheResult {
 
 /// icache 查找结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // 待 icache 查询路径集成后使用
 pub struct ICacheResult {
     pub ino: u32,
     pub file_type: u8,
@@ -649,18 +652,21 @@ pub fn dcache_invalidate_parent(parent_ino: u32) {
 }
 
 /// dcache 失效: 指定条目
+#[allow(dead_code)] // 待路径解析精确失效启用后使用
 pub fn dcache_invalidate_entry(parent_ino: u32, name: &str) {
     let mut dcache = DCACHE.lock();
     dcache.invalidate_entry(parent_ino, name);
 }
 
 /// dcache 清空
+#[allow(dead_code)] // 待文件系统卸载/重新挂载路径启用后使用
 pub fn dcache_flush() {
     let mut dcache = DCACHE.lock();
     dcache.flush();
 }
 
 /// icache 查找
+#[allow(dead_code)] // 待 inode 属性缓存查询路径集成后使用
 pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
     ICACHE_LOOKUPS.fetch_add(1, Ordering::Relaxed);
 
@@ -681,6 +687,7 @@ pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
 }
 
 /// icache 插入/更新
+#[allow(dead_code)] // 待 inode 属性缓存写入路径集成后使用
 pub fn icache_insert(ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64) {
     let mut icache = ICACHE.lock();
     icache.insert(ino, file_type, perm, size, mtime);
@@ -693,12 +700,14 @@ pub fn icache_invalidate(ino: u32) {
 }
 
 /// icache 清空
+#[allow(dead_code)] // 待文件系统卸载路径启用后使用
 pub fn icache_flush() {
     let mut icache = ICACHE.lock();
     icache.flush();
 }
 
 /// 同时清空 dcache + icache
+#[allow(dead_code)] // 待文件系统卸载路径启用后使用
 pub fn flush_all() {
     dcache_flush();
     icache_flush();

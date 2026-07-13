@@ -9,6 +9,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::mm::api as pmm_api;
+use crate::kernel::framework::mm::api::{slab_get_cache_infos, slab_get_stats, SlabCacheInfo};
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;
 pub const PROCFS_MAX_NAME: usize = 32;
@@ -224,10 +225,23 @@ impl ProcfsData {
             write_str(buf, &mut pos, "Dirty:           0 kB\nWriteback:       0 kB\nAnonPages:       ");
             write_str(buf, &mut pos, &alloc::format!("{} kB", used));
             write_str(buf, &mut pos, "\nMapped:          0 kB\nShmem:           0 kB\nKReclaimable:    0 kB\n");
-            write_str(buf, &mut pos, "Slab:            0 kB\nSReclaimable:    0 kB\nSUnreclaim:      0 kB\n");
+            let slab = slab_get_stats();
+            let slab_kb = (slab.total_memory / 1024) as u64;
+            let slab_used_kb = (slab.used_memory / 1024) as u64;
+            write_str(buf, &mut pos, "Slab:            ");
+            write_str(buf, &mut pos, &alloc::format!("{} kB", slab_kb));
+            write_str(buf, &mut pos, "\nSReclaimable:    ");
+            write_str(buf, &mut pos, &alloc::format!("{} kB", slab_used_kb));
+            write_str(buf, &mut pos, "\nSUnreclaim:      ");
+            write_str(buf, &mut pos, &alloc::format!("{} kB", slab_kb.saturating_sub(slab_used_kb)));
+            write_str(buf, &mut pos, "\n");
             write_str(buf, &mut pos, "KernelStack:     0 kB\nPageTables:      0 kB\nNFS_Unstable:    0 kB\n");
             write_str(buf, &mut pos, "Bounce:          0 kB\nWritebackTmp:    0 kB\nCommitLimit:     0 kB\n");
-            write_str(buf, &mut pos, "Committed_AS:    0 kB\nVmallocTotal:    0 kB\nVmallocUsed:     0 kB\n");
+            let kmalloc = pmm_api::kmalloc_get_stats();
+            let kmalloc_kb = (kmalloc.current_usage / 1024) as u64;
+            write_str(buf, &mut pos, "Committed_AS:    0 kB\nVmallocTotal:    0 kB\nVmallocUsed:     ");
+            write_str(buf, &mut pos, &alloc::format!("{} kB", kmalloc_kb));
+            write_str(buf, &mut pos, "\n");
             write_str(buf, &mut pos, "Percpu:          0 kB\nHardwareCorrupted: 0 kB\nAnonHugePages:   0 kB\n");
             write_str(buf, &mut pos, "ShmemHugePages:  0 kB\nShmemPmdMapped:  0 kB\nFileHugePages:   0 kB\n");
             write_str(buf, &mut pos, "FilePmdMapped:   0 kB\nHugePages_Total: 0\nHugePages_Free:  0\nHugePages_Rsvd:  0\n");
@@ -272,12 +286,94 @@ impl ProcfsData {
             write_str(buf, &mut pos, "cpu  0 0 0 0 0 0 0 0 0 0\n");
             write_str(buf, &mut pos, "cpu0 0 0 0 0 0 0 0 0 0 0\n");
             write_str(buf, &mut pos, "intr 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+            let ticks = crate::kernel::framework::tick_query::current_tick();
             write_str(buf, &mut pos, "ctxt 0\n");
             write_str(buf, &mut pos, "btime 0\n");
             write_str(buf, &mut pos, "processes 0\n");
             write_str(buf, &mut pos, "procs_running 1\n");
             write_str(buf, &mut pos, "procs_blocked 0\n");
-            write_str(buf, &mut pos, "softirq 0 0 0 0 0 0 0 0 0 0 0\n");
+            write_str(buf, &mut pos, &alloc::format!("softirq {} 0 0 0 0 0 0 0 0 0 0\n", ticks));
+
+            return pos as i32;
+        }
+
+        // /proc/slabinfo
+        if name == "slabinfo" {
+            let mut pos = 0usize;
+            let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
+                let b = s.as_bytes();
+                let end = (*pos + b.len()).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&b[..len]);
+                *pos += len;
+            };
+
+            let mut infos = [SlabCacheInfo {
+                object_size: 0,
+                total_objects: 0,
+                active_objects: 0,
+                total_slabs: 0,
+            }; 16];
+            let count = slab_get_cache_infos(&mut infos);
+
+            write_str(buf, &mut pos, "# <name> <active_objs> <num_objs> <objsize> <objperslab> <pagesperslab>\n");
+
+            for info in infos.iter().take(count) {
+                let objperslab = if info.object_size > 0 {
+                    (crate::kernel::framework::mm::PAGE_SIZE as usize
+                        / info.object_size as usize) as u32
+                } else {
+                    0
+                };
+                // pagesperslab: 每个 slab 占用的页数, 由 slab 配置决定
+                let pagesperslab = (crate::kernel::services::config::slab::SLAB_DEFAULT_SIZE
+                    / crate::kernel::framework::mm::PAGE_SIZE as usize) as u32;
+                write_str(
+                    buf,
+                    &mut pos,
+                    &alloc::format!(
+                        "slab-{} {} {} {} {} {}\n",
+                        info.object_size,
+                        info.active_objects,
+                        info.total_objects,
+                        info.object_size,
+                        objperslab,
+                        pagesperslab,
+                    ),
+                );
+            }
+
+            return pos as i32;
+        }
+
+        // /proc/fs/dcache
+        if name == "fs/dcache" {
+            let mut pos = 0usize;
+            let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
+                let b = s.as_bytes();
+                let end = (*pos + b.len()).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&b[..len]);
+                *pos += len;
+            };
+
+            let (d_hits, d_lookups) = crate::kernel::services::fs::dcache::dcache_hit_rate();
+            let (i_hits, i_lookups) = crate::kernel::services::fs::dcache::icache_hit_rate();
+            let d_count = crate::kernel::services::fs::dcache::dcache_count();
+            let i_count = crate::kernel::services::fs::dcache::icache_count();
+
+            write_str(buf, &mut pos, "dcache_lookups: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", d_lookups));
+            write_str(buf, &mut pos, "dcache_hits: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", d_hits));
+            write_str(buf, &mut pos, "dcache_entries: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", d_count));
+            write_str(buf, &mut pos, "icache_lookups: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", i_lookups));
+            write_str(buf, &mut pos, "icache_hits: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", i_hits));
+            write_str(buf, &mut pos, "icache_entries: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", i_count));
 
             return pos as i32;
         }

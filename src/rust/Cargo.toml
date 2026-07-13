@@ -33,6 +33,7 @@ zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
 smoltcp = { path = "../kernel/services/net/smoltcp", default-features = false, features = [
     "medium-ethernet",
     "proto-ipv4",
+    "proto-ipv4-fragmentation",
     "proto-ipv6",
     "proto-dhcpv4",
     "proto-dns",
@@ -40,6 +41,7 @@ smoltcp = { path = "../kernel/services/net/smoltcp", default-features = false, f
     "socket-icmp",
     "socket-udp",
     "socket-tcp",
+    "socket-tcp-cubic",
     "socket-dhcpv4",
     "socket-dns",
 ] }

@@ -44,7 +44,6 @@ pub const ATA_SECONDARY_CTRL: u16 = 0x376;
 
 /// I/O 寄存器偏移量
 const ATA_DATA: u16 = 0; // 数据寄存器 (16位)
-#[allow(dead_code)] // 规范定义, 待 ATA 错误诊断路径启用后使用。
 const ATA_ERROR: u16 = 1; // 错误寄存器
 const ATA_SECTOR_COUNT: u16 = 2; // 扇区计数
 const ATA_SECTOR_NUM: u16 = 3; // 扇区号 (LBA 0-7)
@@ -60,9 +59,7 @@ const ATA_CTRL_ALT_STATUS: u8 = 0; // 替代状态
 
 /// 状态寄存器标志位
 const ATA_STATUS_BSY: u8 = 0x80; // Busy
-#[allow(dead_code)] // 规范定义, 待 ATA 状态机诊断启用后使用。
 const ATA_STATUS_DRDY: u8 = 0x40; // Drive Ready
-#[allow(dead_code)] // 规范定义, 待 ATA 设备故障诊断启用后使用。
 const ATA_STATUS_DF: u8 = 0x20; // Device Fault
 #[allow(dead_code)] // 规范定义, 待 ATA 寻道完成检测启用后使用。
 const ATA_STATUS_DSC: u8 = 0x10; // Seek Complete
@@ -198,7 +195,12 @@ fn wait_drq(io: u16, ctrl: u16) -> Result<()> {
         unsafe {
             let status = inb(io + ATA_STATUS);
 
+            if status & ATA_STATUS_DF != 0 {
+                return Err(DriverError::HardwareError);
+            }
+
             if status & ATA_STATUS_ERR != 0 {
+                let _ = inb(io + ATA_ERROR);
                 return Err(DriverError::HardwareError);
             }
 
@@ -230,6 +232,14 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
     // 选择驱动器
     if select_drive(io, ctrl, slave).is_err() {
         return false;
+    }
+
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    unsafe {
+        let status = inb(io + ATA_STATUS);
+        if status & ATA_STATUS_DRDY == 0 {
+            return false;
+        }
     }
 
     // 设置参数为 0 (用于 IDENTIFY)

@@ -497,23 +497,27 @@ Week 5-6: Batch 6 (其他)
 | Batch 1 (进程) | 1 | create_time |
 | Batch 2 (存储/网络) | 2 | NVME_REG_VS/POLL_COUNT |
 | Batch 3 (同步) | 3 | irq_lock/once/scoped |
-| Batch 4 (内存) | 0 | 诊断方法，需复杂集成 |
-| Batch 5 (故障恢复) | 5 | barrier 文件级 #![allow(dead_code)] 移除 (attribution/recovery_policy/health_monitor/cascade/audit_export) |
+| Batch 4 (内存) | 3 | slab_get_system_stats 接入 /proc/meminfo + slab_get_cache_infos API + /proc/slabinfo |
+| Batch 5 (故障恢复) | 6 | barrier 文件级 allow 移除 (5) + RegisteredDomain::name 接入恢复日志 | |
 | Batch 5 (Credo 策略) | 4 | credo 文件级 #![allow(dead_code)] 移除 (policy/grants/sessions/audit) |
 | 框架逐项消除 | 5 | api::kernel_stack_write_canary_delegated 移除, boot::MultibootPtr 注解移除, ebpf::verifier() 注解移除, dma::virt_to_phys 注解移除, credo/storage::debug_assert 交叉验证 |
-| **已消除总计** | **22** | |
+| 会话 dead code 工程 | 38 | ATA DF/DRDY/ERROR, virtio IOERR/UNSUPP/status_byte, virtio-net F_STATUS, virtio FAILED/NEEDS_RESET, idt 旧异常路径清理 (8项), net 翻译函数/stubx12, cstr as_kstr_opt, proc vmm_switch_page_table, lockdep atomics import, elf PT_GNU_STACK, barrier RegisteredDomain::name, racy_cell get_mut, dcache 统计函数 (5项) |
+| slab 诊断路径 | +1 | slab_get_cache_infos() safe 包装 + /proc/slabinfo 逐缓存数据 |
+| **已消除总计** | **59** | |
 
-## 十一、剩余死代码分类 (182 处)
+## 十一、剩余死代码分类 (126 处 framework + 71 处 services item-level)
 
 | 类别 | 数量 | 能否消除 | 说明 |
 |------|------|----------|------|
-| 硬件规范常量 | 58 | ❌ 不能 | 规范要求定义，必须保留 |
-| 诊断方法预留 | 25 | ⚠️ 需要实现诊断功能 | 如 as_ptr/is_null/load_state_raw |
-| 功能预留 | 30 | ⚠️ 需要实现相关功能 | 如 NVMe 中断掩码、USB 电源管理 |
-| 架构集成 | 14 | ⚠️ 需要架构级集成 | 如 barrier 恢复、credo 策略 |
-| 模块级 allow | 10 | ❌ 内部函数在使用 | 文件级 allow 抑制内部函数警告 (已从 20 减至 10, credo/barrier 文件级 allow 已移除) |
-| smoltcp 内部 | 10 | ❌ 第三方库豁免 | 不动源码 |
-| **已消除** | 22 | ✅ | USB/NVMe/e1000/create_time/sync + credo/barrier 文件级 + 逐项消除 |
+| 硬件规范常量 | ~50 | ⚠️ 需要对应功能路径 | APIC/GIC/IOAPIC/e1000/USB/display |
+| 诊断方法预留 | ~20 | ⚠️ 需要 procfs/debug 接口 | as_ptr/is_null/load_state_raw/time_slice |
+| PiMutex PCP 协议 | 4 | ⚠️ 需要完整 PCP 实现 | owner_base_priority/protocol/ceiling/register |
+| ARM VMM | 4 | ⚠️ 需要 aarch64 集成 | 页表诊断/设备映射/非缓存映射/KPTI |
+| 恢复域持久化 | 3 | ⚠️ 需要持久化功能 | save/restore/reset 桩 |
+| 条件编译 | ~5 | ❌ feature gate 下使用 | e1000 real-hw/QEMU stub |
+| 工具方法 | ~9 | 可通过使用消除 | is_null/as_ptr/write_default/write |
+| smoltcp 内部 | ~10 | ❌ 第三方库豁免 | 不动源码 |
+| 其他 | ~22 | 各类预留 | PCI/timer/cpu/dma/credo/elf |
 
 ## 十二、验证标准
 

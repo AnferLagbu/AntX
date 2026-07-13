@@ -1,5 +1,4 @@
 #![deny(unsafe_code)]
-#![allow(dead_code)]
 //! RamFS 核心实现 — services 层 (E6-5 迁移)
 //!
 //! 从 framework/fs/ramfs/ramfs.rs 迁移而来。
@@ -368,6 +367,7 @@ impl RamFsData {
         data[offset..offset + 4].copy_from_slice(&val.to_le_bytes());
     }
 
+    #[allow(dead_code)] // 待 direct/indirect block 读取路径启用后使用
     fn get_data_block(&mut self, node: &mut RamFsNode, block_idx: usize) -> Option<u32> {
         let direct_limit = DIRECT_BLOCKS;
         let indirect_limit = direct_limit + INDIRECT_BLOCKS_PER_BLOCK;
@@ -520,6 +520,7 @@ impl RamFsData {
         self.block_set_free(double_indirect_block);
     }
 
+    #[allow(dead_code)] // 待 ACE 权限检查路径集成后使用
     fn ace_set(&mut self, node_id: u32, pwm: u64, allow: u64, deny: u64) {
         for ace in self.aces.iter_mut() {
             if ace.used && ace.node_id == node_id && ace.pwm == pwm {
@@ -538,6 +539,7 @@ impl RamFsData {
         }
     }
 
+    #[allow(dead_code)] // 待 ACE 权限检查路径集成后使用
     fn ace_clear(&mut self, node_id: u32, pwm: u64) {
         for ace in self.aces.iter_mut() {
             if ace.used && ace.node_id == node_id && ace.pwm == pwm {

@@ -42,7 +42,6 @@ pub trait RecoverableDomain: Send + Sync {
 
 pub(crate) struct RegisteredDomain {
     id: DomainId,
-    #[allow(dead_code)] // 待域诊断/日志路径启用后读取。
     name: String,
     deps: &'static [DomainId],
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -202,6 +201,12 @@ pub fn cascade_recover(domain_id: DomainId) -> usize {
     for &id in order.iter() {
         for r in reg.registered.iter() {
             if r.id == id {
+                crate::klog_info!(
+                    Kernel,
+                    "barrier: recovering domain {} (id={})",
+                    r.name,
+                    id
+                );
                 raw::invoke_restore(r.restore_fn);
                 recovered += 1;
                 break;
@@ -215,6 +220,12 @@ pub fn hard_reset_domain(domain_id: DomainId) {
     let reg = RECOVERY_REGISTRY.lock();
     for r in reg.registered.iter() {
         if r.id == domain_id {
+            crate::klog_warn!(
+                Kernel,
+                "barrier: hard reset domain {} (id={})",
+                r.name,
+                domain_id
+            );
             raw::invoke_reset(r.reset_fn);
             return;
         }

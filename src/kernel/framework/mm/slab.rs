@@ -241,16 +241,6 @@ pub(crate) mod raw {
         core::ptr::write_bytes(ptr, 0, len);
     }}
 
-    /// 不重叠地复制内存.
-    ///
-    /// # Safety
-    /// - src 必须可读 `len` 字节
-    /// - dst 必须可写 `len` 字节
-    #[inline(always)]
-    #[allow(dead_code)] // 待 slab 数据搬移路径启用后使用。
-    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) { unsafe {
-        core::ptr::copy_nonoverlapping(src, dst, len);
-    }}
 }
 
 use raw::SlabRef;
@@ -866,6 +856,45 @@ pub extern "C" fn slab_system_init() -> i32 {
 /// (直接调用 current_slab_policy().find_cache_index()).
 pub(crate) fn find_general_cache_index(size: usize) -> Option<usize> {
     super::slab_trait::current_slab_policy().find_cache_index(size, &GENERAL_CACHE_SIZES)
+}
+
+/// 单个 slab 缓存的统计快照
+#[derive(Debug, Clone, Copy)]
+pub struct SlabCacheSnapshot {
+    /// 对象大小 (字节)
+    pub object_size: u32,
+    /// 总对象数
+    pub total_objects: u32,
+    /// 已用对象数
+    pub active_objects: u32,
+    /// slab 页数
+    pub total_slabs: u32,
+}
+
+/// 遍历所有通用缓存, 返回每个缓存的统计快照.
+/// `out` 由调用方提供, 最大写入 `out.len()` 项. 返回实际写入数.
+pub(crate) fn get_all_cache_snapshots(out: &mut [SlabCacheSnapshot]) -> usize {
+    let mut count = 0usize;
+    // SAFETY: GENERAL_CACHES 在 slab_system_init 后不再重新分配;
+    // get_stats 仅遍历链表计数, 不修改缓存状态; 单核启动期初始化后只读
+    unsafe {
+        for cache_opt in GENERAL_CACHES.iter() {
+            if count >= out.len() {
+                break;
+            }
+            if let Some(cache) = cache_opt {
+                let stats = cache.get_stats();
+                out[count] = SlabCacheSnapshot {
+                    object_size: cache.object_size as u32,
+                    total_objects: stats.total_objects,
+                    active_objects: stats.active_objects,
+                    total_slabs: stats.total_slabs,
+                };
+                count += 1;
+            }
+        }
+    }
+    count
 }
 
 /// 通用分配接口 (FFI 兼容)

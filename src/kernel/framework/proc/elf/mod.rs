@@ -59,7 +59,6 @@ pub struct Elf64Phdr {
 const PT_LOAD: u32 = 1;
 /// PT_INTERP: 动态链接器路径 (指向 ELF 解释器)
 const PT_INTERP: u32 = 3;
-#[allow(dead_code)] // 规范定义, 待 GNU_STACK 段处理启用后使用。
 const PT_GNU_STACK: u32 = 0x6474E551;
 const PF_X: u32 = 1;
 const PF_W: u32 = 2;
@@ -151,6 +150,17 @@ pub fn elf_load_with_bias(
         };
 
         if phdr.p_filesz > phdr.p_memsz {
+            continue;
+        }
+
+        if phdr.p_type == PT_GNU_STACK {
+            if phdr.p_flags & PF_X != 0 {
+                crate::klog_warn!(
+                    Process,
+                    "ELF: PT_GNU_STACK requests executable stack (flags={:#x})",
+                    phdr.p_flags
+                );
+            }
             continue;
         }
 

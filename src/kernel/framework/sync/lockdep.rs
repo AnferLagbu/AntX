@@ -54,7 +54,6 @@ macro_rules! lockdep_log {
     };
 }
 
-#[allow(dead_code)] // 待 lockdep 完整启用后使用。
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock;

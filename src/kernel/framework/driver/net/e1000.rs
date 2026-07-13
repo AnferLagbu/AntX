@@ -920,6 +920,11 @@ pub extern "C" fn e1000_irq_entry(_frame: *mut u8) {
 #[cfg(not(feature = "kernel_test"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn e1000_probe() -> i32 {
+    // aarch64 QEMU virt 无 e1000 NIC, PCI ECAM 访问可能导致 Data Abort.
+    // e1000 是 x86_64 专用 NIC, aarch64 直接返回"未找到".
+    #[cfg(target_arch = "aarch64")]
+    return -1;
+
     let mut need_probe = false;
     {
         let guard = E1000_DEVICE.lock();

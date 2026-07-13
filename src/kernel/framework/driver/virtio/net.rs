@@ -23,7 +23,6 @@ use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ── Feature bits ──
 
 const VIRTIO_NET_F_MAC: u64 = 1 << 5;
-#[allow(dead_code)] // 规范定义, 待链路状态检测启用后使用。
 const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
 
 // ── VirtIO Net 头 (固定 12 字节) ──
@@ -145,26 +144,30 @@ impl VirtioNet {
             let has_v1 = (dev_features & super::VIRTIO_F_VERSION_1) != 0;
 
             if !is_legacy || has_v1 {
-                // 现代模式: 协商 VIRTIO_F_VERSION_1 + VIRTIO_NET_F_MAC
+                // 现代模式: 协商 VIRTIO_F_VERSION_1 + VIRTIO_NET_F_MAC + VIRTIO_NET_F_STATUS
                 negotiated_v1 = true;
                 hdr_size = NET_HDR_SIZE;
-                let feat = super::VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC;
+                let feat = super::VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS;
                 device.write32(super::DRIVER_FEATURES_SEL, 1);
                 device.write32(super::DRIVER_FEATURES, (feat >> 32) as u32);
                 device.write32(super::DRIVER_FEATURES_SEL, 0);
                 device.write32(super::DRIVER_FEATURES, (feat & 0xFFFF_FFFF) as u32);
                 klog_info!(
                     Driver,
-                    "virtio-net: negotiating modern features (VERSION_1)"
+                    "virtio-net: negotiating modern features (VERSION_1 + MAC + STATUS)"
                 );
             } else {
-                // 传统模式: 仅 VIRTIO_NET_F_MAC
+                // 传统模式: VIRTIO_NET_F_MAC + VIRTIO_NET_F_STATUS (如果设备支持)
                 negotiated_v1 = false;
                 hdr_size = NET_HDR_SIZE;
+                let mut feat = VIRTIO_NET_F_MAC;
+                if dev_features & VIRTIO_NET_F_STATUS != 0 {
+                    feat |= VIRTIO_NET_F_STATUS;
+                }
                 device.write32(super::DRIVER_FEATURES_SEL, 1);
                 device.write32(super::DRIVER_FEATURES, 0);
                 device.write32(super::DRIVER_FEATURES_SEL, 0);
-                device.write32(super::DRIVER_FEATURES, VIRTIO_NET_F_MAC as u32);
+                device.write32(super::DRIVER_FEATURES, feat as u32);
                 klog_info!(Driver, "virtio-net: negotiating legacy features");
             }
 

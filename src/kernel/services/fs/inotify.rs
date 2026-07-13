@@ -19,7 +19,6 @@
 //! - 事件队列使用 IrqSpinLock 保护, 中断安全
 
 #![deny(unsafe_code)]
-#![allow(dead_code)]
 
 extern crate alloc;
 use alloc::vec::Vec;

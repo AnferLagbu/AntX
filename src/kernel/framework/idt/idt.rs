@@ -31,8 +31,6 @@ use crate::kernel::framework::sync::IrqSpinLock;
 
 
 use crate::kernel::framework::sync::OnceLock;
-use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
-use crate::klog_err;
 use crate::klog_info;
 // 内联硬件操作函数 (避免跨模块导入问题)
 /// 从端口读字节
@@ -139,24 +137,6 @@ fn halt_loop() -> ! {
     loop {
         crate::arch!(halt());
     }
-}
-
-/// 检查指针是否为 null 或无效 (待 IDT 诊断路径启用后使用)。
-#[allow(dead_code)] // 待 IDT 诊断路径启用后使用。
-fn is_null_or_invalid(ptr: u64) -> bool {
-    ptr == 0 || ptr < USER_ADDR_FLOOR
-}
-
-/// 验证 user 地址 (待 IDT 诊断路径启用后使用)。
-#[allow(dead_code)] // 待 IDT 诊断路径启用后使用。
-fn is_valid_user_address(addr: u64) -> bool {
-    addr > USER_ADDR_MIN && addr < KERNEL_TEXT_BASE
-}
-
-/// 验证 kernel 地址 (待 IDT 诊断路径启用后使用)。
-#[allow(dead_code)] // 待 IDT 诊断路径启用后使用。
-fn is_valid_kernel_address(addr: u64) -> bool {
-    addr >= KERNEL_TEXT_BASE
 }
 
 /// IDT 状态 (受 Mutex 保护)
@@ -614,178 +594,6 @@ impl IdtManager {
         }
     }
 
-    /// 默认异常处理 (临时实现，Phase 2.2 完善, 待异常分发重构后启用)。
-    #[allow(dead_code)] // 待异常分发重构后启用。
-    fn default_exception_handler(&self, frame: &InterruptFrame) {
-        let vector = frame.int_no as u8;
-
-        // 打印基本信息 (Phase 3 使用结构化日志)
-        let _ = (vector, frame);
-
-        match vector {
-            0 => self.handle_division_by_zero(frame),
-            13 => self.handle_gpf(frame),
-            14 => self.handle_page_fault(frame),
-            8 => self.handle_double_fault(frame),
-            _ => {} // 其他异常暂不处理
-        }
-    }
-
-    /// Division By Zero 处理
-    fn handle_division_by_zero(&self, frame: &InterruptFrame) {
-        if frame.is_user_mode() {
-            // User-mode #DE: 终止进程 (安全恢复)
-            self.terminate_user_process(frame, 1);
-        } else {
-            // Kernel-mode #DE: 尝试 domain recovery
-            self.attempt_domain_recovery(frame);
-        }
-    }
-
-    /// Page Fault 处理 (集成 Demand Paging)
-    fn handle_page_fault(&self, frame: &InterruptFrame) {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        let fault_addr = unsafe { frame.fault_address() };
-        let error_flags = frame.error_code_flags();
-        let error_code = frame.err_code;
-
-        if frame.is_user_mode() {
-            // 尝试 Demand Paging
-            let pf_info = crate::kernel::framework::mm::PageFaultInfo::from_error_code(
-                fault_addr, error_code,
-            );
-
-            match crate::kernel::framework::mm::handle_user_page_fault(pf_info) {
-                crate::kernel::framework::mm::PfResult::Fixed => return,
-                crate::kernel::framework::mm::PfResult::SignalSegv => {
-                    self.terminate_user_process(frame, 11); // SIGSEGV
-                    return;
-                }
-                crate::kernel::framework::mm::PfResult::SignalBus => {
-                    self.terminate_user_process(frame, 7); // SIGBUS
-                    return;
-                }
-                crate::kernel::framework::mm::PfResult::Oom => {
-                    self.terminate_user_process(frame, 9); // SIGKILL (OOM)
-                    return;
-                }
-                crate::kernel::framework::mm::PfResult::Unhandled => {
-                    // 回退到原有逻辑
-                }
-            }
-
-            if !error_flags.contains(super::types::ErrorFlags::PRESENT) {
-                if crate::kernel::framework::proc::try_expand_user_stack(fault_addr) {
-                    return;
-                }
-            }
-            self.terminate_user_process(frame, 1);
-            return;
-        }
-
-        // Kernel-mode PF: 尝试恢复
-        // 诊断: 有限次后 panic 获取完整寄存器状态
-        {
-            static KPF_COUNT: AtomicU64 = AtomicU64::new(0);
-            if KPF_COUNT.fetch_add(1, Ordering::Relaxed) > 200 {
-                // 200+ 次内核 PF → 死循环, panic 拿到诊断信息
-                let rip = frame.rip;
-                let cr3: u64;
-                unsafe { core::arch::asm!("mov {}, cr3", out(reg) cr3); }
-                panic!("[KPF] infinite kernel PF loop: addr=0x{:X} rip=0x{:X} cr3=0x{:X}",
-                    fault_addr, rip, cr3
-                );
-            }
-        }
-
-        if is_null_or_invalid(fault_addr) {
-            self.attempt_domain_recovery(frame);
-            return;
-        }
-
-        if is_valid_user_address(frame.rip) && !is_valid_kernel_address(frame.rip) {
-            self.attempt_domain_recovery(frame);
-            return;
-        }
-
-        // 无法恢复: panic
-        self.attempt_domain_recovery(frame);
-    }
-
-    /// General Protection Fault 处理
-    fn handle_gpf(&self, frame: &InterruptFrame) {
-        if frame.is_user_mode() {
-            self.terminate_user_process(frame, 1);
-        } else {
-            self.print_stack_trace(frame);
-            self.attempt_domain_recovery(frame);
-        }
-    }
-
-    /// Double Fault 处理
-    fn handle_double_fault(&self, frame: &InterruptFrame) {
-        static DOUBLE_FAULT_COUNT: AtomicU64 = AtomicU64::new(0);
-        let count = DOUBLE_FAULT_COUNT.fetch_add(1, Ordering::SeqCst);
-
-        self.print_stack_trace(frame);
-
-        if count <= 3 {
-            // 尝试调度切换恢复
-            unsafe extern "C" {
-                fn scheduler_yield();
-            }
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                scheduler_yield();
-            }
-        } else {
-            // 多次 double fault: 系统不稳定
-            self.kernel_panic("Multiple double faults - system unstable");
-        }
-    }
-
-    /// 终止 user 进程
-    fn terminate_user_process(&self, _frame: &InterruptFrame, exit_code: u32) {
-        unsafe extern "C" {
-            fn process_exit(code: u32);
-        }
-        unsafe extern "C" {
-            fn scheduler_yield();
-        }
-
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            process_exit(exit_code);
-            scheduler_yield();
-        }
-    }
-
-    /// 尝试域级恢复
-    fn attempt_domain_recovery(&self, frame: &InterruptFrame) {
-        crate::kernel::framework::barrier::CRASH_RIP.store(frame.rip, core::sync::atomic::Ordering::SeqCst);
-        unsafe extern "C" {
-            fn recovery_try_recover_from_idt() -> i32;
-        }
-
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            let result = recovery_try_recover_from_idt();
-            match result {
-                0 => {
-                    // Recovery 成功
-                }
-                -2 => {
-                    // 已尝试过，拒绝循环
-                    self.kernel_panic("Recovery already attempted");
-                }
-                _ => {
-                    // Recovery 失败: panic
-                    self.kernel_panic("Domain recovery failed");
-                }
-            }
-        }
-    }
-
     /// Kernel panic (停止系统)
     fn kernel_panic(&self, message: &str) {
         let _ = message;
@@ -794,37 +602,6 @@ impl IdtManager {
         unsafe {
             cli();
             halt_loop();
-        }
-    }
-
-    /// 打印堆栈回溯
-    fn print_stack_trace(&self, frame: &InterruptFrame) {
-        let rbp = frame.rbp;
-        let mut rbp_ptr = rbp as *const u64;
-        let mut frame_count = 0usize;
-        const MAX_FRAMES: usize = 10;
-
-        while !rbp_ptr.is_null() && frame_count < MAX_FRAMES {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                let rip_val = *rbp_ptr.offset(1);
-                if rip_val == 0 {
-                    break;
-                }
-
-                let mode = if rip_val < KERNEL_TEXT_BASE && rip_val > USER_ADDR_MIN {
-                    "user"
-                } else {
-                    "kernel"
-                };
-
-                // TD-12: klog 替代原 let _ = ...
-                klog_err!(Kernel, "  #{:<2} rip=0x{:016x} mode={} rbp=0x{:p}",
-                    frame_count, rip_val, mode, rbp_ptr);
-
-                rbp_ptr = *rbp_ptr as *const u64;
-                frame_count += 1;
-            }
         }
     }
 

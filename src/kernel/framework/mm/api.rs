@@ -155,6 +155,72 @@ pub fn pmm_dump_stats() {
     get_pmm().dump_stats();
 }
 
+/// Slab 分配器统计信息
+pub struct SlabStats {
+    /// 总分配内存 (字节)
+    pub total_memory: u64,
+    /// 已使用内存 (字节)
+    pub used_memory: u64,
+    /// 缓存数量
+    pub total_caches: u32,
+}
+
+/// 获取 slab 分配器系统级统计
+pub fn slab_get_stats() -> SlabStats {
+    let mut total_memory = 0u64;
+    let mut used_memory = 0u64;
+    let mut total_caches = 0u32;
+    // SAFETY: slab_get_system_stats 是 FFI 函数, 输出指针由本函数保证有效
+    unsafe {
+        super::slab::slab_get_system_stats(
+            &mut total_memory,
+            &mut used_memory,
+            &mut total_caches,
+        );
+    }
+    SlabStats {
+        total_memory,
+        used_memory,
+        total_caches,
+    }
+}
+
+/// 单个 slab 缓存信息
+#[derive(Debug, Clone, Copy)]
+pub struct SlabCacheInfo {
+    /// 对象大小 (字节)
+    pub object_size: u32,
+    /// 总对象数
+    pub total_objects: u32,
+    /// 已用对象数
+    pub active_objects: u32,
+    /// 总 slab 页数
+    pub total_slabs: u32,
+}
+
+/// 获取所有通用 slab 缓存的逐项信息.
+/// `out` 由调用方提供, 最大写入 `out.len()` 项. 返回实际写入数.
+pub fn slab_get_cache_infos(out: &mut [SlabCacheInfo]) -> usize {
+    // 内部使用 slab 模块的快照函数, 避免直接访问 private static mut
+    let mut snapshots = [super::slab::SlabCacheSnapshot {
+        object_size: 0,
+        total_objects: 0,
+        active_objects: 0,
+        total_slabs: 0,
+    }; 16];
+    let count = super::slab::get_all_cache_snapshots(&mut snapshots);
+    let n = count.min(out.len());
+    for i in 0..n {
+        out[i] = SlabCacheInfo {
+            object_size: snapshots[i].object_size,
+            total_objects: snapshots[i].total_objects,
+            active_objects: snapshots[i].active_objects,
+            total_slabs: snapshots[i].total_slabs,
+        };
+    }
+    n
+}
+
 /// 分配一个大页 (2MB 或 1GB)
 ///
 #[unsafe(no_mangle)]
@@ -383,6 +449,11 @@ pub fn kmalloc_init(start: u64, initial_size: u64) {
 #[unsafe(no_mangle)]
 pub fn kmalloc_dump_stats() {
     get_kmalloc().dump_stats();
+}
+
+/// 获取内核堆统计 (使用已有的 KmallocStats 结构)
+pub fn kmalloc_get_stats() -> super::kmalloc::HeapStats {
+    get_kmalloc().get_stats()
 }
 
 /// 校验堆完整性 (调试用)

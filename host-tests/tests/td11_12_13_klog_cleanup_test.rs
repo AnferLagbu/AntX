@@ -5,7 +5,7 @@
 // 验收:
 //   - handlers.rs::print_detailed_gpf_info 不再有 let _ = 占位, 改用 klog_warn!
 //   - handlers.rs::print_double_fault_context 不再有 let _ = 占位, 改用 klog_err!
-//   - idt.rs::print_stack_trace 不再有 let _ = 占位, 改用 klog_err!
+//   - idt.rs::print_stack_trace 已随旧异常路径移除 (handlers.rs 取代)
 //   - idt.rs::dump_state 不再有 let _ = 占位, 改用 klog_info!
 //   - idt.rs::print_statistics 不再只 let _ = &self.stats, 改为按异常/IRQ 循环 klog
 //   - timer/mod.rs::timer_init_ffi 不再有 let _ = msg, 改用 klog_err!
@@ -79,19 +79,13 @@ fn test_td11_double_fault_uses_klog_err() {
 }
 
 #[test]
-fn test_td12_stack_trace_uses_klog_err() {
+fn test_td12_stack_trace_removed_with_old_exception_path() {
+    // print_stack_trace 已随旧异常处理路径一并移除 (被 handlers.rs 的 create_handler 取代)
     let src = read(IDT);
     let marker = "fn print_stack_trace";
-    let pos = src.find(marker).expect("print_stack_trace 必须存在");
-    let body_end = find_block_end(&src, pos);
-    let body = &src[pos..body_end];
     assert!(
-        !body.contains("let _ = (frame_count,"),
-        "stack trace 不能保留 let _ = (frame_count, rip_val, mode, rbp_ptr) 占位"
-    );
-    assert!(
-        body.contains("klog_err!(Kernel,"),
-        "stack trace 每帧必须用 klog_err!(Kernel, ...) 打印 rip/mode/rbp"
+        src.find(marker).is_none(),
+        "print_stack_trace 应已移除 (旧异常路径已由 handlers.rs 取代)"
     );
 }
 

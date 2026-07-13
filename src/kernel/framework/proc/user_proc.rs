@@ -24,7 +24,6 @@ unsafe extern "C" {
     #[allow(dead_code)] // 待大页分裂路径启用后使用。
     fn vmm_split_2mb_page(vaddr: u64) -> i32;
     fn vmm_ensure_path_user(vaddr: u64);
-    #[allow(dead_code)] // 待进程切换路径启用后使用。
     fn vmm_switch_page_table(table: u64);
     fn vmm_destroy_page_table(cr3: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;

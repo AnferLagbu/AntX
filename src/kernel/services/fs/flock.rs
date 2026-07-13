@@ -52,7 +52,6 @@
 //! - 进程退出时必须调用 flock_release_pid 释放该进程所有锁
 
 #![deny(unsafe_code)]
-#![allow(dead_code)]
 
 use core::sync::atomic::{AtomicU64, Ordering};
 

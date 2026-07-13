@@ -3,12 +3,11 @@
 //! 提供对 x86-64 底层硬件寄存器的安全访问接口。
 //! 封装内联汇编，提供类型安全的 API。
 
-// USER_ADDR_FLOOR: 仅 `is_null_or_invalid` 使用, 该函数在非 test 构建中无人调用
-// (见 idt/idt.rs:146 与 idt/idt.rs:687, 后者由 #[allow(dead_code)] 的 default_exception_handler 间接覆盖)
-// 在 test 构建中本函数被使用, 故这里添加 `#[allow(unused_imports)]` 避免非 test 构建误报.
+// 以下 import 仅在 test 构建中使用
 #[allow(unused_imports)]
 use crate::kernel::framework::mm::{KERNEL_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
 #[cfg(test)]
+#[allow(unused_imports)]
 use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
 
 /// CPU 特性检测结果
@@ -217,38 +216,6 @@ pub fn save_frame_pointer() -> u64 {
 /// 安全的空指针检查
 ///
 /// # Arguments
-/// * `ptr` - 要检查的原始指针
-///
-/// # Returns
-/// `true` 如果指针为 null 或接近 null (< USER_ADDR_FLOOR)
-#[inline]
-pub fn is_null_or_invalid(ptr: u64) -> bool {
-    ptr == 0 || ptr < USER_ADDR_FLOOR
-}
-
-/// 验证用户态地址范围
-///
-/// # Arguments
-/// * `addr` - 要验证的地址
-///
-/// # Returns
-/// `true` 如果地址在合法的用户空间范围内
-#[inline]
-pub fn is_valid_user_address(addr: u64) -> bool {
-    addr > USER_ADDR_MIN && addr < KERNEL_BASE
-}
-
-/// 验证内核态地址范围
-///
-/// # Arguments
-/// * `addr` - 要验证的地址
-///
-/// # Returns
-/// `true` 如果地址在内核空间范围内
-#[inline]
-pub fn is_valid_kernel_address(addr: u64) -> bool {
-    addr >= KERNEL_BASE
-}
 
 #[cfg(test)]
 mod tests {
@@ -276,19 +243,6 @@ mod tests {
         let tsc2 = rdtsc();
         // TSC 应该单调递增 (或相等)
         assert!(tsc2 >= tsc1);
-    }
-
-    #[test]
-    fn test_address_validation() {
-        assert!(is_null_or_invalid(0));
-        assert!(is_null_or_invalid(0xFFF));
-        assert!(!is_null_or_invalid(0x1000));
-
-        assert!(is_valid_user_address(0x400000)); // 典型 user 地址
-        assert!(!is_valid_user_address(KERNEL_BASE)); // kernel 地址
-
-        assert!(is_valid_kernel_address(KERNEL_TEXT_BASE));
-        assert!(!is_valid_kernel_address(0x400000));
     }
 }
 

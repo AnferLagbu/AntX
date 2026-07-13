@@ -341,12 +341,12 @@ pub extern "C" fn kernel_init() {
     crate::klog_boot_info!("QueenX starting");
 
     // 0.05. Boot 栈 canary 验证 — 检测 trampoline → kernel_init 路径上的栈溢出.
-    // canary 在 boot.asm trampoline64_high 中写入 stack_bottom,
+    // canary 在 boot.asm trampoline64_high (x86_64) 或 entry.rs (aarch64) 写入 stack_bottom,
     // 若被覆盖则说明 boot 栈已溢出至栈底, 内核状态不可信, 立即 panic.
     if !crate::kernel::framework::proc::check_boot_stack_canary() {
         panic!(
             "[BOOT] stack canary corrupted! Boot stack overflow detected. \
-             Stack size=128KB, canary at stack_bottom was overwritten \
+             Stack size=256KB, canary at stack_bottom was overwritten \
              during trampoline→kernel_init transition."
         );
     }

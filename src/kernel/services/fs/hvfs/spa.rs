@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 
 use crate::kernel::framework::driver::block;
 use crate::kernel::framework::fs::KernelError;
@@ -12,15 +11,23 @@ use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
+#[allow(dead_code)] // 待 SPA 魔数校验路径集成后使用
 pub const HV_SPA_MAGIC: u32 = 0x48564653;
+#[allow(dead_code)] // 待 uberblock 循环日志路径集成后使用
 pub const HV_UBERBLOCK_COUNT: usize = 128;
+#[allow(dead_code)] // 待 uberblock 磁盘布局路径集成后使用
 pub const HV_UBERBLOCK_SECTOR: u32 = 0;
+#[allow(dead_code)] // 待 vdev 标签路径集成后使用
 pub const HV_VDEV_LABEL_SIZE: u64 = 262144;
+#[allow(dead_code)] // 待池名称校验路径集成后使用
 pub const HV_POOL_MAX_NAME: usize = 64;
 
 pub const HV_POOL_BLOCK_SIZE: u64 = 4096;
+#[allow(dead_code)] // 待 metaslab 分配路径集成后使用
 pub const HV_POOL_METASLAB_SHIFT: u8 = 24;
+#[allow(dead_code)] // 待 metaslab 分配路径集成后使用
 pub const HV_POOL_METASLAB_SIZE: u64 = 1 << HV_POOL_METASLAB_SHIFT;
+#[allow(dead_code)] // 待池容量查询路径集成后使用
 pub const HV_POOL_ASIZE_DEFAULT: u64 = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +57,7 @@ pub struct HvUberblock {
 }
 
 impl HvUberblock {
+    #[allow(dead_code)] // 待 uberblock 空值校验路径集成后使用
     pub const fn null() -> Self {
         Self {
             txg: 0,
@@ -65,16 +73,19 @@ impl HvUberblock {
         }
     }
 
+    #[allow(dead_code)] // 待 uberblock 校验路径集成后使用
     pub fn is_valid(&self) -> bool {
         self.magic == HV_SPA_MAGIC
     }
 
+    #[allow(dead_code)] // 待校验和计算路径集成后使用
     pub fn compute_checksum(&mut self) {
         self.checksum = [0; 4];
         let ck = HvChecksum::compute(HvCksumType::Fletcher4, self.as_bytes());
         self.checksum = ck.value;
     }
 
+    #[allow(dead_code)] // 待校验和验证路径集成后使用
     pub fn verify_checksum(&self) -> bool {
         let mut copy = *self;
         let saved = copy.checksum;
@@ -84,11 +95,13 @@ impl HvUberblock {
     }
 
     /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
+    #[allow(dead_code)] // 待 uberblock 序列化路径集成后使用
     pub fn as_bytes(&self) -> &[u8] {
         zerocopy::IntoBytes::as_bytes(self)
     }
 
     /// E6-6: safe 反序列化, 逐字段读取替代 unsafe read_unaligned
+    #[allow(dead_code)] // 待 uberblock 反序列化路径集成后使用
     pub fn from_bytes_unaligned(bytes: &[u8]) -> Option<Self> {
         let size = core::mem::size_of::<Self>();
         if bytes.len() < size {
@@ -134,6 +147,7 @@ const _UBERBLOCK_MAX_SIZE: usize = 512;
 const _ASSERT_UBERBLOCK_FITS: () =
     assert!(core::mem::size_of::<HvUberblock>() <= _UBERBLOCK_MAX_SIZE);
 
+#[allow(dead_code)] // 待 SPA 配置路径集成后使用
 pub struct HvSpaConfig {
     pub name: [u8; HV_POOL_MAX_NAME],
     pub guid: u64,
@@ -144,6 +158,7 @@ pub struct HvSpaConfig {
 }
 
 impl HvSpaConfig {
+    #[allow(dead_code)] // 待 SpaConfig 构造路径集成后使用
     pub fn new(name: &str) -> Self {
         let mut n = [0u8; HV_POOL_MAX_NAME];
         let b = name.as_bytes();
@@ -228,11 +243,13 @@ impl HvSpa {
             .unwrap_or(0)
     }
 
+    #[allow(dead_code)] // 待磁盘 I/O 路径集成后使用
     fn check_disk_present(&self) -> bool {
         let drive = self.vdev_0_drive_id();
         block::hdd_is_present(drive)
     }
 
+    #[allow(dead_code)] // 待磁盘 I/O 路径集成后使用
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 {
             return KernelError::InvalidArgument.as_i32();
@@ -242,6 +259,7 @@ impl HvSpa {
         block::hdd_read_sector(drive, phys as u64, buf)
     }
 
+    #[allow(dead_code)] // 待磁盘 I/O 路径集成后使用
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
         if buf.len() < 512 {
             return KernelError::InvalidArgument.as_i32();
@@ -301,6 +319,7 @@ impl HvSpa {
         true
     }
 
+    #[allow(dead_code)] // 待块分配路径集成后使用
     pub fn allocate(
         &self,
         size: u64,
@@ -341,6 +360,7 @@ impl HvSpa {
         Some(bp)
     }
 
+    #[allow(dead_code)] // 待块释放路径集成后使用
     pub fn free(&self, bp: &HvBlockPointer, _txg: u64) {
         for i in 0..HV_DVA_MAX {
             if let Some(dva) = bp.get_dva(i) {
@@ -359,6 +379,7 @@ impl HvSpa {
         self.free_count.fetch_add(1, Ordering::Relaxed);
     }
 
+    #[allow(dead_code)] // 待块指针读取路径集成后使用
     pub fn read_bp(&self, bp: &HvBlockPointer, buf: &mut [u8]) -> i32 {
         for i in 0..HV_DVA_MAX {
             if let Some(dva) = bp.get_dva(i) {
@@ -377,6 +398,7 @@ impl HvSpa {
         -1
     }
 
+    #[allow(dead_code)] // 待块指针写入路径集成后使用
     pub fn write_bp(&self, bp: &HvBlockPointer, buf: &[u8]) -> i32 {
         for i in 0..HV_DVA_MAX {
             if let Some(dva) = bp.get_dva(i) {
@@ -432,15 +454,18 @@ impl HvSpa {
         None
     }
 
+    #[allow(dead_code)] // 待 uberblock 同步路径集成后使用
     pub fn sync_uberblock(&self) {
         self.write_uberblock_to_disk();
     }
 
+    #[allow(dead_code)] // 待 uberblock 加载路径集成后使用
     pub fn load_uberblock(&self) -> bool {
         let ub = self.uberblock.lock();
         ub.is_valid() && ub.verify_checksum()
     }
 
+    #[allow(dead_code)] // 待统计接口集成后使用
     pub fn get_stats(&self) -> (u64, u64, u64, u64, u64) {
         (
             self.alloc_count.load(Ordering::Relaxed),
@@ -451,22 +476,27 @@ impl HvSpa {
         )
     }
 
+    #[allow(dead_code)] // 待初始化状态查询集成后使用
     pub fn is_initialized(&self) -> bool {
         self.initialized.load(Ordering::Acquire)
     }
 
+    #[allow(dead_code)] // 待磁盘存在检测集成后使用
     pub fn is_disk_present(&self) -> bool {
         self.disk_present.load(Ordering::Acquire)
     }
 
+    #[allow(dead_code)] // 待格式化状态查询集成后使用
     pub fn is_formatted(&self) -> bool {
         self.formatted.load(Ordering::Acquire)
     }
 
+    #[allow(dead_code)] // 待事务组推进路径集成后使用
     pub fn advance_txg(&self) -> u64 {
         self.txg_current.fetch_add(1, Ordering::AcqRel) + 1
     }
 
+    #[allow(dead_code)] // 待事务组查询路径集成后使用
     pub fn current_txg(&self) -> u64 {
         self.txg_current.load(Ordering::Acquire)
     }

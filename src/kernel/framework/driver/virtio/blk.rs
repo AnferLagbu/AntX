@@ -106,9 +106,7 @@ struct BlkRequest {
 
 /// VirtIO 块请求状态字节 (设备完成后写入).
 const VIRTIO_BLK_S_OK: u8 = 0;
-#[allow(dead_code)] // 规范定义, 待 I/O 错误处理路径启用后使用。
 const VIRTIO_BLK_S_IOERR: u8 = 1;
-#[allow(dead_code)] // 规范定义, 待不支持的请求类型处理启用后使用。
 const VIRTIO_BLK_S_UNSUPP: u8 = 2;
 
 // 请求类型
@@ -132,7 +130,6 @@ pub struct VirtioBlk {
     io_buffer: *mut u8,
     io_buffer_phys: u64,
     /// 最近一次已完成请求的状态字节.
-    #[allow(dead_code)] // 待 I/O 错误处理路径启用后读取。
     status_byte: u8,
     /// I-42: 多 outstanding I/O 完成事件数组. ISR 按 token signal, do_io 等待指定 token.
     completion: IoCompletionArray,
@@ -363,11 +360,26 @@ impl VirtioBlk {
                 // 检查状态字节
                 // SAFETY: `self` 由调用方保证为有效指针; 只读访问
                 let status = unsafe { *self.io_buffer.add(status_offset) };
+                self.status_byte = status;
                 self.vq.reclaim_desc(desc_status);
                 self.vq.reclaim_desc(desc_data);
                 self.vq.reclaim_desc(desc_req);
 
+                if status == VIRTIO_BLK_S_IOERR {
+                    klog_warn!(Driver, "virtio-blk: I/O error at sector {}", lba);
+                    return Err(());
+                }
+                if status == VIRTIO_BLK_S_UNSUPP {
+                    klog_warn!(
+                        Driver,
+                        "virtio-blk: unsupported request type {} at sector {}",
+                        req_type,
+                        lba
+                    );
+                    return Err(());
+                }
                 if status != VIRTIO_BLK_S_OK {
+                    klog_warn!(Driver, "virtio-blk: unknown status {} at sector {}", status, lba);
                     return Err(());
                 }
 

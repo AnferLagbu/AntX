@@ -39,13 +39,26 @@ unsafe extern "C" {
 /// 通过 `KERNEL_BASE + &stack_bottom as *const u8 as u64` 转换为内核虚拟地址访问.
 /// 返回 true 表示 canary 未被覆盖 (栈未溢出至栈底).
 pub fn check_boot_stack_canary() -> bool {
-    // SAFETY: stack_bottom 是 boot.asm 中定义的静态符号, 
+    // SAFETY: stack_bottom 是 boot.asm 中定义的静态符号,
     // 指向 boot 栈底部的 8 字节 canary 区域.
     // 读取操作是 volatile 的, 无数据竞争 (boot 阶段单核).
     unsafe {
         let canary_addr = KERNEL_BASE + &stack_bottom as *const u8 as u64;
         let value = core::ptr::read_volatile(canary_addr as *const u64);
         value == KERNEL_STACK_CANARY
+    }
+}
+
+/// 写入 boot 栈 canary 到 stack_bottom.
+///
+/// 供 aarch64 入口在 clear_bss 之后调用 (x86_64 由 boot.asm trampoline 写入).
+/// 必须在 BSS 清零之后调用, 否则 canary 会被清零覆盖.
+pub fn write_boot_stack_canary() {
+    // SAFETY: stack_bottom 是 boot.asm/start.S 中定义的静态符号,
+    // 写入 8 字节 canary 值, boot 阶段单核无竞争.
+    unsafe {
+        let canary_addr = KERNEL_BASE + &stack_bottom as *const u8 as u64;
+        core::ptr::write_volatile(canary_addr as *mut u64, KERNEL_STACK_CANARY);
     }
 }
 

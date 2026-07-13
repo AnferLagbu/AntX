@@ -32,6 +32,18 @@ pub unsafe extern "C" fn entry() -> ! { unsafe {
     // 1. BSS 清零
     clear_bss();
 
+    // 1.1 写入 boot 栈 canary 到 stack_bottom (栈溢出检测)
+    // 与 x86_64 boot.asm trampoline64_high 对齐
+    // 必须在 clear_bss 之后, 否则 canary 会被清零覆盖
+    crate::kernel::framework::proc::write_boot_stack_canary();
+
+    // 调试: 在 kernel_init 之前验证 canary
+    let canary_ok = crate::kernel::framework::proc::check_boot_stack_canary();
+    if !canary_ok {
+        uart::puts("[BOOT] FATAL: canary lost between write and kernel_init!");
+        loop {}
+    }
+
     // 2. 初始化 UART
     uart::init();
     uart::puts("[BOOT] QueenX starting...");
