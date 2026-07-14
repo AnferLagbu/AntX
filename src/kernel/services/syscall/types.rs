@@ -720,6 +720,17 @@ pub const QX_KEXEC: u64 = 883;
 /// uefi — UEFI 运行时服务系统调用
 pub const QX_UEFI: u64 = 884;
 
+// ==================== D12: 扩展属性 (xattr) ====================
+
+/// setxattr — 设置扩展属性
+pub const QX_SETXATTR: u64 = 890;
+/// getxattr — 获取扩展属性
+pub const QX_GETXATTR: u64 = 891;
+/// listxattr — 列出扩展属性
+pub const QX_LISTXATTR: u64 = 892;
+/// removexattr — 删除扩展属性
+pub const QX_REMOVEXATTR: u64 = 893;
+
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

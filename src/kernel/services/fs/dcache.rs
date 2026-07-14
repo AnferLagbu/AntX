@@ -633,7 +633,6 @@ pub fn dcache_invalidate_parent(parent_ino: u32) {
 }
 
 /// dcache 清空
-#[allow(dead_code)] // 待文件系统卸载/重新挂载路径启用后使用
 pub fn dcache_flush() {
     let mut dcache = DCACHE.lock();
     dcache.flush();
@@ -674,14 +673,12 @@ pub fn icache_invalidate(ino: u32) {
 }
 
 /// icache 清空
-#[allow(dead_code)] // 待文件系统卸载路径启用后使用
 pub fn icache_flush() {
     let mut icache = ICACHE.lock();
     icache.flush();
 }
 
 /// 同时清空 dcache + icache
-#[allow(dead_code)] // 待文件系统卸载路径启用后使用
 pub fn flush_all() {
     dcache_flush();
     icache_flush();

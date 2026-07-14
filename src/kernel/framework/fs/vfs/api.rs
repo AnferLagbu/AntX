@@ -1270,3 +1270,114 @@ pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
 
     newfd as i32
 }
+
+// ============================================================================
+// 扩展属性 (xattr) — framework 层
+// ============================================================================
+
+/// 设置扩展属性
+#[unsafe(no_mangle)]
+pub fn vfs_setxattr_internal(path: *const u8, name: *const u8, value: *const u8, size: u32, pwm: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let name = ptr_to_str(name);
+    let value = if !value.is_null() && size > 0 {
+        // SAFETY: 调用方保证 value 指向有效的 size 字节缓冲区
+        unsafe { core::slice::from_raw_parts(value, size as usize) }
+    } else {
+        &[]
+    };
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    if let Some(fs) = fs_opt {
+        match fs.fs_setxattr(rel_path, name, value, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    } else {
+        -38 // ENOSYS
+    }
+}
+
+/// 获取扩展属性
+#[unsafe(no_mangle)]
+pub fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, size: u32, pwm: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let name = ptr_to_str(name);
+
+    if value.is_null() || size == 0 {
+        return -1;
+    }
+
+    // SAFETY: 调用方保证 value 指向有效的 size 字节缓冲区
+    let mut buf = unsafe { core::slice::from_raw_parts_mut(value, size as usize) };
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    if let Some(fs) = fs_opt {
+        match fs.fs_getxattr(rel_path, name, &mut buf, pwm) {
+            Ok(len) => len as i32,
+            Err(_) => -1,
+        }
+    } else {
+        -38 // ENOSYS
+    }
+}
+
+/// 列出扩展属性
+#[unsafe(no_mangle)]
+pub fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u64) -> i32 {
+    let path = ptr_to_str(path);
+
+    if list.is_null() || size == 0 {
+        return -1;
+    }
+
+    // SAFETY: 调用方保证 list 指向有效的 size 字节缓冲区
+    let mut buf = unsafe { core::slice::from_raw_parts_mut(list, size as usize) };
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    if let Some(fs) = fs_opt {
+        match fs.fs_listxattr(rel_path, &mut buf, pwm) {
+            Ok(len) => len as i32,
+            Err(_) => -1,
+        }
+    } else {
+        -38 // ENOSYS
+    }
+}
+
+/// 删除扩展属性
+#[unsafe(no_mangle)]
+pub fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let name = ptr_to_str(name);
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    if let Some(fs) = fs_opt {
+        match fs.fs_removexattr(rel_path, name, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    } else {
+        -38 // ENOSYS
+    }
+}

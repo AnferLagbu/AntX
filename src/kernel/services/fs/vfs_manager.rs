@@ -490,6 +490,8 @@ impl VfsManager {
 
         for mount in mounts.iter_mut() {
             if mount.used && mount.get_path() == path {
+                // 卸载前清空 dcache/icache
+                crate::kernel::services::fs::dcache::flush_all();
                 mount.used = false;
                 return Ok(());
             }

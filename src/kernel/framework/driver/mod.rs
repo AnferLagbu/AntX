@@ -196,6 +196,9 @@ pub fn init_all() {
 
     hotplug::hotplug_init();
 
+    // 注册 HvFS 热插拔监听器
+    crate::kernel::services::fs::hvfs::hvfs::hvfs_hotplug_register();
+
     let _ = crate::kernel::framework::chitin::devtree_probe_composites();
 
     // 注册 Block softirq 处理程序

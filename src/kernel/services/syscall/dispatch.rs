@@ -325,6 +325,12 @@ impl SyscallDispatch for ServicesSyscallDispatch {
                 ).unwrap_or_else(|e| e.as_ret())
             },
 
+            // ==================== 扩展属性 (xattr) ====================
+            QX_SETXATTR => as_ret(crate::kernel::services::fs::xattr::setxattr_syscall(a0, a1, a2, a3 as usize, a5)),
+            QX_GETXATTR => as_ret(crate::kernel::services::fs::xattr::getxattr_syscall(a0, a1, a2, a3 as usize, a5)),
+            QX_LISTXATTR => as_ret(crate::kernel::services::fs::xattr::listxattr_syscall(a0, a1, a2 as usize, a4)),
+            QX_REMOVEXATTR => as_ret(crate::kernel::services::fs::xattr::removexattr_syscall(a0, a1, a4)),
+
             // 未迁移的 syscall — 返回 -ENOSYS 让 framework 回退处理
             _ => -38,
         }

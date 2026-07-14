@@ -392,6 +392,28 @@ pub trait FileSystem: Send + Sync {
     fn fs_pread_inode(&self, _node_id: u32, _offset: u64, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
         Err(KernelError::NotSupported)
     }
+
+    // ---- 扩展属性 (可选, 默认返回 NotSupported) ----
+
+    /// 设置扩展属性
+    fn fs_setxattr(&self, _rel_path: &str, _name: &str, _value: &[u8], _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
+    /// 获取扩展属性
+    fn fs_getxattr(&self, _rel_path: &str, _name: &str, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        Err(KernelError::NotSupported)
+    }
+
+    /// 列出扩展属性
+    fn fs_listxattr(&self, _rel_path: &str, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+        Err(KernelError::NotSupported)
+    }
+
+    /// 删除扩展属性
+    fn fs_removexattr(&self, _rel_path: &str, _name: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
 }
 
 // ============================================================================

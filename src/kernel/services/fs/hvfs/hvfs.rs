@@ -1,6 +1,7 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::driver::block;
 use crate::kernel::services::fs::hvfs::arc::{HvArcBufType, HvArcKey};
@@ -288,7 +289,6 @@ impl HvfsData {
     ///
     /// 自动探测 QueenX 签名以获取 partition_start。如果磁盘未格式化则使用默认值。
     /// 返回 true 表示成功添加。
-    #[allow(dead_code)] // 待热插拔路径集成后使用
     pub fn hotplug_add_disk(&self, drive: u8) -> bool {
         if !block::hdd_is_present(drive) {
             crate::slog_warn!(FS, "[HvFS] HOTPLUG: drive not present, skip");
@@ -334,7 +334,6 @@ impl HvfsData {
     /// 不移除 vdev (保持 uberblock 一致性)，仅标记状态为 Removed，
     /// 后续 I/O 将跳过该设备。
     /// 返回 true 表示找到并标记成功。
-    #[allow(dead_code)] // 待热插拔路径集成后使用
     pub fn hotplug_remove_disk(&self, drive: u8) -> bool {
         let mut vdevs = self.spa.vdevs.lock();
         if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == drive as u16) {
@@ -1039,7 +1038,7 @@ impl HvfsData {
         KernelError::IoError.as_i32()
     }
 
-    #[allow(dead_code)] // 待扩展属性路径集成后使用
+    /// 设置扩展属性
     pub fn setxattr(&self, path: &str, name: &str, value: &[u8], pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1086,7 +1085,7 @@ impl HvfsData {
         KernelError::NotSupported.as_i32()
     }
 
-    #[allow(dead_code)] // 待扩展属性路径集成后使用
+    /// 获取扩展属性
     pub fn getxattr(&self, path: &str, name: &str, buf: &mut [u8], pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1127,7 +1126,7 @@ impl HvfsData {
         KernelError::NotFound.as_i32()
     }
 
-    #[allow(dead_code)] // 待扩展属性路径集成后使用
+    /// 列出扩展属性
     pub fn listxattr(&self, path: &str, buf: &mut [u8], pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1169,7 +1168,7 @@ impl HvfsData {
         offset as i32
     }
 
-    #[allow(dead_code)] // 待扩展属性路径集成后使用
+    /// 删除扩展属性
     pub fn removexattr(&self, path: &str, name: &str, pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1773,6 +1772,43 @@ impl HvfsData {
 }
 
 // ============================================================================
+// HvFS 热插拔监听器
+// ============================================================================
+
+use crate::kernel::framework::driver::hotplug::{HotplugListener, HotplugEvent};
+
+/// HvFS 热插拔监听器 — 将块设备热插拔事件转发到 HvFS
+struct HvfsHotplugListener;
+
+impl HotplugListener for HvfsHotplugListener {
+    fn on_device_added(&self, event: &HotplugEvent) -> bool {
+        if let HotplugEvent::DeviceAdded { location } = event {
+            // 使用 slot 作为 drive_id (PCI 热插拔槽位号)
+            let drive_id = location.slot;
+            crate::slog_info!(FS, "[HvFS] HOTPLUG: device added (slot={}, bus={}/{}",
+                drive_id, location.bus, location.device);
+            get_hvfs().hotplug_add_disk(drive_id)
+        } else {
+            false
+        }
+    }
+
+    fn on_device_removed(&self, event: &HotplugEvent) {
+        if let HotplugEvent::DeviceRemoved { location } = event {
+            let drive_id = location.slot;
+            crate::slog_info!(FS, "[HvFS] HOTPLUG: device removed (slot={})", drive_id);
+            get_hvfs().hotplug_remove_disk(drive_id);
+        }
+    }
+}
+
+/// 注册 HvFS 热插拔监听器到全局热插拔管理器
+pub fn hvfs_hotplug_register() {
+    use crate::kernel::framework::driver::hotplug::HOTPLUG_MANAGER;
+    HOTPLUG_MANAGER.register_listener(Box::new(HvfsHotplugListener));
+}
+
+// ============================================================================
 // HvfsInode — HvFS 文件 Inode 实现
 // ============================================================================
 
@@ -1989,5 +2025,27 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
 
     fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
         Some(alloc::sync::Arc::new(HvfsInode::new(inode_id, mount_idx, "")))
+    }
+
+    // ---- 扩展属性 ----
+
+    fn fs_setxattr(&self, rel_path: &str, name: &str, value: &[u8], pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
+        let result = self.setxattr(rel_path, name, value, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+    }
+
+    fn fs_getxattr(&self, rel_path: &str, name: &str, buf: &mut [u8], pwm: u64) -> crate::kernel::framework::fs::KernelResult<usize> {
+        let result = self.getxattr(rel_path, name, buf, pwm);
+        if result < 0 { Err(KernelError::NotFound) } else { Ok(result as usize) }
+    }
+
+    fn fs_listxattr(&self, rel_path: &str, buf: &mut [u8], pwm: u64) -> crate::kernel::framework::fs::KernelResult<usize> {
+        let result = self.listxattr(rel_path, buf, pwm);
+        if result < 0 { Err(KernelError::NotFound) } else { Ok(result as usize) }
+    }
+
+    fn fs_removexattr(&self, rel_path: &str, name: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
+        let result = self.removexattr(rel_path, name, pwm);
+        if result == 0 { Ok(()) } else { Err(KernelError::NotFound) }
     }
 }

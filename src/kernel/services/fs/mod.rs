@@ -28,6 +28,8 @@ pub mod vfs_poll_policy;
 pub mod devfs;
 pub mod procfs;
 pub mod procfs_core;
+/// 扩展属性 (xattr) 系统调用处理器
+pub mod xattr;
 pub mod hvfs;
 pub mod ext2;
 pub mod exfat;
