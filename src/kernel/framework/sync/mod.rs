@@ -525,17 +525,6 @@ pub extern "C" fn mutex_owner(m: *const MutexInner) -> i32 {
     raw::mutex_owner(m).load(Ordering::Acquire)
 }
 
-/// 带超时的互斥锁获取 (简化版，暂不支持超时)
-#[unsafe(no_mangle)]
-pub extern "C" fn mutex_lock_timeout(m: *const MutexInner, _timeout_ms: u64) -> i32 {
-    if m.is_null() {
-        return -1;
-    }
-
-    mutex_lock(m);
-    0 // 成功
-}
-
 // ============================================================================
 // 条件变量 re-export (P0-1 修复)
 // ============================================================================

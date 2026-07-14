@@ -378,6 +378,33 @@ impl ProcfsData {
             return pos as i32;
         }
 
+        // /proc/fs/hvfs
+        if name == "fs/hvfs" {
+            let mut pos = 0usize;
+            let write_str = |buf: &mut [u8], pos: &mut usize, s: &str| {
+                let b = s.as_bytes();
+                let end = (*pos + b.len()).min(buf.len());
+                let len = end - *pos;
+                buf[*pos..end].copy_from_slice(&b[..len]);
+                *pos += len;
+            };
+
+            // 获取 HvFS 池统计
+            let hvfs = crate::kernel::services::fs::hvfs::hvfs::get_hvfs();
+            let (allocs, frees, reads, writes) = hvfs.get_stats();
+
+            write_str(buf, &mut pos, "allocs: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", allocs));
+            write_str(buf, &mut pos, "frees: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", frees));
+            write_str(buf, &mut pos, "reads: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", reads));
+            write_str(buf, &mut pos, "writes: ");
+            write_str(buf, &mut pos, &alloc::format!("{}\n", writes));
+
+            return pos as i32;
+        }
+
         // /proc/mounts
         if name == "mounts" {
             let mut pos = 0usize;

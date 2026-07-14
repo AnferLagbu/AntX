@@ -37,11 +37,9 @@ fn hvfs_reset() {
     crate::slog_warn!(FS, "[HvFS] Recovery: domain hard reset");
 }
 
-#[allow(dead_code)] // 待 HvFS FD 管理集成后使用
 pub const HVFS_MAX_FDS: usize = 256;
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // 待 HvFS FD 管理集成后使用
 pub struct HvfsFd {
     pub fd: u32,
     pub obj_id: u64,
@@ -54,7 +52,6 @@ pub struct HvfsFd {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-#[allow(dead_code)] // 待 HvFS 模式切换集成后使用
 pub enum HvfsMode {
     Memory = 0,
     Disk = 1,
@@ -119,37 +116,6 @@ pub fn get_hvfs() -> &'static HvfsData {
 }
 
 impl HvfsData {
-    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
-    fn check_disk(&self) -> bool {
-        block::hdd_is_present(self.disk_drive.load(Ordering::Acquire))
-    }
-
-    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
-    fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
-        if buf.len() < 512 {
-            return KernelError::InvalidArgument.as_i32();
-        }
-        let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        block::hdd_read_sector(
-            self.disk_drive.load(Ordering::Acquire),
-            phys_sector as u64,
-            buf,
-        )
-    }
-
-    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
-    fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
-        if buf.len() < 512 {
-            return KernelError::InvalidArgument.as_i32();
-        }
-        let phys_sector = sector + self.partition_start.load(Ordering::Acquire);
-        block::hdd_write_sector(
-            self.disk_drive.load(Ordering::Acquire),
-            phys_sector as u64,
-            buf,
-        )
-    }
-
     /// 扫描所有已注册的块设备，返回检测到的驱动器列表 (drive_id, partition_start_lba)
     /// 对于已格式化的磁盘读取 QueenX 签名，对于空白磁盘使用默认分区起始偏移
     fn scan_all_drives(&self) -> Vec<(u8, u32)> {
@@ -380,18 +346,6 @@ impl HvfsData {
         false
     }
 
-    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
-    fn read_partition_start(&self) -> u32 {
-        let mut cfg = [0u8; 512];
-        let r = block::hdd_read_sector(self.disk_drive.load(Ordering::Acquire), 2046, &mut cfg);
-        if r >= 0 && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X' {
-            u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]])
-        } else {
-            // 回退: 使用默认 BOOT_PART_SECTORS
-            16384
-        }
-    }
-
     fn probe_partition_size_for_drive(&self, drive_id: u8, part_start: u32) -> u64 {
         if !block::hdd_is_present(drive_id) {
             return 0;
@@ -416,7 +370,6 @@ impl HvfsData {
         }
     }
 
-    #[allow(dead_code)] // 待块设备挂载路径集成后使用
     pub fn mount_drive(&self, drive_id: u8, part_start: u32) -> bool {
         if !block::hdd_is_present(drive_id) {
             return false;
@@ -503,15 +456,6 @@ impl HvfsData {
             }
         }
         None
-    }
-
-    #[allow(dead_code)] // 待块设备 I/O 路径集成后使用
-    fn free_fd(&self, idx: usize) {
-        let mut fds = self.fds.lock();
-        if idx < HVFS_MAX_FDS {
-            fds[idx].used = false;
-            fds[idx].offset = 0;
-        }
     }
 
     fn check_permission(&self, obj: &HvDmuObject, pwm: u64, cap: u64) -> bool {
@@ -1317,8 +1261,6 @@ impl HvfsData {
     }
 
     fn serialize_dataset_metadata(&self, txg: u64) -> Option<HvBlockPointer> {
-        #[allow(dead_code)] // 待块指针序列化路径集成后使用
-        const BP_BYTES: usize = 128;
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_SERIALIZE_OBJECTS: usize = 65536;
         const MAX_SERIALIZE_ENTRIES: usize = 65536;
@@ -1390,7 +1332,7 @@ impl HvfsData {
                 return None;
             }
             off += 8;
-            if off + BP_BYTES > buf.len() {
+            if off + HvBlockPointer::BYTES > buf.len() {
                 return None;
             }
             let bp_bytes = obj.bp.as_bytes();
@@ -1472,8 +1414,6 @@ impl HvfsData {
     }
 
     fn deserialize_dataset_metadata(&self, bp: &HvBlockPointer) -> bool {
-        #[allow(dead_code)] // 待块指针序列化路径集成后使用
-        const BP_BYTES: usize = 128;
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_DESERIALIZE_OBJECTS: usize = 65536;
         const MAX_DESERIALIZE_ENTRIES: usize = 65536;
@@ -1822,7 +1762,7 @@ impl HvfsData {
         new_offset as i64
     }
 
-    #[allow(dead_code)] // 待统计接口集成后使用
+    /// 获取 HvFS 池统计 (allocs, frees, reads, writes)
     pub fn get_stats(&self) -> (u64, u64, u64, u64) {
         if !self.is_initialized() {
             return (0, 0, 0, 0);

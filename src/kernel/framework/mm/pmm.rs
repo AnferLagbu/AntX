@@ -112,18 +112,6 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-        #[allow(dead_code)] // 待 PMM 调试/诊断路径启用后使用。
-        pub fn is_null(self) -> bool {
-            self.0.is_null()
-        }
-
-        #[inline(always)]
-        #[allow(dead_code)] // 待 PMM 调试/诊断路径启用后使用。
-        pub fn as_ptr(self) -> *mut FreeNode {
-            self.0
-        }
-
-        #[inline(always)]
         pub fn prev(&self) -> *mut FreeNode {
             // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 读 prev 链指针 (PMM 锁持有)
             unsafe { (*self.0).prev }

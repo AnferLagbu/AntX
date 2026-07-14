@@ -67,18 +67,6 @@ impl TcbModule {
     }
 }
 
-/// 前缀匹配 (当前未使用, 保留供域名称严格匹配路径启用后使用)
-#[allow(dead_code)] // 待域名严格匹配路径启用后使用。
-const fn starts_with(haystack: &[u8], needle: &[u8]) -> bool {
-    if haystack.len() < needle.len() { return false; }
-    let mut i = 0;
-    while i < needle.len() {
-        if haystack[i] != needle[i] { return false; }
-        i += 1;
-    }
-    true
-}
-
 const fn contains_substr(haystack: &[u8], needle: &[u8]) -> bool {
     if needle.is_empty() { return true; }
     if haystack.len() < needle.len() { return false; }

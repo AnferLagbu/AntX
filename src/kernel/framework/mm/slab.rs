@@ -120,13 +120,11 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-        #[allow(dead_code)] // 待 slab 调试路径启用后使用。
         pub fn as_ptr(self) -> *mut SlabHeader {
             self.0
         }
 
         #[inline(always)]
-        #[allow(dead_code)] // 待 slab 调试/诊断路径启用后使用。
         pub fn is_null(self) -> bool {
             self.0.is_null()
         }
@@ -205,7 +203,6 @@ pub(crate) mod raw {
 
         /// 在该位置写入默认的 SlabHeader.
         #[inline(always)]
-        #[allow(dead_code)] // 待 slab 初始化路径完善后使用。
         pub fn write_default(&self) {
             // SAFETY: 调用方保证指针合法
             unsafe { *self.0 = SlabHeader::default(); }
@@ -549,15 +546,11 @@ impl KmemCache {
 
         // SAFETY: slab points to a PMM-allocated page
         let sr = unsafe { SlabRef::new_unchecked(slab) };
+        sr.write_default();
         // SAFETY: page 是 pmm_alloc_pages 分配的页对齐指针; add 偏移在 page
         // 范围内 (page 至少 SLAB_DEFAULT_SIZE 字节, header 后还有 bitmap 空间);
-        // 仅作指针运算, 后续 set_start_addr 只存储不读取.
         sr.set_start_addr(unsafe { page.add(core::mem::size_of::<SlabHeader>()) } as *mut u8);
         sr.set_obj_count(self.objects_per_slab);
-        sr.set_active_count(0);
-        sr.set_is_full(false);
-        sr.set_prev(core::ptr::null_mut());
-        sr.set_next(core::ptr::null_mut());
 
         let bitmap_bytes = self.objects_per_slab.div_ceil(8);
         let bitmap_start = sr.bitmap_ptr(self.object_size);
@@ -1009,6 +1002,50 @@ pub extern "C" fn slab_dump_all_caches() {
             }
         }
     }
+}
+
+/// 打印指定缓存的 slab 链表详情 (调试用途)
+#[unsafe(no_mangle)]
+pub extern "C" fn slab_dump_cache(name: *const u8) {
+    // SAFETY: 调用方保证 name 为合法 C 字符串
+    let name_str = if name.is_null() {
+        klog_slab!("[SLAB] Cache name is null");
+        return;
+    } else {
+        unsafe {
+            let mut len = 0;
+            while *name.add(len) != 0 {
+                len += 1;
+            }
+            core::str::from_utf8_unchecked(core::slice::from_raw_parts(name, len))
+        }
+    };
+
+    // SAFETY: GENERAL_CACHES 是全局静态数组, 遍历期间不变
+    unsafe {
+        for i in 0..GENERAL_CACHE_SIZES.len() {
+            if let Some(ref cache) = GENERAL_CACHES[i] {
+                if cache.name == name_str {
+                    klog_slab!("[SLAB] Cache '{}': obj_size={} slabs={} active={}",
+                        cache.name, cache.object_size, cache.slab_count, cache.active_objects());
+
+                    // 遍历 partial 链表显示每个 slab 信息
+                    let mut current = cache.slabs_partial;
+                    let mut count = 0;
+                    while !current.is_null() {
+                        let sr = SlabRef::new_unchecked(current);
+                        let ptr = sr.as_ptr();
+                        klog_slab!("[SLAB]   partial[{}]: obj_count={} active={}",
+                            count, (*ptr).obj_count, (*ptr).active_count);
+                        current = sr.next();
+                        count += 1;
+                    }
+                    return;
+                }
+            }
+        }
+    }
+    klog_slab!("[SLAB] Cache '{}' not found", name_str);
 }
 
 // ============================================================================

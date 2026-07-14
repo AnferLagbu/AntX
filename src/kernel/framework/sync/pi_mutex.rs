@@ -56,12 +56,6 @@ use crate::kernel::framework::sync::{LockClassId, LockClassDesc, LockKind};
 static PI_MUTEX_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<alloc::vec::Vec<usize>> =
     crate::kernel::framework::sync::IrqSpinLock::new(alloc::vec::Vec::new());
 
-/// 注册 PI Mutex 到全局表 (由 new 构造函数调用)
-#[allow(dead_code)]
-fn register_pi_mutex(ptr: *mut ()) {
-    PI_MUTEX_REGISTRY.lock().push(ptr as usize);
-}
-
 /// 进程退出回调: 遍历所有已注册 PI Mutex, 对持有该 PID 的 mutex 执行 force_unlock
 pub fn pi_mutex_process_exit(pid: u32) {
     PI_MUTEX_REGISTRY.lock().iter().for_each(|&raw_usize| {

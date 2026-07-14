@@ -396,7 +396,7 @@ impl NvmeQueuePair {
 struct QueueDma {
     virt: VirtAddr,
     phys: PhysAddr,
-    #[allow(dead_code)] // 区分 SQ/CQ — 预留作未来队列类型断言 (assert! / log)
+    /// 区分 SQ/CQ — 用于队列操作断言
     is_cq: bool,
     phase: u16, // CQ 阶段标记
 }
@@ -578,6 +578,10 @@ impl NvmeController {
     /// 提交 Admin 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> { unsafe {
+        // 调试断言: 验证队列类型正确
+        debug_assert!(!self.admin_sq_dma.is_cq, "admin SQ should not be CQ");
+        debug_assert!(self.admin_cq_dma.is_cq, "admin CQ should be CQ");
+
         let cid = self.admin_cid;
         self.admin_cid = self.admin_cid.wrapping_add(1);
 
@@ -822,6 +826,10 @@ impl NvmeController {
     /// 提交 I/O 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> { unsafe {
+        // 调试断言: 验证队列类型正确
+        debug_assert!(!self.io_sq_dma.is_cq, "IO SQ should not be CQ");
+        debug_assert!(self.io_cq_dma.is_cq, "IO CQ should be CQ");
+
         let cid = self.io_cid;
         self.io_cid = self.io_cid.wrapping_add(1);
 

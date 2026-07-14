@@ -51,10 +51,6 @@ pub use tsc::{read_tsc, read_tsc_serialized, cycles_to_nanoseconds};
 // 常量定义 (编译时常量)
 // ============================================================================
 
-/// 最大 CPUID leaf 号 (待 CPU 特性探测扩展启用后使用)。
-#[allow(dead_code)] // 待 CPU 特性探测扩展启用后使用。
-const MAX_CPUID_LEAF_STANDARD: u32 = 0x0F;
-
 /// 扩展 CPUID leaf 起始值 (x86_64 专用)
 #[cfg(target_arch = "x86_64")]
 const CPUID_LEAF_EXT_BASE: u32 = 0x8000_0000;
@@ -667,8 +663,6 @@ pub extern "C" fn cpu_init() -> i32 {
 
     // Step 6: 初始化 MSR (可选, 可能失败于虚拟机)
     if let Err(e) = init_msr(&info.features) {
-        #[allow(dead_code)] // 待 MSR 初始化失败路径完善后使用。
-        static WARN_MSG: &[u8] = b"MSR init failed (expected in VMs): \0";
         let mut msg_buf = [0u8; 128];
         let e_bytes = e.as_bytes();
         let len = e_bytes.len().min(100);

@@ -6,7 +6,7 @@
 pub use crate::kernel::services::fs::dcache::{
     DCacheResult, ICacheResult,
     dcache_lookup, dcache_insert, dcache_insert_negative,
-    dcache_invalidate_parent, dcache_invalidate_entry, dcache_flush,
+    dcache_invalidate_parent, dcache_flush,
     icache_lookup, icache_insert, icache_invalidate, icache_flush,
     flush_all,
     dcache_hit_rate, icache_hit_rate,

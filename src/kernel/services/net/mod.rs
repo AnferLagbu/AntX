@@ -18,6 +18,22 @@
 //! 评估日期: 2026-06-04
 
 use crate::kernel::framework::net_socket as fw_net_socket;
+
+// ============================================================================
+// 状态类型 (统一定义, 避免 kernel_test stub 重复)
+// ============================================================================
+
+/// 网络初始化状态 (与 kernel::net::init::InitState 对齐)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum InitState {
+    Uninitialized = 0,
+    HardwareProbed = 1,
+    InterfaceReady = 2,
+    FullyInitialized = 3,
+    Failed = 255,
+}
+
 // I-预存 (kernel_test build): 同 net_socket.rs 处理 — 用 cfg-gate `use` 别名
 // + 桩模块, 让函数体保持 `init::*` 调用, 不扩散 cfg 到 fn body.
 #[cfg(not(feature = "kernel_test"))]
@@ -27,15 +43,9 @@ use crate::kernel::framework::net::init as init;
 // 同时为 smoltcp_impl.rs 的 `fw_init::` 调用提供 kernel_test no-op stub.
 #[cfg(feature = "kernel_test")]
 mod init {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    #[repr(u8)]
-    pub enum InitState {
-        Uninitialized,
-        HardwareProbed,
-        InterfaceReady,
-        FullyInitialized,
-        Failed,
-    }
+    // 复用外层 InitState, 避免类型重复定义
+    pub use super::InitState;
+
     pub fn is_network_initialized() -> bool {
         false
     }
@@ -137,20 +147,12 @@ pub type NetResult<T> = Result<T, NetError>;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
-// 状态
+// 状态转换
 // ============================================================================
 
-/// 网络初始化状态 (与 kernel::net::init::InitState 对齐)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum InitState {
-    Uninitialized = 0,
-    HardwareProbed = 1,
-    InterfaceReady = 2,
-    FullyInitialized = 3,
-    Failed = 255,
-}
-
+// 非 kernel_test: init::InitState 是 framework 类型, 需要 From 转换
+// kernel_test: init::InitState 就是 super::InitState, From 是恒等转换
+#[cfg(not(feature = "kernel_test"))]
 impl From<init::InitState> for InitState {
     fn from(s: init::InitState) -> Self {
         match s {

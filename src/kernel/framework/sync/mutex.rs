@@ -75,22 +75,6 @@ impl<T> Mutex<T> {
         Self::new(data)
     }
 
-    /// 获取内部数据的不可变引用
-    ///
-    /// # Safety
-    /// 调用者必须确保已获取锁或通过其他方式保证安全
-    pub unsafe fn get(&self) -> &T {
-        unsafe { &*self.data.get() }
-    }
-
-    /// 获取内部数据的可变引用
-    ///
-    /// # Safety
-    /// 调用者必须已持有该锁
-    pub unsafe fn get_mut(&self) -> &mut T {
-        unsafe { &mut *self.data.get() }
-    }
-
     /// 获取锁 (阻塞)
     ///
     /// 如果锁已被持有，当前线程会**让出 CPU**，
@@ -116,42 +100,6 @@ impl<T> Mutex<T> {
             })
         } else {
             None
-        }
-    }
-
-    /// 带超时的锁获取
-    ///
-    /// # Arguments
-    /// * `timeout_ms` - 超时时间 (毫秒), 0 = 无限等待
-    ///
-    /// # Returns
-    /// - `Some(guard)`: 成功获取锁
-    /// - `None`: 超时
-    pub fn lock_timeout(&self, timeout_ms: u32) -> Option<MutexGuard<'_, T>> {
-        if timeout_ms == 0 {
-            return Some(self.lock());
-        }
-
-        let start = rdtsc();
-        let timeout_cycles = (timeout_ms as u64) * 2400000; // 近似转换
-
-        loop {
-            if self.raw_trylock() {
-                return Some(MutexGuard {
-                    // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-                    data: unsafe { &mut *self.data.get() },
-                    _mutex: &self.inner,
-                });
-            }
-
-            // 检查超时
-            let now = rdtsc();
-            if now.saturating_sub(start) > timeout_cycles {
-                return None;
-            }
-
-            // 让出 CPU
-            scheduler_yield();
         }
     }
 
@@ -297,14 +245,18 @@ impl<T: Default> Default for Mutex<T> {
 /// let cond = CondVar::new();
 ///
 /// // Producer:
-/// mutex.lock();
-/// *mutex.get_mut() = true;
+/// {
+///     let mut guard = mutex.lock();
+///     *guard = true;
+/// } // 释放锁
 /// cond.signal(&mutex);  // 通知一个等待者
 ///
 /// // Consumer:
-/// mutex.lock();
-/// while !*unsafe { mutex.get() } {
-///     cond.wait(&mutex);  // 释放锁并等待
+/// {
+///     let mut guard = mutex.lock();
+///     while !*guard {
+///         cond.wait(&mutex);  // 释放锁并等待
+///     }
 /// }
 /// ```
 pub struct CondVar {

@@ -93,25 +93,6 @@ impl Default for DCacheEntry {
     }
 }
 
-impl DCacheEntry {
-    #[allow(dead_code)] // 待 dcache 调试路径启用后使用
-    fn name_str(&self) -> &str {
-        let len = self.name_len as usize;
-        if len == 0 || len > DCACHE_NAME_LEN {
-            return "";
-        }
-        core::str::from_utf8(&self.name[..len]).unwrap_or("")
-    }
-
-    #[allow(dead_code)] // 待 dcache 调试路径启用后使用
-    fn set_name(&mut self, name: &str) {
-        let bytes = name.as_bytes();
-        let len = bytes.len().min(DCACHE_NAME_LEN);
-        self.name[..len].copy_from_slice(&bytes[..len]);
-        self.name_len = len as u8;
-    }
-}
-
 // ============================================================================
 // icache 条目
 // ============================================================================
@@ -649,13 +630,6 @@ pub fn dcache_insert_negative(parent_ino: u32, name: &str) {
 pub fn dcache_invalidate_parent(parent_ino: u32) {
     let mut dcache = DCACHE.lock();
     dcache.invalidate_parent(parent_ino);
-}
-
-/// dcache 失效: 指定条目
-#[allow(dead_code)] // 待路径解析精确失效启用后使用
-pub fn dcache_invalidate_entry(parent_ino: u32, name: &str) {
-    let mut dcache = DCACHE.lock();
-    dcache.invalidate_entry(parent_ino, name);
 }
 
 /// dcache 清空

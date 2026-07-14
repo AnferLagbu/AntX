@@ -367,102 +367,6 @@ impl RamFsData {
         data[offset..offset + 4].copy_from_slice(&val.to_le_bytes());
     }
 
-    #[allow(dead_code)] // 待 direct/indirect block 读取路径启用后使用
-    fn get_data_block(&mut self, node: &mut RamFsNode, block_idx: usize) -> Option<u32> {
-        let direct_limit = DIRECT_BLOCKS;
-        let indirect_limit = direct_limit + INDIRECT_BLOCKS_PER_BLOCK;
-        let double_indirect_limit =
-            indirect_limit + INDIRECT_BLOCKS_PER_BLOCK * INDIRECT_BLOCKS_PER_BLOCK;
-
-        if block_idx < direct_limit {
-            if node.direct_blocks[block_idx] == 0 {
-                let new_block = self.block_alloc();
-                if new_block == u32::MAX {
-                    return None;
-                }
-                node.direct_blocks[block_idx] = new_block;
-            }
-            Some(node.direct_blocks[block_idx])
-        } else if block_idx < indirect_limit {
-            if node.indirect_block == 0 {
-                let new_indirect = self.block_alloc();
-                if new_indirect == u32::MAX {
-                    return None;
-                }
-                node.indirect_block = new_indirect;
-            }
-
-            let indirect_offset = block_idx - direct_limit;
-            let indirect_ptr_addr =
-                node.indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_offset * 4;
-
-            let existing_block: u32 = Self::read_u32(&self.data_area, indirect_ptr_addr);
-
-            if existing_block == 0 {
-                let new_data_block = self.block_alloc();
-                if new_data_block == u32::MAX {
-                    return None;
-                }
-
-                Self::write_u32(&mut self.data_area, indirect_ptr_addr, new_data_block);
-
-                Some(new_data_block)
-            } else {
-                Some(existing_block)
-            }
-        } else if block_idx < double_indirect_limit {
-            if node.double_indirect_block == 0 {
-                let new_double_indirect = self.block_alloc();
-                if new_double_indirect == u32::MAX {
-                    return None;
-                }
-                node.double_indirect_block = new_double_indirect;
-            }
-
-            let double_indirect_offset = block_idx - indirect_limit;
-            let indirect_index = double_indirect_offset / INDIRECT_BLOCKS_PER_BLOCK;
-            let block_index_in_indirect = double_indirect_offset % INDIRECT_BLOCKS_PER_BLOCK;
-
-            let indirect_ptr_addr =
-                node.double_indirect_block as usize * RAMFS_BLOCK_SIZE + indirect_index * 4;
-
-            let existing_indirect: u32 = Self::read_u32(&self.data_area, indirect_ptr_addr);
-
-            let indirect_block_num = if existing_indirect == 0 {
-                let new_indirect = self.block_alloc();
-                if new_indirect == u32::MAX {
-                    return None;
-                }
-
-                Self::write_u32(&mut self.data_area, indirect_ptr_addr, new_indirect);
-
-                new_indirect
-            } else {
-                existing_indirect
-            };
-
-            let data_ptr_addr =
-                indirect_block_num as usize * RAMFS_BLOCK_SIZE + block_index_in_indirect * 4;
-
-            let existing_data: u32 = Self::read_u32(&self.data_area, data_ptr_addr);
-
-            if existing_data == 0 {
-                let new_data_block = self.block_alloc();
-                if new_data_block == u32::MAX {
-                    return None;
-                }
-
-                Self::write_u32(&mut self.data_area, data_ptr_addr, new_data_block);
-
-                Some(new_data_block)
-            } else {
-                Some(existing_data)
-            }
-        } else {
-            None
-        }
-    }
-
     fn free_indirect_chain(&mut self, indirect_block: u32, start_idx: usize, end_idx: usize) {
         if indirect_block == 0 {
             return;
@@ -518,35 +422,6 @@ impl RamFsData {
         }
 
         self.block_set_free(double_indirect_block);
-    }
-
-    #[allow(dead_code)] // 待 ACE 权限检查路径集成后使用
-    fn ace_set(&mut self, node_id: u32, pwm: u64, allow: u64, deny: u64) {
-        for ace in self.aces.iter_mut() {
-            if ace.used && ace.node_id == node_id && ace.pwm == pwm {
-                ace.allow_mask = allow;
-                ace.deny_mask = deny;
-                return;
-            }
-            if !ace.used {
-                ace.node_id = node_id;
-                ace.pwm = pwm;
-                ace.allow_mask = allow;
-                ace.deny_mask = deny;
-                ace.used = true;
-                return;
-            }
-        }
-    }
-
-    #[allow(dead_code)] // 待 ACE 权限检查路径集成后使用
-    fn ace_clear(&mut self, node_id: u32, pwm: u64) {
-        for ace in self.aces.iter_mut() {
-            if ace.used && ace.node_id == node_id && ace.pwm == pwm {
-                ace.used = false;
-                return;
-            }
-        }
     }
 
     fn check_permission(&self, node: &RamFsNode, pwm: u64, cap: u64) -> bool {

@@ -82,17 +82,6 @@ impl<T> RacyCell<T> {
 
     /// 写入值
     ///
-    /// # Safety
-    ///
-    /// 调用方必须保证独占写入。
-    #[allow(dead_code)] // 待 RacyCell 写入路径启用后使用。
-    pub unsafe fn write(&self, val: T) { unsafe {
-        // SAFETY: `core::ptr::write` 是未对齐的 memcpy, 不读旧值 (避免 drop);
-        // 调用方必须保证: 1) 当前无其他线程读/写, 2) 目标地址 valid for writes,
-        // 3) val 不会被 writer 重新使用 (避免 double drop)。
-        core::ptr::write(self.inner.get(), val)
-    }}
-
     /// 通过闭包安全地访问内部数据
     ///
     /// 这是推荐的安全 API——闭包内对 `&T` 的访问是安全的,

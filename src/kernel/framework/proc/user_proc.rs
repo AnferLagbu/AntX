@@ -21,8 +21,6 @@ unsafe extern "C" {
     fn vmm_create_user_page_table() -> u64;
     fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
     fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
-    #[allow(dead_code)] // 待大页分裂路径启用后使用。
-    fn vmm_split_2mb_page(vaddr: u64) -> i32;
     fn vmm_ensure_path_user(vaddr: u64);
     fn vmm_switch_page_table(table: u64);
     fn vmm_destroy_page_table(cr3: u64);
@@ -231,10 +229,15 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-        #[allow(dead_code)] // 待进程状态查询路径启用后使用。
         pub fn load_state(&self) -> u32 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).state.load(Ordering::SeqCst) }
+        }
+
+        /// 获取进程状态 (诊断接口)
+        #[inline(always)]
+        pub fn get_state(&self) -> u32 {
+            self.load_state()
         }
 
         #[inline(always)]
@@ -323,16 +326,14 @@ pub(crate) mod raw {
         unsafe { pmm_alloc_pages(count) }
     }
 
-    /// 释放多页连续物理页 (待批量页释放路径启用后使用)。
-    #[allow(dead_code)] // 待批量页释放路径启用后使用。
+    /// 释放多页连续物理页。
     pub fn free_phys_pages(pages: *mut u8, count: u64) {
         for i in 0..count {
             raw::free_phys_page((pages as u64 + i * PAGE_SIZE) as *mut u8);
         }
     }
 
-    /// 分配一页物理页 (单页, 待单页分配路径启用后使用)。
-    #[allow(dead_code)] // 待单页分配路径启用后使用。
+    /// 分配一页物理页。
     pub fn alloc_phys_page() -> *mut u8 {
         // SAFETY: 物理页分配, 调用方负责所有权。
         unsafe { pmm_alloc_page() }
@@ -380,12 +381,11 @@ pub(crate) mod raw {
 
     /// 物理页零初始化 + 映射到用户页表。
     pub fn alloc_zeroed_user_page(cr3: u64, vaddr: u64, flags: u64) -> *mut u8 {
-        // SAFETY: 物理页分配, 调用方负责所有权。
-        let page = unsafe { pmm_alloc_page() };
+        let page = raw::alloc_phys_page();
         if page.is_null() {
             return page;
         }
-        // SAFETY: page 来自 pmm_alloc_page, 大小为 PAGE_SIZE。
+        // SAFETY: page 来自 alloc_phys_page, 大小为 PAGE_SIZE。
         unsafe { memset(page, 0, PAGE_SIZE) }
         raw::vmm_map_user_page(cr3, vaddr, page as u64, flags);
         page
@@ -407,8 +407,8 @@ pub(crate) mod raw {
     ) {
         // SAFETY: 物理页 + KERNEL_BASE 偏移后内核可写, elf_data 区间内可读。
         unsafe {
-            let dest = (page_phys + KERNEL_BASE + off_in_page) as *mut u8;
-            let src = elf_data.add(src_off);
+            let dest = raw::phys_to_kern_mut(page_phys, off_in_page);
+            let src = raw::elf_ptr_at(elf_data, src_off);
             memcpy(dest, src, chunk);
         }
     }
@@ -427,24 +427,20 @@ pub(crate) mod raw {
 
     /// 用户进程代码页分配 + 清零。
     pub fn alloc_code_page() -> *mut u8 {
-        // SAFETY: pmm_alloc_page 是 C-ABI 物理页分配器；返回的指针是
-        // 物理地址 (本进程内用作内核虚拟地址 by HHDM)。
-        let page = unsafe { pmm_alloc_page() };
+        let page = raw::alloc_phys_page();
         if !page.is_null() {
-            // SAFETY: page 来自 pmm_alloc_page, 大小为 PAGE_SIZE。
+            // SAFETY: page 来自 alloc_phys_page, 大小为 PAGE_SIZE。
             unsafe { memset(page, 0, PAGE_SIZE) }
         }
         page
     }
 
-    /// 物理页 → 内核可写指针 (用于代码段 chunk 复制, 待 ELF 加载路径完善后使用)。
-    #[allow(dead_code)] // 待 ELF 加载路径完善后使用。
+    /// 物理页 → 内核可写指针 (用于代码段 chunk 复制)。
     pub fn phys_to_kern_mut(phys: u64, off: u64) -> *mut u8 {
         (phys + KERNEL_BASE + off) as *mut u8
     }
 
-    /// ELF 文件指针 + 偏移 (待 ELF 加载路径完善后使用)。
-    #[allow(dead_code)] // 待 ELF 加载路径完善后使用。
+    /// ELF 文件指针 + 偏移。
     pub fn elf_ptr_at(elf_data: *const u8, off: usize) -> *const u8 {
         // SAFETY: 调用方保证 off 在 elf_size 范围内。
         unsafe { elf_data.add(off) }
@@ -795,9 +791,7 @@ impl UserProcManager {
             if kstack != 0 {
                 let kstack_base_virt = kstack - USER_KSTACK_SIZE;
                 let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
-                for i in 0..(USER_KSTACK_SIZE / PAGE_SIZE) {
-                    raw::free_phys_page((kstack_base_phys + i * PAGE_SIZE) as *mut u8);
-                }
+                raw::free_phys_pages(kstack_base_phys as *mut u8, USER_KSTACK_SIZE / PAGE_SIZE);
             }
         }
         let ustack = proc_ref.user_stack.load(Ordering::SeqCst);

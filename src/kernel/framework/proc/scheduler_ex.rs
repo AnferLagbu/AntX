@@ -39,13 +39,11 @@ pub(crate) mod raw {
             Self(ptr)
         }
 
-        #[allow(dead_code)] // 待调度器诊断路径启用后使用。
         #[inline(always)]
         pub fn as_ptr(self) -> *mut Thread {
             self.0
         }
 
-        #[allow(dead_code)] // 待调度器诊断路径启用后使用。
         #[inline(always)]
         pub fn is_null(self) -> bool {
             self.0.is_null()
@@ -89,7 +87,6 @@ pub(crate) mod raw {
             unsafe { (*self.0).set_state_safe(s) }
         }
 
-        #[allow(dead_code)] // 待调度器调试路径启用后使用。
         #[inline(always)]
         pub fn load_state_raw(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 原子读 state.u32 表示
@@ -114,7 +111,6 @@ pub(crate) mod raw {
             unsafe { (*self.0).priority.store(v, Ordering::SeqCst) };
         }
 
-        #[allow(dead_code)] // 待调度器调试路径启用后使用。
         #[inline(always)]
         pub fn time_slice(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读时间片剩余
@@ -795,6 +791,135 @@ pub static SCHEDULER_EX: SchedulerEx = SchedulerEx::new();
 
 pub fn init() {
     SCHEDULER_EX.init();
+}
+
+/// 打印线程调试信息 (诊断用途)
+pub fn thread_dump_info(thread: ThreadRef) {
+    unsafe extern "C" {
+        fn klog_ffi_info(msg: *const u8);
+    }
+
+    if thread.is_null() {
+        // SAFETY: klog_ffi_info 是 C ABI 函数
+        unsafe {
+            klog_ffi_info(b"[SCHED] thread_dump: null thread\0".as_ptr());
+        }
+        return;
+    }
+
+    let ptr = thread.as_ptr();
+    // SAFETY: ptr 来自 ThreadRef, 保证有效
+    let (pid, state, prio, ts) = unsafe {
+        (
+            (*ptr).pid,
+            (*ptr).state.load(Ordering::SeqCst),
+            (*ptr).priority.load(Ordering::Acquire),
+            thread.time_slice(),
+        )
+    };
+
+    // 使用栈上缓冲区格式化输出
+    let mut buf = [0u8; 128];
+    let msg = b"[SCHED] thread_dump: pid=\0";
+    buf[..msg.len()].copy_from_slice(msg);
+
+    // 简单数字转字符串
+    let mut pos = msg.len();
+    let mut val = pid;
+    if val == 0 {
+        buf[pos] = b'0';
+        pos += 1;
+    } else {
+        let mut digits = [0u8; 10];
+        let mut i = 0;
+        while val > 0 {
+            digits[i] = b'0' + (val % 10) as u8;
+            val /= 10;
+            i += 1;
+        }
+        while i > 0 {
+            i -= 1;
+            buf[pos] = digits[i];
+            pos += 1;
+        }
+    }
+
+    let suffix = b" state=\0";
+    buf[pos..pos + suffix.len()].copy_from_slice(suffix);
+    pos += suffix.len();
+
+    let mut val2 = state;
+    if val2 == 0 {
+        buf[pos] = b'0';
+        pos += 1;
+    } else {
+        let mut digits = [0u8; 10];
+        let mut i = 0;
+        while val2 > 0 {
+            digits[i] = b'0' + (val2 % 10) as u8;
+            val2 /= 10;
+            i += 1;
+        }
+        while i > 0 {
+            i -= 1;
+            buf[pos] = digits[i];
+            pos += 1;
+        }
+    }
+
+    let suffix2 = b" prio=\0";
+    buf[pos..pos + suffix2.len()].copy_from_slice(suffix2);
+    pos += suffix2.len();
+
+    let mut val3 = prio;
+    if val3 == 0 {
+        buf[pos] = b'0';
+        pos += 1;
+    } else {
+        let mut digits = [0u8; 10];
+        let mut i = 0;
+        while val3 > 0 {
+            digits[i] = b'0' + (val3 % 10) as u8;
+            val3 /= 10;
+            i += 1;
+        }
+        while i > 0 {
+            i -= 1;
+            buf[pos] = digits[i];
+            pos += 1;
+        }
+    }
+
+    let suffix3 = b" ts=\0";
+    buf[pos..pos + suffix3.len()].copy_from_slice(suffix3);
+    pos += suffix3.len();
+
+    let mut val4 = ts;
+    if val4 == 0 {
+        buf[pos] = b'0';
+        pos += 1;
+    } else {
+        let mut digits = [0u8; 10];
+        let mut i = 0;
+        while val4 > 0 {
+            digits[i] = b'0' + (val4 % 10) as u8;
+            val4 /= 10;
+            i += 1;
+        }
+        while i > 0 {
+            i -= 1;
+            buf[pos] = digits[i];
+            pos += 1;
+        }
+    }
+
+    buf[pos] = b'\n';
+    pos += 1;
+
+    // SAFETY: klog_ffi_info 是 C ABI 函数, buf 内容有效
+    unsafe {
+        klog_ffi_info(buf[..pos].as_ptr());
+    }
 }
 
 // ============================================================
