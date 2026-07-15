@@ -57,10 +57,8 @@ const MAX_SECTORS_PER_CMD: u16 = 128;
 // NVMe 控制器寄存器偏移 (BAR0)  // 硬件寄存器描述
 const NVME_REG_CAP: usize = 0x00;    // u64: 控制器能力
 const NVME_REG_VS: usize = 0x08;     // u32: 版本 (NVMe 规范 §3.1.2)
-#[allow(dead_code)] // NVMe 规范 §3.1.6 — 中断屏蔽设置 (待实现 IRQ 路径)
-const NVME_REG_INTMS: usize = 0x0C;  // u32: 中断掩码设置
-#[allow(dead_code)] // NVMe 规范 §3.1.6 — 中断屏蔽清除 (待实现 IRQ 路径)
-const NVME_REG_INTMC: usize = 0x10;  // u32: 中断掩码清除
+const NVME_REG_INTMS: usize = 0x0C;  // u32: 中断掩码设置 (NVMe 规范 §3.1.6)
+const NVME_REG_INTMC: usize = 0x10;  // u32: 中断掩码清除 (NVMe 规范 §3.1.6)
 const NVME_REG_CC: usize = 0x14;     // u32: 控制器配置
 const NVME_REG_CSTS: usize = 0x1C;   // u32: 控制器状态
 const NVME_REG_AQA: usize = 0x24;    // u32: Admin 队列属性

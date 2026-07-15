@@ -54,7 +54,6 @@ mod aux_address {
     pub const ADJUST_REQ_LANE0_1: u16 = 0x0207;
     /// 接收器请求的 voltage swing / pre-emphasis 调整 (LANE2/3, 4-lane 配置)
     /// 当前 phase 1/2 未应用 4-lane ADJUST_REQ_LANE2_3 (phase 1 仅检查 LANE2/3_STATUS).
-    #[allow(dead_code)] // 4-lane 调整应用留 Phase E 集成测试
     pub const ADJUST_REQ_LANE2_3: u16 = 0x0208;
 }
 
@@ -377,8 +376,7 @@ pub struct DpController {
     training_state: TrainingState,
     /// 是否连接显示器
     connected: bool,
-    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
+    /// 设备信息
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
@@ -449,6 +447,11 @@ impl DpController {
     pub unsafe fn new_with_default_hpd(iomem: IoMem) -> Self { unsafe {
         Self::new_with_iomem(iomem, DP_HPD_REG_OFFSET)
     }}
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
+    }
 
     /// 检测热插拔。
     ///

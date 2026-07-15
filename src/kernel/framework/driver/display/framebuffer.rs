@@ -239,8 +239,7 @@ pub struct Framebuffer {
     format: PixelFormat,
     /// 每像素字节数
     bpp: usize,
-    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
+    /// 设备信息
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
@@ -274,6 +273,11 @@ impl Framebuffer {
     /// 获取像素格式
     pub fn format(&self) -> PixelFormat {
         self.format
+    }
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
     }
 
     /// 获取每行字节数

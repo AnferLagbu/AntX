@@ -238,8 +238,7 @@ impl<T: Default + Copy> RingBuffer<T> {
         self.count == 0
     }
 
-    /// 缓冲区是否已满 (待串口流控启用后使用)。
-    #[allow(dead_code)] // 待串口流控启用后使用。
+    /// 缓冲区是否已满
     pub(crate) fn is_full(&self) -> bool {
         self.count >= SERIAL_BUFFER_SIZE
     }

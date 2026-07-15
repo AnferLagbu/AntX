@@ -712,10 +712,7 @@ pub struct AhciController {
     iomem: Option<IoMem>,      // MMIO region handle (safe access proxy)
     ports: Vec<AhciPort>,
     port_bitmap: u32,
-    // I-49: 设备元数据 (驱动名/类型), 预留给 hotplug/procfs 导出.
-    // 当前 boot 路径通过 proto_block::register_block_device 的 name 参数注册,
-    // 此处仅持有运行时副本供未来 driver_manager 枚举时查询.
-    #[allow(dead_code)] // 待 hotplug/procfs 驱动元数据导出启用后使用。
+    // I-49: 设备元数据 (驱动名/类型), 供 hotplug/procfs 导出.
     info: DeviceInfo,
     initialized: bool,
 }
@@ -730,6 +727,11 @@ impl AhciController {
             info: DeviceInfo::new("ahci", DeviceType::Block),
             initialized: false,
         }
+    }
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
     }
 
     /// 初始化控制器

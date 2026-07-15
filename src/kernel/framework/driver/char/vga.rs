@@ -192,8 +192,7 @@ pub struct VgaDriver {
     cursor_y: usize,
     /// 当前文本属性
     attribute: TextAttribute,
-    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
+    /// 设备信息
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
@@ -321,6 +320,11 @@ impl VgaDriver {
     /// 获取当前文本属性
     pub fn get_attribute(&self) -> &TextAttribute {
         &self.attribute
+    }
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
     }
 
     /// 写入单个字符
