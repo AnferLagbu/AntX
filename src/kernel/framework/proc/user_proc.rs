@@ -113,12 +113,6 @@ pub(crate) mod raw {
             Self(ptr)
         }
 
-        #[allow(dead_code)] // 待进程诊断路径启用后使用。
-        #[inline(always)]
-        pub fn as_ptr(self) -> *mut UserProcess {
-            self.0
-        }
-
         /// 访问 pid 字段 (读写)
         #[inline(always)]
         pub fn pid(&self) -> u32 {
@@ -256,30 +250,6 @@ pub(crate) mod raw {
     pub fn deref_non_null(nn: NonNull<UserProcess>) -> &'static UserProcess {
         // SAFETY: nn is from USER_PROC_MANAGER BTreeMap, allocation outlives the manager.
         unsafe { &*nn.as_ptr() }
-    }
-
-    /// 获取当前活跃进程 (current: AtomicU64 → NonNull→ ref)。
-    /// 待进程调度器完整集成后启用。
-    #[allow(dead_code)] // 待进程调度器完整集成后启用。
-    pub fn current_proc() -> Option<UserProcRef> {
-        let cur = USER_PROC_MANAGER.current.load(Ordering::SeqCst);
-        if cur == 0 {
-            None
-        } else {
-            // SAFETY: cur > 0, 此前由 set_current 设为有效的 NonNull 指针。
-            Some(unsafe { UserProcRef::new_unchecked(cur as *mut UserProcess) })
-        }
-    }
-
-    #[allow(dead_code)] // 待进程调度器完整集成后启用。
-    pub fn set_current_ref(r: Option<UserProcRef>) {
-        if let Some(p) = r {
-            USER_PROC_MANAGER
-                .current
-                .store(p.as_ptr() as u64, Ordering::SeqCst);
-        } else {
-            USER_PROC_MANAGER.current.store(0, Ordering::SeqCst);
-        }
     }
 
     // === FFI 桥接安全包装 (mm/vmm 设备) ===

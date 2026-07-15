@@ -1670,7 +1670,30 @@ impl FileSystem for RamFsData {
     fn fs_stat(&self, rel_path: &str, _pwm: u64) -> KernelResult<VfsStat> {
         let ramfs = RAMFS_DATA.lock();
         match ramfs.resolve_path(rel_path) {
-            Some(node_id) => ramfs.stat(node_id).ok_or(KernelError::NotFound),
+            Some(node_id) => {
+                drop(ramfs); // 释放锁, 尝试 icache
+                if let Some(cached) = crate::kernel::services::fs::dcache::icache_lookup(node_id) {
+                    return Ok(VfsStat {
+                        node_id: cached.ino,
+                        file_type: cached.file_type,
+                        perm: cached.perm,
+                        size: cached.size,
+                        mtime: cached.mtime,
+                        ctime: cached.ctime,
+                        owner_pwm: cached.owner_pwm,
+                        group_pwm: cached.group_pwm,
+                        ..VfsStat::default()
+                    });
+                }
+                let ramfs = RAMFS_DATA.lock();
+                ramfs.stat(node_id).map(|st| {
+                    crate::kernel::services::fs::dcache::icache_insert(
+                        node_id, st.file_type, st.perm, st.size as u32, st.mtime,
+                        st.ctime, st.owner_pwm, st.group_pwm,
+                    );
+                    st
+                }).ok_or(KernelError::NotFound)
+            }
             None => Err(KernelError::NotFound),
         }
     }

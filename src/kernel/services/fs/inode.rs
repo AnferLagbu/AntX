@@ -256,9 +256,30 @@ impl Inode for RamFsInode {
     }
 
     fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
+        // icache 快速路径: 避免 RAMFS_DATA 锁
+        if let Some(cached) = crate::kernel::services::fs::dcache::icache_lookup(self.inode_id) {
+            return Ok(VfsStat {
+                node_id: cached.ino,
+                file_type: cached.file_type,
+                perm: cached.perm,
+                size: cached.size,
+                mtime: cached.mtime,
+                ctime: cached.ctime,
+                owner_pwm: cached.owner_pwm,
+                group_pwm: cached.group_pwm,
+                ..VfsStat::default()
+            });
+        }
+        // 缓存未命中: 回退到完整 stat
         use crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA;
         let ramfs = RAMFS_DATA.lock();
-        ramfs.get_stat(self.inode_id, pwm)
+        let st = ramfs.get_stat(self.inode_id, pwm)?;
+        // 填充 icache
+        crate::kernel::services::fs::dcache::icache_insert(
+            self.inode_id, st.file_type, st.perm, st.size as u32, st.mtime,
+            st.ctime, st.owner_pwm, st.group_pwm,
+        );
+        Ok(st)
     }
 
     fn truncate(&self, size: u64, pwm: u64) -> KernelResult<()> {

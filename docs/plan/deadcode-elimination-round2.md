@@ -171,27 +171,30 @@
 | P4 | dcache.rs (flush) | 3 | ✅ 完成 |
 | P4 | hvfs.rs (xattr) | 4 | ✅ 完成 |
 | P5 | hvfs.rs (snapshot/clone) | 4 | ✅ 完成 |
-| **合计** | | **83/139** | |
+| P6 | user_proc.rs (诊断) | 3 | ✅ 完成 |
+| P6 | credo/storage.rs | 1 | ✅ 完成 |
+| P6 | ebpf_verifier.rs | 2 | ✅ 完成 |
+| P7 | dcache.rs (icache) | 4 | ✅ 完成 |
+| **合计** | | **93/139** | |
 
 ## 验证结果
 
 每批实施完成后：
 
 1. 双架构编译 0 warning 0 error ✅
-2. `audit_dead_code.py` 违规数: 139 → 56 (消除 83 项, 60%) ✅
+2. `audit_dead_code.py` 违规数: 139 → 46 (消除 93 项, 67%) ✅
 3. `audit_services_boundary.py` 通过 ✅
 4. `audit_safety_coverage.py` 通过 ✅
 5. host-tests 全部通过 ✅
 
-## 剩余项 (56 项)
+## 剩余项 (46 项)
 
 大部分为合理的开发预留：
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
-| 硬件规范常量 | ~32 | APIC/GIC/e1000/USB/display 寄存器 |
-| 架构级工作 (ARM VMM/Shadow Stack/KPTI) | ~14 | 需平台特定实现 |
+| 硬件规范常量 | ~28 | APIC/GIC/e1000/USB/display/ARM/Intel 寄存器 |
+| 架构级工作 (ARM VMM/Shadow Stack/KPTI) | ~12 | 需平台特定实现 |
 | PCP 协议字段 | ~3 | PiMutex 优先级天花板协议 |
-| 调试路径 | ~4 | 需调试功能实现 |
-| 其他 | ~3 | fd_alloc/barrier/ebpf |
+| 模块级预留 | ~3 | fd_alloc/barrier/pcache |
 | 调试路径 | ~6 | 需调试功能实现 |

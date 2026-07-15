@@ -110,6 +110,12 @@ struct ICacheEntry {
     size: u32,
     /// 修改时间
     mtime: u64,
+    /// 创建时间
+    ctime: u64,
+    /// 所有者 PWM
+    owner_pwm: u64,
+    /// 组 PWM
+    group_pwm: u64,
     /// 有效标志
     valid: bool,
     /// 引用计数 (被 dentry 引用次数)
@@ -126,6 +132,9 @@ impl Default for ICacheEntry {
             perm: 0,
             size: 0,
             mtime: 0,
+            ctime: 0,
+            owner_pwm: 0,
+            group_pwm: 0,
             valid: false,
             ref_count: 0,
             probe_distance: 0,
@@ -374,6 +383,9 @@ impl ICache {
                 perm: 0,
                 size: 0,
                 mtime: 0,
+                ctime: 0,
+                owner_pwm: 0,
+                group_pwm: 0,
                 valid: false,
                 ref_count: 0,
                 probe_distance: 0,
@@ -422,7 +434,7 @@ impl ICache {
     }
 
     /// 插入/更新 inode 缓存
-    fn insert(&mut self, ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64) {
+    fn insert(&mut self, ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64, ctime: u64, owner_pwm: u64, group_pwm: u64) {
         if ino == EMPTY_INO || ino == NEGATIVE_INO {
             return;
         }
@@ -436,6 +448,9 @@ impl ICache {
             perm,
             size,
             mtime,
+            ctime,
+            owner_pwm,
+            group_pwm,
             valid: true,
             ref_count: 0,
             probe_distance: 0,
@@ -517,7 +532,6 @@ impl ICache {
     }
 
     /// 减少引用计数
-    #[allow(dead_code)] // 待 dcache 条目驱逐策略启用后使用
     fn ref_dec(&mut self, ino: u32) {
         if let Some(idx) = self.lookup_index(ino) {
             self.entries[idx].ref_count = self.entries[idx].ref_count.saturating_sub(1);
@@ -584,13 +598,15 @@ pub enum DCacheResult {
 
 /// icache 查找结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // 待 icache 查询路径集成后使用
 pub struct ICacheResult {
     pub ino: u32,
     pub file_type: u8,
     pub perm: u16,
     pub size: u32,
     pub mtime: u64,
+    pub ctime: u64,
+    pub owner_pwm: u64,
+    pub group_pwm: u64,
 }
 
 /// dcache 查找
@@ -639,7 +655,6 @@ pub fn dcache_flush() {
 }
 
 /// icache 查找
-#[allow(dead_code)] // 待 inode 属性缓存查询路径集成后使用
 pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
     ICACHE_LOOKUPS.fetch_add(1, Ordering::Relaxed);
 
@@ -653,6 +668,9 @@ pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
                 perm: entry.perm,
                 size: entry.size,
                 mtime: entry.mtime,
+                ctime: entry.ctime,
+                owner_pwm: entry.owner_pwm,
+                group_pwm: entry.group_pwm,
             })
         }
         None => None,
@@ -660,10 +678,9 @@ pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
 }
 
 /// icache 插入/更新
-#[allow(dead_code)] // 待 inode 属性缓存写入路径集成后使用
-pub fn icache_insert(ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64) {
+pub fn icache_insert(ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64, ctime: u64, owner_pwm: u64, group_pwm: u64) {
     let mut icache = ICACHE.lock();
-    icache.insert(ino, file_type, perm, size, mtime);
+    icache.insert(ino, file_type, perm, size, mtime, ctime, owner_pwm, group_pwm);
 }
 
 /// icache 失效

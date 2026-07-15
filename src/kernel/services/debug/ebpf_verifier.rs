@@ -32,7 +32,6 @@ use crate::kernel::framework::debug::{
 };
 
 /// 寄存器类型 (验证器内部状态, 策略相关, 不导出)
-#[allow(dead_code)] // MapKey/MapValue 为后续 Map 验证预留
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RegType {
     /// 未初始化
@@ -50,23 +49,17 @@ enum RegType {
 }
 
 /// 验证器寄存器状态 (验证器内部状态)
-#[allow(dead_code)] // is_zero 字段为未来 scalar range tracking 预留
 #[derive(Debug, Clone, Copy)]
 struct RegState {
     r#type: RegType,
-    /// 标量值范围 (简化: 仅追踪是否已知为 0)
-    is_zero: bool,
 }
 
 impl RegState {
     fn new() -> Self {
-        Self { r#type: RegType::NotInit, is_zero: false }
+        Self { r#type: RegType::NotInit }
     }
     fn scalar() -> Self {
-        Self { r#type: RegType::Scalar, is_zero: false }
-    }
-    fn scalar_zero() -> Self {
-        Self { r#type: RegType::Scalar, is_zero: true }
+        Self { r#type: RegType::Scalar }
     }
 }
 
@@ -137,8 +130,8 @@ impl BpfVerifier for StandardBpfVerifier {
 
         // 初始化寄存器状态
         let mut regs = [RegState::new(); BPF_REG_NUM];
-        regs[reg::R1] = RegState { r#type: RegType::CtxPtr, is_zero: false };
-        regs[reg::R10] = RegState { r#type: RegType::StackPtr, is_zero: false };
+        regs[reg::R1] = RegState { r#type: RegType::CtxPtr };
+        regs[reg::R10] = RegState { r#type: RegType::StackPtr };
 
         // 逐条验证
         let mut visited = [false; BPF_MAX_INSNS as usize];
@@ -281,11 +274,7 @@ impl BpfVerifier for StandardBpfVerifier {
                         regs[dst] = regs[src];
                     } else {
                         // MOV immediate
-                        regs[dst] = if insn.imm == 0 {
-                            RegState::scalar_zero()
-                        } else {
-                            RegState::scalar()
-                        };
+                        regs[dst] = RegState::scalar();
                     }
                 } else {
                     // 其他 ALU: 结果是标量
