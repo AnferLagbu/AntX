@@ -427,7 +427,7 @@ pub struct NvmeController {
     namespace_count: u32,
     namespace_size_lba: u64, // 命名空间大小 (LBA)
     lba_format_size: u16,    // LBA 格式字节数
-    #[allow(dead_code)] // 设备元数据 — 预留作 sysfs/procfs 暴露 / 驱动注册表
+    /// 设备元数据 — 供 sysfs/procfs 暴露 / 驱动注册表
     info: DeviceInfo,
     initialized: bool,
 }
@@ -477,6 +477,11 @@ impl NvmeController {
             info: DeviceInfo::new("nvme", DeviceType::Block),
             initialized: false,
         }
+    }
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
     }
 
     /// 分配 Admin 队列 DMA 内存
