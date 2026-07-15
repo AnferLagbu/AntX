@@ -86,20 +86,6 @@ pub mod raw {
     }
 
     /// 释放 `alloc_process` 分配的内存。
-    ///
-    /// # Safety (内部)
-    /// - `ptr` 必须由 `alloc_process` 产生且未被释放。
-    #[allow(dead_code)] // 待进程动态释放路径启用后使用。
-    pub fn dealloc_process(ptr: *mut Process) {
-        if !ptr.is_null() {
-            // SAFETY: alloc/dealloc 配对。
-            unsafe {
-                let layout = alloc::alloc::Layout::new::<Process>();
-                alloc::alloc::dealloc(ptr as *mut u8, layout);
-            }
-        }
-    }
-
     /// 从裸指针 (Box 所有权) 还原 Box 并 drop。
     ///
     /// # Safety (内部)

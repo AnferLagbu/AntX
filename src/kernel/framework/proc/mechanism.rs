@@ -28,7 +28,6 @@ pub use super::api::raw::destroy_user_page_table;
 // ==================== 进程分配/释放 ====================
 
 pub use super::api::raw::alloc_process;
-pub use super::api::raw::dealloc_process;
 pub use super::api::raw::drop_boxed_process;
 pub use super::api::raw::process_ref;
 pub use super::api::raw::process_ref_mut;

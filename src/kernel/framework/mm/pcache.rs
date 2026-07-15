@@ -20,11 +20,6 @@
 //! - 脏页写回由文件系统负责 (当前阶段仅标记)
 //! - 仅 `pcache_copy_to_user` 保留 unsafe (用户态指针操作)
 
-// 页缓存实现: PageCacheEntry/PageCacheTable 等内部类型和
-// 查找/插入/脏页标记等函数在 VFS 写回路径中使用.
-// 文件级 allow 用于抑制内部 helper 函数的 dead_code 警告 (如 pcache_hash 的测试覆盖).
-#![allow(dead_code)]
-
 use crate::kernel::framework::mm::{PhysAddr, PAGE_SIZE, pmm};
 use crate::kernel::framework::sync::IrqSpinLock;
 

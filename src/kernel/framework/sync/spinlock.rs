@@ -321,8 +321,7 @@ pub fn restore_interrupts(flags: &IrqSaveFlags) {
 
 /// 启用中断
 ///
-/// 当前无调用方; 保留供中断管理 API 补全 (与 disable/restore 对称)。
-#[allow(dead_code)] // 待中断管理 API 补全后启用。
+/// 无条件启用中断 (与 disable/restore 对称)。
 fn enable_interrupts() {
     crate::arch!(interrupt_enable());
 }

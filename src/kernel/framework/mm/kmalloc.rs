@@ -138,12 +138,6 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-        #[allow(dead_code)] // 待 kmalloc 调试/诊断路径启用后使用。
-        pub fn is_null(self) -> bool {
-            self.0.is_null()
-        }
-
-        #[inline(always)]
         pub fn size(&self) -> u64 {
             // SAFETY: caller guarantees valid pointer under heap lock
             unsafe { (*self.0).size }

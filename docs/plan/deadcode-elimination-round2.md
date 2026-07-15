@@ -180,26 +180,27 @@
 | P10 | USB/Display 驱动 | 6 | ✅ 完成 |
 | P11 | nvme/virtio 驱动 | 2 | ✅ 完成 |
 | P12 | HDMI/USB 驱动 | 6 | ✅ 完成 |
-| **合计** | | **121/139** | |
+| P13 | pcache/kmalloc/pci/proc | 4 | ✅ 完成 |
+| **合计** | | **127/139** | |
 
 ## 验证结果
 
 每批实施完成后：
 
 1. 双架构编译 0 warning 0 error ✅
-2. `audit_dead_code.py` 违规数: 139 → 18 (消除 121 项, 87%) ✅
+2. `audit_dead_code.py` 违规数: 139 → 12 (消除 127 项, 91%) ✅
 3. `audit_services_boundary.py` 通过 ✅
 4. `audit_safety_coverage.py` 通过 ✅
 5. host-tests 全部通过 ✅
 
-## 剩余项 (18 项)
+## 剩余项 (12 项)
 
 大部分为合理的开发预留：
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
-| 硬件规范常量 | ~8 | ARM VMM/Shadow Stack 常量 |
-| 架构级工作 (非PIE ELF/中断API) | ~3 | 需平台特定实现 |
-| 模块级预留 | ~3 | fd_alloc/barrier/pcache |
-| 其他 | ~4 | kmalloc/vga/pci/user_proc |
+| 硬件规范常量 | ~6 | ARM VMM/Shadow Stack 常量 |
+| 架构级工作 | ~2 | 需平台特定实现 |
+| 模块级预留 | ~2 | fd_alloc/barrier |
+| 其他 | ~2 | vga/pci |
 | 调试路径 | ~6 | 需调试功能实现 |

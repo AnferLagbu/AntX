@@ -48,7 +48,6 @@ pub mod msi;
 mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    #[allow(dead_code)] // 待 PCI 配置空间 8 位 I/O 启用后使用。
     pub unsafe fn outb(port: u16, val: u8) {
         crate::arch!(outb(port, val));
     }
