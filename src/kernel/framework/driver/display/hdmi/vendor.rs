@@ -269,5 +269,4 @@ mod tests {
 }
 
 // 抑制未使用导入警告 (IoMem 用于 trait 默认 impl)
-#[allow(dead_code)]
 fn _ensure_iomem_imported(_: IoMem) {}

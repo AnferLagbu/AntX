@@ -308,5 +308,4 @@ pub(super) unsafe fn configure_hdmi_timing(iomem: &IoMem, timing: &VideoTiming) 
 }}
 
 // 抑制未使用导入警告 (DriverError 由后续模块使用, 此处预留).
-#[allow(dead_code)]
 fn _ensure_driver_error_imported(_: DriverError) {}

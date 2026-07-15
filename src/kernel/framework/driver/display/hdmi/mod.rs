@@ -302,8 +302,7 @@ pub struct HdmiController {
     current_mode: Option<VideoMode>,
     /// 是否已连接 (HPD).
     connected: bool,
-    /// 设备信息.
-    #[allow(dead_code)] // Driver trait 当前未提供 info() 访问 (其他驱动同款); 保留以便 trait 扩展
+    /// 设备信息
     info: DeviceInfo,
     /// 是否已初始化.
     initialized: bool,
@@ -326,6 +325,11 @@ impl HdmiController {
             info: DeviceInfo::new("hdmi", DeviceType::Other),
             initialized: false,
         }
+    }
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
     }
 
     /// 创建 HDMI 控制器实例 (真实硬件模式).

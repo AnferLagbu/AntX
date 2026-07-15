@@ -291,5 +291,4 @@ mod tests {
 }
 
 // 抑制未使用导入警告 (IoMem 在 trait 定义中可能后续用于构造辅助函数)
-#[allow(dead_code)]
 fn _ensure_iomem_imported(_: IoMem) {}

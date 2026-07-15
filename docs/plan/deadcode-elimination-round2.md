@@ -179,26 +179,27 @@
 | P9 | ARM KPTI + PCP | 4 | ✅ 完成 |
 | P10 | USB/Display 驱动 | 6 | ✅ 完成 |
 | P11 | nvme/virtio 驱动 | 2 | ✅ 完成 |
-| **合计** | | **115/139** | |
+| P12 | HDMI/USB 驱动 | 6 | ✅ 完成 |
+| **合计** | | **121/139** | |
 
 ## 验证结果
 
 每批实施完成后：
 
 1. 双架构编译 0 warning 0 error ✅
-2. `audit_dead_code.py` 违规数: 139 → 24 (消除 115 项, 83%) ✅
+2. `audit_dead_code.py` 违规数: 139 → 18 (消除 121 项, 87%) ✅
 3. `audit_services_boundary.py` 通过 ✅
 4. `audit_safety_coverage.py` 通过 ✅
 5. host-tests 全部通过 ✅
 
-## 剩余项 (24 项)
+## 剩余项 (18 项)
 
 大部分为合理的开发预留：
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
-| 硬件规范常量 | ~12 | ARM VMM/Shadow Stack/HDMI 常量 |
+| 硬件规范常量 | ~8 | ARM VMM/Shadow Stack 常量 |
 | 架构级工作 (非PIE ELF/中断API) | ~3 | 需平台特定实现 |
 | 模块级预留 | ~3 | fd_alloc/barrier/pcache |
-| 其他 | ~6 | kmalloc/vga/pci/user_proc |
+| 其他 | ~4 | kmalloc/vga/pci/user_proc |
 | 调试路径 | ~6 | 需调试功能实现 |

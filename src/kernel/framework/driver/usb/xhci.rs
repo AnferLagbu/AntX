@@ -513,8 +513,7 @@ impl XhciController {
         unsafe { Some(&mut *self.port_regs.add(port)) }
     }
 
-    /// 端点错误恢复 (待 USB 错误恢复路径启用后使用)。
-    #[allow(dead_code)] // 待 USB 错误恢复路径启用后使用。
+    /// 端点错误恢复
     fn recover_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         let _ = (slot_id, ep_id);
         self.reset_controller()?;

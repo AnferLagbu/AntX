@@ -87,7 +87,6 @@ pub(super) unsafe fn enable_hdmi_tmds_output(iomem: &IoMem) {
 ///
 /// # Safety
 /// 调用方必须保证 `HDMI_TMDS_ENABLE_REG_OFFSET + 1 <= iomem.len()`.
-#[allow(dead_code)] // 待 shutdown() / mode switch 实装时启用.
 pub(super) unsafe fn disable_hdmi_tmds_output(iomem: &IoMem) {
     iomem.write_u8(HDMI_TMDS_ENABLE_REG_OFFSET, 0x00);
 }
