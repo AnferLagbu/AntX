@@ -247,11 +247,9 @@ pub fn build_request_sense_cmd(allocation_length: u8) -> [u8; 6] {
 /// 当前为**软件骨架**: 记录 Mass Storage 设备的端点信息 + 当前 SCSI tag, 提供 CBW 构造
 /// 和 CSW 解析. 真实硬件应通过 Bulk-OUT 发送 CBW, Bulk-IN 接收 Data + CSW.
 pub struct MassStorageDriver {
-    /// 设备地址 (用于 CBW 数据阶段; 当前骨架未发送, Phase E 集成时使用)
-    #[allow(dead_code)] // 保留字段, Phase E Bulk Transfer 集成时启用
+    /// 设备地址 (用于 CBW 数据阶段, Phase E Bulk Transfer 集成时使用)
     device_address: u8,
-    /// Interface number (用于 CBW index 字段; 当前骨架未发送, Phase E 集成时使用)
-    #[allow(dead_code)] // 保留字段, Phase E Bulk Transfer 集成时启用
+    /// Interface number (用于 CBW index 字段, Phase E Bulk Transfer 集成时使用)
     interface_number: u8,
     /// Bulk-IN 批量输入端点 (例如 0x81 表示 EP1 IN)
     bulk_in: u8,

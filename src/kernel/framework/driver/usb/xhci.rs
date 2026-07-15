@@ -314,8 +314,7 @@ pub struct XhciController {
     num_ports: usize,
     /// 插槽数量
     num_slots: usize,
-    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
+    /// 设备信息
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
@@ -324,7 +323,6 @@ pub struct XhciController {
     next_urb_id: u32,
     /// 待处理 URB 列表 (URB ID → caller-provided URB ID, USB-1.3).
     /// Phase E 第 4 组 Event Ring 处理器使用此映射完成 URB 完成回调.
-    #[allow(dead_code)] // 待 Phase E 第 4 组 Event Ring 处理启用
     pending_urbs: Vec<(u32, u32)>,
     /// 已分配设备地址位图 (USB-1.4).
     /// Bit 0 = 地址 0 (保留给 default address), bit 1..=254 = 设备地址.
@@ -360,6 +358,11 @@ impl XhciController {
         self.bar_base = bar_base;
         self.bar_size = bar_size;
         self
+    }
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
     }
 
     /// 初始化控制器 (USB-1.1).

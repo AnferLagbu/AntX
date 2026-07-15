@@ -183,8 +183,7 @@ pub struct DisplayManager {
     active_monitor: Option<usize>,
     /// 主显示器索引
     primary_monitor: Option<usize>,
-    /// 设备信息 (待驱动框架 Device trait 集成后使用)。
-    #[allow(dead_code)] // 待驱动框架 Device trait 集成后使用。
+    /// 设备信息
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
@@ -200,6 +199,11 @@ impl DisplayManager {
             info: DeviceInfo::new("display_manager", DeviceType::Other),
             initialized: false,
         }
+    }
+
+    /// 获取设备信息
+    pub fn get_info(&self) -> &DeviceInfo {
+        &self.info
     }
 
     /// 注册显示器

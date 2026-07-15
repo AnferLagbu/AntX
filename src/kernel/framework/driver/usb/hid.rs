@@ -291,8 +291,7 @@ impl HidProtocolType {
 /// 当前为**软件骨架**: 记录 HID 设备的协议 / 类型信息, 提供 SET_PROTOCOL Setup Packet
 /// 构造. 真实硬件应通过 Control Transfer (request_type=0x21, request=0x0B) 切换协议.
 pub struct HidDriver {
-    /// 设备地址 (用于 SETUP Data stage; 当前骨架未发送, Phase E 集成时使用)
-    #[allow(dead_code)] // 保留字段, Phase E Control Transfer 集成时启用
+    /// 设备地址 (用于 SETUP Data stage, Phase E Control Transfer 集成时使用)
     device_address: u8,
     /// Interface number
     interface_number: u8,
