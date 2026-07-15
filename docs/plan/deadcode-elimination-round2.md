@@ -176,27 +176,28 @@
 | P6 | ebpf_verifier.rs | 2 | ✅ 完成 |
 | P7 | dcache.rs (icache) | 4 | ✅ 完成 |
 | P8 | 驱动 DeviceInfo | 10 | ✅ 完成 |
-| **合计** | | **103/139** | |
+| P9 | ARM KPTI + PCP | 4 | ✅ 完成 |
+| **合计** | | **107/139** | |
 
 ## 验证结果
 
 每批实施完成后：
 
 1. 双架构编译 0 warning 0 error ✅
-2. `audit_dead_code.py` 违规数: 139 → 36 (消除 103 项, 74%) ✅
+2. `audit_dead_code.py` 违规数: 139 → 32 (消除 107 项, 77%) ✅
 3. `audit_services_boundary.py` 通过 ✅
 4. `audit_safety_coverage.py` 通过 ✅
 5. host-tests 全部通过 ✅
 
-## 剩余项 (36 项)
+## 剩余项 (32 项)
 
 大部分为合理的开发预留：
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
-| 硬件规范常量 | ~20 | ARM VMM/Shadow Stack/USB/display 常量 |
-| 架构级工作 (ARM VMM/KPTI/非PIE) | ~6 | 需平台特定实现 |
-| PCP 协议字段 | ~3 | PiMutex 优先级天花板协议 |
+| 硬件规范常量 | ~18 | ARM VMM/Shadow Stack/USB/display 常量 |
+| 架构级工作 (非PIE ELF/中断API) | ~3 | 需平台特定实现 |
 | 模块级预留 | ~3 | fd_alloc/barrier/pcache |
 | USB/驱动预留 | ~4 | xhci/mass_storage/keyboard 功能 |
+| 其他 | ~4 | credo/storage/spinlock/pci |
 | 调试路径 | ~6 | 需调试功能实现 |

@@ -165,7 +165,6 @@ struct PiMutexInner {
     chain_len: AtomicU8,
     /// v2.4: 优先级天花板 (PCP) 协议相关
     /// 当前持有者的 base_priority (用于解锁后恢复)
-    #[allow(dead_code)]
     owner_base_priority: AtomicU32,
 }
 
@@ -202,11 +201,9 @@ pub struct PiMutex<T: ?Sized> {
     inner: PiMutexInner,
     /// 初始持有者的 base_priority (用于解锁后通知撤销)
     holder_base_priority: AtomicU32,
-    /// v2.4: 互斥锁协议
-    #[allow(dead_code)]
+    /// v2.4: 互斥锁协议 (PI 或 PCP)
     protocol: PiMutexProtocol,
     /// v2.4: 优先级天花板 (仅 Pcp 模式使用)
-    #[allow(dead_code)]
     ceiling: AtomicU32,
     /// Lockdep 锁类 ID (debug 模式下使用)
     #[cfg(debug_assertions)]

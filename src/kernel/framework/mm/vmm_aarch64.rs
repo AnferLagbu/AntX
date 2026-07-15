@@ -181,8 +181,7 @@ static VMM_LOCK_RECURSIVE: AtomicBool = AtomicBool::new(false);
 pub struct Aarch64Vmm {
     /// Physical address of kernel L0 table (for TTBR1_EL1)
     kernel_l0: u64,
-    /// User page table counter
-    #[allow(dead_code)] // 待 KPTI 用户页表管理路径启用后使用。
+    /// User page table counter (KPTI 页表隔离追踪)
     next_table_id: core::sync::atomic::AtomicU64,
 }
 
@@ -721,6 +720,9 @@ impl Aarch64Vmm {
                 ptr::write_volatile(user_l0_ptr.add(i), entry);
             }
         }
+
+        // 分配唯一页表 ID (用于 KPTI 页表隔离追踪)
+        let _table_id = self.next_table_id.fetch_add(1, Ordering::Relaxed);
 
         Some(user_l0)
     }
