@@ -331,6 +331,12 @@ impl SyscallDispatch for ServicesSyscallDispatch {
             QX_LISTXATTR => as_ret(crate::kernel::services::fs::xattr::listxattr_syscall(a0, a1, a2 as usize, a4)),
             QX_REMOVEXATTR => as_ret(crate::kernel::services::fs::xattr::removexattr_syscall(a0, a1, a4)),
 
+            // ==================== 快照 (snapshot) ====================
+            QX_SNAPSHOT_CREATE => as_ret(crate::kernel::services::fs::snapshot::snapshot_create_syscall(a0)),
+            QX_SNAPSHOT_DESTROY => as_ret(crate::kernel::services::fs::snapshot::snapshot_destroy_syscall(a0)),
+            QX_SNAPSHOT_ROLLBACK => as_ret(crate::kernel::services::fs::snapshot::snapshot_rollback_syscall(a0)),
+            QX_SNAPSHOT_CLONE => as_ret(crate::kernel::services::fs::snapshot::snapshot_clone_syscall(a0, a1)),
+
             // 未迁移的 syscall — 返回 -ENOSYS 让 framework 回退处理
             _ => -38,
         }

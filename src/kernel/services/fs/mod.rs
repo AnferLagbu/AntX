@@ -30,6 +30,8 @@ pub mod procfs;
 pub mod procfs_core;
 /// 扩展属性 (xattr) 系统调用处理器
 pub mod xattr;
+/// 快照 (snapshot) 系统调用处理器
+pub mod snapshot;
 pub mod hvfs;
 pub mod ext2;
 pub mod exfat;

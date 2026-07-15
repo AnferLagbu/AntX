@@ -1381,3 +1381,19 @@ pub fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm: u64) -> i
         -38 // ENOSYS
     }
 }
+
+// ============================================================================
+// 快照 (snapshot) — framework 层
+// ============================================================================
+
+/// 从原始指针获取快照名称字符串
+///
+/// # Safety
+/// 调用方必须保证 `ptr` 指向有效的以 null 结尾的 UTF-8 字符串。
+pub fn snapshot_get_name(ptr: u64) -> alloc::string::String {
+    if ptr == 0 {
+        return alloc::string::String::new();
+    }
+    let s = ptr_to_str(ptr as *const u8);
+    alloc::string::String::from(s)
+}

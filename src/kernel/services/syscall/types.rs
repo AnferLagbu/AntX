@@ -731,6 +731,17 @@ pub const QX_LISTXATTR: u64 = 892;
 /// removexattr — 删除扩展属性
 pub const QX_REMOVEXATTR: u64 = 893;
 
+// ==================== D13: 快照 (snapshot) ====================
+
+/// snapshot_create — 创建快照
+pub const QX_SNAPSHOT_CREATE: u64 = 895;
+/// snapshot_destroy — 销毁快照
+pub const QX_SNAPSHOT_DESTROY: u64 = 896;
+/// snapshot_rollback — 回滚快照
+pub const QX_SNAPSHOT_ROLLBACK: u64 = 897;
+/// snapshot_clone — 从快照创建克隆
+pub const QX_SNAPSHOT_CLONE: u64 = 898;
+
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

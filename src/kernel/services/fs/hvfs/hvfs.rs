@@ -1678,7 +1678,7 @@ impl HvfsData {
         ]))
     }
 
-    #[allow(dead_code)] // 待快照功能集成后使用
+    /// 创建快照
     pub fn snapshot_create(&self, name: &str) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1692,7 +1692,7 @@ impl HvfsData {
         }
     }
 
-    #[allow(dead_code)] // 待快照功能集成后使用
+    /// 销毁快照
     pub fn snapshot_destroy(&self, snap_id: u64) -> i32 {
         if self.snap_mgr.destroy_snapshot(snap_id) {
             0
@@ -1701,7 +1701,7 @@ impl HvfsData {
         }
     }
 
-    #[allow(dead_code)] // 待快照功能集成后使用
+    /// 回滚快照
     pub fn snapshot_rollback(&self, snap_id: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1715,7 +1715,7 @@ impl HvfsData {
         }
     }
 
-    #[allow(dead_code)] // 待克隆功能集成后使用
+    /// 从快照创建克隆
     pub fn clone_create(&self, snap_id: u64, name: &str) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
