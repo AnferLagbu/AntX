@@ -254,7 +254,10 @@ impl VgaConsole {
         #[cfg(target_arch = "aarch64")]
         let crt: Option<IoPort> = None;
 
-        Some(Self { buffer, crt: crt? })
+        #[cfg(target_arch = "x86_64")]
+        { Some(Self { buffer, crt: crt? }) }
+        #[cfg(target_arch = "aarch64")]
+        { Some(Self { buffer }) }
     }
 
     // ── 显存操作 ──
