@@ -196,25 +196,28 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    // 创建新实例
-    for i in 0..SFD_MAX_SLOTS {
-        if !table.slots[i].used {
-            table.slots[i].used = true;
-            table.slots[i].sigmask = sigmask;
-            table.slots[i].pid = current_pid;
-            SFD_COUNT.fetch_add(1, Ordering::Relaxed);
+    // V2: 使用集中分配器获取 FD (底层使用 fd_at(SignalFd, slot))
+    let new_fd = match crate::kernel::services::proc::fd_alloc::alloc_fd(
+        crate::kernel::services::proc::fd_alloc::FdSubsystem::SignalFd,
+    ) {
+        Some(f) => f,
+        None => return Errno::EMFILE.as_ret(),
+    };
 
-            // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-            let new_fd = crate::kernel::framework::proc::fd_at(
-                crate::kernel::framework::proc::FdSubsystem::SignalFd,
-                i,
-            );
-            crate::klog_debug!(Sync, "[signalfd] Created fd={} pid={}", new_fd, current_pid);
-            return new_fd as i64;
-        }
-    }
+    let slot = match crate::kernel::services::proc::fd_alloc::idx_of(new_fd) {
+        Some((_sub, s)) => s,
+        None => return Errno::EBADF.as_ret(),
+    };
 
-    Errno::EMFILE.as_ret()
+    let mut table = SFD_TABLE.lock();
+    let s = &mut table.slots[slot];
+    s.used = true;
+    s.sigmask = sigmask;
+    s.pid = current_pid;
+    SFD_COUNT.fetch_add(1, Ordering::Relaxed);
+
+    crate::klog_debug!(Sync, "[signalfd] Created fd={} pid={}", new_fd, current_pid);
+    new_fd as i64
 }
 
 /// signalfd read — 读取一个待处理信号

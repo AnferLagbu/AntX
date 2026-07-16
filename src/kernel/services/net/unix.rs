@@ -232,6 +232,7 @@ fn alloc_socket_id() -> u32 {
     id
 }
 
+/// FD → 槽位索引反查 (V3: 使用 idx_of, FD 编号由 fd_at 计算)
 #[inline]
 fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
     match crate::kernel::framework::proc::idx_of(fd) {
@@ -240,14 +241,6 @@ fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
         }
         _ => Err(UdsError::BadFd),
     }
-}
-
-#[inline]
-fn idx_to_fd(idx: u8) -> i32 {
-    crate::kernel::framework::proc::fd_at(
-        crate::kernel::framework::proc::FdSubsystem::Uds,
-        idx as usize,
-    )
 }
 
 // ============================================================================
@@ -259,8 +252,16 @@ pub fn uds_init() {
 }
 
 pub fn uds_create(sock_type: UnixSockType) -> Result<i32, UdsError> {
+    // V2: 使用集中分配器获取 FD, 再通过 idx_of 获取槽位索引
+    let fd = crate::kernel::services::proc::fd_alloc::alloc_fd(
+        crate::kernel::services::proc::fd_alloc::FdSubsystem::Uds,
+    ).ok_or(UdsError::NoMem)?;
+
+    let (_sub, slot) = crate::kernel::services::proc::fd_alloc::idx_of(fd)
+        .ok_or(UdsError::BadFd)?;
+
     UDS_STATE.with_mut(|state| {
-        let idx = state.find_free_socket().ok_or(UdsError::NoMem)?;
+        let idx = slot as u8;
         let id = alloc_socket_id();
         let s = &mut state.sockets[idx as usize];
         s.id = id;
@@ -275,7 +276,7 @@ pub fn uds_create(sock_type: UnixSockType) -> Result<i32, UdsError> {
         s.peer_closed = false;
         s.dgram_len = 0;
         s.dgram_pending = false;
-        Ok(idx_to_fd(idx))
+        Ok(fd)
     })
 }
 
@@ -328,6 +329,14 @@ pub fn uds_listen(fd: i32) -> Result<(), UdsError> {
 }
 
 pub fn uds_accept(fd: i32) -> Result<i32, UdsError> {
+    // V2: 使用集中分配器获取新 FD
+    let new_fd = crate::kernel::services::proc::fd_alloc::alloc_fd(
+        crate::kernel::services::proc::fd_alloc::FdSubsystem::Uds,
+    ).ok_or(UdsError::NoMem)?;
+
+    let (_sub, new_slot) = crate::kernel::services::proc::fd_alloc::idx_of(new_fd)
+        .ok_or(UdsError::BadFd)?;
+
     UDS_STATE.with_mut(|state| {
         let listen_idx = fd_to_idx(fd)? as usize;
         let listen = &state.sockets[listen_idx];
@@ -345,7 +354,7 @@ pub fn uds_accept(fd: i32) -> Result<i32, UdsError> {
         }
         let client_id = listen.listen_pending[listen.listen_head as usize];
         let client_idx = state.socket_idx_by_id(client_id).ok_or(UdsError::NoMem)? as usize;
-        let new_idx = state.find_free_socket().ok_or(UdsError::NoMem)? as usize;
+        let new_idx = new_slot as usize;
         let id = alloc_socket_id();
         let ns = &mut state.sockets[new_idx];
         ns.id = id;
@@ -358,7 +367,7 @@ pub fn uds_accept(fd: i32) -> Result<i32, UdsError> {
             (state.sockets[listen_idx].listen_head + 1) % UNIX_LISTEN_BACKLOG as u8;
         state.sockets[listen_idx].listen_count -= 1;
         state.sockets[client_idx].peer = Some(id);
-        Ok(idx_to_fd(new_idx as u8))
+        Ok(new_fd)
     })
 }
 

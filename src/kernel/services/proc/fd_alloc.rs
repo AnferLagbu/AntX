@@ -51,9 +51,9 @@
 //! ## 演进
 //!
 //! - V1 (当前): 仅规划基址, alloc/free 接口预留, 现有子系统未强制改用
-//! - V2 (下一批): 各子系统 sm_alloc_fd/efd_alloc 等统一改走 `alloc_fd(FdSubsystem::X)`
+//! - V2 (部分完成): UDS/EventFd/SignalFd/TimerFd/Inotify 已迁移到 `alloc_fd(FdSubsystem::X)`, Smoltcp 待迁移
 
-// V1 占位, 待 V2 各子系统统一改走此分配器后逐项消除
+// V1 占位函数 (alloc_fd/free_fd/subsystem_of), 待 V2 各子系统统一改走此分配器后逐项消除
 #![allow(dead_code)]
 
 // ============================================================================

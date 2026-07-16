@@ -111,27 +111,29 @@ pub fn sys_eventfd(initval: u64, flags: i32) -> i64 {
 
     let semaphore = (flags & EFD_SEMAPHORE) != 0;
 
+    // V2: 使用集中分配器获取 FD
+    let fd = match crate::kernel::services::proc::fd_alloc::alloc_fd(
+        crate::kernel::services::proc::fd_alloc::FdSubsystem::EventFd,
+    ) {
+        Some(f) => f,
+        None => return Errno::EMFILE.as_ret(),
+    };
+
+    // V2: FD 编号由 alloc_fd 计算 (底层使用 fd_at(EventFd, slot))
+    let slot = match crate::kernel::services::proc::fd_alloc::idx_of(fd) {
+        Some((_sub, s)) => s,
+        None => return Errno::EBADF.as_ret(),
+    };
+
     let mut table = EFD_TABLE.lock();
+    let s = &mut table.slots[slot];
+    s.used = true;
+    s.counter = initval;
+    s.semaphore = semaphore;
+    EFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
-    // 查找空闲槽位
-    for i in 0..EFD_MAX_SLOTS {
-        if !table.slots[i].used {
-            table.slots[i].used = true;
-            table.slots[i].counter = initval;
-            table.slots[i].semaphore = semaphore;
-            EFD_COUNT.fetch_add(1, Ordering::Relaxed);
-
-            // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-            let fd = crate::kernel::framework::proc::fd_at(
-                crate::kernel::framework::proc::FdSubsystem::EventFd,
-                i,
-            );
-            crate::klog_debug!(Sync, "[eventfd] Created fd={} initval={} sem={}", fd, initval, semaphore);
-            return fd as i64;
-        }
-    }
-
-    Errno::EMFILE.as_ret() // too many open files
+    crate::klog_debug!(Sync, "[eventfd] Created fd={} initval={} sem={}", fd, initval, semaphore);
+    fd as i64
 }
 
 /// eventfd read — 读取计数器

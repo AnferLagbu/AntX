@@ -155,35 +155,36 @@ pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
+    // V2: 使用集中分配器获取 FD
+    let fd = match crate::kernel::services::proc::fd_alloc::alloc_fd(
+        crate::kernel::services::proc::fd_alloc::FdSubsystem::TimerFd,
+    ) {
+        Some(f) => f,
+        None => return Errno::EMFILE.as_ret(),
+    };
+
+    let slot = match crate::kernel::services::proc::fd_alloc::idx_of(fd) {
+        Some((_sub, s)) => s,
+        None => return Errno::EBADF.as_ret(),
+    };
+
     let mut table = TFD_TABLE.lock();
+    let s = &mut table.slots[slot];
+    s.used = true;
+    s.fd = fd;
+    s.clockid = clockid;
+    s.armed = false;
+    s.expiry_count = 0;
+    s.interval_ns = 0;
 
-    for i in 0..TFD_MAX_SLOTS {
-        if !table.slots[i].used {
-            // TD-15: 走 fd_alloc::fd_at 集中计算 FD, 避免本地基址字面量
-            let fd = crate::kernel::framework::proc::fd_at(
-                crate::kernel::framework::proc::FdSubsystem::TimerFd,
-                i,
-            );
+    // 初始化 HrTimer, 回调使用 slot index 编码
+    // SAFETY: timer 嵌入在 slot 中, 生命周期与 slot 一致
+    s.timer.init(timerfd_callback);
 
-            table.slots[i].used = true;
-            table.slots[i].fd = fd;
-            table.slots[i].clockid = clockid;
-            table.slots[i].armed = false;
-            table.slots[i].expiry_count = 0;
-            table.slots[i].interval_ns = 0;
+    TFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
-            // 初始化 HrTimer, 回调使用 slot index 编码
-            // SAFETY: timer 嵌入在 slot 中, 生命周期与 slot 一致
-            table.slots[i].timer.init(timerfd_callback);
-
-            TFD_COUNT.fetch_add(1, Ordering::Relaxed);
-
-            crate::klog_debug!(Sync, "[timerfd] Created fd={} clockid={}", fd, clockid);
-            return fd as i64;
-        }
-    }
-
-    Errno::EMFILE.as_ret()
+    crate::klog_debug!(Sync, "[timerfd] Created fd={} clockid={}", fd, clockid);
+    fd as i64
 }
 
 /// timerfd_settime — 设置定时器

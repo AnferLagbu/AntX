@@ -338,16 +338,26 @@ pub fn sys_inotify_init1(flags: i32) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    let mut instances = INOTIFY_INSTANCES.lock();
-    let (slot_idx, fd) = match instances.iter_mut().enumerate().find(|(_, i)| !i.valid) {
-        Some((idx, slot)) => {
-            slot.init(idx);
-            (idx, slot.fd())
-        }
+    // V2: 使用集中分配器获取 FD
+    let fd = match crate::kernel::services::proc::fd_alloc::alloc_fd(
+        crate::kernel::services::proc::fd_alloc::FdSubsystem::Inotify,
+    ) {
+        Some(f) => f,
         None => return Errno::EMFILE.as_ret(),
     };
 
-    let _ = slot_idx;
+    let slot_idx = match crate::kernel::services::proc::fd_alloc::idx_of(fd) {
+        Some((_sub, s)) => s,
+        None => return Errno::EBADF.as_ret(),
+    };
+
+    let mut instances = INOTIFY_INSTANCES.lock();
+    let slot = match instances.iter_mut().find(|i| !i.valid) {
+        Some(s) => s,
+        None => return Errno::EMFILE.as_ret(),
+    };
+    slot.init(slot_idx);
+
     fd as i64
 }
 
