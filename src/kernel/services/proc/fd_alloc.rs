@@ -51,10 +51,10 @@
 //! ## 演进
 //!
 //! - V1 (当前): 仅规划基址, alloc/free 接口预留, 现有子系统未强制改用
-//! - V2 (部分完成): UDS/EventFd/SignalFd/TimerFd/Inotify 已迁移到 `alloc_fd(FdSubsystem::X)`, Smoltcp 待迁移
-
-// V1 占位函数 (alloc_fd/free_fd/subsystem_of), 待 V2 各子系统统一改走此分配器后逐项消除
-#![allow(dead_code)]
+//! - V2 (完成): 所有子系统已迁移到 `alloc_fd(FdSubsystem::X)` (含 Smoltcp)
+//!
+//! V2 位图分配器支持槽位回收, 替代 V1 单调计数器.
+//! `subsystem_of` 保留供 FD 分发使用 (测试要求暴露).
 
 // ============================================================================
 // 子系统枚举
@@ -205,7 +205,7 @@ impl FdPlan {
 //
 // 使用位图跟踪每个子系统的槽位占用状态, 支持 alloc/free 循环.
 
-use core::sync::atomic::{AtomicI32, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU8, Ordering};
 
 /// 每个子系统的位图: 16 字节 = 128 位, 足够覆盖最大容量 256
 const BITMAP_SIZE: usize = 32;
@@ -270,12 +270,8 @@ pub fn subsystem_of(fd: i32) -> Option<FdSubsystem> {
 }
 
 // ============================================================================
-// V1 内部状态
+// 启动期校验
 // ============================================================================
-
-/// 各子系统的分配计数器
-static SUBSYSTEM_COUNTERS: [AtomicI32; FdSubsystem::COUNT] =
-    [const { AtomicI32::new(0) }; FdSubsystem::COUNT];
 
 // ============================================================================
 // 启动期校验
