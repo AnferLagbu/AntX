@@ -1,6 +1,8 @@
-# 死代码消除 Round 2 实施计划
+# 死代码消除 Round 2 实施计划 [归档]
 
 > 基于源码调研，通过实现功能或移除冗余注解来消除死代码，最终只保留必要的开发预留。
+>
+> **状态: [X] 完成** — 违规数 139 → 8 (消除 131 项, 94.2%)。剩余 8 项见 Round 3 计划。
 
 ## 工程计划: 死代码消除 Round 2
 
@@ -8,7 +10,7 @@
 
 - **描述**: Round 1 已消除 59 项，剩余 139 项。经调研，约 33 项为冗余注解 (项目已使用)，约 8 项为真正死代码可删除，约 18 项可通过小规模重构/功能实现消除。
 - **方案**: 分三批实施：(1) hvfs 冗余注解清理 (2) 死代码删除 + P0 重构 (3) P1 诊断函数添加
-- **状态: []**
+- **状态: [X] 已完成** — 实际消除 131 项，含 Round 3 子任务 (V2 FD 分配器迁移、V1 占位清理、冗余函数删除)
 
 ### 目标
 
@@ -182,25 +184,30 @@
 | P12 | HDMI/USB 驱动 | 6 | ✅ 完成 |
 | P13 | pcache/kmalloc/pci/proc | 4 | ✅ 完成 |
 | P14 | barrier/vga | 2 | ✅ 完成 |
-| **合计** | | **129/139** | |
+| R3-1 | V2 FD 分配器迁移 (6 子系统) | 7 | ✅ 完成 |
+| R3-2 | fd_alloc V1 占位清理 | 1 | ✅ 完成 |
+| R3-3 | vmm_switch_to_user 冗余删除 | 1 | ✅ 完成 |
+| R3-4 | VgaConsole crt cfg 修复 | 0 (非 dead code) | ✅ 完成 |
+| **合计** | | **131/139** | **94.2%** |
 
 ## 验证结果
 
 每批实施完成后：
 
 1. 双架构编译 0 warning 0 error ✅
-2. `audit_dead_code.py` 违规数: 139 → 10 (消除 129 项, 93%) ✅
+2. `audit_dead_code.py` 违规数: 139 → 8 (消除 131 项, 94.2%) ✅
 3. `audit_services_boundary.py` 通过 ✅
 4. `audit_safety_coverage.py` 通过 ✅
 5. host-tests 全部通过 ✅
 
-## 剩余项 (10 项)
+## 剩余项 (8 项 → Round 3 计划)
 
-大部分为合理的开发预留：
+全部为硬件规范常量，需通过实现对应平台特性消除：
 
-| 类别 | 数量 | 说明 |
-|------|------|------|
-| 硬件规范常量 | ~8 | ARM VMM/Shadow Stack/GDT 常量 |
-| 架构级工作 | ~1 | aarch64 用户态进入 |
-| 模块级预留 | ~1 | fd_alloc V1 占位 |
-| 调试路径 | ~6 | 需调试功能实现 |
+| 类别 | 数量 | 说明 | 消除计划 |
+|------|------|------|---------|
+| Intel CET MSR | 3 | 用户态 Shadow Stack 配置 | `deadcode-elimination-hardware-constants.md` Group S |
+| ARM MMU 属性 | 4 | 设备/非缓存/用户态映射 | 同上 Group A |
+| GDT 动态分配 | 1 | PerCpuGdt::new() 构造器 | 同上 Group G |
+
+详细消除方案见: [deadcode-elimination-hardware-constants.md](deadcode-elimination-hardware-constants.md)
