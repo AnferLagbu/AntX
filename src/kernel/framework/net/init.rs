@@ -919,10 +919,13 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
         return -E_NFILE;
     }
 
-    let fd = sm_alloc_fd();
-    if fd < 0 {
-        return -E_NFILE;
-    }
+    // V2: 使用集中分配器获取 FD
+    let fd = match crate::kernel::services::proc::fd_alloc::alloc_fd(
+        crate::kernel::services::proc::fd_alloc::FdSubsystem::Smoltcp,
+    ) {
+        Some(f) => f,
+        None => return -E_NFILE,
+    };
     let fd_idx = fd as usize;
 
     // REVAL-W W4.2.3.3 (2026-06-25): sm_socket 路径迁移到 raw::socket_open_stub.

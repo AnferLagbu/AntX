@@ -200,35 +200,58 @@ impl FdPlan {
 }
 
 // ============================================================================
-// V1 接口: alloc_fd / free_fd
+// V2 接口: alloc_fd / free_fd (支持槽位回收)
 // ============================================================================
 //
-// 当前为占位实现, V2 接入实际子系统. 提供统一的形状, 静态契约测试可基于此构建.
+// 使用位图跟踪每个子系统的槽位占用状态, 支持 alloc/free 循环.
 
-use core::sync::atomic::{AtomicI32, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU8, Ordering};
+
+/// 每个子系统的位图: 16 字节 = 128 位, 足够覆盖最大容量 256
+const BITMAP_SIZE: usize = 32;
+
+/// 全局槽位占用位图 (每个子系统一个)
+static FD_BITMAPS: [AtomicU8; FdSubsystem::COUNT * BITMAP_SIZE] =
+    [const { AtomicU8::new(0) }; FdSubsystem::COUNT * BITMAP_SIZE];
 
 /// 给定子系统分配一个全局 FD 编号
 ///
-/// V1 简化: 在该子系统的 `FdRange` 内顺序扫描首个未占用位 (用 `AtomicI32` 表达).
-/// V2 改进: 各子系统自带静态槽位表, 此接口封装"哪个子系统的哪个槽位是空闲的"映射.
+/// V2: 使用位图跟踪槽位占用, 支持 free 后回收.
 pub fn alloc_fd(sub: FdSubsystem) -> Option<i32> {
     let range = FdPlan::range_for(sub);
-    let counter = SUBSYSTEM_COUNTERS[sub as usize].fetch_add(1, Ordering::AcqRel);
-    let candidate = range.base + counter;
-    if candidate < range.end_exclusive() {
-        Some(candidate)
-    } else {
-        // 回滚
-        SUBSYSTEM_COUNTERS[sub as usize].fetch_sub(1, Ordering::AcqRel);
-        None
+    let base = range.base as usize;
+    let capacity = range.capacity as usize;
+    let bitmap_offset = sub as usize * BITMAP_SIZE;
+
+    // 扫描位图寻找空闲槽位
+    for i in 0..capacity {
+        let byte_idx = bitmap_offset + i / 8;
+        let bit_idx = i % 8;
+        let byte = FD_BITMAPS[byte_idx].load(Ordering::Acquire);
+        if byte & (1 << bit_idx) == 0 {
+            // 找到空闲槽位, 标记为占用
+            FD_BITMAPS[byte_idx].store(byte | (1 << bit_idx), Ordering::Release);
+            return Some((base + i) as i32);
+        }
     }
+    None
 }
 
 /// 释放一个 FD 编号
 ///
-/// V1 简化: 仅校验 fd ∈ FdRange, 实际未回收 (V2 接入).
+/// V2: 清除位图中的占用标记, 支持槽位回收.
 pub fn free_fd(sub: FdSubsystem, fd: i32) -> bool {
-    FdPlan::range_for(sub).contains(fd)
+    let range = FdPlan::range_for(sub);
+    if !range.contains(fd) {
+        return false;
+    }
+    let slot = (fd - range.base) as usize;
+    let bitmap_offset = sub as usize * BITMAP_SIZE;
+    let byte_idx = bitmap_offset + slot / 8;
+    let bit_idx = slot % 8;
+    let byte = FD_BITMAPS[byte_idx].load(Ordering::Acquire);
+    FD_BITMAPS[byte_idx].store(byte & !(1 << bit_idx), Ordering::Release);
+    true
 }
 
 /// 通过 FD 编号反查所属子系统
