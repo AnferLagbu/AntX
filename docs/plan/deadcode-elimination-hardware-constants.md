@@ -10,122 +10,92 @@
 
 ## 一、分类总览
 
+> 2026-07-14 更新: 源码调研发现 3 项为冗余常量 (可直接删除), 无需功能激活. 总预估降至 3-5 天.
+
 | # | 文件 | 常量/函数 | 平台 | 消除方式 | 预估工作量 |
 |---|------|----------|------|---------|-----------|
 | S1 | shadow_stack.rs:62 | `IA32_U_CET` (0x6A0) | x86_64 | 实现用户态 Shadow Stack MSR 配置 | 1-2 天 |
 | S2 | shadow_stack.rs:67 | `IA32_PL3_SSP` (0x6A4) | x86_64 | 同上 (用户态 SSP 指针) | 与 S1 合并 |
 | S3 | shadow_stack.rs:70 | `IA32_INTERRUPT_SSP_TABLE` (0x6A8) | x86_64 | 实现中断 Shadow Stack 表 | 1 天 |
-| A1 | vmm_aarch64.rs:29 | `DESC_VALID` | aarch64 | 实现页表诊断路径 | 0.5 天 |
-| A2 | vmm_aarch64.rs:36 | `MAIR_DEVICE_nGnRnE` | aarch64 | 实现设备内存映射路径 | 0.5 天 |
-| A3 | vmm_aarch64.rs:39 | `MAIR_NORMAL_NC` | aarch64 | 实现非缓存内存映射路径 | 0.5 天 |
-| A4 | aarch64/mmu.rs:27 | `PT_AP_ALL_RW` | aarch64 | 实现用户态页映射路径 | 1 天 |
-| G1 | gdt.rs:331 | `PerCpuGdt::new()` | x86_64 | GDT 动态分配重构 | 1-2 天 |
+| A1 | vmm_aarch64.rs:29 | `DESC_VALID` | aarch64 | **删除 (冗余)** — 已内嵌于 DESC_TYPE_* 的 bit 0 | 5 分钟 |
+| A2 | vmm_aarch64.rs:36 | `MAIR_DEVICE_nGnRnE` | aarch64 | **删除 (冗余)** — 与 mmu.rs `PT_ATTR_DEVICE` 重复 | 5 分钟 |
+| A3 | vmm_aarch64.rs:39 | `MAIR_NORMAL_NC` | aarch64 | **删除** — 无调用路径, 需时重新定义 | 5 分钟 |
+| A4 | aarch64/mmu.rs:27 | `PT_AP_ALL_RW` | aarch64 | **删除或整合** — 与 vmm_aarch64.rs `AP_BOTH_RW` 重复 | 5 分钟 |
+| G1 | gdt.rs:331 | `PerCpuGdt::new()` | x86_64 | **激活** — 静态初始化使用 `new()` | 10 分钟 |
 
-**总预估**: 5-7 天
+**总预估**: Batch A (30 分钟) + Batch G (10 分钟) + Batch S (2-3 天) = 2.5-3.5 天
 
 ---
 
 ## 二、分组实施
 
-### Group S: Intel CET 用户态 Shadow Stack (3 项)
+### Batch A: 冗余常量删除 (3 项) — 立即可做
 
-**目标**: 启用用户态 Shadow Stack，消除 `IA32_U_CET`、`IA32_PL3_SSP`、`IA32_INTERRUPT_SSP_TABLE` 三项 dead code。
+> 源码调研发现这 3 项是冗余定义, 可直接删除, 无需功能激活.
+
+#### A1: `DESC_VALID` (vmm_aarch64.rs:30)
+
+- **值**: `1 << 0`
+- **分析**: ARM 页表描述符 valid bit 已内嵌于所有 `DESC_TYPE_*` 常量 — `DESC_TYPE_TABLE = 0b11`, `DESC_TYPE_BLOCK = 0b01`, `DESC_TYPE_PAGE = 0b11` 的 bit 0 均为 1. 当前代码通过 `| DESC_TYPE_TABLE` 构造描述符 (line 171), valid bit 自动设置. 无代码路径需要单独的 `DESC_VALID`.
+- **消除**: 删除常量定义 + `#[allow(dead_code)]` 注解.
+
+#### A2: `MAIR_DEVICE_nGnRnE` (vmm_aarch64.rs:37)
+
+- **值**: `0`
+- **分析**: mmu.rs 已有 `PT_ATTR_DEVICE = 0` (line 25, 注释: Device-nGnRnE memory, AttrIndx=0). 两者表达同一硬件语义. vmm_aarch64.rs 当前无设备内存映射路径, 若将来需要, 应在 mmu.rs 使用 `PT_ATTR_DEVICE`.
+- **消除**: 删除常量定义 + `#[allow(dead_code)]` 注解.
+
+#### A3: `MAIR_NORMAL_NC` (vmm_aarch64.rs:40)
+
+- **值**: `2`
+- **分析**: 非缓存 Normal 内存属性. 当前无路径使用, MAIR_EL1 初始化也未配置 AttrIndx=2. 若将来需要, 需先在 `init_mair_el1()` 中配置, 然后重新定义常量.
+- **消除**: 删除常量定义 + `#[allow(dead_code)]` 注解.
+
+---
+
+### Batch B: 跨模块重复常量整合 (1 项) — 立即可做
+
+#### B1: `PT_AP_ALL_RW` (aarch64/mmu.rs:28)
+
+- **值**: `1 << 6`
+- **分析**: vmm_aarch64.rs 已有 `AP_BOTH_RW = 1 << 6` (line 45), 语义完全相同. 但两模块不同, 不能直接引用. mmu.rs 当前只映射内核 (EL1_RW), 用户页表映射尚未实装.
+- **消除 (选一)**:
+  - **方案 1 (推荐)**: 删除 `PT_AP_ALL_RW`, 将来实现用户页表时在函数内部定义或从 vmm_aarch64 re-export.
+  - **方案 2**: 在 mod.rs re-export `AP_BOTH_RW`, mmu.rs 通过 crate path 引用.
+
+---
+
+### Batch C: 功能激活 (4 项)
+
+#### Group S: Intel CET 用户态 Shadow Stack (3 项) — 2-3 天
+
+**目标**: 启用用户态 Shadow Stack.
 
 **现状**:
 - 内核态 Shadow Stack 已实现: `enable_kernel_shadow_stack()` 写 `IA32_S_CET` + `IA32_PL0_SSP`
-- 用户态 Shadow Stack 仅创建描述符 (`create_user_shadow_stack`)，未配置 MSR
-- `create_user_shadow_stack` 返回 `ShadowStack::new(0, size)` — base=0 表示未实际分配
+- 用户态 Shadow Stack 仅创建描述符 (`create_user_shadow_stack`), 未配置 MSR
 
 **方案**:
-
-1. **分配用户态 Shadow Stack 内存**:
-   - `create_user_shadow_stack` 改为通过 PMM 分配实际物理页 (当前有 TODO 注释)
-   - 返回有效的 base 地址
-
-2. **进程创建/切换时配置用户态 MSR**:
-   - 在进程创建路径 (`UserProcManager::enter` 或 ELF 加载完成后) 写入:
-     - `IA32_U_CET`: 用户态 CET 配置 (SH_STK_EN=1)
-     - `IA32_PL3_SSP`: 用户态 Shadow Stack 指针 (ShadowStack.base + ShadowStack.size)
-   - 在进程切换时 (`context_switch`) 保存/恢复这两个 MSR
-
-3. **中断 Shadow Stack 表**:
-   - 分配 N 个 Shadow Stack 用于 IST 1-7
-   - 写入 `IA32_INTERRUPT_SSP_TABLE` MSR 指向该表
-   - 在中断入口/出口切换 IST 指针
-
-**涉及文件**:
-- `framework/arch/shadow_stack.rs` — 核心实现
-- `framework/proc/user_proc.rs` — 进程创建集成
-- `framework/proc/api.rs` — 进程切换集成
+1. `create_user_shadow_stack` 改为通过 PMM 分配物理页 (当前 TODO), 写入 `IA32_U_CET` + `IA32_PL3_SSP`
+2. 进程切换时保存/恢复这两个 MSR
+3. `IA32_INTERRUPT_SSP_TABLE`: 新函数 + IDT 初始化集成
 
 **依赖**: PMM 分配 (已有), 进程切换路径 (已有)
-
 **风险**: QEMU 可能不支持 CET, 需回退路径 (已有 `try_write_cr4` 模式)
 
 ---
 
-### Group A: aarch64 MMU 用户态/设备映射 (4 项)
+#### Group G: GDT `PerCpuGdt::new()` 激活 (1 项) — 10 分钟
 
-**目标**: 实现 aarch64 用户态页映射和设备/非缓存内存映射路径，消除 4 项 dead code。
-
-**现状**:
-- `vmm_aarch64.rs` 已有完整的 4 级页表管理 (L0-L3)
-- `AP_EL1_RW` (EL1 读写) 和 `AP_BOTH_RW` (EL1+EL0 读写) 已定义
-- `PT_AP_ALL_RW` 定义在 `mmu.rs` 但未使用
-- `MAIR_DEVICE_nGnRnE` 和 `MAIR_NORMAL_NC` 定义在 `vmm_aarch64.rs` 但未使用
-- `DESC_VALID` 定义但仅用于诊断
-
-**方案**:
-
-#### A1: `DESC_VALID` — 页表诊断路径
-
-- 实现 `vmm_dump_page_table(vaddr: u64)` 函数, 遍历 L0→L3 打印每级描述符
-- 使用 `DESC_VALID` 检查描述符有效位
-- 集成到 `/proc/[pid]/page_tables` 或 debug 命令
-
-#### A2+A3: `MAIR_DEVICE_nGnRnE` + `MAIR_NORMAL_NC` — 设备/非缓存映射
-
-- 实现 `vmm_map_device(phys: u64, size: usize)` 函数, 使用 `MAIR_DEVICE_nGnRnE` 属性映射 MMIO 区域
-- 实现 `vmm_map_noncacheable(phys: u64, size: usize)` 函数, 使用 `MAIR_NORMAL_NC` 属性映射 DMA 缓冲区
-- 集成到设备驱动 MMIO 映射路径
-
-#### A4: `PT_AP_ALL_RW` — 用户态页映射
-
-- 实现 `vmm_map_user_page(table: &mut [u64; 512], vaddr: u64, paddr: u64)` 函数
-- 使用 `PT_AP_ALL_RW` 设置 EL0 可读写权限
-- 集成到 `vmm_create_user_page_table` 用户态映射路径
-
-**涉及文件**:
-- `framework/mm/vmm_aarch64.rs` — 核心实现
-- `framework/arch/aarch64/mmu.rs` — mmu.rs 中的用户态映射
-
-**依赖**: 无 (基础设施已就绪)
-
-**风险**: 低 — 所有常量和基础设施已定义, 仅需编写使用路径
-
----
-
-### Group G: GDT 动态分配重构 (1 项)
-
-**目标**: 使用 `PerCpuGdt::new()` 重构 GDT 初始化路径，消除 dead code。
+**目标**: 使用 `PerCpuGdt::new()` 替代 `MaybeUninit::uninit()` 静态初始化.
 
 **现状**:
-- `PerCpuGdt::new()` 已定义但未调用 (dead code)
-- 当前 GDT 初始化通过 `per_cpu_gdt_mut` 直接构造结构体字段
-- `PerCpuGdt` 有 `entries`/`ptr`/`tss`/`syscall`/`syscall_stack`/`ist0-3` 等字段
+- `PerCpuGdt::new()` 已是 `const fn`, 所有内部类型支持 const 构造
+- 当前 `PER_CPU_GDT` 使用 `MaybeUninit::uninit()`, 后续由 `per_cpu_gdt_mut()` 填充
 
-**方案**:
+**方案**: 将静态数组改为 `[const { MaybeUninit::new(PerCpuGdt::new()) }; PER_CPU_MAX]`, 移除 `#[allow(dead_code)]`.
 
-- 重构 per-CPU GDT 初始化: 将直接字段赋值替换为 `PerCpuGdt::new()` + 按需配置
-- 保持 GDT 加载路径不变 (`lgdt`, `lidt` 等)
-- 确保 TSS/IST 配置在 `new()` 之后正确设置
-
-**涉及文件**:
-- `framework/arch/x86_64/gdt.rs` — 核心重构
-
-**依赖**: 无
-
-**风险**: 低 — 仅初始化路径重构, 不影响运行时行为
+**风险**: 低 — `new()` 返回全零值, 与 `MaybeUninit::uninit()` + 后续填充等价.
 
 ---
 
@@ -133,14 +103,14 @@
 
 | 阶段 | Group | 工作量 | 前置条件 |
 |------|-------|--------|---------|
-| Phase 1 | Group A (ARM MMU) | 2.5 天 | 无 — 最独立, 可立即开始 |
-| Phase 2 | Group G (GDT) | 1-2 天 | 无 — 与 Phase 1 无关 |
-| Phase 3 | Group S (CET) | 2-3 天 | 无 — 但复杂度最高, 建议最后做 |
+| Phase 1 | Batch A + B (删除冗余) | 30 分钟 | 无 — 立即可做 |
+| Phase 2 | Group G (GDT) | 10 分钟 | 无 |
+| Phase 3 | Group S (CET) | 2-3 天 | Shadow Stack 物理页分配 |
 
 选择理由:
-- Group A 最独立 (4 项, aarch64 平台), 且基础设施完备
-- Group G 最小 (1 项, x86_64), 可快速完成
-- Group S 最复杂 (3 项, 涉及 MSR 写入 + 进程切换 + PMM), 建议最后集中攻关
+- Phase 1 最简单 (删除冗余), 立即可做
+- Phase 2 最小 (1 项), 快速完成
+- Phase 3 最复杂 (MSR + 进程切换 + PMM), 建议最后攻关
 
 ---
 
@@ -157,4 +127,10 @@
 
 ## 五、最终目标
 
-所有 8 项消除后, `audit_dead_code.py` 违规数降至 **0** — 内核无预留死代码, 所有硬件常量均有使用路径。
+Phase 1-2 完成后, `audit_dead_code.py` 违规数降至 **4** (仅剩 CET 3 项 + GDT 1 项已激活).
+Phase 3 完成后, 违规数降至 **0** — 内核无预留死代码, 所有硬件常量均有使用路径.
+
+**当前进度**:
+- Phase 1 (Batch A+B): [ ] 待实施 — 删除 4 项冗余常量
+- Phase 2 (Group G): [ ] 待实施 — 激活 PerCpuGdt::new()
+- Phase 3 (Group S): [ ] 待实施 — 用户态 Shadow Stack MSR 配置

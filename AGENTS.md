@@ -87,7 +87,7 @@
 | `scripts/audit_volatile_access.py`  | LTO 字段错位防线: volatile 访问检查        | 硬       |
 | `scripts/audit_static_mut.py`       | framework 层 static mut 使用审查            | 硬       |
 | `scripts/audit_public_api_docs.py`  | pub API 中文文档检查 (informational)          | 软       |
-| `scripts/audit_dead_code.py`        | dead_code 禁止 (硬件规范常量豁免)             | 硬 0     |
+| `scripts/audit_dead_code.py`        | dead_code 零容忍                          | 硬 0     |
 
 任何一项失败视为本轮未完成.
 
@@ -225,7 +225,7 @@ cargo test -p host-tests           # 等价
 | F6 | 审计全部通过 | boundary + safety + deadlock + ci/audit.sh 全量 |
 | F7 | 中文注释强制                                   | `audit_comment_language.py` 0 violations               |
 | F8 | 公共 API 中文文档注释                            | clippy `missing_docs_in_crate_items`                   |
-| F9 | 新增代码禁止 `#[allow(dead_code)]`                | `audit_dead_code.py` 硬阈值 0 (硬件规范常量豁免)          |
+| F9 | 新增代码禁止 `#[allow(dead_code)]`                | `audit_dead_code.py` 硬阈值 0 (无豁免)          |
 
 ***
 
@@ -308,6 +308,8 @@ git pull Gitee main --rebase
 
 存量代码可按渐进式策略修复 (`触及时修复` → `标记待修` → `禁止忽视` → `新代码零容忍`).
 
+**死代码零容忍**: 新增代码和预存代码一律禁止 `#[allow(dead_code)]`. 无豁免, 无例外. 硬件规范常量必须通过实现使用路径消除. 见 §6 F9.
+
 ### 10.2 文档与代码不同步
 
 当代码实装完成但对应 plan/explain 文档状态仍标 `[]` 或未更新时, 视为预存问题, 立即同步. 流程:
@@ -325,7 +327,7 @@ git pull Gitee main --rebase
 
 > **本节是 AI 实施模型下的特殊处理流程.** 用户 负责最终审查与决策, AI 负责实施. 任何 AI 输出 (代码/文档/脚本) 在合并前必须经用户审查以下清单:
 
-- **架构合规**: 未越过 §6 硬规则 (F1-F8), 未引入 services unsafe
+- **架构合规**: 未越过 §6 硬规则 (F1-F9), 未引入 services unsafe
 - **安全注释**: framework `unsafe` 块都有 `// SAFETY:` 注释 (§6 F4)
 - **决策溯源**: 关键设计选择 (方案 A/B) 有对应 commit 消息或 plan 文档记录
 - **测试覆盖**: 新增代码有单元测试, 跨模块接口有集成测试 (host-tests)
@@ -380,6 +382,7 @@ AI 输出若不通过上述审查, 视为预存问题, 必须修复后才能合�
 | 提交前忘跑审计                                      | CI 会拦, 不会合入                                       |
 | 顺手添加"灵活配置"                                   | 禁止, 准则 §0 严格适用                                    |
 | 不读 AGENTS.md §15 AI 行为准则                     | 必读! LLM 行为准则在此                                    |
+| 引入 `#[allow(dead_code)]`                        | 零容忍 (§6 F9), 必须通过实现使用路径消除                  |
 
 ***
 
@@ -483,7 +486,7 @@ make test-host
 当你的改动产生遗留项时:
 
 - 删除那些因你的修改而变成未使用的 import、变量或函数.
-- 不要删除原本就存在的死代码, 除非被明确要求.
+- **死代码零容忍**: 发现任何死代码 (包括预存的), 必须一并消除. 见 §6 F9.
 
 检验标准: 每一行改动都应当能直接追溯到用户请求.
 
