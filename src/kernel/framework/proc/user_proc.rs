@@ -416,13 +416,6 @@ pub(crate) mod raw {
         unsafe { elf_data.add(off) }
     }
 
-    /// 切换到用户页表 (aarch64 用户态进入前, 待 aarch64 进程切换启用后使用)。
-    #[allow(dead_code)] // 待 aarch64 进程切换启用后使用。
-    pub fn vmm_switch_to_user(cr3: u64) {
-        // SAFETY: cr3 来自 user proc 的 cr3 字段, 已由 vmm_create_user_page_table 创建。
-        unsafe { vmm_switch_page_table(cr3) }
-    }
-
     /// 分配内存并清零 (类似 calloc)。
     pub fn alloc_zeroed(size: u64) -> *mut u8 {
         // SAFETY: kmalloc 由 kernel allocator 提供, 调用方负责释放。
