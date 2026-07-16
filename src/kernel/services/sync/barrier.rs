@@ -16,8 +16,6 @@
 //! ## @SAFE
 //! 不含 `unsafe`. 委托 `framework::sync::Mutex` 保护内部状态.
 
-#![allow(dead_code)] // N-线程集合点, 待多线程同步场景集成后使用
-
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::Mutex;

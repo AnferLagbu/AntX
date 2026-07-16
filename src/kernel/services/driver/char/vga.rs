@@ -228,7 +228,8 @@ impl CursorPos {
 /// - volatile 语义: 防止编译器重排 MMIO/PIO
 pub struct VgaConsole {
     buffer: IoMem,
-    #[allow(dead_code)] // aarch64 上未使用 (无 PIO)
+    /// CRT 控制器端口 (仅 x86_64, aarch64 无 PIO)
+    #[cfg(target_arch = "x86_64")]
     crt: IoPort,
 }
 
