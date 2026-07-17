@@ -512,13 +512,6 @@ impl XhciController {
         // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { Some(&mut *self.port_regs.add(port)) }
     }
-
-    /// 端点错误恢复
-    fn recover_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
-        let _ = (slot_id, ep_id);
-        self.reset_controller()?;
-        self.start_controller()
-    }
 }
 
 // ============================================================================

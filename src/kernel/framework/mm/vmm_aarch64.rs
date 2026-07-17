@@ -26,17 +26,14 @@ fn phys_to_virt(phys: u64) -> u64 {
 // ─── ARM 描述符常量 ────────────────────────────────────────
 
 /// 描述符类型
-#[allow(dead_code)] // 待 ARM 页表诊断路径启用后使用。
 const DESC_VALID: u64 = 1 << 0;
 const DESC_TYPE_TABLE: u64 = 0b11; // 表描述符 (L0/L1/L2)
 const DESC_TYPE_BLOCK: u64 = 0b01; // 块描述符 (L1/L2)
 const DESC_TYPE_PAGE: u64 = 0b11; // 页描述符 (L3, 与 TABLE 位相同)
 
 /// 内存属性索引 (与 mmu.rs 中 MAIR_EL1 设定对应)
-#[allow(dead_code)] // 待 ARM 设备内存映射路径启用后使用。
 const MAIR_DEVICE_nGnRnE: u64 = 0; // Device memory
 const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
-#[allow(dead_code)] // 待 ARM 非缓存内存映射路径启用后使用。
 const MAIR_NORMAL_NC: u64 = 2; // Normal non-cacheable
 const MAIR_USER_NORMAL: u64 = 4; // Normal WBWA for user pages
 
@@ -1008,4 +1005,82 @@ pub fn get_current_pml4() -> u64 {
     } else {
         get_vmm().kernel_l0
     }
+}
+
+// ============================================================================
+// 诊断和页表查询 API
+// ============================================================================
+
+/// 检查描述符是否有效 (valid bit)
+pub fn is_desc_valid(descriptor: u64) -> bool {
+    descriptor & DESC_VALID != 0
+}
+
+/// 获取描述符类型
+pub fn desc_type(descriptor: u64) -> u64 {
+    descriptor & 0x3
+}
+
+/// 检查描述符是否为表描述符
+pub fn is_desc_table(descriptor: u64) -> bool {
+    (descriptor & 0x3) == DESC_TYPE_TABLE
+}
+
+/// 检查描述符是否为块描述符
+pub fn is_desc_block(descriptor: u64) -> bool {
+    (descriptor & 0x3) == DESC_TYPE_BLOCK
+}
+
+/// 检查描述符是否为页描述符
+pub fn is_desc_page(descriptor: u64) -> bool {
+    (descriptor & 0x3) == DESC_TYPE_PAGE
+}
+
+/// 获取描述符中的物理地址 (去除属性位)
+pub fn desc_physical_addr(descriptor: u64) -> u64 {
+    descriptor & 0x0000_FFFF_FFFF_F000
+}
+
+/// 检查描述符是否为设备内存映射 (MAIR index = 0)
+pub fn is_desc_device_memory(descriptor: u64) -> bool {
+    let mair_idx = (descriptor >> 2) & 0x7;
+    mair_idx == MAIR_DEVICE_nGnRnE as u64
+}
+
+/// 检查描述符是否为非缓存 Normal 内存 (MAIR index = 2)
+pub fn is_desc_non_cacheable(descriptor: u64) -> bool {
+    let mair_idx = (descriptor >> 2) & 0x7;
+    mair_idx == MAIR_NORMAL_NC as u64
+}
+
+/// 诊断页表条目
+pub fn diagnose_descriptor(descriptor: u64, level: u8) {
+    if !is_desc_valid(descriptor) {
+        crate::klog_ffi!(
+            klog_ffi_info,
+            "[VMM] L{} descriptor 0x{:016x}: invalid (valid=0)",
+            level, descriptor
+        );
+        return;
+    }
+
+    let type_str = match desc_type(descriptor) {
+        0b00 => "invalid",
+        0b01 => "block",
+        0b10 => "reserved",
+        0b11 => "table/page",
+        _ => "unknown",
+    };
+
+    let phys = desc_physical_addr(descriptor);
+    let mair_idx = (descriptor >> 2) & 0x7;
+    let ap = (descriptor >> 6) & 0x3;
+    let af = (descriptor >> 10) & 0x1;
+    let xn = (descriptor >> 54) & 0x1;
+
+    crate::klog_ffi!(
+        klog_ffi_info,
+        "[VMM] L{} descriptor 0x{:016x}: type={} phys=0x{:x} mair={} ap={} af={} xn={}",
+        level, descriptor, type_str, phys, mair_idx, ap, af, xn
+    );
 }

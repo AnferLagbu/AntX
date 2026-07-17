@@ -319,13 +319,6 @@ pub fn restore_interrupts(flags: &IrqSaveFlags) {
     crate::arch!(interrupt_restore(flags.0 as usize));
 }
 
-/// 启用中断
-///
-/// 无条件启用中断 (与 disable/restore 对称)。
-fn enable_interrupts() {
-    crate::arch!(interrupt_enable());
-}
-
 // ============================================================================
 // 内存屏障辅助函数
 // ============================================================================

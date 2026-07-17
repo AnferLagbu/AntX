@@ -36,20 +36,15 @@ const APIC_TIMER_DCR: u32 = 0x3E0;
 const SVR_ENABLE: u32 = 1 << 8;
 const LVT_MASK: u32 = 1 << 16;
 const LVT_TIMER_PERIODIC: u32 = 1 << 17;
-// LVT 投递模式: 规范定义, 待 SMI/NMI 中断路由特性启用后使用。
-#[allow(dead_code)] // 规范定义, 待 LVT SMI 投递模式启用后使用。
+// LVT 投递模式
 const LVT_DELIVERY_FIXED: u32 = 0x000;
-#[allow(dead_code)] // 规范定义, 待 LVT SMI 投递模式启用后使用。
 const LVT_DELIVERY_SMI: u32 = 0x200;
-#[allow(dead_code)] // 规范定义, 待 LVT NMI 投递模式启用后使用。
 const LVT_DELIVERY_NMI: u32 = 0x400;
 const LVT_DELIVERY_EXTINT: u32 = 0x700;
 
 const ICR_ASSERT: u64 = 1 << 14;
-// ICR 模式位: 规范定义, 待 IPI 广播/电平触发特性启用后使用。
-#[allow(dead_code)] // 规范定义, 待 IPI 电平触发模式启用后使用。
+// ICR 模式位
 const ICR_LEVEL: u64 = 1 << 15;
-#[allow(dead_code)] // 规范定义, 待 IPI 广播模式启用后使用。
 const ICR_BROADCAST: u64 = 1 << 19;
 const ICR_ALL_EXCLUDE_SELF: u64 = 1 << 18 | 1 << 19;
 
@@ -303,4 +298,82 @@ pub extern "C" fn apic_set_timer_count(count: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_calibrate_timer(pit_hz: u64, target_ms: u64) -> u64 {
     calibrate_timer(pit_hz, target_ms)
+}
+
+// ============================================================================
+// LVT 配置 API
+// ============================================================================
+
+/// 配置 LVT LINT0 为指定投递模式
+pub fn configure_lint0(mode: u32) {
+    if is_initialized() {
+        apic_write(APIC_LVT_LINT0, mode);
+    }
+}
+
+/// 配置 LVT LINT1 为指定投递模式
+pub fn configure_lint1(mode: u32) {
+    if is_initialized() {
+        apic_write(APIC_LVT_LINT1, mode);
+    }
+}
+
+/// 获取 Fixed 投递模式常量
+pub fn delivery_fixed() -> u32 {
+    LVT_DELIVERY_FIXED
+}
+
+/// 获取 SMI 投递模式常量
+pub fn delivery_smi() -> u32 {
+    LVT_DELIVERY_SMI
+}
+
+/// 获取 NMI 投递模式常量
+pub fn delivery_nmi() -> u32 {
+    LVT_DELIVERY_NMI
+}
+
+/// 获取 ExtINT 投递模式常量
+pub fn delivery_extint() -> u32 {
+    LVT_DELIVERY_EXTINT
+}
+
+// ============================================================================
+// ICR 配置 API
+// ============================================================================
+
+/// 发送带 level 触发模式的 IPI
+pub fn send_ipi_level(apic_id: u8, vector: u8) {
+    if !is_initialized() {
+        return;
+    }
+    apic_write(APIC_ICR_HIGH, (apic_id as u32) << 24);
+    apic_write(
+        APIC_ICR_LOW,
+        vector as u32 | ICR_ASSERT as u32 | ICR_LEVEL as u32,
+    );
+    while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
+}
+
+/// 发送带 broadcast 模式的 IPI
+pub fn broadcast_ipi_level(vector: u8) {
+    if !is_initialized() {
+        return;
+    }
+    apic_write(APIC_ICR_HIGH, 0);
+    apic_write(
+        APIC_ICR_LOW,
+        vector as u32 | ICR_ALL_EXCLUDE_SELF as u32 | ICR_ASSERT as u32 | ICR_LEVEL as u32,
+    );
+    while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
+}
+
+/// 获取 ICR_LEVEL 常量
+pub fn icr_level() -> u64 {
+    ICR_LEVEL
+}
+
+/// 获取 ICR_BROADCAST 常量
+pub fn icr_broadcast() -> u64 {
+    ICR_BROADCAST
 }

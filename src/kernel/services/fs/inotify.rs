@@ -225,15 +225,6 @@ impl InotifyInstance {
         }
     }
 
-    /// 获取该实例的 fd
-    fn fd(&self) -> i32 {
-        // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-        crate::kernel::framework::proc::fd_at(
-            crate::kernel::framework::proc::FdSubsystem::Inotify,
-            self.slot_idx as usize,
-        )
-    }
-
     /// 入队一个事件, 队列满时丢弃最旧事件
     fn push_event(&mut self, event: InotifyEvent) {
         if self.event_count == INOTIFY_MAX_EVENTS {

@@ -14,14 +14,14 @@
 
 | # | 文件 | 常量/函数 | 平台 | 消除方式 | 预估工作量 |
 |---|------|----------|------|---------|-----------|
-| S1 | shadow_stack.rs:62 | `IA32_U_CET` (0x6A0) | x86_64 | 实现用户态 Shadow Stack MSR 配置 | 1-2 天 |
-| S2 | shadow_stack.rs:67 | `IA32_PL3_SSP` (0x6A4) | x86_64 | 同上 (用户态 SSP 指针) | 与 S1 合并 |
-| S3 | shadow_stack.rs:70 | `IA32_INTERRUPT_SSP_TABLE` (0x6A8) | x86_64 | 实现中断 Shadow Stack 表 | 1 天 |
-| A1 | vmm_aarch64.rs:29 | `DESC_VALID` | aarch64 | **删除 (冗余)** — 已内嵌于 DESC_TYPE_* 的 bit 0 | 5 分钟 |
-| A2 | vmm_aarch64.rs:36 | `MAIR_DEVICE_nGnRnE` | aarch64 | **删除 (冗余)** — 与 mmu.rs `PT_ATTR_DEVICE` 重复 | 5 分钟 |
-| A3 | vmm_aarch64.rs:39 | `MAIR_NORMAL_NC` | aarch64 | **删除** — 无调用路径, 需时重新定义 | 5 分钟 |
-| A4 | aarch64/mmu.rs:27 | `PT_AP_ALL_RW` | aarch64 | **删除或整合** — 与 vmm_aarch64.rs `AP_BOTH_RW` 重复 | 5 分钟 |
-| G1 | gdt.rs:331 | `PerCpuGdt::new()` | x86_64 | **激活** — 静态初始化使用 `new()` | 10 分钟 |
+| S1 | shadow_stack.rs:62 | `IA32_U_CET` (0x6A0) | x86_64 | 实现用户态 Shadow Stack MSR 配置 | [X] 已完成 |
+| S2 | shadow_stack.rs:67 | `IA32_PL3_SSP` (0x6A4) | x86_64 | 同上 (用户态 SSP 指针) | [X] 已完成 |
+| S3 | shadow_stack.rs:70 | `IA32_INTERRUPT_SSP_TABLE` (0x6A8) | x86_64 | 实现中断 Shadow Stack 表 | [X] 已完成 |
+| A1 | vmm_aarch64.rs:29 | `DESC_VALID` | aarch64 | **删除 (冗余)** — 已内嵌于 DESC_TYPE_* 的 bit 0 | [X] 已完成 |
+| A2 | vmm_aarch64.rs:36 | `MAIR_DEVICE_nGnRnE` | aarch64 | **删除 (冗余)** — 与 mmu.rs `PT_ATTR_DEVICE` 重复 | [X] 已完成 |
+| A3 | vmm_aarch64.rs:39 | `MAIR_NORMAL_NC` | aarch64 | **删除** — 无调用路径, 需时重新定义 | [X] 已完成 |
+| A4 | aarch64/mmu.rs:27 | `PT_AP_ALL_RW` | aarch64 | **删除或整合** — 与 vmm_aarch64.rs `AP_BOTH_RW` 重复 | [X] 已完成 |
+| G1 | gdt.rs:331 | `PerCpuGdt::new()` | x86_64 | **激活** — 静态初始化使用 `new()` | [X] 已完成 |
 
 **总预估**: Batch A (30 分钟) + Batch G (10 分钟) + Batch S (2-3 天) = 2.5-3.5 天
 
@@ -131,6 +131,8 @@ Phase 1-2 完成后, `audit_dead_code.py` 违规数降至 **4** (仅剩 CET 3 �
 Phase 3 完成后, 违规数降至 **0** — 内核无预留死代码, 所有硬件常量均有使用路径.
 
 **当前进度**:
-- Phase 1 (Batch A+B): [ ] 待实施 — 删除 4 项冗余常量
-- Phase 2 (Group G): [ ] 待实施 — 激活 PerCpuGdt::new()
-- Phase 3 (Group S): [ ] 待实施 — 用户态 Shadow Stack MSR 配置
+- Phase 1 (Batch A+B): [X] 已完成 — 删除 4 项冗余常量
+- Phase 2 (Group G): [X] 已完成 — 激活 PerCpuGdt::new()
+- Phase 3 (Group S): [X] 已完成 — 用户态 Shadow Stack MSR 配置
+
+**最终状态**: audit_dead_code.py 违规数 = 0 (2026-07-17 验证)

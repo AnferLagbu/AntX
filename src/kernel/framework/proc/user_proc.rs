@@ -22,7 +22,6 @@ unsafe extern "C" {
     fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
     fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
     fn vmm_ensure_path_user(vaddr: u64);
-    fn vmm_switch_page_table(table: u64);
     fn vmm_destroy_page_table(cr3: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
     fn memset(s: *mut u8, c: i32, n: u64);
@@ -220,18 +219,6 @@ pub(crate) mod raw {
             unsafe {
                 (*self.0).stack_bottom.store(v, Ordering::SeqCst);
             }
-        }
-
-        #[inline(always)]
-        pub fn load_state(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).state.load(Ordering::SeqCst) }
-        }
-
-        /// 获取进程状态 (诊断接口)
-        #[inline(always)]
-        pub fn get_state(&self) -> u32 {
-            self.load_state()
         }
 
         #[inline(always)]

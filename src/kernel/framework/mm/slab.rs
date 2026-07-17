@@ -125,11 +125,6 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-        pub fn is_null(self) -> bool {
-            self.0.is_null()
-        }
-
-        #[inline(always)]
         pub fn start_addr(&self) -> *mut u8 {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).start_addr }

@@ -180,15 +180,6 @@ impl UdsState {
         }
     }
 
-    fn find_free_socket(&self) -> Option<u8> {
-        for (i, s) in self.sockets.iter().enumerate() {
-            if s.id == 0 {
-                return Some(i as u8);
-            }
-        }
-        None
-    }
-
     fn find_free_path(&self) -> Option<u8> {
         for (i, p) in self.paths.iter().enumerate() {
             if !p.used {

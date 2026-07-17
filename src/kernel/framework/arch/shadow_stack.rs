@@ -59,15 +59,12 @@ mod x86_msrs {
     /// CR4 第23位 = CET 启用
     pub const CR4_CET_BIT: u64 = 1 << 23;
     /// IA32_U_CET: 用户态 CET 配置
-    #[allow(dead_code)] // 待用户态 Shadow Stack 启用后使用。
     pub const IA32_U_CET: u32 = 0x6A0;
     /// IA32_S_CET: 内核态 CET 配置
     pub const IA32_S_CET: u32 = 0x6A2;
     /// IA32_PL3_SSP: 用户态 Shadow Stack 指针
-    #[allow(dead_code)] // 待用户态 Shadow Stack 启用后使用。
     pub const IA32_PL3_SSP: u32 = 0x6A4;
     /// IA32_INTERRUPT_SSP_TABLE: 中断 Shadow Stack 表
-    #[allow(dead_code)] // 待中断 Shadow Stack 切换启用后使用。
     pub const IA32_INTERRUPT_SSP_TABLE: u32 = 0x6A8;
     /// IA32_PL0_SSP: 内核态 Shadow Stack 指针
     pub const IA32_PL0_SSP: u32 = 0x6A5;
@@ -322,9 +319,107 @@ impl CetSubsystem {
             return None;
         }
         let actual_size = if size == 0 { SHADOW_STACK_DEFAULT_SIZE } else { size };
-        // TODO(TRACK-5D8B23): 分配用户态 Shadow Stack 物理页
-        // 当前: 返回描述符, base=0 表示未实际分配
-        Some(ShadowStack::new(0, actual_size as u64))
+
+        // 分配 Shadow Stack 物理页
+        let pages_needed = (actual_size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+        let phys_addr = crate::kernel::framework::mm::pmm_alloc_pages_phys(pages_needed)?;
+
+        // 将物理地址转换为内核虚拟地址
+        let virt_addr = phys_addr.as_u64() + crate::kernel::framework::mm::KERNEL_BASE;
+
+        // 创建 Shadow Stack 描述符
+        let ss = ShadowStack::new(virt_addr, actual_size as u64);
+        ss.activate();
+
+        // 配置用户态 MSR (仅在进程切换时实际写入)
+        // 当前仅记录配置信息, 实际 MSR 写入在进程切换时进行
+        #[cfg(target_arch = "x86_64")]
+        {
+            // IA32_U_CET: 启用用户态 Shadow Stack
+            // Bit 0 = SH_STK_EN (Shadow Stack 启用)
+            // Bit 1 = WR_SHSTK_EN (WRSS 启用)
+            let u_cet_val: u64 = 0x3; // SH_STK_EN | WR_SHSTK_EN
+
+            // IA32_PL3_SSP: 设置用户态 Shadow Stack 指针
+            let pl3_ssp_val = virt_addr + actual_size as u64; // 栈从高向低增长
+
+            crate::klog_ffi!(
+                klog_ffi_info,
+                "[CET] user shadow stack created: base=0x{:x}, size={}, U_CET=0x{:x}, PL3_SSP=0x{:x}",
+                virt_addr, actual_size, u_cet_val, pl3_ssp_val
+            );
+        }
+
+        Some(ss)
+    }
+
+    /// 配置用户态 CET MSR (在进入用户态前调用)
+    ///
+    /// 写入 IA32_U_CET 和 IA32_PL3_SSP MSR, 启用用户态 Shadow Stack.
+    /// SAFETY: 调用方必须确保:
+    /// - CET 已初始化 (caps.shadow_stack_enabled = true)
+    /// - ssp 指向有效的 Shadow Stack 内存
+    /// - 仅在从内核态切换到用户态前调用
+    pub unsafe fn configure_user_cet_msr(&self, ssp: u64) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !self.caps.lock().shadow_stack_enabled {
+                return;
+            }
+
+            // IA32_U_CET: 启用用户态 Shadow Stack
+            // Bit 0 = SH_STK_EN (Shadow Stack 启用)
+            // Bit 1 = WR_SHSTK_EN (WRSS 启用)
+            let u_cet_val: u64 = 0x3;
+
+            // SAFETY: 写入 IA32_U_CET 配置用户态 CET
+            unsafe {
+                crate::kernel::framework::cpu::msr::write_msr(
+                    x86_msrs::IA32_U_CET, u_cet_val
+                );
+            }
+
+            // SAFETY: 写入 IA32_PL3_SSP 设置用户态 Shadow Stack 指针
+            unsafe {
+                crate::kernel::framework::cpu::msr::write_msr(
+                    x86_msrs::IA32_PL3_SSP, ssp
+                );
+            }
+
+            crate::klog_ffi!(
+                klog_ffi_info,
+                "[CET] user MSR configured: U_CET=0x{:x}, PL3_SSP=0x{:x}",
+                u_cet_val, ssp
+            );
+        }
+    }
+
+    /// 配置中断 Shadow Stack 表 (IDT 集成)
+    ///
+    /// 写入 IA32_INTERRUPT_SSP_TABLE MSR, 设置中断时使用的 Shadow Stack 表.
+    /// SAFETY: 调用方必须确保:
+    /// - CET 已初始化
+    /// - table_addr 指向有效的 SSP 表内存 (16 字节对齐)
+    pub unsafe fn configure_interrupt_ssp_table(&self, table_addr: u64) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !self.caps.lock().shadow_stack {
+                return;
+            }
+
+            // SAFETY: 写入 IA32_INTERRUPT_SSP_TABLE 设置中断 Shadow Stack 表
+            unsafe {
+                crate::kernel::framework::cpu::msr::write_msr(
+                    x86_msrs::IA32_INTERRUPT_SSP_TABLE, table_addr
+                );
+            }
+
+            crate::klog_ffi!(
+                klog_ffi_info,
+                "[CET] interrupt SSP table configured: addr=0x{:x}",
+                table_addr
+            );
+        }
     }
 
     /// 获取功能支持

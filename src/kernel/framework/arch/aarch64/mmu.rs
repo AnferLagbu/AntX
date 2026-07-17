@@ -24,7 +24,6 @@ const PT_AF: u64 = 1 << 10; // Access Flag
 const PT_ATTR_NORMAL: u64 = (0b0100 << 2) | (0b0100 << 8); // Normal memory, Inner/Outer WBWA
 const PT_ATTR_DEVICE: u64 = 0; // Device-nGnRnE memory (AttrIndx=0, MAIR[0]=0x44)
 const PT_AP_EL1_RW: u64 = 0 << 6; // EL1 read/write
-#[allow(dead_code)] // 待 ARM 用户态页映射路径启用后使用。
 const PT_AP_ALL_RW: u64 = 1 << 6; // EL1+EL0 read/write
 
 const L2_BLOCK_SIZE: u64 = 0x200000; // 2MB (L2 block at 4KB granule)
@@ -286,4 +285,55 @@ pub fn read_far() -> u64 {
         core::arch::asm!("mrs {}, far_el1", out(reg) val);
     }
     val
+}
+
+// ============================================================================
+// 页表权限查询 API
+// ============================================================================
+
+/// 检查页表条目是否允许 EL0 (用户态) 访问
+pub fn allows_el0_access(descriptor: u64) -> bool {
+    let ap = (descriptor >> 6) & 0x3;
+    // AP[1] = 1 表示 EL0 也可访问
+    ap & 0x2 != 0
+}
+
+/// 获取页表条目的访问权限描述
+pub fn describe_ap(descriptor: u64) -> &'static str {
+    let ap = (descriptor >> 6) & 0x3;
+    match ap {
+        0b00 => "EL1 RW, EL0 none",
+        0b01 => "EL1 RW, EL0 RW",
+        0b10 => "EL1 RO, EL0 none",
+        0b11 => "EL1 RO, EL0 RO",
+        _ => "unknown",
+    }
+}
+
+/// 创建用户态可读写的页表条目 (使用 PT_AP_ALL_RW)
+pub fn make_user_rw_entry(phys_addr: u64, attr: u64) -> u64 {
+    phys_addr | PT_TYPE_BLOCK | PT_AF | attr | PT_AP_ALL_RW
+}
+
+/// 创建内核态可读写的页表条目 (使用 PT_AP_EL1_RW)
+pub fn make_kernel_rw_entry(phys_addr: u64, attr: u64) -> u64 {
+    phys_addr | PT_TYPE_BLOCK | PT_AF | attr | PT_AP_EL1_RW
+}
+
+/// 创建用户态只读的页表条目
+pub fn make_user_ro_entry(phys_addr: u64, attr: u64) -> u64 {
+    phys_addr | PT_TYPE_BLOCK | PT_AF | attr | 0x3 << 6 // AP_EL1_RO | AP_EL0_RO
+}
+
+/// 诊断页表条目权限
+pub fn diagnose_permission(descriptor: u64, label: &str) {
+    let ap = (descriptor >> 6) & 0x3;
+    let af = (descriptor >> 10) & 0x1;
+    let xn = (descriptor >> 54) & 0x1;
+
+    crate::klog_ffi!(
+        klog_ffi_info,
+        "[MMU] {} desc=0x{:016x}: ap={} af={} xn={} ({})",
+        label, descriptor, ap, af, xn, describe_ap(descriptor)
+    );
 }

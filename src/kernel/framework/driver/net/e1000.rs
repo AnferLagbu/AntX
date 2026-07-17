@@ -88,7 +88,6 @@ const E1000_ICR: u32 = 0x00C0;
 const E1000_IMS: u32 = 0x00D0;
 const E1000_ICR_LSC: u32 = 1 << 2;
 const E1000_ICR_RXDMT0: u32 = 1 << 4;
-#[allow(dead_code)] // 规范定义, 待接收溢出中断处理启用后使用。
 const E1000_ICR_RXO: u32 = 1 << 6;
 const E1000_ICR_RXT0: u32 = 1 << 7;
 
@@ -833,6 +832,14 @@ impl E1000Device {
         if icr & E1000_ICR_LSC != 0 {
             self.link_change_count += 1;
             klog_info!(Net, "e1000: link status change");
+        }
+
+        // 处理接收溢出中断
+        if icr & E1000_ICR_RXO != 0 {
+            klog_warn!(Net, "e1000: RX buffer overflow, clearing");
+            // 清除 RDT 以恢复接收
+            let rdt = self.iomem.as_ref().unwrap().read_u32(E1000_RDT as usize);
+            self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, rdt);
         }
 
         if icr & (E1000_ICR_RXT0 | E1000_ICR_RXDMT0) != 0 {

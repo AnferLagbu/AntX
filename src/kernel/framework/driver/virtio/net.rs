@@ -55,12 +55,6 @@ const NET_CONFIG_STATUS: usize = 0x06; // 2 字节
 
 const RX_BUFFER_SIZE: usize = 2048;
 
-// ── QEMU virt: virtio-net MMIO 基址 ──
-
-/// QEMU virt aarch64 将 virtio-net 放在 VIRTIO_MMIO_BASE (第一个设备).
-/// virtio-net 设备 ID 为 1, probe_all() 将发现它.
-const VIRTIO_NET_MMIO_BASE_HINT: u64 = super::VIRTIO_MMIO_BASE;
-
 /// 带 virtqueue 的 virtio-net 设备.
 pub struct VirtioNet {
     /// MMIO 设备传输引用.

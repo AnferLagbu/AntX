@@ -317,40 +317,6 @@ impl DCache {
         }
     }
 
-    /// 失效指定 (parent_ino, name) 的条目
-    fn invalidate_entry(&mut self, parent_ino: u32, name: &str) {
-        if name.is_empty() {
-            return;
-        }
-
-        let hash = Self::hash_key(parent_ino, name);
-        let start = (hash % DCACHE_SIZE as u64) as usize;
-
-        for distance in 0..DCACHE_SIZE {
-            let idx = (start + distance) % DCACHE_SIZE;
-            let entry = &mut self.entries[idx];
-
-            if !entry.valid && entry.parent_ino == EMPTY_INO {
-                return;
-            }
-
-            if entry.probe_distance < distance as u8 {
-                return;
-            }
-
-            if entry.valid
-                && entry.parent_ino == parent_ino
-                && entry.name_len as usize == name.len()
-                && &entry.name[..entry.name_len as usize] == name.as_bytes()
-            {
-                entry.valid = false;
-                entry.parent_ino = EMPTY_INO;
-                self.count -= 1;
-                return;
-            }
-        }
-    }
-
     /// 清空所有缓存
     fn flush(&mut self) {
         for entry in self.entries.iter_mut() {
@@ -528,13 +494,6 @@ impl ICache {
     fn ref_inc(&mut self, ino: u32) {
         if let Some(idx) = self.lookup_index(ino) {
             self.entries[idx].ref_count = self.entries[idx].ref_count.saturating_add(1);
-        }
-    }
-
-    /// 减少引用计数
-    fn ref_dec(&mut self, ino: u32) {
-        if let Some(idx) = self.lookup_index(ino) {
-            self.entries[idx].ref_count = self.entries[idx].ref_count.saturating_sub(1);
         }
     }
 

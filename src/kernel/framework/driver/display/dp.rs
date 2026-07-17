@@ -52,9 +52,6 @@ mod aux_address {
     pub const LANE_ALIGN_STATUS_UPDATED: u16 = 0x0206;
     /// 接收器请求的 voltage swing / pre-emphasis 调整 (LANE0/1)
     pub const ADJUST_REQ_LANE0_1: u16 = 0x0207;
-    /// 接收器请求的 voltage swing / pre-emphasis 调整 (LANE2/3, 4-lane 配置)
-    /// 当前 phase 1/2 未应用 4-lane ADJUST_REQ_LANE2_3 (phase 1 仅检查 LANE2/3_STATUS).
-    pub const ADJUST_REQ_LANE2_3: u16 = 0x0208;
 }
 
 /// DP HPD (Hot Plug Detect) 状态寄存器偏移。

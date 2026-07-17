@@ -238,11 +238,6 @@ impl<T: Default + Copy> RingBuffer<T> {
         self.count == 0
     }
 
-    /// 缓冲区是否已满
-    pub(crate) fn is_full(&self) -> bool {
-        self.count >= SERIAL_BUFFER_SIZE
-    }
-
     pub(crate) fn len(&self) -> usize {
         self.count
     }

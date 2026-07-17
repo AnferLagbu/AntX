@@ -326,9 +326,6 @@ struct PerCpuGdt {
 }
 
 impl PerCpuGdt {
-    // per-CPU 初始化预留: 当前通过 per_cpu_gdt_mut 直接构造,
-    // 待 GDT 动态分配重构后启用。
-    #[allow(dead_code)] // 待 GDT 动态分配重构后启用。
     const fn new() -> Self {
         Self {
             entries: [GdtEntry::null(); GDT_MAX_ENTRIES],
@@ -349,7 +346,7 @@ impl PerCpuGdt {
 // ============================================================================
 
 static mut PER_CPU_GDT: [core::mem::MaybeUninit<PerCpuGdt>; PER_CPU_MAX] =
-    [const { core::mem::MaybeUninit::uninit() }; PER_CPU_MAX];
+    [const { core::mem::MaybeUninit::new(PerCpuGdt::new()) }; PER_CPU_MAX];
 
 // ============================================================================
 // 内部辅助函数

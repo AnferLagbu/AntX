@@ -20,37 +20,28 @@ const GICR_SGI_BASE: u64 = 0x080B_0000;
 
 /// GICD 寄存器偏移
 const GICD_CTLR: u64 = 0x0000; // Distributor Control
-#[allow(dead_code)] // 规范定义, 待 GIC 中断类型探测启用后使用。
 const GICD_TYPER: u64 = 0x0008; // Type
-#[allow(dead_code)] // 规范定义, 待 GIC 实现者 ID 查询启用后使用。
 const GICD_IIDR: u64 = 0x000C; // Implementer ID
 const GICD_IGROUPR: u64 = 0x0080; // Interrupt Group (0-31)
-#[allow(dead_code)] // 规范定义, 待 GIC 中断 Set-Enable 启用后使用。
 const GICD_ISENABLER: u64 = 0x0100; // Interrupt Set-Enable (0-31)
-#[allow(dead_code)] // 规范定义, 待 GIC 中断 Set-Pending 启用后使用。
 const GICD_ISPENDR: u64 = 0x0200; // Interrupt Set-Pending
 const GICD_IPRIORITYR: u64 = 0x0400; // Interrupt Priority (8-bit each)
 const GICD_ITARGETSR: u64 = 0x0800; // Interrupt Target
-#[allow(dead_code)] // 规范定义, 待 GIC 中断配置 (level/edge) 启用后使用。
 const GICD_ICFGR: u64 = 0x0C00; // Interrupt Configuration (level/edge)
 
 /// GICR 寄存器偏移 (SGI + PPI)
 const GICR_CTLR: u64 = 0x0000; // Redistributor Control
 const GICR_WAKER: u64 = 0x0014; // Wake
-#[allow(dead_code)] // 规范定义, 待 GICR SGI/PPI 分组启用后使用。
 const GICR_IGROUPR0: u64 = 0x0080; // Group for SGIs/PPIs
 pub const GICR_ISENABLER0: u64 = 0x0100; // Enable for SGIs/PPIs
 const GICR_IPRIORITYR: u64 = 0x0400; // Priority for SGIs/PPIs
-#[allow(dead_code)] // 规范定义, 待 GICR PPI 配置启用后使用。
 const GICR_ICFGR1: u64 = 0x0C04; // Configuration for PPIs
 
 /// CPU Interface 寄存器 (系统寄存器, ICC_*)
 /// 通过 MRS/MSR 访问
 
 // SPIs 范围
-#[allow(dead_code)] // 规范定义, 待 GIC 中断号范围校验启用后使用。
 const PPI_BASE: u32 = 16;
-#[allow(dead_code)] // 规范定义, 待 GIC 中断号范围校验启用后使用。
 const SPI_BASE: u32 = 32;
 
 /// ARM 架构定时器 PPI (Non-secure Physical Timer)
@@ -60,7 +51,6 @@ const TIMER_PPI: u32 = 30; // CNTPNSIRQ
 // 寄存器读写辅助
 // ============================================================================
 
-#[allow(dead_code)] // 待 GICD 寄存器诊断读取路径启用后使用。
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn gicd_read(offset: u64) -> u32 { unsafe {
@@ -125,15 +115,27 @@ pub unsafe fn gicr_sgi_write(offset: u64, val: u32) { unsafe {
 // ============================================================================
 
 /// 初始化 GICv3 Distributor:
-/// 1. 禁用所有中断
-/// 2. 配置中断优先级 (全默认 0xA0)
-/// 3. 使能 Distributor
-/// 4. 使能 CPU Interface
+/// 1. 读取 GIC 类型和实现者信息
+/// 2. 禁用所有中断
+/// 3. 配置中断优先级 (全默认 0xA0)
+/// 4. 使能 Distributor
+/// 5. 使能 CPU Interface
 ///
 /// # Safety
 ///
 /// 调用前需确保 GICD_BASE (0x08000000) 已正确映射，MMU 已启用。
 pub unsafe fn init_distributor() { unsafe {
+    // 0. 读取 GIC 诊断信息
+    let typer = gicd_read(GICD_TYPER);
+    let iidr = gicd_read(GICD_IIDR);
+    let num_spi = ((typer >> 5) & 0x1F) as u32 + 1; // ITLinesNumber: bits [5:0]
+    let num_cpus = ((typer >> 8) & 0x07) as u32 + 1; // CPUNumber: bits [10:8]
+    crate::klog_ffi!(
+        klog_ffi_info,
+        "[GIC] typer=0x{:08x} iidr=0x{:08x} spi={} cpus={}",
+        typer, iidr, num_spi, num_cpus
+    );
+
     // 1. 禁用 Distributor
     gicd_write(GICD_CTLR, 0);
 
@@ -157,7 +159,9 @@ pub unsafe fn init_distributor() { unsafe {
 
 /// 初始化 GICv3 Redistributor (当前 CPU):
 /// 1. 唤醒 redistributor
-/// 2. 为当前核启用 SGIs/PPIs
+/// 2. 配置 SGI/PPI 分组
+/// 3. 配置 PPI 触发模式
+/// 4. 为当前核启用 SGIs/PPIs
 ///
 /// # Safety
 ///
@@ -176,13 +180,24 @@ pub unsafe fn init_redistributor() { unsafe {
     gicr_sgi_write(GICR_IPRIORITYR + 4, 0xA0A0_A0A0);
     gicr_sgi_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0);
 
-    // 3. Timer PPI 低优先级
+    // 3. 配置 SGI/PPI 分组: 全部设为 Group 0
+    gicr_sgi_write(GICR_IGROUPR0, 0);
+
+    // 4. 配置 PPI 触发模式: Timer PPI 为 level-triggered
+    let icfgr1_val = gicr_sgi_read(GICR_ICFGR1);
+    // Timer PPI = 30, 在 ICFGR1 中 (PPI 16-31)
+    // bit[31:30] 对应 PPI 31, bit[29:28] 对应 PPI 30
+    // level-triggered = 0b00
+    let ppi30_shift = ((30 - 16) * 2) as u64;
+    gicr_sgi_write(GICR_ICFGR1, icfgr1_val & !(0x3 << ppi30_shift));
+
+    // 5. Timer PPI 低优先级
     let prio_addr = GICR_IPRIORITYR + ((TIMER_PPI as u64 / 4) * 4);
     let prio = gicr_sgi_read(prio_addr);
     let shift = ((TIMER_PPI % 4) * 8) as u64;
     gicr_sgi_write(prio_addr, (prio & !(0xFF << shift)) | (0x40 << shift));
 
-    // 4. Enable redistributor
+    // 6. Enable redistributor
     gicr_write(GICR_CTLR, 0x1); // Enable
 }}
 
@@ -256,3 +271,108 @@ pub unsafe fn init() { unsafe {
     init_cpu_interface();
     enable_timer_ppi();
 }}
+
+// ============================================================================
+// 中断管理 API
+// ============================================================================
+
+/// 校验中断号是否为有效的 PPI
+pub fn is_ppi(irq: u32) -> bool {
+    irq >= PPI_BASE && irq < SPI_BASE
+}
+
+/// 校验中断号是否为有效的 SPI
+pub fn is_spi(irq: u32) -> bool {
+    irq >= SPI_BASE
+}
+
+/// 校验中断号是否在有效范围内
+pub fn is_valid_irq(irq: u32) -> bool {
+    irq < SPI_BASE + 960 // GICv3 最多支持 1024 个中断
+}
+
+/// 使能 SPI 中断
+///
+/// # Safety
+///
+/// 调用前需确保 Distributor 已初始化。
+pub unsafe fn enable_spi(irq: u32) { unsafe {
+    if !is_spi(irq) {
+        return;
+    }
+    let reg_offset = GICD_ISENABLER + ((irq / 32) as u64 * 4);
+    let bit = 1u32 << (irq % 32);
+    gicd_write(reg_offset, bit);
+}}
+
+/// 禁用 SPI 中断
+///
+/// # Safety
+///
+/// 调用前需确保 Distributor 已初始化。
+pub unsafe fn disable_spi(irq: u32) { unsafe {
+    if !is_spi(irq) {
+        return;
+    }
+    let reg_offset = GICD_ISENABLER + ((irq / 32) as u64 * 4);
+    let bit = 1u32 << (irq % 32);
+    // GICD_ICENABLER 与 ISENABLER 偏移相同, 写 1 禁用
+    gicd_write(reg_offset + 0x80, bit);
+}}
+
+/// 设置 SPI 中断为 pending
+///
+/// # Safety
+///
+/// 调用前需确保 Distributor 已初始化。
+pub unsafe fn set_spi_pending(irq: u32) { unsafe {
+    if !is_spi(irq) {
+        return;
+    }
+    let reg_offset = GICD_ISPENDR + ((irq / 32) as u64 * 4);
+    let bit = 1u32 << (irq % 32);
+    gicd_write(reg_offset, bit);
+}}
+
+/// 配置 SPI 中断为 level-triggered
+///
+/// # Safety
+///
+/// 调用前需确保 Distributor 已初始化。
+pub unsafe fn configure_spi_level(irq: u32) { unsafe {
+    if !is_spi(irq) {
+        return;
+    }
+    let reg_offset = GICD_ICFGR + ((irq / 16) as u64 * 4);
+    let shift = ((irq % 16) * 2) as u64;
+    let val = gicd_read(reg_offset);
+    // bit 0 = 0 for level-triggered, bit 1 = 0 for inactive
+    gicd_write(reg_offset, val & !(3 << shift));
+}}
+
+/// 配置 SPI 中断为 edge-triggered
+///
+/// # Safety
+///
+/// 调用前需确保 Distributor 已初始化。
+pub unsafe fn configure_spi_edge(irq: u32) { unsafe {
+    if !is_spi(irq) {
+        return;
+    }
+    let reg_offset = GICD_ICFGR + ((irq / 16) as u64 * 4);
+    let shift = ((irq % 16) * 2) as u64;
+    let val = gicd_read(reg_offset);
+    // bit 0 = 1 for edge-triggered
+    gicd_write(reg_offset, val | (1 << shift));
+}}
+
+/// 读取 SPI 中断状态 (是否 pending)
+pub fn is_spi_pending(irq: u32) -> bool {
+    if !is_spi(irq) {
+        return false;
+    }
+    let reg_offset = GICD_ISPENDR + ((irq / 32) as u64 * 4);
+    let bit = 1u32 << (irq % 32);
+    // SAFETY: 读取 GICD 寄存器, 调用方保证 MMIO 已映射
+    unsafe { gicd_read(reg_offset) & bit != 0 }
+}

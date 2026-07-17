@@ -163,9 +163,6 @@ struct PiMutexInner {
     /// v2.2: 链式捐赠追踪 (holder→donor→donor...)
     chain: UnsafeCell<[u32; 8]>,
     chain_len: AtomicU8,
-    /// v2.4: 优先级天花板 (PCP) 协议相关
-    /// 当前持有者的 base_priority (用于解锁后恢复)
-    owner_base_priority: AtomicU32,
 }
 
 impl PiMutexInner {
@@ -177,7 +174,6 @@ impl PiMutexInner {
             effective_priority: AtomicU32::new(0),
             chain: UnsafeCell::new([0; 8]),
             chain_len: AtomicU8::new(0),
-            owner_base_priority: AtomicU32::new(0),
         }
     }
 }

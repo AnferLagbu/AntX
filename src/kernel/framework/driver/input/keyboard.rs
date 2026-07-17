@@ -337,16 +337,6 @@ fn wait_output_buffer_full() -> bool {
     false
 }
 
-/// 向 PS/2 控制器发送命令
-fn ps2_send_command(cmd: u8) -> DriverResult<()> {
-    wait_input_buffer_empty();
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        outb(PS2_CMD_PORT, cmd);
-    }
-    Ok(())
-}
-
 /// 向键盘发送数据
 fn keyboard_send_data(data: u8) -> DriverResult<()> {
     wait_input_buffer_empty();
@@ -521,6 +511,14 @@ impl KeyboardDriver {
 
         // 只处理按键按下事件
         if !pressed {
+            return None;
+        }
+
+        // 检查是否为特殊按键
+        let special = get_special_key(key_code);
+        if special != SpecialKey::None {
+            // 特殊按键处理 (如 F1-F12, 方向键等)
+            // 当前仅返回 None, 可扩展为特殊按键事件
             return None;
         }
 

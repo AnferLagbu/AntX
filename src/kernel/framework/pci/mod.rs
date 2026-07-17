@@ -48,40 +48,9 @@ pub mod msi;
 mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    pub unsafe fn outb(port: u16, val: u8) {
-        crate::arch!(outb(port, val));
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    #[allow(dead_code)] // 待 PCI 配置空间 16 位 I/O 启用后使用。
-    pub unsafe fn outw(port: u16, val: u16) { unsafe {
-        core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
-    }}
-
-    #[inline(always)]
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn outl(port: u16, val: u32) {
         crate::arch!(outl(port, val));
     }
-
-    #[inline(always)]
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    #[allow(dead_code)] // 待 PCI 配置空间 8 位读取启用后使用。
-    pub unsafe fn inb(port: u16) -> u8 {
-        crate::arch!(inb(port))
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[inline(always)]
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    #[allow(dead_code)] // 待 PCI 配置空间 16 位读取启用后使用。
-    pub unsafe fn inw(port: u16) -> u16 { unsafe {
-        let ret: u16;
-        core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
-        ret
-    }}
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
