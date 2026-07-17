@@ -4,6 +4,7 @@ build/
 isodir/
 tmp/
 backup/
+.mimocode/
 
 # ===== 通用构建产物 =====
 *.o
