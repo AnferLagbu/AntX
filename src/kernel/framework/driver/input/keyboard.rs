@@ -419,10 +419,20 @@ impl Driver for KeyboardDriver {
         // 1. 清空输出缓冲区
         let _ = keyboard_read_data();
 
-        // 2. 发送 SET LED 命令设置初始 LED 状态
+        // 2. PS/2 控制器自检
+        if ps2_self_test().is_err() {
+            // 自检失败, 尝试重置
+            let _ = keyboard_reset();
+            // 重置后再次自检
+            if ps2_self_test().is_err() {
+                return Err(DriverError::HardwareError);
+            }
+        }
+
+        // 3. 发送 SET LED 命令设置初始 LED 状态
         update_leds(&self.modifiers);
 
-        // 3. 清空缓冲区
+        // 4. 清空缓冲区
         self.buffer.clear();
 
         self.initialized = true;

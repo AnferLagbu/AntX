@@ -363,6 +363,11 @@ impl HidDriver {
         self.interrupt_in_max_packet
     }
 
+    /// 获取接口编号
+    pub fn interface_number(&self) -> u8 {
+        self.interface_number
+    }
+
     /// 获取当前协议.
     pub fn protocol(&self) -> HidProtocol {
         self.protocol

@@ -22,7 +22,6 @@ unsafe extern "C" {
     fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
     fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
     fn vmm_ensure_path_user(vaddr: u64);
-    fn vmm_switch_page_table(table: u64);
     fn vmm_destroy_page_table(cr3: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
     fn memset(s: *mut u8, c: i32, n: u64);
@@ -237,12 +236,6 @@ pub(crate) mod raw {
             unsafe { (*self.0).state.load(Ordering::SeqCst) }
         }
 
-        /// 获取进程状态 (诊断接口)
-        #[inline(always)]
-        pub fn get_state(&self) -> u32 {
-            self.load_state()
-        }
-
         /// 检查进程是否在运行状态 (Running = 2)
         pub fn is_running(&self) -> bool {
             use crate::kernel::services::proc::types::ProcessState;
@@ -284,16 +277,6 @@ pub(crate) mod raw {
     pub fn destroy_user_page_table(cr3: u64) {
         // SAFETY: cr3 是 vmm_create_user_page_table 创建的, 调用方负责所有权释放。
         unsafe { vmm_destroy_page_table(cr3) }
-    }
-
-    /// 切换到指定页表。
-    ///
-    /// # Safety (内部)
-    /// - `table` 必须为有效的页表基址 (cr3)。
-    /// - 调用方必须确保当前上下文安全切换。
-    pub fn switch_page_table(table: u64) {
-        // SAFETY: table 是有效的页表基址, 由调用方保证。
-        unsafe { vmm_switch_page_table(table) }
     }
 
     /// 查询用户页表中虚拟地址对应的物理地址。
@@ -768,20 +751,26 @@ impl UserProcManager {
     fn destroy(&self, proc: NonNull<UserProcess>, keep_kstack: bool) {
         // SAFETY: proc 是 NonNull<UserProcess>, 由 kmalloc 分配并插入
         // BTreeMap, 在 destroy 前始终有效.
-        let proc_ref = raw::deref_non_null(proc);
-        let cr3 = proc_ref.cr3.load(Ordering::SeqCst);
+        let proc_ref = unsafe { raw::UserProcRef::new_unchecked(proc.as_ptr()) };
+
+        // 仅销毁已退出的进程
+        if !proc_ref.is_exited() {
+            return;
+        }
+
+        let cr3 = proc_ref.load_cr3();
         if cr3 != 0 {
             raw::destroy_user_page_table(cr3);
         }
         if !keep_kstack {
-            let kstack = proc_ref.kernel_stack.load(Ordering::SeqCst);
+            let kstack = proc_ref.load_kernel_stack();
             if kstack != 0 {
                 let kstack_base_virt = kstack - USER_KSTACK_SIZE;
                 let kstack_base_phys = kstack_base_virt - KERNEL_BASE;
                 raw::free_phys_pages(kstack_base_phys as *mut u8, USER_KSTACK_SIZE / PAGE_SIZE);
             }
         }
-        let ustack = proc_ref.user_stack.load(Ordering::SeqCst);
+        let ustack = proc_ref.load_user_stack();
         if ustack != 0 {
             let stack_virt = USER_STACK_TOP - USER_STACK_SIZE - USER_STACK_GUARD;
             for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
@@ -792,7 +781,7 @@ impl UserProcManager {
                 }
             }
         }
-        let pid = proc_ref.pid;
+        let pid = proc_ref.pid();
         self.processes.lock().remove(&pid);
     }
 
@@ -826,13 +815,23 @@ impl UserProcManager {
     pub fn destroy_by_pid(&self, pid: u32) {
         // SAFETY: get returns *mut from NonNull which is never null.
         if let Some(proc) = self.processes.lock().get(&pid).copied() {
-            self.destroy(proc, false);
+            // SAFETY: proc 来自 BTreeMap 中的 NonNull, 进程存活期间有效.
+            let proc_ref = unsafe { raw::UserProcRef::new_unchecked(proc.as_ptr()) };
+            // 仅销毁非运行状态的进程
+            if !proc_ref.is_running() {
+                self.destroy(proc, false);
+            }
         }
     }
 
     pub fn destroy_by_pid_no_kstack(&self, pid: u32) {
         if let Some(proc) = self.processes.lock().get(&pid).copied() {
-            self.destroy(proc, true);
+            // SAFETY: proc 来自 BTreeMap 中的 NonNull, 进程存活期间有效.
+            let proc_ref = unsafe { raw::UserProcRef::new_unchecked(proc.as_ptr()) };
+            // 仅销毁已退出的进程
+            if proc_ref.is_exited() {
+                self.destroy(proc, true);
+            }
         }
     }
 

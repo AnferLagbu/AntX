@@ -38,10 +38,6 @@ enum RegType {
     NotInit,
     /// 未知标量值
     Scalar,
-    /// 指向 Map key 的指针 (预留)
-    MapKey,
-    /// 指向 Map value 的指针 (预留)
-    MapValue,
     /// 指向栈的指针
     StackPtr,
     /// 指向上下文的指针
@@ -305,7 +301,7 @@ impl BpfVerifier for StandardBpfVerifier {
                 // EBPF-4 规则 10: LDX 加载要求 src 必须是已知指针 (StackPtr 或 MapValue)
                 // 简化: 拒绝从 scalar 加载 (避免将标量当指针)
                 match regs[src].r#type {
-                    RegType::StackPtr | RegType::MapValue | RegType::MapKey | RegType::CtxPtr => {
+                    RegType::StackPtr | RegType::CtxPtr => {
                         // 合法: 已知指针
                     }
                     _ => {
@@ -328,7 +324,7 @@ impl BpfVerifier for StandardBpfVerifier {
                     );
                 }
                 match regs[dst].r#type {
-                    RegType::MapValue | RegType::StackPtr => {}
+                    RegType::StackPtr => {}
                     RegType::CtxPtr => {
                         // 简化: 允许 CtxPtr 写入
                     }

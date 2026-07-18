@@ -312,6 +312,16 @@ impl MassStorageDriver {
         self.bulk_max_packet
     }
 
+    /// 获取设备地址
+    pub fn device_address(&self) -> u8 {
+        self.device_address
+    }
+
+    /// 获取接口编号
+    pub fn interface_number(&self) -> u8 {
+        self.interface_number
+    }
+
     /// 分配并构造新的 CBW.
     ///
     /// `next_tag` 单调递增, 调用方在收到 CSW 后验证 tag 匹配.

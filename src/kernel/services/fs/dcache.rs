@@ -317,6 +317,20 @@ impl DCache {
         }
     }
 
+    /// 尝试释放无效的缓存条目
+    ///
+    /// 在内存压力或缓存驱逐时调用.
+    fn try_evict_entries(&mut self) -> usize {
+        let mut evicted = 0;
+        for entry in self.entries.iter_mut() {
+            if !entry.valid && entry.parent_ino != EMPTY_INO {
+                entry.parent_ino = EMPTY_INO;
+                evicted += 1;
+            }
+        }
+        evicted
+    }
+
     /// 清空所有缓存
     fn flush(&mut self) {
         for entry in self.entries.iter_mut() {
@@ -551,6 +565,22 @@ impl ICache {
         None
     }
 
+    /// 尝试释放引用计数为零的缓存条目
+    ///
+    /// 在内存压力或缓存驱逐时调用.
+    fn try_evict_entries(&mut self) -> usize {
+        let mut evicted = 0;
+        for entry in self.entries.iter_mut() {
+            if entry.valid && entry.ref_count == 0 {
+                entry.valid = false;
+                entry.ino = EMPTY_INO;
+                self.count -= 1;
+                evicted += 1;
+            }
+        }
+        evicted
+    }
+
     /// 清空所有缓存
     fn flush(&mut self) {
         for entry in self.entries.iter_mut() {
@@ -635,6 +665,8 @@ pub fn dcache_invalidate_parent(parent_ino: u32) {
 /// dcache 清空
 pub fn dcache_flush() {
     let mut dcache = DCACHE.lock();
+    // 先尝试驱逐无效条目
+    dcache.try_evict_entries();
     dcache.flush();
 }
 
@@ -642,10 +674,12 @@ pub fn dcache_flush() {
 pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
     ICACHE_LOOKUPS.fetch_add(1, Ordering::Relaxed);
 
-    let icache = ICACHE.lock();
+    let mut icache = ICACHE.lock();
     match icache.lookup(ino) {
         Some(entry) => {
             ICACHE_HITS.fetch_add(1, Ordering::Relaxed);
+            // 增加引用计数
+            icache.ref_inc(ino);
             Some(ICacheResult {
                 ino: entry.ino,
                 file_type: entry.file_type,
@@ -670,12 +704,25 @@ pub fn icache_insert(ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64, 
 /// icache 失效
 pub fn icache_invalidate(ino: u32) {
     let mut icache = ICACHE.lock();
-    icache.invalidate(ino);
+    // 减少引用计数
+    icache.ref_dec(ino);
+    // 如果引用计数为零, 可以安全失效
+    if icache.is_ref_zero(ino) {
+        icache.invalidate(ino);
+    }
+}
+
+/// 获取 icache 条目的引用计数 (诊断接口)
+pub fn icache_get_ref_count(ino: u32) -> u32 {
+    let icache = ICACHE.lock();
+    icache.get_ref_count(ino)
 }
 
 /// icache 清空
 pub fn icache_flush() {
     let mut icache = ICACHE.lock();
+    // 先尝试驱逐引用计数为零的条目
+    icache.try_evict_entries();
     icache.flush();
 }
 

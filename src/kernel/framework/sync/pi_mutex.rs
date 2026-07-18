@@ -262,6 +262,21 @@ impl<T> PiMutex<T> {
     pub fn named(_name: &'static str, data: T) -> Self {
         Self::new(data)
     }
+
+    /// 设置优先级天花板 (PCP 协议)
+    pub fn set_ceiling(&self, ceiling: u32) {
+        self.ceiling.store(ceiling, Ordering::Release);
+    }
+
+    /// 获取当前优先级天花板
+    pub fn get_ceiling(&self) -> u32 {
+        self.ceiling.load(Ordering::Acquire)
+    }
+
+    /// 获取互斥锁协议
+    pub fn get_protocol(&self) -> PiMutexProtocol {
+        self.protocol
+    }
 }
 
 impl<T: Default> Default for PiMutex<T> {

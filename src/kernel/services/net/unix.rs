@@ -263,15 +263,26 @@ pub fn uds_init() {
 }
 
 pub fn uds_create(sock_type: UnixSockType) -> Result<i32, UdsError> {
-    // V2: 使用集中分配器获取 FD, 再通过 idx_of 获取槽位索引
-    let fd = crate::kernel::services::proc::fd_alloc::alloc_fd(
-        crate::kernel::services::proc::fd_alloc::FdSubsystem::Uds,
-    ).ok_or(UdsError::NoMem)?;
-
-    let (_sub, slot) = crate::kernel::services::proc::fd_alloc::idx_of(fd)
-        .ok_or(UdsError::BadFd)?;
-
     UDS_STATE.with_mut(|state| {
+        // 检查是否有空闲套接字槽位
+        if !state.has_free_socket() {
+            return Err(UdsError::NoMem);
+        }
+
+        // 检查已使用套接字数量 (资源限制)
+        let used_count = state.used_socket_count();
+        if used_count >= MAX_UDS_FD {
+            return Err(UdsError::NoMem);
+        }
+
+        // V2: 使用集中分配器获取 FD, 再通过 idx_of 获取槽位索引
+        let fd = crate::kernel::services::proc::fd_alloc::alloc_fd(
+            crate::kernel::services::proc::fd_alloc::FdSubsystem::Uds,
+        ).ok_or(UdsError::NoMem)?;
+
+        let (_sub, slot) = crate::kernel::services::proc::fd_alloc::idx_of(fd)
+            .ok_or(UdsError::BadFd)?;
+
         let idx = slot as u8;
         let id = alloc_socket_id();
         let s = &mut state.sockets[idx as usize];

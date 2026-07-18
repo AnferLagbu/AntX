@@ -1181,13 +1181,18 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
 
     // 阶段 2: 读取新进程的地址空间信息 (CR3/entry/stack)
     let new_addr_space = USER_PROC_MANAGER.with_process(new_pid_u32, |proc| {
-        (
+        // 检查进程状态是否有效
+        let state = proc.state.load(Ordering::SeqCst);
+        if state == 0 { // Created 状态
+            return None;
+        }
+        Some((
             proc.cr3.load(Ordering::SeqCst),
             proc.entry,
             proc.user_stack.load(Ordering::SeqCst),
             proc.stack_bottom.load(Ordering::SeqCst),
-        )
-    });
+        ))
+    }).flatten();
 
     let (new_cr3, new_entry, new_user_stack, new_stack_bottom) = match new_addr_space {
         Some(info) => info,

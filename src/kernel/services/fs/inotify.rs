@@ -241,6 +241,11 @@ impl InotifyInstance {
 
     /// 入队一个事件, 队列满时丢弃最旧事件
     fn push_event(&mut self, event: InotifyEvent) {
+        // 检查 fd 是否有效
+        if !self.is_fd_valid() {
+            return;
+        }
+
         if self.event_count == INOTIFY_MAX_EVENTS {
             self.event_head = (self.event_head + 1) % INOTIFY_MAX_EVENTS;
             self.event_count -= 1;
