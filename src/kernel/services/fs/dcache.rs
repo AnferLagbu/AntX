@@ -497,6 +497,31 @@ impl ICache {
         }
     }
 
+    /// 减少引用计数
+    fn ref_dec(&mut self, ino: u32) {
+        if let Some(idx) = self.lookup_index(ino) {
+            self.entries[idx].ref_count = self.entries[idx].ref_count.saturating_sub(1);
+        }
+    }
+
+    /// 检查引用计数是否为零
+    fn is_ref_zero(&self, ino: u32) -> bool {
+        if let Some(idx) = self.lookup_index(ino) {
+            self.entries[idx].ref_count == 0
+        } else {
+            true
+        }
+    }
+
+    /// 获取引用计数
+    fn get_ref_count(&self, ino: u32) -> u32 {
+        if let Some(idx) = self.lookup_index(ino) {
+            self.entries[idx].ref_count
+        } else {
+            0
+        }
+    }
+
     /// 可变查找 (返回索引)
     fn lookup_index(&self, ino: u32) -> Option<usize> {
         if ino == EMPTY_INO || ino == NEGATIVE_INO {

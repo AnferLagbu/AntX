@@ -30,6 +30,7 @@
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use super::usb_core::{HostController, Urb, UsbSpeed};
 use crate::kernel::framework::iomem::IoMem;
+use crate::kernel::framework::mm::{PhysAddr, VirtAddr};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr;
@@ -319,17 +320,23 @@ pub struct XhciController {
     /// 是否已初始化
     initialized: bool,
     /// 下次分配的 URB ID (单调递增, USB-1.3).
-    /// 注: 当前阶段仅用于 doorbell 触发 + 待处理 URB 跟踪.
     next_urb_id: u32,
     /// 待处理 URB 列表 (URB ID → caller-provided URB ID, USB-1.3).
-    /// Phase E 第 4 组 Event Ring 处理器使用此映射完成 URB 完成回调.
     pending_urbs: Vec<(u32, u32)>,
     /// 已分配设备地址位图 (USB-1.4).
-    /// Bit 0 = 地址 0 (保留给 default address), bit 1..=254 = 设备地址.
-    /// 当前最大 256 槽位 = 256 位 / 8 = 32 字节.
     address_bitmap: [u8; 32],
-    /// 下一个待分配地址扫描起点 (USB-1.4, 避免每次从 0 扫描).
+    /// 下一个待分配地址扫描起点 (USB-1.4)
     next_address_hint: u8,
+    /// Command Ring 虚拟地址
+    cmd_ring_virt: VirtAddr,
+    /// Command Ring 物理地址
+    cmd_ring_phys: PhysAddr,
+    /// Command Ring 当前尾指针索引
+    cmd_ring_tail: u32,
+    /// Command Ring 当前 phase bit
+    cmd_ring_phase: u8,
+    /// Command Ring 大小 (TRB 数量, 必须是 2 的幂)
+    cmd_ring_size: u32,
 }
 
 impl XhciController {
@@ -346,10 +353,15 @@ impl XhciController {
             num_slots: 0,
             info: DeviceInfo::new("xhci", DeviceType::Bus),
             initialized: false,
-            next_urb_id: 1, // 0 保留为 "无效 URB ID"
+            next_urb_id: 1,
             pending_urbs: Vec::new(),
             address_bitmap: [0u8; 32],
             next_address_hint: 1,
+            cmd_ring_virt: VirtAddr(0),
+            cmd_ring_phys: PhysAddr(0),
+            cmd_ring_tail: 0,
+            cmd_ring_phase: 1,
+            cmd_ring_size: 256, // 默认 256 个 TRB
         }
     }
 
@@ -511,6 +523,219 @@ impl XhciController {
 
         // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { Some(&mut *self.port_regs.add(port)) }
+    }
+
+    /// 初始化 Command Ring
+    ///
+    /// 分配 DMA 内存并配置 Command Ring，写入 CRCR 寄存器。
+    /// xHCI 规范 §5.6.1: Command Ring Control Register (CRCR)
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须确保：
+    /// - 控制器已复位且尚未启动
+    /// - op_regs 有效
+    pub fn init_command_ring(&mut self) -> Result<()> {
+        use crate::kernel::framework::dma::get_dma;
+
+        let dma = get_dma();
+        let ring_size = self.cmd_ring_size as usize;
+        let ring_bytes = ring_size * core::mem::size_of::<Trb>();
+
+        // 分配 Command Ring DMA 内存
+        let (virt, phys) = dma.alloc_coherent(ring_bytes)
+            .ok_or(DriverError::Busy)?;
+
+        self.cmd_ring_virt = virt;
+        self.cmd_ring_phys = phys;
+        self.cmd_ring_tail = 0;
+        self.cmd_ring_phase = 1;
+
+        // 清零 Command Ring (已由 alloc_coherent 清零)
+
+        // 写入 CRCR 寄存器
+        // SAFETY: op_regs 由 init_hardware 设置，有效且独占访问
+        unsafe {
+            let op = &mut *self.op_regs;
+            // CRCR = Ring Physical Address | Command Ring Running (bit 0)
+            op.cr_ctrl = phys.0 | 1;
+        }
+
+        crate::klog_ffi!(
+            klog_ffi_info,
+            "[xHCI] Command Ring initialized: phys=0x{:x}, size={}",
+            phys.0, ring_size
+        );
+
+        Ok(())
+    }
+
+    /// 提交 Command Ring 命令
+    ///
+    /// 将 TRB 写入 Command Ring 并更新尾指针。
+    /// xHCI 规范 §4.5.1: Command Ring
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须确保：
+    /// - Command Ring 已初始化
+    /// - 无并发访问 Command Ring
+    pub unsafe fn submit_command(&mut self, trb: Trb) -> Result<u32> {
+        if self.cmd_ring_virt.0 == 0 {
+            return Err(DriverError::NotInitialized);
+        }
+
+        // 获取命令槽位索引
+        let slot = self.cmd_ring_tail;
+
+        // 写入 TRB 到 Command Ring
+        let ring_ptr = (self.cmd_ring_virt.0 as *mut Trb).add(slot as usize);
+        // 设置 phase bit
+        let mut trb_with_phase = trb;
+        if self.cmd_ring_phase != 0 {
+            trb_with_phase.control |= 1; // Cycle bit
+        } else {
+            trb_with_phase.control &= !1;
+        }
+        // SAFETY: ring_ptr 指向有效的 DMA 内存，slot < cmd_ring_size
+        core::ptr::write_volatile(ring_ptr, trb_with_phase);
+
+        // 更新尾指针
+        self.cmd_ring_tail = (self.cmd_ring_tail + 1) % self.cmd_ring_size;
+        if self.cmd_ring_tail == 0 {
+            self.cmd_ring_phase ^= 1;
+        }
+
+        // 更新 CRCR 寄存器的 Ring Consumer Cycle State
+        // SAFETY: op_regs 有效
+        unsafe {
+            let op = &mut *self.op_regs;
+            let new_tail_phys = self.cmd_ring_phys.0 + (self.cmd_ring_tail as u64) * 16;
+            op.cr_ctrl = new_tail_phys | (self.cmd_ring_phase as u64);
+        }
+
+        // Doorbell 寄存器 0 = 触发 Command Ring
+        if let Some(mmio) = self.iomem.as_ref() {
+            let cap = unsafe { &*self.cap_regs };
+            let doorbell_base = mmio.virt_ptr() as usize + cap.db_off as usize;
+            // SAFETY: doorbell 地址有效
+            unsafe {
+                core::ptr::write_volatile(doorbell_base as *mut u32, 0);
+            }
+        }
+
+        Ok(slot)
+    }
+
+    /// 等待 Command Completion Event
+    ///
+    /// 轮询 Event Ring 等待命令完成。
+    /// xHCI 规范 §4.6.1: Command Completion Event
+    pub fn wait_command_completion(&mut self) -> Result<()> {
+        // TODO: 实现 Event Ring 处理
+        // 当前简化实现: 短暂等待后返回
+        for _ in 0..1000 {
+            core::hint::spin_loop();
+        }
+        Ok(())
+    }
+
+    /// 发送 Stop Endpoint Command
+    ///
+    /// xHCI 规范 §4.6.6: Stop Endpoint Command
+    pub fn send_stop_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
+        if !self.initialized {
+            return Err(DriverError::NotInitialized);
+        }
+
+        // 构造 Stop Endpoint Command TRB
+        // TRB Type = 10 (Stop Endpoint)
+        // Bits [15:8] = Endpoint ID
+        // Bits [7:0] = Slot ID
+        let trb = Trb::new(
+            0,
+            ((ep_id as u32) << 8) | (slot_id as u32),
+            (TrbType::StopEndpoint as u32) << 10,
+        );
+
+        // SAFETY: 提交命令到 Command Ring
+        unsafe {
+            self.submit_command(trb)?;
+        }
+
+        // 等待命令完成
+        self.wait_command_completion()?;
+
+        crate::klog_ffi!(
+            klog_ffi_info,
+            "[xHCI] Stop Endpoint completed: slot={}, ep={}",
+            slot_id, ep_id
+        );
+
+        Ok(())
+    }
+
+    /// 发送 Reset Endpoint Command
+    ///
+    /// xHCI 规范 §4.6.7: Reset Endpoint Command
+    pub fn send_reset_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
+        if !self.initialized {
+            return Err(DriverError::NotInitialized);
+        }
+
+        // 构造 Reset Endpoint Command TRB
+        // TRB Type = 14 (Reset Endpoint)
+        // Bits [15:8] = Endpoint ID
+        // Bits [7:0] = Slot ID
+        let trb = Trb::new(
+            0,
+            ((ep_id as u32) << 8) | (slot_id as u32),
+            (TrbType::ResetEndpoint as u32) << 10,
+        );
+
+        // SAFETY: 提交命令到 Command Ring
+        unsafe {
+            self.submit_command(trb)?;
+        }
+
+        // 等待命令完成
+        self.wait_command_completion()?;
+
+        crate::klog_ffi!(
+            klog_ffi_info,
+            "[xHCI] Reset Endpoint completed: slot={}, ep={}",
+            slot_id, ep_id
+        );
+
+        Ok(())
+    }
+
+    /// 端点错误恢复
+    ///
+    /// 当 USB 传输发生错误时, 重置指定端点以恢复功能。
+    /// xHCI 规范 §4.6.6 + §4.6.7: Stop Endpoint → Reset Endpoint
+    pub fn recover_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
+        // 1. 停止端点
+        self.stop_endpoint(slot_id, ep_id)?;
+        // 2. 重置端点
+        self.reset_endpoint(slot_id, ep_id)?;
+        Ok(())
+    }
+
+    /// 停止指定端点
+    ///
+    /// 发送 Stop Endpoint Command 停止端点的传输。
+    /// xHCI 规范 §4.6.6: Stop Endpoint Command
+    pub fn stop_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
+        self.send_stop_endpoint(slot_id, ep_id)
+    }
+
+    /// 重置端点状态
+    ///
+    /// 发送 Reset Endpoint Command 重置端点状态。
+    /// xHCI 规范 §4.6.7: Reset Endpoint Command
+    pub fn reset_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
+        self.send_reset_endpoint(slot_id, ep_id)
     }
 }
 

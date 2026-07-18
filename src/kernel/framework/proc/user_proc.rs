@@ -22,6 +22,7 @@ unsafe extern "C" {
     fn vmm_map_page_in_table(table: u64, vaddr: u64, paddr: u64, flags: u64);
     fn vmm_map_page(vaddr: u64, paddr: u64, flags: u64) -> i32;
     fn vmm_ensure_path_user(vaddr: u64);
+    fn vmm_switch_page_table(table: u64);
     fn vmm_destroy_page_table(cr3: u64);
     fn vmm_get_physical_in_table(table: u64, vaddr: u64) -> u64;
     fn memset(s: *mut u8, c: i32, n: u64);
@@ -228,6 +229,32 @@ pub(crate) mod raw {
                 (*self.0).state.store(v, Ordering::SeqCst);
             }
         }
+
+        /// 加载进程状态
+        #[inline(always)]
+        pub fn load_state(&self) -> u32 {
+            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
+            unsafe { (*self.0).state.load(Ordering::SeqCst) }
+        }
+
+        /// 获取进程状态 (诊断接口)
+        #[inline(always)]
+        pub fn get_state(&self) -> u32 {
+            self.load_state()
+        }
+
+        /// 检查进程是否在运行状态 (Running = 2)
+        pub fn is_running(&self) -> bool {
+            use crate::kernel::services::proc::types::ProcessState;
+            ProcessState::from_u32(self.load_state()).is_alive()
+        }
+
+        /// 检查进程是否已退出 (Zombie = 4 或 Terminated = 5)
+        pub fn is_exited(&self) -> bool {
+            use crate::kernel::services::proc::types::ProcessState;
+            let state = ProcessState::from_u32(self.load_state());
+            matches!(state, ProcessState::Zombie | ProcessState::Terminated)
+        }
     }
 
     /// 在 BTreeMap 中按 pid 索引得到的 NonNull 句柄转成安全引用。
@@ -257,6 +284,16 @@ pub(crate) mod raw {
     pub fn destroy_user_page_table(cr3: u64) {
         // SAFETY: cr3 是 vmm_create_user_page_table 创建的, 调用方负责所有权释放。
         unsafe { vmm_destroy_page_table(cr3) }
+    }
+
+    /// 切换到指定页表。
+    ///
+    /// # Safety (内部)
+    /// - `table` 必须为有效的页表基址 (cr3)。
+    /// - 调用方必须确保当前上下文安全切换。
+    pub fn switch_page_table(table: u64) {
+        // SAFETY: table 是有效的页表基址, 由调用方保证。
+        unsafe { vmm_switch_page_table(table) }
     }
 
     /// 查询用户页表中虚拟地址对应的物理地址。

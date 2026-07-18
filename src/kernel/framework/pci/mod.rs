@@ -48,8 +48,34 @@ pub mod msi;
 mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    pub unsafe fn outb(port: u16, val: u8) {
+        crate::arch!(outb(port, val));
+    }
+
+    #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    pub unsafe fn outw(port: u16, val: u16) {
+        core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
+    }
+
+    #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     pub unsafe fn outl(port: u16, val: u32) {
         crate::arch!(outl(port, val));
+    }
+
+    #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    pub unsafe fn inb(port: u16) -> u8 {
+        crate::arch!(inb(port))
+    }
+
+    #[inline(always)]
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    pub unsafe fn inw(port: u16) -> u16 {
+        let ret: u16;
+        core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
+        ret
     }
 
     #[inline(always)]

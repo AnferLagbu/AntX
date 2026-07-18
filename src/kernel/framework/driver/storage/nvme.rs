@@ -57,6 +57,8 @@ const MAX_SECTORS_PER_CMD: u16 = 128;
 // NVMe 控制器寄存器偏移 (BAR0)  // 硬件寄存器描述
 const NVME_REG_CAP: usize = 0x00;    // u64: 控制器能力
 const NVME_REG_VS: usize = 0x08;     // u32: 版本 (NVMe 规范 §3.1.2)
+const NVME_REG_INTMS: usize = 0x0C;  // u32: 中断掩码设置 (NVMe 规范 §3.1.6)
+const NVME_REG_INTMC: usize = 0x10;  // u32: 中断掩码清除 (NVMe 规范 §3.1.6)
 const NVME_REG_CC: usize = 0x14;     // u32: 控制器配置
 const NVME_REG_CSTS: usize = 0x1C;   // u32: 控制器状态
 const NVME_REG_AQA: usize = 0x24;    // u32: Admin 队列属性
@@ -1062,6 +1064,120 @@ impl Driver for NvmeController {
         } else {
             "NVMe not initialized"
         }
+    }
+}
+
+// ============================================================================
+// NVMe 中断管理 API
+// ============================================================================
+
+impl NvmeController {
+    /// 使能指定中断向量
+    ///
+    /// 通过写入 INTMS 寄存器使能指定中断。
+    pub fn enable_interrupt(&mut self, vector: u32) {
+        if let Some(mmio) = self.iomem.as_ref() {
+            mmio.write_u32(NVME_REG_INTMS, vector);
+        }
+    }
+
+    /// 禁用指定中断向量
+    ///
+    /// 通过写入 INTMC 寄存器禁用指定中断。
+    pub fn disable_interrupt(&mut self, vector: u32) {
+        if let Some(mmio) = self.iomem.as_ref() {
+            mmio.write_u32(NVME_REG_INTMC, vector);
+        }
+    }
+
+    /// 屏蔽所有中断
+    pub fn mask_all_interrupts(&mut self) {
+        if let Some(mmio) = self.iomem.as_ref() {
+            // 写入全 1 屏蔽所有中断
+            mmio.write_u32(NVME_REG_INTMS, 0xFFFF_FFFF);
+        }
+    }
+
+    /// 取消屏蔽所有中断
+    pub fn unmask_all_interrupts(&mut self) {
+        if let Some(mmio) = self.iomem.as_ref() {
+            // 写入全 1 取消屏蔽所有中断
+            mmio.write_u32(NVME_REG_INTMC, 0xFFFF_FFFF);
+        }
+    }
+
+    /// 处理 NVMe 中断
+    ///
+    /// 读取 I/O 完成队列并处理完成的命令。
+    ///
+    /// 当前 NVMe 驱动采用同步实现 (submit_io_command 等待完成)，
+    /// 此函数用于以下场景：
+    /// 1. 异步 I/O 提交后，中断触发时处理完成事件
+    /// 2. 清理残留的完成条目
+    /// 3. 未来异步 I/O 路径的回调处理
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须确保：
+    /// - 控制器已初始化
+    /// - 中断已正确注册
+    /// - 无并发访问 I/O 队列
+    pub fn handle_interrupt(&mut self) -> Result<()> {
+        if !self.initialized {
+            return Ok(());
+        }
+
+        // 读取 I/O 完成队列
+        // SAFETY: io_cq_dma 由 DMA 分配保证有效，io_cq_head 在有效范围内
+        let cq = self.io_cq_dma.virt.0 as *const NvmeCompletion;
+        let mut processed = 0u32;
+
+        loop {
+            // SAFETY: cq 指向有效的 DMA 内存，io_cq_head < QUEUE_DEPTH
+            let entry = unsafe { cq.add(self.io_cq_head as usize).read_volatile() };
+
+            // 检查 phase bit 是否匹配当前 phase
+            if !entry.is_completed(self.io_phase) {
+                break;
+            }
+
+            // 检查命令是否成功
+            if !entry.is_success() {
+                // 复制 packed struct 字段到局部变量以避免对齐问题
+                let sqid = entry.sqid;
+                let cid = entry.cid;
+                let status = entry.status_code();
+                crate::klog_ffi!(
+                    klog_ffi_warn,
+                    "[NVMe] I/O completion error: sqid={}, cid={}, status={}",
+                    sqid, cid, status
+                );
+            }
+
+            processed += 1;
+
+            // 更新头指针
+            let new_head = (self.io_cq_head + 1) % (QUEUE_DEPTH as u32);
+            self.io_cq_head = new_head;
+
+            // 每 QUEUE_DEPTH 个条目翻转一次 phase bit
+            if new_head == 0 {
+                self.io_phase ^= 1;
+            }
+        }
+
+        if processed > 0 {
+            // 敲响 CQ 门铃，通知控制器已完成条目已被处理
+            self.write_doorbell(IO_QUEUE_ID, false, self.io_cq_head);
+
+            crate::klog_ffi!(
+                klog_ffi_info,
+                "[NVMe] interrupt handled: {} completions processed",
+                processed
+            );
+        }
+
+        Ok(())
     }
 }
 

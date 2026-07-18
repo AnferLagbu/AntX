@@ -337,6 +337,38 @@ fn wait_output_buffer_full() -> bool {
     false
 }
 
+/// 向 PS/2 控制器发送命令
+fn ps2_send_command(cmd: u8) -> DriverResult<()> {
+    wait_input_buffer_empty();
+    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    unsafe {
+        outb(PS2_CMD_PORT, cmd);
+    }
+    Ok(())
+}
+
+/// PS/2 控制器自检
+///
+/// 发送 0xAA 命令, 期望收到 0x55 表示自检通过。
+fn ps2_self_test() -> DriverResult<()> {
+    ps2_send_command(0xAA)?;
+    match keyboard_read_data() {
+        Some(0x55) => Ok(()), // 自检通过
+        _ => Err(DriverError::HardwareError),
+    }
+}
+
+/// 键盘重置
+///
+/// 发送 0xFF 命令重置键盘, 期望收到 0xFA (ACK)。
+fn keyboard_reset() -> DriverResult<()> {
+    keyboard_send_data(0xFF)?;
+    match keyboard_read_data() {
+        Some(0xFA) => Ok(()), // ACK
+        _ => Err(DriverError::HardwareError),
+    }
+}
+
 /// 向键盘发送数据
 fn keyboard_send_data(data: u8) -> DriverResult<()> {
     wait_input_buffer_empty();

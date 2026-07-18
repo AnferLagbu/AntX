@@ -189,6 +189,26 @@ impl UdsState {
         None
     }
 
+    /// 查找空闲套接字槽位
+    fn find_free_socket(&self) -> Option<u8> {
+        for (i, s) in self.sockets.iter().enumerate() {
+            if s.id == 0 {
+                return Some(i as u8);
+            }
+        }
+        None
+    }
+
+    /// 检查是否有空闲套接字槽位
+    fn has_free_socket(&self) -> bool {
+        self.find_free_socket().is_some()
+    }
+
+    /// 获取已使用的套接字数量
+    fn used_socket_count(&self) -> usize {
+        self.sockets.iter().filter(|s| s.id != 0).count()
+    }
+
     fn find_path(&self, path: &[u8]) -> Option<u8> {
         for (i, p) in self.paths.iter().enumerate() {
             if p.used && p.path_len as usize == path.len() && p.path[..path.len()] == *path {
