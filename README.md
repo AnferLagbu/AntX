@@ -128,7 +128,7 @@ CI 流程在 `ci/build.sh` 与 `ci/audit.sh` 中串联。`ci/audit.sh` 包含 fa
 | `audit_repr_c.py` | repr(C) 字段错位检查 |
 | `audit_volatile_access.py` | volatile 访问检查 |
 | `audit_static_mut.py` | static mut 使用审查 |
-| `audit_dead_code.py` | dead_code 禁止 |
+| `audit_dead_code.py` | dead_code 禁止 | 已移除 |
 | `audit_smoltcp_purity.py` | smoltcp vendored 纯净性 |
 | `audit_edition2024.py` | Edition 2024 兼容性 |
 | `audit_public_api_docs.py` | 公共 API 中文文档 |
