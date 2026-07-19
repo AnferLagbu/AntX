@@ -23,10 +23,8 @@
 
 #[cfg(target_arch = "x86_64")]
 use super::framework::Driver;
-use super::framework::{inb, outb};
-#[cfg(target_arch = "x86_64")]
-use super::framework::{inw, outw};
 use super::framework::{DeviceInfo, DeviceType, DriverError, Result};
+use crate::kernel::framework::ioport::IoPort;
 use alloc::boxed::Box;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ============================================================================
@@ -54,8 +52,7 @@ const ATA_STATUS: u16 = 7; // 状态寄存器
 const ATA_COMMAND: u16 = 7; // 命令寄存器
 
 /// 控制寄存器偏移量
-#[allow(dead_code)] // 规范定义, 待 ATA 软复位/轮询路径启用后使用。
-const ATA_CTRL_ALT_STATUS: u8 = 0; // 替代状态
+const ATA_CTRL_ALT_STATUS: u8 = 0; // 替代状态 (控制寄存器块偏移 0)
 
 /// 状态寄存器标志位
 const ATA_STATUS_BSY: u8 = 0x80; // Busy
@@ -121,6 +118,14 @@ pub struct AtaController {
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
+    /// Primary I/O 端口 (0x1F0-0x1F7)
+    primary_io: IoPort,
+    /// Primary 控制端口 (0x3F6)
+    primary_ctrl: IoPort,
+    /// Secondary I/O 端口 (0x170-0x177)
+    secondary_io: IoPort,
+    /// Secondary 控制端口 (0x176)
+    secondary_ctrl: IoPort,
 }
 
 // ============================================================================
@@ -146,13 +151,16 @@ pub fn get_ctrl_base(drive: u8) -> u16 {
 }
 
 /// ATA 延时函数 (读取状态寄存器 4 次)
-fn ata_delay(ctrl: u16) {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        for _ in 0..4 {
-            let _ = inb(ctrl);
-        }
+fn ata_delay(ctrl: &IoPort) {
+    for _ in 0..4 {
+        let _ = ctrl.read_u8(ATA_CTRL_ALT_STATUS as u16);
     }
+}
+
+/// 读取备用状态寄存器 (不清除中断)
+#[inline]
+fn read_alt_status(ctrl: &IoPort) -> u8 {
+    ctrl.read_u8(ATA_CTRL_ALT_STATUS as u16)
 }
 
 /// 等待 BSY 位清除
@@ -160,16 +168,13 @@ fn ata_delay(ctrl: u16) {
 /// # Returns
 /// * `Ok(())` - BSY 已清除
 /// * `Err(DriverError::Timeout)` - 超时
-fn wait_bsy(io: u16, ctrl: u16) -> Result<()> {
+fn wait_bsy(io: &IoPort, ctrl: &IoPort) -> Result<()> {
     let mut timeout = ATA_TIMEOUT;
 
     while timeout > 0 {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            let status = inb(io + ATA_STATUS);
-            if status & ATA_STATUS_BSY == 0 {
-                return Ok(());
-            }
+        let status = io.read_u8(ATA_STATUS as u16);
+        if status & ATA_STATUS_BSY == 0 {
+            return Ok(());
         }
         ata_delay(ctrl);
         timeout -= 1;
@@ -179,26 +184,23 @@ fn wait_bsy(io: u16, ctrl: u16) -> Result<()> {
 }
 
 /// 等待 DRQ 位设置且 BSY 清除
-fn wait_drq(io: u16, ctrl: u16) -> Result<()> {
+fn wait_drq(io: &IoPort, ctrl: &IoPort) -> Result<()> {
     let mut timeout = ATA_TIMEOUT;
 
     while timeout > 0 {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            let status = inb(io + ATA_STATUS);
+        let status = io.read_u8(ATA_STATUS as u16);
 
-            if status & ATA_STATUS_DF != 0 {
-                return Err(DriverError::HardwareError);
-            }
+        if status & ATA_STATUS_DF != 0 {
+            return Err(DriverError::HardwareError);
+        }
 
-            if status & ATA_STATUS_ERR != 0 {
-                let _ = inb(io + ATA_ERROR);
-                return Err(DriverError::HardwareError);
-            }
+        if status & ATA_STATUS_ERR != 0 {
+            let _ = io.read_u8(ATA_ERROR as u16);
+            return Err(DriverError::HardwareError);
+        }
 
-            if status & (ATA_STATUS_DRQ | ATA_STATUS_BSY) == ATA_STATUS_DRQ {
-                return Ok(());
-            }
+        if status & (ATA_STATUS_DRQ | ATA_STATUS_BSY) == ATA_STATUS_DRQ {
+            return Ok(());
         }
         ata_delay(ctrl);
         timeout -= 1;
@@ -208,11 +210,8 @@ fn wait_drq(io: u16, ctrl: u16) -> Result<()> {
 }
 
 /// 选择驱动器
-fn select_drive(io: u16, ctrl: u16, slave: bool) -> Result<()> {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        outb(io + ATA_DRIVE_HEAD, 0xA0 | ((slave as u8) << 4));
-    }
+fn select_drive(io: &IoPort, ctrl: &IoPort, slave: bool) -> Result<()> {
+    io.write_u8(ATA_DRIVE_HEAD as u16, 0xA0 | ((slave as u8) << 4));
     ata_delay(ctrl);
 
     wait_bsy(io, ctrl)
@@ -220,42 +219,33 @@ fn select_drive(io: u16, ctrl: u16, slave: bool) -> Result<()> {
 
 /// 检测驱动器是否存在
 #[cfg(target_arch = "x86_64")]
-fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
+fn detect_drive(io: &IoPort, ctrl: &IoPort, slave: bool) -> bool {
     // 选择驱动器
     if select_drive(io, ctrl, slave).is_err() {
         return false;
     }
 
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        let status = inb(io + ATA_STATUS);
-        if status & ATA_STATUS_DRDY == 0 {
-            return false;
-        }
+    let status = io.read_u8(ATA_STATUS as u16);
+    if status & ATA_STATUS_DRDY == 0 {
+        return false;
     }
 
     // 设置参数为 0 (用于 IDENTIFY)
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        outb(io + ATA_SECTOR_COUNT, 0);
-        outb(io + ATA_SECTOR_NUM, 0);
-        outb(io + ATA_CYLINDER_LOW, 0);
-        outb(io + ATA_CYLINDER_HIGH, 0);
+    io.write_u8(ATA_SECTOR_COUNT as u16, 0);
+    io.write_u8(ATA_SECTOR_NUM as u16, 0);
+    io.write_u8(ATA_CYLINDER_LOW as u16, 0);
+    io.write_u8(ATA_CYLINDER_HIGH as u16, 0);
 
-        // 发送 IDENTIFY 命令
-        outb(io + ATA_COMMAND, ATA_CMD_IDENTIFY);
-    }
+    // 发送 IDENTIFY 命令
+    io.write_u8(ATA_COMMAND as u16, ATA_CMD_IDENTIFY);
     ata_delay(ctrl);
 
     // 检查状态
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        let status = inb(io + ATA_STATUS);
+    let status = io.read_u8(ATA_STATUS as u16);
 
-        // 如果状态为 0，说明没有设备
-        if status == 0 {
-            return false;
-        }
+    // 如果状态为 0，说明没有设备
+    if status == 0 {
+        return false;
     }
 
     // 等待 BSY 清除
@@ -264,12 +254,9 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
     }
 
     // 检查错误
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        let status = inb(io + ATA_STATUS);
-        if status & ATA_STATUS_ERR != 0 {
-            return false;
-        }
+    let status = io.read_u8(ATA_STATUS as u16);
+    if status & ATA_STATUS_ERR != 0 {
+        return false;
     }
 
     // 等待 DRQ
@@ -279,10 +266,7 @@ fn detect_drive(io: u16, ctrl: u16, slave: bool) -> bool {
 
     // 读取 IDENTIFY 数据 (丢弃)
     for _ in 0..WORDS_PER_SECTOR {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            let _ = inw(io + ATA_DATA);
-        }
+        let _ = io.read_u16(ATA_DATA as u16);
     }
 
     true
@@ -315,69 +299,77 @@ impl Driver for AtaController {
         }
 
         // === 检测 Primary 通道 ===
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            // Software Reset
-            outb(ATA_PRIMARY_CTRL, 0x04);
-            ata_delay(ATA_PRIMARY_CTRL);
-            outb(ATA_PRIMARY_CTRL, 0x00);
-            ata_delay(ATA_PRIMARY_CTRL);
+        // Software Reset
+        self.primary_ctrl.write_u8(0, 0x04);
+        ata_delay(&self.primary_ctrl);
+        self.primary_ctrl.write_u8(0, 0x00);
 
-            // 写入签名值进行检测
-            outb(ATA_PRIMARY_IO + ATA_SECTOR_COUNT, 0x55);
-            outb(ATA_PRIMARY_IO + ATA_SECTOR_NUM, 0xAA);
+        // ATA 规范 9.2: 轮询备用状态等待 BSY 清除 (400ns minimum)
+        for _ in 0..1000 {
+            if read_alt_status(&self.primary_ctrl) & ATA_STATUS_BSY == 0 {
+                break;
+            }
+            core::hint::spin_loop();
+        }
 
-            // 读取并验证
-            let count = inb(ATA_PRIMARY_IO + ATA_SECTOR_COUNT);
-            let num = inb(ATA_PRIMARY_IO + ATA_SECTOR_NUM);
+        // 写入签名值进行检测
+        self.primary_io.write_u8(ATA_SECTOR_COUNT as u16, 0x55);
+        self.primary_io.write_u8(ATA_SECTOR_NUM as u16, 0xAA);
 
-            if count == 0x55 && num == 0xAA {
-                self.primary_present = true;
+        // 读取并验证
+        let count = self.primary_io.read_u8(ATA_SECTOR_COUNT as u16);
+        let num = self.primary_io.read_u8(ATA_SECTOR_NUM as u16);
 
-                // 检测 Master
-                if detect_drive(ATA_PRIMARY_IO, ATA_PRIMARY_CTRL, false) {
-                    self.devices[0].present = true;
-                    self.devices[0].is_master = true;
-                    self.devices[0].channel = 0;
-                }
+        if count == 0x55 && num == 0xAA {
+            self.primary_present = true;
 
-                // 检测 Slave
-                if detect_drive(ATA_PRIMARY_IO, ATA_PRIMARY_CTRL, true) {
-                    self.devices[1].present = true;
-                    self.devices[1].is_master = false;
-                    self.devices[1].channel = 0;
-                }
+            // 检测 Master
+            if detect_drive(&self.primary_io, &self.primary_ctrl, false) {
+                self.devices[0].present = true;
+                self.devices[0].is_master = true;
+                self.devices[0].channel = 0;
+            }
+
+            // 检测 Slave
+            if detect_drive(&self.primary_io, &self.primary_ctrl, true) {
+                self.devices[1].present = true;
+                self.devices[1].is_master = false;
+                self.devices[1].channel = 0;
             }
         }
 
         // === 检测 Secondary 通道 ===
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            outb(ATA_SECONDARY_CTRL, 0x04);
-            ata_delay(ATA_SECONDARY_CTRL);
-            outb(ATA_SECONDARY_CTRL, 0x00);
-            ata_delay(ATA_SECONDARY_CTRL);
+        self.secondary_ctrl.write_u8(0, 0x04);
+        ata_delay(&self.secondary_ctrl);
+        self.secondary_ctrl.write_u8(0, 0x00);
 
-            outb(ATA_SECONDARY_IO + ATA_SECTOR_COUNT, 0x55);
-            outb(ATA_SECONDARY_IO + ATA_SECTOR_NUM, 0xAA);
+        // ATA 规范 9.2: 轮询备用状态等待 BSY 清除
+        for _ in 0..1000 {
+            if read_alt_status(&self.secondary_ctrl) & ATA_STATUS_BSY == 0 {
+                break;
+            }
+            core::hint::spin_loop();
+        }
 
-            let count = inb(ATA_SECONDARY_IO + ATA_SECTOR_COUNT);
-            let num = inb(ATA_SECONDARY_IO + ATA_SECTOR_NUM);
+        self.secondary_io.write_u8(ATA_SECTOR_COUNT as u16, 0x55);
+        self.secondary_io.write_u8(ATA_SECTOR_NUM as u16, 0xAA);
 
-            if count == 0x55 && num == 0xAA {
-                self.secondary_present = true;
+        let count = self.secondary_io.read_u8(ATA_SECTOR_COUNT as u16);
+        let num = self.secondary_io.read_u8(ATA_SECTOR_NUM as u16);
 
-                if detect_drive(ATA_SECONDARY_IO, ATA_SECONDARY_CTRL, false) {
-                    self.devices[2].present = true;
-                    self.devices[2].is_master = true;
-                    self.devices[2].channel = 1;
-                }
+        if count == 0x55 && num == 0xAA {
+            self.secondary_present = true;
 
-                if detect_drive(ATA_SECONDARY_IO, ATA_SECONDARY_CTRL, true) {
-                    self.devices[3].present = true;
-                    self.devices[3].is_master = false;
-                    self.devices[3].channel = 1;
-                }
+            if detect_drive(&self.secondary_io, &self.secondary_ctrl, false) {
+                self.devices[2].present = true;
+                self.devices[2].is_master = true;
+                self.devices[2].channel = 1;
+            }
+
+            if detect_drive(&self.secondary_io, &self.secondary_ctrl, true) {
+                self.devices[3].present = true;
+                self.devices[3].is_master = false;
+                self.devices[3].channel = 1;
             }
         }
 
@@ -418,12 +410,26 @@ impl Driver for AtaController {
 impl AtaController {
     /// 创建新的 ATA 控制器实例
     pub fn new() -> Self {
+        // SAFETY: ATA I/O 端口地址由 PC 规范确定 (Primary: 0x1F0/0x3F6, Secondary: 0x170/0x176),
+        // 不与其他 IoPort 实例重叠.
+        let primary_io = unsafe { IoPort::new(ATA_PRIMARY_IO, 8, "ata-pio") }
+            .expect("ata-pio port init failed");
+        let primary_ctrl = unsafe { IoPort::new(ATA_PRIMARY_CTRL, 2, "ata-pctrl") }
+            .expect("ata-pctrl port init failed");
+        let secondary_io = unsafe { IoPort::new(ATA_SECONDARY_IO, 8, "ata-sio") }
+            .expect("ata-sio port init failed");
+        let secondary_ctrl = unsafe { IoPort::new(ATA_SECONDARY_CTRL, 2, "ata-sctrl") }
+            .expect("ata-sctrl port init failed");
         Self {
             primary_present: false,
             secondary_present: false,
             devices: [AtaDevice::default(); MAX_ATA_DEVICES],
             info: DeviceInfo::new("ata_controller", DeviceType::Block),
             initialized: false,
+            primary_io,
+            primary_ctrl,
+            secondary_io,
+            secondary_ctrl,
         }
     }
 
@@ -436,6 +442,15 @@ impl AtaController {
             return false;
         }
         self.devices[drive as usize].present
+    }
+
+    /// 获取指定驱动器的 I/O 和控制端口引用
+    fn ports_for_drive(&self, drive: u8) -> (&IoPort, &IoPort) {
+        if drive < 2 {
+            (&self.primary_io, &self.primary_ctrl)
+        } else {
+            (&self.secondary_io, &self.secondary_ctrl)
+        }
     }
 
     /// 读取单个扇区
@@ -454,41 +469,34 @@ impl AtaController {
             return Err(DriverError::DeviceNotFound);
         }
 
-        let io = get_io_base(drive);
-        let ctrl = get_ctrl_base(drive);
+        let (io, ctrl) = self.ports_for_drive(drive);
         let slave = (drive & 0x01) != 0;
 
         select_drive(io, ctrl, slave)?;
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            // 设置 LBA 地址
-            outb(io + ATA_SECTOR_COUNT, 1); // 1 个扇区
-            outb(io + ATA_SECTOR_NUM, (lba & 0xFF) as u8); // LBA 0-7
-            outb(io + ATA_CYLINDER_LOW, ((lba >> 8) & 0xFF) as u8); // LBA 8-15
-            outb(io + ATA_CYLINDER_HIGH, ((lba >> 16) & 0xFF) as u8); // LBA 16-23
-            outb(
-                io + ATA_DRIVE_HEAD,
-                0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
-            );
-            ata_delay(ctrl);
+        // 设置 LBA 地址
+        io.write_u8(ATA_SECTOR_COUNT as u16, 1); // 1 个扇区
+        io.write_u8(ATA_SECTOR_NUM as u16, (lba & 0xFF) as u8); // LBA 0-7
+        io.write_u8(ATA_CYLINDER_LOW as u16, ((lba >> 8) & 0xFF) as u8); // LBA 8-15
+        io.write_u8(ATA_CYLINDER_HIGH as u16, ((lba >> 16) & 0xFF) as u8); // LBA 16-23
+        io.write_u8(
+            ATA_DRIVE_HEAD as u16,
+            0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
+        );
+        ata_delay(ctrl);
 
-            // 发送读命令
-            outb(io + ATA_COMMAND, ATA_CMD_READ_SECTORS);
-            ata_delay(ctrl);
-        }
+        // 发送读命令
+        io.write_u8(ATA_COMMAND as u16, ATA_CMD_READ_SECTORS);
+        ata_delay(ctrl);
 
         wait_bsy(io, ctrl)?;
         wait_drq(io, ctrl)?;
 
         // 读取数据 (512 字节 = 256 个 16-bit 字)
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            for i in 0..WORDS_PER_SECTOR {
-                let word = inw(io + ATA_DATA);
-                buffer[i * 2] = (word & 0xFF) as u8;
-                buffer[i * 2 + 1] = ((word >> 8) & 0xFF) as u8;
-            }
+        for i in 0..WORDS_PER_SECTOR {
+            let word = io.read_u16(ATA_DATA as u16);
+            buffer[i * 2] = (word & 0xFF) as u8;
+            buffer[i * 2 + 1] = ((word >> 8) & 0xFF) as u8;
         }
 
         Ok(())
@@ -506,48 +514,38 @@ impl AtaController {
             return Err(DriverError::DeviceNotFound);
         }
 
-        let io = get_io_base(drive);
-        let ctrl = get_ctrl_base(drive);
+        let (io, ctrl) = self.ports_for_drive(drive);
         let slave = (drive & 0x01) != 0;
 
         select_drive(io, ctrl, slave)?;
 
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            // 设置 LBA 地址
-            outb(io + ATA_SECTOR_COUNT, 1);
-            outb(io + ATA_SECTOR_NUM, (lba & 0xFF) as u8);
-            outb(io + ATA_CYLINDER_LOW, ((lba >> 8) & 0xFF) as u8);
-            outb(io + ATA_CYLINDER_HIGH, ((lba >> 16) & 0xFF) as u8);
-            outb(
-                io + ATA_DRIVE_HEAD,
-                0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
-            );
-            ata_delay(ctrl);
+        // 设置 LBA 地址
+        io.write_u8(ATA_SECTOR_COUNT as u16, 1);
+        io.write_u8(ATA_SECTOR_NUM as u16, (lba & 0xFF) as u8);
+        io.write_u8(ATA_CYLINDER_LOW as u16, ((lba >> 8) & 0xFF) as u8);
+        io.write_u8(ATA_CYLINDER_HIGH as u16, ((lba >> 16) & 0xFF) as u8);
+        io.write_u8(
+            ATA_DRIVE_HEAD as u16,
+            0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
+        );
+        ata_delay(ctrl);
 
-            // 发送写命令
-            outb(io + ATA_COMMAND, ATA_CMD_WRITE_SECTORS);
-            ata_delay(ctrl);
-        }
+        // 发送写命令
+        io.write_u8(ATA_COMMAND as u16, ATA_CMD_WRITE_SECTORS);
+        ata_delay(ctrl);
 
         wait_bsy(io, ctrl)?;
         wait_drq(io, ctrl)?;
 
         // 写入数据
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            for i in 0..WORDS_PER_SECTOR {
-                let word = ((buffer[i * 2 + 1] as u16) << 8) | (buffer[i * 2] as u16);
-                outw(io + ATA_DATA, word);
-            }
+        for i in 0..WORDS_PER_SECTOR {
+            let word = ((buffer[i * 2 + 1] as u16) << 8) | (buffer[i * 2] as u16);
+            io.write_u16(ATA_DATA as u16, word);
         }
 
         // 刷新缓存
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            outb(io + ATA_COMMAND, ATA_CMD_FLUSH_CACHE);
-            ata_delay(ctrl);
-        }
+        io.write_u8(ATA_COMMAND as u16, ATA_CMD_FLUSH_CACHE);
+        ata_delay(ctrl);
 
         wait_bsy(io, ctrl)?;
 

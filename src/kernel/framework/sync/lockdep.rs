@@ -414,7 +414,6 @@ impl HeldLockStack {
     }
 
     /// 检查是否在中断上下文中持有锁
-    #[allow(dead_code)] // 待 lockdep 中断安全检测启用后使用。
     fn any_in_irq(&self) -> bool {
         self.entries[..self.depth].iter().any(|e| e.in_irq)
     }
@@ -509,6 +508,20 @@ pub fn acquire(class_id: LockClassId, irq_context: bool) -> bool {
             );
             map.violation_count.fetch_add(1, Ordering::Relaxed);
             return false;
+        }
+
+        // 检查 2.5: 持有 IRQ 上下文锁时获取 sleep lock → 潜在死锁
+        if !irq_context && stack.any_in_irq() {
+            if let Some(k) = kind {
+                if k.may_sleep() {
+                    let map = LOCK_DEP_MAP.lock();
+                    let name = map.class_name(class_id);
+                    lockdep_log!(
+                        "lockdep WARNING: acquiring sleep lock '{}' while holding IRQ-context lock",
+                        name
+                    );
+                }
+            }
         }
 
         // 检查 3: AB-BA 依赖检测

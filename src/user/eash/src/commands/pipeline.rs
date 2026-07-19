@@ -16,7 +16,6 @@ enum RedirKind {
     None,
     StdoutNew,     // >
     StdoutAppend,  // >>
-    #[allow(dead_code)]
     StdinFile,     // <
 }
 
@@ -119,6 +118,7 @@ fn parse_single_segment<'a>(raw: &'a [u8]) -> Segment<'a> {
             let name_start = k;
             while k < copy_len && seg.cmd_buf[k] != b' ' && seg.cmd_buf[k] != b'\t' { k += 1; }
             seg.redir_in = Some(&raw[name_start..k]);
+            seg.redir_kind = RedirKind::StdinFile;
             seg.cmd_buf[j] = 0;
             seg.cmd_len = j;
             break;

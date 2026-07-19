@@ -305,7 +305,11 @@ impl DmaEngine {
     }
 
     /// 为 CPU 访问同步 (Device → CPU)
-    pub fn sync_for_cpu(&self, _mapping: &DmaMapping, _offset: usize, _size: usize) {
+    pub fn sync_for_cpu(&self, mapping: &DmaMapping, offset: usize, size: usize) {
+        if !mapping.is_coherent {
+            let addr = VirtAddr(mapping.cpu_addr.0 + offset as u64);
+            self.cache_invalidate(addr, size);
+        }
         Self::barrier_cpu();
     }
 
@@ -437,10 +441,7 @@ impl DmaEngine {
 
     /// 在 DMA 读之前失效 CPU 缓存.
     /// 确保 CPU 能看到设备的写入.
-    /// 待流式 DMA 读取路径启用后使用。
     #[inline(always)]
-    #[allow(dead_code)] // 待流式 DMA 读取路径启用后使用。
-    #[allow(unused_variables)]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]
         {

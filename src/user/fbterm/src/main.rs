@@ -90,12 +90,10 @@ impl Terminal {
         self.fill_rect(0, 0, self.width, self.height, 20, 20, 28);
     }
 
-    #[allow(dead_code)]
     fn clear_line(&mut self, row: u32) {
         if row >= self.rows { return; }
-        for col in 0..self.cols {
-            self.draw_glyph(b' ', col, row, 255, 255, 255, 20, 20, 28);
-        }
+        let y0 = row * GLYPH_H;
+        self.fill_rect(0, y0, self.width, GLYPH_H, 20, 20, 28);
     }
 
     fn scroll_up_one(&mut self) {
@@ -106,9 +104,7 @@ impl Terminal {
             let dst = ((row - 1) * GLYPH_H * self.pitch) as usize;
             self.fb.copy_within(src..src + char_height_bytes, dst);
         }
-        let last_row = self.rows - 1;
-        let y0 = last_row * GLYPH_H;
-        self.fill_rect(0, y0, self.width, GLYPH_H, 20, 20, 28);
+        self.clear_line(self.rows - 1);
     }
 
     fn newline(&mut self) {

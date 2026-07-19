@@ -114,8 +114,9 @@ const VIRTIO_BLK_T_IN: u32 = 0; // 读
 const VIRTIO_BLK_T_OUT: u32 = 1; // 写
 
 // 配置空间偏移 (相对于 0x100)
+// virtio-blk 规范: offset 0x00 = capacity_lo (32bit), offset 0x04 = capacity_hi (32bit)
+// read_config64 内部组合为 u64, 支持 >2TB 容量
 const BLK_CONFIG_CAPACITY_LO: usize = 0x00;
-#[allow(dead_code)] // 规范定义, 待 >2TB 块设备容量查询启用后使用。
 const BLK_CONFIG_CAPACITY_HI: usize = 0x04;
 
 /// 带 virtqueue 的 virtio-blk 设备.

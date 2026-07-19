@@ -48,12 +48,9 @@ const E1000_STATUS_FD: u32 = 1 << 0;
 const E1000_STATUS_SPEED_1000: u32 = 2 << 6;
 const E1000_STATUS_SPEED_100: u32 = 1 << 6;
 
-// EEPROM 寄存器: 规范定义, 待 e1000-real-hw feature 启用后使用。
-#[allow(dead_code)] // 规范定义, 待 e1000-real-hw EEPROM 读取启用后使用。
+// EEPROM 寄存器
 const E1000_EERD: u32 = 0x0014;
-#[allow(dead_code)] // 规范定义, 待 e1000-real-hw EEPROM 读取启用后使用。
 const E1000_EERD_START: u32 = 1 << 0;
-#[allow(dead_code)] // 规范定义, 待 e1000-real-hw EEPROM 读取启用后使用。
 const E1000_EERD_DONE: u32 = 1 << 4;
 
 const E1000_RCTL: u32 = 0x0100;
@@ -191,7 +188,6 @@ impl Default for E1000Device {
 /// 否则无法读取 NIC 真实 MAC.
 /// 真实硬件必须启用 `e1000-real-hw` feature 方可调用此函数。
 #[cfg(not(feature = "e1000-real-hw"))]
-#[allow(dead_code)] // QEMU 路径下 read_mac_address 直接硬编码 MAC, 不调用本函数。
 fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
     let iomem = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
     // QEMU 兼容路径: 跳过 EERD 访问, 立即返回空值. 让 read_mac_address 走默认 MAC.

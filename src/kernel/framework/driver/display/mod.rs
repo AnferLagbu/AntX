@@ -113,8 +113,7 @@ fn infer_pixel_format(bpp: u8, red_pos: u8, green_pos: u8, blue_pos: u8) -> Pixe
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
-/// Bochs VBE DISPI MMIO 寄存器偏移（相对于 BAR0）, 待 MMIO 模式启用后使用。
-#[allow(dead_code)] // 待 Bochs VBE MMIO 模式启用后使用。
+/// Bochs VBE DISPI MMIO 寄存器偏移（相对于 BAR0）
 const VBE_DISPI_MMIO_BASE: u64 = 0x500;
 
 /// Bochs VBE DISPI 端口 I/O 地址
@@ -178,6 +177,39 @@ fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
     }
 }
 
+/// 通过 MMIO 读取 Bochs DISPI 寄存器 (替代 port I/O)
+///
+/// # Safety
+///
+/// - `mmio_base` 必须是有效的 VGA BAR0 映射地址
+/// - 偏移计算: VBE_DISPI_MMIO_BASE + reg * 2 (每寄存器 2 字节间距)
+#[cfg(target_arch = "x86_64")]
+unsafe fn read_bochs_disp_mode_mmio(mmio_base: u64) -> Option<(u32, u32, u8)> {
+    // SAFETY: 调用方保证 mmio_base 是有效的 VGA BAR0 映射,
+    // 偏移在 BAR0 范围内, volatile 访问对 MMIO 寄存器是必需的.
+    unsafe {
+        let base = mmio_base + VBE_DISPI_MMIO_BASE;
+        let read_reg = |reg: u16| -> u16 {
+            core::ptr::read_volatile((base + reg as u64 * 2) as *const u16)
+        };
+        let id = read_reg(VBE_DISPI_INDEX_ID);
+        if id < VBE_DISPI_ID5 {
+            return None;
+        }
+        let enabled = read_reg(VBE_DISPI_INDEX_ENABLE);
+        if enabled == 0 {
+            return None;
+        }
+        let xres = read_reg(VBE_DISPI_INDEX_XRES) as u32;
+        let yres = read_reg(VBE_DISPI_INDEX_YRES) as u32;
+        let bpp = read_reg(VBE_DISPI_INDEX_BPP) as u8;
+        if xres == 0 || yres == 0 || bpp == 0 {
+            return None;
+        }
+        Some((xres, yres, bpp))
+    }
+}
+
 /// 通过 PCI 探测 VGA 设备 BAR0 获取帧缓冲信息
 #[cfg(target_arch = "x86_64")]
 fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
@@ -201,14 +233,18 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
             continue;
         }
 
-        // 通过 Bochs DISPI 读取当前显示模式
-        let (width, height, bpp) = match read_bochs_disp_mode() {
-            Some(mode) => mode,
-            None => {
-                // 回退到默认值 1024x768x32
-                (1024, 768, 32)
-            }
+        // 优先 MMIO 路径 (避免 port I/O 开销)
+        let mode = if bar0.base_addr != 0 {
+            // SAFETY: bar0.base_addr 是 PCI BAR0 物理地址, 已通过 PCI 枚举验证.
+            // MMIO 偏移 VBE_DISPI_MMIO_BASE 在 BAR0 范围内.
+            unsafe { read_bochs_disp_mode_mmio(bar0.base_addr) }
+        } else {
+            None
         };
+        // 回退到 port I/O 路径
+        let (width, height, bpp) = mode
+            .or_else(|| read_bochs_disp_mode())
+            .unwrap_or((1024, 768, 32));
 
         let pitch = width * (bpp as u32 / 8);
 

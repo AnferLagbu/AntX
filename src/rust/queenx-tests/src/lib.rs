@@ -5,8 +5,6 @@
 //! the no_std kernel crate. For host testing, we extract the parameter
 //! validation rules into equivalent pure functions.
 
-#![allow(dead_code)]
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Errno {
     EINVAL,

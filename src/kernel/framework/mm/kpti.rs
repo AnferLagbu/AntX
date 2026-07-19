@@ -49,7 +49,6 @@ pub const PCID_USER: u64 = 2;
 /// INVPCID 指令类型: 按 PCID 刷新 TLB
 ///
 /// 供 VMM 页表修改 (COW/mprotect) 后刷除特定 PCID 的 TLB 条目.
-#[allow(dead_code)] // 待 VMM COW/mprotect TLB 刷新路径启用后使用。
 const INVPCID_TYPE_SINGLE: u64 = 0;
 /// INVPCID 指令类型: 刷新所有 TLB (包括 global 页)
 const INVPCID_TYPE_ALL_INCL_GLOBAL: u64 = 2;
@@ -85,6 +84,25 @@ pub unsafe fn invpcid(pcid: u64, addr: u64, typ: u64) {
 pub unsafe fn invpcid_flush_all() {
     // SAFETY: 调用方保证 CPU 支持 INVPCID; type 2 刷新所有 TLB 条目是安全操作.
     unsafe { invpcid(0, 0, INVPCID_TYPE_ALL_INCL_GLOBAL); }
+}
+
+/// 按 PCID + 虚拟地址刷新单条 TLB 条目.
+///
+/// 用于 VMM COW/mprotect 的细粒度 TLB 失效, 避免全量刷新的性能损失.
+///
+/// # Safety
+///
+/// - `pcid` 必须是有效的 PCID (0-4095)
+/// - `vaddr` 必须是页对齐的虚拟地址
+/// - 调用方保证 vaddr 属于当前地址空间或已通过 CR3 切换访问
+/// - CPU 必须支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认)
+#[inline(always)]
+pub unsafe fn invpcid_flush_single(pcid: u16, vaddr: u64) {
+    // SAFETY: INVPCID type 0 (by individual address + PCID).
+    // 前提: pcid 有效 (0-4095), vaddr 页对齐.
+    // 调用方保证: vaddr 属于调用方地址空间.
+    // 硬件契约: INVPCID 指令在支持的 CPU 上原子刷新单条 TLB.
+    unsafe { invpcid(pcid as u64, vaddr, INVPCID_TYPE_SINGLE); }
 }
 
 /// CR3 值中嵌入 PCID: PML4 物理地址 | PCID.

@@ -18,7 +18,7 @@
 //! # Safety
 //! 此模块直接操作 PS/2 控制器硬件。
 
-use crate::kernel::framework::driver::{inb, outb};
+use crate::kernel::framework::ioport::IoPort;
 use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
 use alloc::boxed::Box;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
@@ -294,6 +294,10 @@ pub struct KeyboardDriver {
     info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
+    /// PS/2 数据端口 (0x60)
+    data_port: IoPort,
+    /// PS/2 命令端口 (0x64)
+    cmd_port: IoPort,
 }
 
 // ============================================================================
@@ -301,25 +305,19 @@ pub struct KeyboardDriver {
 // ============================================================================
 
 /// 等待输入缓冲区为空
-fn wait_input_buffer_empty() {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        while inb(PS2_CMD_PORT) & PS2_STATUS_INPUT_FULL != 0 {
-            core::hint::spin_loop();
-        }
+fn wait_input_buffer_empty(cmd_port: &IoPort) {
+    while cmd_port.read_u8(0) & PS2_STATUS_INPUT_FULL != 0 {
+        core::hint::spin_loop();
     }
 }
 
 /// 等待输出缓冲区满
-fn wait_output_buffer_full() -> bool {
+fn wait_output_buffer_full(cmd_port: &IoPort) -> bool {
     let mut timeout: u32 = 100000;
 
     while timeout > 0 {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            if inb(PS2_CMD_PORT) & PS2_STATUS_OUTPUT_FULL != 0 {
-                return true;
-            }
+        if cmd_port.read_u8(0) & PS2_STATUS_OUTPUT_FULL != 0 {
+            return true;
         }
         timeout -= 1;
         core::hint::spin_loop();
@@ -329,21 +327,18 @@ fn wait_output_buffer_full() -> bool {
 }
 
 /// 向 PS/2 控制器发送命令
-fn ps2_send_command(cmd: u8) -> DriverResult<()> {
-    wait_input_buffer_empty();
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        outb(PS2_CMD_PORT, cmd);
-    }
+fn ps2_send_command(cmd_port: &IoPort, cmd: u8) -> DriverResult<()> {
+    wait_input_buffer_empty(cmd_port);
+    cmd_port.write_u8(0, cmd);
     Ok(())
 }
 
 /// PS/2 控制器自检
 ///
 /// 发送 0xAA 命令, 期望收到 0x55 表示自检通过。
-fn ps2_self_test() -> DriverResult<()> {
-    ps2_send_command(0xAA)?;
-    match keyboard_read_data() {
+fn ps2_self_test(cmd_port: &IoPort, data_port: &IoPort) -> DriverResult<()> {
+    ps2_send_command(cmd_port, 0xAA)?;
+    match keyboard_read_data(cmd_port, data_port) {
         Some(0x55) => Ok(()), // 自检通过
         _ => Err(DriverError::HardwareError),
     }
@@ -352,41 +347,37 @@ fn ps2_self_test() -> DriverResult<()> {
 /// 键盘重置
 ///
 /// 发送 0xFF 命令重置键盘, 期望收到 0xFA (ACK)。
-fn keyboard_reset() -> DriverResult<()> {
-    keyboard_send_data(0xFF)?;
-    match keyboard_read_data() {
+fn keyboard_reset(cmd_port: &IoPort, data_port: &IoPort) -> DriverResult<()> {
+    keyboard_send_data(cmd_port, data_port, 0xFF)?;
+    match keyboard_read_data(cmd_port, data_port) {
         Some(0xFA) => Ok(()), // ACK
         _ => Err(DriverError::HardwareError),
     }
 }
 
 /// 向键盘发送数据
-fn keyboard_send_data(data: u8) -> DriverResult<()> {
-    wait_input_buffer_empty();
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        outb(PS2_DATA_PORT, data);
-    }
+fn keyboard_send_data(cmd_port: &IoPort, data_port: &IoPort, data: u8) -> DriverResult<()> {
+    wait_input_buffer_empty(cmd_port);
+    data_port.write_u8(0, data);
     Ok(())
 }
 
 /// 从键盘读取数据
-fn keyboard_read_data() -> Option<u8> {
-    if !wait_output_buffer_full() {
+fn keyboard_read_data(cmd_port: &IoPort, data_port: &IoPort) -> Option<u8> {
+    if !wait_output_buffer_full(cmd_port) {
         return None;
     }
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    Some(unsafe { inb(PS2_DATA_PORT) })
+    Some(data_port.read_u8(0))
 }
 
 /// 更新键盘 LED 状态
-fn update_leds(modifiers: &ModifierState) {
-    let _ = keyboard_send_data(KB_CMD_SET_LED);
+fn update_leds(cmd_port: &IoPort, data_port: &IoPort, modifiers: &ModifierState) {
+    let _ = keyboard_send_data(cmd_port, data_port, KB_CMD_SET_LED);
     // 等待 ACK (0xFA)
-    let _ = keyboard_read_data();
-    let _ = keyboard_send_data(modifiers.to_led_byte());
+    let _ = keyboard_read_data(cmd_port, data_port);
+    let _ = keyboard_send_data(cmd_port, data_port, modifiers.to_led_byte());
     // 等待 ACK
-    let _ = keyboard_read_data();
+    let _ = keyboard_read_data(cmd_port, data_port);
 }
 
 // ============================================================================
@@ -408,20 +399,20 @@ impl Driver for KeyboardDriver {
 
     fn init(&mut self) -> DriverResult<()> {
         // 1. 清空输出缓冲区
-        let _ = keyboard_read_data();
+        let _ = keyboard_read_data(&self.cmd_port, &self.data_port);
 
         // 2. PS/2 控制器自检
-        if ps2_self_test().is_err() {
+        if ps2_self_test(&self.cmd_port, &self.data_port).is_err() {
             // 自检失败, 尝试重置
-            let _ = keyboard_reset();
+            let _ = keyboard_reset(&self.cmd_port, &self.data_port);
             // 重置后再次自检
-            if ps2_self_test().is_err() {
+            if ps2_self_test(&self.cmd_port, &self.data_port).is_err() {
                 return Err(DriverError::HardwareError);
             }
         }
 
         // 3. 发送 SET LED 命令设置初始 LED 状态
-        update_leds(&self.modifiers);
+        update_leds(&self.cmd_port, &self.data_port, &self.modifiers);
 
         // 4. 清空缓冲区
         self.buffer.clear();
@@ -455,11 +446,19 @@ impl Driver for KeyboardDriver {
 impl KeyboardDriver {
     /// 创建新的键盘驱动实例
     pub fn new() -> Self {
+        // SAFETY: PS/2 数据端口 (0x60) 和命令端口 (0x64) 是标准硬件端口,
+        // 由 PC 枚举确定, 不与其他 IoPort 实例重叠.
+        let data_port = unsafe { IoPort::new(PS2_DATA_PORT, 1, "ps2-data") }
+            .expect("ps2-data port init failed");
+        let cmd_port = unsafe { IoPort::new(PS2_CMD_PORT, 1, "ps2-cmd") }
+            .expect("ps2-cmd port init failed");
         Self {
             modifiers: ModifierState::default(),
             buffer: KeyboardBuffer::default(),
             info: DeviceInfo::new("ps2_keyboard", DeviceType::Input),
             initialized: false,
+            data_port,
+            cmd_port,
         }
     }
 
@@ -472,7 +471,7 @@ impl KeyboardDriver {
     /// * `None` - 无有效数据或特殊按键
     pub fn handle_interrupt(&mut self) -> Option<u8> {
         // 读取 scancode
-        let scancode = match keyboard_read_data() {
+        let scancode = match keyboard_read_data(&self.cmd_port, &self.data_port) {
             Some(s) => s,
             None => return None,
         };
@@ -519,7 +518,7 @@ impl KeyboardDriver {
                 // Caps Lock
                 if pressed {
                     self.modifiers.caps_lock = !self.modifiers.caps_lock;
-                    update_leds(&self.modifiers);
+                    update_leds(&self.cmd_port, &self.data_port, &self.modifiers);
                 }
                 return None;
             }
@@ -527,7 +526,7 @@ impl KeyboardDriver {
                 // Num Lock
                 if pressed {
                     self.modifiers.num_lock = !self.modifiers.num_lock;
-                    update_leds(&self.modifiers);
+                    update_leds(&self.cmd_port, &self.data_port, &self.modifiers);
                 }
                 return None;
             }
@@ -535,7 +534,7 @@ impl KeyboardDriver {
                 // Scroll Lock
                 if pressed {
                     self.modifiers.scroll_lock = !self.modifiers.scroll_lock;
-                    update_leds(&self.modifiers);
+                    update_leds(&self.cmd_port, &self.data_port, &self.modifiers);
                 }
                 return None;
             }

@@ -13,11 +13,6 @@
 //! - port 必须是有效的 I/O 端口地址 (0..65536)。
 //! - PIO 指令使用 nostack, nomem 选项避免编译器重排。
 
-// I/O 端口访问层, 待驱动统一 I/O 抽象后启用。
-// 保留文件级 allow: IoPort 及其方法 (readb/readw/readl/writeb/writew/writel)
-// 待 x86_64 驱动层全面改用此抽象后启用, 逐项标注会淹没代码。
-#![allow(dead_code)]
-
 #[cfg(target_arch = "x86_64")]
 use core::arch::asm;
 

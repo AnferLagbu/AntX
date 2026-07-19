@@ -127,6 +127,44 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 ---
 
+## P0: PCI MSI/MSI-X 中断基础设施
+
+**风险等级:** 高
+**涉及已删除常量:** `pci/msi.rs` 全模块 (`#![allow(dead_code)]`)
+
+### 问题描述
+
+`pci/msi.rs` 包含完整的 MSI/MSI-X 实现 (向量分配、PCI 配置空间写入、MMIO 表操作)，但从未被任何驱动调用。经深度调研发现，`msi_enable()` 写入 PCI config 后返回 `MsiConfig`，但**未注册 IDT handler** — CPU 跳转到 MSI vector 后无处理代码。
+
+**缺失的基础设施:**
+
+| 缺口 | 说明 |
+|------|------|
+| 无 ISR stub | vector 0x40-0x7F (MSI 范围) 无中断入口代码 |
+| IDT dispatch 仅支持 IRQ 0-15 | `IdtManager::register_irq` 硬限制 `irq < 16` |
+| `msi_enable()` 未注册 handler | 写入 PCI config 后返回 MsiConfig，但未调用 IDT 注册 |
+| `IrqLine` 零调用者 | 类型存在但从未被任何驱动使用 |
+| NVMe 未接 MSI | 有 PciDevice 引用但未调用 `msi_enable()` |
+
+**影响:** NVMe、virtio-net (PCI 模式) 等现代 PCI 设备无法使用 MSI/MSI-X 中断，只能使用 legacy INTx 中断。
+
+### 涉及文件
+
+- `src/kernel/framework/idt/mod.rs` — 扩展 ISR stub (0x40-0x7F) + dispatch 路径
+- `src/kernel/framework/idt/irqline.rs` — IrqLine 用于 MSI vector 注册
+- `src/kernel/framework/pci/msi.rs` — `msi_enable()` 接受 InterruptHandler 参数
+- `src/kernel/framework/driver/storage/nvme.rs` — 存储 PciDevice + 调用 msi_enable
+
+### 验证标准
+
+- [ ] vector 0x40-0x7F 有 ISR stub 入口
+- [ ] `msi_enable()` 返回的 MsiConfig 可注册 IDT handler
+- [ ] NVMe 驱动通过 MSI 接收中断
+- [ ] 双架构编译 0 warning 0 error
+- [ ] host-tests 全部通过
+
+---
+
 ## 关联文档
 
 - `docs/explain/explain-framekernel.md` — 框内核架构说明

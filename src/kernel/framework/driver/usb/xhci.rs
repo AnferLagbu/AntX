@@ -167,10 +167,8 @@ mod usb_sts {
 /// - PORT_TEST [28:31]
 mod portsc {
     pub const CURRENT_CONNECT_STATUS: u32 = 1 << 0;
-    #[allow(dead_code)] // 规范定义, 待端口使能/禁用变更中断处理启用后使用。
     pub const PORT_ENABLED: u32 = 1 << 1;
     pub const PORT_RESET: u32 = 1 << 4;
-    #[allow(dead_code)] // 规范定义, 待端口电源管理启用后使用。
     pub const PORT_POWER: u32 = 1 << 9;
 }
 
