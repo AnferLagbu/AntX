@@ -165,6 +165,28 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 ---
 
+## P1: Syscall sm_getsockname/getpeername 迁移
+
+**风险等级:** 中
+**涉及死代码:** `sm_getsockname_call`, `sm_getpeername_call` + 对应 extern 声明
+
+### 问题描述
+
+`sys_getsockname` 和 `sys_getpeername` 是唯一仍通过 `raw` 模块 FFI 包装函数调用的网络系统调用。其他网络系统调用 (socket/bind/listen/connect/send/recv/close 等) 已迁移到 `net_socket.rs` 路径。这两个未迁移，导致 4 项死代码无法消除。
+
+### 涉及文件
+
+- `src/kernel/framework/net/net_socket.rs` — 添加 `sm_getsockname`/`sm_getpeername` 包装
+- `src/kernel/framework/syscall/mod.rs` — 修改 `sys_getsockname`/`sys_getpeername` 使用新路径
+
+### 验证标准
+
+- [ ] `sys_getsockname`/`sys_getpeername` 通过 `net_socket.rs` 路径调用
+- [ ] raw 模块 `sm_getsockname_call`/`sm_getpeername_call` 及其 extern 声明可删除
+- [ ] 双架构编译 0 warning 0 error
+
+---
+
 ## 关联文档
 
 - `docs/explain/explain-framekernel.md` — 框内核架构说明

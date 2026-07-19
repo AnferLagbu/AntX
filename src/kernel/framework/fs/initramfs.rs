@@ -60,8 +60,6 @@ struct CpioEntry<'a> {
     data: &'a [u8],
     /// 文件模式 (权限 + 类型)
     mode: u32,
-    /// 文件大小
-    size: u32,
 }
 
 /// 从 hex ASCII 字符串解析 u32
@@ -147,7 +145,6 @@ fn parse_next_entry(data: &[u8], offset: usize) -> Option<(CpioEntry<'_>, usize)
             name,
             data: file_data,
             mode,
-            size: filesize,
         },
         next_offset,
     ))

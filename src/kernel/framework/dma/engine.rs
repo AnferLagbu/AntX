@@ -441,6 +441,10 @@ impl DmaEngine {
 
     /// 在 DMA 读之前失效 CPU 缓存.
     /// 确保 CPU 能看到设备的写入.
+    ///
+    /// x86_64: 缓存一致, 仅需栅栏 (addr/size 无须使用).
+    /// aarch64: 按虚拟地址逐行失效 (DC IVAC).
+    #[cfg_attr(target_arch = "x86_64", allow(unused_variables))]
     #[inline(always)]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]

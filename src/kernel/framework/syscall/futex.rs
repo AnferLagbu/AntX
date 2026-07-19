@@ -54,12 +54,6 @@ struct SimpleSpinLock {
 }
 
 impl SimpleSpinLock {
-    const fn new() -> Self {
-        SimpleSpinLock {
-            locked: AtomicBool::new(false),
-        }
-    }
-
     fn lock(&self) {
         while self
             .locked

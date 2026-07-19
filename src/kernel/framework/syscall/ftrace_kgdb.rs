@@ -33,9 +33,7 @@ use core::mem;
 use core::ptr;
 
 const EFAULT: i64 = -14;
-const EINVAL: i64 = -22;
 const ENODEV: i64 = -19;
-const ENOENT: i64 = -2;
 
 /// sys_ftrace_enable: 启用 ftrace 全局开关
 pub fn sys_ftrace_enable() -> i64 {

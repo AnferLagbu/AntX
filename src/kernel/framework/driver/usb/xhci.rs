@@ -167,9 +167,7 @@ mod usb_sts {
 /// - PORT_TEST [28:31]
 mod portsc {
     pub const CURRENT_CONNECT_STATUS: u32 = 1 << 0;
-    pub const PORT_ENABLED: u32 = 1 << 1;
     pub const PORT_RESET: u32 = 1 << 4;
-    pub const PORT_POWER: u32 = 1 << 9;
 }
 
 // ============================================================================
@@ -1009,8 +1007,7 @@ mod tests {
     #[test]
     fn test_portsc_bits() {
         assert_eq!(portsc::CURRENT_CONNECT_STATUS, 1);
-        assert_eq!(portsc::PORT_ENABLED, 2);
-        assert_eq!(portsc::PORT_POWER, 512);
+        assert_eq!(portsc::PORT_RESET, 1 << 4);
     }
 
     // USB-1.4: 设备地址分配/释放单元测试

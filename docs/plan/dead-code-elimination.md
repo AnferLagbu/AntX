@@ -2,15 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use compose:subagent (recommended) or compose:execute to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 消除项目中全部 66 处 `#[allow(dead_code)]` 标记，恢复 Rust 编译器 dead_code lint 的完整效力
+**Goal:** 消除项目中全部 dead_code 标记及编译器识别的死代码，恢复 Rust 编译器 dead_code lint 的完整效力
 
 **Architecture:** 按处置策略分三类：(1) 冗余/冲突/孤立代码 → 直接删除；(2) 预留/扩展代码 → 实现对应功能激活；(3) 文件级抑制 → 收窄为项级或移除。每项独立验证，逐模块推进。
 
 **Tech Stack:** Rust, QueenX Framekernel audit scripts, clippy
 
 **子计划:**
-- **D 区 (直接删除)** — 本文档 Task 1~3, 11a~11c, 12~14
-- **A 区 (激活实现)** — [dead-code-activation.md](./dead-code-activation.md) Task A-01~A-14c
+- **D 区 (直接删除)** — 本文档 Task 1~3, 11a~11c, 12~14 + D2 (待清理)
+- **A 区 (激活实现)** — [dead-code-activation.md](./dead-code-activation.md) Task A-01~A-26
+- **硬件兼容性任务** — [hardware-compatibility-tasks.md](./hardware-compatibility-tasks.md) P0~P2 + sm_getsockname/getpeername 迁移
 
 ## Global Constraints
 
@@ -91,6 +92,50 @@
 | A-14c | `framework/net/init.rs` | `raw::sockets_remove_helper` | 实装 W4.2.2 socket 关闭路径 |
 | A-15 | `framework/net/iface_trait.rs` | 文件级 allow 收窄 | 仅默认方法体保留 allow |
 | A-16 | `framework/syscall/mod.rs` | 文件级 allow 收窄 | 识别具体未使用项，逐项标注 |
+
+### D. 编译器识别的死代码 — 待清理 (32 项删除 + 4 项擢升 + 15 项激活)
+
+经 `cargo check` 编译器 dead_code lint 扫描发现的未标注死代码。分三类处置。
+
+#### D2. 完全死代码 — 直接删除 (32 项)
+
+| # | 位置 | 项 | 理由 |
+|---|------|----|------|
+| D2-01 | `framework/syscall/mod.rs` | `sm_socket_call`, `sm_bind_call`, `sm_listen_call`, `sm_accept_call`, `sm_connect_call`, `sm_send_call`, `sm_recv_call`, `sm_close_call`, `sm_setsockopt_call`, `sm_getsockopt_call`, `sm_sendmsg_call`, `sm_recvmsg_call` (12 个包装函数) | 服务层已通过 `net_socket.rs` 直接调用，这些包装函数零调用者 |
+| D2-02 | `framework/syscall/mod.rs` | `sm_socket`, `sm_bind`, `sm_listen`, `sm_accept`, `sm_connect`, `sm_send`, `sm_recv`, `sm_close`, `sm_setsockopt`, `sm_getsockopt`, `sm_sendmsg`, `sm_recvmsg` (12 个 extern 声明) | 仅被上述死包装函数调用 |
+| D2-03 | `framework/syscall/mod.rs:1392` | `raw::read_u8` | 零调用者 |
+| D2-04 | `framework/syscall/mod.rs:1408` | `raw::write_bytes` | 零调用者 |
+| D2-05 | `framework/syscall/mod.rs:1713` | `raw::user_addr_max` | 零调用者 |
+| D2-06 | `framework/syscall/ftrace_kgdb.rs:36,38` | `EINVAL`, `ENOENT` | 定义但文件内从未使用 |
+| D2-07 | `framework/syscall/futex.rs:57` | `SimpleSpinLock::new` | 被 `mem::zeroed()` 静态初始化替代 |
+| D2-08 | `framework/fs/initramfs.rs:64` | `CpioEntry.size` 字段 | 赋值后从未读取，`unpack()` 用 `entry.data.len()` |
+| D2-09 | `framework/ioport.rs:25` | `IoPort.name` 字段 | 存储但无 getter，从未读取 |
+| D2-10 | `framework/driver/usb/xhci.rs:170,172` | `PORT_ENABLED`, `PORT_POWER` | 仅测试断言引用 |
+| D2-11 | `framework/dma/engine.rs:445` | `cache_invalidate` 的 `addr`/`size` 参数 | x86_64 路径未使用 (仅 aarch64 使用) |
+
+#### D2. 援升为独立任务 (4 项)
+
+| # | 位置 | 项 | 理由 |
+|---|------|----|------|
+| D2-12 | `framework/syscall/mod.rs` | `sm_getsockname_call` | 唯一调用者 `sys_getsockname`，需先迁移到 `net_socket.rs` |
+| D2-13 | `framework/syscall/mod.rs` | `sm_getpeername_call` | 同上，`sys_getpeername` 的唯一调用者 |
+| D2-14 | `framework/syscall/mod.rs` | `sm_getsockname` extern 声明 | 被 D2-12 使用 |
+| D2-15 | `framework/syscall/mod.rs` | `sm_getpeername` extern 声明 | 被 D2-13 使用 |
+
+#### D2. 预留/激活目标 — 需实现功能来消除 (15 项)
+
+| # | 位置 | 项 | 激活方式 |
+|---|------|----|---------|
+| A-17 | `framework/driver/net/e1000.rs:52-54` | `E1000_EERD/START/DONE` | 启用 `e1000-real-hw` feature 或删除 QEMU stub |
+| A-18 | `framework/driver/net/e1000.rs:191` | `eeprom_read` (QEMU stub) | 同上 |
+| A-19 | `framework/net/init.rs:970` | `listen_endpoint_to_smol` | 修改 `sm_listen` 使用 (A-14b 同一目标) |
+| A-20 | `framework/net/init.rs:984` | `ipaddr_from_smol` | smoltcp 翻译层，net 栈集成后使用 |
+| A-21 | `framework/net/init.rs:993` | `endpoint_from_smol` | 同上 |
+| A-22 | `framework/net/init.rs:1002` | `cidr_from_smol` | 同上 |
+| A-23 | `framework/net/init.rs:1925` | `store_mac` | 驱动初始化时调用 |
+| A-24 | `framework/net/init.rs:2343` | `socket_close_stub` | W4.2.3.3 迁移后使用 |
+| A-25 | `framework/driver/virtio/blk.rs:120` | `BLK_CONFIG_CAPACITY_HI` | 隐式通过 `read_config64` 使用，添加注释说明 |
+| A-26 | `framework/syscall/futex.rs:123` | `FutexBucket::new` | 测试中使用，保留或重构测试 |
 
 ### C. 文件级抑制消除 (6 个文件级 allow → 0) — ✅ 已完成 (2026-07-18)
 

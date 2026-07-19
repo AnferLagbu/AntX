@@ -1293,36 +1293,9 @@ pub(crate) mod raw {
         // 串口 (COM1/COM2)
         fn serial_has_data(com: i32) -> bool;
         fn serial_getc(com: i32) -> i32;
-        // 物理内存分配 (PMM FFI 桥)
-        fn pmm_alloc_pages(count: u64) -> *mut u8;
-        fn pmm_free_pages(addr: *mut u8, count: u64);
-        // smoltcp 网络栈
-        fn sm_socket(domain: i32, sock_type: i32, protocol: i32) -> i32;
-        fn sm_bind(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
-        fn sm_listen(sockfd: i32, backlog: i32) -> i32;
-        fn sm_accept(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
-        fn sm_connect(sockfd: i32, addr: *const u8, addrlen: u32) -> i32;
-        fn sm_send(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32;
-        fn sm_recv(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32;
-        fn sm_close(sockfd: i32) -> i32;
-        fn sm_setsockopt(
-            sockfd: i32,
-            level: i32,
-            optname: i32,
-            optval: *const u8,
-            optlen: u32,
-        ) -> i32;
-        fn sm_getsockopt(
-            sockfd: i32,
-            level: i32,
-            optname: i32,
-            optval: *mut u8,
-            optlen: *mut u32,
-        ) -> i32;
+        // smoltcp 网络栈 (仅保留仍被调用的 extern)
         fn sm_getsockname(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
         fn sm_getpeername(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
-        fn sm_sendmsg(fd: i32, msg: *const u8, flags: i32) -> i32;
-        fn sm_recvmsg(fd: i32, msg: *mut u8, flags: i32) -> i32;
         // 链接器符号
         static _kernel_start: u8;
         static _kernel_end: u8;
@@ -1386,30 +1359,12 @@ pub(crate) mod raw {
         }
     }
 
-    /// 读一个 u8。
-    /// # Safety
-    /// 调用方必须先调用 `check_user_ptr(ptr as u64)` 验证。
-    pub unsafe fn read_u8(ptr: *const u8) -> u8 {
-        // SAFETY: 调用方已验证 ptr 指向有效可读用户地址。
-        unsafe { core::ptr::read_volatile(ptr) }
-    }
-
     /// 读一个 u64。
     /// # Safety
     /// 调用方必须先调用 `check_user_buf(ptr as u64, 8)` 验证。
     pub unsafe fn read_u64(ptr: *const u64) -> u64 {
         // SAFETY: 调用方已验证 ptr 对齐到 8 字节且指向 8 字节可读用户空间。
         unsafe { core::ptr::read_volatile(ptr) }
-    }
-
-    /// 从 src 复制 len 字节到用户指针 dst。
-    /// # Safety
-    /// 调用方必须先调用 `check_user_buf(dst as u64, len)` 验证。
-    pub unsafe fn write_bytes(dst: *mut u8, src: &[u8]) {
-        // SAFETY: 调用方已验证 dst 指向 len 字节可写用户空间；src 是有效
-        // Rust 切片不会越界；copy_nonoverlapping 要求两区域不重叠，
-        // src 来自内核栈/数据段，与用户空间地址不会重叠。
-        unsafe { core::ptr::copy_nonoverlapping(src.as_ptr(), dst, src.len()) }
     }
 
     /// 从用户指针读取 len 字节构造 slice。
@@ -1574,89 +1529,6 @@ pub(crate) mod raw {
     // ============= smoltcp 网络栈 FFI 包装 =============
 
     /// # Safety
-    /// FFI 调用，需在中断上下文。
-    pub fn sm_socket_call(domain: i32, sock_type: i32, protocol: i32) -> i32 {
-        // SAFETY: sm_socket 是 C-ABI 套接字创建函数，无指针参数。
-        unsafe { sm_socket(domain, sock_type, protocol) }
-    }
-
-    /// # Safety
-    /// FFI 调用，addr/addrlen 由调用方负责用户态校验。
-    pub fn sm_bind_call(sockfd: i32, addr: *const u8, addrlen: u32) -> i32 {
-        // SAFETY: 调用方已通过 check_user_buf 验证 addr 指向 addrlen 字节
-        // 可读用户空间。
-        unsafe { sm_bind(sockfd, addr, addrlen) }
-    }
-
-    /// # Safety
-    /// FFI 调用。
-    pub fn sm_listen_call(sockfd: i32, backlog: i32) -> i32 {
-        // SAFETY: sm_listen 是 C-ABI 函数，无指针参数。
-        unsafe { sm_listen(sockfd, backlog) }
-    }
-
-    /// # Safety
-    /// FFI 调用，addr/addrlen 由调用方负责用户态校验。
-    pub fn sm_accept_call(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
-        // SAFETY: 调用方已验证 addr/addrlen 是合法可写用户指针。
-        unsafe { sm_accept(sockfd, addr, addrlen) }
-    }
-
-    /// # Safety
-    /// FFI 调用，addr/addrlen 由调用方负责用户态校验。
-    pub fn sm_connect_call(sockfd: i32, addr: *const u8, addrlen: u32) -> i32 {
-        // SAFETY: 调用方已验证 addr 指向合法可读用户空间。
-        unsafe { sm_connect(sockfd, addr, addrlen) }
-    }
-
-    /// # Safety
-    /// FFI 调用，buf 由调用方负责用户态校验。
-    pub fn sm_send_call(sockfd: i32, buf: *const u8, len: u32, flags: i32) -> i32 {
-        // SAFETY: 调用方已验证 buf 指向 len 字节可读用户空间。
-        unsafe { sm_send(sockfd, buf, len, flags) }
-    }
-
-    /// # Safety
-    /// FFI 调用，buf 由调用方负责用户态校验。
-    pub fn sm_recv_call(sockfd: i32, buf: *mut u8, len: u32, flags: i32) -> i32 {
-        // SAFETY: 调用方已验证 buf 指向 len 字节可写用户空间。
-        unsafe { sm_recv(sockfd, buf, len, flags) }
-    }
-
-    /// # Safety
-    /// FFI 调用。
-    pub fn sm_close_call(sockfd: i32) -> i32 {
-        // SAFETY: sm_close 是 C-ABI 函数，无指针参数。
-        unsafe { sm_close(sockfd) }
-    }
-
-    /// # Safety
-    /// FFI 调用，optval 由调用方负责用户态校验。
-    pub fn sm_setsockopt_call(
-        sockfd: i32,
-        level: i32,
-        optname: i32,
-        optval: *const u8,
-        optlen: u32,
-    ) -> i32 {
-        // SAFETY: 调用方已验证 optval 指向 optlen 字节可读用户空间。
-        unsafe { sm_setsockopt(sockfd, level, optname, optval, optlen) }
-    }
-
-    /// # Safety
-    /// FFI 调用，optval/optlen 由调用方负责用户态校验。
-    pub fn sm_getsockopt_call(
-        sockfd: i32,
-        level: i32,
-        optname: i32,
-        optval: *mut u8,
-        optlen: *mut u32,
-    ) -> i32 {
-        // SAFETY: 调用方已验证 optval/optlen 是合法可写用户指针。
-        unsafe { sm_getsockopt(sockfd, level, optname, optval, optlen) }
-    }
-
-    /// # Safety
     /// FFI 调用，addr/addrlen 由调用方负责用户态校验 (可写)。
     pub fn sm_getsockname_call(
         sockfd: i32,
@@ -1678,20 +1550,6 @@ pub(crate) mod raw {
             unsafe { sm_getpeername(sockfd, addr as *mut u8, addrlen as *mut u32) }
         }
 
-        /// # Safety
-        /// FFI 调用，`msg` 由 services 校验 msghdr 布局 (iov 范围、iovlen 个 iovec 可读)。
-        pub fn sm_sendmsg_call(fd: i32, msg: u64, flags: i32) -> i32 {
-            // SAFETY: msg 经 services 校验完整 Msghdr (56 字节) 可读, iovlen 个 Iovec 可读.
-            unsafe { sm_sendmsg(fd, msg as *const u8, flags) }
-        }
-
-        /// # Safety
-        /// FFI 调用，`msg` 由 services 校验 msghdr 布局 (iov 范围、iovlen 个 iovec 可写)。
-        pub fn sm_recvmsg_call(fd: i32, msg: u64, flags: i32) -> i32 {
-            // SAFETY: msg 经 services 校验完整 Msghdr (56 字节) 可写, iovlen 个 Iovec 可写.
-            unsafe { sm_recvmsg(fd, msg as *mut u8, flags) }
-        }
-
     // ============= 链接器符号访问 =============
 
     /// 内核映像起始虚拟地址。
@@ -1707,11 +1565,6 @@ pub(crate) mod raw {
     /// # SAFETY: 链接器符号，hhdm_offset 必须与启动时一致。
     pub fn kernel_end_phys(hhdm_offset: usize) -> usize {
         unsafe { (&_kernel_end as *const u8 as usize).wrapping_sub(hhdm_offset) }
-    }
-
-    /// 用户地址空间上限（导出方便 raw 内部判断）。
-    pub const fn user_addr_max() -> u64 {
-        super::USER_ADDR_MAX
     }
 
     // ============= CPU 控制指令集中点 =============

@@ -56,6 +56,12 @@ impl IoPort {
         self.base
     }
 
+    /// 端口名称 (调试用)
+    #[inline(always)]
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
     fn check_offset(&self, offset: u16, size: u16) -> Result<u16, &'static str> {
         if offset.saturating_add(size) > self.len {
             return Err("IoPort: access out of bounds");
