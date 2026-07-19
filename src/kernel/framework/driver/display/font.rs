@@ -5,8 +5,6 @@ const FONT8X16_DATA: &[u8] = include_bytes!("assets/font8x16.raw");
 
 const GLYPH_WIDTH: u32 = 8;
 const GLYPH_HEIGHT: u32 = 16;
-#[allow(dead_code)] // 规范定义, 待字体度量查询 API 启用后使用。
-const GLYPH_BYTES: u32 = 16;
 
 pub struct Font {
     data: &'static [u8],

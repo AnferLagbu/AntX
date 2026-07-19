@@ -16,10 +16,6 @@
 //! - [ftrace](file:///home/anfer/Code/QueenX/src/kernel/framework/debug/ftrace.rs) — 跟踪点/事件记录
 //! - [kgdb](file:///home/anfer/Code/QueenX/src/kernel/framework/debug/kgdb.rs) — KGDB 桩
 //! - [api](file:///home/anfer/Code/QueenX/src/kernel/framework/debug/api.rs) — 公共 re-export
-// 调试子系统占位, 待 ftrace/kgdb 集成后启用。
-// 保留文件级 allow: ebpf 子模块大量内部类型和函数待调试路径启用后使用。
-#![allow(dead_code)]
-
 // ebpf 公共接口 re-export — 避免跨子系统直接访问 debug::ebpf 内部
 pub use ebpf::sys_bpf;
 pub use ebpf::bpf_init;

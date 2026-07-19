@@ -124,6 +124,3 @@ pub fn save(cmd: &Cmd) {
     let n = fs_write(fd, text_str.as_bytes()); fs_close(fd);
     print("Wrote "); print_dec(n as i64); println(" bytes");
 }
-
-#[allow(dead_code)]
-pub fn sync(_: &Cmd) { fs_sync(); println("Synced"); }

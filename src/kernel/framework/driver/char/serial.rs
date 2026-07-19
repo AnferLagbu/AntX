@@ -57,8 +57,6 @@ const UART_LSR: u16 = 5; // 线路状态寄存器
 /// LSR 标志位
 const LSR_DATA_READY: u8 = 0x01; // 数据可读
 const LSR_TRANSMIT_EMPTY: u8 = 0x20; // 发送保持寄存器空
-#[allow(dead_code)] // 规范定义, 待串口流控特性启用后使用。
-const LSR_TRANSMIT_IDLE: u8 = 0x40; // 发送器空闲
 
 /// FCR 命令
 const FCR_ENABLE_FIFO: u8 = 0xC1; // 启用 FIFO，清除缓冲区

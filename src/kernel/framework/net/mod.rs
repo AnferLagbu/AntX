@@ -17,8 +17,6 @@ pub mod netfilter;
 pub mod iface_trait;
 #[cfg(not(feature = "kernel_test"))]
 pub mod smoltcp_impl;
-/// AF_UNIX 子系统 (Phase C.3)
-pub mod unix;
 /// P2-I-41: Socket WaitQueue 基础设施
 pub mod wait_queue;
 /// P2-I-44: 网络快照 (net_save / net_restore 完整实现)

@@ -82,8 +82,6 @@ const REG_DEVICE_ID: u8 = 0x02;
 const REG_COMMAND: u8 = 0x04;
 const REG_STATUS: u8 = 0x06;
 const REG_REVISION_ID: u8 = 0x08;
-#[allow(dead_code)] // 规范定义, 待 PCI 子类编程接口查询启用后使用。
-const REG_CLASS_CODE: u8 = 0x0B;
 const REG_HEADER_TYPE: u8 = 0x0E;
 const REG_BAR0: u8 = 0x10;
 const REG_CAP_PTR: u8 = 0x34;

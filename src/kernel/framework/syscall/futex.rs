@@ -18,12 +18,6 @@
 //! - `uaddr` 必须是合法的用户空间指针, 在 syscall 入口已通过 check_user_ptr 验证
 //! - 原子比较使用 `AtomicU32` 访问用户空间, 需确保页表映射有效
 
-// futex 实现占位, 待用户空间等待机制启用后使用。
-// 保留文件级 allow: 大量内部类型 (FutexWaiter/FutexBucket/FutexHashTable) 和
-// 辅助函数 (hash_uaddr/futex_op/futex_wait/futex_wake/futex_requeue) 待 services 层
-// futex 安全封装接入后启用, 逐项标注会淹没代码。
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 

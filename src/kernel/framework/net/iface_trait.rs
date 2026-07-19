@@ -41,8 +41,6 @@
 //!
 //! REVAL-W 第 5 组 (W1), 2026-06-24 实装.
 
-#![allow(dead_code)] // W3 实装前方法未被调用, 属正常预留
-
 use core::fmt;
 
 // ============================================================================
@@ -611,8 +609,6 @@ pub struct Ipv4Addr(pub [u8; 4]);
 impl Ipv4Addr {
     /// 任意地址 (0.0.0.0) — 用于"未指定"语义.
     pub const UNSPECIFIED: Self = Self([0, 0, 0, 0]);
-    /// 255.255.255.255 广播地址.
-    pub const BROADCAST: Self = Self([255, 255, 255, 255]);
 
     /// 构造一个 IPv4 地址.
     #[inline(always)]

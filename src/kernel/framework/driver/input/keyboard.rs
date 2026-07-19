@@ -34,17 +34,8 @@ const PS2_CMD_PORT: u16 = 0x64;
 /// 状态寄存器标志位
 const PS2_STATUS_OUTPUT_FULL: u8 = 0x01; // 输出缓冲区满
 const PS2_STATUS_INPUT_FULL: u8 = 0x02; // 输入缓冲区满
-#[allow(dead_code)] // 规范定义, 待 PS/2 控制器诊断启用后使用。
-const PS2_STATUS_SYSTEM: u8 = 0x04; // 系统标志
-
 /// 键盘命令
 const KB_CMD_SET_LED: u8 = 0xED; // 设置 LED
-#[allow(dead_code)] // 规范定义, 待键盘诊断/扫描码集切换启用后使用。
-const KB_CMD_ECHO: u8 = 0xEE; // Echo
-#[allow(dead_code)] // 规范定义, 待键盘扫描码集切换启用后使用。
-const KB_CMD_SCANCODE: u8 = 0xF0; // 获取/设置扫描码集
-#[allow(dead_code)] // 规范定义, 待键盘识别诊断启用后使用。
-const KB_CMD_IDENTIFY: u8 = 0xF2; // Identify Keyboard
 
 /// LED 标志位
 const KB_LED_SCROLL_LOCK: u8 = 0x01;

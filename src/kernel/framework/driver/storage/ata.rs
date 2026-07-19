@@ -61,13 +61,7 @@ const ATA_CTRL_ALT_STATUS: u8 = 0; // 替代状态
 const ATA_STATUS_BSY: u8 = 0x80; // Busy
 const ATA_STATUS_DRDY: u8 = 0x40; // Drive Ready
 const ATA_STATUS_DF: u8 = 0x20; // Device Fault
-#[allow(dead_code)] // 规范定义, 待 ATA 寻道完成检测启用后使用。
-const ATA_STATUS_DSC: u8 = 0x10; // Seek Complete
 const ATA_STATUS_DRQ: u8 = 0x08; // Data Request
-#[allow(dead_code)] // 规范定义, 待 ATA 状态机诊断启用后使用。
-const ATA_STATUS_CORR: u8 = 0x04; // Corrected Data
-#[allow(dead_code)] // 规范定义, 待 ATA 索引标记诊断启用后使用。
-const ATA_STATUS_IDX: u8 = 0x02; // Index
 const ATA_STATUS_ERR: u8 = 0x01; // Error
 
 /// ATA 命令集
@@ -82,8 +76,6 @@ const ATA_TIMEOUT: u32 = 100000;
 /// 成功和错误码
 const ATA_SUCCESS: i32 = 0;
 const ATA_ERR: i32 = -1;
-#[allow(dead_code)] // 规范定义, 待 ATA 超时重试路径启用后使用。
-const ATA_TIMEOUT_ERR: i32 = -2;
 const ATA_NO_DISK: i32 = -3;
 
 /// 每个扇区的字数 (256 × 16bit = 512 bytes)

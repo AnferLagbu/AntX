@@ -47,8 +47,6 @@ pub const VGA_BUFFER_SIZE: usize = SCREEN_WIDTH * SCREEN_HEIGHT * 2;
 
 /// CRT 控制器端口
 const VGA_CTRL_REGISTER: u16 = 0x3D4;
-#[allow(dead_code)] // 规范定义, 待 VGA 索引寄存器写入启用后使用。
-const VGA_DATA_REGISTER: u16 = 0x3D5;
 
 /// 光标位置寄存器
 const VGA_CURSOR_HIGH: u8 = 0x0E;

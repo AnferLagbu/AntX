@@ -9,28 +9,13 @@ const IOAPIC_BASE_DEFAULT: u64 = 0xFEC00000;
 const IOREGSEL: u32 = 0x00;
 const IOWIN: u32 = 0x10;
 
-#[allow(dead_code)] // 规范定义, 待 IOAPIC ID 寄存器读取启用后使用。
-const IOAPIC_ID: u32 = 0x00;
 const IOAPIC_VER: u32 = 0x01;
-#[allow(dead_code)] // 规范定义, 待 IOAPID ID/仲裁调试启用后使用。
-const IOAPIC_ARB: u32 = 0x02;
 const IOREDTBL_BASE: u32 = 0x10;
 
 const REDTBL_MASK: u64 = 1 << 16;
 const REDTBL_LEVEL: u64 = 1 << 15;
-#[allow(dead_code)] // 规范定义, 待 IO-APIC 低优先级中断路由启用后使用。
-const REDTBL_LOW_PRIORITY: u64 = 1 << 13;
-#[allow(dead_code)] // 规范定义, 待 IO-APIC 逻辑目标模式启用后使用。
-const REDTBL_LOGICAL: u64 = 1 << 11;
 
 const DELIVERY_FIXED: u64 = 0x000;
-// 投递模式: 规范定义, 待 SMI/NMI/ExtINT 中断路由启用后使用。
-#[allow(dead_code)] // 规范定义, 待 SMI 中断路由启用后使用。
-const DELIVERY_SMI: u64 = 0x200;
-#[allow(dead_code)] // 规范定义, 待 NMI 中断路由启用后使用。
-const DELIVERY_NMI: u64 = 0x400;
-#[allow(dead_code)] // 规范定义, 待 ExtINT 中断路由启用后使用。
-const DELIVERY_EXTINT: u64 = 0x700;
 
 static IOAPIC_BASE: AtomicU64 = AtomicU64::new(0);
 static IOAPIC_INITIALIZED: AtomicBool = AtomicBool::new(false);

@@ -13,13 +13,6 @@ const APIC_VERSION: u32 = 0x030;
 const APIC_TPR: u32 = 0x080;
 const APIC_EOI: u32 = 0x0B0;
 const APIC_SVR: u32 = 0x0F0;
-// APIC ISR/TMR/IRR 寄存器组: 规范定义, 待中断调试/IRQ 亲和性特性启用后使用。
-#[allow(dead_code)] // 规范定义, 待中断调试/ISR 查询启用后使用。
-const APIC_ISR_BASE: u32 = 0x100;
-#[allow(dead_code)] // 规范定义, 待中断调试/TMR 查询启用后使用。
-const APIC_TMR_BASE: u32 = 0x180;
-#[allow(dead_code)] // 规范定义, 待 IRQ 亲和性/IRR 查询启用后使用。
-const APIC_IRR_BASE: u32 = 0x200;
 const APIC_ESR: u32 = 0x280;
 const APIC_ICR_LOW: u32 = 0x300;
 const APIC_ICR_HIGH: u32 = 0x310;

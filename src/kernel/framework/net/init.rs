@@ -1,8 +1,3 @@
-// 网络子系统初始化占位, 待 smoltcp 集成完成后启用。
-// 保留文件级 allow: InitState/NetStatus 等内部类型和大量初始化函数
-// 待网络栈端到端路径启用后使用, 逐项标注会淹没代码。
-#![allow(dead_code)]
-
 use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
@@ -46,8 +41,6 @@ static G_INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
 // 当前网络配置快照 (D1.1/D1.2 高层 API 支撑)
 // 全部为 Atomic, 单字段读写无需 NET_LOCK; 多字段一致性由 NetStatus::capture 原子复制.
 // 未配置时全部 = 0; 0.0.0.0 表示"无".
-const IPV4_NONE: [u8; 4] = [0; 4];
-const MAC_NONE: [u8; 6] = [0; 6];
 static G_MAC: AtomicU64 = AtomicU64::new(0);              // 6 字节大端打包为 u64
 static G_IPV4: AtomicU32 = AtomicU32::new(0);             // 网络字节序
 static G_GATEWAY: AtomicU32 = AtomicU32::new(0);          // 网络字节序
@@ -867,23 +860,10 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
 }}
 
 // ============================================================================
-// Socket 系统调用注册
-// ============================================================================
-
-#[unsafe(no_mangle)]
-pub extern "C" fn qx_socket_register_syscalls() -> i32 {
-    0
-}
-
-// ============================================================================
 // Socket 公共 API
 // ============================================================================
 
 // POSIX errno 常量 (i32)
-const E_PERM: i32 = 1;
-const E_NOENT: i32 = 2;
-const E_INTR: i32 = 4;
-const E_IO: i32 = 5;
 const E_BADF: i32 = 9;
 const E_AGAIN: i32 = 11;
 const E_NOMEM: i32 = 12;
@@ -893,7 +873,6 @@ const E_NFILE: i32 = 23;
 const E_NOTSUPP: i32 = 95;
 const E_AFNOSUPPORT: i32 = 97;
 const E_ADDRINUSE: i32 = 98;
-const E_ADDRNOTAVAIL: i32 = 99;
 const E_CONNRESET: i32 = 104;
 const E_NOTCONN: i32 = 107;
 const E_CONNREFUSED: i32 = 111;
@@ -1849,23 +1828,6 @@ static mut UDP_RX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS] =
 static mut UDP_TX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS] =
     [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS];
 
-/// # Safety
-///
-/// - 直接访问 `static mut` 全局表 (`FD_TYPES`, `SOCKET_TABLE`)
-/// - 调用方须保证在持有 `SM_FD_TABLE_LOCK` 时调用
-unsafe fn sm_alloc_fd() -> i32 { unsafe {
-    for i in 0..MAX_SM_FD {
-        if FD_TYPES.0[i] == 0 && SOCKET_TABLE.0[i].is_none() {
-            // TD-02 V3: 通过 fd_alloc 集中计算 FD 编号
-            return crate::kernel::framework::proc::fd_at(
-                crate::kernel::framework::proc::FdSubsystem::Smoltcp,
-                i,
-            );
-        }
-    }
-    -1
-}}
-
 pub fn is_network_initialized() -> bool {
     crate::kernel::framework::net::NET_READY.load(Ordering::Acquire)
 }
@@ -2487,19 +2449,6 @@ pub(crate) mod raw {
             5 => DhcpState::Failed,
             _ => DhcpState::Idle, // 默认
         }
-    }
-
-    /// smoltcp SocketSet::remove 辅助 (W4.2 阶段 1 stub).
-    ///
-    /// 阶段 1 简化: 仅返回 false (未实现), 不实际修改 SocketSet.
-    /// 阶段 2+ 实装: 调用 `sockets.remove(handle)` 并返回 true.
-    fn sockets_remove_helper(_smol_handle: smoltcp::iface::SocketHandle) -> bool {
-        // W4.2 阶段 1: 0 逻辑, 返回 false (未实现)
-        // W4.2.2+ 实装: 
-        //   let smol_socket = sockets.remove(_smol_handle);
-        //   // smoltcp SocketSet::remove 返回 Socket enum, 实际删除已发生
-        //   true
-        false
     }
 
     /// klog 网络消息 (C 字符串) - 安全包装

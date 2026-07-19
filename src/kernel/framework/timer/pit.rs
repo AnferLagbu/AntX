@@ -29,10 +29,6 @@ use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
 /// PIT I/O 端口地址
 const PIT_CHANNEL_0_DATA: u16 = 0x40; // 通道 0 数据端口
-#[allow(dead_code)] // 规范定义, 待 PIT 通道 1 启用后使用。
-const PIT_CHANNEL_1_DATA: u16 = 0x41; // 通道 1 数据端口
-#[allow(dead_code)] // 规范定义, 待 PIT 通道 2 (PC 扬声器) 启用后使用。
-const PIT_CHANNEL_2_DATA: u16 = 0x42; // 通道 2 数据端口
 const PIT_COMMAND_PORT: u16 = 0x43; // 命令/控制寄存器
 
 /// PIT 基础时钟频率 (1.193182 MHz)

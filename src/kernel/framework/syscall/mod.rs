@@ -1,10 +1,3 @@
-// 系统调用分发模块: 大量桩函数待 services 层逐步接入后启用, 保留文件级 allow。
-//
-// ## 依赖声明
-//
-// framework 内部依赖: proc, mm, fs, sync, net, driver, timer, tests, credo, ipc, chitin, barrier
-// services 依赖: services::syscall (安全代理)
-#![allow(dead_code)]
 pub mod api;
 pub mod brk;
 pub mod canary;
@@ -726,11 +719,6 @@ fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
     buf[offset + 3] = (val >> 24) as u8;
 }
 
-fn write_le16(buf: &mut [u8], offset: usize, val: u16) {
-    buf[offset] = val as u8;
-    buf[offset + 1] = (val >> 8) as u8;
-}
-
 const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
@@ -862,9 +850,6 @@ pub fn sys_nanosleep(req: u64, rem: u64) -> i64 {
 
 // 已迁移到 services: sys_clock_gettime, sys_poll, sys_chown
 
-const SIGTERM: i32 = 15;
-const SIGKILL: i32 = 9;
-
 pub fn sys_kill(pid: i32, sig: i32) -> i64 {
     if !(0..=31).contains(&sig) {
         return Errno::EINVAL.as_ret();
@@ -887,8 +872,6 @@ fn sys_tgkill(_tgid: i32, tid: i32, sig: i32) -> i64 {
 
 // 信号框架 — rt_sigaction / rt_sigprocmask / rt_sigreturn
 
-const SIG_DFL_SYSCALL: u64 = 0;
-const SIG_IGN_SYSCALL: u64 = 1;
 const SIG_BLOCK: i32 = 0;
 const SIG_UNBLOCK: i32 = 1;
 const SIG_SETMASK: i32 = 2;

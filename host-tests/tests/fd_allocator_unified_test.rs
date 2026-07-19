@@ -144,13 +144,11 @@ fn test_v3_subsystems_use_fd_at_not_base_plus() {
     //   3. signalfd.rs sys_signalfd 内部
     //   4. inotify.rs InotifyInstance::fd
     //   5. inotify.rs 通知循环 epoll_pwake
-    //   6. init.rs sm_alloc_fd
     let cases: &[(&str, &str)] = &[
         ("src/kernel/services/net/unix.rs",              "fd_at"),
         ("src/kernel/framework/syscall/eventfd.rs",     "fd_at"),
         ("src/kernel/framework/syscall/signalfd.rs",    "fd_at"),
         ("src/kernel/services/fs/inotify.rs",          "fd_at"),
-        ("src/kernel/framework/net/init.rs",            "fd_at"),
     ];
     for (path, expected) in cases {
         let p = Path::new(env!("CARGO_MANIFEST_DIR"))

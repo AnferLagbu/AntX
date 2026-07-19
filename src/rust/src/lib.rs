@@ -563,7 +563,7 @@ pub extern "C" fn kernel_init() {
         crate::klog_boot_info!("VFS ready");
 
         // 9-1. UDS (AF_UNIX) — Phase C.3
-        crate::kernel::framework::net::unix::uds_init();
+        crate::kernel::services::net::unix::uds_init();
         crate::klog_boot_info!("UDS subsystem initialized");
 
         // 10. Network (smoltcp + 网卡驱动)
