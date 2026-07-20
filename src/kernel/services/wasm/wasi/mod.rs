@@ -1,0 +1,82 @@
+#![deny(unsafe_code)]
+//! WASI snapshot_preview1 适配层
+//!
+//! 实现 WASI preview1 标准接口，使 QueenX 可运行 WASI 编译的 WASM 模块。
+//!
+//! ## 架构
+//!
+//! ```text
+//! WASM 模块
+//!   │ import "wasi_snapshot_preview1" "fd_read" ...
+//!   ▼
+//! WASI 适配层 (本模块)
+//!   │ WasiContext { fd_table, args, env }
+//!   │ fn wasi_fd_read() → 查 fd_table → read_bytes()
+//!   ▼
+//! 现有 POSIX 服务层
+//!   services::fs (VFS)
+//!   services::mm (mmap)
+//!   services::proc (exit)
+//!   framework::timer (clock)
+//! ```
+
+pub mod errno;
+pub mod fd_table;
+
+// WASI 函数模块
+mod clock_random;
+mod env_args;
+mod process;
+
+pub use errno::{WasiErrno, wasi_success, wasi_errno};
+pub use fd_table::{
+    WasiFdTable, WasiFdEntry, WasiRights, WasiFileType,
+    WASI_STDIN, WASI_STDOUT, WASI_STDERR,
+    WasiIoVec, read_iovec_from_memory,
+    write_u32_to_memory, write_i64_to_memory, write_i32_to_memory,
+};
+
+use alloc::string::String;
+use alloc::vec::Vec;
+use crate::kernel::services::wasm::types::WasmError;
+use crate::kernel::services::wasm::interpreter::Interpreter;
+
+/// WASI 运行时上下文 (每个 WASM 实例一个)
+pub struct WasiContext {
+    pub fd_table: WasiFdTable,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+}
+
+impl WasiContext {
+    pub fn new() -> Self {
+        Self {
+            fd_table: WasiFdTable::new(256),
+            args: Vec::new(),
+            env: Vec::new(),
+        }
+    }
+}
+
+/// WASI 函数签名: (WasiContext, Interpreter) -> Result
+pub type WasiFunc = fn(&mut WasiContext, &mut Interpreter) -> Result<(), WasmError>;
+
+/// WASI 函数注册表: name → 函数指针
+///
+/// 用于 `Interpreter::auto_register_wasi()` 根据 WASM import section
+/// 自动查找并注册对应的 host function。
+pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
+    &[
+        // G1: 进程控制
+        ("proc_exit", process::wasi_proc_exit as WasiFunc),
+        ("sched_yield", process::wasi_sched_yield as WasiFunc),
+        // G2: 时钟/随机
+        ("clock_time_get", clock_random::wasi_clock_time_get as WasiFunc),
+        ("random_get", clock_random::wasi_random_get as WasiFunc),
+        // G3: 环境/参数
+        ("environ_sizes_get", env_args::wasi_environ_sizes_get as WasiFunc),
+        ("environ_get", env_args::wasi_environ_get as WasiFunc),
+        ("args_sizes_get", env_args::wasi_args_sizes_get as WasiFunc),
+        ("args_get", env_args::wasi_args_get as WasiFunc),
+    ]
+}

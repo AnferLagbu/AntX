@@ -22,3 +22,5 @@ pub mod leb128;
 pub mod module;
 /// T6-9: WASM 解释器 (原 framework/wasm/interpreter.rs)
 pub mod interpreter;
+/// WASI snapshot_preview1 适配层
+pub mod wasi;
