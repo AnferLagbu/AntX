@@ -33,7 +33,7 @@
 
 **Steps:**
 
-- [ ] **Step 1: 在 Interpreter 中添加名称注册存储**
+- [x] **Step 1: 在 Interpreter 中添加名称注册存储**
 
 在 `interpreter.rs` 的 `Interpreter` struct 中添加:
 
@@ -42,7 +42,7 @@
 named_host_functions: alloc::collections::BTreeMap<(alloc::string::String, alloc::string::String), usize>,
 ```
 
-- [ ] **Step 2: 实现 register_named_host_function**
+- [x] **Step 2: 实现 register_named_host_function**
 
 ```rust
 /// 注册名称匹配的 host function
@@ -64,7 +64,7 @@ pub fn register_named_host_function(
 }
 ```
 
-- [ ] **Step 3: 实现 auto_register_wasi**
+- [x] **Step 3: 实现 auto_register_wasi**
 
 ```rust
 /// 自动注册 WASI 函数 (根据 WASM 模块 import section)
@@ -94,13 +94,13 @@ pub fn auto_register_wasi(&mut self) {
 }
 ```
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/services/wasm/interpreter.rs
@@ -125,7 +125,7 @@ git commit -m "feat(wasm): 解释器增强名称解析 host function 注册 (P1)
 
 **Steps:**
 
-- [ ] **Step 1: 创建 wasi/errno.rs**
+- [x] **Step 1: 创建 wasi/errno.rs**
 
 ```rust
 //! WASI errno 映射
@@ -162,7 +162,7 @@ pub fn wasi_success() -> i32 { WasiErrno::Success.as_i32() }
 pub fn wasi_errno(e: WasiErrno) -> i32 { e.as_i32() }
 ```
 
-- [ ] **Step 2: 创建 wasi/fd_table.rs**
+- [x] **Step 2: 创建 wasi/fd_table.rs**
 
 ```rust
 //! WASI 文件描述符表
@@ -242,7 +242,7 @@ impl WasiFdTable {
 }
 ```
 
-- [ ] **Step 3: 创建 wasi/mod.rs**
+- [x] **Step 3: 创建 wasi/mod.rs**
 
 ```rust
 //! WASI snapshot_preview1 适配层
@@ -273,19 +273,19 @@ impl WasiContext {
 }
 ```
 
-- [ ] **Step 4: 在 services/wasm/mod.rs 中添加 wasi 模块**
+- [x] **Step 4: 在 services/wasm/mod.rs 中添加 wasi 模块**
 
 ```rust
 pub mod wasi;
 ```
 
-- [ ] **Step 5: 双架构编译验证**
+- [x] **Step 5: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/kernel/services/wasm/wasi/ src/kernel/services/wasm/mod.rs
@@ -310,7 +310,7 @@ git commit -m "feat(wasm): WasiFdTable + WasiContext + errno 基础设施 (P2)"
 
 **Steps:**
 
-- [ ] **Step 1: 创建 wasi/process.rs**
+- [x] **Step 1: 创建 wasi/process.rs**
 
 ```rust
 //! WASI 进程控制: proc_exit, sched_yield
@@ -334,7 +334,7 @@ pub fn wasi_sched_yield(_ctx: &mut WasiContext, _interp: &mut Interpreter) -> Re
 }
 ```
 
-- [ ] **Step 2: 创建 wasi/clock_random.rs**
+- [x] **Step 2: 创建 wasi/clock_random.rs**
 
 ```rust
 //! WASI 时钟/随机: clock_time_get, random_get
@@ -387,7 +387,7 @@ pub fn wasi_random_get(_ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
 }
 ```
 
-- [ ] **Step 3: 创建 wasi/env_args.rs**
+- [x] **Step 3: 创建 wasi/env_args.rs**
 
 ```rust
 //! WASI 环境/参数: environ_get, environ_sizes_get, args_get, args_sizes_get
@@ -464,7 +464,7 @@ pub fn wasi_args_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
 }
 ```
 
-- [ ] **Step 4: 在 wasi/mod.rs 中添加 WASI 函数注册表**
+- [x] **Step 4: 在 wasi/mod.rs 中添加 WASI 函数注册表**
 
 ```rust
 /// WASI 函数注册表: name → 函数指针
@@ -484,13 +484,13 @@ pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
 }
 ```
 
-- [ ] **Step 5: 双架构编译验证**
+- [x] **Step 5: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/kernel/services/wasm/wasi/
@@ -513,25 +513,25 @@ git commit -m "feat(wasm): WASI G1/G2/G3 实现 — 进程控制/时钟随机/�
 
 **Steps:**
 
-- [ ] **Step 1: 创建 wasi/fd_ops.rs — FD 管理函数**
+- [x] **Step 1: 创建 wasi/fd_ops.rs — FD 管理函数**
 
 实现 `fd_close`, `fd_seek`, `fd_tell`, `fd_sync`, `fd_prestat_get`, `fd_prestat_dir_name`, `fd_stat_get`。每个函数从 WASM 栈弹出参数，查 fd_table，调用底层 VFS。
 
-- [ ] **Step 2: 创建 wasi/fd_ops.rs — FD I/O 函数**
+- [x] **Step 2: 创建 wasi/fd_ops.rs — FD I/O 函数**
 
 实现 `fd_read`, `fd_write`, `fd_pread`, `fd_pwrite`, `fd_allocate`, `fd_advise`。`fd_read`/`fd_write` 需要解析 WASM iovec 数组 (从线性内存读取)。
 
-- [ ] **Step 3: 在 wasi/mod.rs 中注册 G4/G5 函数**
+- [x] **Step 3: 在 wasi/mod.rs 中注册 G4/G5 函数**
 
 将 13 个新函数添加到 `wasi_function_table()`。
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/services/wasm/wasi/fd_ops.rs src/kernel/services/wasm/wasi/mod.rs
@@ -554,27 +554,27 @@ git commit -m "feat(wasm): WASI G4/G5 实现 — FD 管理 + FD I/O (P4)"
 
 **Steps:**
 
-- [ ] **Step 1: 创建 wasi/path_ops.rs — 路径解析辅助**
+- [x] **Step 1: 创建 wasi/path_ops.rs — 路径解析辅助**
 
 实现 `resolve_path(ctx, dirfd, path_ptr, path_len)` 辅助函数，将 WASM 路径 + dirfd 解析为 QueenX 内部路径。
 
-- [ ] **Step 2: 实现 path_open (核心)**
+- [x] **Step 2: 实现 path_open (核心)**
 
 `path_open` 是最复杂的 WASI 函数：解析路径 → 查找目录 fd → 调用 VFS open → 创建新 fd entry → 注册到 fd_table。
 
-- [ ] **Step 3: 实现其余 9 个路径操作函数**
+- [x] **Step 3: 实现其余 9 个路径操作函数**
 
 每个函数: 弹出参数 → 解析路径 → 调用 VFS → 返回结果。
 
-- [ ] **Step 4: 在 wasi/mod.rs 中注册 G6 函数**
+- [x] **Step 4: 在 wasi/mod.rs 中注册 G6 函数**
 
-- [ ] **Step 5: 双架构编译验证**
+- [x] **Step 5: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/kernel/services/wasm/wasi/path_ops.rs src/kernel/services/wasm/wasi/mod.rs
@@ -598,21 +598,21 @@ git commit -m "feat(wasm): WASI G6 实现 — 路径操作 (P5)"
 
 **Steps:**
 
-- [ ] **Step 1: 在 fd_ops.rs 中添加 fd_renumber, fd_dup, fd_readdir**
+- [x] **Step 1: 在 fd_ops.rs 中添加 fd_renumber, fd_dup, fd_readdir**
 
-- [ ] **Step 2: 创建 wasi/sock.rs — Socket 函数**
+- [x] **Step 2: 创建 wasi/sock.rs — Socket 函数**
 
 实现 4 个 socket 函数，桥接到 services::net。
 
-- [ ] **Step 3: 在 wasi/mod.rs 中注册 G7/G8 函数**
+- [x] **Step 3: 在 wasi/mod.rs 中注册 G7/G8 函数**
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/services/wasm/wasi/
@@ -634,27 +634,27 @@ git commit -m "feat(wasm): WASI G7/G8 实现 — 高级 FD + Socket (P6)"
 
 **Steps:**
 
-- [ ] **Step 1: 创建 wasi_test.rs — 基础测试**
+- [x] **Step 1: 创建 wasi_test.rs — 基础测试**
 
 测试 WasiFdTable 创建、alloc/close/get、WasiContext 初始化、errno 映射。
 
-- [ ] **Step 2: 创建 WASI 函数单元测试**
+- [x] **Step 2: 创建 WASI 函数单元测试**
 
 为每组 WASI 函数编写测试：mock Interpreter + 线性内存，验证参数解析和返回值。
 
-- [ ] **Step 3: 运行 host-tests**
+- [x] **Step 3: 运行 host-tests**
 
 ```bash
 make test-host
 ```
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add host-tests/tests/wasi_test.rs
@@ -669,29 +669,29 @@ git commit -m "test(wasm): WASI preview1 集成测试 (P7)"
 
 **Steps:**
 
-- [ ] **Step 1: 双架构编译**
+- [x] **Step 1: 双架构编译**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 2: 全量审计**
+- [x] **Step 2: 全量审计**
 
 ```bash
 ci/audit.sh full
 ```
 
-- [ ] **Step 3: host-tests**
+- [x] **Step 3: host-tests**
 
 ```bash
 make test-host
 ```
 
-- [ ] **Step 4: 更新 services/wasm/mod.rs 文档**
+- [x] **Step 4: 更新 services/wasm/mod.rs 文档**
 
-- [ ] **Step 5: 更新 docs/plan/future-roadmap.md WASM 相关描述**
+- [x] **Step 5: 更新 docs/plan/future-roadmap.md WASM 相关描述**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A
