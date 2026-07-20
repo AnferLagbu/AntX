@@ -19,8 +19,10 @@
 //! - 除以零和溢出均返回 Trap
 
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use alloc::collections::BTreeMap;
 
 use super::leb128::*;
 use super::module::parse_wasm;
@@ -37,11 +39,14 @@ pub struct Interpreter {
     call_stack: Vec<CallFrame>,
     pub config: InterpreterConfig,
     pub gas_used: u64,
+    pub exit_code: i32,
     module: WasmModule,
     host_functions: Vec<Box<dyn Fn(&mut Interpreter) -> Result<(), WasmError>>>,
     import_func_count: u32,
     globals: Vec<Value>,
     tables: Vec<Vec<u32>>,
+    /// 名称索引的 host function: (module, name) → index
+    named_host_functions: BTreeMap<(String, String), usize>,
 }
 
 impl Interpreter {
@@ -106,11 +111,13 @@ impl Interpreter {
             call_stack: Vec::with_capacity(64),
             config,
             gas_used: 0,
+            exit_code: 0,
             module,
             host_functions: Vec::new(),
             import_func_count,
             globals,
             tables,
+            named_host_functions: BTreeMap::new(),
         };
 
         for (gi, (_, init_expr)) in module_globals.iter().enumerate() {
@@ -198,6 +205,53 @@ impl Interpreter {
         f: Box<dyn Fn(&mut Interpreter) -> Result<(), WasmError>>,
     ) {
         self.host_functions.push(f);
+    }
+
+    /// 注册名称匹配的 host function
+    ///
+    /// 注册后，`auto_register_wasi` 可根据 WASM import section 的 module/name
+    /// 自动查找并注册到正确的 index 位置。
+    pub fn register_named_host_function(
+        &mut self,
+        module: &str,
+        name: &str,
+        f: Box<dyn Fn(&mut Interpreter) -> Result<(), WasmError>>,
+    ) {
+        let idx = self.host_functions.len();
+        self.host_functions.push(f);
+        self.named_host_functions.insert(
+            (String::from(module), String::from(name)),
+            idx,
+        );
+    }
+
+    /// 自动注册 WASI 函数 (根据 WASM 模块 import section)
+    ///
+    /// 遍历 `module.imports`，对每个 `(module="wasi_snapshot_preview1", desc=Function)` 的 import，
+    /// 根据 `name` 查找已注册的 named host function，将其移动到正确的 index 位置。
+    ///
+    /// 调用顺序: 先通过 `register_named_host_function` 注册所有 WASI 函数，
+    /// 再调用本方法完成 import section 到 host_functions 的映射。
+    pub fn auto_register_wasi(&mut self) {
+        let mut func_idx = 0u32;
+        for import in self.module.imports.iter() {
+            if let ImportKind::Function(_) = import.desc {
+                let module_name = core::str::from_utf8(&import.module).unwrap_or("");
+                let func_name = core::str::from_utf8(&import.name).unwrap_or("");
+                if module_name == "wasi_snapshot_preview1" {
+                    if let Some(&idx) = self.named_host_functions.get(&(String::from(module_name), String::from(func_name))) {
+                        // 确保 host_functions 数组足够大
+                        while self.host_functions.len() <= func_idx as usize {
+                            self.host_functions.push(Box::new(|_| Ok(())));
+                        }
+                        // 交换到正确位置
+                        self.host_functions.swap(func_idx as usize, idx);
+                    }
+                }
+                func_idx += 1;
+            }
+        }
+        self.import_func_count = func_idx;
     }
 
     fn find_export(&self, name: &str) -> Option<u32> {
