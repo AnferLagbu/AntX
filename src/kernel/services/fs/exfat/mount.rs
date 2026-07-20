@@ -70,6 +70,12 @@ impl Inode for ExfatInode {
         false // 简化: exFAT 目录判断需查 FAT 表
     }
 
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // exFAT: 时间戳更新需修改目录项
+        // TODO: 未来可接入 exFAT 目录项时间戳更新
+        Ok(())
+    }
+
     fn node_id(&self) -> u32 {
         self.cluster
     }

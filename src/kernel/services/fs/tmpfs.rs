@@ -87,6 +87,11 @@ impl Inode for TmpFsInode {
         }
     }
 
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // TmpFS: 内存文件系统, 无持久时间戳
+        Ok(())
+    }
+
     fn node_id(&self) -> u32 {
         self.node_id
     }

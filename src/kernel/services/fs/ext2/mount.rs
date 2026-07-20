@@ -94,6 +94,12 @@ impl Inode for Ext2Inode {
         false
     }
 
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // ext2: 时间戳更新需修改磁盘 inode
+        // TODO: 未来可接入 ext2 inode 时间戳更新
+        Ok(())
+    }
+
     fn node_id(&self) -> u32 {
         self.inode_num
     }

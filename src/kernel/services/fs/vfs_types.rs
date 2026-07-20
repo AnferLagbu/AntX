@@ -319,6 +319,10 @@ pub trait FileSystem: Send + Sync {
     fn fs_chmod(&self, rel_path: &str, mode: u16, pwm: u64) -> KernelResult<()>;
     /// 修改文件所有者
     fn fs_chown(&self, rel_path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> KernelResult<()>;
+    /// 设置文件时间戳 (atime, mtime)
+    fn fs_utimensat(&self, _rel_path: &str, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
 
     // ---- 目录操作 ----
 

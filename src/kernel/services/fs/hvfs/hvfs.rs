@@ -1883,6 +1883,12 @@ impl Inode for HvfsInode {
         false
     }
 
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // HvFS: ZFS-like 文件系统, 时间戳由内部管理
+        // TODO: 未来可接入 HvFS 时间戳更新
+        Ok(())
+    }
+
     fn node_id(&self) -> u32 {
         self.fd
     }

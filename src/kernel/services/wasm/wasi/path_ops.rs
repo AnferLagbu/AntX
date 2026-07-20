@@ -325,19 +325,38 @@ pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -
 }
 
 /// WASI path_filestat_set_times: 设置文件/目录时间戳
+///
+/// WASI 语义: atime/mtime 为 u64::MAX 时表示不修改该时间戳
 pub fn wasi_path_filestat_set_times(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let _flags = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
     let path_len = interp.stack.pop_i32()? as u32;
-    let _atim = interp.stack.pop_i64()?;
-    let _mtim = interp.stack.pop_i64()?;
+    let atim = interp.stack.pop_i64()? as u64;
+    let mtim = interp.stack.pop_i64()? as u64;
 
     let path = read_path(interp, path_ptr, path_len)?;
-    let _abs_path = resolve_path(ctx, dirfd, &path)?;
+    let abs_path = resolve_path(ctx, dirfd, &path)?;
 
-    // TODO: VFS 当前无 utimensat
-    interp.stack.push(Value::I32(wasi_errno(WasiErrno::Notsup)))?;
+    // WASI u64::MAX 表示不修改该时间戳
+    let vfs_atime = if atim == u64::MAX { u64::MAX } else { atim };
+    let vfs_mtime = if mtim == u64::MAX { u64::MAX } else { mtim };
+
+    // SAFETY: abs_path 是内核堆上的 String
+    let result = unsafe {
+        crate::kernel::framework::fs::vfs::api::vfs_utimensat(
+            abs_path.as_ptr(),
+            vfs_atime,
+            vfs_mtime,
+            0,
+        )
+    };
+
+    if result < 0 {
+        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+    } else {
+        interp.stack.push(Value::I32(wasi_success()))?;
+    }
     Ok(())
 }
 

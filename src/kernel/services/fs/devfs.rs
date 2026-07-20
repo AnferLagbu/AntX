@@ -607,6 +607,11 @@ impl Inode for DevFsInode {
         false
     }
 
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // DevFS: 设备文件, 无时间戳
+        Ok(())
+    }
+
     fn node_id(&self) -> u32 {
         self.dev_type as u32
     }

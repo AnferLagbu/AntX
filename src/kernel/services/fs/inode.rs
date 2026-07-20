@@ -117,6 +117,14 @@ pub trait Inode: Send + Sync {
         Ok(())
     }
 
+    /// 设置文件时间戳 (atime, mtime)
+    ///
+    /// - `atime`: 访问时间 (纳秒), u64::MAX 表示不修改
+    /// - `mtime`: 修改时间 (纳秒), u64::MAX 表示不修改
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+
     /// 获取底层 inode_id (供 pcache 等需要 inode 标识的场景使用)
     fn node_id(&self) -> u32;
 
@@ -198,6 +206,11 @@ impl Inode for AnonymousInode {
 
     fn is_dir(&self) -> bool {
         false
+    }
+
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // AnonymousInode: 匿名文件, 无持久时间戳
+        Ok(())
     }
 
     fn node_id(&self) -> u32 {
@@ -313,6 +326,11 @@ impl Inode for RamFsInode {
         } else {
             false
         }
+    }
+
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // RamFS: 内存文件系统, 无持久时间戳, 直接返回成功
+        Ok(())
     }
 
     fn node_id(&self) -> u32 {
@@ -486,6 +504,12 @@ impl Inode for LegacyInode {
             Some(f) => f.fs_chown(&self.rel_path, owner_pwm, group_pwm, pwm),
             None => Err(KernelError::NotInitialized),
         }
+    }
+
+    fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+        // LegacyInode: 委托给底层 FileSystem
+        // 默认返回 NotSupported (各文件系统可覆盖)
+        Err(KernelError::NotSupported)
     }
 
     fn pread_inode(&self, offset: u64, buf: &mut [u8], pwm: u64) -> KernelResult<usize> {

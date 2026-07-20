@@ -855,6 +855,31 @@ pub fn vfs_chown_ext(
     }
 }
 
+/// 设置文件时间戳 (utimensat)
+///
+/// - `path`: 文件路径
+/// - `atime`: 访问时间 (纳秒), u64::MAX 表示不修改
+/// - `mtime`: 修改时间 (纳秒), u64::MAX 表示不修改
+/// - `pwm`: 权限凭证
+#[unsafe(no_mangle)]
+pub fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -1,
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    if let Some(fs) = fs_opt {
+        match fs.fs_utimensat(rel_path, atime, mtime, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
+    } else {
+        -1
+    }
+}
+
 // ============================================================================
 // fchmod — 按 fd 修改文件权限
 // ============================================================================
