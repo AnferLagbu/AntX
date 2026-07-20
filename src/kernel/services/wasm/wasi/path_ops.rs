@@ -146,9 +146,16 @@ pub fn wasi_path_remove_directory(ctx: &mut WasiContext, interp: &mut Interprete
     let path = read_path(interp, path_ptr, path_len)?;
     let abs_path = resolve_path(ctx, dirfd, &path)?;
 
-    // TODO: VFS 当前无 rmdir，返回 NotSup
-    let _ = abs_path;
-    interp.stack.push(Value::I32(wasi_errno(WasiErrno::Notsup)))?;
+    // SAFETY: abs_path 是内核堆上的 String
+    let result = unsafe {
+        crate::kernel::framework::fs::vfs::api::vfs_rmdir(abs_path.as_ptr(), 0)
+    };
+
+    if result < 0 {
+        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+    } else {
+        interp.stack.push(Value::I32(wasi_success()))?;
+    }
     Ok(())
 }
 
@@ -186,9 +193,23 @@ pub fn wasi_path_symlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Res
     let new_path = read_path(interp, new_path_ptr, new_path_len)?;
     let _abs_new = resolve_path(ctx, dirfd, &new_path)?;
 
-    // TODO: VFS symlink
-    let _ = old_path;
-    interp.stack.push(Value::I32(wasi_errno(WasiErrno::Notsup)))?;
+    // WASI path_symlink(old_path, dirfd, new_path)
+    // old_path = target (被指向的路径), new_path = linkpath (链接路径)
+    // VFS symlink(target, linkpath)
+    // SAFETY: 路径是内核堆上的 String
+    let result = unsafe {
+        crate::kernel::framework::fs::vfs::api::vfs_symlink(
+            old_path.as_ptr(),
+            new_path.as_ptr(),
+            0,
+        )
+    };
+
+    if result < 0 {
+        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+    } else {
+        interp.stack.push(Value::I32(wasi_success()))?;
+    }
     Ok(())
 }
 
@@ -318,8 +339,21 @@ pub fn wasi_path_link(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     let _old_abs = resolve_path(ctx, old_dirfd, &old_path)?;
     let _new_abs = resolve_path(ctx, new_dirfd, &new_path)?;
 
-    // TODO: VFS link
-    interp.stack.push(Value::I32(wasi_errno(WasiErrno::Notsup)))?;
+    // VFS link(oldpath, newpath)
+    // SAFETY: 路径是内核堆上的 String
+    let result = unsafe {
+        crate::kernel::framework::fs::vfs::api::vfs_link(
+            old_path.as_ptr(),
+            new_path.as_ptr(),
+            0,
+        )
+    };
+
+    if result < 0 {
+        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+    } else {
+        interp.stack.push(Value::I32(wasi_success()))?;
+    }
     Ok(())
 }
 

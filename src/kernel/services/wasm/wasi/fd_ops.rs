@@ -98,10 +98,14 @@ pub fn wasi_fd_sync(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
     let fd = interp.stack.pop_i32()? as u32;
 
     match ctx.fd_table.get(fd) {
-        Ok(entry) => {
-            // TODO: VFS 当前无 fsync, 简化返回成功
-            let _ = entry;
-            interp.stack.push(Value::I32(wasi_success()))?;
+        Ok(_entry) => {
+            // 调用 VFS sync (全局同步所有已打开的文件)
+            let result = crate::kernel::framework::fs::vfs::api::vfs_sync();
+            if result < 0 {
+                interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+            } else {
+                interp.stack.push(Value::I32(wasi_success()))?;
+            }
         }
         Err(e) => {
             interp.stack.push(Value::I32(wasi_errno(e)))?;
