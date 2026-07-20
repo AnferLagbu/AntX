@@ -739,6 +739,101 @@ pub fn vfs_mount_safe(path: &str, fs_name: &str) -> i32 {
     vfs_mount_internal(path_buf.as_ptr(), fs_buf.as_ptr())
 }
 
+/// 将 Rust &str 转换为 null 终止的 C 字符串并调用 VFS 函数
+///
+/// # Safety
+/// 本函数内部处理 unsafe 指针操作，调用方无需 unsafe。
+pub fn with_cstr<F, R>(path: &str, f: F) -> R
+where
+    F: FnOnce(*const u8) -> R,
+{
+    let mut buf = alloc::vec::Vec::with_capacity(path.len() + 1);
+    buf.extend_from_slice(path.as_bytes());
+    buf.push(0);
+    f(buf.as_ptr())
+}
+
+/// Safe 包装: vfs_open (接受 &str 路径)
+pub fn vfs_open_safe(path: &str, flags: u32, pwm: u64) -> i32 {
+    with_cstr(path, |ptr| vfs_open_internal(ptr, flags, pwm))
+}
+
+/// Safe 包装: vfs_mkdir (接受 &str 路径)
+pub fn vfs_mkdir_safe(path: &str, pwm: u64) -> i32 {
+    with_cstr(path, |ptr| vfs_mkdir_internal(ptr, pwm))
+}
+
+/// Safe 包装: vfs_unlink (接受 &str 路径)
+pub fn vfs_unlink_safe(path: &str, pwm: u64) -> i32 {
+    with_cstr(path, |ptr| vfs_unlink_internal(ptr, pwm))
+}
+
+/// Safe 包装: vfs_rmdir (接受 &str 路径)
+pub fn vfs_rmdir_safe(path: &str, pwm: u64) -> i32 {
+    with_cstr(path, |ptr| vfs_rmdir_internal(ptr, pwm))
+}
+
+/// Safe 包装: vfs_symlink (接受 &str 路径)
+pub fn vfs_symlink_safe(target: &str, linkpath: &str, pwm: u64) -> i32 {
+    with_cstr(target, |t| {
+        with_cstr(linkpath, |l| vfs_symlink(t, l, pwm))
+    })
+}
+
+/// Safe 包装: vfs_link (接受 &str 路径)
+pub fn vfs_link_safe(oldpath: &str, newpath: &str, pwm: u64) -> i32 {
+    with_cstr(oldpath, |o| {
+        with_cstr(newpath, |n| vfs_link(o, n, pwm))
+    })
+}
+
+/// Safe 包装: vfs_rename (接受 &str 路径)
+pub fn vfs_rename_safe(old: &str, new: &str, pwm: u64) -> i32 {
+    with_cstr(old, |o| {
+        with_cstr(new, |n| vfs_rename(o, n, pwm))
+    })
+}
+
+/// Safe 包装: vfs_readlink (接受 &str 路径)
+pub fn vfs_readlink_safe(path: &str, buf: &mut [u8], pwm: u64) -> i32 {
+    with_cstr(path, |ptr| {
+        vfs_readlink(ptr, buf.as_mut_ptr(), buf.len() as u64, pwm)
+    })
+}
+
+/// Safe 包装: vfs_utimensat (接受 &str 路径)
+pub fn vfs_utimensat_safe(path: &str, atime: u64, mtime: u64, pwm: u64) -> i32 {
+    with_cstr(path, |ptr| vfs_utimensat(ptr, atime, mtime, pwm))
+}
+
+/// Safe 包装: vfs_read (接受可变切片)
+pub fn vfs_read_safe(fd: u32, buf: &mut [u8]) -> i32 {
+    // SAFETY: buf 是调用方拥有的有效可写缓冲区
+    vfs_read(fd, buf.as_mut_ptr(), buf.len() as u32)
+}
+
+/// Safe 包装: vfs_write (接受不可变切片)
+pub fn vfs_write_safe(fd: u32, buf: &[u8]) -> i32 {
+    // SAFETY: buf 是调用方拥有的有效只读缓冲区
+    vfs_write(fd, buf.as_ptr(), buf.len() as u32)
+}
+
+/// Safe 包装: vfs_close
+pub fn vfs_close_safe(fd: u32) -> i32 {
+    vfs_close(fd)
+}
+
+/// Safe 包装: vfs_seek
+pub fn vfs_seek_safe(fd: u32, offset: i32, whence: u32) -> i32 {
+    vfs_seek(fd, offset, whence)
+}
+
+/// Safe 包装: vfs_readdir
+pub fn vfs_readdir_safe(fd: u32, entry: &mut crate::kernel::services::fs::vfs_types::VfsDirEntry) -> i32 {
+    // SAFETY: entry 是调用方拥有的有效可写结构体
+    vfs_readdir(fd, entry as *mut _)
+}
+
 #[unsafe(no_mangle)]
 pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
     if path.is_null() {

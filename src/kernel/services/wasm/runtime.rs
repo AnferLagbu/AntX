@@ -208,6 +208,24 @@ impl LinearMemory {
         self.data[addr..addr + 8].copy_from_slice(&bytes);
         Ok(())
     }
+
+    /// 获取可写切片 (安全包装, 供 WASI 模块使用)
+    ///
+    /// 返回指向 WASM 线性内存 `[offset, offset+len)` 的可写切片。
+    /// 调用方无需 unsafe。
+    pub fn get_slice_mut(&mut self, offset: u32, len: u32) -> Result<&mut [u8], WasmError> {
+        let addr = self.check_access(offset, len)?;
+        Ok(&mut self.data[addr..addr + len as usize])
+    }
+
+    /// 获取只读切片 (安全包装, 供 WASI 模块使用)
+    ///
+    /// 返回指向 WASM 线性内存 `[offset, offset+len)` 的只读切片。
+    /// 调用方无需 unsafe。
+    pub fn get_slice(&self, offset: u32, len: u32) -> Result<&[u8], WasmError> {
+        let addr = self.check_access(offset, len)?;
+        Ok(&self.data[addr..addr + len as usize])
+    }
 }
 
 // ============================================================================

@@ -180,17 +180,15 @@ pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     };
 
     // 调用 VFS fstat 获取文件信息
-    let mut stat = crate::kernel::services::fs::vfs_types::VfsStat::default();
-    let result = crate::kernel::framework::fs::vfs::api::vfs_fstat(
-        entry.inner_fd as u32,
-        &mut stat as *mut _,
-        0,
-    );
-
-    if result < 0 {
-        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
-        return Ok(());
-    }
+    let stat = match crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(
+        entry.inner_fd as u32, 0,
+    ) {
+        Some(s) => s,
+        None => {
+            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+            return Ok(());
+        }
+    };
 
     // 写入 WASI filestat 结构到线性内存
     // filestat: { dev: u64, ino: u64, filetype: u8, nlink: u64, size: u64, atim: u64, mtim: u64, ctim: u64 }
@@ -245,17 +243,16 @@ pub fn wasi_fd_read(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
         if iov.len == 0 {
             continue;
         }
-        // 从 WASM 线性内存获取缓冲区指针
-        let mem_ref = interp.memory.as_ref()
-            .ok_or(WasmError::MemoryOutOfBounds)?;
-        // SAFETY: iov.buf 在 WASM 线性内存范围内, 由 read_iovec_from_memory 验证
-        let buf_ptr = unsafe { mem_ref.data.as_ptr().add(iov.buf as usize) } as *mut u8;
+        // 使用 safe 方法获取 WASM 线性内存切片
+        let slice = interp.memory.as_mut()
+            .ok_or(WasmError::MemoryOutOfBounds)?
+            .get_slice_mut(iov.buf, iov.len)
+            .map_err(|_| WasmError::MemoryOutOfBounds)?;
 
-        // 调用 VFS read
-        let n = crate::kernel::framework::fs::vfs::api::vfs_read(
+        // 使用 safe wrapper 调用 VFS read
+        let n = crate::kernel::framework::fs::vfs::api::vfs_read_safe(
             entry.inner_fd as u32,
-            buf_ptr,
-            iov.len,
+            slice,
         );
 
         if n < 0 {
@@ -292,17 +289,16 @@ pub fn wasi_fd_write(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
         if iov.len == 0 {
             continue;
         }
-        // 从 WASM 线性内存获取缓冲区指针
-        let mem_ref = interp.memory.as_ref()
-            .ok_or(WasmError::MemoryOutOfBounds)?;
-        // SAFETY: iov.buf 在 WASM 线性内存范围内
-        let buf_ptr = unsafe { mem_ref.data.as_ptr().add(iov.buf as usize) } as *const u8;
+        // 使用 safe 方法获取 WASM 线性内存切片
+        let slice = interp.memory.as_ref()
+            .ok_or(WasmError::MemoryOutOfBounds)?
+            .get_slice(iov.buf, iov.len)
+            .map_err(|_| WasmError::MemoryOutOfBounds)?;
 
-        // 调用 VFS write
-        let n = crate::kernel::framework::fs::vfs::api::vfs_write(
+        // 使用 safe wrapper 调用 VFS write
+        let n = crate::kernel::framework::fs::vfs::api::vfs_write_safe(
             entry.inner_fd as u32,
-            buf_ptr,
-            iov.len,
+            slice,
         );
 
         if n < 0 {
@@ -346,12 +342,12 @@ pub fn wasi_fd_pread(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
 
     for iov in &iovecs {
         if iov.len == 0 { continue; }
-        let mem_ref = interp.memory.as_ref()
-            .ok_or(WasmError::MemoryOutOfBounds)?;
-        // SAFETY: iov.buf 在 WASM 线性内存范围内
-        let buf_ptr = unsafe { mem_ref.data.as_ptr().add(iov.buf as usize) } as *mut u8;
-        let n = crate::kernel::framework::fs::vfs::api::vfs_read(
-            entry.inner_fd as u32, buf_ptr, iov.len,
+        let slice = interp.memory.as_mut()
+            .ok_or(WasmError::MemoryOutOfBounds)?
+            .get_slice_mut(iov.buf, iov.len)
+            .map_err(|_| WasmError::MemoryOutOfBounds)?;
+        let n = crate::kernel::framework::fs::vfs::api::vfs_read_safe(
+            entry.inner_fd as u32, slice,
         );
         if n < 0 {
             let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
@@ -402,12 +398,12 @@ pub fn wasi_fd_pwrite(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
 
     for iov in &iovecs {
         if iov.len == 0 { continue; }
-        let mem_ref = interp.memory.as_ref()
-            .ok_or(WasmError::MemoryOutOfBounds)?;
-        // SAFETY: iov.buf 在 WASM 线性内存范围内
-        let buf_ptr = unsafe { mem_ref.data.as_ptr().add(iov.buf as usize) } as *const u8;
-        let n = crate::kernel::framework::fs::vfs::api::vfs_write(
-            entry.inner_fd as u32, buf_ptr, iov.len,
+        let slice = interp.memory.as_ref()
+            .ok_or(WasmError::MemoryOutOfBounds)?
+            .get_slice(iov.buf, iov.len)
+            .map_err(|_| WasmError::MemoryOutOfBounds)?;
+        let n = crate::kernel::framework::fs::vfs::api::vfs_write_safe(
+            entry.inner_fd as u32, slice,
         );
         if n < 0 {
             let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
@@ -451,14 +447,12 @@ pub fn wasi_fd_allocate(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     let target_size = offset.saturating_add(len);
 
     // 获取当前文件大小
-    let mut stat = crate::kernel::services::fs::vfs_types::VfsStat::default();
-    let stat_result = crate::kernel::framework::fs::vfs::api::vfs_fstat(
-        entry.inner_fd as u32,
-        &mut stat as *mut _,
-        0,
+    let stat = crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(
+        entry.inner_fd as u32, 0,
     );
 
-    if stat_result >= 0 && (stat.size as u64) < target_size {
+    let current_size = stat.map(|s| s.size as u64).unwrap_or(0);
+    if current_size < target_size {
         // 文件需要扩展, 使用 truncate
         let trunc_result = crate::kernel::framework::fs::vfs::api::vfs_truncate_internal(
             entry.inner_fd as u32,
