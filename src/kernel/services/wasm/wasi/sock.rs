@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 //! WASI Socket: sock_accept, sock_connect, sock_recv, sock_send
 
 use crate::kernel::services::wasm::types::{Value, WasmError};

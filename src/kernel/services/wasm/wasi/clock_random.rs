@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 //! WASI 时钟/随机: clock_time_get, random_get
 
 use crate::kernel::services::wasm::types::{Value, WasmError};

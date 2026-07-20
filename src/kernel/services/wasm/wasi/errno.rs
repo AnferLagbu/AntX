@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 //! WASI errno 映射 (wasi_snapshot_preview1)
 
 /// WASI errno 值

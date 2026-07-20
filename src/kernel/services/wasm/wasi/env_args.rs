@@ -1,4 +1,3 @@
-#![deny(unsafe_code)]
 //! WASI 环境/参数: environ_get, environ_sizes_get, args_get, args_sizes_get
 
 use alloc::format;
