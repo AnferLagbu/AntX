@@ -37,35 +37,35 @@
 
 **Steps:**
 
-- [ ] **Step 1: 读取 mutex.rs 确认移除范围**
+- [x] **Step 1: 读取 mutex.rs 确认移除范围**
 
 确认 `lock_timeout` 方法的精确行范围 (约 lines 122-160)，以及 `rdtsc()` 辅助函数是否仅被 `lock_timeout` 使用。
 
-- [ ] **Step 2: 读取 sync/mod.rs 确认 FFI 移除范围**
+- [x] **Step 2: 读取 sync/mod.rs 确认 FFI 移除范围**
 
 确认 `mutex_lock_timeout` FFI 导出的精确行范围。
 
-- [ ] **Step 3: 移除 mutex.rs 中的 lock_timeout 方法**
+- [x] **Step 3: 移除 mutex.rs 中的 lock_timeout 方法**
 
 ```rust
 // 移除 lines 122-160 的 lock_timeout 方法
 // 如果 rdtsc() 仅被 lock_timeout 使用, 也一并移除
 ```
 
-- [ ] **Step 4: 移除 sync/mod.rs 中的 mutex_lock_timeout FFI**
+- [x] **Step 4: 移除 sync/mod.rs 中的 mutex_lock_timeout FFI**
 
 ```rust
 // 移除 #[unsafe(no_mangle)] pub extern "C" fn mutex_lock_timeout(...)
 ```
 
-- [ ] **Step 5: 验证编译**
+- [x] **Step 5: 验证编译**
 
 ```bash
 ./ci/build.sh x86_64
 ```
 Expected: 0 error, 0 warning
 
-- [ ] **Step 6: 运行审计**
+- [x] **Step 6: 运行审计**
 
 ```bash
 python3 scripts/audit_services_boundary.py
@@ -89,25 +89,25 @@ Expected: 全部 PASS
 
 **Steps:**
 
-- [ ] **Step 1: 读取 mutex.rs 确认移除范围**
+- [x] **Step 1: 读取 mutex.rs 确认移除范围**
 
 确认 `get()` 和 `get_mut()` 方法的精确行范围，以及 CondVar doc comment 中的引用是否需要更新。
 
-- [ ] **Step 2: 移除 get() 和 get_mut() 方法**
+- [x] **Step 2: 移除 get() 和 get_mut() 方法**
 
 移除 lines 78-92 (包括 doc comment)。
 
-- [ ] **Step 3: 更新 CondVar doc comment**
+- [x] **Step 3: 更新 CondVar doc comment**
 
 如果 CondVar 的 doc comment 示例引用了 `mutex.get()` / `mutex.get_mut()`，更新为使用 `lock()` guard 模式。
 
-- [ ] **Step 4: 验证编译**
+- [x] **Step 4: 验证编译**
 
 ```bash
 ./ci/build.sh x86_64
 ```
 
-- [ ] **Step 5: 运行审计**
+- [x] **Step 5: 运行审计**
 
 ```bash
 python3 scripts/audit_dead_code.py
@@ -128,15 +128,15 @@ python3 scripts/audit_dead_code.py
 
 **Steps:**
 
-- [ ] **Step 1: 读取真实 InitState 定义**
+- [x] **Step 1: 读取真实 InitState 定义**
 
 确认 `framework/net/init.rs` 中 `InitState` 的所有 variant 和 discriminant 值。
 
-- [ ] **Step 2: 读取 stub InitState 定义**
+- [x] **Step 2: 读取 stub InitState 定义**
 
 确认 `services/net/mod.rs` 中 stub 的精确内容。
 
-- [ ] **Step 3: 修复 stub 的 Failed discriminant**
+- [x] **Step 3: 修复 stub 的 Failed discriminant**
 
 ```rust
 #[repr(u8)]
@@ -150,13 +150,13 @@ pub enum InitState {
 }
 ```
 
-- [ ] **Step 4: 验证编译**
+- [x] **Step 4: 验证编译**
 
 ```bash
 ./ci/build.sh x86_64
 ```
 
-- [ ] **Step 5: 运行 host-tests**
+- [x] **Step 5: 运行 host-tests**
 
 ```bash
 make test-host
@@ -177,25 +177,25 @@ make test-host
 
 **Steps:**
 
-- [ ] **Step 1: 读取 pmm.rs 确认移除范围**
+- [x] **Step 1: 读取 pmm.rs 确认移除范围**
 
 确认 `is_null()` 和 `as_ptr()` 的精确行范围。
 
-- [ ] **Step 2: 确认无调用者**
+- [x] **Step 2: 确认无调用者**
 
 grep 确认 `FreeNodeRef.*is_null` 和 `FreeNodeRef.*as_ptr` 无调用。
 
-- [ ] **Step 3: 移除死代码方法**
+- [x] **Step 3: 移除死代码方法**
 
 移除 lines 114-124 (is_null 和 as_ptr)。
 
-- [ ] **Step 4: 验证编译**
+- [x] **Step 4: 验证编译**
 
 ```bash
 ./ci/build.sh x86_64
 ```
 
-- [ ] **Step 5: 运行审计**
+- [x] **Step 5: 运行审计**
 
 ```bash
 python3 scripts/audit_dead_code.py
@@ -207,26 +207,26 @@ python3 scripts/audit_dead_code.py
 
 **Steps:**
 
-- [ ] **Step 1: 双架构编译**
+- [x] **Step 1: 双架构编译**
 
 ```bash
 ./ci/build.sh all
 ```
 Expected: 0 error, 0 warning
 
-- [ ] **Step 2: 全量审计**
+- [x] **Step 2: 全量审计**
 
 ```bash
 ci/audit.sh
 ```
 
-- [ ] **Step 3: host-tests**
+- [x] **Step 3: host-tests**
 
 ```bash
 make test-host
 ```
 
-- [ ] **Step 4: 记录结果**
+- [x] **Step 4: 记录结果**
 
 所有验证通过后标记完成。
 

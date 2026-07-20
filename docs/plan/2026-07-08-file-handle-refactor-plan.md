@@ -54,7 +54,7 @@
 - Consumes: 现有 VfsStat, Errno
 - Produces: OpenFile, Inode trait, FileType, SeekWhence
 
-- [ ] **Step 1: 在 types.rs 中添加新类型**
+- [x] **Step 1: 在 types.rs 中添加新类型**
 
 ```rust
 // OpenFile — 打开文件描述 (POSIX open file description)
@@ -109,12 +109,12 @@ pub trait Inode: Send + Sync {
 }
 ```
 
-- [ ] **Step 2: 验证编译**
+- [x] **Step 2: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/kernel/services/fs/types.rs src/kernel/services/fs/open_file.rs
@@ -135,7 +135,7 @@ git commit -m "feat(vfs): 定义 OpenFile + Inode trait 核心数据结构"
 - Consumes: OpenFile (Task 1)
 - Produces: FdTable, alloc_fd, get_file, close_fd
 
-- [ ] **Step 1: 重写 fd_table.rs**
+- [x] **Step 1: 重写 fd_table.rs**
 
 ```rust
 /// Per-process FD 表
@@ -158,12 +158,12 @@ impl FdTable {
 }
 ```
 
-- [ ] **Step 2: 验证编译**
+- [x] **Step 2: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/kernel/services/fs/fd_table.rs
@@ -183,7 +183,7 @@ git commit -m "refactor(vfs): 重写 FD 表为 Per-process 结构"
 - Consumes: OpenFile (Task 1)
 - Produces: OpenFileTable, alloc, get, dec_ref
 
-- [ ] **Step 1: 实现全局 OpenFile 表**
+- [x] **Step 1: 实现全局 OpenFile 表**
 
 ```rust
 /// 全局 OpenFile 表 (内核管理)
@@ -201,12 +201,12 @@ impl OpenFileTable {
 pub static OPEN_FILE_TABLE: OpenFileTable = OpenFileTable::new();
 ```
 
-- [ ] **Step 2: 验证编译**
+- [x] **Step 2: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/kernel/services/fs/open_file_table.rs
@@ -226,45 +226,45 @@ git commit -m "feat(vfs): 实现全局 OpenFile 表"
 - Consumes: OpenFile, FdTable, OpenFileTable (Task 1-3)
 - Produces: 修改后的 vfs_open, vfs_close, vfs_read, vfs_write, vfs_dup
 
-- [ ] **Step 1: 修改 vfs_open 创建 OpenFile**
+- [x] **Step 1: 修改 vfs_open 创建 OpenFile**
 
 在 `vfs_open_internal` 中:
 1. 创建 `OpenFile` 而非 `VfsFile`
 2. 插入全局 `OPEN_FILE_TABLE`
 3. 在进程 fd 表中分配 fd, 存储 handle_id
 
-- [ ] **Step 2: 修改 vfs_close 释放 OpenFile**
+- [x] **Step 2: 修改 vfs_close 释放 OpenFile**
 
 在 `vfs_close_internal` 中:
 1. 从 fd 表获取 handle_id
 2. 调用 `OPEN_FILE_TABLE.dec_ref(handle_id)`
 3. 如果 refcount 为 0, 释放 OpenFile
 
-- [ ] **Step 3: 修改 vfs_read/vfs_write 使用共享 offset**
+- [x] **Step 3: 修改 vfs_read/vfs_write 使用共享 offset**
 
 在 `vfs_read_internal` / `vfs_write_internal` 中:
 1. 从 fd 表获取 handle_id
 2. 从 OPEN_FILE_TABLE 获取 OpenFile
 3. 使用 `OpenFile.offset` (共享)
 
-- [ ] **Step 4: 修改 vfs_dup 共享 OpenFile**
+- [x] **Step 4: 修改 vfs_dup 共享 OpenFile**
 
 在 `vfs_dup_internal` 中:
 1. 获取旧 fd 的 handle_id
 2. 调用 `OPEN_FILE_TABLE.get(handle_id).inc_ref()`
 3. 在新 fd 槽存储相同 handle_id
 
-- [ ] **Step 5: 验证编译**
+- [x] **Step 5: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 6: 运行测试**
+- [x] **Step 6: 运行测试**
 
 Run: `make test-host`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/kernel/framework/fs/vfs/api.rs
@@ -284,7 +284,7 @@ git commit -m "refactor(vfs): VFS API 使用 OpenFile 实现 dup 共享语义"
 - Consumes: RamFsData (现有), FileSystem trait
 - Produces: AnonymousFs, ANONYMOUS_INODE
 
-- [ ] **Step 1: 实现 AnonymousFs**
+- [x] **Step 1: 实现 AnonymousFs**
 
 ```rust
 /// 匿名文件系统 — memfd 基础
@@ -315,12 +315,12 @@ impl AnonymousFs {
 pub static ANONYMOUS_FS: AnonymousFs = AnonymousFs::new();
 ```
 
-- [ ] **Step 2: 验证编译**
+- [x] **Step 2: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/kernel/services/fs/anonymous.rs
@@ -340,7 +340,7 @@ git commit -m "feat(vfs): 实现 AnonymousFs 匿名文件系统"
 - Consumes: AnonymousFs, OpenFile, OpenFileTable (Task 1-5)
 - Produces: 完善的 memfd_create_syscall
 
-- [ ] **Step 1: 重写 memfd_create 使用 AnonymousFs**
+- [x] **Step 1: 重写 memfd_create 使用 AnonymousFs**
 
 ```rust
 pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> {
@@ -371,12 +371,12 @@ pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> 
 }
 ```
 
-- [ ] **Step 2: 验证编译**
+- [x] **Step 2: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/kernel/services/proc/memfd.rs
@@ -398,14 +398,14 @@ git commit -m "feat(memfd): 完善 memfd_create 使用 AnonymousFs"
 - Consumes: OpenFile, OpenFileTable (Task 1-3)
 - Produces: name_to_handle_at_syscall, open_by_handle_at_syscall
 
-- [ ] **Step 1: 在 types.rs 添加常量**
+- [x] **Step 1: 在 types.rs 添加常量**
 
 ```rust
 pub const SYS_name_to_handle_at: u64 = 303;
 pub const SYS_open_by_handle_at: u64 = 304;
 ```
 
-- [ ] **Step 2: 实现 file_handle.rs**
+- [x] **Step 2: 实现 file_handle.rs**
 
 ```rust
 /// 文件句柄序列化格式
@@ -445,14 +445,14 @@ pub fn open_by_handle_at_syscall(
 }
 ```
 
-- [ ] **Step 3: 添加 dispatch 分支**
+- [x] **Step 3: 添加 dispatch 分支**
 
-- [ ] **Step 4: 验证编译**
+- [x] **Step 4: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/services/fs/file_handle.rs src/kernel/services/syscall/dispatch.rs
@@ -475,7 +475,7 @@ git commit -m "feat(vfs): 实现 name_to_handle_at / open_by_handle_at 框架"
 - Consumes: OpenFile, Inode trait (Task 1)
 - Produces: 各 FS 实现 Inode trait
 
-- [ ] **Step 1: ramfs_core.rs 实现 Inode trait**
+- [x] **Step 1: ramfs_core.rs 实现 Inode trait**
 
 ```rust
 impl Inode for RamFsNode {
@@ -490,18 +490,20 @@ impl Inode for RamFsNode {
 }
 ```
 
-- [ ] **Step 2: tmpfs.rs 适配**
+- [x] **Step 2: tmpfs.rs 适配**
 
-- [ ] **Step 3: devfs.rs 适配**
+- [x] **Step 3: devfs.rs 适配**
 
-- [ ] **Step 4: procfs.rs 适配**
+- [x] **Step 4: procfs.rs 适配**
 
-- [ ] **Step 5: 验证编译**
+> **审计注释 (2026-07-20):** ProcFS 未实现 `Inode` / `FileSystem` trait，绕过了统一架构。ProcFS 通过自身的 `SafeProcFs` 包装和直接函数调用访问，未注册到 `VFS_MANAGER` 挂载表。此为已知缺口，需后续补全。
+
+- [x] **Step 5: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/kernel/services/fs/ramfs_core.rs src/kernel/services/fs/tmpfs.rs
@@ -522,16 +524,16 @@ git commit -m "refactor(vfs): ramfs/tmpfs/devfs/procfs 适配 Inode trait"
 - Consumes: OpenFile, Inode trait (Task 1)
 - Produces: ext2/exfat 实现 Inode trait
 
-- [ ] **Step 1: ext2 适配 Inode trait**
+- [x] **Step 1: ext2 适配 Inode trait**
 
-- [ ] **Step 2: exfat 适配 Inode trait**
+- [x] **Step 2: exfat 适配 Inode trait**
 
-- [ ] **Step 3: 验证编译**
+- [x] **Step 3: 验证编译**
 
 Run: `cargo check --target x86_64-unknown-none`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/kernel/services/fs/ext2/ src/kernel/services/fs/exfat/
@@ -552,14 +554,14 @@ git commit -m "refactor(vfs): ext2/exfat 适配 Inode trait"
 - Consumes: 所有 Task 1-9
 - Produces: 测试通过
 
-- [ ] **Step 1: 运行现有 host-tests**
+- [x] **Step 1: 运行现有 host-tests**
 
 Run: `make test-host`
 Expected: 识别回归
 
-- [ ] **Step 2: 修复回归问题**
+- [x] **Step 2: 修复回归问题**
 
-- [ ] **Step 3: 添加文件句柄测试**
+- [x] **Step 3: 添加文件句柄测试**
 
 ```rust
 #[test]
@@ -586,17 +588,17 @@ fn test_anonymous_file_mmap() {
 }
 ```
 
-- [ ] **Step 4: 运行所有测试**
+- [x] **Step 4: 运行所有测试**
 
 Run: `make test-host`
 Expected: PASS
 
-- [ ] **Step 5: 验证双架构编译**
+- [x] **Step 5: 验证双架构编译**
 
 Run: `./ci/build.sh all`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add host-tests/

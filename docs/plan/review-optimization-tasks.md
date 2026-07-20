@@ -49,9 +49,9 @@
 
 ### 2.4 WASM 解释器进度明确化
 
-- **描述**: `services/wasm/` 仍为 stub 状态（6 文件，主要是类型定义迁移），实际执行逻辑留在 `framework/wasm/`；状态不明确，容易误导贡献者
-- **方案**: 在 `future-roadmap.md` 或独立 plan 文档中明确 WASM 模块的 timeline：(a) 标记为 experimental 并注明预计完成时间，或 (b) 从 services/wasm/ 移除 stub 文件，仅保留 framework/wasm/ 的纯 safe 实现
-- **状态**: []
+- **描述**: `services/wasm/` 已完成全量迁移 (interpreter.rs 1111 行 + types.rs 445 行 + module.rs 424 行 + runtime.rs 231 行 + leb128.rs 96 行)，`framework/wasm/` 仅为 re-export shim。但 `services/wasm/mod.rs` 文档仍标注"⏳ 未迁移"，与实际不符
+- **方案**: 更新 `services/wasm/mod.rs` 文档注释，移除过期的"未迁移"标注；更新 `future-roadmap.md` 中 WASM 相关描述
+- **状态**: [X] 代码已完成 (T6-9 迁移)，文档待更新
 
 ### 2.5 future-roadmap.md 重复条目清理
 
