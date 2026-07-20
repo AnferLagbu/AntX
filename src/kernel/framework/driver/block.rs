@@ -230,9 +230,8 @@ pub fn block_device_list() -> Vec<(usize, &'static str, u64)> {
         .filter(|d| d.proto == crate::kernel::framework::chitin::ChitinProto::Block)
         .enumerate()
         .map(|(i, d)| {
-            let sectors = match d.block_ops() {
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                Some(ops) => unsafe { (ops.total_sectors)(d.driver_data) },
+            let sectors = match d.block_dev.as_ref() {
+                Some(bd) => bd.blk_total_sectors(),
                 None => 0,
             };
             (i, d.name, sectors)
