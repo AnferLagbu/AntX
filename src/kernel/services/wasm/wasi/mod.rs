@@ -28,6 +28,7 @@ mod clock_random;
 mod env_args;
 mod process;
 pub mod fd_ops;
+pub mod path_ops;
 
 pub use errno::{WasiErrno, wasi_success, wasi_errno};
 pub use fd_table::{
@@ -98,5 +99,16 @@ pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
         ("fd_renumber", fd_ops::wasi_fd_renumber as WasiFunc),
         ("fd_dup", fd_ops::wasi_fd_dup as WasiFunc),
         ("fd_readdir", fd_ops::wasi_fd_readdir as WasiFunc),
+        // G6: 路径操作
+        ("path_open", path_ops::wasi_path_open as WasiFunc),
+        ("path_create_directory", path_ops::wasi_path_create_directory as WasiFunc),
+        ("path_remove_directory", path_ops::wasi_path_remove_directory as WasiFunc),
+        ("path_unlink_file", path_ops::wasi_path_unlink_file as WasiFunc),
+        ("path_symlink", path_ops::wasi_path_symlink as WasiFunc),
+        ("path_readlink", path_ops::wasi_path_readlink as WasiFunc),
+        ("path_rename", path_ops::wasi_path_rename as WasiFunc),
+        ("path_filestat_get", path_ops::wasi_path_filestat_get as WasiFunc),
+        ("path_filestat_set_times", path_ops::wasi_path_filestat_set_times as WasiFunc),
+        ("path_link", path_ops::wasi_path_link as WasiFunc),
     ]
 }
