@@ -965,50 +965,6 @@ pub(crate) fn endpoint_to_smol(
     }
 }
 
-/// 把 trait 抽象的 `NetListenEndpoint` 翻译成 smoltcp 的 `IpListenEndpoint`.
-#[inline]
-pub(crate) fn listen_endpoint_to_smol(
-    e: crate::kernel::framework::net::iface_trait::NetListenEndpoint,
-) -> IpListenEndpoint {
-    match e.addr {
-        None => IpListenEndpoint { addr: None, port: e.port },
-        Some(a) => IpListenEndpoint {
-            addr: Some(IpAddress::Ipv4(wire_to_smol_v4(a))),
-            port: e.port,
-        },
-    }
-}
-
-/// 从 smoltcp `IpAddress` 中提取 IPv4 octets, 翻译为 trait `Ipv4Addr`.
-#[inline]
-pub(crate) fn ipaddr_from_smol(a: IpAddress) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Addr> {
-    match a {
-        IpAddress::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(v4.octets())),
-        _ => None,
-    }
-}
-
-/// 从 smoltcp `IpEndpoint` 翻译为 trait `NetEndpoint`.
-#[inline]
-pub(crate) fn endpoint_from_smol(e: IpEndpoint) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
-    Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new(
-        ipaddr_from_smol(e.addr)?,
-        e.port,
-    ))
-}
-
-/// 从 smoltcp `IpCidr` 翻译为 trait `Ipv4Cidr` (仅 IPv4).
-#[inline]
-pub(crate) fn cidr_from_smol(c: IpCidr) -> Option<crate::kernel::framework::net::iface_trait::Ipv4Cidr> {
-    match c {
-        IpCidr::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::Ipv4Cidr::new(
-            crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(v4.address().octets()),
-            v4.prefix_len(),
-        )),
-        _ => None,
-    }
-}
-
 #[repr(C)]
 struct SockaddrIn {
     sin_family: u16,
@@ -1921,13 +1877,6 @@ pub fn get_mac_address() -> Option<[u8; 6]> {
     }
 }
 
-/// 把 [u8; 6] MAC 写入 G_MAC (大端打包为 u64)
-pub(crate) fn store_mac(mac: [u8; 6]) {
-    let mut buf = [0u8; 8];
-    buf[2..8].copy_from_slice(&mac);
-    G_MAC.store(u64::from_be_bytes(buf), Ordering::Release);
-}
-
 /// 查询当前 IPv4
 pub fn get_ipv4_address() -> Option<[u8; 4]> {
     ipv4_from_atomic(G_IPV4.load(Ordering::Acquire))
@@ -2326,30 +2275,6 @@ pub(crate) mod raw {
         }
     }
 
-    /// 实际关闭一个 socket (W4.2.2 实装).
-    ///
-    /// 调用 `SocketSet::remove(smol_handle)` 删除 socket. smoltcp API 返回
-    /// `Socket` enum (类型擦除内部 socket), 删除已发生, 返回值被丢弃.
-    ///
-    /// ## 调用方契约
-    ///
-    /// - 必须在 NET_LOCK 保护下调用
-    /// - sockets 来自本模块的 socket_set()
-    /// - smol_handle 必须是 sockets 中有效的 socket 句柄, 否则 smoltcp panic
-    ///
-    /// ## 返回值
-    ///
-    /// 始终返回 `true` (smoltcp 0.13.1 的 `SocketSet::remove` 不会失败).
-    pub fn socket_close_stub(
-        sockets: &mut SocketSet<'_>,
-        smol_handle: smoltcp::iface::SocketHandle,
-    ) -> bool {
-        // smoltcp SocketSet::remove 删除 socket, 返回 Socket enum 被丢弃.
-        // 0.13.1 文档: "Removes a socket from the set, returning the socket that was removed."
-        let _removed = sockets.remove(smol_handle);
-        true
-    }
-
     /// 实际获取 DHCP 状态 (W4.2.2 实装).
     ///
     /// 翻译 `dhcpv4::Socket::poll()` → `DhcpState`:
@@ -2514,26 +2439,6 @@ mod tests {
         assert_eq!(back.addr.octets(), [10, 0, 2, 15]);
     }
 
-    /// W4.4: 验证 ipaddr_from_smol 对 IPv4 提取 octets, 其它变体返回 None.
-    #[test]
-    fn test_ipaddr_from_smol_v4_only() {
-        let v4_in = wire_to_smol_v4(TraitIpv4Addr::new(8, 8, 8, 8));
-        let out = ipaddr_from_smol(IpAddress::Ipv4(v4_in)).unwrap();
-        assert_eq!(out.octets(), [8, 8, 8, 8]);
-    }
-
-    /// W4.4: 验证 cidr_from_smol 把 smoltcp CIDR 翻译为 trait 抽象.
-    #[test]
-    fn test_cidr_from_smol() {
-        let cidr_smol = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
-            Ipv4Address::new(10, 0, 0, 0),
-            8,
-        ));
-        let out = cidr_from_smol(cidr_smol).unwrap();
-        assert_eq!(out.address.octets(), [10, 0, 0, 0]);
-        assert_eq!(out.prefix_len, 8);
-    }
-
     /// W4.4: 验证 parse_ipv4_endpoint_trait 解析后立即落入 trait 抽象类型.
     #[test]
     fn test_parse_ipv4_endpoint_trait_bridge() {
@@ -2625,15 +2530,6 @@ mod tests {
         assert_eq!(s.gateway, None);
         assert_eq!(s.dns, [None, None, None]);
         assert!(!s.dhcp_configured);
-    }
-
-    #[test]
-    fn test_store_and_get_mac_roundtrip() {
-        // SAFETY: 单线程测试, reset 仅修改状态原子变量
-        unsafe { reset_network_state(); }
-        let mac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
-        store_mac(mac);
-        assert_eq!(get_mac_address(), Some(mac));
     }
 
     #[test]

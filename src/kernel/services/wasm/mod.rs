@@ -1,26 +1,16 @@
 #![deny(unsafe_code)]
-//! WASM 沙箱 (services 层占位)
+//! WASM 沙箱 (services 层)
 //!
-//! ## 当前状态: ⏳ 未迁移 (Phase 7 未完成)
+//! ## 当前状态: 已完成迁移 (T6-9)
 //!
-//! 实际实现仍在 `kernel/wasm/` 老位置:
-//! - [kernel/wasm/interpreter.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/interpreter.rs) — 解释器
-//! - [kernel/wasm/runtime.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/runtime.rs) — 运行时
-//! - [kernel/wasm/module.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/module.rs) — 模块加载
-//! - [kernel/wasm/types.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/types.rs) — 类型
-//! - [kernel/wasm/leb128.rs](file:///home/anfer/Code/QueenX/src/kernel/wasm/leb128.rs) — LEB128 解码
+//! 完整实现已从 `framework/wasm/` 迁移到本目录:
+//! - `interpreter.rs` — WASM 栈机解释器
+//! - `runtime.rs` — ValueStack/CallFrame/LinearMemory 运行时
+//! - `module.rs` — WASM 二进制格式解析器 (11 section)
+//! - `types.rs` — WASM 1.0 类型定义
+//! - `leb128.rs` — LEB128 编解码器
 //!
-//! ## 迁移路径
-//!
-//! 1. 引入 `wasmi` (no_std 兼容) 或自己实现
-//! 2. WASM 线性内存 = `framework::VmSpace` 实例
-//! 3. WASM 实例 = `framework::sched::Task` 子类
-//! 4. 在 services/wasm/ 暴露 `pub fn instantiate`, `pub fn invoke` 等纯 safe API
-//!
-//! ## 估算: 1 人月
-//!
-//! 评估日期: 2026-06-03
-//! 阻塞点: 依赖 Phase 2.3 进程管理迁移完成
+//! `framework/wasm/` 仅保留 re-export shim, 保持向后兼容.
 
 /// T6-9: WASM 类型定义 (原 framework/wasm/types.rs)
 pub mod types;

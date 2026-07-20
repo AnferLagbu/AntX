@@ -48,7 +48,7 @@
 
 **Steps:**
 
-- [ ] **Step 1: 移除 e1000.rs 的 4 处 `#[allow(dead_code)]`**
+- [x] **Step 1: 移除 e1000.rs 的 4 处 `#[allow(dead_code)]`**
 
 删除以下注释行 (保留常量定义和函数本身):
 - line ~52: `E1000_EERD` 的 allow
@@ -56,13 +56,13 @@
 - line ~56: `E1000_EERD_DONE` 的 allow
 - line ~194: `eeprom_read()` QEMU stub 的 allow
 
-- [ ] **Step 2: 移除 xhci.rs 的 2 处 `#[allow(dead_code)]`**
+- [x] **Step 2: 移除 xhci.rs 的 2 处 `#[allow(dead_code)]`**
 
 删除以下注释行:
 - line ~170: `PORT_ENABLED` 的 allow
 - line ~173: `PORT_POWER` 的 allow
 
-- [ ] **Step 3: 双架构编译验证**
+- [x] **Step 3: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
@@ -70,7 +70,7 @@
 
 预期: 0 error (这些项在 feature/test 路径下被引用)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/kernel/framework/driver/net/e1000.rs src/kernel/framework/driver/usb/xhci.rs
@@ -93,7 +93,7 @@ git commit -m "refactor(driver): 移除 e1000/xhci 已激活项的 dead_code 允
 
 **Steps:**
 
-- [ ] **Step 1: 删除 `sockets_remove_helper` 函数**
+- [x] **Step 1: 删除 `sockets_remove_helper` 函数**
 
 从 `src/kernel/framework/net/init.rs` 的 `raw` 模块中删除:
 ```rust
@@ -103,13 +103,13 @@ fn sockets_remove_helper(_smol_handle: smoltcp::iface::SocketHandle) -> bool {
 }
 ```
 
-- [ ] **Step 2: 双架构编译验证**
+- [x] **Step 2: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/kernel/framework/net/init.rs
@@ -135,11 +135,11 @@ git commit -m "refactor(net): 删除 sockets_remove_helper 空 stub (A-14c)"
 
 **Steps:**
 
-- [ ] **Step 1: 确认 read_config64 的实现**
+- [x] **Step 1: 确认 read_config64 的实现**
 
 读取 `src/kernel/framework/driver/virtio/mod.rs` 中 `read_config64` 和 `read64` 的实现，确认 high 偏移是否为 `low_off + 4`。
 
-- [ ] **Step 2: 修改 VirtioBlk 容量读取为显式双寄存器读取**
+- [x] **Step 2: 修改 VirtioBlk 容量读取为显式双寄存器读取**
 
 在 `blk.rs` 的 `VirtioBlk::new()` 中，将:
 ```rust
@@ -154,17 +154,17 @@ let capacity = device.read_config64(BLK_CONFIG_CAPACITY_LO);
 
 若 `read_config64` 的 high 偏移硬编码为 `low_off + 4`，则 `BLK_CONFIG_CAPACITY_HI` 无需在运行时使用，仅需移除 allow 并添加文档注释说明与 `BLK_CONFIG_CAPACITY_LO` 的关系。
 
-- [ ] **Step 3: 移除 `#[allow(dead_code)]`**
+- [x] **Step 3: 移除 `#[allow(dead_code)]`**
 
 删除 `BLK_CONFIG_CAPACITY_HI` 的 `#[allow(dead_code)]` 注释。
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/framework/driver/virtio/blk.rs
@@ -188,7 +188,7 @@ git commit -m "feat(virtio-blk): 文档化 >2TB 容量支持，移除 dead_code 
 
 **Steps:**
 
-- [ ] **Step 1: 实现 `invpcid_flush_single` 函数**
+- [x] **Step 1: 实现 `invpcid_flush_single` 函数**
 
 在 `kpti.rs` 的 `invpcid_flush_all()` 附近添加:
 
@@ -219,11 +219,11 @@ pub unsafe fn invpcid_flush_single(pcid: u16, vaddr: u64) {
 }
 ```
 
-- [ ] **Step 2: 移除 `#[allow(dead_code)]`**
+- [x] **Step 2: 移除 `#[allow(dead_code)]`**
 
 删除 `INVPCID_TYPE_SINGLE` 的 `#[allow(dead_code)]` 注释 (line ~52)。
 
-- [ ] **Step 3: 双架构编译验证**
+- [x] **Step 3: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
@@ -231,7 +231,7 @@ pub unsafe fn invpcid_flush_single(pcid: u16, vaddr: u64) {
 
 预期: aarch64 下 INVPCID 代码被 `#[cfg(target_arch = "x86_64")]` 门控。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/kernel/framework/mm/kpti.rs
@@ -255,7 +255,7 @@ git commit -m "feat(mm): 实现 invpcid_flush_single 单 PCID TLB 刷新 (A-05)"
 
 **Steps:**
 
-- [ ] **Step 1: 在 sync_for_cpu 中接入 cache_invalidate**
+- [x] **Step 1: 在 sync_for_cpu 中接入 cache_invalidate**
 
 修改 `sync_for_cpu()` 方法:
 ```rust
@@ -266,17 +266,17 @@ fn sync_for_cpu(&self) {
 }
 ```
 
-- [ ] **Step 2: 移除 `#[allow(dead_code)]` 和 `#[allow(unused_variables)]`**
+- [x] **Step 2: 移除 `#[allow(dead_code)]` 和 `#[allow(unused_variables)]`**
 
 删除 `cache_invalidate` 方法上的两个 allow 注释 (line ~441-442)。
 
-- [ ] **Step 3: 双架构编译验证**
+- [x] **Step 3: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/kernel/framework/dma/engine.rs
@@ -300,7 +300,7 @@ git commit -m "feat(dma): 接入 cache_invalidate 到 DMA 读取同步路径 (A-
 
 **Steps:**
 
-- [ ] **Step 1: 在 acquire 中添加 IRQ 锁持有检查**
+- [x] **Step 1: 在 acquire 中添加 IRQ 锁持有检查**
 
 在 `acquire()` 函数的 Check 2 (递归锁检测) 之后、Check 3 (AB-BA 检测) 之前添加:
 
@@ -315,17 +315,17 @@ if !irq_context && k.may_sleep() && stack.any_in_irq() {
 }
 ```
 
-- [ ] **Step 2: 移除 `#[allow(dead_code)]`**
+- [x] **Step 2: 移除 `#[allow(dead_code)]`**
 
 删除 `any_in_irq()` 的 `#[allow(dead_code)]` 注释 (line ~417)。
 
-- [ ] **Step 3: 双架构编译验证**
+- [x] **Step 3: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/kernel/framework/sync/lockdep.rs
@@ -351,7 +351,7 @@ git commit -m "feat(sync): 接入 lockdep any_in_irq 中断安全检测 (A-07)"
 
 **Steps:**
 
-- [ ] **Step 1: 优化 clear_line 实现**
+- [x] **Step 1: 优化 clear_line 实现**
 
 当前 `clear_line` 逐列调用 `draw_glyph` 效率较低。改为使用 `fill_rect`:
 ```rust
@@ -362,7 +362,7 @@ fn clear_line(&mut self, row: u32) {
 }
 ```
 
-- [ ] **Step 2: 在 scroll_up_one 中使用 clear_line**
+- [x] **Step 2: 在 scroll_up_one 中使用 clear_line**
 
 修改 `scroll_up_one()` (line ~108):
 ```rust
@@ -370,17 +370,17 @@ fn clear_line(&mut self, row: u32) {
 self.clear_line(last_row);
 ```
 
-- [ ] **Step 3: 移除 `#[allow(dead_code)]`**
+- [x] **Step 3: 移除 `#[allow(dead_code)]`**
 
 删除 `clear_line` 的 `#[allow(dead_code)]` 注释 (line ~93)。
 
-- [ ] **Step 4: 编译验证**
+- [x] **Step 4: 编译验证**
 
 ```bash
 cargo build --release  # 用户态程序
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/user/fbterm/src/main.rs
@@ -406,24 +406,24 @@ git commit -m "feat(fbterm): 激活 clear_line，优化滚动清行逻辑 (A-11)
 
 **Steps:**
 
-- [ ] **Step 1: 在 `<` 解析路径中设置 redir_kind**
+- [x] **Step 1: 在 `<` 解析路径中设置 redir_kind**
 
 在 `pipeline.rs` line ~121 (`seg.redir_in = Some(...)`) 之后添加:
 ```rust
 seg.redir_kind = RedirKind::StdinFile;
 ```
 
-- [ ] **Step 2: 移除 `#[allow(dead_code)]`**
+- [x] **Step 2: 移除 `#[allow(dead_code)]`**
 
 删除 `StdinFile` variant 的 `#[allow(dead_code)]` 注释 (line ~19)。
 
-- [ ] **Step 3: 编译验证**
+- [x] **Step 3: 编译验证**
 
 ```bash
 cargo build --release  # 用户态程序
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/user/eash/src/commands/pipeline.rs
@@ -447,7 +447,7 @@ git commit -m "feat(eash): 激活 RedirKind::StdinFile 重定向枚举 (A-12)"
 
 **Steps:**
 
-- [ ] **Step 1: 添加 alt status 读取辅助函数**
+- [x] **Step 1: 添加 alt status 读取辅助函数**
 
 在 `ata_delay` 附近添加:
 ```rust
@@ -460,7 +460,7 @@ fn read_alt_status(ctrl: u16) -> u8 {
 }
 ```
 
-- [ ] **Step 2: 在软复位后轮询 alt status 等待 BSY 清除**
+- [x] **Step 2: 在软复位后轮询 alt status 等待 BSY 清除**
 
 修改 `init()` 中的软复位路径 (line ~321-324):
 ```rust
@@ -480,17 +480,17 @@ for _ in 0..1000 {
 
 对 Secondary 通道 (line ~356-359) 做相同修改。
 
-- [ ] **Step 3: 移除 `#[allow(dead_code)]`**
+- [x] **Step 3: 移除 `#[allow(dead_code)]`**
 
 删除 `ATA_CTRL_ALT_STATUS` 的 `#[allow(dead_code)]` 注释 (line ~57)。
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/framework/driver/storage/ata.rs
@@ -517,11 +517,11 @@ git commit -m "feat(ata): 接入备用状态寄存器轮询，符合 ATA 规范 
 
 **Steps:**
 
-- [ ] **Step 1: 确认 sysctl 注册 API**
+- [x] **Step 1: 确认 sysctl 注册 API**
 
 读取 `src/kernel/services/config/` 目录，找到 sysctl 注册和写入处理的 API。
 
-- [ ] **Step 2: 在 configure_max_sockets 中注册 sysctl**
+- [x] **Step 2: 在 configure_max_sockets 中注册 sysctl**
 
 ```rust
 pub fn configure_max_sockets() {
@@ -540,17 +540,17 @@ pub fn configure_max_sockets() {
 }
 ```
 
-- [ ] **Step 3: 移除注释中的 dead_code 引用**
+- [x] **Step 3: 移除注释中的 dead_code 引用**
 
 `set_max_sockets` 本身无 `#[allow(dead_code)]`，但 line ~95 和 ~916 的注释引用了它。确认注释准确。
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/framework/net/init.rs
@@ -574,7 +574,7 @@ git commit -m "feat(net): 接入 set_max_sockets sysctl 运行时配置 (A-14a)"
 
 **Steps:**
 
-- [ ] **Step 1: 修改 sm_listen 使用绑定地址**
+- [x] **Step 1: 修改 sm_listen 使用绑定地址**
 
 将 `sm_listen()` 中的:
 ```rust
@@ -589,13 +589,13 @@ let local = IpListenEndpoint {
 1. smoltcp `tcp::Socket` 是否暴露 `local_endpoint()` 方法
 2. 若有，使用 `listen_endpoint_to_smol()` 翻译
 
-- [ ] **Step 2: 双架构编译验证**
+- [x] **Step 2: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/kernel/framework/net/init.rs
@@ -619,7 +619,7 @@ git commit -m "fix(net): sm_listen 使用绑定地址而非硬编码 0:0 (A-14b)
 
 **Steps:**
 
-- [ ] **Step 1: 实现 MMIO 读取函数**
+- [x] **Step 1: 实现 MMIO 读取函数**
 
 ```rust
 /// 通过 MMIO 读取 Bochs DISPI 寄存器 (替代 port I/O)
@@ -647,7 +647,7 @@ unsafe fn read_bochs_disp_mode_mmio(mmio_base: u64) -> Option<(u32, u32, u8)> {
 }
 ```
 
-- [ ] **Step 2: 在 probe_vga_fb_via_pci 中优先使用 MMIO**
+- [x] **Step 2: 在 probe_vga_fb_via_pci 中优先使用 MMIO**
 
 ```rust
 let mode = if bar0.base_addr != 0 {
@@ -660,15 +660,15 @@ let (width, height, bpp) = mode
     .unwrap_or((1024, 768, 32));
 ```
 
-- [ ] **Step 3: 移除 `#[allow(dead_code)]`**
+- [x] **Step 3: 移除 `#[allow(dead_code)]`**
 
-- [ ] **Step 4: 双架构编译验证**
+- [x] **Step 4: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/kernel/framework/driver/display/mod.rs
@@ -695,7 +695,7 @@ git commit -m "feat(display): 实现 Bochs VBE MMIO 读取路径 (A-04)"
 
 **Steps:**
 
-- [ ] **Step 1: 为 ATA 驱动创建 IoPort 实例**
+- [x] **Step 1: 为 ATA 驱动创建 IoPort 实例**
 
 在 `AtaController` 结构体中添加 IoPort 字段:
 ```rust
@@ -715,7 +715,7 @@ let io = unsafe { IoPort::new(0x1F0, 8, "ata-primary")? };
 let ctrl = unsafe { IoPort::new(0x3F6, 1, "ata-primary-ctrl")? };
 ```
 
-- [ ] **Step 2: 逐步替换 ATA 驱动中的 raw port I/O**
+- [x] **Step 2: 逐步替换 ATA 驱动中的 raw port I/O**
 
 按函数逐个替换:
 1. `ata_delay()`: `inb(ctrl)` → `ctrl.read_u8(0)`
@@ -726,7 +726,7 @@ let ctrl = unsafe { IoPort::new(0x3F6, 1, "ata-primary-ctrl")? };
 
 对 Secondary 通道创建第二组 IoPort 实例。
 
-- [ ] **Step 3: 为 Keyboard 驱动创建 IoPort 实例**
+- [x] **Step 3: 为 Keyboard 驱动创建 IoPort 实例**
 
 ```rust
 struct Ps2Controller {
@@ -737,23 +737,23 @@ struct Ps2Controller {
 
 替换 6 个 raw port I/O 调用点。
 
-- [ ] **Step 4: 移除 ioport.rs 文件级 allow**
+- [x] **Step 4: 移除 ioport.rs 文件级 allow**
 
 删除 `#![allow(dead_code)]` (line 19)。
 
-- [ ] **Step 5: 双架构编译验证**
+- [x] **Step 5: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 6: host-tests 验证**
+- [x] **Step 6: host-tests 验证**
 
 ```bash
 make test-host
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/kernel/framework/driver/storage/ata.rs \
@@ -793,7 +793,7 @@ git commit -m "refactor(driver): 迁移 ATA/Keyboard 到 IoPort 安全抽象 (A-
 
 **Steps:**
 
-- [ ] **Step 1: 为 MSI vector 0x40-0x7F 生成 ISR stub**
+- [x] **Step 1: 为 MSI vector 0x40-0x7F 生成 ISR stub**
 
 在 `idt/mod.rs` 的 ISR stub 生成逻辑中，为 vector 0x40-0x7F 添加 stub:
 ```rust
@@ -803,7 +803,7 @@ for i in 0x40..=0x7F {
 }
 ```
 
-- [ ] **Step 2: 修改 IRQ dispatch 支持 MSI vector**
+- [x] **Step 2: 修改 IRQ dispatch 支持 MSI vector**
 
 在 `handle_irq` 或 `dispatch_irq` 中，扩展 vector 范围检查:
 ```rust
@@ -815,7 +815,7 @@ if vector >= 0x40 && vector <= 0x7F {
 }
 ```
 
-- [ ] **Step 3: 在 msi_enable 中注册 IDT handler**
+- [x] **Step 3: 在 msi_enable 中注册 IDT handler**
 
 修改 `msi_enable()` 返回前:
 ```rust
@@ -827,7 +827,7 @@ irq.enable();
 
 这要求 `msi_enable()` 接受一个 `InterruptHandler` 参数。
 
-- [ ] **Step 4: NVMe 驱动接入 MSI**
+- [x] **Step 4: NVMe 驱动接入 MSI**
 
 在 NVMe 的 `init()` 中:
 ```rust
@@ -839,21 +839,21 @@ if let Some(ref pci_dev) = self.pci_device {
 }
 ```
 
-- [ ] **Step 5: 移除 msi.rs 文件级 allow**
+- [x] **Step 5: 移除 msi.rs 文件级 allow**
 
-- [ ] **Step 6: 双架构编译验证**
+- [x] **Step 6: 双架构编译验证**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 7: host-tests 验证**
+- [x] **Step 7: host-tests 验证**
 
 ```bash
 make test-host
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/kernel/framework/idt/mod.rs \
@@ -874,15 +874,15 @@ git commit -m "feat(pci): 完整激活 MSI/MSI-X，含 ISR stub + IDT dispatch +
 
 **Steps:**
 
-- [ ] **Step 1: 读取 queenx-tests 确认用途**
+- [x] **Step 1: 读取 queenx-tests 确认用途**
 
 确认该 crate 的测试是否被主测试流程引用。
 
-- [ ] **Step 2: 评估是否可移除文件级 allow**
+- [x] **Step 2: 评估是否可移除文件级 allow**
 
 若所有测试函数均被 `#[test]` 标注且有调用者，可移除 `#![allow(dead_code)]`。
 
-- [ ] **Step 3: Commit (如需要)**
+- [x] **Step 3: Commit (如需要)**
 
 ---
 
@@ -890,25 +890,25 @@ git commit -m "feat(pci): 完整激活 MSI/MSI-X，含 ISR stub + IDT dispatch +
 
 **Steps:**
 
-- [ ] **Step 1: 双架构编译**
+- [x] **Step 1: 双架构编译**
 
 ```bash
 ./ci/build.sh all
 ```
 
-- [ ] **Step 2: 全量审计**
+- [x] **Step 2: 全量审计**
 
 ```bash
 ci/audit.sh full
 ```
 
-- [ ] **Step 3: host-tests**
+- [x] **Step 3: host-tests**
 
 ```bash
 make test-host
 ```
 
-- [ ] **Step 4: grep 确认 dead_code 消除进度**
+- [x] **Step 4: grep 确认 dead_code 消除进度**
 
 ```bash
 grep -rn "#\[allow(dead_code)\]" src/kernel/framework/ src/kernel/services/ src/user/ | grep -v smoltcp | grep -v "//.*allow(dead_code)"

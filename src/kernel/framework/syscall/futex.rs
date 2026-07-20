@@ -114,6 +114,7 @@ struct FutexBucket {
 }
 
 impl FutexBucket {
+    #[cfg(feature = "kernel_test")]
     const fn new() -> Self {
         FutexBucket {
             waiters: [
