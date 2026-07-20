@@ -430,20 +430,47 @@ pub fn wasi_fd_pwrite(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
 }
 
 /// WASI fd_allocate: 预分配文件空间
+///
+/// WASI 语义: 确保文件至少有 offset+len 字节的空间。
+/// 实现: 使用 vfs_truncate 扩展文件到目标大小 (offset+len)。
+/// 若文件已足够大则不操作。
 pub fn wasi_fd_allocate(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
-    let _offset = interp.stack.pop_i64()?;
-    let _len = interp.stack.pop_i64()?;
+    let offset = interp.stack.pop_i64()? as u64;
+    let len = interp.stack.pop_i64()? as u64;
 
-    match ctx.fd_table.get(fd) {
-        Ok(_entry) => {
-            // TODO: VFS 当前无 fallocate
-            interp.stack.push(Value::I32(wasi_success()))?;
-        }
+    let entry = match ctx.fd_table.get(fd) {
+        Ok(e) => e,
         Err(e) => {
             interp.stack.push(Value::I32(wasi_errno(e)))?;
+            return Ok(());
+        }
+    };
+
+    // 计算目标大小: offset + len
+    let target_size = offset.saturating_add(len);
+
+    // 获取当前文件大小
+    let mut stat = crate::kernel::services::fs::vfs_types::VfsStat::default();
+    let stat_result = crate::kernel::framework::fs::vfs::api::vfs_fstat(
+        entry.inner_fd as u32,
+        &mut stat as *mut _,
+        0,
+    );
+
+    if stat_result >= 0 && (stat.size as u64) < target_size {
+        // 文件需要扩展, 使用 truncate
+        let trunc_result = crate::kernel::framework::fs::vfs::api::vfs_truncate_internal(
+            entry.inner_fd as u32,
+            target_size,
+        );
+        if trunc_result < 0 {
+            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+            return Ok(());
         }
     }
+
+    interp.stack.push(Value::I32(wasi_success()))?;
     Ok(())
 }
 
