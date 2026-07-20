@@ -19,16 +19,33 @@ fn read_path(interp: &Interpreter, ptr: u32, len: u32) -> Result<String, WasiErr
 
 /// 解析路径: 将 dirfd + relative path 组合为绝对路径
 ///
-/// 简化实现: 直接返回 relative path
-/// 完整实现需要从 fd_table 获取 preopen 路径并拼接
-fn resolve_path(_ctx: &WasiContext, dirfd: u32, path: &str) -> Result<String, WasiErrno> {
-    if dirfd == 0xffffff9c { // AT_FDCWD
+/// WASI 语义: dirfd 是 preopen fd (通过 fd_prestat_get 获取), relative path
+/// 相对于 dirfd 的 preopen 路径。AT_FDCWD (0xffffff9c) 表示使用当前工作目录。
+fn resolve_path(ctx: &WasiContext, dirfd: u32, path: &str) -> Result<String, WasiErrno> {
+    // AT_FDCWD: 直接返回 relative path (相对当前工作目录)
+    if dirfd == 0xffffff9c {
         return Ok(String::from(path));
     }
-    // 完整实现需要从 fd_table 获取 preopen 路径并拼接
-    // 简化: 直接返回路径
-    let _ = _ctx;
-    Ok(String::from(path))
+
+    // 从 fd_table 获取 preopen 路径
+    let entry = ctx.fd_table.get(dirfd)?;
+    match &entry.path {
+        Some(base_path) => {
+            // 拼接: base_path + "/" + relative path
+            if path.starts_with('/') {
+                // 绝对路径: 忽略 dirfd
+                Ok(String::from(path))
+            } else if base_path.ends_with('/') {
+                Ok(alloc::format!("{}{}", base_path, path))
+            } else {
+                Ok(alloc::format!("{}/{}", base_path, path))
+            }
+        }
+        None => {
+            // 非 preopen fd, 使用 relative path 本身
+            Ok(String::from(path))
+        }
+    }
 }
 
 /// 将路径字符串转换为 C 字符串指针 (用于 VFS API)
