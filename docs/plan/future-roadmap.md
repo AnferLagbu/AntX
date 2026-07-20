@@ -4,6 +4,16 @@
 
 ---
 
+## WASM WASI 接入 ✅ 已完成
+
+- **描述**: 实现 WASI snapshot_preview1 标准接口，使 QueenX 可运行 WASI 编译的 WASM 模块
+- **完成日期**: 2026-07-20
+- **实现**: 独立 WASI 适配层 (services/wasm/wasi/) + 复用底层 POSIX 服务
+- **规模**: ~2,500 行新增代码 (WASI 适配层 + 解释器增强 + 测试)
+- **文档**: [wasm-wasi-integration-design.md](./wasm-wasi-integration-design.md), [wasm-wasi-integration-plan.md](./wasm-wasi-integration-plan.md)
+
+---
+
 ## F1: mdBook 文档体系
 
 - **描述**: 建立完整的内核文档体系
