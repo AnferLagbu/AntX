@@ -29,6 +29,7 @@ mod env_args;
 mod process;
 pub mod fd_ops;
 pub mod path_ops;
+pub mod sock;
 
 pub use errno::{WasiErrno, wasi_success, wasi_errno};
 pub use fd_table::{
@@ -110,5 +111,10 @@ pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
         ("path_filestat_get", path_ops::wasi_path_filestat_get as WasiFunc),
         ("path_filestat_set_times", path_ops::wasi_path_filestat_set_times as WasiFunc),
         ("path_link", path_ops::wasi_path_link as WasiFunc),
+        // G8: Socket
+        ("sock_accept", sock::wasi_sock_accept as WasiFunc),
+        ("sock_connect", sock::wasi_sock_connect as WasiFunc),
+        ("sock_recv", sock::wasi_sock_recv as WasiFunc),
+        ("sock_send", sock::wasi_sock_send as WasiFunc),
     ]
 }
