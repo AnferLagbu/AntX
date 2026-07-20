@@ -42,7 +42,7 @@
 //! chitin_register_block_dev("ata0", None, None, &mut block_dev)
 //!   ├── 创建 ChitinDevice + block_dev trait 引用
 //!   ├── HvFS 通过 chitin_blk_read/write → BlockDevice::blk_read/write
-//!   └── 0 unsafe, 0 thunk
+//!   └── 0 unsafe
 //!
 //! chitin_blk_read(drive_idx, sector, buf)
 //!   └── CHITIN_DEVICES[drive].block_dev.blk_read(...)
@@ -174,9 +174,9 @@ pub struct ChitinDevice {
     pub irq: Option<u8>,
     pub driver_data: *mut u8,
     pub ops: Option<ChitinOps>,
-    /// 块设备 trait 引用
+/// 块设备 trait 引用
     /// 当 `proto == ChitinProto::Block` 且驱动通过 `register_block_device` 注册时,
-    /// `chitin_blk_read/write` 走此字段 (0 unsafe, 0 thunk)
+    /// `chitin_blk_read/write` 走此字段 (0 unsafe)
     ///
     /// # Mutability
     ///
@@ -327,11 +327,10 @@ pub fn chitin_register_with_ops(
     id
 }
 
-/// 注册块设备 (直接传 `&'static mut dyn BlockDevice`, 0 thunk, 0 BlockOps)
+/// 注册块设备 (直接传 `&'static mut dyn BlockDevice`)
 ///
 /// 优势:
 /// - 0 unsafe (chitin_blk_read/write 直接 trait dispatch)
-/// - 0 间接调用 (BlockOps 函数指针 thunk 不再存在)
 /// - 类型安全 (驱动方必须实现 BlockDevice trait, 编译期检查)
 ///
 /// # 生命周期
@@ -921,8 +920,8 @@ mod tests {
     // ==========================================================================
     //
     // 验证: register_block_device + chitin_register_block_dev 走 trait dispatch
-    // 而非 thunk 函数指针. 这些测试用 MockBlockDevice (本地 struct) 验证
-    // BlockDevice trait 直接被 chitin_blk_read/write 调用, 不通过 extern "C".
+    // 这些测试用 MockBlockDevice (本地 struct) 验证
+    // BlockDevice trait 直接被 chitin_blk_read/write 调用.
 
     struct MockBlockDevice {
         counter: u64,
@@ -974,7 +973,7 @@ mod tests {
         CHITIN_DEVICES.lock().clear();
     }
 
-    /// 2. trait dispatch: chitin_blk_read 调 MockBlockDevice.blk_read (非 thunk)
+    /// trait dispatch: chitin_blk_read 调 MockBlockDevice.blk_read
     #[test]
     fn test_t4_1_chitin_blk_read_via_trait() {
         CHITIN_DEVICES.lock().clear();
@@ -984,7 +983,7 @@ mod tests {
         let mut buf = [0u8; 512];
         let r = chitin_blk_read(idx as u8, 7, &mut buf);
         assert_eq!(r, 0, "chitin_blk_read 应成功");
-        assert_eq!(buf[0], b'T', "数据应来自 MockBlockDevice (trait), 非 thunk");
+        assert_eq!(buf[0], b'T', "数据应来自 MockBlockDevice (trait)");
         assert_eq!(buf[16], 7, "sector 7 应被传到 trait");
         assert_eq!(mock.counter, 1, "MockBlockDevice.blk_read 应被调用 1 次");
         assert_eq!(mock.last_sector, 7);

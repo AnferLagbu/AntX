@@ -1,17 +1,16 @@
 //! 几丁质块设备协议 (Chitin Block Protocol)
 //!
-//! 块设备注册路径 — 统一使用 `BlockDevice` trait, 0 thunk, 0 BlockOps.
+//! 块设备注册路径 — 统一使用 `BlockDevice` trait.
 //!
 //! `chitin_blk_read/write` 直接调用 `&mut dyn BlockDevice::blk_read/blk_write`,
-//! 0 unsafe, 0 间接调用.
+//! 0 unsafe, 编译期类型安全.
 
 use crate::kernel::framework::chitin::BlockDevice;
 
 /// 注册块设备到 Chitin
 ///
-/// 直接传 `&'static mut dyn BlockDevice`, 0 thunk, 0 BlockOps:
+/// 直接传 `&'static mut dyn BlockDevice`:
 /// - `chitin_blk_read/write` 直接 trait dispatch
-/// - 无 extern "C" 间接调用
 /// - 编译期类型安全
 ///
 /// # 内存
