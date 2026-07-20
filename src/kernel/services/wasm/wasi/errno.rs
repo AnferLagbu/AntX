@@ -64,3 +64,14 @@ pub fn wasi_success() -> i32 {
 pub fn wasi_errno(e: WasiErrno) -> i32 {
     e.as_i32()
 }
+
+impl From<WasiErrno> for crate::kernel::services::wasm::types::WasmError {
+    fn from(e: WasiErrno) -> Self {
+        match e {
+            WasiErrno::Fault => crate::kernel::services::wasm::types::WasmError::MemoryOutOfBounds,
+            WasiErrno::Inval => crate::kernel::services::wasm::types::WasmError::TypeMismatch,
+            WasiErrno::Badf => crate::kernel::services::wasm::types::WasmError::BadExport,
+            _ => crate::kernel::services::wasm::types::WasmError::InternalError,
+        }
+    }
+}

@@ -27,6 +27,7 @@ pub mod fd_table;
 mod clock_random;
 mod env_args;
 mod process;
+pub mod fd_ops;
 
 pub use errno::{WasiErrno, wasi_success, wasi_errno};
 pub use fd_table::{
@@ -78,5 +79,24 @@ pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
         ("environ_get", env_args::wasi_environ_get as WasiFunc),
         ("args_sizes_get", env_args::wasi_args_sizes_get as WasiFunc),
         ("args_get", env_args::wasi_args_get as WasiFunc),
+        // G4: FD 管理
+        ("fd_close", fd_ops::wasi_fd_close as WasiFunc),
+        ("fd_seek", fd_ops::wasi_fd_seek as WasiFunc),
+        ("fd_tell", fd_ops::wasi_fd_tell as WasiFunc),
+        ("fd_sync", fd_ops::wasi_fd_sync as WasiFunc),
+        ("fd_prestat_get", fd_ops::wasi_fd_prestat_get as WasiFunc),
+        ("fd_prestat_dir_name", fd_ops::wasi_fd_prestat_dir_name as WasiFunc),
+        ("fd_stat_get", fd_ops::wasi_fd_stat_get as WasiFunc),
+        // G5: FD I/O
+        ("fd_read", fd_ops::wasi_fd_read as WasiFunc),
+        ("fd_write", fd_ops::wasi_fd_write as WasiFunc),
+        ("fd_pread", fd_ops::wasi_fd_pread as WasiFunc),
+        ("fd_pwrite", fd_ops::wasi_fd_pwrite as WasiFunc),
+        ("fd_allocate", fd_ops::wasi_fd_allocate as WasiFunc),
+        ("fd_advise", fd_ops::wasi_fd_advise as WasiFunc),
+        // G7: 高级 FD
+        ("fd_renumber", fd_ops::wasi_fd_renumber as WasiFunc),
+        ("fd_dup", fd_ops::wasi_fd_dup as WasiFunc),
+        ("fd_readdir", fd_ops::wasi_fd_readdir as WasiFunc),
     ]
 }
