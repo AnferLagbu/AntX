@@ -254,6 +254,10 @@ impl VgaConsole {
         #[cfg(target_arch = "aarch64")]
         let crt: Option<IoPort> = None;
 
+        // aarch64 无 CRT, 抑制 unused 警告
+        #[cfg(target_arch = "aarch64")]
+        let _ = crt;
+
         #[cfg(target_arch = "x86_64")]
         { Some(Self { buffer, crt: crt? }) }
         #[cfg(target_arch = "aarch64")]

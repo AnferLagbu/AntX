@@ -9,14 +9,14 @@
 
 ### 1.1 lib.rs clippy allow 收敛
 
-- **描述**: `src/rust/src/lib.rs` 当前有 42 个 clippy allow，每个虽有注释说明原因，但数量偏多，是技术债
-- **方案**: 制定季度收敛计划，逐个评估每个 allow 是否可消除；优先处理可通过架构改进移除的 allow（如 `static_mut_refs` 涉及的 32 个全局可变静态），逐步迁移到 `OnceLock`/`RwLock` 包装
-- **状态**: []
+- **描述**: `src/rust/src/lib.rs` 当前有 3 个 clippy allow（均为 `unused_mut`），数量已大幅收敛
+- **方案**: 评估剩余 3 个 allow 是否可通过代码重构消除（如 `let mut` 改为 `let`）
+- **状态**: [X] 已从 42 个收敛到 3 个
 
 ### 1.2 全局可变静态迁移
 
-- **描述**: `static_mut_refs` allow 的根源是 32 个全局可变静态变量，这在 Rust 未来版本中将被废弃
-- **方案**: 逐个审计 32 个 `static mut`，按使用场景选择替代方案：单次初始化用 `OnceLock`，并发读写用 `RwLock<T>` 或 `IrqSpinLock<T>`，无竞争场景用 `racy_cell::RacyCell`
+- **描述**: `static_mut_refs` allow 的根源是 framework 中 38 个 `static mut` 全局可变静态变量，这在 Rust 未来版本中将被废弃
+- **方案**: 逐个审计 38 个 `static mut`，按使用场景选择替代方案：单次初始化用 `OnceLock`，并发读写用 `RwLock<T>` 或 `IrqSpinLock<T>`，无竞争场景用 `racy_cell::RacyCell`
 - **状态**: []
 
 ### 1.3 services/fs 层 KernelError 统一
@@ -114,19 +114,20 @@
 
 **framework 消除: 27 项, services 消除: 5 项, 总计: 32 项 (+8 功能/修复)**
 
-### 剩余项 (framework 126 + services 71 item-level)
+### 剩余项 (framework 197 + services 71 static_mut_refs)
+
+> **2026-07-21 验证更新**: `#[allow(dead_code)]` 已全部消除（仅剩 `pci/msi.rs` 文件级 allow）。
+> 当前主要技术债为 framework 中 38 个 `static mut` 全局可变静态变量（`static_mut_refs` 警告）。
 
 | 类别 | 数量 | 消除条件 |
 |------|------|----------|
-| 硬件规范常量 (arch/driver) | ~50 | 需要对应功能路径 (IRQ/Device trait) |
-| 诊断/调试方法 (mm/proc/sync) | ~15 | 需要 procfs/debug 接口 |
-| PiMutex PCP 协议 (sync) | 4 | 需要完整 PCP 实现 |
-| ARM VMM (mm) | 4 | 需要 aarch64 集成 |
-| 恢复域持久化 (barrier) | 3 | 需要持久化功能 |
-| 条件编译 (e1000 real-hw) | ~5 | 仅 feature gate 下使用 |
-| 工具方法 (is_null/as_ptr) | ~9 | 可通过使用消除，非功能实现 |
+| framework static mut (arch) | 7 | aarch64 页表 + x86_64 GDT/SMP，需架构特定替代方案 |
+| framework static mut (mm) | 8 | kmalloc/slab/VMA/CURRENT_MM，需 OnceLock/RwLock 包装 |
+| framework static mut (net) | 13 | NET_DEVICE/SOCKET_SET/SOCKET_TABLE 等，需重构为类型安全全局 |
+| framework static mut (driver) | 5 | VGA/SERIAL/FRAMEBUFFER/KALLOC 等，需初始化重构 |
+| framework static mut (其他) | 5 | irqline/klog/dma/credo/grant，需逐个评估替代方案 |
 | smoltcp 内部 | ~10 | 第三方库豁免 |
-| 其他 | ~22 | 各类预留 |
+| pci/msi.rs 文件级 allow | 1 | 待 MSI/MSI-X 子系统激活后移除 |
 
 ---
 
@@ -137,7 +138,6 @@
 | 项 | 原因 |
 |----|------|
 | e1000 EERD 常量 dead_code | 仅 `e1000-real-hw` feature 下使用，默认构建 dead 合理 |
-| is_null/as_ptr 工具方法 | 原始指针便捷包装，非功能实现 |
 | 条件编译 stub (QEMU 路径) | feature gate 导致，默认构建 dead 合理 |
 
 ---
@@ -145,8 +145,8 @@
 ## 实施时间线建议
 
 ```text
-Phase 1 (近期):  1.3 KernelError 统一
-Phase 2 (中期):  1.1 clippy allow 收敛 + 1.2 static mut 迁移 + 2.1 子系统 benchmark
-Phase 3 (远期):  2.2 aarch64 测试 + 2.3 隐式依赖审计 + 2.4 WASM 进度
+Phase 1 (近期):  1.3 KernelError 统一 + 1.2 static mut 迁移 (38 个 framework static mut)
+Phase 2 (中期):  2.1 子系统 benchmark
+Phase 3 (远期):  2.2 aarch64 测试 + 2.3 隐式依赖审计
 持续:            3.1-3.3 文档与工具维护
 ```

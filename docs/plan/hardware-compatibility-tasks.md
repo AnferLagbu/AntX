@@ -130,7 +130,7 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 ## P0: PCI MSI/MSI-X 中断基础设施
 
 **风险等级:** 高
-**涉及已删除常量:** `pci/msi.rs` 全模块 (`#![allow(dead_code)]`)
+**涉及已删除常量:** `pci/msi.rs` 全模块 (`#![allow(dead_code)]` 已移除, 4 个规范常量已删除)
 
 ### 问题描述
 
@@ -147,6 +147,15 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 | NVMe 未接 MSI | 有 PciDevice 引用但未调用 `msi_enable()` |
 
 **影响:** NVMe、virtio-net (PCI 模式) 等现代 PCI 设备无法使用 MSI/MSI-X 中断，只能使用 legacy INTx 中断。
+
+**已删除的规范常量 (需在完整实现时恢复):**
+
+| 常量 | 规范含义 | 用途 |
+|------|----------|------|
+| `MSI_CTRL_QMASK` | Multi-Message Capable (bits 1-3) | 查询设备支持多少中断向量 |
+| `MSI_CTRL_QSIZE` | Multi-Message Enable (bits 4-6) | 配置实际分配的向量数 |
+| `MSI_CTRL_PERVEC` | Per-Vector Masking (bit 8) | 每向量独立屏蔽能力 |
+| `MSIX_CTRL_FMASK` | Function Mask (bit 14) | 全局屏蔽 MSI-X |
 
 ### 涉及文件
 

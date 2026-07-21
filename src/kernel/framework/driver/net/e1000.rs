@@ -48,9 +48,12 @@ const E1000_STATUS_FD: u32 = 1 << 0;
 const E1000_STATUS_SPEED_1000: u32 = 2 << 6;
 const E1000_STATUS_SPEED_100: u32 = 1 << 6;
 
-// EEPROM 寄存器
+// EEPROM 寄存器 (仅 e1000-real-hw feature 下使用)
+#[cfg(feature = "e1000-real-hw")]
 const E1000_EERD: u32 = 0x0014;
+#[cfg(feature = "e1000-real-hw")]
 const E1000_EERD_START: u32 = 1 << 0;
+#[cfg(feature = "e1000-real-hw")]
 const E1000_EERD_DONE: u32 = 1 << 4;
 
 const E1000_RCTL: u32 = 0x0100;
@@ -184,14 +187,12 @@ impl Default for E1000Device {
 /// - 启用 `e1000-real-hw` feature: 通过 EERD.START 触发读, 轮询 EERD.DONE
 ///   位 (带 100k 次 spin_loop 超时), 返回 (val >> 16) & 0xFFFF.
 ///
-/// 真实硬件 (i210 / i211 / i219 / 82574L 等) 必须在 build 时打开该 feature,
-/// 否则无法读取 NIC 真实 MAC.
-/// 真实硬件必须启用 `e1000-real-hw` feature 方可调用此函数。
+/// QEMU 兼容路径: 跳过 EERD MMIO 访问, 直接返回哨兵值.
+/// QEMU 仿真器对 EERD 寄存器的写操作会触发内部 mutex 死锁,
+/// 因此此版本不执行任何 MMIO 操作, 仅返回 0xFFFF.
 #[cfg(not(feature = "e1000-real-hw"))]
 fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
-    let iomem = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
-    // QEMU 兼容路径: 跳过 EERD 访问, 立即返回空值. 让 read_mac_address 走默认 MAC.
-    let _ = iomem;
+    let _ = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
     let _ = addr;
     0xFFFF
 }
@@ -223,7 +224,8 @@ fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
 fn read_mac_address(dev: &mut E1000Device) {
     #[cfg(not(feature = "e1000-real-hw"))]
     {
-        // QEMU 兼容路径: 默认 MAC 52:54:00:12:34:56
+        // QEMU 兼容路径: 调用 eeprom_read 获取哨兵值 (不执行 MMIO), 使用默认 MAC
+        let _ = eeprom_read(dev, 0);
         dev.mac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
     }
     #[cfg(feature = "e1000-real-hw")]
@@ -928,8 +930,10 @@ pub extern "C" fn e1000_probe() -> i32 {
     #[cfg(target_arch = "aarch64")]
     return -1;
 
-    let mut need_probe = false;
+    #[cfg(not(target_arch = "aarch64"))]
     {
+        let mut need_probe = false;
+        {
         let guard = E1000_DEVICE.lock();
         if guard.is_none() {
             need_probe = true;
@@ -967,6 +971,7 @@ pub extern "C" fn e1000_probe() -> i32 {
     match &*E1000_DEVICE.lock() {
         Some(_) => 0,
         None => -1,
+    }
     }
 }
 

@@ -6,7 +6,7 @@
 use crate::kernel::services::wasm::types::{Value, WasmError};
 use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
-use super::fd_table::{WasiRights, read_iovec_from_memory, write_u32_to_memory};
+use super::fd_table::{read_iovec_from_memory, write_u32_to_memory};
 
 // ============================================================================
 // G4: FD 管理

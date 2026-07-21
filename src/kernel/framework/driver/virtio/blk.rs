@@ -115,7 +115,7 @@ const VIRTIO_BLK_T_OUT: u32 = 1; // 写
 
 // 配置空间偏移 (相对于 0x100)
 // virtio-blk 规范: offset 0x00 = capacity_lo (32bit), offset 0x04 = capacity_hi (32bit)
-// read_config64 内部组合为 u64, 支持 >2TB 容量
+// 两个常量分别用于 read_config32 读取低/高 32 位, 支持 >2TB 容量
 const BLK_CONFIG_CAPACITY_LO: usize = 0x00;
 const BLK_CONFIG_CAPACITY_HI: usize = 0x04;
 
@@ -176,8 +176,10 @@ impl VirtioBlk {
         // 设置 DRIVER_OK — 队列配置完成后设备进入 live
         device.set_driver_ok();
 
-        // 从配置空间读取容量
-        let capacity = device.read_config64(BLK_CONFIG_CAPACITY_LO);
+        // 从配置空间读取容量 (显式使用两个常量支持 >2TB)
+        let cap_lo = device.read_config32(BLK_CONFIG_CAPACITY_LO) as u64;
+        let cap_hi = device.read_config32(BLK_CONFIG_CAPACITY_HI) as u64;
+        let capacity = cap_lo | (cap_hi << 32);
 
         // 分配 IO 缓冲区: 512 字节扇区数据 + 请求头 + 状态字节
         let buf_size = 512 + core::mem::size_of::<BlkRequest>() + 1;

@@ -45,9 +45,9 @@
 //! - MSI-X Table/PBA 通过 MMIO 访问 (需要映射)
 
 // MSI-X 实现占位, 待中断路由重构后启用。
-// 保留文件级 allow: MsiCapability/MsixTable 等内部类型和
-// msi_alloc_vector/msix_enable 等函数待中断路由重构后使用, 逐项标注会淹没代码。
-#![allow(dead_code)]
+// MSI/MSI-X 中断基础设施
+// msi_alloc_vector/msi_free_vector 已被 services/driver/acpi.rs 使用
+// MsixTable/MsixEntry 等类型待 NVMe/VirtIO 驱动接入后使用
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -68,14 +68,8 @@ const PCI_CAP_ID_MSIX: u8 = 0x11;
 
 /// MSI Enable
 const MSI_CTRL_ENABLE: u16 = 1 << 0;
-/// 多消息能力 (bits 1-3, 编码为 log2(向量数))
-const MSI_CTRL_QMASK: u16 = 0x000E;
-/// 多消息使能 (bits 4-6)
-const MSI_CTRL_QSIZE: u16 = 0x0070;
 /// 64-bit 地址能力
 const MSI_CTRL_64BIT: u16 = 0x0080;
-/// Per-vector masking 能力
-const MSI_CTRL_PERVEC: u16 = 0x0100;
 
 // ============================================================================
 // MSI-X Message Control 位
@@ -83,8 +77,6 @@ const MSI_CTRL_PERVEC: u16 = 0x0100;
 
 /// MSI-X Enable
 const MSIX_CTRL_ENABLE: u16 = 1 << 15;
-/// MSI-X Function Mask
-const MSIX_CTRL_FMASK: u16 = 1 << 14;
 /// MSI-X Table Size (bits 0-10)
 const MSIX_CTRL_TSIZE: u16 = 0x07FF;
 

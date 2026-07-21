@@ -361,6 +361,9 @@ impl CetSubsystem {
     /// - ssp 指向有效的 Shadow Stack 内存
     /// - 仅在从内核态切换到用户态前调用
     pub unsafe fn configure_user_cet_msr(&self, ssp: u64) {
+        // aarch64 无 CET, 抑制 unused 警告
+        #[cfg(target_arch = "aarch64")]
+        let _ = ssp;
         #[cfg(target_arch = "x86_64")]
         {
             if !self.caps.lock().shadow_stack_enabled {
@@ -401,6 +404,9 @@ impl CetSubsystem {
     /// - CET 已初始化
     /// - table_addr 指向有效的 SSP 表内存 (16 字节对齐)
     pub unsafe fn configure_interrupt_ssp_table(&self, table_addr: u64) {
+        // aarch64 无 CET, 抑制 unused 警告
+        #[cfg(target_arch = "aarch64")]
+        let _ = table_addr;
         #[cfg(target_arch = "x86_64")]
         {
             if !self.caps.lock().shadow_stack {

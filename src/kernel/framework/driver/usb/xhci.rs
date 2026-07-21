@@ -585,7 +585,8 @@ impl XhciController {
         let slot = self.cmd_ring_tail;
 
         // 写入 TRB 到 Command Ring
-        let ring_ptr = (self.cmd_ring_virt.0 as *mut Trb).add(slot as usize);
+        // SAFETY: ring_ptr 指向有效的 DMA 内存，slot < cmd_ring_size
+        let ring_ptr = unsafe { (self.cmd_ring_virt.0 as *mut Trb).add(slot as usize) };
         // 设置 phase bit
         let mut trb_with_phase = trb;
         if self.cmd_ring_phase != 0 {
@@ -594,7 +595,7 @@ impl XhciController {
             trb_with_phase.control &= !1;
         }
         // SAFETY: ring_ptr 指向有效的 DMA 内存，slot < cmd_ring_size
-        core::ptr::write_volatile(ring_ptr, trb_with_phase);
+        unsafe { core::ptr::write_volatile(ring_ptr, trb_with_phase) };
 
         // 更新尾指针
         self.cmd_ring_tail = (self.cmd_ring_tail + 1) % self.cmd_ring_size;
@@ -613,7 +614,8 @@ impl XhciController {
         // Doorbell 寄存器 0 = 触发 Command Ring
         if let Some(mmio) = self.iomem.as_ref() {
             let cap = unsafe { &*self.cap_regs };
-            let doorbell_base = mmio.virt_ptr() as usize + cap.db_off as usize;
+            // SAFETY: mmio 由 IoMem 抽象提供, virt_ptr() 返回有效的虚拟地址
+            let doorbell_base = unsafe { mmio.virt_ptr() } as usize + cap.db_off as usize;
             // SAFETY: doorbell 地址有效
             unsafe {
                 core::ptr::write_volatile(doorbell_base as *mut u32, 0);

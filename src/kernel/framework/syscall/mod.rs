@@ -712,6 +712,7 @@ fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
 // 已迁移到 services: sys_getrusage, sys_auth_*, sys_pwm_*, sys_gethostname,
 // sys_sethostname, sys_boot_check, sys_reboot, sys_disk_list/info/format/partition/fat_format
 
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
     buf[offset] = val as u8;
     buf[offset + 1] = (val >> 8) as u8;
@@ -719,6 +720,7 @@ fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
     buf[offset + 3] = (val >> 24) as u8;
 }
 
+#[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
 const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
@@ -1294,7 +1296,9 @@ pub(crate) mod raw {
         fn serial_has_data(com: i32) -> bool;
         fn serial_getc(com: i32) -> i32;
         // smoltcp 网络栈 (仅保留仍被调用的 extern)
+        #[cfg(feature = "net")]
         fn sm_getsockname(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
+        #[cfg(feature = "net")]
         fn sm_getpeername(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
         // 链接器符号
         static _kernel_start: u8;
@@ -1530,6 +1534,7 @@ pub(crate) mod raw {
 
     /// # Safety
     /// FFI 调用，addr/addrlen 由调用方负责用户态校验 (可写)。
+    #[cfg(feature = "net")]
     pub fn sm_getsockname_call(
         sockfd: i32,
         addr: u64,
@@ -1541,6 +1546,7 @@ pub(crate) mod raw {
 
     /// # Safety
     /// FFI 调用，addr/addrlen 由调用方负责用户态校验 (可写)。
+    #[cfg(feature = "net")]
     pub fn sm_getpeername_call(
             sockfd: i32,
             addr: u64,
@@ -1555,6 +1561,7 @@ pub(crate) mod raw {
     /// 内核映像起始虚拟地址。
     /// # Safety
     /// 链接器符号，仅在 boot 后有效。
+    #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     pub fn kernel_start_ptr() -> *const u8 {
         // SAFETY: _kernel_start 是链接器符号 (extern "C")，是静态地址，
         // boot 后由 VMM 建立映射可读。
@@ -1563,6 +1570,7 @@ pub(crate) mod raw {
 
     /// 内核映像结束物理地址（已减 HHDM_OFFSET）。
     /// # SAFETY: 链接器符号，hhdm_offset 必须与启动时一致。
+    #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     pub fn kernel_end_phys(hhdm_offset: usize) -> usize {
         unsafe { (&_kernel_end as *const u8 as usize).wrapping_sub(hhdm_offset) }
     }

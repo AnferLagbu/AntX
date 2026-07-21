@@ -21,6 +21,8 @@ use core::arch::asm;
 /// 封装一个有效的 I/O 端口范围, 提供类型安全的读写。
 pub struct IoPort {
     base: u16,
+    /// 端口长度, 用于 check_offset 越界校验. 仅 x86_64 PIO 路径使用.
+    #[cfg(target_arch = "x86_64")]
     len: u16,
     name: &'static str,
 }
@@ -38,7 +40,12 @@ impl IoPort {
         if base.checked_add(len).is_none() {
             return Err("IoPort: port range overflow");
         }
-        Ok(Self { base, len, name })
+        Ok(Self {
+            base,
+            #[cfg(target_arch = "x86_64")]
+            len,
+            name,
+        })
     }
 
     /// 安全 PIO 构造 (已知 base/len 合法)
@@ -62,6 +69,8 @@ impl IoPort {
         self.name
     }
 
+    /// 检查偏移量是否在端口范围内 (仅 x86_64 使用)
+    #[cfg(target_arch = "x86_64")]
     fn check_offset(&self, offset: u16, size: u16) -> Result<u16, &'static str> {
         if offset.saturating_add(size) > self.len {
             return Err("IoPort: access out of bounds");

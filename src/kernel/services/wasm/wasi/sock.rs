@@ -6,7 +6,7 @@
 use crate::kernel::services::wasm::types::{Value, WasmError};
 use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
-use super::fd_table::{read_iovec_from_memory, write_u32_to_memory, write_i32_to_memory, WasiIoVec};
+use super::fd_table::{read_iovec_from_memory, write_u32_to_memory, write_i32_to_memory};
 
 /// WASI sock_accept: 接受连接
 pub fn wasi_sock_accept(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {

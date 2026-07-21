@@ -8,7 +8,7 @@
 use crate::kernel::services::wasm::types::{Value, WasmError};
 use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
-use super::fd_table::{WasiFileType, WasiRights, WasiFdEntry, read_bytes_from_memory, write_u32_to_memory, write_bytes_to_memory};
+use super::fd_table::{WasiFileType, WasiRights, WasiFdEntry, read_bytes_from_memory, write_u32_to_memory};
 use alloc::string::String;
 
 /// 从 WASM 线性内存读取路径字符串 (NUL 终止)
