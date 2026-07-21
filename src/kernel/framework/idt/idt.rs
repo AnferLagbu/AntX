@@ -330,6 +330,25 @@ impl IdtManager {
         Ok(())
     }
 
+    /// 编程 MSI 向量 IDT 条目 (向量 0x40-0x7F)
+    ///
+    /// MSI 向量范围 0x40-0x7F 对应 irq16-irq79 (MSI_VECTOR_BASE=0x40).
+    /// 这些 IDT 条目使用与传统 IRQ 相同的 irq_common 入口.
+    pub fn init_msi_idt(&self, msi_table: &[u64; 64]) {
+        let mut state = self.state.lock();
+        for (i, &handler_addr) in msi_table.iter().enumerate() {
+            let vector = 0x40 + i as u8;
+            self.set_gate_internal(
+                &mut state,
+                vector,
+                handler_addr,
+                GDT_KERNEL_CODE,
+                IDT_TYPE_INTERRUPT,
+            );
+        }
+        crate::klog_info!(Kernel, "IDT: MSI vectors 0x40-0x7F programmed");
+    }
+
     /// 内部函数: 设置门描述符 (需要 &mut state)
     fn set_gate_internal(
         &self,
@@ -666,6 +685,10 @@ impl IdtManager {
                     crate::kernel::framework::proc::do_signal_deliver(frame);
                 }
             }
+        } else {
+            // MSI 向量 (0x40-0x7F → irq 0x10-0x3F): 通过 ISR_TABLE 分发
+            crate::kernel::framework::irqline::dispatch_irq(vector);
+            self.send_eoi(irq);
         }
     }
 

@@ -352,6 +352,73 @@ irq_stub 13, 45
 irq_stub 14, 46
 irq_stub 15, 47
 
+; ── MSI 向量 (0x40-0x7F) ─────────────────────────────────────────────
+; 64 个 MSI 向量 stub, 使用 irq_common 入口 → irq_handler FFI
+irq_stub 16, 64
+irq_stub 17, 65
+irq_stub 18, 66
+irq_stub 19, 67
+irq_stub 20, 68
+irq_stub 21, 69
+irq_stub 22, 70
+irq_stub 23, 71
+irq_stub 24, 72
+irq_stub 25, 73
+irq_stub 26, 74
+irq_stub 27, 75
+irq_stub 28, 76
+irq_stub 29, 77
+irq_stub 30, 78
+irq_stub 31, 79
+irq_stub 32, 80
+irq_stub 33, 81
+irq_stub 34, 82
+irq_stub 35, 83
+irq_stub 36, 84
+irq_stub 37, 85
+irq_stub 38, 86
+irq_stub 39, 87
+irq_stub 40, 88
+irq_stub 41, 89
+irq_stub 42, 90
+irq_stub 43, 91
+irq_stub 44, 92
+irq_stub 45, 93
+irq_stub 46, 94
+irq_stub 47, 95
+irq_stub 48, 96
+irq_stub 49, 97
+irq_stub 50, 98
+irq_stub 51, 99
+irq_stub 52, 100
+irq_stub 53, 101
+irq_stub 54, 102
+irq_stub 55, 103
+irq_stub 56, 104
+irq_stub 57, 105
+irq_stub 58, 106
+irq_stub 59, 107
+irq_stub 60, 108
+irq_stub 61, 109
+irq_stub 62, 110
+irq_stub 63, 111
+irq_stub 64, 112
+irq_stub 65, 113
+irq_stub 66, 114
+irq_stub 67, 115
+irq_stub 68, 116
+irq_stub 69, 117
+irq_stub 70, 118
+irq_stub 71, 119
+irq_stub 72, 120
+irq_stub 73, 121
+irq_stub 74, 122
+irq_stub 75, 123
+irq_stub 76, 124
+irq_stub 77, 125
+irq_stub 78, 126
+irq_stub 79, 127
+
 ; ── syscall / recovery ─────────────────────────────────────────────────
 extern syscall_dispatch_from_frame
 

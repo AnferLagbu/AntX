@@ -177,6 +177,71 @@ pub extern "C" fn idt_init() -> i32 {
         fn irq13();
         fn irq14();
         fn irq15();
+        // MSI 向量 stub (0x40-0x7F → irq16-irq79)
+        fn irq16();
+        fn irq17();
+        fn irq18();
+        fn irq19();
+        fn irq20();
+        fn irq21();
+        fn irq22();
+        fn irq23();
+        fn irq24();
+        fn irq25();
+        fn irq26();
+        fn irq27();
+        fn irq28();
+        fn irq29();
+        fn irq30();
+        fn irq31();
+        fn irq32();
+        fn irq33();
+        fn irq34();
+        fn irq35();
+        fn irq36();
+        fn irq37();
+        fn irq38();
+        fn irq39();
+        fn irq40();
+        fn irq41();
+        fn irq42();
+        fn irq43();
+        fn irq44();
+        fn irq45();
+        fn irq46();
+        fn irq47();
+        fn irq48();
+        fn irq49();
+        fn irq50();
+        fn irq51();
+        fn irq52();
+        fn irq53();
+        fn irq54();
+        fn irq55();
+        fn irq56();
+        fn irq57();
+        fn irq58();
+        fn irq59();
+        fn irq60();
+        fn irq61();
+        fn irq62();
+        fn irq63();
+        fn irq64();
+        fn irq65();
+        fn irq66();
+        fn irq67();
+        fn irq68();
+        fn irq69();
+        fn irq70();
+        fn irq71();
+        fn irq72();
+        fn irq73();
+        fn irq74();
+        fn irq75();
+        fn irq76();
+        fn irq77();
+        fn irq78();
+        fn irq79();
         fn syscall_handler();
         fn isr0x82();
     }
@@ -250,18 +315,43 @@ pub extern "C" fn idt_init() -> i32 {
             addr!(irq15),
         ];
 
+        // MSI 向量 stub 表 (0x40-0x7F → irq16-irq79)
+        let msi_table: [u64; 64] = [
+            addr!(irq16), addr!(irq17), addr!(irq18), addr!(irq19),
+            addr!(irq20), addr!(irq21), addr!(irq22), addr!(irq23),
+            addr!(irq24), addr!(irq25), addr!(irq26), addr!(irq27),
+            addr!(irq28), addr!(irq29), addr!(irq30), addr!(irq31),
+            addr!(irq32), addr!(irq33), addr!(irq34), addr!(irq35),
+            addr!(irq36), addr!(irq37), addr!(irq38), addr!(irq39),
+            addr!(irq40), addr!(irq41), addr!(irq42), addr!(irq43),
+            addr!(irq44), addr!(irq45), addr!(irq46), addr!(irq47),
+            addr!(irq48), addr!(irq49), addr!(irq50), addr!(irq51),
+            addr!(irq52), addr!(irq53), addr!(irq54), addr!(irq55),
+            addr!(irq56), addr!(irq57), addr!(irq58), addr!(irq59),
+            addr!(irq60), addr!(irq61), addr!(irq62), addr!(irq63),
+            addr!(irq64), addr!(irq65), addr!(irq66), addr!(irq67),
+            addr!(irq68), addr!(irq69), addr!(irq70), addr!(irq71),
+            addr!(irq72), addr!(irq73), addr!(irq74), addr!(irq75),
+            addr!(irq76), addr!(irq77), addr!(irq78), addr!(irq79),
+        ];
+
         match manager.init(
             &isr_table,
             &irq_table,
             addr!(syscall_handler),
             addr!(isr0x82),
         ) {
-            Ok(()) => MODULE_INIT_SUCCESS,
+            Ok(()) => {}
             Err(msg) => {
                 klog_error!("IDT init failed: {}", msg);
-                MODULE_INIT_FAILURE
+                return MODULE_INIT_FAILURE;
             }
         }
+
+        // 编程 MSI 向量 IDT 条目 (0x40-0x7F)
+        manager.init_msi_idt(&msi_table);
+
+        MODULE_INIT_SUCCESS
     }
 }
 

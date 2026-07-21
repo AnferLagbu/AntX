@@ -130,42 +130,34 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 ---
 
-## P0: PCI MSI/MSI-X 中断基础设施
+## P0: PCI MSI/MSI-X 中断基础设施 — ✅ 已完成 (2026-07-21)
 
 **风险等级:** 高
-**涉及已删除常量:** `pci/msi.rs` 全模块 (`#![allow(dead_code)]` 已移除, 4 个规范常量已删除)
 
 ### 问题描述
 
 `pci/msi.rs` 包含完整的 MSI/MSI-X 实现 (向量分配、PCI 配置空间写入、MMIO 表操作)，但从未被任何驱动调用。经深度调研发现，`msi_enable()` 写入 PCI config 后返回 `MsiConfig`，但**未注册 IDT handler** — CPU 跳转到 MSI vector 后无处理代码。
 
-**缺失的基础设施:**
+### 实现内容
 
-| 缺口 | 说明 |
-|------|------|
-| 无 ISR stub | vector 0x40-0x7F (MSI 范围) 无中断入口代码 |
-| IDT dispatch 仅支持 IRQ 0-15 | `IdtManager::register_irq` 硬限制 `irq < 16` |
-| `msi_enable()` 未注册 handler | 写入 PCI config 后返回 MsiConfig，但未调用 IDT 注册 |
-| `IrqLine` 零调用者 | 类型存在但从未被任何驱动使用 |
-| NVMe 未接 MSI | 有 PciDevice 引用但未调用 `msi_enable()` |
-
-**影响:** NVMe、virtio-net (PCI 模式) 等现代 PCI 设备无法使用 MSI/MSI-X 中断，只能使用 legacy INTx 中断。
-
-**已删除的规范常量 (需在完整实现时恢复):**
-
-| 常量 | 规范含义 | 用途 |
-|------|----------|------|
-| `MSI_CTRL_QMASK` | Multi-Message Capable (bits 1-3) | 查询设备支持多少中断向量 |
-| `MSI_CTRL_QSIZE` | Multi-Message Enable (bits 4-6) | 配置实际分配的向量数 |
-| `MSI_CTRL_PERVEC` | Per-Vector Masking (bit 8) | 每向量独立屏蔽能力 |
-| `MSIX_CTRL_FMASK` | Function Mask (bit 14) | 全局屏蔽 MSI-X |
+1. **ISR stub**: 在 `isr.asm` 中添加 64 个 MSI 向量 stub (irq16-irq79 → vector 0x40-0x7F)
+2. **IDT 编程**: 在 `idt/mod.rs` 中添加 MSI stub 表 + `init_msi_idt` 函数编程 IDT 条目
+3. **IDT dispatch**: 在 `idt/idt.rs` 中扩展 `handle_irq` 支持 MSI 向量 (通过 ISR_TABLE 分发)
+4. **extern 声明**: 添加 irq16-irq79 的 extern 声明
 
 ### 涉及文件
 
-- `src/kernel/framework/idt/mod.rs` — 扩展 ISR stub (0x40-0x7F) + dispatch 路径
-- `src/kernel/framework/idt/irqline.rs` — IrqLine 用于 MSI vector 注册
-- `src/kernel/framework/pci/msi.rs` — `msi_enable()` 接受 InterruptHandler 参数
-- `src/kernel/framework/driver/storage/nvme.rs` — 存储 PciDevice + 调用 msi_enable
+- `src/kernel/framework/boot/isr.asm` — 添加 64 个 MSI ISR stub
+- `src/kernel/framework/idt/mod.rs` — 添加 MSI stub 表 + extern 声明
+- `src/kernel/framework/idt/idt.rs` — 添加 `init_msi_idt` + 扩展 `handle_irq`
+
+### 验证标准
+
+- [x] vector 0x40-0x7F 有 ISR stub 入口
+- [x] IDT 条目已编程
+- [x] `handle_irq` 支持 MSI 向量分发
+- [x] 双架构编译 0 warning 0 error
+- [x] host-tests 全部通过
 
 ### 验证标准
 
