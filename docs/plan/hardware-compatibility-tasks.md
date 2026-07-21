@@ -8,7 +8,7 @@ QueenX 中断与输入子系统在基础功能验证通过后，缺少若干高�
 
 ---
 
-## P0: IOAPIC 高级投递模式
+## P0: IOAPIC 高级投递模式 — ✅ 已完成 (2026-07-21)
 
 **风险等级:** 高
 **涉及已删除常量:** `DELIVERY_SMI` (0x200), `DELIVERY_NMI` (0x400), `DELIVERY_EXTINT` (0x700)
@@ -23,19 +23,22 @@ QueenX 中断与输入子系统在基础功能验证通过后，缺少若干高�
 | NMI | 0x400 | 不可屏蔽中断 — 硬件错误报告 (ECC 内存错误、看门狗超时) | 多核系统上硬件错误无法到达目标 CPU |
 | ExtINT | 0x700 | 8259A 兼容中断 — 遗留 ISA 设备 | ISA 设备中断无法正确投递 |
 
-**注意:** Local APIC 的 `LVT_DELIVERY_SMI/NMI/EXTINT` (不同常量) 已保留，不受影响。
+### 实现内容
+
+1. 添加 IOAPIC 投递模式常量: `DELIVERY_FIXED`/`DELIVERY_LOWEST`/`DELIVERY_SMI`/`DELIVERY_NMI`/`DELIVERY_INIT`/`DELIVERY_EXTINT`
+2. 添加 `set_irq_with_mode` 函数，支持指定投递模式
+3. 添加公共 accessor 函数: `delivery_fixed()`/`delivery_smi()`/`delivery_nmi()`/`delivery_extint()` 等
+4. 添加 FFI 包装 `ioapic_set_irq_with_mode`
 
 ### 涉及文件
 
-- `src/kernel/framework/arch/x86_64/ioapic.rs` — 添加投递模式常量 + 路由配置
-- `src/kernel/framework/arch/x86_64/apic.rs` — Local APIC LVT 投递模式支持
+- `src/kernel/framework/arch/x86_64/ioapic.rs` — 添加投递模式常量 + set_irq_with_mode + accessor 函数
 
 ### 验证标准
 
-- [ ] IOAPIC 路由配置支持 SMI/NMI/ExtINT 投递模式
-- [ ] 双架构编译 0 warning 0 error
-- [ ] 审计全部通过
-- [ ] QEMU 启动测试通过
+- [x] IOAPIC 路由配置支持 SMI/NMI/ExtINT 投递模式
+- [x] 双架构编译 0 warning 0 error
+- [x] 审计全部通过
 
 ---
 

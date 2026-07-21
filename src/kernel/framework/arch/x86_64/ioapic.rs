@@ -15,7 +15,18 @@ const IOREDTBL_BASE: u32 = 0x10;
 const REDTBL_MASK: u64 = 1 << 16;
 const REDTBL_LEVEL: u64 = 1 << 15;
 
+// IOAPIC 投递模式 (重定向表 bit[8:10], 与 Local APIC LVT 编码一致)
 const DELIVERY_FIXED: u64 = 0x000;
+/// 最低优先级投递 — 同一 APIC ID 组中选择最低优先级 CPU
+const DELIVERY_LOWEST: u64 = 0x100;
+/// 系统管理中断 — 固件与 OS 通信机制
+const DELIVERY_SMI: u64 = 0x200;
+/// 不可屏蔽中断 — 硬件错误报告 (ECC 内存错误、看门狗超时)
+const DELIVERY_NMI: u64 = 0x400;
+/// INIT 投递 — 用于处理器初始化序列
+const DELIVERY_INIT: u64 = 0x500;
+/// 8259A 兼容中断 — 遗留 ISA 设备 (ExtINT 需配合 Local APIC LINT0)
+const DELIVERY_EXTINT: u64 = 0x700;
 
 static IOAPIC_BASE: AtomicU64 = AtomicU64::new(0);
 static IOAPIC_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -80,10 +91,22 @@ pub fn get_max_irq() -> u8 {
 }
 
 pub fn set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
+    set_irq_with_mode(irq, vector, apic_id, masked, DELIVERY_FIXED);
+}
+
+/// 设置 IRQ 的投递模式、vector 和目标 APIC ID
+///
+/// # 参数
+/// - `irq`: IOAPIC IRQ 编号 (0-23)
+/// - `vector`: 中断向量号 (0x20-0xFF)
+/// - `apic_id`: 目标 Local APIC ID
+/// - `masked`: 是否屏蔽此 IRQ
+/// - `mode`: 投递模式 (DELIVERY_FIXED/SMI/NMI/EXTINT 等)
+pub fn set_irq_with_mode(irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
     if !is_initialized() {
         return;
     }
-    let mut entry: u64 = vector as u64 | ((apic_id as u64) << 56);
+    let mut entry: u64 = vector as u64 | mode | ((apic_id as u64) << 56);
     if masked {
         entry |= REDTBL_MASK;
     }
@@ -127,6 +150,19 @@ pub fn route_irq_to_cpu(irq: u8, apic_id: u8) {
     ioapic_write_redirection(irq, new_entry);
 }
 
+/// 返回 Fixed 投递模式常量
+pub fn delivery_fixed() -> u64 { DELIVERY_FIXED }
+/// 返回 Lowest Priority 投递模式常量
+pub fn delivery_lowest() -> u64 { DELIVERY_LOWEST }
+/// 返回 SMI 投递模式常量
+pub fn delivery_smi() -> u64 { DELIVERY_SMI }
+/// 返回 NMI 投递模式常量
+pub fn delivery_nmi() -> u64 { DELIVERY_NMI }
+/// 返回 INIT 投递模式常量
+pub fn delivery_init() -> u64 { DELIVERY_INIT }
+/// 返回 ExtINT 投递模式常量 (8259A 兼容)
+pub fn delivery_extint() -> u64 { DELIVERY_EXTINT }
+
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_init(base_addr: u64) {
     init(base_addr);
@@ -142,6 +178,16 @@ pub extern "C" fn ioapic_unmask_irq(irq: u8) {
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
     set_irq(irq, vector, apic_id, masked);
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn ioapic_set_irq_with_mode(
+    irq: u8,
+    vector: u8,
+    apic_id: u8,
+    masked: bool,
+    mode: u64,
+) {
+    set_irq_with_mode(irq, vector, apic_id, masked, mode);
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_route_irq_to_cpu(irq: u8, apic_id: u8) {
