@@ -96,6 +96,12 @@ mod init {
     ) -> i32 {
         0
     }
+    pub fn sm_getsockname(_fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 {
+        0
+    }
+    pub fn sm_getpeername(_fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 {
+        0
+    }
     pub fn sm_poll_sockets() -> i32 {
         0
     }
@@ -300,6 +306,26 @@ pub fn sm_setsockopt(fd: i32, level: i32, optname: i32, optval: *const u8, optle
 pub fn sm_getsockopt(fd: i32, level: i32, optname: i32, optval: *mut u8, optlen: *mut u32) -> i32 {
     // SAFETY: optval 可写, optlen 可写
     unsafe { init::sm_getsockopt(fd, level, optname, optval, optlen) }
+}
+
+/// POSIX `getsockname(fd, addr, addrlen)` — 获取本端地址
+///
+/// # Safety
+///
+/// `addr` 必须为可写缓冲区, `addrlen` 为可写 u32。
+pub fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+    // SAFETY: addr 可写, addrlen 可写, 由调用方保证有效
+    unsafe { init::sm_getsockname(fd, addr, addrlen) }
+}
+
+/// POSIX `getpeername(fd, addr, addrlen)` — 获取对端地址
+///
+/// # Safety
+///
+/// `addr` 必须为可写缓冲区, `addrlen` 为可写 u32。
+pub fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+    // SAFETY: addr 可写, addrlen 可写, 由调用方保证有效
+    unsafe { init::sm_getpeername(fd, addr, addrlen) }
 }
 
 /// 轮询所有 socket

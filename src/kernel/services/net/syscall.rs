@@ -190,6 +190,20 @@ pub fn getsockopt_syscall(
     if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
 }
 
+/// getsockname(fd, addr, addrlen) — 获取本端地址
+pub fn getsockname_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<usize, Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    let r = fw::getsockname_syscall(fd, addr_ptr, addrlen_ptr);
+    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+}
+
+/// getpeername(fd, addr, addrlen) — 获取对端地址
+pub fn getpeername_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<usize, Errno> {
+    if fd < 0 { return Err(Errno::EBADF); }
+    let r = fw::getpeername_syscall(fd, addr_ptr, addrlen_ptr);
+    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+}
+
 /// shutdown(fd, how)
 pub fn shutdown_syscall(fd: i32, how: i32) -> Result<usize, Errno> {
     if fd < 0 { return Err(Errno::EBADF); }

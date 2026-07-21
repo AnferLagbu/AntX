@@ -174,7 +174,7 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 ---
 
-## P1: Syscall sm_getsockname/getpeername 迁移
+## P1: Syscall sm_getsockname/getpeername 迁移 — ✅ 已完成 (2026-07-21)
 
 **风险等级:** 中
 **涉及死代码:** `sm_getsockname_call`, `sm_getpeername_call` + 对应 extern 声明
@@ -183,16 +183,26 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 `sys_getsockname` 和 `sys_getpeername` 是唯一仍通过 `raw` 模块 FFI 包装函数调用的网络系统调用。其他网络系统调用 (socket/bind/listen/connect/send/recv/close 等) 已迁移到 `net_socket.rs` 路径。这两个未迁移，导致 4 项死代码无法消除。
 
+### 迁移内容
+
+1. `framework/net_socket.rs` — 添加 `sm_getsockname`/`sm_getpeername` FFI 包装 + kernel_test 桩
+2. `framework/net/syscall.rs` — 添加 `getsockname_syscall`/`getpeername_syscall`
+3. `services/net/syscall.rs` — 添加安全代理
+4. `framework/syscall/mod.rs` — `sys_getsockname`/`sys_getpeername` 改用新路径，删除旧 raw 模块代码
+
 ### 涉及文件
 
-- `src/kernel/framework/net/net_socket.rs` — 添加 `sm_getsockname`/`sm_getpeername` 包装
+- `src/kernel/framework/net_socket.rs` — 添加 `sm_getsockname`/`sm_getpeername` FFI 包装
+- `src/kernel/framework/net/syscall.rs` — 添加 `getsockname_syscall`/`getpeername_syscall`
+- `src/kernel/services/net/syscall.rs` — 添加安全代理
 - `src/kernel/framework/syscall/mod.rs` — 修改 `sys_getsockname`/`sys_getpeername` 使用新路径
 
 ### 验证标准
 
-- [ ] `sys_getsockname`/`sys_getpeername` 通过 `net_socket.rs` 路径调用
-- [ ] raw 模块 `sm_getsockname_call`/`sm_getpeername_call` 及其 extern 声明可删除
-- [ ] 双架构编译 0 warning 0 error
+- [x] `sys_getsockname`/`sys_getpeername` 通过 `net_socket.rs` 路径调用
+- [x] raw 模块 `sm_getsockname_call`/`sm_getpeername_call` 及其 extern 声明已删除
+- [x] 双架构编译 0 warning 0 error
+- [x] host-tests 全部通过
 
 ---
 

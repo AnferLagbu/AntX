@@ -701,12 +701,12 @@ fn sys_execve(
 
 #[cfg(feature = "net")]
 fn sys_getsockname(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    raw::sm_getsockname_call(sockfd, addr, addrlen) as i64
+    crate::kernel::framework::net::syscall::getsockname_syscall(sockfd, addr, addrlen)
 }
 
 #[cfg(feature = "net")]
 fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
-    raw::sm_getpeername_call(sockfd, addr, addrlen) as i64
+    crate::kernel::framework::net::syscall::getpeername_syscall(sockfd, addr, addrlen)
 }
 
 // 已迁移到 services: sys_getrusage, sys_auth_*, sys_pwm_*, sys_gethostname,
@@ -1295,11 +1295,7 @@ pub(crate) mod raw {
         // 串口 (COM1/COM2)
         fn serial_has_data(com: i32) -> bool;
         fn serial_getc(com: i32) -> i32;
-        // smoltcp 网络栈 (仅保留仍被调用的 extern)
-        #[cfg(feature = "net")]
-        fn sm_getsockname(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
-        #[cfg(feature = "net")]
-        fn sm_getpeername(sockfd: i32, addr: *mut u8, addrlen: *mut u32) -> i32;
+        // smoltcp 网络栈 — 已迁移到 net_socket.rs 路径
         // 链接器符号
         static _kernel_start: u8;
         static _kernel_end: u8;
@@ -1531,30 +1527,6 @@ pub(crate) mod raw {
     }
 
     // ============= smoltcp 网络栈 FFI 包装 =============
-
-    /// # Safety
-    /// FFI 调用，addr/addrlen 由调用方负责用户态校验 (可写)。
-    #[cfg(feature = "net")]
-    pub fn sm_getsockname_call(
-        sockfd: i32,
-        addr: u64,
-        addrlen: u64,
-    ) -> i32 {
-        // SAFETY: addr/addrlen 经 services 校验, 至少 sizeof(SockaddrIn)=16 字节可写.
-        unsafe { sm_getsockname(sockfd, addr as *mut u8, addrlen as *mut u32) }
-    }
-
-    /// # Safety
-    /// FFI 调用，addr/addrlen 由调用方负责用户态校验 (可写)。
-    #[cfg(feature = "net")]
-    pub fn sm_getpeername_call(
-            sockfd: i32,
-            addr: u64,
-            addrlen: u64,
-        ) -> i32 {
-            // SAFETY: addr/addrlen 经 services 校验, 至少 sizeof(SockaddrIn)=16 字节可写.
-            unsafe { sm_getpeername(sockfd, addr as *mut u8, addrlen as *mut u32) }
-        }
 
     // ============= 链接器符号访问 =============
 

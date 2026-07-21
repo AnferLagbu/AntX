@@ -374,4 +374,26 @@ pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, _flags: i32) -> i64 {
     rc as i64
 }
 
+/// getsockname(fd, addr, addrlen) — 获取本端地址
+pub fn getsockname_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> i64 {
+    if fd < 0 { return Errno::EBADF.as_ret(); }
+    let rc = net_socket::sm_getsockname(
+        fd,
+        addr_ptr as *mut u8,
+        addrlen_ptr as *mut u32,
+    );
+    rc as i64
+}
+
+/// getpeername(fd, addr, addrlen) — 获取对端地址
+pub fn getpeername_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> i64 {
+    if fd < 0 { return Errno::EBADF.as_ret(); }
+    let rc = net_socket::sm_getpeername(
+        fd,
+        addr_ptr as *mut u8,
+        addrlen_ptr as *mut u32,
+    );
+    rc as i64
+}
+
 extern crate alloc;
