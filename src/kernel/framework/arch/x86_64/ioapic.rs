@@ -10,6 +10,10 @@ const IOREGSEL: u32 = 0x00;
 const IOWIN: u32 = 0x10;
 
 const IOAPIC_VER: u32 = 0x01;
+/// IOAPIC ID 寄存器 (读写, bit[24:27] 为 APIC ID)
+const IOAPIC_ID: u32 = 0x00;
+/// IOAPIC 仲裁 ID 寄存器 (只读, bit[24:27] 为仲裁 ID)
+const IOAPIC_ARB: u32 = 0x02;
 const IOREDTBL_BASE: u32 = 0x10;
 
 const REDTBL_MASK: u64 = 1 << 16;
@@ -162,6 +166,42 @@ pub fn delivery_nmi() -> u64 { DELIVERY_NMI }
 pub fn delivery_init() -> u64 { DELIVERY_INIT }
 /// 返回 ExtINT 投递模式常量 (8259A 兼容)
 pub fn delivery_extint() -> u64 { DELIVERY_EXTINT }
+
+// ============================================================================
+// IOAPIC ID / 仲裁 API (多 IOAPIC 支持)
+// ============================================================================
+
+/// 读取当前 IOAPIC 的 ID (bit[24:27])
+///
+/// 多 IOAPIC 系统中, 每个 IOAPIC 有唯一 ID, 用于中断路由决策.
+/// 单 IOAPIC 系统中返回该唯一控制器的 ID.
+pub fn get_id() -> u8 {
+    if !is_initialized() { return 0; }
+    let val = ioapic_read(IOAPIC_ID);
+    ((val >> 24) & 0x0F) as u8
+}
+
+/// 设置当前 IOAPIC 的 ID (bit[24:27])
+///
+/// # Safety
+///
+/// 多 IOAPIC 系统中, ID 冲突会导致中断路由错误.
+/// 仅在 MADT 枚举阶段由初始化代码调用.
+pub fn set_id(id: u8) {
+    if !is_initialized() { return; }
+    let val = ioapic_read(IOAPIC_ID);
+    let new_val = (val & !(0x0F << 24)) | ((id as u32 & 0x0F) << 24);
+    ioapic_write(IOAPIC_ID, new_val);
+}
+
+/// 读取当前 IOAPIC 的仲裁 ID (只读, bit[24:27])
+///
+/// 仲裁 ID 由硬件固定, 用于多 IOAPIC 中断分配时的优先级仲裁.
+pub fn get_arbitration_id() -> u8 {
+    if !is_initialized() { return 0; }
+    let val = ioapic_read(IOAPIC_ARB);
+    ((val >> 24) & 0x0F) as u8
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_init(base_addr: u64) {

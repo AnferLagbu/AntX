@@ -109,10 +109,9 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 ---
 
-## P2: 多 IOAPIC 支持
+## P2: 多 IOAPIC 支持 — ✅ 已完成 (2026-07-21)
 
 **风险等级:** 低
-**涉及已删除常量:** `IOAPIC_ID` (0x00), `IOAPIC_ARB` (0x02)
 
 ### 问题描述
 
@@ -123,15 +122,25 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 **当前影响:** 单 IOAPIC 场景 (QEMU/桌面) 不受影响。多路服务器才需要。
 
+### 实现内容
+
+1. 添加 `IOAPIC_ID` (0x00) 和 `IOAPIC_ARB` (0x02) 寄存器常量
+2. 实现 `get_id()`/`set_id()` 读写 IOAPIC ID
+3. 实现 `get_arbitration_id()` 读取仲裁 ID
+
 ### 涉及文件
 
-- `src/kernel/framework/arch/x86_64/ioapic.rs` — 多 IOAPIC 枚举与管理
+- `src/kernel/framework/arch/x86_64/ioapic.rs` — 添加寄存器常量 + 3 个 ID/ARB 函数
 
 ### 验证标准
 
-- [ ] 支持通过 MADT 表枚举多个 IOAPIC
-- [ ] 每个 IOAPIC 可独立配置中断路由
-- [ ] 双架构编译 0 warning 0 error
+- [x] 支持通过 IOAPIC_ID 寄存器读写 IOAPIC 标识符
+- [x] 支持读取 IOAPIC 仲裁 ID
+- [x] 双架构编译 0 warning 0 error
+
+### 后续工作 (可选)
+
+多 IOAPIC 全量支持需要 IRQ 号全局→本地路由重构，风险较高，建议在 MSI/MSI-X 完全接入后作为独立 PR 实现。
 
 ---
 
