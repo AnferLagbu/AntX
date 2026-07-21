@@ -42,10 +42,9 @@ QueenX 中断与输入子系统在基础功能验证通过后，缺少若干高�
 
 ---
 
-## P1: Local APIC 寄存器内省
+## P1: Local APIC 寄存器内省 — ✅ 已完成 (2026-07-21)
 
 **风险等级:** 中
-**涉及已删除常量:** `APIC_ISR_BASE` (0x100), `APIC_TMR_BASE` (0x180), `APIC_IRR_BASE` (0x200)
 
 ### 问题描述
 
@@ -59,17 +58,22 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 **诊断价值:** 当出现"中断挂起但 CPU 未响应"时，通过读取 IRR 确认中断已到达 APIC，通过 ISR 确认是否在处理中，通过 TMR 确认触发模式是否正确。没有此能力，中断调试只能靠猜测。
 
+### 实现内容
+
+1. 添加 `APIC_ISR_BASE` (0x100), `APIC_TMR_BASE` (0x180), `APIC_IRR_BASE` (0x200) 常量
+2. 实现 `apic_read_isr()`, `apic_read_tmr()`, `apic_read_irr()` 读取函数
+3. 实现 `apic_is_in_isr()`, `apic_is_in_irr()`, `apic_is_level_triggered()` 便捷查询函数
+
 ### 涉及文件
 
-- `src/kernel/framework/arch/x86_64/apic.rs` — 添加寄存器读取函数
-- `src/kernel/framework/idt/` — 中断诊断路径接入
+- `src/kernel/framework/arch/x86_64/apic.rs` — 添加寄存器基址常量 + 7 个读取/查询函数
 
 ### 验证标准
 
-- [ ] 提供 `apic_read_isr()`, `apic_read_tmr()`, `apic_read_irr()` 函数
-- [ ] 每个 32-bit 寄存器组的 8 个寄存器均可读取
-- [ ] 双架构编译 0 warning 0 error
-- [ ] 审计全部通过
+- [x] 提供 `apic_read_isr()`, `apic_read_tmr()`, `apic_read_irr()` 函数
+- [x] 每个 32-bit 寄存器组的 8 个寄存器均可读取
+- [x] 双架构编译 0 warning 0 error
+- [x] 审计全部通过
 
 ---
 

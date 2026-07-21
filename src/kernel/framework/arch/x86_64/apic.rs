@@ -26,6 +26,14 @@ const APIC_TIMER_ICR: u32 = 0x380;
 const APIC_TIMER_CCR: u32 = 0x390;
 const APIC_TIMER_DCR: u32 = 0x3E0;
 
+// ISR/TMR/IRR 寄存器组基址 (每个 8 x 32-bit 寄存器, 覆盖 256 个中断向量)
+/// In-Service Register 基址 (0x100-0x17F)
+const APIC_ISR_BASE: u32 = 0x100;
+/// Trigger Mode Register 基址 (0x180-0x1FF)
+const APIC_TMR_BASE: u32 = 0x180;
+/// Interrupt Request Register 基址 (0x200-0x27F)
+const APIC_IRR_BASE: u32 = 0x200;
+
 const SVR_ENABLE: u32 = 1 << 8;
 const LVT_MASK: u32 = 1 << 16;
 const LVT_TIMER_PERIODIC: u32 = 1 << 17;
@@ -329,6 +337,73 @@ pub fn delivery_nmi() -> u32 {
 /// 获取 ExtINT 投递模式常量
 pub fn delivery_extint() -> u32 {
     LVT_DELIVERY_EXTINT
+}
+
+// ============================================================================
+// ISR/TMR/IRR 内省 API
+// ============================================================================
+
+/// 读取 In-Service Register 的 256 位 (8 个 32-bit 寄存器)
+///
+/// ISR 记录当前正在处理的中断向量. 每个 bit 对应一个中断向量,
+/// 置 1 表示该向量的中断正在被 CPU 处理 (尚未 EOI).
+///
+/// 返回 [u32; 8], 索引 i 对应 bit[i*32..(i+1)*32-1].
+pub fn apic_read_isr() -> [u32; 8] {
+    let mut isr = [0u32; 8];
+    for i in 0..8u32 {
+        isr[i as usize] = apic_read(APIC_ISR_BASE + i * 0x10);
+    }
+    isr
+}
+
+/// 读取 Trigger Mode Register 的 256 位 (8 个 32-bit 寄存器)
+///
+/// TMR 记录中断的触发模式: 每个 bit 对应一个中断向量,
+/// 置 1 = 电平触发, 清 0 = 边沿触发.
+///
+/// 返回 [u32; 8], 索引 i 对应 bit[i*32..(i+1)*32-1].
+pub fn apic_read_tmr() -> [u32; 8] {
+    let mut tmr = [0u32; 8];
+    for i in 0..8u32 {
+        tmr[i as usize] = apic_read(APIC_TMR_BASE + i * 0x10);
+    }
+    tmr
+}
+
+/// 读取 Interrupt Request Register 的 256 位 (8 个 32-bit 寄存器)
+///
+/// IRR 记录待处理的中断请求. 每个 bit 对应一个中断向量,
+/// 置 1 表示该向量有中断请求等待 CPU 响应.
+///
+/// 返回 [u32; 8], 索引 i 对应 bit[i*32..(i+1)*32-1].
+pub fn apic_read_irr() -> [u32; 8] {
+    let mut irr = [0u32; 8];
+    for i in 0..8u32 {
+        irr[i as usize] = apic_read(APIC_IRR_BASE + i * 0x10);
+    }
+    irr
+}
+
+/// 查询指定向量是否在 ISR 中 (正在处理)
+pub fn apic_is_in_isr(vector: u8) -> bool {
+    let reg = vector / 32;
+    let bit = vector % 32;
+    apic_read(APIC_ISR_BASE + reg as u32 * 0x10) & (1 << bit) != 0
+}
+
+/// 查询指定向量是否在 IRR 中 (待处理)
+pub fn apic_is_in_irr(vector: u8) -> bool {
+    let reg = vector / 32;
+    let bit = vector % 32;
+    apic_read(APIC_IRR_BASE + reg as u32 * 0x10) & (1 << bit) != 0
+}
+
+/// 查询指定向量的触发模式 (true = 电平触发, false = 边沿触发)
+pub fn apic_is_level_triggered(vector: u8) -> bool {
+    let reg = vector / 32;
+    let bit = vector % 32;
+    apic_read(APIC_TMR_BASE + reg as u32 * 0x10) & (1 << bit) != 0
 }
 
 // ============================================================================
