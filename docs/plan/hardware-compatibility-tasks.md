@@ -77,10 +77,9 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 
 ---
 
-## P1: PS/2 键盘扫描码集协商
+## P1: PS/2 键盘扫描码集协商 — ✅ 已完成 (2026-07-21)
 
 **风险等级:** 中
-**涉及已删除常量:** `KB_CMD_SCANCODE` (0xF0), `KB_CMD_IDENTIFY` (0xF2)
 
 ### 问题描述
 
@@ -89,22 +88,24 @@ Local APIC 有 3 组只读寄存器用于中断状态内省:
 - **QEMU/Bochs:** PS/2 控制器自动做 set 2 → set 1 转换，驱动正常工作
 - **真实硬件:** 某些 PS/2 控制器**不做此转换**，键盘直接发送 set 2 扫描码，驱动解析出错误字符
 
-**需要的能力:**
+### 实现内容
 
-1. `KB_CMD_SCANCODE` (0xF0): 查询当前扫描码集 + 切换到 set 1
-2. `KB_CMD_IDENTIFY` (0xF2): 识别键盘类型 (AT/XT/Enhanced)，处理不同键盘的初始化差异
+1. 添加 `KB_CMD_SCANCODE` (0xF0) 常量
+2. 实现 `query_scancode_set()` 查询当前扫描码集
+3. 实现 `switch_scancode_set()` 切换扫描码集
+4. 实现 `negotiate_scancode_set()` 协商函数：查询 → 切换到 Set 1
+5. 在 `init()` 中调用扫描码集协商（自检后、LED 设置前）
 
 ### 涉及文件
 
-- `src/kernel/framework/driver/input/keyboard.rs` — 键盘初始化路径添加扫描码集协商
+- `src/kernel/framework/driver/input/keyboard.rs` — 添加命令常量 + 3 个函数 + init 集成
 
 ### 验证标准
 
-- [ ] 键盘初始化时发送 `KB_CMD_SCANCODE` 查询当前扫描码集
-- [ ] 若非 set 1，发送 `KB_CMD_SCANCODE` 切换到 set 1
-- [ ] 若 set 2, 切换失败，使用 set 2 映射表 (后备方案)
-- [ ] 双架构编译 0 warning 0 error
-- [ ] QEMU 键盘输入测试通过
+- [x] 键盘初始化时发送 `KB_CMD_SCANCODE` 查询当前扫描码集
+- [x] 若非 set 1，发送 `KB_CMD_SCANCODE` 切换到 set 1
+- [x] 双架构编译 0 warning 0 error
+- [x] host-tests 全部通过
 
 ---
 

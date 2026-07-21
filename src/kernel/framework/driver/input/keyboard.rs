@@ -36,6 +36,8 @@ const PS2_STATUS_OUTPUT_FULL: u8 = 0x01; // 输出缓冲区满
 const PS2_STATUS_INPUT_FULL: u8 = 0x02; // 输入缓冲区满
 /// 键盘命令
 const KB_CMD_SET_LED: u8 = 0xED; // 设置 LED
+/// 查询/设置扫描码集 (0xF0 后跟 0=查询, 1=Set 1, 2=Set 2, 3=Set 3)
+const KB_CMD_SCANCODE: u8 = 0xF0;
 
 /// LED 标志位
 const KB_LED_SCROLL_LOCK: u8 = 0x01;
@@ -380,6 +382,63 @@ fn update_leds(cmd_port: &IoPort, data_port: &IoPort, modifiers: &ModifierState)
     let _ = keyboard_read_data(cmd_port, data_port);
 }
 
+/// 查询当前扫描码集
+///
+/// 发送 0xF0 + 0x00 查询命令, 等待 ACK 后读取回复字节.
+/// 回复: 1=Set 1, 2=Set 2, 3=Set 3.
+fn query_scancode_set(cmd_port: &IoPort, data_port: &IoPort) -> Option<u8> {
+    // 发送 0xF0 0x00 查询
+    let _ = keyboard_send_data(cmd_port, data_port, KB_CMD_SCANCODE);
+    let _ = keyboard_send_data(cmd_port, data_port, 0x00);
+    // 等待 ACK (0xFA)
+    let _ = keyboard_read_data(cmd_port, data_port);
+    // 读取扫描码集回复
+    keyboard_read_data(cmd_port, data_port)
+}
+
+/// 切换到指定扫描码集
+///
+/// 发送 0xF0 + set_number, 等待 ACK.
+fn switch_scancode_set(cmd_port: &IoPort, data_port: &IoPort, set: u8) -> bool {
+    let _ = keyboard_send_data(cmd_port, data_port, KB_CMD_SCANCODE);
+    let _ = keyboard_send_data(cmd_port, data_port, set);
+    // 等待 ACK (0xFA)
+    matches!(keyboard_read_data(cmd_port, data_port), Some(0xFA))
+}
+
+/// 协商扫描码集: 查询当前 set, 若非 set 1 则切换
+///
+/// PS/2 键盘默认使用 Scancode Set 2. QEMU/Bochs 的 PS/2 控制器
+/// 自动做 set 2 → set 1 转换, 但某些控制器 (尤其是真实硬件) 不做此转换.
+/// 本函数确保键盘使用 Set 1, 若切换失败则打印警告 (由调用方决定是否报错).
+fn negotiate_scancode_set(cmd_port: &IoPort, data_port: &IoPort) {
+    if let Some(current) = query_scancode_set(cmd_port, data_port) {
+        match current {
+            1 => {
+                // 已是 Set 1, 无需切换
+            }
+            2 => {
+                // Set 2, 尝试切换到 Set 1
+                if switch_scancode_set(cmd_port, data_port, 1) {
+                    // 切换成功
+                } else {
+                    crate::klog_warn!(Driver, "keyboard: Set 2→1 切换失败, 使用 Set 1 映射 (可能产生错误字符)");
+                }
+            }
+            3 => {
+                // Set 3, 尝试切换到 Set 1
+                let _ = switch_scancode_set(cmd_port, data_port, 1);
+                crate::klog_warn!(Driver, "keyboard: Set 3 键盘, 已尝试切换到 Set 1");
+            }
+            _ => {
+                crate::klog_warn!(Driver, "keyboard: 未知扫描码集 {}, 假设 Set 1", current);
+            }
+        }
+    } else {
+        // 无法查询, 假设 Set 1 (QEMU 兼容路径)
+    }
+}
+
 // ============================================================================
 // Driver Trait 实现
 // ============================================================================
@@ -411,10 +470,14 @@ impl Driver for KeyboardDriver {
             }
         }
 
-        // 3. 发送 SET LED 命令设置初始 LED 状态
+        // 3. 协商扫描码集: 查询当前 set, 若非 set 1 则切换
+        //    QEMU/Bochs 自动做 set 2→1 转换, 真实硬件可能需要此步
+        negotiate_scancode_set(&self.cmd_port, &self.data_port);
+
+        // 4. 发送 SET LED 命令设置初始 LED 状态
         update_leds(&self.cmd_port, &self.data_port, &self.modifiers);
 
-        // 4. 清空缓冲区
+        // 5. 清空缓冲区
         self.buffer.clear();
 
         self.initialized = true;
