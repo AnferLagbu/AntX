@@ -50,11 +50,11 @@
 - **方案**: 在 `host-tests/benches/` 下增加子系统 benchmark：调度延迟 (context_switch_latency)、IPC 吞吐 (pipe_throughput/shm_throughput)、文件系统 ops/sec (vfs_open_close/read_write)、网络延迟 (loopback_rtt)。输出格式与现有 `baseline.json` 对齐
 - **状态**: []
 
-### 2.2 aarch64 QEMU 测试纳入 CI 默认路径
+### 2.2 aarch64 QEMU 测试纳入 CI 默认路径 — ✅ 已完成 (2026-07-21)
 
 - **描述**: x86_64 有完整的 QEMU 测试链 (test-unit/test-chaos/test-smp)，aarch64 当前仅做编译检查，测试覆盖不对称
 - **方案**: 在 `ci/audit.sh` full 模式中增加 aarch64 QEMU boot test；在 `Makefile.ci` 中增加 `ci-test-aarch64` 目标；GitHub Actions `ci-aarch64.yml` 增加 boot test job
-- **状态**: []
+- **状态**: [X] 已完成
 
 ### 2.3 services 层模块间隐式依赖审计
 

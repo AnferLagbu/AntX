@@ -43,3 +43,31 @@ jobs:
             echo "::error::cargo check 失败"
             exit 1
           fi
+
+  # ========================================================================
+  # Job 2: aarch64 QEMU boot test
+  # ========================================================================
+  qemu-boot-aarch64:
+    name: QEMU boot test (aarch64)
+    runs-on: ubuntu-latest
+    needs: cargo-check-aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust nightly + aarch64 target
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: aarch64-unknown-none
+          components: rust-src
+
+      - name: 安装 QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm
+
+      - name: 构建 aarch64 内核
+        run: make ARCH=aarch64 all
+
+      - name: QEMU boot test
+        run: |
+          bash scripts/qemu_boot_test.sh aarch64

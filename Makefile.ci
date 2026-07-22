@@ -25,12 +25,13 @@ help:
 	@echo "  make -f Makefile.ci ci-bench          - framekernel-bench + 回归检查"
 	@echo "  make -f Makefile.ci ci-bench-record   - 重新记录性能基线"
 	@echo "  make -f Makefile.ci ci-test-host      - host-tests 单元+集成全量 (Cargo 自动发现)"
+	@echo "  make -f Makefile.ci ci-test-aarch64   - aarch64 QEMU boot test"
 	@echo "  make -f Makefile.ci ci-fix            - auto-fix where possible"
 	@echo "  make -f Makefile.ci ci-clean          - clean log dir"
 	@echo ""
 
 # Full CI
-ci: ci-unsafe-scan ci-audit ci-cargo ci-bench
+ci: ci-unsafe-scan ci-audit ci-cargo ci-bench ci-test-aarch64
 	@echo ""
 	@echo "=========================================="
 	@echo "QueenX Framekernel Compliance: PASS"
@@ -117,3 +118,10 @@ ci-test-host:
 ci-clean:
 	@rm -rf $(LOG_DIR)
 	@echo "PASS: clean"
+
+# aarch64 QEMU boot test
+ci-test-aarch64:
+	@echo "[aarch64] QEMU boot test..."
+	@mkdir -p $(LOG_DIR)
+	@bash scripts/qemu_boot_test.sh aarch64 2>&1 | tee $(LOG_DIR)/qemu_boot_aarch64.txt
+	@echo "PASS: aarch64 QEMU boot test"
