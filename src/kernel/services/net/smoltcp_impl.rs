@@ -217,6 +217,112 @@ impl SmoltcpNetStack {
         }
         None
     }
+
+    // ---- fd-based 便捷方法 (供 socket.rs 直接调用, 无需 SocketHandle 查找) ----
+
+    /// 将 fd 绑定到本地端点.
+    pub fn bind_fd(&self, fd: i32, addr: NetEndpoint) -> Result<()> {
+        let sin = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_bind(fd, sin.as_ptr(), 16);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 将 fd 置为监听状态.
+    pub fn listen_fd(&self, fd: i32, backlog: i32) -> Result<()> {
+        let rc = fw_net_socket::sm_net_listen(fd, backlog);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 从监听 fd 的已完成连接队列中取出一个新连接.
+    pub fn accept_fd(&self, fd: i32) -> Result<i32> {
+        let new_fd = fw_net_socket::sm_net_accept(fd, core::ptr::null_mut(), core::ptr::null_mut());
+        if new_fd >= 0 {
+            Ok(new_fd)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 发起 TCP 连接到远端端点.
+    pub fn connect_fd(&self, fd: i32, addr: NetEndpoint) -> Result<()> {
+        let sin = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_connect(fd, sin.as_ptr(), 16);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 向已连接的 fd 发送数据.
+    pub fn send_fd(&self, fd: i32, buf: &[u8]) -> Result<usize> {
+        let rc = fw_net_socket::sm_net_send(fd, buf.as_ptr(), buf.len() as u32, 0);
+        if rc >= 0 {
+            Ok(rc as usize)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 从已连接的 fd 接收数据.
+    pub fn recv_fd(&self, fd: i32, buf: &mut [u8]) -> Result<usize> {
+        let rc = fw_net_socket::sm_net_recv(fd, buf.as_mut_ptr(), buf.len() as u32, 0);
+        if rc >= 0 {
+            Ok(rc as usize)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 向指定端点发送数据报 (UDP 主要场景).
+    pub fn sendto_fd(&self, fd: i32, buf: &[u8], addr: NetEndpoint) -> Result<usize> {
+        let sin = endpoint_to_sockaddr(addr);
+        let rc =
+            fw_net_socket::sm_net_sendto(fd, buf.as_ptr(), buf.len() as u32, 0, sin.as_ptr(), 16);
+        if rc >= 0 {
+            Ok(rc as usize)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 接收数据报并获取来源端点信息 (UDP 主要场景).
+    pub fn recvfrom_fd(&self, fd: i32, buf: &mut [u8]) -> Result<(usize, NetEndpoint)> {
+        let mut src = [0u8; 16];
+        let mut addrlen = 16u32;
+        let rc = fw_net_socket::sm_net_recvfrom(
+            fd,
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            0,
+            src.as_mut_ptr(),
+            &mut addrlen,
+        );
+        if rc >= 0 {
+            let ep = sockaddr_to_endpoint(&src).unwrap_or(NetEndpoint::UNSPECIFIED);
+            Ok((rc as usize, ep))
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 关闭 fd.
+    pub fn close_fd(&self, fd: i32) -> Result<()> {
+        let rc = fw_net_socket::sm_net_close(fd);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
 }
 
 /// NetEndpoint → sockaddr_in [u8; 16] (network byte order for port, little-endian struct layout).
