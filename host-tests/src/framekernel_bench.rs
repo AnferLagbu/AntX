@@ -2265,6 +2265,157 @@ pub fn zil_persist_dispatch_bench(iters: u64) -> u128 {
     elapsed.saturating_mul(1_000) / iters as u128
 }
 
+// ====== 25. 调度延迟: 模拟上下文切换 ======
+
+/// 模拟上下文切换开销: 寄存器保存/恢复 + 栈指针切换
+/// 测量纯软件上下文切换延迟 (不含 TLB flush)
+pub fn context_switch_bench(iters: u64) -> u128 {
+    // 模拟寄存器组 (x86_64: 16 个 64-bit 通用寄存器 + RFLAGS)
+    #[repr(C)]
+    struct Context {
+        regs: [u64; 16],
+        rflags: u64,
+        rsp: u64,
+        rbp: u64,
+    }
+
+    let mut ctx_a = Context {
+        regs: [0; 16],
+        rflags: 0,
+        rsp: 0,
+        rbp: 0,
+    };
+    let mut ctx_b = Context {
+        regs: [1; 16],
+        rflags: 0,
+        rsp: 0,
+        rbp: 0,
+    };
+
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for _ in 0..iters {
+        // 模拟 save ctx_a, restore ctx_b
+        for i in 0..16 {
+            ctx_b.regs[i] = ctx_a.regs[i];
+        }
+        sink ^= ctx_b.regs[0];
+        // 模拟 save ctx_b, restore ctx_a
+        for i in 0..16 {
+            ctx_a.regs[i] = ctx_b.regs[i];
+        }
+        sink ^= ctx_a.regs[0];
+    }
+    std::hint::black_box(sink);
+    let elapsed = start.elapsed().as_nanos();
+    // 每次迭代完成 2 次上下文切换
+    elapsed.saturating_mul(1_000) / (iters * 2) as u128
+}
+
+// ====== 26. IPC 吞吐: 模拟管道读写 ======
+
+/// 模拟管道吞吐量: 环形缓冲区 + 生产者-消费者模式
+/// 测量单次写入 + 单次读取的总延迟
+pub fn pipe_throughput_bench(iters: u64) -> u128 {
+    const PIPE_SIZE: usize = 4096;
+    let mut buffer = [0u8; PIPE_SIZE];
+    let mut read_pos: usize = 0;
+    let mut write_pos: usize = 0;
+
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for _ in 0..iters {
+        // 模拟写入 (生产者)
+        let data = [0xAB; 64]; // 64 字节消息
+        for &byte in &data {
+            buffer[write_pos % PIPE_SIZE] = byte;
+            write_pos += 1;
+        }
+
+        // 模拟读取 (消费者)
+        for _ in 0..64 {
+            sink ^= buffer[read_pos % PIPE_SIZE] as u64;
+            read_pos += 1;
+        }
+    }
+    std::hint::black_box(sink);
+    let elapsed = start.elapsed().as_nanos();
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
+// ====== 27. 文件系统 ops/sec: 模拟 VFS open/close ======
+
+/// 模拟 VFS open/close 路径: 路径哈希 + 文件表查找 + 引用计数
+/// 测量单次 open + close 的总延迟
+pub fn vfs_open_close_bench(iters: u64) -> u128 {
+    use std::collections::HashMap;
+
+    // 模拟文件表
+    let mut file_table: HashMap<u64, u32> = HashMap::new();
+    // 预填充一些文件
+    for i in 0..1000 {
+        file_table.insert(i, 1); // refcount = 1
+    }
+
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for i in 0..iters {
+        let fd = i % 1000;
+        // 模拟 open: 查找文件 + 增加引用计数
+        if let Some(refcount) = file_table.get_mut(&fd) {
+            *refcount += 1;
+            sink ^= fd;
+        }
+        // 模拟 close: 减少引用计数 + 可能删除
+        if let Some(refcount) = file_table.get_mut(&fd) {
+            *refcount -= 1;
+            if *refcount == 0 {
+                file_table.remove(&fd);
+            }
+        }
+    }
+    std::hint::black_box(sink);
+    let elapsed = start.elapsed().as_nanos();
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
+// ====== 28. 网络延迟: 模拟环回 RTT ======
+
+/// 模拟环回 RTT: 协议栈处理 + 缓冲区复制 + 校验和计算
+/// 测量单次发送 + 接收的总延迟
+pub fn loopback_rtt_bench(iters: u64) -> u128 {
+    const MTU: usize = 1500;
+    let mut tx_buf = [0u8; MTU];
+    let mut rx_buf = [0u8; MTU];
+
+    // 填充测试数据
+    for (i, byte) in tx_buf.iter_mut().enumerate() {
+        *byte = (i & 0xFF) as u8;
+    }
+
+    let start = Instant::now();
+    let mut sink: u64 = 0;
+    for _ in 0..iters {
+        // 模拟发送: 复制 + 计算校验和
+        let mut checksum: u32 = 0;
+        for &byte in &tx_buf {
+            checksum = checksum.wrapping_add(byte as u32);
+        }
+        rx_buf.copy_from_slice(&tx_buf);
+
+        // 模拟接收: 校验和验证 + 处理
+        let mut rx_checksum: u32 = 0;
+        for &byte in &rx_buf {
+            rx_checksum = rx_checksum.wrapping_add(byte as u32);
+        }
+        sink ^= (checksum ^ rx_checksum) as u64;
+    }
+    std::hint::black_box(sink);
+    let elapsed = start.elapsed().as_nanos();
+    // 每次迭代完成 1 次 RTT (发送 + 接收)
+    elapsed.saturating_mul(1_000) / iters as u128
+}
+
 // ====== 编排器 ======
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -2378,6 +2529,24 @@ pub fn run_all() -> BenchReport {
     // LEGACY-5.11: ZIL persist trait dispatch bench
     results.push(measure("zil_persist_dispatch", "hvfs", 1_000, ||
         zil_persist_dispatch_bench(1_000)));
+
+    // ====================================================================
+    // 子系统级基准测试 (2.1)
+    // ====================================================================
+
+    // 调度延迟: 模拟上下文切换 (寄存器保存/恢复 + 栈切换)
+    results.push(measure("context_switch_latency", "sched", 100_000, ||
+        context_switch_bench(100_000)));
+    // IPC 吞吐: 模拟管道读写 (环形缓冲区 + 生产者-消费者)
+    results.push(measure("pipe_throughput", "ipc", 10_000, ||
+        pipe_throughput_bench(10_000)));
+    // 文件系统 ops/sec: 模拟 VFS open/close 路径 (哈希查找 + 状态更新)
+    results.push(measure("vfs_open_close", "fs", 10_000, ||
+        vfs_open_close_bench(10_000)));
+    // 网络延迟: 模拟环回 RTT (协议栈处理 + 缓冲区复制)
+    results.push(measure("loopback_rtt", "net", 10_000, ||
+        loopback_rtt_bench(10_000)));
+
     BenchReport { version: 1, results }
 }
 
