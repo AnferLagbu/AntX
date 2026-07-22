@@ -2285,8 +2285,41 @@ pub(crate) mod raw {
                     UDP_TX_BUFS[slot_idx] = tx_ptr;
                     Some(handle)
                 }
-                // Icmp / Raw / Dhcpv4 / Dns 暂不实装 (W4.2.4+ 阶段)
-                _ => None,
+                SocketKind::Icmp => {
+                    // ICMP socket: 使用 UDP socket buffer (ICMP 无连接, 类似 UDP)
+                    let rx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
+                    if rx_ptr.is_null() {
+                        return None;
+                    }
+                    let tx_ptr = crate::kernel::framework::mm::k_malloc(UDP_BUF_SIZE);
+                    if tx_ptr.is_null() {
+                        crate::kernel::framework::mm::k_free(rx_ptr);
+                        return None;
+                    }
+                    // SAFETY: rx_ptr/tx_ptr 来自 k_malloc, 长度合法, 唯一别名
+                    let rx_slice = core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE);
+                    let tx_slice = core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE);
+                    let udp_sock = smoltcp::socket::udp::Socket::new(
+                        smoltcp::socket::udp::PacketBuffer::new(
+                            &mut UDP_RX_METAS[slot_idx][..],
+                            rx_slice,
+                        ),
+                        smoltcp::socket::udp::PacketBuffer::new(
+                            &mut UDP_TX_METAS[slot_idx][..],
+                            tx_slice,
+                        ),
+                    );
+                    let handle = sockets.add(udp_sock);
+                    SOCKET_TABLE.0[slot_idx] = Some(handle);
+                    FD_TYPES.0[slot_idx] = 2; // ICMP 走 UDP socket 类型
+                    UDP_RX_BUFS[slot_idx] = rx_ptr;
+                    UDP_TX_BUFS[slot_idx] = tx_ptr;
+                    Some(handle)
+                }
+                SocketKind::Raw | SocketKind::Dhcpv4 | SocketKind::Dns => {
+                    // Raw/Dhcpv4/Dns: 用户态不可见, 暂不支持
+                    None
+                }
             }
         }
     }
