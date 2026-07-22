@@ -105,6 +105,10 @@ mod init {
     pub fn sm_poll_sockets() -> i32 {
         0
     }
+    // ── SmoltcpNetStack 桥接 safe wrappers (W4.2.3.4) ──
+    pub fn smoltcp_net_stack_socket_close(_slot_idx: usize) -> bool {
+        false
+    }
 }
 
 // ============================================================================
@@ -332,4 +336,122 @@ pub fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
 pub fn sm_poll_sockets() -> i32 {
     // SAFETY: try_lock 内部使用, ISR 安全
     unsafe { init::sm_poll_sockets() }
+}
+
+// ============================================================================
+// SmoltcpNetStack 桥接 safe wrappers (W4.2.3.4)
+//
+// services 层 SmoltcpNetStack 通过本模块调用 init::sm_* 函数,
+// 保持 services 0 unsafe.
+// ============================================================================
+
+/// SmoltcpNetStack::bind — POSIX bind 委托
+///
+/// # Safety
+///
+/// `addr` 必须为至少 `addrlen` 字节的有效指针, 调用期间不释放。
+pub fn sm_net_bind(fd: i32, addr: *const u8, addrlen: u32) -> i32 {
+    // SAFETY: addr 由调用方保证有效, sm_bind 同步读取
+    unsafe { init::sm_bind(fd, addr, addrlen) }
+}
+
+/// SmoltcpNetStack::listen — POSIX listen 委托
+pub fn sm_net_listen(fd: i32, backlog: i32) -> i32 {
+    // SAFETY: NET_LOCK 内部获取
+    unsafe { init::sm_listen(fd, backlog) }
+}
+
+/// SmoltcpNetStack::accept — POSIX accept 委托
+///
+/// # Safety
+///
+/// `addr` 和 `addrlen` 可为 null 表示不关心对端地址。
+pub fn sm_net_accept(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
+    // SAFETY: null 表示不写对端地址, 由调用方契约保证
+    unsafe { init::sm_accept(fd, addr, addrlen) }
+}
+
+/// SmoltcpNetStack::connect — POSIX connect 委托
+///
+/// # Safety
+///
+/// `addr` 必须为至少 `addrlen` 字节的有效指针, 调用期间不释放。
+pub fn sm_net_connect(fd: i32, addr: *const u8, addrlen: u32) -> i32 {
+    // SAFETY: addr 栈上有效, sm_connect 同步读取
+    unsafe { init::sm_connect(fd, addr, addrlen) }
+}
+
+/// SmoltcpNetStack::send — POSIX send 委托
+///
+/// # Safety
+///
+/// `buf` 必须为至少 `len` 字节的有效只读指针, 调用期间不释放。
+pub fn sm_net_send(fd: i32, buf: *const u8, len: u32, flags: i32) -> i32 {
+    // SAFETY: buf 在调用期间有效, sm_send 同步读取
+    unsafe { init::sm_send(fd, buf, len, flags) }
+}
+
+/// SmoltcpNetStack::recv — POSIX recv 委托
+///
+/// # Safety
+///
+/// `buf` 必须为至少 `len` 字节的有效可写指针。
+pub fn sm_net_recv(fd: i32, buf: *mut u8, len: u32, flags: i32) -> i32 {
+    // SAFETY: buf 在调用期间有效可写
+    unsafe { init::sm_recv(fd, buf, len, flags) }
+}
+
+/// SmoltcpNetStack::sendto — POSIX sendto 委托
+///
+/// # Safety
+///
+/// `buf` 和 `dest_addr` 必须为有效指针, 调用期间不释放。
+pub fn sm_net_sendto(
+    fd: i32,
+    buf: *const u8,
+    len: u32,
+    flags: i32,
+    dest_addr: *const u8,
+    addrlen: u32,
+) -> i32 {
+    // SAFETY: buf + dest_addr 同步有效
+    unsafe { init::sm_sendto(fd, buf, len, flags, dest_addr, addrlen) }
+}
+
+/// SmoltcpNetStack::recvfrom — POSIX recvfrom 委托
+///
+/// # Safety
+///
+/// `buf` 可写, `src_addr` 为有效可写缓冲, `addrlen` 为可写 u32。
+pub fn sm_net_recvfrom(
+    fd: i32,
+    buf: *mut u8,
+    len: u32,
+    flags: i32,
+    src_addr: *mut u8,
+    addrlen: *mut u32,
+) -> i32 {
+    // SAFETY: buf 可写, src_addr 可写
+    unsafe { init::sm_recvfrom(fd, buf, len, flags, src_addr, addrlen) }
+}
+
+/// SmoltcpNetStack::close — POSIX close 委托
+pub fn sm_net_close(fd: i32) -> i32 {
+    // SAFETY: sm_close 内部 NET_LOCK 串行化
+    unsafe { init::sm_close(fd) }
+}
+
+// ============================================================================
+// SmoltcpNetStack 专属 safe wrapper (W4.2.3.4)
+// ============================================================================
+
+/// SmoltcpNetStack::close 的 safe wrapper — 关闭 SmoltcpNetStack 范围内的 socket.
+///
+/// # Safety
+///
+/// `slot_idx` 必须在 `[smoltcp_net_stack_slot_base(), TOTAL_SLOTS)` 范围内,
+/// 由 SmoltcpNetStack 调用方保证.
+pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
+    // SAFETY: 内部持有 NET_LOCK, slot_idx 范围由调用方保证
+    unsafe { init::raw::smoltcp_net_stack_socket_close(slot_idx) }
 }

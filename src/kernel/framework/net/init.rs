@@ -2337,6 +2337,110 @@ pub(crate) mod raw {
         }
     }
 
+    /// SmoltcpNetStack::close 的 safe wrapper (W4.2.3.4).
+    ///
+    /// 关闭 `[MAX_SM_FD, TOTAL_SLOTS)` 范围内的 smoltcp socket,
+    /// 释放 buffer 并清空槽位状态. 与 `sm_close` 逻辑对称, 但索引
+    /// 校验针对 SmoltcpNetStack 专属范围.
+    ///
+    /// ## 返回
+    ///
+    /// - `true`: 关闭成功
+    /// - `false`: slot_idx 越界或槽位空闲
+    pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
+        // SAFETY: 调用方持有 NET_LOCK, 整个函数体访问 static mut (SOCKET_TABLE,
+        // FD_TYPES, TCP_RX_BUFS, TCP_TX_BUFS, UDP_RX_BUFS, UDP_TX_BUFS).
+        unsafe {
+            // 1. 校验 slot_idx 在 SmoltcpNetStack 范围内
+            if slot_idx < MAX_SM_FD || slot_idx >= TOTAL_SLOTS {
+                return false;
+            }
+            // 2. 校验槽位已占用
+            if SOCKET_TABLE.0[slot_idx].is_none() || FD_TYPES.0[slot_idx] == 0 {
+                return false;
+            }
+
+            let handle = SOCKET_TABLE.0[slot_idx].unwrap();
+            let stype = FD_TYPES.0[slot_idx];
+            let sockets = &mut *socket_set();
+
+            // 3. 根据类型关闭 TCP/UDP socket
+            match stype {
+                1 => {
+                    let sock = sockets.get_mut::<tcp::Socket>(handle);
+                    sock.close();
+                }
+                2 => {
+                    let sock = sockets.get_mut::<udp::Socket>(handle);
+                    sock.close();
+                }
+                _ => {}
+            }
+
+            // 4. 从 SocketSet 移除
+            sockets.remove(handle);
+
+            // 5. 释放 slab buffer
+            if !TCP_RX_BUFS[slot_idx].is_null() {
+                crate::kernel::framework::mm::k_free(TCP_RX_BUFS[slot_idx]);
+                TCP_RX_BUFS[slot_idx] = core::ptr::null_mut();
+            }
+            if !TCP_TX_BUFS[slot_idx].is_null() {
+                crate::kernel::framework::mm::k_free(TCP_TX_BUFS[slot_idx]);
+                TCP_TX_BUFS[slot_idx] = core::ptr::null_mut();
+            }
+            if !UDP_RX_BUFS[slot_idx].is_null() {
+                crate::kernel::framework::mm::k_free(UDP_RX_BUFS[slot_idx]);
+                UDP_RX_BUFS[slot_idx] = core::ptr::null_mut();
+            }
+            if !UDP_TX_BUFS[slot_idx].is_null() {
+                crate::kernel::framework::mm::k_free(UDP_TX_BUFS[slot_idx]);
+                UDP_TX_BUFS[slot_idx] = core::ptr::null_mut();
+            }
+
+            // 6. 清空槽位状态
+            SOCKET_TABLE.0[slot_idx] = None;
+            FD_TYPES.0[slot_idx] = 0;
+            true
+        }
+    }
+
+    /// SmoltcpNetStack::poll 的 safe wrapper (W4.2.3.4).
+    ///
+    /// 驱动 smoltcp 协议栈轮询 (TX/RX + 定时器 + DHCP), 返回 `PollOutcome`.
+    /// 与 `poll_network` 逻辑对称, 但由 SmoltcpNetStack 调用方主动触发
+    /// (而非 timer ISR 自动轮询).
+    pub fn smoltcp_net_stack_poll() -> crate::kernel::framework::net::iface_trait::PollOutcome {
+        use crate::kernel::framework::net::iface_trait::PollOutcome;
+
+        let nic = match device_mut() {
+            Some(d) => d,
+            None => return PollOutcome::idle(),
+        };
+        let stack = match stack_mut() {
+            Some(s) => s,
+            None => return PollOutcome::idle(),
+        };
+        // SAFETY: socket_set() 返回已初始化的 SocketSet 指针, 调用方持有 NET_LOCK.
+        let sockets = unsafe { &mut *socket_set() };
+
+        // SAFETY: stack.poll 驱动 smoltcp 协议栈 (RX/TX + 定时器), 返回 PollResult.
+        let poll_result = stack.poll(nic, sockets);
+        // SAFETY: process_dhcp_events 在 NET_LOCK 保护下处理 DHCP 事件.
+        unsafe { super::process_dhcp_events(sockets) };
+
+        // 将 smoltcp PollResult 翻译为 QueenX PollOutcome
+        match poll_result {
+            smoltcp::iface::PollResult::SocketStateChanged => PollOutcome {
+                packet_received: true,
+                socket_woken: true,
+                dhcp_progressed: false,
+                tx_pending: 0,
+            },
+            smoltcp::iface::PollResult::None => PollOutcome::idle(),
+        }
+    }
+
     /// DhcpState tag → DhcpState 翻译.
     ///
     /// tag 值 (来自 PREV_DHCP_TAG):
