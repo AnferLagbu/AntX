@@ -48,7 +48,7 @@
 
 - **描述**: 当前仅有 `framekernel-bench` 全局基线，缺少子系统级细粒度性能数据，难以定位回归来源
 - **方案**: 在 `host-tests/benches/` 下增加子系统 benchmark：调度延迟 (context_switch_latency)、IPC 吞吐 (pipe_throughput/shm_throughput)、文件系统 ops/sec (vfs_open_close/read_write)、网络延迟 (loopback_rtt)。输出格式与现有 `baseline.json` 对齐
-- **状态**: []
+- **状态**: [待实施] 需要实现调度器/IPC/VFS/网络子系统的 host-side 模拟，工作量 ~1 周
 
 ### 2.2 aarch64 QEMU 测试纳入 CI 默认路径 — ✅ 已完成 (2026-07-21)
 
