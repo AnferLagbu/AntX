@@ -557,11 +557,10 @@ impl CpuInfo {
 // 全局状态 (静态单例, 使用 OnceCell 保证只初始化一次)
 // ============================================================================
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use crate::kernel::framework::sync::once_lock::OnceLock;
 
-/// 全局 CPU 信息实例 (延迟初始化)
-static mut CPU_INFO: Option<CpuInfo> = None;
-static CPU_INFO_INIT: AtomicBool = AtomicBool::new(false);
+/// 全局 CPU 信息实例 (延迟初始化, 线程安全)
+static CPU_INFO: OnceLock<CpuInfo> = OnceLock::new();
 
 /// 获取全局 CPU 信息引用 (必须先调用 cpu_init())
 ///
@@ -570,12 +569,7 @@ static CPU_INFO_INIT: AtomicBool = AtomicBool::new(false);
 /// * None - 尚未初始化
 #[inline]
 pub fn get_cpu_info() -> Option<&'static CpuInfo> {
-    if !CPU_INFO_INIT.load(Ordering::Acquire) {
-        return None;
-    }
-    // SAFETY: CPU_INFO_INIT 的 Acquire 加载保证 CPU_INFO 在本读取前已初始化;
-    // CPU_INFO 是 'static 静态量, 拥有合法的 MaybeUninit 内存布局.
-    unsafe { CPU_INFO.as_ref() }
+    CPU_INFO.get()
 }
 
 // ============================================================================
@@ -688,8 +682,8 @@ pub extern "C" fn cpu_init() -> i32 {
     // 标记初始化完成
     info.initialized = true;
 
-    // 存储到全局单例
-    if CPU_INFO_INIT.swap(true, Ordering::AcqRel) {
+    // 存储到全局单例 (OnceLock::set 失败表示已初始化, 不允许重复调用)
+    if CPU_INFO.set(info).is_err() {
         static ERR_MSG: &[u8] = b"ERROR: cpu_init called twice!\0";
         // SAFETY: FFI logging call; ERR_MSG is a static NUL-terminated byte slice.
         unsafe {
@@ -703,13 +697,6 @@ pub extern "C" fn cpu_init() -> i32 {
             );
         }
         return -1;
-    }
-
-    // SAFETY: CPU_INFO 是 'static MaybeUninit<Option<CpuInfo>>; 刚把
-    // CPU_INFO_INIT 置 true (与 AcqRel 交换配对), 之后所有读取者将看到
-    // 已初始化的值.
-    unsafe {
-        CPU_INFO = Some(info);
     }
 
     static OK_MSG: &[u8] = b"CPU driver initialized successfully\0";
@@ -746,7 +733,7 @@ pub extern "C" fn cpu_init() -> i32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info as *const CpuInfo,
         None => core::ptr::null(),
     }
@@ -758,7 +745,7 @@ pub extern "C" fn cpu_get_info() -> *const CpuInfo {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info
             .features
             .contains(CpuFeatures::from_bits_truncate(feature_bit as u128)),
@@ -772,7 +759,7 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_intel() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.is_intel(),
         None => false,
     }
@@ -784,7 +771,7 @@ pub extern "C" fn cpu_is_intel() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_amd() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.is_amd(),
         None => false,
     }
@@ -796,7 +783,7 @@ pub extern "C" fn cpu_is_amd() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_virtualized() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.is_virtualized(),
         None => false,
     }
@@ -808,7 +795,7 @@ pub extern "C" fn cpu_is_virtualized() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.max_standard_leaf,
         None => 0,
     }
@@ -820,7 +807,7 @@ pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.max_ext_leaf,
         None => 0,
     }
@@ -832,7 +819,7 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_apic_id() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.topology.apic_id as u32,
         None => 0,
     }
@@ -844,7 +831,7 @@ pub extern "C" fn cpu_get_apic_id() -> u32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_logical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.topology.logical_threads,
         None => 1,
     }
@@ -856,7 +843,7 @@ pub extern "C" fn cpu_get_logical_cores() -> u8 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_physical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.topology.physical_cores,
         None => 1,
     }
@@ -868,7 +855,7 @@ pub extern "C" fn cpu_get_physical_cores() -> u8 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_signature() -> CpuSignature {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.signature,
         _ => CpuSignature::default(),
     }
@@ -880,7 +867,7 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => &info.cache as *const CacheInfo,
         None => core::ptr::null(),
     }
@@ -892,7 +879,7 @@ pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_tsc_frequency() -> u64 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match unsafe { CPU_INFO.as_ref() } {
+    match get_cpu_info() {
         Some(info) => info.tsc_frequency_hz,
         None => 0,
     }

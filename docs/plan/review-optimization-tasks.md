@@ -17,7 +17,22 @@
 
 - **描述**: `static_mut_refs` allow 的根源是 framework 中 38 个 `static mut` 全局可变静态变量，这在 Rust 未来版本中将被废弃
 - **方案**: 逐个审计 38 个 `static mut`，按使用场景选择替代方案：单次初始化用 `OnceLock`，并发读写用 `RwLock<T>` 或 `IrqSpinLock<T>`，无竞争场景用 `racy_cell::RacyCell`
-- **状态**: []
+- **状态**: [部分完成] 已迁移 CPU_INFO (OnceLock) + KB_READ_SLOT (AtomicU8)，剩余 36 个待迁移
+
+### 已完成的迁移
+
+| 变量 | 原类型 | 新类型 | 文件 |
+|------|--------|--------|------|
+| `CPU_INFO` | `static mut Option<CpuInfo>` + `AtomicBool` | `OnceLock<CpuInfo>` | `cpu/mod.rs` |
+| `KB_READ_SLOT` | `static mut u8` | `AtomicU8` | `driver/input/keyboard.rs` |
+
+### 待迁移 (按复杂度分组)
+
+| 复杂度 | 变量 | 建议替代方案 |
+|--------|------|-------------|
+| 低 (启动后只读) | VGA_DRIVER, GLOBAL_FRAMEBUFFER, SERIAL_PORTS | `OnceLock` (需 InteriorMutability 包装) |
+| 中 (并发读写) | ISR_TABLE, LOG_SINKS, SLAB_CACHES | `IrqSpinLock` 或 `OnceLock` |
+| 高 (复杂类型) | NET_DEVICE, NET_STACK, SOCKET_SET, SOCKET_TABLE | 需重构为类型安全全局 |
 
 ### 1.3 services/fs 层 KernelError 统一 — ✅ 已完成 (2026-07-21)
 

@@ -902,18 +902,17 @@ extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
     let kb = unsafe { &mut *(driver_data as *mut KeyboardDriver) };
     match kb.read_char() {
         Some(b) => {
-            // 使用静态槽位存放返回值, 调用方在返回后立即拷贝, 借用安全。
-            // SAFETY: 单线程调用方串行使用, 借用结束于下个 read_char 调用。
-            let slot = unsafe { &mut KB_READ_SLOT };
-            *slot = b;
-            slot as *const u8
+            // 使用原子槽位存放返回值, 调用方在返回后立即拷贝
+            KB_READ_SLOT.store(b, Ordering::Relaxed);
+            &KB_READ_SLOT as *const AtomicU8 as *const u8
         }
         None => core::ptr::null(),
     }
 }
 
-/// 临时存放 read_char 返回值的槽位
-static mut KB_READ_SLOT: u8 = 0;
+/// 临时存放 read_char 返回值的槽位 (原子操作保证线程安全)
+use core::sync::atomic::{AtomicU8, Ordering};
+static KB_READ_SLOT: AtomicU8 = AtomicU8::new(0);
 
 extern "C" fn kb_input_has(driver_data: *mut u8) -> bool {
     if driver_data.is_null() { return false; }
