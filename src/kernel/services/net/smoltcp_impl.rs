@@ -43,8 +43,10 @@
 //! - [docs/plan/maintenance-cycle-2026-06-19.md] §9.5 REVAL-W 第 6 组
 
 use crate::kernel::framework::net::iface_trait::{
-    DhcpState, NetConfig, NetError, NetStack, PollOutcome, Result, SocketHandle, SocketKind,
+    DhcpState, Ipv4Addr, NetConfig, NetEndpoint, NetError, NetStack, PollOutcome, Result,
+    SocketHandle, SocketKind,
 };
+use crate::kernel::framework::net_socket as fw_net_socket;
 // REVAL-W W4.2.3.4 步骤 3: 调用 framework::init 的 safe wrapper, 实现
 // 实际 smoltcp socket 创建. smoltcp_impl 是 services 层唯一允许直接使用
 // smoltcp 类型的文件, 但 socket_open 的实际 smoltcp 操作 (k_malloc +
@@ -203,6 +205,37 @@ impl SmoltcpNetStack {
     fn is_dhcp_handle(&self, user_id: u32) -> bool {
         self.dhcp_user_id == Some(user_id)
     }
+
+    /// 从 handle_map 反查 framework 侧 fd (sm_* 函数使用的 fd).
+    fn handle_to_fd(&self, h: SocketHandle) -> Option<i32> {
+        for (i, slot) in self.handle_map.iter().enumerate() {
+            if let Some((u, _)) = slot {
+                if *u == h.raw() {
+                    return Some((fw_init::smoltcp_net_stack_slot_base() + i) as i32);
+                }
+            }
+        }
+        None
+    }
+}
+
+/// NetEndpoint → sockaddr_in [u8; 16] (network byte order for port, little-endian struct layout).
+fn endpoint_to_sockaddr(ep: NetEndpoint) -> [u8; 16] {
+    let mut sin = [0u8; 16];
+    sin[0..2].copy_from_slice(&2u16.to_le_bytes()); // AF_INET = 2
+    sin[2..4].copy_from_slice(&ep.port.to_be_bytes()); // port in network byte order
+    sin[4..8].copy_from_slice(&ep.addr.octets());
+    sin
+}
+
+/// sockaddr_in [u8; 16] → NetEndpoint.
+fn sockaddr_to_endpoint(buf: &[u8; 16]) -> Option<NetEndpoint> {
+    if buf[0..2] != [2, 0] {
+        return None;
+    }
+    let port = u16::from_be_bytes([buf[2], buf[3]]);
+    let addr = Ipv4Addr::new(buf[4], buf[5], buf[6], buf[7]);
+    Some(NetEndpoint::new(addr, port))
 }
 
 impl Default for SmoltcpNetStack {
@@ -401,6 +434,166 @@ impl NetStack for SmoltcpNetStack {
     /// 查询 DHCP 状态.
     fn dhcp_state(&self) -> DhcpState {
         self.dhcp_state
+    }
+
+    /// 将 Socket 绑定到本地端点 (地址 + 端口).
+    fn bind(&mut self, h: SocketHandle, addr: NetEndpoint) -> Result<()> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let sin = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_bind(fd, sin.as_ptr(), 16);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 将 TCP Socket 置为监听状态.
+    fn listen(&mut self, h: SocketHandle, backlog: i32) -> Result<()> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let rc = fw_net_socket::sm_net_listen(fd, backlog);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 从监听 Socket 的已完成连接队列中取出一个新连接.
+    fn accept(
+        &mut self,
+        h: SocketHandle,
+        peer: Option<&mut NetEndpoint>,
+    ) -> Result<SocketHandle> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let mut addr_buf = [0u8; 16];
+        let mut addrlen = 16u32;
+        let new_fd = fw_net_socket::sm_net_accept(fd, addr_buf.as_mut_ptr(), &mut addrlen);
+        if new_fd < 0 {
+            return Err(NetError::Other);
+        }
+        if let Some(ep) = peer {
+            if let Some(parsed) = sockaddr_to_endpoint(&addr_buf) {
+                *ep = parsed;
+            }
+        }
+        // 新 fd 需要映射回 SmoltcpNetStack handle
+        // 但由于 accept 不在 SmoltcpNetStack 路径创建, 返回 new_fd 作为 raw handle
+        Ok(SocketHandle::from_raw(new_fd as u32))
+    }
+
+    /// 发起 TCP 连接到远端端点.
+    fn connect(&mut self, h: SocketHandle, addr: NetEndpoint) -> Result<()> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let sin = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_connect(fd, sin.as_ptr(), 16);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 向已连接的 socket 发送数据.
+    fn send(&mut self, h: SocketHandle, buf: &[u8], flags: i32) -> Result<usize> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let rc = fw_net_socket::sm_net_send(fd, buf.as_ptr(), buf.len() as u32, flags);
+        if rc >= 0 {
+            Ok(rc as usize)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 从已连接的 socket 接收数据.
+    fn recv(&mut self, h: SocketHandle, buf: &mut [u8], flags: i32) -> Result<usize> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let rc = fw_net_socket::sm_net_recv(fd, buf.as_mut_ptr(), buf.len() as u32, flags);
+        if rc >= 0 {
+            Ok(rc as usize)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 向指定端点发送数据报 (UDP 主要场景).
+    fn sendto(
+        &mut self,
+        h: SocketHandle,
+        buf: &[u8],
+        flags: i32,
+        addr: NetEndpoint,
+    ) -> Result<usize> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let sin = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_sendto(
+            fd,
+            buf.as_ptr(),
+            buf.len() as u32,
+            flags,
+            sin.as_ptr(),
+            16,
+        );
+        if rc >= 0 {
+            Ok(rc as usize)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 接收数据报并获取来源端点信息 (UDP 主要场景).
+    fn recvfrom(
+        &mut self,
+        h: SocketHandle,
+        buf: &mut [u8],
+        flags: i32,
+        src: Option<&mut NetEndpoint>,
+    ) -> Result<usize> {
+        if !self.initialized || !h.is_valid() {
+            return Err(NetError::NotReady);
+        }
+        let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
+        let mut addr_buf = [0u8; 16];
+        let mut addrlen = 16u32;
+        let rc = fw_net_socket::sm_net_recvfrom(
+            fd,
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            flags,
+            addr_buf.as_mut_ptr(),
+            &mut addrlen,
+        );
+        if rc >= 0 {
+            if let Some(ep) = src {
+                if let Some(parsed) = sockaddr_to_endpoint(&addr_buf) {
+                    *ep = parsed;
+                }
+            }
+            Ok(rc as usize)
+        } else {
+            Err(NetError::Other)
+        }
     }
 }
 
