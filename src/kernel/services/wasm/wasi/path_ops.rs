@@ -16,7 +16,7 @@ fn read_path(interp: &Interpreter, ptr: u32, len: u32) -> Result<String, WasiErr
     let bytes = read_bytes_from_memory(interp, ptr, len)?;
     let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
     core::str::from_utf8(&bytes[..end])
-        .map(|s| String::from(s))
+        .map(String::from)
         .map_err(|_| WasiErrno::Inval)
 }
 

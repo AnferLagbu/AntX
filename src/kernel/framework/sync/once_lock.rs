@@ -103,7 +103,7 @@ impl InnerOnce {
                 // 退出循环后状态可能是 DONE (成功) 或 UNINITIALIZED (panic 后重置).
                 // 若为 UNINITIALIZED, 递归调用自身重试一次.
                 if self.state.load(Ordering::Acquire) == UNINITIALIZED {
-                    return self.call_once(f);
+                    self.call_once(f)
                 }
             }
             _ => unreachable!("Once: unknown state"),

@@ -356,7 +356,10 @@ impl CetSubsystem {
     /// 配置用户态 CET MSR (在进入用户态前调用)
     ///
     /// 写入 IA32_U_CET 和 IA32_PL3_SSP MSR, 启用用户态 Shadow Stack.
-    /// SAFETY: 调用方必须确保:
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须确保:
     /// - CET 已初始化 (caps.shadow_stack_enabled = true)
     /// - ssp 指向有效的 Shadow Stack 内存
     /// - 仅在从内核态切换到用户态前调用
@@ -400,7 +403,10 @@ impl CetSubsystem {
     /// 配置中断 Shadow Stack 表 (IDT 集成)
     ///
     /// 写入 IA32_INTERRUPT_SSP_TABLE MSR, 设置中断时使用的 Shadow Stack 表.
-    /// SAFETY: 调用方必须确保:
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须确保:
     /// - CET 已初始化
     /// - table_addr 指向有效的 SSP 表内存 (16 字节对齐)
     pub unsafe fn configure_interrupt_ssp_table(&self, table_addr: u64) {

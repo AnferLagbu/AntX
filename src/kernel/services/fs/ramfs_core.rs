@@ -1686,12 +1686,11 @@ impl FileSystem for RamFsData {
                     });
                 }
                 let ramfs = RAMFS_DATA.lock();
-                ramfs.stat(node_id).map(|st| {
+                ramfs.stat(node_id).inspect(|st| {
                     crate::kernel::services::fs::dcache::icache_insert(
                         node_id, st.file_type, st.perm, st.size as u32, st.mtime,
                         st.ctime, st.owner_pwm, st.group_pwm,
                     );
-                    st
                 }).ok_or(KernelError::FileNotFound)
             }
             None => Err(KernelError::FileNotFound),

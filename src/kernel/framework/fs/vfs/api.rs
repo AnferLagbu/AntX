@@ -1434,7 +1434,7 @@ pub fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, s
     }
 
     // SAFETY: 调用方保证 value 指向有效的 size 字节缓冲区
-    let mut buf = unsafe { core::slice::from_raw_parts_mut(value, size as usize) };
+    let buf = unsafe { core::slice::from_raw_parts_mut(value, size as usize) };
 
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -1443,7 +1443,7 @@ pub fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, s
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     if let Some(fs) = fs_opt {
-        match fs.fs_getxattr(rel_path, name, &mut buf, pwm) {
+        match fs.fs_getxattr(rel_path, name, buf, pwm) {
             Ok(len) => len as i32,
             Err(_) => -1,
         }
@@ -1462,7 +1462,7 @@ pub fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u6
     }
 
     // SAFETY: 调用方保证 list 指向有效的 size 字节缓冲区
-    let mut buf = unsafe { core::slice::from_raw_parts_mut(list, size as usize) };
+    let buf = unsafe { core::slice::from_raw_parts_mut(list, size as usize) };
 
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -1471,7 +1471,7 @@ pub fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u6
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     if let Some(fs) = fs_opt {
-        match fs.fs_listxattr(rel_path, &mut buf, pwm) {
+        match fs.fs_listxattr(rel_path, buf, pwm) {
             Ok(len) => len as i32,
             Err(_) => -1,
         }

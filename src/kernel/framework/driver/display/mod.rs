@@ -243,7 +243,7 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
         };
         // 回退到 port I/O 路径
         let (width, height, bpp) = mode
-            .or_else(|| read_bochs_disp_mode())
+            .or_else(read_bochs_disp_mode)
             .unwrap_or((1024, 768, 32));
 
         let pitch = width * (bpp as u32 / 8);

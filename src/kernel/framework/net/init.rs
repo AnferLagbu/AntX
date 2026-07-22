@@ -2368,7 +2368,7 @@ pub(crate) mod raw {
         // FD_TYPES, TCP_RX_BUFS, TCP_TX_BUFS, UDP_RX_BUFS, UDP_TX_BUFS).
         unsafe {
             // 1. 校验 slot_idx 在 SmoltcpNetStack 范围内
-            if slot_idx < MAX_SM_FD || slot_idx >= TOTAL_SLOTS {
+            if !(MAX_SM_FD..TOTAL_SLOTS).contains(&slot_idx) {
                 return false;
             }
             // 2. 校验槽位已占用
