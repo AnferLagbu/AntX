@@ -23,7 +23,6 @@ extern crate alloc;
 
 use super::net_stack;
 use crate::kernel::framework::net::iface_trait::{Ipv4Addr, NetEndpoint};
-use crate::kernel::framework::net_socket;
 
 // ============================================================================
 // 错误
@@ -104,12 +103,9 @@ impl SockAddrIn {
 ///
 /// 成功返回新 socket 的 FD, 失败返回 `SocketError`。
 pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResult<i32> {
-    let fd = net_socket::sm_socket(domain as i32, sock_type as i32, 0);
-    if fd < 0 {
-        Err(SocketError::from_i32(fd))
-    } else {
-        Ok(fd)
-    }
+    let s = net_stack().lock();
+    s.socket_create_fd(domain as i32, sock_type as i32)
+        .map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `bind(fd, addr, addrlen)`
@@ -181,36 +177,28 @@ pub fn close(fd: i32) -> SocketResult<()> {
 /// - `val`: 选项值 (u32)
 pub fn setsockopt(fd: i32, level: i32, optname: i32, val: u32) -> SocketResult<()> {
     let val_bytes = val.to_ne_bytes();
-    let rc = net_socket::sm_setsockopt(
-        fd,
-        level,
-        optname,
-        val_bytes.as_ptr(),
-        val_bytes.len() as u32,
-    );
-    if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
+    let s = net_stack().lock();
+    s.setsockopt_fd(fd, level, optname, &val_bytes)
+        .map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `getsockopt(fd, level, optname, optval, optlen)` → u32
 pub fn getsockopt(fd: i32, level: i32, optname: i32) -> SocketResult<u32> {
-    let mut out = 0u32;
-    let mut out_len = core::mem::size_of::<u32>() as u32;
-    let rc = net_socket::sm_getsockopt(
-        fd,
-        level,
-        optname,
-        &mut out as *mut u32 as *mut u8,
-        &mut out_len,
-    );
-    if rc == 0 { Ok(out) } else { Err(SocketError::from_i32(rc)) }
+    let mut buf = [0u8; 4];
+    let s = net_stack().lock();
+    s.getsockopt_fd(fd, level, optname, &mut buf)
+        .map_err(|_| SocketError::InvalidArgument)?;
+    Ok(u32::from_ne_bytes(buf))
 }
 
 /// 轮询所有 socket (驱动事件分发)
 ///
 /// 由 timer ISR 或专用网络任务周期性调用。
 pub fn poll_all() -> SocketResult<i32> {
-    let n = net_socket::sm_poll_sockets();
-    if n < 0 { Err(SocketError::from_i32(n)) } else { Ok(n) }
+    let s = net_stack().lock();
+    s.poll_all_fd()
+        .map_err(|_| SocketError::InvalidArgument)?;
+    Ok(0)
 }
 
 // ============================================================================
