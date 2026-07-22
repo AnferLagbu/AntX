@@ -64,6 +64,10 @@ mod init {
     pub fn smoltcp_net_stack_slot_base() -> usize {
         0
     }
+    pub fn smoltcp_net_stack_poll() -> crate::kernel::framework::net::iface_trait::PollOutcome {
+        crate::kernel::framework::net::iface_trait::PollOutcome::idle()
+    }
+    pub fn smoltcp_net_stack_close(_slot_idx: usize) {}
 }
 
 pub mod netfilter;

@@ -2035,6 +2035,22 @@ pub fn smoltcp_net_stack_slot_base() -> usize {
     MAX_SM_FD
 }
 
+/// SmoltcpNetStack::poll 的 safe wrapper (W4.2.3.4).
+///
+/// 委托给 `raw::smoltcp_net_stack_poll`, 内部持有 NET_LOCK 并调用
+/// smoltcp `Interface::poll` + `process_dhcp_events`.
+pub fn smoltcp_net_stack_poll() -> crate::kernel::framework::net::iface_trait::PollOutcome {
+    raw::smoltcp_net_stack_poll()
+}
+
+/// SmoltcpNetStack::close 的 safe wrapper (W4.2.3.4).
+///
+/// 关闭 SmoltcpNetStack 范围内的 smoltcp socket, 释放 buffer.
+/// 委托给 `raw::smoltcp_net_stack_socket_close`.
+pub fn smoltcp_net_stack_close(slot_idx: usize) {
+    raw::smoltcp_net_stack_socket_close(slot_idx);
+}
+
 // ============================================================================
 // 特权子模块 (Framekernel raw): 集中 static mut 访问
 // ============================================================================

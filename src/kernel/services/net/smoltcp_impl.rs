@@ -278,17 +278,14 @@ impl NetStack for SmoltcpNetStack {
 
     /// 轮询协议栈.
     ///
-    /// ## W3.2 占位行为
-    ///
-    /// 不实际调用 smoltcp `Interface::poll` (需要 &mut device 借用, 与
-    /// self-referential 冲突). W3.2 返回 `PollOutcome::idle()`.
-    /// 真实 poll 留给 W4 整合 init.rs 时实现.
+    /// 委托给 framework safe wrapper, 内部持有 NET_LOCK 并调用
+    /// smoltcp `Interface::poll` + `process_dhcp_events`.
     fn poll(&mut self, ts_ms: u64) -> PollOutcome {
         if !self.initialized {
             return PollOutcome::idle();
         }
         let _ = ts_ms;
-        PollOutcome::idle()
+        fw_init::smoltcp_net_stack_poll()
     }
 
     /// 查询下次轮询时间.
@@ -390,7 +387,13 @@ impl NetStack for SmoltcpNetStack {
             return Ok(());
         }
 
-        // 释放槽位
+        // 计算 framework 侧 slot_idx
+        let fw_slot_idx = fw_init::smoltcp_net_stack_slot_base() + idx;
+
+        // 委托 framework 关闭 smoltcp socket + 释放 buffer
+        fw_init::smoltcp_net_stack_close(fw_slot_idx);
+
+        // 清理 handle_map
         self.handle_map[idx] = None;
         Ok(())
     }
