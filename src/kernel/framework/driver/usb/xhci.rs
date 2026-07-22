@@ -682,7 +682,7 @@ impl XhciController {
         }
 
         // 构造 Reset Endpoint Command TRB
-        // TRB Type = 14 (Reset Endpoint)
+        // TRB 类型 = 14 (复位端点)
         // Bits [15:8] = Endpoint ID
         // Bits [7:0] = Slot ID
         let trb = Trb::new(

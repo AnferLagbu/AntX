@@ -102,6 +102,22 @@ ALLOWED_ENGLISH_TERMS = frozenset({
     "namespaces", "pwm", "PWM", "credo", "Credo", "sched", "Scheduler",
     "schedule", "scheduler", "tickless", "shadow", "secure_boot",
     "iopl", "ioperm", "io_uring", "iovec",
+    # WASM/WASI 标准术语
+    "WASM", "WASI", "wasi_snapshot_preview1", "WasiContext", "WasiFdTable",
+    "WasiErrno", "WasiRights", "WasiFileType", "WasiIoVec",
+    # WASI 标准函数名 (无法翻译的规范标识符)
+    "fd_prestat_get", "fd_prestat_dir_name", "fd_stat_get",
+    "fd_read", "fd_write", "fd_pread", "fd_pwrite", "fd_allocate", "fd_advise",
+    "fd_renumber", "fd_dup", "fd_readdir",
+    "path_unlink_file", "path_relative_path", "path_symlink", "path_readlink",
+    "path_filestat_get", "path_filestat_set_times", "path_link",
+    "sock_accept", "sock_connect", "sock_recv", "sock_send",
+    "filestat", "filetype", "nlink", "atim", "mtim",
+    "dirent", "inode", "next_cookie", "namlen",
+    "sockaddr_in", "sin_family", "sin_port", "sin_addr",
+    "old_path", "new_path", "linkpath",
+    # USB/xHCI 规范术语
+    "TRB", "Endpoint", "Transfer", "Ring", "Slot", "Context",
     # 扩展 syscall 名称 (linuxulator 表中纯标识符引用)
     "mlock", "mlockall", "munlock", "munlockall", "mincore",
     "timer_create", "timer_settime", "timer_gettime", "timer_delete",

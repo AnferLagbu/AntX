@@ -49,9 +49,9 @@
 
 ### 2.4 WASM 解释器进度明确化
 
-- **描述**: `services/wasm/` 已完成全量迁移 (interpreter.rs 1111 行 + types.rs 445 行 + module.rs 424 行 + runtime.rs 231 行 + leb128.rs 96 行)，`framework/wasm/` 仅为 re-export shim。但 `services/wasm/mod.rs` 文档仍标注"⏳ 未迁移"，与实际不符
-- **方案**: 更新 `services/wasm/mod.rs` 文档注释，移除过期的"未迁移"标注；更新 `future-roadmap.md` 中 WASM 相关描述
-- **状态**: [X] 代码已完成 (T6-9 迁移)，文档待更新
+- **描述**: `services/wasm/` 已完成全量迁移 (interpreter.rs 1111 行 + types.rs 445 行 + module.rs 424 行 + runtime.rs 231 行 + leb128.rs 96 行)，`framework/wasm/` 仅为 re-export shim。`services/wasm/mod.rs` 文档已更新为"已完成迁移 (T6-9)"
+- **方案**: 已完成，无需操作
+- **状态**: [X] 已完成
 
 ### 2.5 future-roadmap.md 重复条目清理
 
