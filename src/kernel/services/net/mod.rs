@@ -18,6 +18,16 @@
 //! 评估日期: 2026-06-04
 
 use crate::kernel::framework::net_socket as fw_net_socket;
+use crate::kernel::framework::sync::{IrqSpinLock, OnceLock};
+use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;
+
+/// 全局 SmoltcpNetStack 实例, 由 `init()` 初始化, socket.rs 通过 `net_stack()` 访问
+static NET_STACK_INSTANCE: OnceLock<IrqSpinLock<SmoltcpNetStack>> = OnceLock::new();
+
+/// 获取全局 SmoltcpNetStack 实例的引用 (需在 `init()` 之后调用)
+pub fn net_stack() -> &'static IrqSpinLock<SmoltcpNetStack> {
+    NET_STACK_INSTANCE.get().expect("SmoltcpNetStack 未初始化")
+}
 
 // ============================================================================
 // 状态类型 (统一定义, 避免 kernel_test stub 重复)
@@ -178,6 +188,10 @@ impl From<init::InitState> for InitState {
 /// 探测网卡 (e1000 / virtio-net), 启动协议栈, 启动 DHCP 异步获取 IP。
 /// 如果无 NIC 则进入 "NoNetwork" 状态。
 pub fn init() {
+    // 初始化全局 SmoltcpNetStack 实例
+    NET_STACK_INSTANCE.get_or_init(|slot| {
+        slot.write(IrqSpinLock::new(SmoltcpNetStack::new()));
+    });
     fw_net_socket::qx_net_init();
 }
 
