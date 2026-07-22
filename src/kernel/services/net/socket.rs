@@ -21,6 +21,8 @@
 
 extern crate alloc;
 
+use super::net_stack;
+use crate::kernel::framework::net::iface_trait::{Ipv4Addr, NetEndpoint};
 use crate::kernel::framework::net_socket;
 
 // ============================================================================
@@ -95,42 +97,6 @@ impl SockAddrIn {
 }
 
 // ============================================================================
-// 字节序转换
-// ============================================================================
-
-/// IPv4 Socket 地址 → 8 字节 C 结构体 (`SockaddrIn`)
-///
-/// 布局 (Linux `struct sockaddr_in`):
-/// ```text
-/// offset 0:  sin_family (u16, BE) = 2 (AF_INET)
-/// offset 2:  sin_port   (u16, BE)
-/// offset 4:  sin_addr   ([u8; 4])
-/// offset 8:  zero padding
-/// ```
-fn sockaddr_in_to_bytes(addr: &SockAddrIn) -> [u8; 8] {
-    let mut buf = [0u8; 8];
-    buf[0..2].copy_from_slice(&(2u16).to_be_bytes()); // AF_INET
-    buf[2..4].copy_from_slice(&addr.port.to_be_bytes());
-    buf[4..8].copy_from_slice(&addr.ip);
-    buf
-}
-
-/// 8 字节 C 结构体 → IPv4 Socket 地址
-fn bytes_to_sockaddr_in(buf: &[u8; 8]) -> Option<SockAddrIn> {
-    if buf.len() < 8 {
-        return None;
-    }
-    let family = u16::from_be_bytes([buf[0], buf[1]]);
-    if family != 2 {
-        return None;
-    }
-    let port = u16::from_be_bytes([buf[2], buf[3]]);
-    let mut ip = [0u8; 4];
-    ip.copy_from_slice(&buf[4..8]);
-    Some(SockAddrIn { port, ip })
-}
-
-// ============================================================================
 // Socket API
 // ============================================================================
 
@@ -148,98 +114,63 @@ pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResu
 
 /// POSIX `bind(fd, addr, addrlen)`
 pub fn bind(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
-    let bytes = sockaddr_in_to_bytes(addr);
-    let rc = net_socket::sm_bind(fd, bytes.as_ptr(), bytes.len() as u32);
-    if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
+    let ep = NetEndpoint::new(Ipv4Addr::from_octets(addr.ip), addr.port);
+    let s = net_stack().lock();
+    s.bind_fd(fd, ep).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `listen(fd, backlog)`
 pub fn listen(fd: i32, backlog: i32) -> SocketResult<()> {
-    let rc = net_socket::sm_listen(fd, backlog);
-    if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
+    let s = net_stack().lock();
+    s.listen_fd(fd, backlog).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `accept(fd, addr, addrlen)` — 返回新连接的 FD
 pub fn accept(fd: i32) -> SocketResult<i32> {
-    let new_fd = net_socket::sm_accept(fd, core::ptr::null_mut(), core::ptr::null_mut());
-    if new_fd < 0 {
-        Err(SocketError::from_i32(new_fd))
-    } else {
-        Ok(new_fd)
-    }
+    let s = net_stack().lock();
+    s.accept_fd(fd).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `connect(fd, addr, addrlen)`
 pub fn connect(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
-    let bytes = sockaddr_in_to_bytes(addr);
-    let rc = net_socket::sm_connect(fd, bytes.as_ptr(), bytes.len() as u32);
-    if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
+    let ep = NetEndpoint::new(Ipv4Addr::from_octets(addr.ip), addr.port);
+    let s = net_stack().lock();
+    s.connect_fd(fd, ep).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `send(fd, buf, len, flags)` → 实际发送字节数
 pub fn send(fd: i32, buf: &[u8]) -> SocketResult<usize> {
-    let n = net_socket::sm_send(fd, buf.as_ptr(), buf.len() as u32, 0);
-    if n < 0 {
-        Err(SocketError::from_i32(n))
-    } else {
-        Ok(n as usize)
-    }
+    let s = net_stack().lock();
+    s.send_fd(fd, buf).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `recv(fd, buf, len, flags)` → 实际接收字节数
 ///
 /// 写入 `out` 切片, 返回字节数; `WouldBlock` 表示无数据可读。
 pub fn recv(fd: i32, out: &mut [u8]) -> SocketResult<usize> {
-    let n = net_socket::sm_recv(fd, out.as_mut_ptr(), out.len() as u32, 0);
-    if n < 0 {
-        Err(SocketError::from_i32(n))
-    } else {
-        Ok(n as usize)
-    }
+    let s = net_stack().lock();
+    s.recv_fd(fd, out).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `sendto(fd, buf, len, flags, dest_addr, addrlen)`
 pub fn sendto(fd: i32, buf: &[u8], dest: &SockAddrIn) -> SocketResult<usize> {
-    let bytes = sockaddr_in_to_bytes(dest);
-    let n = net_socket::sm_sendto(
-        fd,
-        buf.as_ptr(),
-        buf.len() as u32,
-        0,
-        bytes.as_ptr(),
-        bytes.len() as u32,
-    );
-    if n < 0 {
-        Err(SocketError::from_i32(n))
-    } else {
-        Ok(n as usize)
-    }
+    let ep = NetEndpoint::new(Ipv4Addr::from_octets(dest.ip), dest.port);
+    let s = net_stack().lock();
+    s.sendto_fd(fd, buf, ep).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `recvfrom(fd, buf, len, flags, src_addr, addrlen)` → (字节数, 源地址)
 pub fn recvfrom(fd: i32, out: &mut [u8]) -> SocketResult<(usize, SockAddrIn)> {
-    let mut src = [0u8; 8];
-    let n = net_socket::sm_recvfrom(
-        fd,
-        out.as_mut_ptr(),
-        out.len() as u32,
-        0,
-        src.as_mut_ptr(),
-        &mut (src.len() as u32),
-    );
-    if n < 0 {
-        Err(SocketError::from_i32(n))
-    } else {
-        let addr = bytes_to_sockaddr_in(&src)
-            .ok_or(SocketError::InvalidArgument)?;
-        Ok((n as usize, addr))
-    }
+    let s = net_stack().lock();
+    let (n, ep) = s.recvfrom_fd(fd, out).map_err(|_| SocketError::InvalidArgument)?;
+    let addr = SockAddrIn::new(ep.port, ep.addr.octets());
+    Ok((n, addr))
 }
 
 /// POSIX `close(fd)`
 pub fn close(fd: i32) -> SocketResult<()> {
-    let rc = net_socket::sm_close(fd);
-    if rc == 0 { Ok(()) } else { Err(SocketError::from_i32(rc)) }
+    let s = net_stack().lock();
+    s.close_fd(fd).map_err(|_| SocketError::InvalidArgument)
 }
 
 /// POSIX `setsockopt(fd, level, optname, optval, optlen)`
