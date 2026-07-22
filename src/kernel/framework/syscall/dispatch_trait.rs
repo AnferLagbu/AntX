@@ -16,7 +16,7 @@
 //! - 寄存器保存/恢复 (syscall_dispatch_from_frame)
 //! - in_kern 标记 (proc_set_in_kern)
 //! - seccomp 过滤检查
-//! - Linux 编号翻译 (linuxulator)
+//! - rt_sigreturn 特殊处理
 //!
 //! services 实现 (策略):
 //! - syscall 编号→具体实现的分发

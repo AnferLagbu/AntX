@@ -16,7 +16,6 @@ pub mod mprotect;
 pub mod sendfile;
 pub mod ftrace_kgdb;
 pub mod posix_timer;
-pub mod linuxulator;
 pub mod wait4;
 /// T-03: 系统调用分发决策 trait
 pub mod dispatch_trait;
@@ -101,8 +100,13 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     let syscall_num = f.rax;
 
     // rt_sigreturn 特殊处理: 需要直接修改 frame, 不走正常 dispatch
-    // 使用架构无关的翻译层判断
-    if linuxulator::is_rt_sigreturn(syscall_num) {
+    // x86_64: SYS_rt_sigreturn = 15, aarch64: SYS_rt_sigreturn = 139
+    #[cfg(target_arch = "x86_64")]
+    let is_rt_sigreturn = syscall_num == 15;
+    #[cfg(target_arch = "aarch64")]
+    let is_rt_sigreturn = syscall_num == 139;
+
+    if is_rt_sigreturn {
         // 从用户栈上的 SignalFrame 恢复寄存器
         // 布局: rsp+0=返回地址, rsp+8=SignalFrame
         let sigframe_ptr = (f.rsp + 8) as *const crate::kernel::framework::proc::SignalFrame;

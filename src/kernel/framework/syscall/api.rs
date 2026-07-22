@@ -4,7 +4,7 @@
 //! 用户态→内核态的唯一合法路径。
 //!
 //! ## 编号空间
-//! - 0-299   : Linux 兼容编号 (SYS_*), 由 linuxulator 模块翻译为 QX_*
+//! - 0-299   : Linux 兼容编号 (SYS_*), 直接使用 Linux 标准编号
 //! - 400-499 : Credo 私有 syscall
 //! - 500+    : QueenX 原生编号 (QX_*)
 //!
@@ -17,7 +17,6 @@
 //!
 //! ## 内部接口
 //! - `types.rs` —— SyscallHandler 函数指针类型, Errno, syscall 编号常量
-//! - `linuxulator.rs` —— Linux ABI 兼容层 (编号翻译 + 参数转换)
 //! - `mmap.rs` —— mmap/munmap/mprotect 实现
 //! - `mod.rs` —— syscall_dispatch() 核心分发器 (所有 sys_* 实现)
 //!
@@ -89,7 +88,7 @@ pub use super::types::{
 };
 
 // ============================================================================
-// Linux 兼容编号 (SYS_*) — 保留给 linuxulator, 由 linuxulator 模块翻译
+// Linux 兼容编号 (SYS_*) — 直接使用 Linux 标准编号
 // ============================================================================
 
 pub const SYS_read: u64 = 0;

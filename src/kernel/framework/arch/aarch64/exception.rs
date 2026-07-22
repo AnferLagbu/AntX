@@ -453,9 +453,10 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     let syscall_num = frame.x0;
 
     // rt_sigreturn 特殊处理: 需要直接修改 frame, 不走正常 dispatch.
+    // aarch64: SYS_rt_sigreturn = 139
     // aarch64 信号投递 (do_signal_deliver) 尚未实现, 此拦截为预留.
     // 当信号投递实现后, 从用户栈读取 Aarch64SignalFrame 并恢复 x0-x30/elr/spsr/sp.
-    if crate::kernel::framework::syscall::linuxulator::is_rt_sigreturn(syscall_num) {
+    if syscall_num == 139 {
         // 清除 SS_ONSTACK 标记
         if let Some(pid) = Some(crate::kernel::framework::proc::process_get_current_pid()).filter(|&p| p != 0) {
             crate::kernel::framework::proc::process_with_mut(pid, |proc| {
