@@ -10,7 +10,7 @@
 //! ## 核心原则 (ASTD 四准则, framekernel-nature.md §2)
 //!
 //! - **Soundness**: 0 unsafe, safe API 不触发 UB
-//! - **Expressiveness**: 6 个方法覆盖 smoltcp 全部核心能力
+//! - **Expressiveness**: 15 个方法覆盖 smoltcp 全部核心能力
 //! - **Minimalism**: 仅保留 trait + 数据类型, 无具体实现
 //! - **Efficiency**: 全部 `#[inline]`, 静态分发 0 开销 (LLVM 单态化)
 //!
@@ -386,6 +386,124 @@ pub trait NetStack {
     fn dhcp_state(&self) -> DhcpState {
         DhcpState::default()
     }
+
+    // ========================================================================
+    // Socket 生命周期: bind / listen / accept / connect
+    // ========================================================================
+
+    /// 将 Socket 绑定到本地端点 (地址 + 端口).
+    ///
+    /// 绑定后可开始 listen (TCP) 或直接 send/recv (UDP).
+    /// 未绑定的 socket 发送数据时, 协议栈自动分配临时端口.
+    #[inline]
+    fn bind(&mut self, h: SocketHandle, addr: NetEndpoint) -> Result<()> {
+        let _ = (h, addr);
+        Err(NetError::NotReady)
+    }
+
+    /// 将 TCP Socket 置为监听状态, 开始等待传入连接.
+    ///
+    /// `backlog` 指定等待连接队列长度 (SOMAXCONN 语义).
+    /// 仅 TCP socket 有效, UDP 调用返回 `Err(NetError::BadConfig)`.
+    #[inline]
+    fn listen(&mut self, h: SocketHandle, backlog: i32) -> Result<()> {
+        let _ = (h, backlog);
+        Err(NetError::NotReady)
+    }
+
+    /// 从监听 Socket 的已完成连接队列中取出一个新连接.
+    ///
+    /// 成功返回新 socket 的句柄. `peer` 若非 None, 填充对端端点信息.
+    /// 仅 TCP 监听 socket 有效.
+    #[inline]
+    fn accept(
+        &mut self,
+        h: SocketHandle,
+        peer: Option<&mut NetEndpoint>,
+    ) -> Result<SocketHandle> {
+        let _ = (h, peer);
+        Err(NetError::NotReady)
+    }
+
+    /// 发起 TCP 连接到远端端点.
+    ///
+    /// 非阻塞语义: 调用仅发起连接请求, 真正建立需后续 poll + 事件.
+    /// UDP socket 调用此方法会设置默认对端地址.
+    #[inline]
+    fn connect(&mut self, h: SocketHandle, addr: NetEndpoint) -> Result<()> {
+        let _ = (h, addr);
+        Err(NetError::NotReady)
+    }
+
+    // ========================================================================
+    // 数据传输: send / recv / sendto / recvfrom
+    // ========================================================================
+
+    /// 向已连接的 socket 发送数据.
+    ///
+    /// `flags` 预留 (当前为 0). 返回实际发送的字节数.
+    /// TCP 会在内部缓冲区满时阻塞 (非阻塞模式返回 WouldBlock).
+    #[inline]
+    fn send(&mut self, h: SocketHandle, buf: &[u8], flags: i32) -> Result<usize> {
+        let _ = (h, buf, flags);
+        Err(NetError::NotReady)
+    }
+
+    /// 从已连接的 socket 接收数据.
+    ///
+    /// `flags` 预留 (当前为 0). 返回实际读取的字节数.
+    /// 对端关闭连接后返回 0 (EOF).
+    #[inline]
+    fn recv(&mut self, h: SocketHandle, buf: &mut [u8], flags: i32) -> Result<usize> {
+        let _ = (h, buf, flags);
+        Err(NetError::NotReady)
+    }
+
+    /// 向指定端点发送数据报 (UDP 主要场景).
+    ///
+    /// 与 `send` 的区别: 每次调用指定目标地址, 无需预先 connect.
+    /// TCP socket 调用此方法等价于 `send` (忽略 addr).
+    #[inline]
+    fn sendto(
+        &mut self,
+        h: SocketHandle,
+        buf: &[u8],
+        flags: i32,
+        addr: NetEndpoint,
+    ) -> Result<usize> {
+        let _ = (h, buf, flags, addr);
+        Err(NetError::NotReady)
+    }
+
+    /// 接收数据报并获取来源端点信息 (UDP 主要场景).
+    ///
+    /// 与 `recv` 的区别: `src` 填充数据报来源地址+端口.
+    /// TCP socket 调用此方法等价于 `recv` (忽略 src).
+    #[inline]
+    fn recvfrom(
+        &mut self,
+        h: SocketHandle,
+        buf: &mut [u8],
+        flags: i32,
+        src: Option<&mut NetEndpoint>,
+    ) -> Result<usize> {
+        let _ = (h, buf, flags, src);
+        Err(NetError::NotReady)
+    }
+
+    // ========================================================================
+    // 资源释放
+    // ========================================================================
+
+    /// 关闭 Socket 并释放所有关联资源.
+    ///
+    /// 与 `socket_close` 等价 — 保留 `socket_close` 以兼容现有调用方.
+    /// 幂等操作, 对 `SocketHandle::INVALID` 或已关闭句柄调用不报错.
+    #[inline]
+    fn close(&mut self, h: SocketHandle) -> Result<()> {
+        let _ = h;
+        Ok(())
+    }
 }
 
 // ============================================================================
@@ -567,6 +685,96 @@ mod tests {
         assert_eq!(mock.socket_open(SocketKind::Tcp), Err(NetError::NotReady));
         assert_eq!(mock.socket_close(SocketHandle::INVALID), Ok(()));
         assert_eq!(mock.dhcp_state(), DhcpState::Idle);
+    }
+
+    /// 验证 NetStack 新增 socket 生命周期方法默认实现.
+    #[test]
+    fn test_netstack_socket_lifecycle_defaults() {
+        struct Mock;
+        impl NetStack for Mock {}
+
+        let mut mock = Mock;
+        let h = SocketHandle::from_raw(1);
+        let ep = NetEndpoint::new(Ipv4Addr::new(192, 168, 1, 1), 8080);
+
+        // bind: 默认返回 NotReady
+        assert_eq!(mock.bind(h, ep), Err(NetError::NotReady));
+
+        // listen: 默认返回 NotReady
+        assert_eq!(mock.listen(h, 128), Err(NetError::NotReady));
+
+        // accept: 默认返回 NotReady
+        assert_eq!(mock.accept(h, None), Err(NetError::NotReady));
+
+        // accept: 带 peer 参数
+        let mut peer_ep = NetEndpoint::UNSPECIFIED;
+        assert_eq!(mock.accept(h, Some(&mut peer_ep)), Err(NetError::NotReady));
+
+        // connect: 默认返回 NotReady
+        assert_eq!(mock.connect(h, ep), Err(NetError::NotReady));
+    }
+
+    /// 验证 NetStack 新增数据传输方法默认实现.
+    #[test]
+    fn test_netstack_data_transfer_defaults() {
+        struct Mock;
+        impl NetStack for Mock {}
+
+        let mut mock = Mock;
+        let h = SocketHandle::from_raw(1);
+        let ep = NetEndpoint::new(Ipv4Addr::new(10, 0, 2, 15), 5000);
+        let send_buf = [1u8, 2, 3, 4];
+        let mut recv_buf = [0u8; 16];
+
+        // send: 默认返回 NotReady
+        assert_eq!(mock.send(h, &send_buf, 0), Err(NetError::NotReady));
+
+        // recv: 默认返回 NotReady
+        assert_eq!(mock.recv(h, &mut recv_buf, 0), Err(NetError::NotReady));
+
+        // sendto: 默认返回 NotReady
+        assert_eq!(mock.sendto(h, &send_buf, 0, ep), Err(NetError::NotReady));
+
+        // recvfrom: 默认返回 NotReady (无 src)
+        assert_eq!(mock.recvfrom(h, &mut recv_buf, 0, None), Err(NetError::NotReady));
+
+        // recvfrom: 默认返回 NotReady (带 src)
+        let mut src_ep = NetEndpoint::UNSPECIFIED;
+        assert_eq!(
+            mock.recvfrom(h, &mut recv_buf, 0, Some(&mut src_ep)),
+            Err(NetError::NotReady)
+        );
+    }
+
+    /// 验证 NetStack close 方法默认实现 (幂等, 返回 Ok).
+    #[test]
+    fn test_netstack_close_default() {
+        struct Mock;
+        impl NetStack for Mock {}
+
+        let mut mock = Mock;
+
+        // close: 对 INVALID 句柄调用返回 Ok
+        assert_eq!(mock.close(SocketHandle::INVALID), Ok(()));
+
+        // close: 对有效句柄调用也返回 Ok
+        assert_eq!(mock.close(SocketHandle::from_raw(7)), Ok(()));
+    }
+
+    /// 验证新旧关闭方法语义一致.
+    #[test]
+    fn test_netstack_close_vs_socket_close() {
+        struct Mock;
+        impl NetStack for Mock {}
+
+        let mut mock = Mock;
+        let h = SocketHandle::from_raw(3);
+
+        // socket_close 和 close 对相同句柄返回相同结果
+        let r1 = mock.socket_close(h);
+        let r2 = mock.close(h);
+        assert_eq!(r1, r2);
+        assert_eq!(r1, Ok(()));
     }
 }
 
