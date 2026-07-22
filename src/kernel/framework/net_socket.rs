@@ -455,3 +455,47 @@ pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
     // SAFETY: 内部持有 NET_LOCK, slot_idx 范围由调用方保证
     unsafe { init::raw::smoltcp_net_stack_socket_close(slot_idx) }
 }
+
+// ============================================================================
+// Socket 选项与轮询 FFI 安全代理
+// ============================================================================
+
+/// 创建 socket (POSIX socket(domain, type, protocol)).
+///
+/// # Safety
+///
+/// 由 NET_LOCK 内部串行化.
+pub fn sm_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i32 {
+    // SAFETY: 内部持有 NET_LOCK, 串行化
+    unsafe { init::sm_socket(domain, sock_type, protocol) }
+}
+
+/// 设置 Socket 选项 (POSIX setsockopt).
+///
+/// # Safety
+///
+/// `val` 必须为至少 `optlen` 字节的有效只读指针.
+pub fn sm_net_setsockopt(fd: i32, level: i32, optname: i32, val: *const u8, optlen: u32) -> i32 {
+    // SAFETY: val 由调用方保证有效, sm_setsockopt 同步读取
+    unsafe { init::sm_setsockopt(fd, level, optname, val, optlen) }
+}
+
+/// 获取 Socket 选项 (POSIX getsockopt).
+///
+/// # Safety
+///
+/// `val` 必须为可写缓冲区, `optlen` 为可写 u32.
+pub fn sm_net_getsockopt(fd: i32, level: i32, optname: i32, val: *mut u8, optlen: *mut u32) -> i32 {
+    // SAFETY: val 可写, optlen 可写
+    unsafe { init::sm_getsockopt(fd, level, optname, val, optlen) }
+}
+
+/// 轮询所有 Socket 状态.
+///
+/// # Safety
+///
+/// 内部持有 NET_LOCK, ISR 安全.
+pub fn sm_net_poll_sockets() -> i32 {
+    // SAFETY: 内部持有 NET_LOCK, 串行化
+    unsafe { init::sm_poll_sockets() }
+}

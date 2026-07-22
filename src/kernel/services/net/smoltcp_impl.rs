@@ -323,6 +323,47 @@ impl SmoltcpNetStack {
             Err(NetError::Other)
         }
     }
+
+    /// 通过 fd 设置 Socket 选项.
+    pub fn setsockopt_fd(&self, fd: i32, level: i32, optname: i32, val: &[u8]) -> Result<()> {
+        let rc = fw_net_socket::sm_net_setsockopt(fd, level, optname, val.as_ptr(), val.len() as u32);
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 通过 fd 获取 Socket 选项.
+    pub fn getsockopt_fd(&self, fd: i32, level: i32, optname: i32, out: &mut [u8]) -> Result<usize> {
+        let mut out_len = out.len() as u32;
+        let rc = fw_net_socket::sm_net_getsockopt(fd, level, optname, out.as_mut_ptr(), &mut out_len);
+        if rc == 0 {
+            Ok(out_len as usize)
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 轮询所有 fd 的 Socket 状态.
+    pub fn poll_all_fd(&self) -> Result<()> {
+        let rc = fw_net_socket::sm_net_poll_sockets();
+        if rc >= 0 {
+            Ok(())
+        } else {
+            Err(NetError::Other)
+        }
+    }
+
+    /// 通过 domain + type 创建 socket, 返回 fd.
+    pub fn socket_create_fd(&self, domain: i32, sock_type: i32) -> Result<i32> {
+        let fd = fw_net_socket::sm_net_socket(domain, sock_type, 0);
+        if fd >= 0 {
+            Ok(fd)
+        } else {
+            Err(NetError::Other)
+        }
+    }
 }
 
 /// NetEndpoint → sockaddr_in [u8; 16] (network byte order for port, little-endian struct layout).

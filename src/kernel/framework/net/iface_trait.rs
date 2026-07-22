@@ -504,6 +504,30 @@ pub trait NetStack {
         let _ = h;
         Ok(())
     }
+
+    // ========================================================================
+    // Socket 选项与轮询
+    // ========================================================================
+
+    /// 设置 Socket 选项.
+    #[inline]
+    fn setsockopt(&mut self, h: SocketHandle, level: i32, optname: i32, val: &[u8]) -> Result<()> {
+        let _ = (h, level, optname, val);
+        Err(NetError::NotReady)
+    }
+
+    /// 获取 Socket 选项.
+    #[inline]
+    fn getsockopt(&mut self, h: SocketHandle, level: i32, optname: i32, out: &mut [u8]) -> Result<usize> {
+        let _ = (h, level, optname, out);
+        Err(NetError::NotReady)
+    }
+
+    /// 轮询所有 Socket 状态 (驱动 select/poll).
+    #[inline]
+    fn poll_sockets(&mut self) -> Result<()> {
+        Err(NetError::NotReady)
+    }
 }
 
 // ============================================================================
