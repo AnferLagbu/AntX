@@ -193,7 +193,7 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
 
                 fd_idx as i32
             }
-            Err(KernelError::NotFound) if (flags & VfsOpenFlags::CREAT.bits()) != 0 => {
+            Err(KernelError::FileNotFound) if (flags & VfsOpenFlags::CREAT.bits()) != 0 => {
                 // CREAT: 文件不存在, 尝试创建
                 let (parent_path, name) = split_parent_name(rel_path);
                 match fs.fs_create(parent_path, name, pwm) {

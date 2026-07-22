@@ -177,7 +177,7 @@ impl BlockDevice for CompositeBlockDevice {
                         }
                     }
                     if !ok {
-                        return KernelError::IoError.as_i32();
+                        return KernelError::Io.as_i32();
                     }
                 }
                 0

@@ -33,7 +33,7 @@ impl Inode for TmpFsInode {
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
         let mut offset_i32 = offset as i32;
         let result = fs.inner.read(self.node_id, &mut offset_i32, buf, 0);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn write(&self, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
@@ -41,7 +41,7 @@ impl Inode for TmpFsInode {
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
         let mut offset_i32 = offset as i32;
         let result = fs.inner.write(self.node_id, &mut offset_i32, buf, 0);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
@@ -49,7 +49,7 @@ impl Inode for TmpFsInode {
         let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
         match fs.inner.get_stat(self.node_id, pwm) {
             Ok(s) => Ok(s),
-            Err(_) => Err(KernelError::NotFound),
+            Err(_) => Err(KernelError::FileNotFound),
         }
     }
 
@@ -57,7 +57,7 @@ impl Inode for TmpFsInode {
         let mut fs_guard = TMPFS_DATA.lock();
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
         let rc = fs.inner.truncate(self.node_id, size, 0);
-        if rc == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if rc == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
@@ -186,7 +186,7 @@ impl FileSystem for TmpFsFileSystem {
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
 
         let result = fs.inner.open(rel_path, 0, _pwm)
-            .ok_or(KernelError::NotFound)?;
+            .ok_or(KernelError::FileNotFound)?;
 
         Ok(Arc::new(TmpFsInode::new(result.0, 0)))
     }
@@ -201,7 +201,7 @@ impl FileSystem for TmpFsFileSystem {
 
         let result = fs.inner.read(handle, &mut (offset as i32), buf, _pwm);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             Ok(result as usize)
         }
@@ -218,7 +218,7 @@ impl FileSystem for TmpFsFileSystem {
 
         let result = fs.inner.write(handle, &mut (offset as i32), buf, _pwm);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             fs.add_used(result as u64);
             Ok(result as usize)
@@ -230,11 +230,11 @@ impl FileSystem for TmpFsFileSystem {
         let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
 
         let node_id = fs.inner.resolve_path(rel_path)
-            .ok_or(KernelError::NotFound)?;
+            .ok_or(KernelError::FileNotFound)?;
 
         let node = &fs.inner.nodes[node_id as usize];
         if !node.used {
-            return Err(KernelError::NotFound);
+            return Err(KernelError::FileNotFound);
         }
 
         Ok(VfsStat {
@@ -255,11 +255,11 @@ impl FileSystem for TmpFsFileSystem {
     }
 
     fn fs_chmod(&self, _rel_path: &str, _mode: u16, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_mkdir(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {
@@ -280,7 +280,7 @@ impl FileSystem for TmpFsFileSystem {
 
         let result = fs.inner.unlink(rel_path, _pwm);
         if result < 0 {
-            Err(KernelError::NotFound)
+            Err(KernelError::FileNotFound)
         } else {
             Ok(())
         }

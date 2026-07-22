@@ -79,7 +79,7 @@ pub fn write_fat_entry(
     });
 
     if !matches!(result, Some(Ok(()))) {
-        return Err(KernelError::IoError);
+        return Err(KernelError::Io);
     }
 
     let bytes = value.to_le_bytes();
@@ -94,6 +94,6 @@ pub fn write_fat_entry(
 
     match result {
         Some(Ok(())) => Ok(()),
-        _ => Err(KernelError::IoError),
+        _ => Err(KernelError::Io),
     }
 }

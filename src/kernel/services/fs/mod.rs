@@ -92,7 +92,7 @@ impl FsBackend for ServicesFsBackend {
         if rc == 0 {
             Ok(())
         } else {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         }
     }
 

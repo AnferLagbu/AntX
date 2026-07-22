@@ -26,7 +26,7 @@ impl ExfatFs {
 
         match result {
             Some(Ok(())) => {}
-            _ => return Err(KernelError::IoError),
+            _ => return Err(KernelError::Io),
         }
 
         // 解析超级块
@@ -76,7 +76,7 @@ impl ExfatFs {
             }
 
             if !found {
-                return Err(KernelError::NotFound);
+                return Err(KernelError::FileNotFound);
             }
         }
 
@@ -111,7 +111,7 @@ impl ExfatFs {
             }
         }
 
-        Err(KernelError::NotFound)
+        Err(KernelError::FileNotFound)
     }
 
     /// 读取文件内容

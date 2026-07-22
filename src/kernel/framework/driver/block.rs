@@ -164,7 +164,7 @@ pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut
     for i in 0..count {
         match dev.blk_read(start + i as u64, &mut buf[offset..offset + 512]) {
             n if n >= 0 => offset += 512,
-            _ => return Err(KernelError::IoError),
+            _ => return Err(KernelError::Io),
         }
     }
     Ok(())
@@ -179,7 +179,7 @@ pub fn write_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &[u
     for i in 0..count {
         match dev.blk_write(start + i as u64, &buf[offset..offset + 512]) {
             n if n >= 0 => offset += 512,
-            _ => return Err(KernelError::IoError),
+            _ => return Err(KernelError::Io),
         }
     }
     Ok(())

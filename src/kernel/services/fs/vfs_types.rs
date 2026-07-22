@@ -7,6 +7,11 @@
 //! 原属 framework/fs/vfs/types.rs, 2026-06-16 提取到 services.
 //! 纯类型定义 (常量/枚举/结构体/FileSystem trait), 0 unsafe, 0 外部依赖.
 //! framework 仅保留 re-export.
+//!
+//! ## KernelError 统一 (2026-07-21)
+//!
+//! fs 层 KernelError 已统一到顶层 `services::error::KernelError`.
+//! 旧变体名通过类型别名保持向后兼容.
 
 pub const VFS_MAX_PATH: usize = 128;
 pub const VFS_MAX_NAME: usize = 64;
@@ -15,45 +20,19 @@ pub const VFS_MAX_MOUNTS: usize = 8;
 
 extern crate alloc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KernelError {
-    NotFound,
-    AlreadyExists,
-    NoSpace,
-    PermissionDenied,
-    InvalidArgument,
-    NotInitialized,
-    IoError,
-    OutOfMemory,
-    Busy,
-    NotSupported,
-    NotADirectory,
-    IsDirectory,
-    ReadOnly,
-    Overflow,
-    /// 文件名过长 (ENAMETOOLONG=36)
-    NameTooLong,
-}
+// 统一到顶层 KernelError
+pub use crate::kernel::services::error::KernelError;
+
+/// fs 层特有的类型别名 (向后兼容旧变体名)
+pub type NotFound = crate::kernel::services::error::KernelError;
+pub type IoError = crate::kernel::services::error::KernelError;
+pub type OutOfMemory = crate::kernel::services::error::KernelError;
+pub type ReadOnly = crate::kernel::services::error::KernelError;
 
 impl KernelError {
+    /// VFS 风格返回: 负 errno (POSIX `-|errno|` 约定)
     pub fn as_i32(self) -> i32 {
-        match self {
-            Self::NotFound => -2,
-            Self::AlreadyExists => -17,
-            Self::NoSpace => -28,
-            Self::PermissionDenied => -13,
-            Self::InvalidArgument => -22,
-            Self::NotInitialized => -5,
-            Self::IoError => -5,
-            Self::OutOfMemory => -12,
-            Self::Busy => -16,
-            Self::NotSupported => -95,
-            Self::NotADirectory => -20,
-            Self::IsDirectory => -21,
-            Self::ReadOnly => -30,
-            Self::Overflow => -75,
-            Self::NameTooLong => -36,
-        }
+        -(self.as_errno() as i32)
     }
 }
 

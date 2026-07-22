@@ -65,7 +65,7 @@ impl Inode for Ext2Inode {
     }
 
     fn truncate(&self, _size: u64, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
@@ -125,7 +125,7 @@ impl FileSystem for Ext2FileSystem {
     fn fs_mount(&self, _path: &str) -> KernelResult<()> {
         // ext2 挂载需要指定设备
         // 当前实现: 假设设备 0
-        let fs = Ext2Fs::open(0).map_err(|_| KernelError::IoError)?;
+        let fs = Ext2Fs::open(0).map_err(|_| KernelError::Io)?;
         let mut guard = EXT2_FS.lock();
         *guard = Some(fs);
         Ok(())
@@ -183,11 +183,11 @@ impl FileSystem for Ext2FileSystem {
     }
 
     fn fs_chmod(&self, _rel_path: &str, _mode: u16, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_mkdir(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {

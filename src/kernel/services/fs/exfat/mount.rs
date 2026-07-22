@@ -98,7 +98,7 @@ impl FileSystem for ExfatFileSystem {
     }
 
     fn fs_mount(&self, _path: &str) -> KernelResult<()> {
-        let fs = ExfatFs::open(0).map_err(|_| KernelError::IoError)?;
+        let fs = ExfatFs::open(0).map_err(|_| KernelError::Io)?;
         let mut guard = EXFAT_FS.lock();
         *guard = Some(fs);
         Ok(())
@@ -198,7 +198,7 @@ impl FileSystem for ExfatFileSystem {
     }
 
     fn fs_symlink(&self, _target: &str, _link_path: &str, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_readlink(&self, _rel_path: &str, _buf: &mut [u8]) -> KernelResult<usize> {
@@ -206,7 +206,7 @@ impl FileSystem for ExfatFileSystem {
     }
 
     fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {

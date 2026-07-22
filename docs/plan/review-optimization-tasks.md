@@ -19,11 +19,11 @@
 - **方案**: 逐个审计 38 个 `static mut`，按使用场景选择替代方案：单次初始化用 `OnceLock`，并发读写用 `RwLock<T>` 或 `IrqSpinLock<T>`，无竞争场景用 `racy_cell::RacyCell`
 - **状态**: []
 
-### 1.3 services/fs 层 KernelError 统一
+### 1.3 services/fs 层 KernelError 统一 — ✅ 已完成 (2026-07-21)
 
-- **描述**: `services/fs/vfs_types.rs` 定义了独立的 `KernelError`（15 个变体），与顶层 `services/error.rs` 的 `KernelError`（25+ POSIX 变体）不一致，增加认知负担
-- **方案**: 将 fs 层 `KernelError` 统一到顶层 `services::error::KernelError`，fs 特有变体合并为 `Other(i32)` 或新增顶层变体；更新 fs 层所有 `use` 路径
-- **状态**: []
+- **描述**: `services/fs/vfs_types.rs` 定义了独立的 `KernelError`（15 个变体），与顶层 `services/error.rs` 的 `KernelError`（27 个变体）不一致，增加认知负担
+- **方案**: 将 fs 层 `KernelError` 统一到顶层 `services::error::KernelError`，添加 `NotInitialized`/`Overflow` 变体，更新 fs 层所有 `use` 路径
+- **状态**: [X] 已完成
 
 ---
 

@@ -532,7 +532,7 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
     match dev.send_packet(dma_phys, total as u32) {
         Ok(()) => 0,
-        Err(()) => KernelError::IoError.as_i32(),
+        Err(()) => KernelError::Io.as_i32(),
     }
 }
 

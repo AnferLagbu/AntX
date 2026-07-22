@@ -480,11 +480,11 @@ pub fn chitin_blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> i32 {
     let mut devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
     if idx >= devices.len() {
-        return KernelError::IoError.as_i32();
+        return KernelError::Io.as_i32();
     }
     let dev = &mut devices[idx];
     if dev.proto != ChitinProto::Block {
-        return KernelError::IoError.as_i32();
+        return KernelError::Io.as_i32();
     }
     if dev.state != DeviceState::Ready {
         return KernelError::Busy.as_i32();
@@ -503,11 +503,11 @@ pub fn chitin_blk_write(drive: u8, sector: u64, buf: &[u8]) -> i32 {
     let mut devices = CHITIN_DEVICES.lock();
     let idx = drive as usize;
     if idx >= devices.len() {
-        return KernelError::IoError.as_i32();
+        return KernelError::Io.as_i32();
     }
     let dev = &mut devices[idx];
     if dev.proto != ChitinProto::Block {
-        return KernelError::IoError.as_i32();
+        return KernelError::Io.as_i32();
     }
     if dev.state != DeviceState::Ready {
         return KernelError::Busy.as_i32();

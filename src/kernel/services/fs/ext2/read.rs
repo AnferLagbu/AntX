@@ -37,7 +37,7 @@ impl Ext2Fs {
 
         match result {
             Some(Ok(())) => {}
-            _ => return Err(KernelError::IoError),
+            _ => return Err(KernelError::Io),
         }
 
         // 解析超级块
@@ -57,7 +57,7 @@ impl Ext2Fs {
 
         match result {
             Some(Ok(())) => {}
-            _ => return Err(KernelError::IoError),
+            _ => return Err(KernelError::Io),
         }
 
         let bg_count = super_block.block_group_count() as usize;
@@ -105,7 +105,7 @@ impl Ext2Fs {
 
         match result {
             Some(Ok(())) => {}
-            _ => return Err(KernelError::IoError),
+            _ => return Err(KernelError::Io),
         }
 
         let inode = Ext2Inode::from_bytes(&inode_data)
@@ -131,7 +131,7 @@ impl Ext2Fs {
 
         match result {
             Some(Ok(())) => Ok(data),
-            _ => Err(KernelError::IoError),
+            _ => Err(KernelError::Io),
         }
     }
 
@@ -210,7 +210,7 @@ impl Ext2Fs {
             }
 
             if !found {
-                return Err(KernelError::NotFound);
+                return Err(KernelError::FileNotFound);
             }
         }
 
@@ -802,7 +802,7 @@ impl Ext2Fs {
             }
         }
 
-        Err(KernelError::NotFound)
+        Err(KernelError::FileNotFound)
     }
 
     /// 创建目录

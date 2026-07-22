@@ -184,13 +184,13 @@ fn hvfs_sync_returns_ioerror_on_nonzero() {
         .rsplit_once("impl crate::kernel::framework::fs::FileSystem for HvfsData")
         .map(|(_, b)| b)
         .unwrap_or("");
-    // r == 0 → Ok(()); != 0 → Err(IoError)
+    // r == 0 → Ok(()); != 0 → Err(Io)
     let sync_block = impl_block
         .split_once("fn fs_sync(")
         .map(|(_, b)| b)
         .unwrap_or("");
     assert!(
-        sync_block.contains("KernelError::IoError") || sync_block.contains("IoError"),
-        "P3-I-18: HvFS.fs_sync 非零返回必须映射为 KernelError::IoError"
+        sync_block.contains("KernelError::Io") || sync_block.contains("IoError"),
+        "P3-I-18: HvFS.fs_sync 非零返回必须映射为 KernelError::Io"
     );
 }

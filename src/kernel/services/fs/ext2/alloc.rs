@@ -26,7 +26,7 @@ pub fn alloc_block_in_group(
         read_sectors(dev, bitmap_sector, bitmap_sector_count, &mut bitmap_data)
     });
     if !matches!(result, Some(Ok(()))) {
-        return Err(KernelError::IoError);
+        return Err(KernelError::Io);
     }
 
     // 扫描位图寻找空闲块
@@ -53,7 +53,7 @@ pub fn alloc_block_in_group(
                     write_sectors(dev, bitmap_sector, bitmap_sector_count, &bitmap_data)
                 });
                 if !matches!(result, Some(Ok(()))) {
-                    return Err(KernelError::IoError);
+                    return Err(KernelError::Io);
                 }
 
                 return Ok(first_block + block_offset as u32);
@@ -83,7 +83,7 @@ pub fn free_block(
         read_sectors(dev, bitmap_sector, bitmap_sector_count, &mut bitmap_data)
     });
     if !matches!(result, Some(Ok(()))) {
-        return Err(KernelError::IoError);
+        return Err(KernelError::Io);
     }
 
     // 清除位
@@ -96,7 +96,7 @@ pub fn free_block(
         write_sectors(dev, bitmap_sector, bitmap_sector_count, &bitmap_data)
     });
     if !matches!(result, Some(Ok(()))) {
-        return Err(KernelError::IoError);
+        return Err(KernelError::Io);
     }
 
     Ok(())
@@ -126,7 +126,7 @@ pub fn write_block(
 
     match result {
         Some(Ok(())) => Ok(()),
-        _ => Err(KernelError::IoError),
+        _ => Err(KernelError::Io),
     }
 }
 
@@ -188,7 +188,7 @@ pub fn write_inode(
 
     match result {
         Some(Ok(())) => Ok(()),
-        _ => Err(KernelError::IoError),
+        _ => Err(KernelError::Io),
     }
 }
 
@@ -210,7 +210,7 @@ pub fn alloc_inode_in_group(
         read_sectors(dev, bitmap_sector, bitmap_sector_count, &mut bitmap_data)
     });
     if !matches!(result, Some(Ok(()))) {
-        return Err(KernelError::IoError);
+        return Err(KernelError::Io);
     }
 
     // 扫描位图寻找空闲 inode
@@ -237,7 +237,7 @@ pub fn alloc_inode_in_group(
                     write_sectors(dev, bitmap_sector, bitmap_sector_count, &bitmap_data)
                 });
                 if !matches!(result, Some(Ok(()))) {
-                    return Err(KernelError::IoError);
+                    return Err(KernelError::Io);
                 }
 
                 return Ok(first_inode + inode_offset as u32);
@@ -267,7 +267,7 @@ pub fn free_inode(
         read_sectors(dev, bitmap_sector, bitmap_sector_count, &mut bitmap_data)
     });
     if !matches!(result, Some(Ok(()))) {
-        return Err(KernelError::IoError);
+        return Err(KernelError::Io);
     }
 
     // 清除位
@@ -280,7 +280,7 @@ pub fn free_inode(
         write_sectors(dev, bitmap_sector, bitmap_sector_count, &bitmap_data)
     });
     if !matches!(result, Some(Ok(()))) {
-        return Err(KernelError::IoError);
+        return Err(KernelError::Io);
     }
 
     Ok(())

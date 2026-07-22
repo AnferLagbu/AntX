@@ -163,13 +163,13 @@ impl Inode for AnonymousInode {
     fn read(&self, offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
         ANONYMOUS_FS
             .read_at(self.inode_id, offset, buf)
-            .ok_or(KernelError::IoError)
+            .ok_or(KernelError::Io)
     }
 
     fn write(&self, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
         ANONYMOUS_FS
             .write_at(self.inode_id, offset, buf)
-            .ok_or(KernelError::IoError)
+            .ok_or(KernelError::Io)
     }
 
     fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
@@ -188,7 +188,7 @@ impl Inode for AnonymousInode {
         if ANONYMOUS_FS.truncate(self.inode_id, size) {
             Ok(())
         } else {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         }
     }
 
@@ -253,7 +253,7 @@ impl Inode for RamFsInode {
         } else if bytes_read > 0 {
             Ok(bytes_read)
         } else {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         }
     }
 
@@ -264,7 +264,7 @@ impl Inode for RamFsInode {
         if bytes_written > 0 {
             Ok(bytes_written)
         } else {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         }
     }
 
@@ -302,7 +302,7 @@ impl Inode for RamFsInode {
         if rc == 0 {
             Ok(())
         } else {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         }
     }
 

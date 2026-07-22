@@ -68,8 +68,24 @@ pub enum KernelError {
     NoSpace,
     /// 跨设备链接 (EXDEV=18)
     CrossDevice,
+    /// 子系统未初始化 (自定义, 非 POSIX)
+    NotInitialized,
+    /// 数值溢出 (自定义, 非 POSIX)
+    Overflow,
     /// 其他未分类
     Other(i32),
+}
+
+// 向后兼容别名 (fs 层旧变体名 → 统一变体名)
+impl KernelError {
+    /// fs 层旧名: NotFound → FileNotFound
+    pub const fn not_found() -> Self { Self::FileNotFound }
+    /// fs 层旧名: IoError → Io
+    pub const fn io_error() -> Self { Self::Io }
+    /// fs 层旧名: OutOfMemory → NoMemory
+    pub const fn out_of_memory() -> Self { Self::NoMemory }
+    /// fs 层旧名: ReadOnly → ReadOnlyFilesystem
+    pub const fn read_only() -> Self { Self::ReadOnlyFilesystem }
 }
 
 impl KernelError {
@@ -136,6 +152,8 @@ impl KernelError {
             Self::NotConnected => Errno::ENOTCONN,
             Self::ConnectionRefused => Errno::ECONNREFUSED,
             Self::NotReady => Errno::EAGAIN,
+            Self::NotInitialized => Errno::EINVAL,
+            Self::Overflow => Errno::EINVAL,
             Self::Other(_) => Errno::EINVAL,
         }
     }

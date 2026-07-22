@@ -90,7 +90,7 @@ fn test_devfs_unregister_nonexistent() -> TestResult {
     // I-20: 注销不存在从 `== -1` 改为 NotFound
     let result = DEVFS_DATA.unregister_device("nonexistent_dev");
     check!(
-        matches!(result, Err(crate::kernel::framework::fs::vfs::types::KernelError::NotFound)),
+        matches!(result, Err(crate::kernel::framework::fs::vfs::types::KernelError::FileNotFound)),
         "unregistering nonexistent should return NotFound"
     );
     TestResult::Pass

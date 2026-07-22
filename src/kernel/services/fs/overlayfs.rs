@@ -156,7 +156,7 @@ impl Inode for OverlayFsInode {
         let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
         let mut offset_i32 = offset as i32;
         let result = fs.upper_data.read(self.node_id, &mut offset_i32, buf, _pwm);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn write(&self, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
@@ -164,7 +164,7 @@ impl Inode for OverlayFsInode {
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
         let mut offset_i32 = offset as i32;
         let result = fs.upper_data.write(self.node_id, &mut offset_i32, buf, _pwm);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
@@ -172,7 +172,7 @@ impl Inode for OverlayFsInode {
         let fs = fs_guard.as_ref().ok_or(KernelError::NotInitialized)?;
         match fs.upper_data.get_stat(self.node_id, _pwm) {
             Ok(s) => Ok(s),
-            Err(_) => Err(KernelError::NotFound),
+            Err(_) => Err(KernelError::FileNotFound),
         }
     }
 
@@ -180,7 +180,7 @@ impl Inode for OverlayFsInode {
         let mut fs_guard = OVERLAY_FS.lock();
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
         let rc = fs.upper_data.truncate(self.node_id, size, 0);
-        if rc == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if rc == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
@@ -250,7 +250,7 @@ impl FileSystem for OverlayFsFileSystem {
         let entry = fs.resolve_layer(rel_path);
 
         if entry.is_whiteout {
-            return Err(KernelError::NotFound);
+            return Err(KernelError::FileNotFound);
         }
 
         if !entry.in_upper && (_flags & 0x0003 != 0) {
@@ -276,7 +276,7 @@ impl FileSystem for OverlayFsFileSystem {
         // 从 upperdir 读取
         let result = fs.upper_data.read(handle, &mut (offset as i32), buf, _pwm);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             Ok(result as usize)
         }
@@ -289,7 +289,7 @@ impl FileSystem for OverlayFsFileSystem {
         // 写入 upperdir
         let result = fs.upper_data.write(handle, &mut (offset as i32), buf, _pwm);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             Ok(result as usize)
         }
@@ -303,7 +303,7 @@ impl FileSystem for OverlayFsFileSystem {
         let entry = fs.resolve_layer(rel_path);
 
         if entry.is_whiteout {
-            return Err(KernelError::NotFound);
+            return Err(KernelError::FileNotFound);
         }
 
         // 从 upperdir 或 lowerdir 获取属性
@@ -311,7 +311,7 @@ impl FileSystem for OverlayFsFileSystem {
             let node_id = entry.upper_inode.unwrap_or(0);
             let node = &fs.upper_data.nodes[node_id as usize];
             if !node.used {
-                return Err(KernelError::NotFound);
+                return Err(KernelError::FileNotFound);
             }
 
             Ok(VfsStat {
@@ -336,11 +336,11 @@ impl FileSystem for OverlayFsFileSystem {
     }
 
     fn fs_chmod(&self, _rel_path: &str, _mode: u16, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::ReadOnly)
+        Err(KernelError::ReadOnlyFilesystem)
     }
 
     fn fs_mkdir(&self, rel_path: &str, _pwm: u64) -> KernelResult<()> {
@@ -368,7 +368,7 @@ impl FileSystem for OverlayFsFileSystem {
         // 文件在 upperdir，直接删除
         fs.upper_data.unlink(rel_path, _pwm)
             .map(|_| ())
-            .map_err(|_| KernelError::NotFound)
+            .map_err(|_| KernelError::FileNotFound)
     }
 
     fn fs_rmdir(&self, _rel_path: &str, _pwm: u64) -> KernelResult<()> {

@@ -93,7 +93,7 @@ pub fn write_cluster(
         });
 
         if !matches!(result, Some(Ok(()))) {
-            return Err(KernelError::IoError);
+            return Err(KernelError::Io);
         }
     }
 
@@ -125,7 +125,7 @@ pub fn read_cluster(
         });
 
         if !matches!(result, Some(Ok(()))) {
-            return Err(KernelError::IoError);
+            return Err(KernelError::Io);
         }
     }
 

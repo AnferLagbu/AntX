@@ -497,7 +497,7 @@ impl VfsManager {
             }
         }
 
-        Err(KernelError::NotFound)
+        Err(KernelError::FileNotFound)
     }
 
     pub fn set_cwd(&self, path: &str) {

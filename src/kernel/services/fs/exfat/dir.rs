@@ -119,7 +119,7 @@ impl ExfatDirEntry {
                 });
 
                 if !matches!(result, Some(Ok(()))) {
-                    return Err(KernelError::IoError);
+                    return Err(KernelError::Io);
                 }
             }
 

@@ -497,7 +497,7 @@ impl HvfsData {
         };
         let obj_id = match obj_id {
             Some(id) => id,
-            None => return Err(KernelError::NotFound),
+            None => return Err(KernelError::FileNotFound),
         };
         let obj = {
             let datasets = self.datasets.lock();
@@ -505,7 +505,7 @@ impl HvfsData {
         };
         let obj = match obj {
             Some(o) => o,
-            None => return Err(KernelError::NotFound),
+            None => return Err(KernelError::FileNotFound),
         };
         if !self.check_permission(&obj, pwm, 0x01) {
             return Err(KernelError::PermissionDenied);
@@ -557,7 +557,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
         if !self.check_permission(&obj, pwm, 0x01) {
@@ -617,7 +617,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
         if !self.check_permission(&obj, pwm, 0x02) {
@@ -642,7 +642,7 @@ impl HvfsData {
         if self.is_disk_mode() {
             if self.spa.write_bp(&new_bp, write_data) != 0 {
                 self.spa.free(&new_bp, txg);
-                return KernelError::IoError.as_i32();
+                return KernelError::Io.as_i32();
             }
         }
         obj.cow_bp(new_bp, txg);
@@ -688,7 +688,7 @@ impl HvfsData {
                 self.zil.add_record(HvZilRecord::new_mkdir(txg, 0, name));
                 obj_id as i32
             }
-            None => KernelError::IoError.as_i32(),
+            None => KernelError::Io.as_i32(),
         }
     }
 
@@ -703,13 +703,13 @@ impl HvfsData {
         };
         let obj_id = match obj_id {
             Some(id) => id,
-            None => return KernelError::NotFound.as_i32(),
+            None => return KernelError::FileNotFound.as_i32(),
         };
         let obj = {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
         if !self.check_permission(&obj, pwm, 0x02) {
@@ -718,7 +718,7 @@ impl HvfsData {
         {
             let datasets = self.datasets.lock();
             if !datasets[0].unlink(name) {
-                return KernelError::IoError.as_i32();
+                return KernelError::Io.as_i32();
             }
         }
         let txg = self.spa.current_txg();
@@ -754,12 +754,12 @@ impl HvfsData {
         let ds = &mut datasets[0];
         let obj_id = match ds.lookup(name) {
             Some(id) => id,
-            None => return KernelError::NotFound.as_i32(),
+            None => return KernelError::FileNotFound.as_i32(),
         };
 
         let mut obj = match ds.objset.get_obj(obj_id) {
             Some(o) => o,
-            None => return KernelError::NotFound.as_i32(),
+            None => return KernelError::FileNotFound.as_i32(),
         };
 
         if obj.owner_pwm != pwm {
@@ -779,7 +779,7 @@ impl HvfsData {
             return 0;
         }
 
-        KernelError::IoError.as_i32()
+        KernelError::Io.as_i32()
     }
 
     pub fn chown(&self, path: &str, owner_pwm: u64, pwm: u64) -> i32 {
@@ -802,12 +802,12 @@ impl HvfsData {
         let ds = &mut datasets[0];
         let obj_id = match ds.lookup(name) {
             Some(id) => id,
-            None => return KernelError::NotFound.as_i32(),
+            None => return KernelError::FileNotFound.as_i32(),
         };
 
         let mut obj = match ds.objset.get_obj(obj_id) {
             Some(o) => o,
-            None => return KernelError::NotFound.as_i32(),
+            None => return KernelError::FileNotFound.as_i32(),
         };
 
         obj.owner_pwm = owner_pwm;
@@ -822,7 +822,7 @@ impl HvfsData {
             return 0;
         }
 
-        KernelError::IoError.as_i32()
+        KernelError::Io.as_i32()
     }
 
     pub fn rename(&self, old_path: &str, new_path: &str, pwm: u64) -> i32 {
@@ -836,7 +836,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(old_name) {
                 Some(id) => id,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -844,7 +844,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
         if !self.check_permission(&obj, pwm, 0x02) {
@@ -922,7 +922,7 @@ impl HvfsData {
             }
 
             if !ds.link(link_name, obj_id) {
-                return KernelError::IoError.as_i32();
+                return KernelError::Io.as_i32();
             }
         }
 
@@ -944,7 +944,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(old_name) {
                 Some(id) => id,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -952,7 +952,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
         if obj.obj_type == HvObjType::Dir {
@@ -981,7 +981,7 @@ impl HvfsData {
             }
 
             if !ds.link(new_name, obj_id) {
-                return KernelError::IoError.as_i32();
+                return KernelError::Io.as_i32();
             }
         }
 
@@ -1002,7 +1002,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(name) {
                 Some(id) => id,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1010,7 +1010,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1035,7 +1035,7 @@ impl HvfsData {
             return to_read as i32;
         }
 
-        KernelError::IoError.as_i32()
+        KernelError::Io.as_i32()
     }
 
     /// 设置扩展属性
@@ -1049,7 +1049,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1057,7 +1057,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
         if !self.check_permission(&obj, pwm, 0x02) {
@@ -1096,7 +1096,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1104,7 +1104,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1123,7 +1123,7 @@ impl HvfsData {
             }
         }
 
-        KernelError::NotFound.as_i32()
+        KernelError::FileNotFound.as_i32()
     }
 
     /// 列出扩展属性
@@ -1137,7 +1137,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1145,7 +1145,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1179,7 +1179,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].lookup(obj_name) {
                 Some(id) => id,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
 
@@ -1187,7 +1187,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32(),
+                None => return KernelError::FileNotFound.as_i32(),
             }
         };
         if !self.check_permission(&obj, pwm, 0x02) {
@@ -1688,7 +1688,7 @@ impl HvfsData {
         let txg = self.spa.current_txg();
         match self.snap_mgr.create_snapshot(ds, name, txg) {
             Some(id) => id as i32,
-            None => KernelError::IoError.as_i32(),
+            None => KernelError::Io.as_i32(),
         }
     }
 
@@ -1697,7 +1697,7 @@ impl HvfsData {
         if self.snap_mgr.destroy_snapshot(snap_id) {
             0
         } else {
-            KernelError::NotFound.as_i32()
+            KernelError::FileNotFound.as_i32()
         }
     }
 
@@ -1711,7 +1711,7 @@ impl HvfsData {
         if self.snap_mgr.rollback(snap_id, ds) {
             0
         } else {
-            KernelError::IoError.as_i32()
+            KernelError::Io.as_i32()
         }
     }
 
@@ -1728,7 +1728,7 @@ impl HvfsData {
                 self.datasets.lock().push(ds);
                 ds_id as i32
             }
-            None => KernelError::IoError.as_i32(),
+            None => KernelError::Io.as_i32(),
         }
     }
 
@@ -1745,7 +1745,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::NotFound.as_i32() as i64,
+                None => return KernelError::FileNotFound.as_i32() as i64,
             }
         };
         let new_offset = match whence {
@@ -1832,13 +1832,13 @@ impl Inode for HvfsInode {
     fn read(&self, _offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
         let hvfs = get_hvfs();
         let result = hvfs.read(self.fd, buf, buf.len() as u32);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn write(&self, _offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
         let hvfs = get_hvfs();
         let result = hvfs.write(self.fd, buf, buf.len() as u32);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
@@ -1862,7 +1862,7 @@ impl Inode for HvfsInode {
                 };
                 Ok(st)
             }
-            None => Err(KernelError::NotFound),
+            None => Err(KernelError::FileNotFound),
         }
     }
 
@@ -1930,19 +1930,19 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
 
     fn fs_close(&self, handle: u32) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.close(handle);
-        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if result == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn fs_read(&self, handle: u32, offset: u64, buf: &mut [u8], _pwm: u64) -> crate::kernel::framework::fs::KernelResult<usize> {
         let _ = offset;
         let result = self.read(handle, buf, buf.len() as u32);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn fs_write(&self, handle: u32, offset: u64, buf: &[u8], _pwm: u64) -> crate::kernel::framework::fs::KernelResult<usize> {
         let _ = offset;
         let result = self.write(handle, buf, buf.len() as u32);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn fs_stat(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<crate::kernel::framework::fs::VfsStat> {
@@ -1965,7 +1965,7 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
                 };
                 Ok(st)
             }
-            None => Err(KernelError::NotFound),
+            None => Err(KernelError::FileNotFound),
         }
     }
 
@@ -1981,22 +1981,22 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
 
     fn fs_mkdir(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.mkdir(rel_path, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if result == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn fs_unlink(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.unlink(rel_path, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::NotFound) }
+        if result == 0 { Ok(()) } else { Err(KernelError::FileNotFound) }
     }
 
     fn fs_rmdir(&self, rel_path: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.unlink(rel_path, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::NotFound) }
+        if result == 0 { Ok(()) } else { Err(KernelError::FileNotFound) }
     }
 
     fn fs_rename(&self, old_path: &str, new_path: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.rename(old_path, new_path, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if result == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn fs_readdir(&self, _handle: u32, _offset: u64, _entry: &mut crate::kernel::framework::fs::VfsDirEntry) -> crate::kernel::framework::fs::KernelResult<bool> {
@@ -2005,17 +2005,17 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
 
     fn fs_symlink(&self, target: &str, link_path: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.symlink(target, link_path, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if result == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn fs_readlink(&self, rel_path: &str, buf: &mut [u8]) -> crate::kernel::framework::fs::KernelResult<usize> {
         let result = self.readlink(rel_path, buf, 0);
-        if result < 0 { Err(KernelError::IoError) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::Io) } else { Ok(result as usize) }
     }
 
     fn fs_link(&self, old_path: &str, new_path: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.link(old_path, new_path, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if result == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn fs_seek(&self, handle: u32, offset: i64, whence: crate::kernel::framework::fs::VfsSeekWhence, _current: u64) -> crate::kernel::framework::fs::KernelResult<u64> {
@@ -2026,7 +2026,7 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
     // P3-I-18: trait fs_sync 包装 self.sync() (i32 → KernelResult<()>).
     fn fs_sync(&self) -> crate::kernel::framework::fs::KernelResult<()> {
         let r = self.sync();
-        if r == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if r == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
@@ -2037,21 +2037,21 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
 
     fn fs_setxattr(&self, rel_path: &str, name: &str, value: &[u8], pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.setxattr(rel_path, name, value, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::IoError) }
+        if result == 0 { Ok(()) } else { Err(KernelError::Io) }
     }
 
     fn fs_getxattr(&self, rel_path: &str, name: &str, buf: &mut [u8], pwm: u64) -> crate::kernel::framework::fs::KernelResult<usize> {
         let result = self.getxattr(rel_path, name, buf, pwm);
-        if result < 0 { Err(KernelError::NotFound) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::FileNotFound) } else { Ok(result as usize) }
     }
 
     fn fs_listxattr(&self, rel_path: &str, buf: &mut [u8], pwm: u64) -> crate::kernel::framework::fs::KernelResult<usize> {
         let result = self.listxattr(rel_path, buf, pwm);
-        if result < 0 { Err(KernelError::NotFound) } else { Ok(result as usize) }
+        if result < 0 { Err(KernelError::FileNotFound) } else { Ok(result as usize) }
     }
 
     fn fs_removexattr(&self, rel_path: &str, name: &str, pwm: u64) -> crate::kernel::framework::fs::KernelResult<()> {
         let result = self.removexattr(rel_path, name, pwm);
-        if result == 0 { Ok(()) } else { Err(KernelError::NotFound) }
+        if result == 0 { Ok(()) } else { Err(KernelError::FileNotFound) }
     }
 }

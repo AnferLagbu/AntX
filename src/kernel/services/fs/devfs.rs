@@ -206,7 +206,7 @@ impl DevfsData {
                 }
             }
         }
-        Err(KernelError::NotFound)
+        Err(KernelError::FileNotFound)
     }
 
     pub fn mount(&self, _path: &str) -> i32 {
@@ -437,7 +437,7 @@ impl SafeDevFs {
     pub fn unregister(&self, name: &str) -> Result<(), &'static str> {
         match self.inner.unregister_device(name) {
             Ok(()) => Ok(()),
-            Err(KernelError::NotFound) => Err("device not found"),
+            Err(KernelError::FileNotFound) => Err("device not found"),
             Err(_) => Err("unregister failed"),
         }
     }
@@ -570,7 +570,7 @@ impl Inode for DevFsInode {
     fn read(&self, _offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
         let result = DEVFS_DATA.read(self.dev_type, buf);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             Ok(result as usize)
         }
@@ -579,7 +579,7 @@ impl Inode for DevFsInode {
     fn write(&self, _offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
         let result = DEVFS_DATA.write(self.dev_type, buf);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             Ok(result as usize)
         }
@@ -640,7 +640,7 @@ impl FileSystem for DevfsData {
 
     fn fs_mount(&self, path: &str) -> KernelResult<()> {
         if self.mount(path) != 0 {
-            return Err(KernelError::IoError);
+            return Err(KernelError::Io);
         }
         // E6-9a: mount 不再硬编码设备, 由 init() 或 init_with_chitin_bridge() 注册
         Ok(())
@@ -649,7 +649,7 @@ impl FileSystem for DevfsData {
     fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<Arc<dyn Inode>> {
         match self.open(rel_path) {
             Some((_index, dev_type)) => Ok(Arc::new(DevFsInode::new(dev_type, 0))),
-            None => Err(KernelError::NotFound),
+            None => Err(KernelError::FileNotFound),
         }
     }
 
@@ -661,7 +661,7 @@ impl FileSystem for DevfsData {
         // DevFS read 需要 dev_type, handle 即为 dev_type
         let result = self.read(_handle as u8, buf);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             Ok(result as usize)
         }
@@ -670,7 +670,7 @@ impl FileSystem for DevfsData {
     fn fs_write(&self, _handle: u32, _offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
         let result = self.write(_handle as u8, buf);
         if result < 0 {
-            Err(KernelError::IoError)
+            Err(KernelError::Io)
         } else {
             Ok(result as usize)
         }
@@ -693,7 +693,7 @@ impl FileSystem for DevfsData {
                 file_type: dev_type,
                 sensitivity: 0,
             }),
-            None => Err(KernelError::NotFound),
+            None => Err(KernelError::FileNotFound),
         }
     }
 
