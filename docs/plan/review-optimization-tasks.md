@@ -56,11 +56,11 @@
 - **方案**: 在 `ci/audit.sh` full 模式中增加 aarch64 QEMU boot test；在 `Makefile.ci` 中增加 `ci-test-aarch64` 目标；GitHub Actions `ci-aarch64.yml` 增加 boot test job
 - **状态**: [X] 已完成
 
-### 2.3 services 层模块间隐式依赖审计
+### 2.3 services 层模块间隐式依赖审计 — ✅ 已完成 (2026-07-21)
 
 - **描述**: `audit_coupling.py` 检测模块间循环依赖，但 services 层模块可能通过 framework 全局状态（如 `VFS_MANAGER`、`IPC_NAMESPACE`、`SCHEDULER`）产生隐式依赖，当前无工具检测这类间接耦合
-- **方案**: 扩展 `audit_coupling.py` 或新增脚本，扫描 services 层各模块对 framework 全局状态的引用，构建隐式依赖图；输出超过阈值时告警
-- **状态**: []
+- **方案**: 新增 `scripts/audit_implicit_deps.py` 脚本，扫描 services 层各模块对 framework 全局状态的引用
+- **状态**: [X] 已完成
 
 ### 2.4 WASM 解释器进度明确化
 
