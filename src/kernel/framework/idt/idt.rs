@@ -454,50 +454,47 @@ impl IdtManager {
 
     /// 启用指定 IRQ
     pub fn enable_irq(&self, irq: u8) {
+        // 使用 GSI 路由, 不再限制 irq < 16
+        #[cfg(target_arch = "x86_64")]
+        {
+            if crate::kernel::framework::arch::ioapic::is_initialized() {
+                crate::kernel::framework::arch::ioapic::unmask_irq(irq);
+                return;
+            }
+        }
+        // 兜底: 传统 PIC (8259A), 仅 irq < 16
         if irq >= 16 {
             return;
         }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        unsafe {
+            if irq < 8 {
+                let mask = port_inb(0x21) & !(1 << irq);
+                port_outb(0x21, mask);
+            } else {
+                let slave_mask = port_inb(0xA1) & !(1 << (irq - 8));
+                port_outb(0xA1, slave_mask);
 
-        // Use IOAPIC if available (modern systems); 仅 x86_64 支持 IOAPIC.
-        let ioapic_handled = {
-            #[cfg(target_arch = "x86_64")]
-            {
-                if crate::kernel::framework::arch::ioapic::is_initialized() {
-                    crate::kernel::framework::arch::ioapic::unmask_irq(irq);
-                    true
-                } else {
-                    false
-                }
-            }
-            #[cfg(not(target_arch = "x86_64"))]
-            {
-                false
-            }
-        };
-        if !ioapic_handled {
-            // 兜底: 对老式系统回退到传统 PIC (8259A)
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                if irq < 8 {
-                    let mask = port_inb(0x21) & !(1 << irq);
-                    port_outb(0x21, mask);
-                } else {
-                    let slave_mask = port_inb(0xA1) & !(1 << (irq - 8));
-                    port_outb(0xA1, slave_mask);
-
-                    let master_mask = port_inb(0x21) & !(1 << 2);
-                    port_outb(0x21, master_mask);
-                }
+                let master_mask = port_inb(0x21) & !(1 << 2);
+                port_outb(0x21, master_mask);
             }
         }
     }
 
     /// 禁用指定 IRQ
     pub fn disable_irq(&self, irq: u8) {
+        // 使用 GSI 路由, 不再限制 irq < 16
+        #[cfg(target_arch = "x86_64")]
+        {
+            if crate::kernel::framework::arch::ioapic::is_initialized() {
+                crate::kernel::framework::arch::ioapic::mask_irq(irq);
+                return;
+            }
+        }
+        // 兜底: 传统 PIC (8259A), 仅 irq < 16
         if irq >= 16 {
             return;
         }
-
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             if irq < 8 {

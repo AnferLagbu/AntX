@@ -81,6 +81,41 @@ pub fn ioapic_gsib() -> u32 {
 }
 
 // ============================================================================
+// IOAPIC 信息查询 (多 IOAPIC 支持)
+// ============================================================================
+
+/// IOAPIC 信息 (safe 拷贝)
+#[derive(Debug, Clone, Copy)]
+pub struct IoApicInfoSafe {
+    pub id: u8,
+    pub base_addr: u64,
+    pub gsi_base: u32,
+    pub max_irq: u8,
+}
+
+/// 获取所有 IOAPIC 信息
+pub fn ioapic_list() -> [Option<IoApicInfoSafe>; 8] {
+    let fw = crate::kernel::framework::arch::acpi::get_ioapics();
+    let mut result = [None; 8];
+    for (i, item) in fw.iter().enumerate() {
+        if i < 8 {
+            result[i] = item.map(|info| IoApicInfoSafe {
+                id: info.id,
+                base_addr: info.base_addr,
+                gsi_base: info.gsi_base,
+                max_irq: info.max_irq,
+            });
+        }
+    }
+    result
+}
+
+/// IOAPIC 数量
+pub fn ioapic_count() -> u32 {
+    crate::kernel::framework::arch::acpi::get_ioapic_count()
+}
+
+// ============================================================================
 // HPET 高精度定时器信息
 // ============================================================================
 
