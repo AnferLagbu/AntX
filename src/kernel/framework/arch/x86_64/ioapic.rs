@@ -1,8 +1,10 @@
 //! IOAPIC (I/O 高级可编程中断控制器) 驱动
 //!
-//! 将外部硬件中断路由到指定 CPU 核心。
+//! 将外部硬件中断路由到指定 CPU 核心.
+//! 支持多 IOAPIC 控制器, 通过 GSI (Global System Interrupt) 路由.
 
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use crate::kernel::framework::sync::IrqSpinLock;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 const IOAPIC_BASE_DEFAULT: u64 = 0xFEC00000;
 
@@ -32,176 +34,305 @@ const DELIVERY_INIT: u64 = 0x500;
 /// 8259A 兼容中断 — 遗留 ISA 设备 (ExtINT 需配合 Local APIC LINT0)
 const DELIVERY_EXTINT: u64 = 0x700;
 
-static IOAPIC_BASE: AtomicU64 = AtomicU64::new(0);
-static IOAPIC_INITIALIZED: AtomicBool = AtomicBool::new(false);
-static IOAPIC_MAX_IRQ: AtomicU64 = AtomicU64::new(0);
+/// 最大 IOAPIC 控制器数量
+const MAX_IOAPICS: usize = 8;
 
-fn ioapic_read(reg: u32) -> u32 {
-    let base = IOAPIC_BASE.load(Ordering::Acquire);
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+/// 单个 IOAPIC 控制器的运行时状态
+struct IoApicState {
+    base_addr: u64,
+    max_irq: u8,
+    initialized: bool,
+}
+
+/// 所有 IOAPIC 控制器状态
+static IOAPICS: IrqSpinLock<[Option<IoApicState>; MAX_IOAPICS]> =
+    IrqSpinLock::new([const { None }; MAX_IOAPICS]);
+/// 已注册的 IOAPIC 控制器数量
+static IOAPIC_COUNT: AtomicU32 = AtomicU32::new(0);
+
+// ============================================================================
+// 底层 MMIO 读写 (参数化, 支持多控制器)
+// ============================================================================
+
+/// 在指定基地址上读取 IOAPIC 寄存器
+fn ioapic_read_on(base: u64, reg: u32) -> u32 {
+    // SAFETY: base 来自 ACPI MADT 枚举的 MMIO 地址, 调用方保证有效
     unsafe {
         core::ptr::write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
         core::ptr::read_volatile((base + IOWIN as u64) as *const u32)
     }
 }
 
-fn ioapic_write(reg: u32, value: u32) {
-    let base = IOAPIC_BASE.load(Ordering::Acquire);
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+/// 在指定基地址上写入 IOAPIC 寄存器
+fn ioapic_write_on(base: u64, reg: u32, value: u32) {
+    // SAFETY: 同上
     unsafe {
         core::ptr::write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
         core::ptr::write_volatile((base + IOWIN as u64) as *mut u32, value);
     }
 }
 
-fn ioapic_read_redirection(irq: u8) -> u64 {
-    let reg = IOREDTBL_BASE + (irq as u32) * 2;
-    let low = ioapic_read(reg);
-    let high = ioapic_read(reg + 1);
-    ((high as u64) << 32) | (low as u64)
-}
+// ============================================================================
+// 初始化
+// ============================================================================
 
-fn ioapic_write_redirection(irq: u8, value: u64) {
-    let reg = IOREDTBL_BASE + (irq as u32) * 2;
-    ioapic_write(reg, value as u32);
-    ioapic_write(reg + 1, (value >> 32) as u32);
-}
-
+/// 注册一个新的 IOAPIC 控制器
+///
+/// 每次从 ACPI MADT 枚举到 IOAPIC 时调用此函数.
+/// 多次调用会依次注册多个控制器.
 pub fn init(base_addr: u64) {
     let base = if base_addr == 0 {
         IOAPIC_BASE_DEFAULT
     } else {
         base_addr
     };
-    IOAPIC_BASE.store(base, Ordering::Release);
 
-    let ver = ioapic_read(IOAPIC_VER);
-    let max_irq = ((ver >> 16) & 0xFF) as u64 + 1;
-    IOAPIC_MAX_IRQ.store(max_irq, Ordering::Release);
+    let ver = ioapic_read_on(base, IOAPIC_VER);
+    let max_irq = ((ver >> 16) & 0xFF) as u8 + 1;
 
+    // 屏蔽所有重定向表条目
     for irq in 0..24u8 {
-        ioapic_write_redirection(irq, REDTBL_MASK | DELIVERY_FIXED | (irq as u64 + 32));
+        ioapic_write_on(
+            base,
+            IOREDTBL_BASE + (irq as u32) * 2,
+            (REDTBL_MASK | DELIVERY_FIXED | (irq as u64 + 32)) as u32,
+        );
     }
 
-    IOAPIC_INITIALIZED.store(true, Ordering::Release);
+    let idx = IOAPIC_COUNT.load(Ordering::Acquire) as usize;
+    if idx < MAX_IOAPICS {
+        let mut ioapics = IOAPICS.lock();
+        ioapics[idx] = Some(IoApicState {
+            base_addr: base,
+            max_irq,
+            initialized: true,
+        });
+        drop(ioapics);
+        IOAPIC_COUNT.store((idx + 1) as u32, Ordering::Release);
+    }
 }
 
+/// 是否至少有一个 IOAPIC 已初始化
 pub fn is_initialized() -> bool {
-    IOAPIC_INITIALIZED.load(Ordering::Acquire)
+    IOAPIC_COUNT.load(Ordering::Acquire) > 0
 }
 
+/// 返回所有已注册 IOAPIC 中最大的 max_irq 值
 pub fn get_max_irq() -> u8 {
-    IOAPIC_MAX_IRQ.load(Ordering::Acquire) as u8
+    let ioapics = IOAPICS.lock();
+    ioapics.iter().flatten().map(|s| s.max_irq).max().unwrap_or(0)
 }
 
+// ============================================================================
+// GSI-based API (多 IOAPIC 路由)
+// ============================================================================
+
+/// 按 GSI 设置 IRQ (自动路由到正确的 IOAPIC)
+pub fn set_irq_gsi(gsi: u32, vector: u8, apic_id: u8, masked: bool) {
+    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
+        set_irq_on(idx, local_irq, vector, apic_id, masked, DELIVERY_FIXED);
+    }
+}
+
+/// 按 IOAPIC 索引 + 本地 IRQ 设置
+pub fn set_irq_on(ioapic_idx: usize, local_irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
+    let ioapics = IOAPICS.lock();
+    if let Some(ref state) = ioapics[ioapic_idx] {
+        if !state.initialized {
+            return;
+        }
+        let mut entry = vector as u64 | mode | ((apic_id as u64) << 56);
+        if masked {
+            entry |= REDTBL_MASK;
+        }
+        ioapic_write_on(state.base_addr, IOREDTBL_BASE + (local_irq as u32) * 2, entry as u32);
+        ioapic_write_on(
+            state.base_addr,
+            IOREDTBL_BASE + (local_irq as u32) * 2 + 1,
+            (entry >> 32) as u32,
+        );
+    }
+}
+
+/// 按 GSI 屏蔽 IRQ
+pub fn mask_irq_gsi(gsi: u32) {
+    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
+        let ioapics = IOAPICS.lock();
+        if let Some(ref state) = ioapics[idx] {
+            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let val = ioapic_read_on(state.base_addr, reg);
+            ioapic_write_on(state.base_addr, reg, val | REDTBL_MASK as u32);
+        }
+    }
+}
+
+/// 按 GSI 取消屏蔽 IRQ
+pub fn unmask_irq_gsi(gsi: u32) {
+    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
+        let ioapics = IOAPICS.lock();
+        if let Some(ref state) = ioapics[idx] {
+            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let val = ioapic_read_on(state.base_addr, reg);
+            ioapic_write_on(state.base_addr, reg, val & !(REDTBL_MASK as u32));
+        }
+    }
+}
+
+/// 按 GSI 设置触发模式 (电平/边沿)
+pub fn set_irq_level_gsi(gsi: u32, level_triggered: bool) {
+    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
+        let ioapics = IOAPICS.lock();
+        if let Some(ref state) = ioapics[idx] {
+            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let val = ioapic_read_on(state.base_addr, reg);
+            if level_triggered {
+                ioapic_write_on(state.base_addr, reg, val | REDTBL_LEVEL as u32);
+            } else {
+                ioapic_write_on(state.base_addr, reg, val & !(REDTBL_LEVEL as u32));
+            }
+        }
+    }
+}
+
+/// 按 GSI 路由 IRQ 到指定 CPU
+pub fn route_irq_to_cpu_gsi(gsi: u32, apic_id: u8) {
+    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
+        let ioapics = IOAPICS.lock();
+        if let Some(ref state) = ioapics[idx] {
+            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let val = ioapic_read_on(state.base_addr, reg);
+            let new_val = (val & !(0xFFu32 << 24)) | ((apic_id as u32 & 0x0F) << 24);
+            ioapic_write_on(state.base_addr, reg, new_val);
+        }
+    }
+}
+
+// ============================================================================
+// 向后兼容 API (假设单 IOAPIC, GSI = IRQ)
+// ============================================================================
+
+/// 向后兼容: 按 IRQ 设置 (假设单 IOAPIC, GSI = IRQ)
 pub fn set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
-    set_irq_with_mode(irq, vector, apic_id, masked, DELIVERY_FIXED);
+    set_irq_gsi(irq as u32, vector, apic_id, masked);
 }
 
-/// 设置 IRQ 的投递模式、vector 和目标 APIC ID
-///
-/// # 参数
-/// - `irq`: IOAPIC IRQ 编号 (0-23)
-/// - `vector`: 中断向量号 (0x20-0xFF)
-/// - `apic_id`: 目标 Local APIC ID
-/// - `masked`: 是否屏蔽此 IRQ
-/// - `mode`: 投递模式 (DELIVERY_FIXED/SMI/NMI/EXTINT 等)
+/// 向后兼容: 按 IRQ 设置投递模式
 pub fn set_irq_with_mode(irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
-    if !is_initialized() {
-        return;
+    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(irq as u32) {
+        set_irq_on(idx, local_irq, vector, apic_id, masked, mode);
     }
-    let mut entry: u64 = vector as u64 | mode | ((apic_id as u64) << 56);
-    if masked {
-        entry |= REDTBL_MASK;
-    }
-    ioapic_write_redirection(irq, entry);
 }
 
+/// 向后兼容: 屏蔽 IRQ
 pub fn mask_irq(irq: u8) {
-    if !is_initialized() {
-        return;
-    }
-    let entry = ioapic_read_redirection(irq);
-    ioapic_write_redirection(irq, entry | REDTBL_MASK);
+    mask_irq_gsi(irq as u32);
 }
 
+/// 向后兼容: 取消屏蔽 IRQ
 pub fn unmask_irq(irq: u8) {
-    if !is_initialized() {
-        return;
-    }
-    let entry = ioapic_read_redirection(irq);
-    ioapic_write_redirection(irq, entry & !REDTBL_MASK);
+    unmask_irq_gsi(irq as u32);
 }
 
+/// 向后兼容: 设置触发模式
 pub fn set_irq_level(irq: u8, level_triggered: bool) {
-    if !is_initialized() {
-        return;
-    }
-    let entry = ioapic_read_redirection(irq);
-    if level_triggered {
-        ioapic_write_redirection(irq, entry | REDTBL_LEVEL);
-    } else {
-        ioapic_write_redirection(irq, entry & !REDTBL_LEVEL);
-    }
+    set_irq_level_gsi(irq as u32, level_triggered);
 }
 
+/// 向后兼容: 路由 IRQ 到 CPU
 pub fn route_irq_to_cpu(irq: u8, apic_id: u8) {
-    if !is_initialized() {
-        return;
-    }
-    let entry = ioapic_read_redirection(irq);
-    let new_entry = (entry & !(0xFFu64 << 56)) | ((apic_id as u64) << 56);
-    ioapic_write_redirection(irq, new_entry);
+    route_irq_to_cpu_gsi(irq as u32, apic_id);
 }
 
-/// 返回 Fixed 投递模式常量
-pub fn delivery_fixed() -> u64 { DELIVERY_FIXED }
-/// 返回 Lowest Priority 投递模式常量
-pub fn delivery_lowest() -> u64 { DELIVERY_LOWEST }
-/// 返回 SMI 投递模式常量
-pub fn delivery_smi() -> u64 { DELIVERY_SMI }
-/// 返回 NMI 投递模式常量
-pub fn delivery_nmi() -> u64 { DELIVERY_NMI }
-/// 返回 INIT 投递模式常量
-pub fn delivery_init() -> u64 { DELIVERY_INIT }
-/// 返回 ExtINT 投递模式常量 (8259A 兼容)
-pub fn delivery_extint() -> u64 { DELIVERY_EXTINT }
-
 // ============================================================================
-// IOAPIC ID / 仲裁 API (多 IOAPIC 支持)
+// IOAPIC ID / 仲裁 API
 // ============================================================================
 
-/// 读取当前 IOAPIC 的 ID (bit[24:27])
+/// 读取指定 IOAPIC 的 ID (bit[24:27])
 ///
 /// 多 IOAPIC 系统中, 每个 IOAPIC 有唯一 ID, 用于中断路由决策.
-/// 单 IOAPIC 系统中返回该唯一控制器的 ID.
-pub fn get_id() -> u8 {
-    if !is_initialized() { return 0; }
-    let val = ioapic_read(IOAPIC_ID);
-    ((val >> 24) & 0x0F) as u8
+pub fn get_id_on(ioapic_idx: usize) -> u8 {
+    let ioapics = IOAPICS.lock();
+    if let Some(ref state) = ioapics[ioapic_idx] {
+        let val = ioapic_read_on(state.base_addr, IOAPIC_ID);
+        ((val >> 24) & 0x0F) as u8
+    } else {
+        0
+    }
 }
 
-/// 设置当前 IOAPIC 的 ID (bit[24:27])
+/// 设置指定 IOAPIC 的 ID (bit[24:27])
 ///
 /// # Safety
 ///
 /// 多 IOAPIC 系统中, ID 冲突会导致中断路由错误.
 /// 仅在 MADT 枚举阶段由初始化代码调用.
-pub fn set_id(id: u8) {
-    if !is_initialized() { return; }
-    let val = ioapic_read(IOAPIC_ID);
-    let new_val = (val & !(0x0F << 24)) | ((id as u32 & 0x0F) << 24);
-    ioapic_write(IOAPIC_ID, new_val);
+pub fn set_id_on(ioapic_idx: usize, id: u8) {
+    let ioapics = IOAPICS.lock();
+    if let Some(ref state) = ioapics[ioapic_idx] {
+        let val = ioapic_read_on(state.base_addr, IOAPIC_ID);
+        let new_val = (val & !(0x0F << 24)) | ((id as u32 & 0x0F) << 24);
+        ioapic_write_on(state.base_addr, IOAPIC_ID, new_val);
+    }
 }
 
-/// 读取当前 IOAPIC 的仲裁 ID (只读, bit[24:27])
-///
-/// 仲裁 ID 由硬件固定, 用于多 IOAPIC 中断分配时的优先级仲裁.
-pub fn get_arbitration_id() -> u8 {
-    if !is_initialized() { return 0; }
-    let val = ioapic_read(IOAPIC_ARB);
-    ((val >> 24) & 0x0F) as u8
+/// 读取指定 IOAPIC 的仲裁 ID (只读, bit[24:27])
+pub fn get_arbitration_id_on(ioapic_idx: usize) -> u8 {
+    let ioapics = IOAPICS.lock();
+    if let Some(ref state) = ioapics[ioapic_idx] {
+        let val = ioapic_read_on(state.base_addr, IOAPIC_ARB);
+        ((val >> 24) & 0x0F) as u8
+    } else {
+        0
+    }
 }
+
+/// 向后兼容: 读取第一个 IOAPIC 的 ID
+pub fn get_id() -> u8 {
+    get_id_on(0)
+}
+
+/// 向后兼容: 设置第一个 IOAPIC 的 ID
+pub fn set_id(id: u8) {
+    set_id_on(0, id);
+}
+
+/// 向后兼容: 读取第一个 IOAPIC 的仲裁 ID
+pub fn get_arbitration_id() -> u8 {
+    get_arbitration_id_on(0)
+}
+
+// ============================================================================
+// 投递模式常量
+// ============================================================================
+
+/// 返回 Fixed 投递模式常量
+pub fn delivery_fixed() -> u64 {
+    DELIVERY_FIXED
+}
+/// 返回 Lowest Priority 投递模式常量
+pub fn delivery_lowest() -> u64 {
+    DELIVERY_LOWEST
+}
+/// 返回 SMI 投递模式常量
+pub fn delivery_smi() -> u64 {
+    DELIVERY_SMI
+}
+/// 返回 NMI 投递模式常量
+pub fn delivery_nmi() -> u64 {
+    DELIVERY_NMI
+}
+/// 返回 INIT 投递模式常量
+pub fn delivery_init() -> u64 {
+    DELIVERY_INIT
+}
+/// 返回 ExtINT 投递模式常量 (8259A 兼容)
+pub fn delivery_extint() -> u64 {
+    DELIVERY_EXTINT
+}
+
+// ============================================================================
+// extern "C" FFI 包装 (保持不变)
+// ============================================================================
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_init(base_addr: u64) {
