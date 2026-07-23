@@ -41,8 +41,6 @@ const _MADT_TYPE_NMI: u8 = 0x04;
 
 static MADT_BASE: AtomicU64 = AtomicU64::new(0);
 static MADT_FOUND: AtomicBool = AtomicBool::new(false);
-static IOAPIC_ADDR: AtomicU64 = AtomicU64::new(0);
-static IOAPIC_GSIB: AtomicU32 = AtomicU32::new(0);
 
 /// 发现的 AP LAPIC 信息
 #[derive(Debug, Clone, Copy)]
@@ -51,6 +49,25 @@ pub struct ApInfo {
     pub apic_id: u32,
     pub enabled: bool,
 }
+
+/// 单个 IOAPIC 控制器的描述信息
+#[derive(Debug, Clone, Copy)]
+pub struct IoApicInfo {
+    /// IOAPIC 硬件 ID (MADT 中的 io_apic_id)
+    pub id: u8,
+    /// MMIO 基址 (从 MADT 解析)
+    pub base_addr: u64,
+    /// 全局系统中断基址 (GSI base)
+    pub gsi_base: u32,
+    /// 最大 IRQ 数 (从 IOAPICVER 寄存器读取, 初始化时填充)
+    pub max_irq: u8,
+}
+
+/// 所有 IOAPIC 控制器 (启动期由 ACPI MADT 填充)
+static IOAPICS: IrqSpinLock<[Option<IoApicInfo>; MAX_IOAPICS]> =
+    IrqSpinLock::new([None; MAX_IOAPICS]);
+static IOAPIC_COUNT: AtomicU32 = AtomicU32::new(0);
+const MAX_IOAPICS: usize = 8;
 
 static AP_LIST: IrqSpinLock<[Option<ApInfo>; MAX_CPUS]> =
     IrqSpinLock::new([None; MAX_CPUS]);
@@ -356,8 +373,17 @@ fn parse_madt_entries(madt_ptr: u64) {
                 }
                 // SAFETY: `offset` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(MadtIoApic)); 只读访问
                 let ioapic = unsafe { &*(offset as *const MadtIoApic) };
-                IOAPIC_ADDR.store(ioapic.io_apic_addr as u64, Ordering::Release);
-                IOAPIC_GSIB.store(ioapic.global_sys_int_base, Ordering::Release);
+                let idx = IOAPIC_COUNT.load(Ordering::Acquire) as usize;
+                if idx < MAX_IOAPICS {
+                    let info = IoApicInfo {
+                        id: ioapic.io_apic_id,
+                        base_addr: ioapic.io_apic_addr as u64,
+                        gsi_base: ioapic.global_sys_int_base,
+                        max_irq: 0, // 初始化时填充
+                    };
+                    IOAPICS.lock()[idx] = Some(info);
+                    IOAPIC_COUNT.store((idx + 1) as u32, Ordering::Release);
+                }
             }
             _ => {}
         }
@@ -396,11 +422,36 @@ pub fn has_madt() -> bool {
 }
 
 pub fn get_ioapic_addr() -> u64 {
-    IOAPIC_ADDR.load(Ordering::Acquire)
+    let ioapics = IOAPICS.lock();
+    ioapics.iter().flatten().next().map(|i| i.base_addr).unwrap_or(0)
 }
 
 pub fn get_ioapic_gsib() -> u32 {
-    IOAPIC_GSIB.load(Ordering::Acquire)
+    let ioapics = IOAPICS.lock();
+    ioapics.iter().flatten().next().map(|i| i.gsi_base).unwrap_or(0)
+}
+
+/// 获取所有 IOAPIC 信息
+pub fn get_ioapics() -> [Option<IoApicInfo>; MAX_IOAPICS] {
+    *IOAPICS.lock()
+}
+
+/// 获取 IOAPIC 数量
+pub fn get_ioapic_count() -> u32 {
+    IOAPIC_COUNT.load(Ordering::Acquire)
+}
+
+/// GSI → IOAPIC 路由: 返回 (ioapic_index, local_irq)
+pub fn gsi_to_ioapic(gsi: u32) -> Option<(usize, u8)> {
+    let ioapics = IOAPICS.lock();
+    for (i, ioapic) in ioapics.iter().enumerate() {
+        if let Some(info) = ioapic {
+            if gsi >= info.gsi_base && gsi < info.gsi_base + info.max_irq as u32 {
+                return Some((i, (gsi - info.gsi_base) as u8));
+            }
+        }
+    }
+    None
 }
 
 pub fn get_lapic_base() -> u64 {
