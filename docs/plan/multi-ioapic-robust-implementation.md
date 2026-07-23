@@ -1,5 +1,10 @@
 # 多 IOAPIC 稳健实现计划
 
+> **实施状态**: ✅ 已完成 (2026-07-22)
+> **变更摘要**: 3 个 commit, ~200 行变更
+> **验证结果**: clippy 0 warning, 双架构编译通过, 审计全 PASS (boundary/safety/deadlock/coupling/invariants), host-tests PASS
+> **关联 commit**: 6756cdf5 (ACPI MADT), ed0a356a (IOAPIC driver), aab40532 (IDT + services)
+
 > **目标**: 将 IOAPIC 驱动从单例模式重构为支持多 IOAPIC 控制器的稳健实现
 >
 > **前置条件**: MSI/MSI-X 中断基础设施已完成 (docs/plan/archive/2026-07-21-hardware-compatibility-tasks.md)
@@ -144,7 +149,7 @@ pub fn unmask_irq_on(ioapic_idx: usize, local_irq: u8)
 
 ## 四、实施任务
 
-### Task 1: ACPI MADT 解析重构
+### Task 1: ACPI MADT 解析重构 **状态: [X]** (commit 6756cdf5)
 
 **文件**: `framework/arch/x86_64/acpi.rs`
 
@@ -159,7 +164,7 @@ pub fn unmask_irq_on(ioapic_idx: usize, local_irq: u8)
 
 ---
 
-### Task 2: IOAPIC 驱动重构
+### Task 2: IOAPIC 驱动重构 **状态: [X]** (commit ed0a356a)
 
 **文件**: `framework/arch/x86_64/ioapic.rs`
 
@@ -174,7 +179,7 @@ pub fn unmask_irq_on(ioapic_idx: usize, local_irq: u8)
 
 ---
 
-### Task 3: IrqLine 适配
+### Task 3: IrqLine 适配 **状态: [X]** (commit aab40532)
 
 **文件**: `framework/irqline.rs`
 
@@ -187,7 +192,7 @@ pub fn unmask_irq_on(ioapic_idx: usize, local_irq: u8)
 
 ---
 
-### Task 4: IDT 管理器适配
+### Task 4: IDT 管理器适配 **状态: [X]** (commit aab40532)
 
 **文件**: `framework/idt/idt.rs`
 
@@ -200,7 +205,7 @@ pub fn unmask_irq_on(ioapic_idx: usize, local_irq: u8)
 
 ---
 
-### Task 5: Services 层适配
+### Task 5: Services 层适配 **状态: [X]** (commit aab40532)
 
 **文件**: `services/driver/acpi.rs`
 
@@ -212,7 +217,7 @@ pub fn unmask_irq_on(ioapic_idx: usize, local_irq: u8)
 
 ---
 
-### Task 6: 全量验证
+### Task 6: 全量验证 **状态: [X]** (2026-07-22, clippy 0W / 双架构 / 5 审计 PASS / host-tests PASS)
 
 **Steps**:
 1. 双架构编译 0 warning 0 error
