@@ -52,6 +52,8 @@ pub mod time_sync;
 pub mod kexec;
 /// D11: UEFI 安全封装
 pub mod uefi;
+/// 显示子系统 (DDC + HDMI) 安全封装
+pub mod display;
 
 // ============================================================================
 // T-04: 中断处理决策策略
