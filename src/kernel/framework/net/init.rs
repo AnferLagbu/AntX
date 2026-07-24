@@ -106,6 +106,7 @@ impl NetState {
 }
 
 /// 全局网络状态, IrqSpinLock 保护 (替代原 NET_LOCK + 12 static mut).
+/// poll_network 使用 try_lock() 避免 ISR 上下文阻塞.
 static NET_STATE: Mutex<NetState> = Mutex::new(NetState::new());
 
 // 以下 static mut 保留: SOCKET_STORAGE/SOCKET_SET 是自引用结构,
