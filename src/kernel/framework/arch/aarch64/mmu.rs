@@ -37,13 +37,34 @@ const L2_BLOCK_SIZE: u64 = 0x200000; // 2MB (L2 block at 4KB granule)
 pub struct AlignedPageTable([u64; 512]);
 
 /// L0 页表 (512 entries × 8 bytes = 4KB)
+///
+/// # Safety 不变量
+///
+/// - **写入时机**: 仅在 `init()` 函数中写入 (启动最早期, MMU 启用前)
+/// - **运行时**: MMU 启用后硬件直接使用, 软件不可写入
+/// - **并发**: 写入时系统单线程 (AP 未启动), 无竞争
+/// - **对齐**: 4KB 对齐 (ARM MMU 硬件要求)
 static mut L0_TABLE: AlignedPageTable = AlignedPageTable([0; 512]);
 
 /// L1 页表 (512 entries × 8 bytes = 4KB), 覆盖 0-2GB (L1 块描述符, 每项 1GB)
+///
+/// # Safety 不变量
+///
+/// - **写入时机**: 仅在 `init()` 函数中写入 (启动最早期, MMU 启用前)
+/// - **运行时**: MMU 启用后硬件直接使用, 软件不可写入
+/// - **并发**: 写入时系统单线程 (AP 未启动), 无竞争
+/// - **对齐**: 4KB 对齐 (ARM MMU 硬件要求)
 static mut L1_IDMAP: AlignedPageTable = AlignedPageTable([0; 512]);
 
 /// L2 页表 (512 entries × 8 bytes = 4KB), 覆盖 0-1GB (L2 块描述符, 每项 2MB)
 /// 用于以 Device memory 属性映射 GIC/UART 等 MMIO 区域
+///
+/// # Safety 不变量
+///
+/// - **写入时机**: 仅在 `init()` 函数中写入 (启动最早期, MMU 启用前)
+/// - **运行时**: MMU 启用后硬件直接使用, 软件不可写入
+/// - **并发**: 写入时系统单线程 (AP 未启动), 无竞争
+/// - **对齐**: 4KB 对齐 (ARM MMU 硬件要求)
 static mut L2_DEVICE: AlignedPageTable = AlignedPageTable([0; 512]);
 
 // ============================================================================
@@ -51,9 +72,23 @@ static mut L2_DEVICE: AlignedPageTable = AlignedPageTable([0; 512]);
 // ============================================================================
 
 /// TTBR1 内核 L0 页表 (独立于 identity mapping)
+///
+/// # Safety 不变量
+///
+/// - **写入时机**: 仅在 `init()` 函数中写入 (启动最早期, MMU 启用前)
+/// - **运行时**: MMU 启用后硬件直接使用, 软件不可写入
+/// - **并发**: 写入时系统单线程 (AP 未启动), 无竞争
+/// - **对齐**: 4KB 对齐 (ARM MMU 硬件要求)
 static mut TTBR1_L0: AlignedPageTable = AlignedPageTable([0; 512]);
 
 /// TTBR1 内核 L1 页表 (覆盖 0xFFFF_0000_0000_0000 - 0xFFFF_0000_8000_0000, 2GB)
+///
+/// # Safety 不变量
+///
+/// - **写入时机**: 仅在 `init()` 函数中写入 (启动最早期, MMU 启用前)
+/// - **运行时**: MMU 启用后硬件直接使用, 软件不可写入
+/// - **并发**: 写入时系统单线程 (AP 未启动), 无竞争
+/// - **对齐**: 4KB 对齐 (ARM MMU 硬件要求)
 static mut TTBR1_L1: AlignedPageTable = AlignedPageTable([0; 512]);
 
 /// 初始化 identity mapping (覆盖 0-2GB) 并启用 MMU。

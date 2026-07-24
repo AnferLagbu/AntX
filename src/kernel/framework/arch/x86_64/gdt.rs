@@ -345,6 +345,14 @@ impl PerCpuGdt {
 // 全局状态 (Per-CPU)
 // ============================================================================
 
+/// Per-CPU GDT 存储
+///
+/// # Safety 不变量
+///
+/// - **写入时机**: SMP init 阶段, 每个 AP CPU 写入自己的槽位
+/// - **运行时**: 各 CPU 只读访问自己的 GDT
+/// - **并发**: 写入时 AP 串行启动 (SIPI 序列), 运行时各 CPU 独占自己的槽位
+/// - **索引**: `cpu_id % PER_CPU_MAX` 保证不越界
 static mut PER_CPU_GDT: [core::mem::MaybeUninit<PerCpuGdt>; PER_CPU_MAX] =
     [const { core::mem::MaybeUninit::new(PerCpuGdt::new()) }; PER_CPU_MAX];
 

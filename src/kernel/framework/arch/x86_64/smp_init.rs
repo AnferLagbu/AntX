@@ -45,6 +45,14 @@ struct ApPerCpu {
     stack: [u8; AP_STACK_SIZE],
 }
 
+/// AP (Application Processor) per-CPU 数据
+///
+/// # Safety 不变量
+///
+/// - **写入时机**: SMP init, 每个 AP 写入自己的槽位
+/// - **运行时**: 各 CPU 读取自己的数据
+/// - **并发**: 写入时 AP 串行启动 (通过 SIPI 序列)
+/// - **释放**: 无主动释放, 随系统生命周期存在
 static mut AP_PER_CPU: [Option<*mut ApPerCpu>; super::acpi::MAX_CPUS] =
     [None; super::acpi::MAX_CPUS];
 
