@@ -87,8 +87,9 @@ impl IrqLine {
 const MAX_ISR_VECTORS: usize = 256;
 
 /// 全局 ISR 函数指针表, 由 idt handlers 分发调用。
-/// 初始化时单线程写入, 运行时只读 → 无锁安全。
-static mut ISR_TABLE: [Option<InterruptHandler>; MAX_ISR_VECTORS] = [None; MAX_ISR_VECTORS];
+/// 使用 IrqSpinLock 保护, 中断安全 (dispatch_irq 在中断上下文调用).
+static ISR_TABLE: crate::kernel::framework::sync::IrqSpinLock<[Option<InterruptHandler>; MAX_ISR_VECTORS]> =
+    crate::kernel::framework::sync::IrqSpinLock::new([None; MAX_ISR_VECTORS]);
 
 /// 注册中断向量对应的 ISR 处理器。
 ///
@@ -99,12 +100,10 @@ static mut ISR_TABLE: [Option<InterruptHandler>; MAX_ISR_VECTORS] = [None; MAX_I
 /// 3. `handler` 必须是 `'static` 生命周期的合法函数指针, 可被中断上下文调用
 ///    (不持有任何 Rust 锁, 不分配, 不睡眠)
 unsafe fn register_isr(vector: u8, handler: InterruptHandler) {
-    // SAFETY: 单线程初始化上下文, 无竞争。
     let idx = vector as usize;
     if idx < MAX_ISR_VECTORS {
-        // SAFETY: 启动阶段单线程, ISR_TABLE 全局表只被本函数写, 后续只读。
-        // idx 已通过 `idx < MAX_ISR_VECTORS` 边界检查, 不会越界写入。
-        unsafe { ISR_TABLE[idx] = Some(handler); }
+        let mut table = ISR_TABLE.lock();
+        table[idx] = Some(handler);
     }
 }
 
@@ -112,8 +111,8 @@ unsafe fn register_isr(vector: u8, handler: InterruptHandler) {
 pub fn dispatch_irq(vector: u8) -> bool {
     let idx = vector as usize;
     if idx < MAX_ISR_VECTORS {
-        // SAFETY: ISR_TABLE 运行时只读, 中断上下文无竞争。
-        if let Some(handler) = unsafe { ISR_TABLE[idx] } {
+        let table = ISR_TABLE.lock();
+        if let Some(handler) = table[idx] {
             return handler();
         }
     }

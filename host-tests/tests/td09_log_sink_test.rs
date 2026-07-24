@@ -48,7 +48,11 @@ fn test_sink_registry_caps_at_4() {
     let src = read(KLOG);
     assert!(src.contains("pub const MAX_LOG_SINKS: usize = 4"), "容量必须为 4");
     assert!(src.contains("static LOG_SINK_COUNT: AtomicU8"), "必须有计数");
-    assert!(src.contains("static mut LOG_SINKS: [SinkPtr"), "必须有 SinkPtr 注册表");
+    // 新模式: LOG_SINKS 使用 IrqSpinLock 包装 SinkPtr 数组
+    assert!(
+        src.contains("static LOG_SINKS: crate::kernel::framework::sync::IrqSpinLock<[SinkPtr"),
+        "必须有 IrqSpinLock 包装的 SinkPtr 注册表"
+    );
 }
 
 #[test]

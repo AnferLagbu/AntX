@@ -1045,14 +1045,12 @@ unsafe impl Send for MmStruct {}
 // SAFETY: 同上, 原子操作与锁保证并发安全.
 unsafe impl Sync for MmStruct {}
 
-static mut CURRENT_MM: *const MmStruct = core::ptr::null();
+static CURRENT_MM: core::sync::atomic::AtomicPtr<MmStruct> = core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
 
 pub fn set_current_mm(mm: *const MmStruct) {
     // SAFETY: CURRENT_MM 是当前 CPU 的 per-CPU 状态指针，
     // 仅在进程切换时由调度器写入，调用者保证无并发写入。
-    unsafe {
-        CURRENT_MM = mm;
-    }
+    CURRENT_MM.store(mm as *mut MmStruct, core::sync::atomic::Ordering::Release);
 }
 
 pub fn get_current_mm() -> Option<&'static MmStruct> {
@@ -1060,12 +1058,12 @@ pub fn get_current_mm() -> Option<&'static MmStruct> {
     // 要么为 null，要么指向有效的 MmStruct。
     // 返回 &'static 引用是安全的，因为 MmStruct 生命周期
     // 与进程一致，进程存在期间指针有效。
-    unsafe {
-        if CURRENT_MM.is_null() {
-            None
-        } else {
-            Some(&*CURRENT_MM)
-        }
+    let ptr = CURRENT_MM.load(core::sync::atomic::Ordering::Acquire);
+    if ptr.is_null() {
+        None
+    } else {
+        // SAFETY: ptr 由 set_current_mm 写入，保证为有效 MmStruct 指针
+        Some(unsafe { &*ptr })
     }
 }
 

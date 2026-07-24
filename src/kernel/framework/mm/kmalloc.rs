@@ -312,6 +312,10 @@ pub struct KernelHeap {
     failed_allocs: AtomicU64,
 }
 
+// SAFETY: KernelHeap 的 UnsafeCell/裸指针 在内核生命周期内有效;
+//         所有访问由 IrqSpinLock + 内部原子锁保护.
+unsafe impl Send for KernelHeap {}
+
 const EARLY_BUFFER_SIZE: usize = PAGE_SIZE as usize;
 
 impl KernelHeap {
@@ -897,26 +901,18 @@ pub struct HeapStats {
 }
 
 // 全局 Kmalloc 实例
-static mut GLOBAL_KMALLOC: KernelHeap = KernelHeap::new();
+static GLOBAL_KMALLOC: crate::kernel::framework::sync::IrqSpinLock<KernelHeap> =
+    crate::kernel::framework::sync::IrqSpinLock::new(KernelHeap::new());
 
-/// 获取全局 Kmalloc 实例的引用
-///
-/// # Safety
-/// GLOBAL_KMALLOC 是通过 `KernelHeap::new()` (const) 初始化的 static.
-/// 读取 static 引用始终是安全的.
-pub fn get_kmalloc() -> &'static KernelHeap {
-    // SAFETY: GLOBAL_KMALLOC 是 static; 引用在程序整个生命周期内有效,
-    // 共享访问不存在别名问题.
-    unsafe { &GLOBAL_KMALLOC }
+/// 获取全局 Kmalloc 实例的锁 guard
+pub fn get_kmalloc() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, KernelHeap> {
+    GLOBAL_KMALLOC.lock()
 }
 
-/// 获取全局 Kmalloc 实例的可变引用 (用于初始化)
-///
-/// # Safety
-/// 仅在内核初始化期间调用
-pub unsafe fn get_kmalloc_mut() -> &'static mut KernelHeap { unsafe {
-    &mut GLOBAL_KMALLOC
-}}
+/// 获取全局 Kmalloc 实例的可变 guard (用于初始化)
+pub fn get_kmalloc_mut() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, KernelHeap> {
+    GLOBAL_KMALLOC.lock()
+}
 
 // ==================== 辅助函数 ====================
 

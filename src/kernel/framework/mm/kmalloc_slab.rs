@@ -18,22 +18,19 @@ use super::slab::KmemCache;
 use core::sync::atomic::{AtomicBool, Ordering};
 use crate::klog_error;
 use crate::klog_info_simple;
-// P1-I-28 修复: slab 自旋锁在中断上下文会死锁, 仿 pmm.rs 模式 disable/restore IRQ.
-use crate::kernel::framework::sync::{
-    disable_interrupts, restore_interrupts, IrqSaveFlags,
-};
 
 const CACHE_SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
 
 /// Slab 缓存数组 - 用 Option 安全处理初始化失败
 /// None 表示缓存创建失败, 不应使用
-static mut SLAB_CACHES: [Option<KmemCache>; 8] = [None, None, None, None, None, None, None, None];
-static SLAB_LOCK: AtomicBool = AtomicBool::new(false);
+static SLAB_CACHES: crate::kernel::framework::sync::IrqSpinLock<[Option<KmemCache>; 8]> =
+    crate::kernel::framework::sync::IrqSpinLock::new([None, None, None, None, None, None, None, None]);
 static SLAB_READY: AtomicBool = AtomicBool::new(false);
 
 pub fn slab_init() {
     let mut success_count = 0;
-    
+    let mut caches = SLAB_CACHES.lock();
+
     for i in 0..8 {
         let name = match i {
             0 => "kmalloc-16",
@@ -45,11 +42,10 @@ pub fn slab_init() {
             6 => "kmalloc-1024",
             _ => "kmalloc-2048",
         };
-        
+
         match KmemCache::create(name, CACHE_SIZES[i]) {
             Ok(cache) => {
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                unsafe { SLAB_CACHES[i] = Some(cache); }
+                caches[i] = Some(cache);
                 success_count += 1;
             }
             Err(_) => {
@@ -59,11 +55,11 @@ pub fn slab_init() {
                     name,
                     CACHE_SIZES[i]
                 );
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                unsafe { SLAB_CACHES[i] = None; }
+                caches[i] = None;
             }
         }
     }
+    drop(caches);
     
     if success_count == 0 {
         klog_error!("[SLAB] CRITICAL: All slab caches failed to initialize!");
@@ -82,43 +78,20 @@ fn cache_index(size: usize) -> Option<usize> {
     super::slab_trait::current_slab_policy().find_cache_index(size, &super::slab::GENERAL_CACHE_SIZES)
 }
 
-#[inline(always)]
-fn slab_lock() -> IrqSaveFlags {
-    let flags = disable_interrupts();
-    while SLAB_LOCK
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        core::hint::spin_loop();
-    }
-    flags
-}
-
-#[inline(always)]
-fn slab_unlock(flags: &IrqSaveFlags) {
-    SLAB_LOCK.store(false, Ordering::Release);
-    restore_interrupts(flags);
-}
-
 pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
     if size == 0 || !SLAB_READY.load(Ordering::Acquire) {
         return super::kmalloc::get_kmalloc().allocate(size);
     }
 
     if let Some(idx) = cache_index(size) {
-        let flags = slab_lock();
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        let result = unsafe {
-            match &mut SLAB_CACHES[idx] {
-                Some(cache) => cache.allocate(),
-                None => {
-                    // 缓存创建失败, 回退到堆分配器
-                    super::kmalloc::get_kmalloc().allocate(size)
-                }
+        let mut caches = SLAB_CACHES.lock();
+        match caches[idx] {
+            Some(ref mut cache) => cache.allocate(),
+            None => {
+                drop(caches);
+                super::kmalloc::get_kmalloc().allocate(size)
             }
-        };
-        slab_unlock(&flags);
-        result
+        }
     } else {
         super::kmalloc::get_kmalloc().allocate(size)
     }
@@ -135,18 +108,14 @@ pub fn slab_kfree(ptr: *mut u8, size: usize) {
     }
 
     if let Some(idx) = cache_index(size) {
-        let flags = slab_lock();
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            match &mut SLAB_CACHES[idx] {
-                Some(cache) => cache.deallocate(ptr),
-                None => {
-                    // 缓存创建失败, 使用堆释放器
-                    super::kmalloc::get_kmalloc().deallocate(ptr);
-                }
+        let mut caches = SLAB_CACHES.lock();
+        match caches[idx] {
+            Some(ref mut cache) => cache.deallocate(ptr),
+            None => {
+                drop(caches);
+                super::kmalloc::get_kmalloc().deallocate(ptr);
             }
         }
-        slab_unlock(&flags);
     } else {
         super::kmalloc::get_kmalloc().deallocate(ptr);
     }

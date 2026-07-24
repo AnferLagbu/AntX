@@ -274,7 +274,12 @@ const fn null_sink_ptr() -> SinkPtr { SinkPtr { raw: 0 } }
 const fn make_null_sinks() -> [SinkPtr; MAX_LOG_SINKS] {
     [null_sink_ptr(), null_sink_ptr(), null_sink_ptr(), null_sink_ptr()]
 }
-static mut LOG_SINKS: [SinkPtr; MAX_LOG_SINKS] = make_null_sinks();
+// SAFETY: SinkPtr 的 raw/fat 共享存储, 注册时写入 fat 有效; 日志路径由调用方序列化.
+unsafe impl Send for SinkPtr {}
+// SAFETY: 同上, 日志路径由调用方序列化, 跨线程访问安全.
+unsafe impl Sync for SinkPtr {}
+static LOG_SINKS: crate::kernel::framework::sync::IrqSpinLock<[SinkPtr; MAX_LOG_SINKS]> =
+    crate::kernel::framework::sync::IrqSpinLock::new(make_null_sinks());
 static LOG_SINK_COUNT: AtomicU8 = AtomicU8::new(0);
 
 /// 注册 sink, 失败返回 `None` (已满).
@@ -286,11 +291,10 @@ pub unsafe fn klog_register_sink(sink: &'static dyn LogSink) -> Option<usize> {
     if idx >= MAX_LOG_SINKS {
         return None;
     }
-    // SAFETY: 独占注册路径, 容量未越界; SinkPtr 与 usize 布局一致.
     let ptr = sink as *const dyn LogSink;
-    unsafe {
-        LOG_SINKS[idx] = SinkPtr { fat: ptr };
-    }
+    let mut sinks = LOG_SINKS.lock();
+    sinks[idx] = SinkPtr { fat: ptr };
+    drop(sinks);
     LOG_SINK_COUNT.store((idx + 1) as u8, Ordering::SeqCst);
     Some(idx)
 }
@@ -305,8 +309,9 @@ pub fn klog_sink_count() -> usize {
 /// # Safety
 /// 调用方必须保证 `idx < klog_sink_count()` 且 sink 仍 `'static` 有效.
 pub unsafe fn klog_sink_at(idx: usize) -> Option<&'static dyn LogSink> {
-    // SAFETY: 调用方保证 idx 有效.
-    let entry = unsafe { LOG_SINKS[idx] };
+    let sinks = LOG_SINKS.lock();
+    let entry = sinks[idx];
+    drop(sinks);
     // SAFETY: SinkPtr 是 union, raw/fat 共享存储, 注册时写入 fat 有效.
     let fat = unsafe { entry.fat };
     if fat.is_null() {

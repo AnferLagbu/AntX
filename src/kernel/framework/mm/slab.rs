@@ -281,6 +281,10 @@ pub struct KmemCache {
     cache_misses: u64,
 }
 
+// SAFETY: KmemCache 的裸指针 (slabs_full/partial/free) 指向 PMM 分配的页面,
+//         在内核生命周期内始终有效; 所有访问由外部锁 (IrqSpinLock) 保护.
+unsafe impl Send for KmemCache {}
+
 impl KmemCache {
     /// 创建新的缓存
     ///
@@ -811,11 +815,11 @@ impl CacheStats {
 // ============================================================================
 
 /// 通用缓存数组 (预定义 8 个大小的缓存)
-static mut GENERAL_CACHES: [Option<KmemCache>; SLAB_GENERAL_CACHE_NUM] =
-    [const { None }; SLAB_GENERAL_CACHE_NUM];
+static GENERAL_CACHES: crate::kernel::framework::sync::IrqSpinLock<[Option<KmemCache>; SLAB_GENERAL_CACHE_NUM]> =
+    crate::kernel::framework::sync::IrqSpinLock::new([const { None }; SLAB_GENERAL_CACHE_NUM]);
 
 /// 系统是否已初始化
-static mut SLAB_INITIALIZED: bool = false;
+static SLAB_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// 初始化 Slab 系统 (创建通用缓存池)
 ///
@@ -824,15 +828,14 @@ static mut SLAB_INITIALIZED: bool = false;
 pub extern "C" fn slab_system_init() -> i32 {
     klog_slab!("[SLAB] Initializing Slab allocator...");
 
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        for (i, &cache_size) in GENERAL_CACHE_SIZES.iter().enumerate() {
-            if let Ok(cache) = KmemCache::create("", cache_size) {
-                GENERAL_CACHES[i] = Some(cache);
-            }
+    let mut caches = GENERAL_CACHES.lock();
+    for (i, &cache_size) in GENERAL_CACHE_SIZES.iter().enumerate() {
+        if let Ok(cache) = KmemCache::create("", cache_size) {
+            caches[i] = Some(cache);
         }
-        SLAB_INITIALIZED = true;
     }
+    drop(caches);
+    SLAB_INITIALIZED.store(true, core::sync::atomic::Ordering::Release);
 
     klog_slab!("[SLAB] System initialized with 8 general caches");
     0
@@ -863,23 +866,20 @@ pub struct SlabCacheSnapshot {
 /// `out` 由调用方提供, 最大写入 `out.len()` 项. 返回实际写入数.
 pub(crate) fn get_all_cache_snapshots(out: &mut [SlabCacheSnapshot]) -> usize {
     let mut count = 0usize;
-    // SAFETY: GENERAL_CACHES 在 slab_system_init 后不再重新分配;
-    // get_stats 仅遍历链表计数, 不修改缓存状态; 单核启动期初始化后只读
-    unsafe {
-        for cache_opt in GENERAL_CACHES.iter() {
-            if count >= out.len() {
-                break;
-            }
-            if let Some(cache) = cache_opt {
-                let stats = cache.get_stats();
-                out[count] = SlabCacheSnapshot {
-                    object_size: cache.object_size as u32,
-                    total_objects: stats.total_objects,
-                    active_objects: stats.active_objects,
-                    total_slabs: stats.total_slabs,
-                };
-                count += 1;
-            }
+    let caches = GENERAL_CACHES.lock();
+    for cache_opt in caches.iter() {
+        if count >= out.len() {
+            break;
+        }
+        if let Some(cache) = cache_opt {
+            let stats = cache.get_stats();
+            out[count] = SlabCacheSnapshot {
+                object_size: cache.object_size as u32,
+                total_objects: stats.total_objects,
+                active_objects: stats.active_objects,
+                total_slabs: stats.total_slabs,
+            };
+            count += 1;
         }
     }
     count
@@ -901,15 +901,14 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
         return core::ptr::null_mut();
     }
 
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    if !unsafe { SLAB_INITIALIZED } {
+    if !SLAB_INITIALIZED.load(core::sync::atomic::Ordering::Acquire) {
         return core::ptr::null_mut();
     }
 
     match find_general_cache_index(size) {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        Some(idx) => unsafe {
-            if let Some(ref mut cache) = GENERAL_CACHES[idx] {
+        Some(idx) => {
+            let mut caches = GENERAL_CACHES.lock();
+            if let Some(ref mut cache) = caches[idx] {
                 match cache.allocate() {
                     Some(ptr) => ptr,
                     None => core::ptr::null_mut(),
@@ -917,7 +916,7 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
             } else {
                 core::ptr::null_mut()
             }
-        },
+        }
         None => core::ptr::null_mut(),
     }
 }
@@ -927,20 +926,16 @@ pub extern "C" fn slab_free(ptr: *mut u8) {
     if ptr.is_null() {
         return;
     }
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    if !unsafe { SLAB_INITIALIZED } {
+    if !SLAB_INITIALIZED.load(core::sync::atomic::Ordering::Acquire) {
         return;
     }
-
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        for i in 0..GENERAL_CACHE_SIZES.len() {
-            if let Some(ref mut cache) = GENERAL_CACHES[i] {
-                let slab = cache.find_object_slab(ptr);
-                if !slab.is_null() {
-                    cache.deallocate(ptr);
-                    return;
-                }
+    let mut caches = GENERAL_CACHES.lock();
+    for i in 0..GENERAL_CACHE_SIZES.len() {
+        if let Some(ref mut cache) = caches[i] {
+            let slab = cache.find_object_slab(ptr);
+            if !slab.is_null() {
+                cache.deallocate(ptr);
+                return;
             }
         }
     }
@@ -957,20 +952,21 @@ pub extern "C" fn slab_get_system_stats(
         return;
     }
 
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        let mut total = 0u64;
-        let mut used = 0u64;
-        let mut count = 0u32;
+    let mut total = 0u64;
+    let mut used = 0u64;
+    let mut count = 0u32;
+    let caches = GENERAL_CACHES.lock();
 
-        for i in 0..GENERAL_CACHE_SIZES.len() {
-            if let Some(ref cache) = GENERAL_CACHES[i] {
-                count += 1;
-                total += cache.slab_count as u64 * SLAB_DEFAULT_SIZE as u64;
-                used += cache.active_objects() * cache.object_size as u64;
-            }
+    for i in 0..GENERAL_CACHE_SIZES.len() {
+        if let Some(ref cache) = caches[i] {
+            count += 1;
+            total += cache.slab_count as u64 * SLAB_DEFAULT_SIZE as u64;
+            used += cache.active_objects() * cache.object_size as u64;
         }
+    }
 
+    // SAFETY: 调用方保证指针有效
+    unsafe {
         *total_memory = total;
         *used_memory = used;
         *total_caches = count;
@@ -982,19 +978,17 @@ pub extern "C" fn slab_get_system_stats(
 pub extern "C" fn slab_dump_all_caches() {
     klog_slab!("[SLAB] === Slab Allocator Status ===");
 
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        for i in 0..GENERAL_CACHE_SIZES.len() {
-            if let Some(ref cache) = GENERAL_CACHES[i] {
-                klog_slab!(
-                    "[SLAB] Cache '{}': obj_size={} objs_per_slab={} slabs={} active={}",
-                    cache.name,
-                    cache.object_size,
-                    cache.objects_per_slab,
-                    cache.slab_count,
-                    cache.active_objects()
-                );
-            }
+    let caches = GENERAL_CACHES.lock();
+    for i in 0..GENERAL_CACHE_SIZES.len() {
+        if let Some(ref cache) = caches[i] {
+            klog_slab!(
+                "[SLAB] Cache '{}': obj_size={} objs_per_slab={} slabs={} active={}",
+                cache.name,
+                cache.object_size,
+                cache.objects_per_slab,
+                cache.slab_count,
+                cache.active_objects()
+            );
         }
     }
 }
@@ -1016,27 +1010,26 @@ pub extern "C" fn slab_dump_cache(name: *const u8) {
         }
     };
 
-    // SAFETY: GENERAL_CACHES 是全局静态数组, 遍历期间不变
-    unsafe {
-        for i in 0..GENERAL_CACHE_SIZES.len() {
-            if let Some(ref cache) = GENERAL_CACHES[i] {
-                if cache.name == name_str {
-                    klog_slab!("[SLAB] Cache '{}': obj_size={} slabs={} active={}",
-                        cache.name, cache.object_size, cache.slab_count, cache.active_objects());
+    let caches = GENERAL_CACHES.lock();
+    for i in 0..GENERAL_CACHE_SIZES.len() {
+        if let Some(ref cache) = caches[i] {
+            if cache.name == name_str {
+                klog_slab!("[SLAB] Cache '{}': obj_size={} slabs={} active={}",
+                    cache.name, cache.object_size, cache.slab_count, cache.active_objects());
 
-                    // 遍历 partial 链表显示每个 slab 信息
-                    let mut current = cache.slabs_partial;
-                    let mut count = 0;
-                    while !current.is_null() {
-                        let sr = SlabRef::new_unchecked(current);
-                        let ptr = sr.as_ptr();
-                        klog_slab!("[SLAB]   partial[{}]: obj_count={} active={}",
-                            count, (*ptr).obj_count, (*ptr).active_count);
-                        current = sr.next();
-                        count += 1;
-                    }
-                    return;
+                // 遍历 partial 链表显示每个 slab 信息
+                let mut current = cache.slabs_partial;
+                let mut count = 0;
+                while !current.is_null() {
+                    // SAFETY: current 由 slabs_partial 链表保证是合法 Slab 头指针
+                    let sr = unsafe { SlabRef::new_unchecked(current) };
+                    let ptr = sr.as_ptr();
+                    klog_slab!("[SLAB]   partial[{}]: obj_count={} active={}",
+                        count, unsafe { (*ptr).obj_count }, unsafe { (*ptr).active_count });
+                    current = sr.next();
+                    count += 1;
                 }
+                return;
             }
         }
     }

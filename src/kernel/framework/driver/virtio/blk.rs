@@ -34,12 +34,17 @@ struct VirtioBlkRegistryEntry {
     device: *const VirtioBlk,
 }
 
+// SAFETY: VirtioBlkRegistryEntry 含裸指针, 但所有访问由 VIRTIO_BLK_REGISTRY 锁保护;
+//         completion/device 指针在注册期间有效 (VirtioBlk 由 Chitin 持有至系统关闭).
+#[cfg(target_arch = "x86_64")]
+unsafe impl Send for VirtioBlkRegistryEntry {}
+
 /// I-42: 全局设备注册表, IRQ 号 → 设备实例映射.
 /// enable_irq() 注册, ISR 查表. 替代原先的单静态指针.
 #[cfg(target_arch = "x86_64")]
-static mut VIRTIO_BLK_REGISTRY: [Option<VirtioBlkRegistryEntry>; MAX_VIRTIO_BLK_IRQS] = {
+static VIRTIO_BLK_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<[Option<VirtioBlkRegistryEntry>; MAX_VIRTIO_BLK_IRQS]> = {
     const NONE: Option<VirtioBlkRegistryEntry> = None;
-    [NONE; MAX_VIRTIO_BLK_IRQS]
+    crate::kernel::framework::sync::IrqSpinLock::new([NONE; MAX_VIRTIO_BLK_IRQS])
 };
 
 // I-42: 轻量级 I/O 完成事件, 替代原 do_io 内的 `loop { pop_used(); spin_loop() }` 忙等.
@@ -417,20 +422,22 @@ impl VirtioBlk {
 #[cfg(target_arch = "x86_64")]
 #[unsafe(no_mangle)]
 pub extern "C" fn virtio_blk_irq_handler(frame: *mut InterruptFrame) {
-    // SAFETY: 注册表由 enable_irq() 在启动时单线程写入, ISR 只读, 无数据竞争.
-    unsafe {
-        for i in 0..MAX_VIRTIO_BLK_IRQS {
-            if let Some(ref entry) = VIRTIO_BLK_REGISTRY[i] {
-                // signal 完成事件
-                if !entry.completion.is_null() {
-                    (*entry.completion).signal_all();
-                }
-                // ACK 设备中断 (VirtIO MMIO 规范要求)
-                if !entry.device.is_null() {
-                    (*entry.device).device.ack_interrupt();
-                }
-                return;
+    let registry = VIRTIO_BLK_REGISTRY.lock();
+    for i in 0..MAX_VIRTIO_BLK_IRQS {
+        if let Some(ref entry) = registry[i] {
+            // signal 完成事件
+            if !entry.completion.is_null() {
+                // SAFETY: entry.completion 由 register_virtio_blk_device 在启动时写入,
+                //         指向有效的 IoCompletionArray
+                unsafe { (*entry.completion).signal_all(); }
             }
+            // ACK 设备中断 (VirtIO MMIO 规范要求)
+            if !entry.device.is_null() {
+                // SAFETY: entry.device 由 register_virtio_blk_device 在启动时写入,
+                //         指向有效的 VirtioBlk 实例
+                unsafe { (*entry.device).device.ack_interrupt(); }
+            }
+            return;
         }
     }
     // 未找到注册设备 — 不应发生, 记录告警
@@ -442,18 +449,12 @@ pub extern "C" fn virtio_blk_irq_handler(frame: *mut InterruptFrame) {
 // enable_irq() 调用, ISR 查表使用.
 #[cfg(target_arch = "x86_64")]
 pub fn register_virtio_blk_device(irq: usize, completion: &IoCompletionArray, device: &VirtioBlk) {
-    // SAFETY: 启动阶段单线程调用, 无并发风险.
-    //         completion 指针: IoCompletionArray 是 VirtioBlk 的字段, 生命周期与 VirtioBlk 绑定.
-    //         device 指针: VirtioBlk 由 storage_init 创建后通过 register_block_device 传入
-    //         Chitin, Chitin 将其 Box 化并持有至系统关闭, 故 device 指针在注册期间始终有效.
-    //         若未来 Chitin 支持设备热拔插, 需在注销时同步清除注册表条目.
-    unsafe {
-        if irq < MAX_VIRTIO_BLK_IRQS {
-            VIRTIO_BLK_REGISTRY[irq] = Some(VirtioBlkRegistryEntry {
-                completion: completion as *const IoCompletionArray,
-                device: device as *const VirtioBlk,
-            });
-        }
+    let mut registry = VIRTIO_BLK_REGISTRY.lock();
+    if irq < MAX_VIRTIO_BLK_IRQS {
+        registry[irq] = Some(VirtioBlkRegistryEntry {
+            completion: completion as *const IoCompletionArray,
+            device: device as *const VirtioBlk,
+        });
     }
 }
 

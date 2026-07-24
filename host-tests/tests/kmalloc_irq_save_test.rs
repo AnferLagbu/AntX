@@ -159,21 +159,24 @@ fn kmalloc_source_uses_irq_save_flags_signature() {
 
 #[test]
 fn kmalloc_slab_source_uses_irq_save_flags_signature() {
-    // P1-I-28 验收: kmalloc_slab.rs 同样必须使用 IrqSaveFlags
+    // P1-I-28 验收: kmalloc_slab.rs 必须使用 IrqSpinLock 保护 SLAB_CACHES
     let source = include_str!("../../src/kernel/framework/mm/kmalloc_slab.rs");
+    // 新模式: SLAB_CACHES 使用 IrqSpinLock 包装, 通过 .lock() 访问
     assert!(
-        source.contains("fn slab_lock() -> IrqSaveFlags"),
-        "P1-I-28: kmalloc_slab.rs::slab_lock 签名必须返回 IrqSaveFlags"
+        source.contains("static SLAB_CACHES: crate::kernel::framework::sync::IrqSpinLock<"),
+        "P1-I-28: kmalloc_slab.rs::SLAB_CACHES 必须使用 IrqSpinLock 包装"
     );
     assert!(
-        source.contains("fn slab_unlock(flags: &IrqSaveFlags)"),
-        "P1-I-28: kmalloc_slab.rs::slab_unlock 签名必须接 &IrqSaveFlags"
+        source.contains("SLAB_CACHES.lock()"),
+        "P1-I-28: kmalloc_slab.rs 必须通过 SLAB_CACHES.lock() 访问"
     );
-    // 调用点必须用 let flags = slab_lock(); ... slab_unlock(&flags);
-    let paired_call = source.contains("let flags = slab_lock();")
-        && source.contains("slab_unlock(&flags)");
+    // 旧模式不应存在
     assert!(
-        paired_call,
-        "P1-I-28: kmalloc_slab.rs 调用点必须用 let flags = slab_lock(); slab_unlock(&flags); 配对"
+        !source.contains("fn slab_lock()"),
+        "P1-I-28: kmalloc_slab.rs 不应包含旧的 slab_lock 函数"
+    );
+    assert!(
+        !source.contains("static SLAB_LOCK: AtomicBool"),
+        "P1-I-28: kmalloc_slab.rs 不应包含旧的 SLAB_LOCK AtomicBool"
     );
 }

@@ -1071,9 +1071,10 @@ struct AlignedKallocBuf {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-static mut KALLOC_BUF: AlignedKallocBuf = AlignedKallocBuf { data: [0; 1048576] };
+static KALLOC_BUF: crate::kernel::framework::sync::IrqSpinLock<AlignedKallocBuf> =
+    crate::kernel::framework::sync::IrqSpinLock::new(AlignedKallocBuf { data: [0; 1048576] });
 #[cfg(not(feature = "kernel_test"))]
-static mut KALLOC_OFF: usize = 0;
+static KALLOC_OFF: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 #[cfg(not(feature = "kernel_test"))]
 #[unsafe(no_mangle)]
@@ -1081,21 +1082,25 @@ static mut KALLOC_OFF: usize = 0;
 /// # Safety
 ///
 /// `reg` 是 BAR0 区域内的有效 MMIO 寄存器偏移。设备已探测且 MMIO 区域已映射。
-pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 { unsafe {
+pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };
-    let base = KALLOC_BUF.data.as_mut_ptr() as usize;
-    let current = base + KALLOC_OFF;
+    let mut buf = KALLOC_BUF.lock();
+    let base = buf.data.as_mut_ptr() as usize;
+    let current_off = KALLOC_OFF.load(core::sync::atomic::Ordering::Relaxed);
+    let current = base + current_off;
     let aligned = (current + a - 1) & !(a - 1);
     let padding = aligned - current;
-    if KALLOC_OFF + padding + s > KALLOC_BUF.data.len() {
+    if current_off + padding + s > buf.data.len() {
         return core::ptr::null_mut();
     }
-    KALLOC_OFF += padding;
-    let ptr = KALLOC_BUF.data.as_mut_ptr().add(KALLOC_OFF) as *mut u8;
-    KALLOC_OFF += s;
+    let new_off = current_off + padding;
+    KALLOC_OFF.store(new_off, core::sync::atomic::Ordering::Relaxed);
+    // SAFETY: new_off 已通过边界检查, 不会越界
+    let ptr = unsafe { buf.data.as_mut_ptr().add(new_off) } as *mut u8;
+    KALLOC_OFF.store(new_off + s, core::sync::atomic::Ordering::Relaxed);
     ptr
-}}
+}
 
 #[cfg(test)]
 mod tests {
