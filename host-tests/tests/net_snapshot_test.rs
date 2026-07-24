@@ -148,8 +148,8 @@ fn net_save_not_empty_anymore() {
         "P2-I-44: net_save 必须调用 snap::save 填充快照"
     );
     assert!(
-        body.contains("NET_LOCK.lock()"),
-        "P2-I-44: net_save 必须持有 NET_LOCK (与 smoltcp state 一致性)"
+        body.contains("NET_STATE.lock()") || body.contains("NET_STATE.try_lock()"),
+        "P2-I-44: net_save 必须持有 NET_STATE (与 smoltcp state 一致性)"
     );
 }
 
@@ -194,12 +194,12 @@ fn net_restore_restores_fd_table() {
     let start = src.find(marker).expect("missing net_restore");
     let body = &src[start..start + 5000];
     assert!(
-        body.contains("FD_TYPES.0[i] = saved.fd_types[i]"),
-        "P2-I-44: net_restore 必须按 fd 恢复 FD_TYPES (TD-05 包装后访问走 .0 字段)"
+        body.contains("raw::set_fd_type("),
+        "P2-I-44: net_restore 必须按 fd 恢复 FD_TYPES"
     );
     assert!(
-        body.contains("SOCKET_TABLE.0[i]"),
-        "P2-I-44: net_restore 必须按 fd 恢复 SOCKET_TABLE (TD-05 包装后访问走 .0 字段)"
+        body.contains("raw::set_socket_handle("),
+        "P2-I-44: net_restore 必须按 fd 恢复 SOCKET_TABLE"
     );
 }
 
