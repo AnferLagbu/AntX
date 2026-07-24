@@ -1,0 +1,360 @@
+#![deny(unsafe_code)]
+//! @SAFE: 本文件不含 unsafe 代码。
+//!
+//! VirtIO 网络设备驱动 — services 层 (Phase 2.1.2)
+//!
+//! 通过 `VirtioDevice` (transport.rs) 提供 100% safe 的网卡初始化与配置路径。
+//! VirtQueue 操作通过 framework 层安全 API 完成。
+//!
+//! ## 设计原则
+//!
+//! - **零 unsafe**: 所有 MMIO 读/写通过 `VirtioDevice` 安全代理
+//! - **请求格式**: 定义 VirtioNetHdr / 配置偏移 / 特性位, 供 framework I/O 路径使用
+//! - **初始化序列**: Reset → Ack → Driver → Feature Negotiate → Features_OK → Queue Setup → Driver_OK
+//!
+//! ## 与 framework 的分工
+//!
+//! - **services (本文件)**: 初始化序列, 特性协商, 配置空间读取, 包格式定义
+//! - **framework**: VirtQueue 分配与 DMA 缓冲区管理 (需要 unsafe 指针操作)
+//!
+//! 评估日期: 2026-06-04
+//! Phase 2.1.2 任务: VirtIO-Net 网卡迁移
+
+use super::transport::{VirtioDevice, DEVICE_ID_NET, VIRTIO_F_VERSION_1};
+use crate::slog_info;
+use crate::slog_warn;
+
+// ============================================================================
+// VirtIO-net 常量
+// ============================================================================
+
+/// VirtIO 网络头大小 (12 字节, 旧版与 v1 相同)
+pub const NET_HDR_SIZE: usize = 12;
+
+/// 默认 RX 缓冲区大小 (字节)
+pub const RX_BUFFER_SIZE: usize = 2048;
+
+/// RX virtqueue 索引
+pub const RX_QUEUE_INDEX: u16 = 0;
+/// TX virtqueue 索引
+pub const TX_QUEUE_INDEX: u16 = 1;
+
+// ── Feature bits ──
+
+/// VIRTIO_NET_F_CSUM: 设备处理校验和
+pub const VIRTIO_NET_F_CSUM: u64 = 1 << 0;
+/// VIRTIO_NET_F_GUEST_CSUM: 驱动提供校验和
+pub const VIRTIO_NET_F_GUEST_CSUM: u64 = 1 << 1;
+/// VIRTIO_NET_F_MAC: 设备提供 MAC 地址
+pub const VIRTIO_NET_F_MAC: u64 = 1 << 5;
+/// VIRTIO_NET_F_GSO: 驱动支持 GSO
+pub const VIRTIO_NET_F_GSO: u64 = 1 << 6;
+/// VIRTIO_NET_F_GUEST_TSO4: 驱动接收 TSO4
+pub const VIRTIO_NET_F_GUEST_TSO4: u64 = 1 << 7;
+/// VIRTIO_NET_F_GUEST_TSO6: 驱动接收 TSO6
+pub const VIRTIO_NET_F_GUEST_TSO6: u64 = 1 << 8;
+/// VIRTIO_NET_F_MRG_RXBUF: 合并接收缓冲区
+pub const VIRTIO_NET_F_MRG_RXBUF: u64 = 1 << 15;
+/// VIRTIO_NET_F_STATUS: 设备提供链路状态
+pub const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
+/// VIRTIO_NET_F_CTRL_VQ: 设备支持控制队列
+pub const VIRTIO_NET_F_CTRL_VQ: u64 = 1 << 17;
+
+// ── 配置空间偏移 (相对于 0x100) ──
+
+/// MAC 地址偏移 (6 字节)
+pub const NET_CONFIG_MAC: usize = 0x00;
+/// 链路状态偏移 (2 字节, bit 0 = link up)
+pub const NET_CONFIG_STATUS: usize = 0x06;
+
+// ── 链路状态 ──
+
+/// 链路 UP
+pub const NET_STATUS_LINK_UP: u16 = 1;
+
+// ============================================================================
+// 网络头结构体
+// ============================================================================
+
+/// VirtIO 网络头 (12 字节, 旧版与 v1 相同).
+///
+/// 每个 TX/RX 包前的固定头.
+/// `num_buffers` 仅在协商 VIRTIO_NET_F_MRG_RXBUF 时有意义.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VirtioNetHdr {
+    /// 特性标志
+    pub flags: u8,
+    /// GSO 类型
+    pub gso_type: u8,
+    /// 头部长度
+    pub hdr_len: u16,
+    /// GSO 大小
+    pub gso_size: u16,
+    /// 校验和起始偏移
+    pub csum_start: u16,
+    /// 校验和偏移
+    pub csum_offset: u16,
+    /// 合并缓冲区数 (MRG_RXBUF)
+    pub num_buffers: u16,
+}
+
+impl VirtioNetHdr {
+    /// 创建空头 (无 GSO, 无校验和卸载)
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    /// 头大小 (字节)
+    pub const fn size() -> usize {
+        core::mem::size_of::<Self>()
+    }
+}
+
+// ============================================================================
+// 安全驱动逻辑
+// ============================================================================
+
+/// VirtIO 网络设备安全驱动 (services 层, 0 unsafe)。
+///
+/// 封装 VirtIO 网络设备的初始化序列与配置读取, 通过 `VirtioDevice` 安全代理访问 MMIO。
+/// DMA 缓冲区管理与 VirtQueue 操作保留在 framework 层。
+///
+/// ## 初始化流程
+///
+/// 1. `VirtioNetDriver::new(device)` — 验证设备 ID, 执行初始化序列
+/// 2. 读取 MAC 地址与链路状态
+/// 3. framework: 分配 RX/TX VirtQueue 并配置
+/// 4. `set_driver_ok()` — 设备进入 live 状态
+pub struct VirtioNetDriver {
+    /// MMIO 设备传输代理
+    device: VirtioDevice,
+    /// MAC 地址 (从配置空间读取)
+    mac: [u8; 6],
+    /// 链路状态 (true = up)
+    link_up: bool,
+    /// 设备支持的特性位
+    negotiated_features: u64,
+    /// 协商后的头大小: 10 (现代 VERSION_1) 或 12 (旧版)
+    hdr_size: usize,
+}
+
+impl VirtioNetDriver {
+    /// 创建并初始化 VirtIO 网络设备驱动。
+    ///
+    /// 验证设备 ID 为网络设备, 执行完整初始化序列 (Reset → Ack → Driver → Feature → Features_OK)。
+    /// 返回 `Some(VirtioNetDriver)` 表示设备就绪, 可继续配置 VirtQueue。
+    ///
+    /// # 参数
+    /// - `device`: 已探测到的 VirtIO 设备 (device_id 必须为 DEVICE_ID_NET)
+    pub fn new(device: VirtioDevice) -> Option<Self> {
+        if device.device_id() != DEVICE_ID_NET {
+            slog_warn!(
+                Driver,
+                "virtio-net: 期望 device_id={}, 实际={}",
+                DEVICE_ID_NET,
+                device.device_id()
+            );
+            return None;
+        }
+
+        let is_legacy = device.is_legacy();
+        slog_info!(
+            Driver,
+            "virtio-net: 初始化 at {:#x} (version={}, {} mode)",
+            device.mmio_base(),
+            device.version(),
+            if is_legacy { "legacy" } else { "modern" }
+        );
+
+        // Step 1: Reset
+        device.reset();
+
+        // Step 2: ACKNOWLEDGE
+        device.ack();
+
+        // Step 3: DRIVER
+        device.set_driver();
+
+        // Step 4: 特性协商
+        let dev_features = device.device_features();
+        slog_info!(Driver, "virtio-net: 设备特性={:#018x}", dev_features);
+
+        let has_v1 = (dev_features & VIRTIO_F_VERSION_1) != 0;
+        let negotiated_v1: bool;
+        let hdr_size: usize;
+
+        if !is_legacy || has_v1 {
+            // 现代模式: 协商 VERSION_1 + MAC + STATUS
+            negotiated_v1 = true;
+            hdr_size = NET_HDR_SIZE;
+            let feat = VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS;
+            device.set_driver_features(feat);
+            slog_info!(
+                Driver,
+                "virtio-net: 协商现代特性 (VERSION_1 + MAC + STATUS)"
+            );
+        } else {
+            // 传统模式: MAC + STATUS (如果设备支持)
+            negotiated_v1 = false;
+            hdr_size = NET_HDR_SIZE;
+            let mut feat = VIRTIO_NET_F_MAC;
+            if dev_features & VIRTIO_NET_F_STATUS != 0 {
+                feat |= VIRTIO_NET_F_STATUS;
+            }
+            device.set_driver_features(feat);
+            slog_info!(Driver, "virtio-net: 协商传统特性");
+        }
+
+        // Step 5: FEATURES_OK
+        if !device.features_ok() {
+            slog_warn!(Driver, "virtio-net: FEATURES_OK 被拒绝");
+            return None;
+        }
+
+        // 从配置空间读取 MAC 地址
+        let mut mac: [u8; 6] = [0; 6];
+        for i in 0..6 {
+            mac[i] = (device.read_config32(NET_CONFIG_MAC + (i & !3)) >> ((i & 3) * 8)) as u8;
+        }
+
+        slog_info!(
+            Driver,
+            "virtio-net: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
+        );
+
+        // 读取链路状态
+        let link_status = device.read_config32(NET_CONFIG_STATUS) as u16;
+        let link_up = (link_status & NET_STATUS_LINK_UP) != 0;
+        slog_info!(
+            Driver,
+            "virtio-net: 链路 {}",
+            if link_up { "UP" } else { "DOWN" }
+        );
+
+        Some(Self {
+            device,
+            mac,
+            link_up,
+            negotiated_features: if negotiated_v1 {
+                VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS
+            } else {
+                VIRTIO_NET_F_MAC
+            },
+            hdr_size,
+        })
+    }
+
+    /// 设置 DRIVER_OK (设备进入 live 状态).
+    ///
+    /// 必须在所有 virtqueue 配置完成后调用.
+    pub fn set_driver_ok(&self) {
+        self.device.set_driver_ok();
+        slog_info!(Driver, "virtio-net: DRIVER_OK 已设置");
+    }
+
+    /// 获取 MMIO 设备引用 (用于 VirtQueue 配置).
+    pub fn device(&self) -> &VirtioDevice {
+        &self.device
+    }
+
+    /// 获取 MAC 地址.
+    pub fn mac(&self) -> &[u8; 6] {
+        &self.mac
+    }
+
+    /// 链路是否 UP.
+    pub fn link_up(&self) -> bool {
+        self.link_up
+    }
+
+    /// 获取协商后的特性位.
+    pub fn negotiated_features(&self) -> u64 {
+        self.negotiated_features
+    }
+
+    /// 检查是否协商了指定特性.
+    pub fn has_feature(&self, feature: u64) -> bool {
+        self.negotiated_features & feature != 0
+    }
+
+    /// 获取头大小 (10 或 12 字节).
+    pub fn hdr_size(&self) -> usize {
+        self.hdr_size
+    }
+
+    /// 是否为传统模式 (未协商 VERSION_1).
+    pub fn is_legacy(&self) -> bool {
+        self.negotiated_features & VIRTIO_F_VERSION_1 == 0
+    }
+
+    // ── 队列配置辅助 (通过 VirtioDevice MMIO) ──
+
+    /// 配置指定 virtqueue 的 MMIO 寄存器.
+    ///
+    /// # 参数
+    /// - `vq_index`: virtqueue 索引 (RX=0, TX=1)
+    /// - `desc_paddr`: 描述符表物理地址
+    /// - `avail_paddr`: available ring 物理地址
+    /// - `used_paddr`: used ring 物理地址
+    ///
+    /// # 返回
+    /// - `Ok(max_size)`: 队列最大尺寸
+    /// - `Err(())`: 配置失败
+    pub fn setup_queue(
+        &self,
+        vq_index: u16,
+        desc_paddr: u64,
+        avail_paddr: u64,
+        used_paddr: u64,
+    ) -> Result<u32, ()> {
+        self.device.select_queue(vq_index);
+        let max_size = self.device.queue_num_max();
+        slog_info!(
+            Driver,
+            "virtio-net: vq{} max_size={}",
+            vq_index,
+            max_size
+        );
+
+        if self.is_legacy() {
+            // 传统模式: 使用 PFN 接口
+            self.device
+                .setup_queue_legacy(desc_paddr);
+        } else {
+            // 现代模式: 使用 64 位地址
+            self.device
+                .setup_queue_addrs(desc_paddr, avail_paddr, used_paddr);
+        }
+
+        self.device.set_queue_ready();
+        slog_info!(Driver, "virtio-net: vq{} ready", vq_index);
+        Ok(max_size)
+    }
+
+    /// 通知设备: 指定队列有新描述符.
+    pub fn notify(&self, vq_index: u16) {
+        self.device.notify_queue(vq_index);
+    }
+
+    /// 读取并应答中断状态.
+    pub fn ack_interrupt(&self) -> u32 {
+        let status = self.device.interrupt_status();
+        if status != 0 {
+            self.device.ack_interrupt(status);
+        }
+        status
+    }
+
+    /// 读取当前链路状态 (从配置空间实时读取).
+    pub fn read_link_status(&self) -> bool {
+        let status = self.device.read_config32(NET_CONFIG_STATUS) as u16;
+        (status & NET_STATUS_LINK_UP) != 0
+    }
+}

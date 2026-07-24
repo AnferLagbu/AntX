@@ -236,6 +236,19 @@ impl VirtQueue {
             self.free_head = head;
         }
     }
+
+    /// 将描述符 head 链接到 next 描述符 (设置 NEXT 标志和 next 指针).
+    ///
+    /// 用于构建多描述符链 (如 virtio-blk 的 header→data→status).
+    pub fn link_desc(&mut self, head: u16, next: u16) {
+        // SAFETY: head/next 均为有效的描述符索引 (由 prepare_desc 返回),
+        // desc 指针指向 PMM 分配的 DMA 页, 生命周期由 VirtQueue 管理.
+        unsafe {
+            let desc = &mut *self.desc.add(head as usize);
+            desc.flags |= VQ_DESC_F_NEXT;
+            desc.next = next;
+        }
+    }
 }
 
 /// 将 `val` 向上对齐到 `align` 的下一个倍数.
