@@ -6,8 +6,8 @@
 >
 > **创建时间**: 2026-07-21
 >
-> **已完成**: 7/38 (CPU_INFO, KB_READ_SLOT, VGA_DRIVER, GLOBAL_FRAMEBUFFER, SERIAL_PORTS, GLOBAL_DMA, GRANT_RECORDS)
-> **最近迁移**: Task 1 低复杂度 5 个 (commit 2335ae14, 2026-07-22)
+> **已完成**: 17/38 (CPU_INFO, KB_READ_SLOT + Task1: 5个 + Task2: 10个)
+> **最近迁移**: Task 2 中复杂度 10 个 (2026-07-22)
 
 ---
 
@@ -77,11 +77,11 @@
 
 **Approach**: 使用 `IrqSpinLock` 替代 `static mut`, 统一锁保护模式
 
-### Task 2: 中复杂度迁移 (10 个)
+### Task 2: 中复杂度迁移 (10 个) **状态: [X]** (2026-07-22)
 
-**Files**: `irqline.rs`, `klog/mod.rs`, `mm/*.rs`, `net/init.rs`, `net/save.rs`
+**Files**: `irqline.rs`, `klog/mod.rs`, `mm/kmalloc_slab.rs`, `mm/slab.rs`, `mm/vma.rs`, `mm/kmalloc.rs`, `driver/net/e1000.rs`, `driver/virtio/blk.rs`
 
-**Approach**: 按使用场景选择 `OnceLock`/`AtomicXxx`/`IrqSpinLock`
+**Approach**: `IrqSpinLock` 替代大部分, `AtomicBool`/`AtomicPtr`/`AtomicUsize` 替代简单标量
 
 ### Task 3: 高复杂度迁移 — net 层 (12 个)
 
