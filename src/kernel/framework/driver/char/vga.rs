@@ -28,6 +28,7 @@ use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverErr
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::ioport::IoPort;
 use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
 // 硬件常量定义
@@ -528,29 +529,27 @@ impl Default for VgaDriver {
 // ============================================================================
 
 /// 全局 VGA 驱动实例
-static mut VGA_DRIVER: Option<VgaDriver> = None;
+static VGA_DRIVER: IrqSpinLock<Option<VgaDriver>> = IrqSpinLock::new(None);
 
 /// 初始化全局 VGA 驱动
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_init() {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        VGA_DRIVER = Some(VgaDriver::new());
-        if let Some(ref mut vga) = VGA_DRIVER {
+    VGA_DRIVER.with_mut(|opt| {
+        *opt = Some(VgaDriver::new());
+        if let Some(ref mut vga) = *opt {
             let _ = vga.init();
         }
-    }
+    });
 }
 
 /// 向 VGA 输出字符 (C 兼容接口)
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_putchar(ch: i32) {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        if let Some(ref mut vga) = VGA_DRIVER {
+    VGA_DRIVER.with_mut(|opt| {
+        if let Some(ref mut vga) = *opt {
             vga.putchar(ch as u8);
         }
-    }
+    });
 }
 
 /// 向 VGA 输出字符串 (C 兼容接口)
@@ -560,40 +559,39 @@ pub extern "C" fn vga_puts(s: *const u8) {
         return;
     }
 
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        if let Some(ref mut vga) = VGA_DRIVER {
-            let mut ptr = s;
-            while *ptr != 0 {
-                vga.putchar(*ptr as u8);
-                ptr = ptr.add(1);
+    // SAFETY: s 是调用方保证的有效 C 字符串指针
+    let mut ptr = s;
+    while unsafe { *ptr != 0 } {
+        let ch = unsafe { *ptr };
+        VGA_DRIVER.with_mut(|opt| {
+            if let Some(ref mut vga) = *opt {
+                vga.putchar(ch as u8);
             }
-        }
+        });
+        ptr = unsafe { ptr.add(1) };
     }
 }
 
 /// 清屏 (C 兼容接口)
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_clear() {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        if let Some(ref mut vga) = VGA_DRIVER {
+    VGA_DRIVER.with_mut(|opt| {
+        if let Some(ref mut vga) = *opt {
             vga.clear_screen();
         }
-    }
+    });
 }
 
 /// 设置颜色 (C 兼容接口)
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_set_color(fg: u8, bg: u8) {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe {
-        if let Some(ref mut vga) = VGA_DRIVER {
+    VGA_DRIVER.with_mut(|opt| {
+        if let Some(ref mut vga) = *opt {
             let fg_color = Color::from_u8(fg).unwrap_or(Color::White);
             let bg_color = Color::from_u8(bg).unwrap_or(Color::Black);
             vga.set_color(fg_color, bg_color);
         }
-    }
+    });
 }
 
 // ============================================================================

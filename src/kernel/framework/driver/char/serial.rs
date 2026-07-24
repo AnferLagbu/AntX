@@ -30,6 +30,7 @@
 
 use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
 use crate::kernel::framework::ioport::IoPort;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
 // 硬件常量定义
@@ -568,19 +569,19 @@ impl SerialPort {
 // ============================================================================
 
 /// 全局串口实例数组
-static mut SERIAL_PORTS: [Option<SerialPort>; MAX_COM_PORTS] = [None, None, None, None];
+static SERIAL_PORTS: IrqSpinLock<[Option<SerialPort>; MAX_COM_PORTS]> =
+    IrqSpinLock::new([None, None, None, None]);
 
 /// 初始化指定串口 (C 兼容接口)
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_init(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            SERIAL_PORTS[com as usize] = SerialPort::new(com as u8);
-            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
+        SERIAL_PORTS.with_mut(|ports| {
+            ports[com as usize] = SerialPort::new(com as u8);
+            if let Some(port) = &mut ports[com as usize] {
                 let _ = port.init();
             }
-        }
+        });
     }
 }
 
@@ -588,12 +589,11 @@ pub extern "C" fn serial_init(com: u32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_putc(com: u32, ch: i32) {
     if (com as usize) < MAX_COM_PORTS {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
+        SERIAL_PORTS.with_mut(|ports| {
+            if let Some(port) = &mut ports[com as usize] {
                 let _ = port.send_byte(ch as u8);
             }
-        }
+        });
     }
 }
 
@@ -601,15 +601,16 @@ pub extern "C" fn serial_putc(com: u32, ch: i32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_puts(com: u32, s: *const u8) {
     if (com as usize) < MAX_COM_PORTS && !s.is_null() {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
-                let mut ptr = s;
-                while *ptr != 0 {
-                    let _ = port.send_byte(*ptr as u8);
-                    ptr = ptr.add(1);
+        // SAFETY: s 是调用方保证的有效 C 字符串指针
+        let mut ptr = s;
+        while unsafe { *ptr != 0 } {
+            let ch = unsafe { *ptr };
+            SERIAL_PORTS.with_mut(|ports| {
+                if let Some(port) = &mut ports[com as usize] {
+                    let _ = port.send_byte(ch as u8);
                 }
-            }
+            });
+            ptr = unsafe { ptr.add(1) };
         }
     }
 }
@@ -618,16 +619,13 @@ pub extern "C" fn serial_puts(com: u32, s: *const u8) {
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_getc(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            match &mut SERIAL_PORTS[com as usize] {
-                Some(port) => match port.receive_byte() {
-                    Some(ch) => ch as i32,
-                    None => -1,
-                },
+        SERIAL_PORTS.with_mut(|ports| match &mut ports[com as usize] {
+            Some(port) => match port.receive_byte() {
+                Some(ch) => ch as i32,
                 None => -1,
-            }
-        }
+            },
+            None => -1,
+        })
     } else {
         -1
     }
@@ -637,19 +635,16 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            match &SERIAL_PORTS[com as usize] {
-                Some(port) => {
-                    if port.has_data() {
-                        1
-                    } else {
-                        0
-                    }
+        SERIAL_PORTS.with(|ports| match &ports[com as usize] {
+            Some(port) => {
+                if port.has_data() {
+                    1
+                } else {
+                    0
                 }
-                None => 0,
             }
-        }
+            None => 0,
+        })
     } else {
         0
     }
@@ -659,12 +654,11 @@ pub extern "C" fn serial_has_char(com: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_irq_handler(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            if let Some(port) = &mut SERIAL_PORTS[com as usize] {
+        SERIAL_PORTS.with_mut(|ports| {
+            if let Some(port) = &mut ports[com as usize] {
                 port.handle_interrupt();
             }
-        }
+        });
     }
 }
 

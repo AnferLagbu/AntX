@@ -1,53 +1,31 @@
 use super::types::*;
-use core::sync::atomic::Ordering;
+use crate::kernel::framework::sync::IrqSpinLock;
 
-static GRANT_LOCK: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
-
-fn lock_grants() {
-    while GRANT_LOCK
-        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        core::hint::spin_loop();
-    }
-}
-
-fn unlock_grants() {
-    GRANT_LOCK.store(false, Ordering::Release);
-}
-
-// REVAL-5: `static mut` → `static` + `core::ptr::addr_of_mut!` 模式
-// `[GrantRecord::EMPTY; MAX_GRANT_RECORDS]` 是 const 表达式, 可零 unsafe 初始化.
-// `addr_of!`/`addr_of_mut!` 取得裸指针, 调用方在 GRANT_LOCK 保护下解引用为 &mut.
-// 该模式消除 `static mut` 的 aliasing UB 风险.
-static mut GRANT_RECORDS: [GrantRecord; MAX_GRANT_RECORDS] =
-    [GrantRecord::EMPTY; MAX_GRANT_RECORDS];
+/// Grant 记录表 — 替代 static mut, 由 IrqSpinLock 保护并发访问
+static GRANT_RECORDS: IrqSpinLock<[GrantRecord; MAX_GRANT_RECORDS]> =
+    IrqSpinLock::new([GrantRecord::EMPTY; MAX_GRANT_RECORDS]);
 
 pub fn add_record(record: GrantRecord) -> Result<(), PwmError> {
-    lock_grants();
-    let result = raw::records_mut().iter_mut()
+    let mut guard = GRANT_RECORDS.lock();
+    guard.iter_mut()
         .find(|r| r.is_empty())
         .map(|slot| { *slot = record; Ok(()) })
-        .unwrap_or(Err(PwmError::TableFull));
-    unlock_grants();
-    result
+        .unwrap_or(Err(PwmError::TableFull))
 }
 
 pub fn is_grantor(grantor_pwm: u64, grantee_pwm: u64, domain: CapDomain, caps: CapBits) -> bool {
-    lock_grants();
-    let found = raw::records().iter().any(|r| {
+    let guard = GRANT_RECORDS.lock();
+    guard.iter().any(|r| {
         r.grantor_pwm.0 == grantor_pwm
             && r.grantee_pwm.0 == grantee_pwm
             && r.domain == domain
             && (r.caps & caps) == caps
-    });
-    unlock_grants();
-    found
+    })
 }
 
 pub fn clear_records(revoker_pwm: u64, target_pwm: u64, domain: CapDomain, caps: CapBits) {
-    lock_grants();
-    for record in raw::records_mut().iter_mut() {
+    let mut guard = GRANT_RECORDS.lock();
+    for record in guard.iter_mut() {
         if record.grantor_pwm.0 == revoker_pwm
             && record.grantee_pwm.0 == target_pwm
             && record.domain == domain
@@ -57,26 +35,5 @@ pub fn clear_records(revoker_pwm: u64, target_pwm: u64, domain: CapDomain, caps:
                 *record = GrantRecord::EMPTY;
             }
         }
-    }
-    unlock_grants();
-}
-
-// ============================================================================
-// 特权子模块 (Framekernel raw): 集中 static mut GRANT_RECORDS 访问
-// ============================================================================
-
-pub(crate) mod raw {
-    use super::*;
-
-    /// 安全读视图 (调用方持有 GRANT_LOCK)
-    pub fn records() -> &'static [GrantRecord; MAX_GRANT_RECORDS] {
-        // SAFETY: 调用方契约持有 GRANT_LOCK, 保证唯一读访问。
-        unsafe { &*core::ptr::addr_of!(GRANT_RECORDS) }
-    }
-
-    /// 安全写视图 (调用方持有 GRANT_LOCK)
-    pub fn records_mut() -> &'static mut [GrantRecord; MAX_GRANT_RECORDS] {
-        // SAFETY: 调用方契约持有 GRANT_LOCK, 保证唯一 &mut。
-        unsafe { &mut *core::ptr::addr_of_mut!(GRANT_RECORDS) }
     }
 }

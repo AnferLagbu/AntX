@@ -40,6 +40,7 @@ use super::framework;
 use super::framework::{Driver, DriverError};
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 struct DisplayDriver;
 
@@ -66,7 +67,7 @@ impl Driver for DisplayDriver {
 // ============================================================================
 
 /// 全局帧缓冲 — 在 display_init() 中初始化，之后只读访问
-static mut GLOBAL_FRAMEBUFFER: Option<Framebuffer> = None;
+static GLOBAL_FRAMEBUFFER: IrqSpinLock<Option<Framebuffer>> = IrqSpinLock::new(None);
 
 /// 帧缓冲物理地址 — 供 sys_fb_mmap 映射到用户空间
 pub static FB_PHYS_ADDR: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
@@ -74,12 +75,13 @@ pub static FB_PHYS_ADDR: core::sync::atomic::AtomicU64 = core::sync::atomic::Ato
 /// 帧缓冲物理大小 — 供 sys_fb_mmap 校验
 pub static FB_PHYS_SIZE: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-/// 获取全局帧缓冲的可变引用
+/// 获取全局帧缓冲的锁守卫
 ///
-/// # Safety
-/// 调用者必须确保没有并发访问（内核启动后在单线程上下文中使用是安全的）
-pub fn get_framebuffer() -> Option<&'static mut Framebuffer> {
-    unsafe { GLOBAL_FRAMEBUFFER.as_mut() }
+/// 返回 `IrqSpinLockGuard` 持有锁期间访问帧缓冲。
+/// 调用方通过 `.as_ref()` 获取 `Option<&Framebuffer>`。
+pub fn get_framebuffer() -> Option<crate::kernel::framework::sync::IrqSpinLockGuard<'static, Option<Framebuffer>>> {
+    let guard = GLOBAL_FRAMEBUFFER.lock();
+    if guard.is_some() { Some(guard) } else { None }
 }
 
 // ============================================================================
@@ -346,10 +348,10 @@ pub fn display_init() -> framework::Result<()> {
             .map_err(|_| DriverError::HardwareError)?
     };
 
-    unsafe {
-        GLOBAL_FRAMEBUFFER = Some(Framebuffer::new(fb_iomem, width, height, pitch, format));
+    GLOBAL_FRAMEBUFFER.with_mut(|opt| {
+        *opt = Some(Framebuffer::new(fb_iomem, width, height, pitch, format));
 
-        if let Some(ref mut fb) = GLOBAL_FRAMEBUFFER {
+        if let Some(ref mut fb) = *opt {
             let _ = fb.init();
 
             crate::klog_info!(
@@ -375,7 +377,7 @@ pub fn display_init() -> framework::Result<()> {
             crate::kernel::framework::console::gfx_console_init(alloc::boxed::Box::leak(console));
             crate::klog_info!(Driver, "[DISPLAY] GfxConsole initialized");
         }
-    }
+    });
 
     let _manager = DisplayManager::new();
 

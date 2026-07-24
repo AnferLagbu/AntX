@@ -1201,12 +1201,15 @@ fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
         crate::kernel::framework::driver::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
 
     let (width, height, pitch, bpp) = match crate::kernel::framework::driver::get_framebuffer() {
-        Some(fb) => (
-            fb.width(),
-            fb.height(),
-            fb.pitch(),
-            fb.format().bits_per_pixel() as u8,
-        ),
+        Some(guard) => {
+            let fb = guard.as_ref().unwrap();
+            (
+                fb.width(),
+                fb.height(),
+                fb.pitch(),
+                fb.format().bits_per_pixel() as u8,
+            )
+        }
         None => return Errno::ENODEV.as_ret(),
     };
 

@@ -502,24 +502,26 @@ impl DmaEngine {
 }
 
 // 全局 DMA Engine 实例
-static mut GLOBAL_DMA: DmaEngine = DmaEngine::new();
+static GLOBAL_DMA: Mutex<DmaEngine> = Mutex::new(DmaEngine::new());
 
-pub fn get_dma() -> &'static DmaEngine {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe { &GLOBAL_DMA }
+/// 获取全局 DMA Engine 的锁守卫
+///
+/// 返回 `IrqSpinLockGuard`，持有期间可安全调用 DmaEngine 的所有方法。
+/// 由于 `DmaEngine` 内部已有 Mutex 保护，此处锁守卫仅消除 static mut 的 aliasing UB。
+pub fn get_dma() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, DmaEngine> {
+    GLOBAL_DMA.lock()
 }
 
-/// # Safety
+/// 获取全局 DMA Engine 的可变锁守卫 (与 `get_dma` 相同语义)
 ///
-/// 在 DMA 子系统尚未生效前的初始化阶段调用. 调用方保证 `count` > 0.
-pub unsafe fn get_dma_mut() -> &'static mut DmaEngine { unsafe {
-    &mut GLOBAL_DMA
-}}
+/// 保留此函数以兼容现有调用方，实际返回与 `get_dma` 相同的锁守卫。
+pub fn get_dma_mut() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, DmaEngine> {
+    GLOBAL_DMA.lock()
+}
 
 /// FFI 层使用的访问器
-pub(crate) fn dma() -> &'static DmaEngine {
-    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe { &GLOBAL_DMA }
+pub(crate) fn dma() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, DmaEngine> {
+    GLOBAL_DMA.lock()
 }
 
 // =============== DMA 传输引擎 ===============
