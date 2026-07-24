@@ -328,6 +328,30 @@ impl VgaConsole {
         }
     }
 
+    /// 清除指定行 (用空格 + 指定属性填充)
+    pub fn clear_row(&self, y: usize, attr: TextAttribute) {
+        if y >= SCREEN_HEIGHT {
+            return;
+        }
+        let blank = VgaCell::from_attr(b' ', attr).to_u16();
+        let row_start = y * SCREEN_WIDTH;
+        for i in 0..SCREEN_WIDTH {
+            self.buffer.write_u16((row_start + i) * 2, blank);
+        }
+    }
+
+    /// 在指定位置写入字节串 (不越界截断, 不影响光标)
+    pub fn write_string_at(&self, pos: CursorPos, s: &[u8], attr: TextAttribute) {
+        let pos = pos.clamp();
+        for (i, &ch) in s.iter().enumerate() {
+            let x = pos.x + i;
+            if x >= SCREEN_WIDTH {
+                break;
+            }
+            self.write_char(CursorPos { x, y: pos.y }, ch, attr);
+        }
+    }
+
     // ── 光标控制 (x86_64 only) ──
 
     /// 写硬件光标位置

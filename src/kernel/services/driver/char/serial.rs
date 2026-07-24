@@ -27,6 +27,11 @@
 
 use crate::kernel::framework::ioport::IoPort;
 
+// ── 缓冲区大小 ──
+
+/// 接收/发送环形缓冲区容量 (字节)
+pub const SERIAL_BUFFER_SIZE: usize = 256;
+
 // ── COM 端口基址 ──
 
 pub const COM1_BASE: u16 = 0x3F8;
@@ -257,16 +262,87 @@ impl ComPort {
 }
 
 // ============================================================================
+// 环形缓冲区
+// ============================================================================
+
+/// 固定容量环形缓冲区 (用于串口收发中断驱动 I/O)
+pub struct RingBuffer<T> {
+    buffer: [T; SERIAL_BUFFER_SIZE],
+    head: usize,
+    tail: usize,
+    count: usize,
+}
+
+impl<T: Default + Copy> Default for RingBuffer<T> {
+    fn default() -> Self {
+        Self {
+            buffer: [T::default(); SERIAL_BUFFER_SIZE],
+            head: 0,
+            tail: 0,
+            count: 0,
+        }
+    }
+}
+
+impl<T: Default + Copy> RingBuffer<T> {
+    /// 压入一个元素; 缓冲区满时返回 Err
+    pub fn push(&mut self, item: T) -> Result<(), ()> {
+        if self.count >= SERIAL_BUFFER_SIZE {
+            return Err(());
+        }
+        self.buffer[self.tail] = item;
+        self.tail = (self.tail + 1) % SERIAL_BUFFER_SIZE;
+        self.count += 1;
+        Ok(())
+    }
+
+    /// 弹出一个元素; 缓冲区空时返回 None
+    pub fn pop(&mut self) -> Option<T> {
+        if self.count == 0 {
+            return None;
+        }
+        let item = self.buffer[self.head];
+        self.head = (self.head + 1) % SERIAL_BUFFER_SIZE;
+        self.count -= 1;
+        Some(item)
+    }
+
+    /// 缓冲区是否为空
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// 缓冲区已用容量
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    /// 清空缓冲区
+    pub fn clear(&mut self) {
+        self.head = 0;
+        self.tail = 0;
+        self.count = 0;
+    }
+}
+
+// ============================================================================
 // 安全串口驱动
 // ============================================================================
 
 /// 16550 UART 串口的安全代理 (services 层)。
 ///
 /// 内部封装 `IoPort`, 提供类型安全的 PIO 读写。
+/// 支持中断驱动 I/O: 接收/发送环形缓冲区由 `handle_interrupt()` 喂入。
 pub struct SerialPort {
     port: IoPort,
     com: ComPort,
     config: SerialConfig,
+    /// 接收环形缓冲区 (中断驱动读入)
+    rx_buffer: RingBuffer<u8>,
+    /// 发送环形缓冲区 (中断驱动写出)
+    tx_buffer: RingBuffer<u8>,
 }
 
 impl SerialPort {
@@ -285,7 +361,13 @@ impl SerialPort {
         // 同一端口的多次注册.
         let port = IoPort::new_safe(com.base(), COM_PORT_COUNT, "serial").ok()?;
 
-        let mut s = Self { port, com, config };
+        let mut s = Self {
+            port,
+            com,
+            config,
+            rx_buffer: RingBuffer::default(),
+            tx_buffer: RingBuffer::default(),
+        };
         s.apply_config();
         Some(s)
     }
@@ -332,10 +414,10 @@ impl SerialPort {
         self.line_status() & LSR_TRANSMIT_EMPTY != 0
     }
 
-    /// 是否有数据可读
+    /// 是否有数据可读 (缓冲区或硬件)
     #[inline]
     pub fn has_data(&self) -> bool {
-        self.line_status() & LSR_DATA_READY != 0
+        !self.rx_buffer.is_empty() || self.line_status() & LSR_DATA_READY != 0
     }
 
     /// 读一个字节 (阻塞, 等待数据)
@@ -407,5 +489,76 @@ impl SerialPort {
     /// 获取当前配置
     pub const fn config(&self) -> &SerialConfig {
         &self.config
+    }
+
+    /// 获取端口基址 (别名: base())
+    pub const fn base_address(&self) -> u16 {
+        self.com.base()
+    }
+
+    // ── 中断驱动 I/O ──
+
+    /// 处理串口中断 (在 IRQ handler 中调用)
+    ///
+    /// 读取 IIR 判断中断类型:
+    /// - 接收数据可用 → 读入 rx_buffer
+    /// - 发送保持寄存器空 → 从 tx_buffer 取出发送
+    pub fn handle_interrupt(&mut self) {
+        let iir = self.port.read_u8(UART_IIR);
+
+        // bit 0 = 0 表示有挂起的中断
+        if iir & 0x01 != 0 {
+            return;
+        }
+
+        // bits 1-3: 中断 ID
+        let interrupt_id = (iir >> 1) & 0x07;
+
+        match interrupt_id {
+            0x02 => {
+                // 接收数据可用 — 读入 rx_buffer 直到无数据
+                while self.port.read_u8(UART_LSR) & LSR_DATA_READY != 0 {
+                    let byte = self.port.read_u8(UART_RBR);
+                    let _ = self.rx_buffer.push(byte);
+                }
+            }
+            0x01 => {
+                // 发送保持寄存器空 — 从 tx_buffer 取出一个字节发送
+                if let Some(byte) = self.tx_buffer.pop() {
+                    self.port.write_u8(UART_THR, byte);
+                }
+            }
+            _ => {} // 其他中断类型暂不处理
+        }
+    }
+
+    /// 从接收缓冲区读取一个字节 (非阻塞)
+    pub fn read_from_buffer(&mut self) -> Option<u8> {
+        self.rx_buffer.pop()
+    }
+
+    /// 获取接收缓冲区中待读字节数
+    pub fn available_bytes(&self) -> usize {
+        self.rx_buffer.len()
+    }
+
+    /// 清空接收缓冲区
+    pub fn clear_buffer(&mut self) {
+        self.rx_buffer.clear();
+    }
+
+    /// 清空发送缓冲区
+    pub fn clear_tx_buffer(&mut self) {
+        self.tx_buffer.clear();
+    }
+
+    /// 将字节压入发送缓冲区 (供中断驱动发送)
+    pub fn enqueue_tx(&mut self, byte: u8) -> Result<(), ()> {
+        self.tx_buffer.push(byte)
+    }
+
+    /// 发送缓冲区剩余容量
+    pub fn tx_available(&self) -> usize {
+        SERIAL_BUFFER_SIZE - self.tx_buffer.len()
     }
 }
