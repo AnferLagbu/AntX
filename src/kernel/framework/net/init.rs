@@ -398,7 +398,7 @@ unsafe fn nic_probe_all() -> Option<ChitinNetDevice> { unsafe {
                 raw::klog_err("e1000: hardware init failed");
                 return None;
             }
-            let mac = dev.mac;
+            let mac = dev.mac();
             let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
             let nic = ChitinNetDevice::new(&E1000_NET_OPS_STATIC, raw_ptr, mac);
             raw::klog_msg("e1000: probed successfully");

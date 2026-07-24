@@ -34,6 +34,8 @@
 //!
 //! 进度: 1/6 → 2/6 (transport 为后续 2.1.2/2.1.3 共享底层, 视为部分完成)
 
+/// T24: E1000 网卡驱动 (services 层安全逻辑)
+pub mod net;
 pub mod virtio;
 pub mod char;
 pub mod firmware;

@@ -4,9 +4,6 @@ use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::driver::DriverError;
 use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
-// I-预存: `iomem` 模块无 cfg gate (见 framework::iomem.rs), IoMem 在两种 build 都可用.
-// 之前误打 cfg, 改成无条件导入.
-use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::KERNEL_BASE;
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
@@ -28,119 +25,54 @@ use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // 网络性能统计: 接收包计数
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
-pub const E1000_TX_RING_SIZE: usize = 64;
-pub const E1000_RX_RING_SIZE: usize = 128;
-pub const E1000_RX_BUFFER_SIZE: usize = 2048;
+// ============================================================================
+// 从 services 层重新导出 (保持公共 API 兼容)
+// ============================================================================
+
+pub use crate::kernel::services::driver::net::e1000::{
+    E1000TxDesc, E1000RxDesc,
+    E1000_TX_RING_SIZE, E1000_RX_RING_SIZE, E1000_RX_BUFFER_SIZE,
+    E1000_TXD_CMD_EOP, E1000_TXD_CMD_IFCS, E1000_TXD_CMD_RS,
+    E1000_TXD_STAT_DD,
+    E1000_RXD_STAT_DD,
+    E1000_RXD_ERR_CE, E1000_RXD_ERR_SE, E1000_RXD_ERR_SEQ, E1000_RXD_ERR_RXE,
+    E1000_ICR_LSC, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_ICR_RXDMT0,
+    E1000_RDT,
+};
+
+// 从 services 层导入安全驱动逻辑
+use crate::kernel::services::driver::net::e1000::{E1000Driver, E1000Io};
+
 const E1000_TIMEOUT: u32 = 100000;
 
-const E1000_CTRL: u32 = 0x0000;
-const E1000_CTRL_RST: u32 = 1 << 31;
-const E1000_CTRL_SLU: u32 = 1 << 6;
-const E1000_CTRL_ASDE: u32 = 1 << 5;
-const E1000_CTRL_SPEED_1000: u32 = 2 << 8;
-const E1000_CTRL_FRCDPX: u32 = 1 << 14;
-const E1000_CTRL_FD: u32 = 1 << 0;
-const E1000_CTRL_FRCSPD: u32 = 1 << 11;
+// ============================================================================
+// 虚拟地址 → 物理地址转换 (framework 层)
+// ============================================================================
 
-const E1000_STATUS: u32 = 0x0008;
-const E1000_STATUS_LU: u32 = 1 << 1;
-const E1000_STATUS_FD: u32 = 1 << 0;
-const E1000_STATUS_SPEED_1000: u32 = 2 << 6;
-const E1000_STATUS_SPEED_100: u32 = 1 << 6;
-
-// EEPROM 寄存器 (仅 e1000-real-hw feature 下使用)
-#[cfg(feature = "e1000-real-hw")]
-const E1000_EERD: u32 = 0x0014;
-#[cfg(feature = "e1000-real-hw")]
-const E1000_EERD_START: u32 = 1 << 0;
-#[cfg(feature = "e1000-real-hw")]
-const E1000_EERD_DONE: u32 = 1 << 4;
-
-const E1000_RCTL: u32 = 0x0100;
-const E1000_RCTL_EN: u32 = 1 << 1;
-const E1000_RCTL_SBP: u32 = 1 << 2;
-const E1000_RCTL_UPE: u32 = 1 << 3;
-const E1000_RCTL_MPE: u32 = 1 << 4;
-const E1000_RCTL_BAM: u32 = 1 << 15;
-const E1000_RCTL_SECRC: u32 = 1 << 26;
-const E1000_RCTL_BSIZE_2048: u32 = 1 << 25;
-
-const E1000_TCTL: u32 = 0x0400;
-const E1000_TCTL_EN: u32 = 1 << 1;
-const E1000_TCTL_PSP: u32 = 1 << 3;
-const E1000_TCTL_COLD_FD: u32 = 0x40 << 12;
-const E1000_TCTL_CT_FD: u32 = 0x10 << 4;
-
-const E1000_TDBAL: u32 = 0x3800;
-const E1000_TDBAH: u32 = 0x3804;
-const E1000_TDLEN: u32 = 0x3808;
-const E1000_TDH: u32 = 0x3810;
-const E1000_TDT: u32 = 0x3818;
-
-const E1000_RDBAL: u32 = 0x2800;
-const E1000_RDBAH: u32 = 0x2804;
-const E1000_RDLEN: u32 = 0x2808;
-const E1000_RDH: u32 = 0x2810;
-const E1000_RDT: u32 = 0x2818;
-
-const E1000_IMC: u32 = 0x00D8;
-const E1000_ICR: u32 = 0x00C0;
-const E1000_IMS: u32 = 0x00D0;
-const E1000_ICR_LSC: u32 = 1 << 2;
-const E1000_ICR_RXDMT0: u32 = 1 << 4;
-const E1000_ICR_RXO: u32 = 1 << 6;
-const E1000_ICR_RXT0: u32 = 1 << 7;
-
-const E1000_IPG: u32 = 0x00B0;
-
-const E1000_RAL0: u32 = 0x5400;
-const E1000_RAH0: u32 = 0x5404;
-const E1000_RAH_AV: u32 = 1 << 31;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct E1000TxDesc {
-    addr: u64,
-    length: u16,
-    cso: u8,
-    cmd: u8,
-    status: u8,
-    css: u8,
-    special: u16,
+pub fn virt_to_phys(virt: u64) -> u64 {
+    if virt >= KERNEL_BASE {
+        virt - KERNEL_BASE
+    } else {
+        virt
+    }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct E1000RxDesc {
-    addr: u64,
-    length: u16,
-    checksum: u16,
-    status: u8,
-    errors: u8,
-    special: u16,
-}
-
-const E1000_TXD_CMD_EOP: u8 = 1 << 0;
-const E1000_TXD_CMD_IFCS: u8 = 1 << 1;
-const E1000_TXD_CMD_RS: u8 = 1 << 3;
-const E1000_TXD_STAT_DD: u8 = 1 << 0;
-pub(crate) const E1000_RXD_STAT_DD: u8 = 1 << 0;
-pub(crate) const E1000_RXD_ERR_CE: u8 = 1 << 0;
-pub(crate) const E1000_RXD_ERR_SE: u8 = 1 << 1;
-pub(crate) const E1000_RXD_ERR_SEQ: u8 = 1 << 2;
-pub(crate) const E1000_RXD_ERR_RXE: u8 = 1 << 3;
+// ============================================================================
+// E1000 设备 (framework 层: DMA 管理 + FFI + 安全驱动逻辑委托)
+// ============================================================================
 
 pub struct E1000Device {
     pub bus: u8,
     pub device: u8,
     pub func: u8,
     mmio_phys: u64,
-    iomem: Option<IoMem>,
-    pub irq: u8,
-    pub mac: [u8; 6],
+    /// 安全驱动逻辑 (services 层, 0 unsafe)
+    driver: Option<E1000Driver>,
+    /// DMA 发送描述符环 (framework 层管理, 需要 unsafe 指针操作)
     tx_descs: Option<*mut E1000TxDesc>,
     tx_tail: usize,
     tx_count: u64,
+    /// DMA 接收描述符环 (framework 层管理, 需要 unsafe 指针操作)
     rx_descs: Option<*mut E1000RxDesc>,
     rx_buffers: [*mut u8; E1000_RX_RING_SIZE],
     rx_tail: usize,
@@ -148,7 +80,6 @@ pub struct E1000Device {
     isr_count: u64,
     link_change_count: u64,
     info: crate::kernel::framework::driver::DeviceInfo,
-    initialized: bool,
 }
 
 impl Default for E1000Device {
@@ -158,9 +89,7 @@ impl Default for E1000Device {
             device: 0,
             func: 0,
             mmio_phys: 0,
-            iomem: None,
-            irq: 0,
-            mac: [0u8; 6],
+            driver: None,
             tx_descs: None,
             tx_tail: 0,
             tx_count: 0,
@@ -174,8 +103,20 @@ impl Default for E1000Device {
                 "Intel E1000",
                 DeviceType::Network,
             ),
-            initialized: false,
         }
+    }
+}
+
+/// E1000Device 辅助方法 (安全驱动访问)
+impl E1000Device {
+    /// 获取安全驱动引用 (driver 已初始化时可用)
+    fn driver_ref(&self) -> &E1000Driver {
+        self.driver.as_ref().expect("e1000: driver 未初始化")
+    }
+
+    /// 获取安全驱动可变引用 (driver 已初始化时可用)
+    fn driver_mut(&mut self) -> &mut E1000Driver {
+        self.driver.as_mut().expect("e1000: driver 未初始化")
     }
 }
 
@@ -187,33 +128,18 @@ impl Default for E1000Device {
 /// - 启用 `e1000-real-hw` feature: 通过 EERD.START 触发读, 轮询 EERD.DONE
 ///   位 (带 100k 次 spin_loop 超时), 返回 (val >> 16) & 0xFFFF.
 ///
-/// QEMU 兼容路径: 跳过 EERD MMIO 访问, 直接返回哨兵值.
-/// QEMU 仿真器对 EERD 寄存器的写操作会触发内部 mutex 死锁,
-/// 因此此版本不执行任何 MMIO 操作, 仅返回 0xFFFF.
-#[cfg(not(feature = "e1000-real-hw"))]
-fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
-    let _ = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
+/// QEMU 兼容路径: 跳过 EERD MMIO 访问, 直接返回哨兵值。
+#[cfg(all(not(feature = "kernel_test"), not(feature = "e1000-real-hw")))]
+fn eeprom_read(io: &E1000Io, addr: u8) -> u16 {
+    let _ = io;
     let _ = addr;
     0xFFFF
 }
 
 /// 真实硬件 EERD 读取路径. 由 `e1000-real-hw` feature 启用.
-#[cfg(feature = "e1000-real-hw")]
-fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
-    let iomem = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
-    // SAFETY: iomem 由 IoMem 抽象提供, 写 32 位寄存器的边界 + 对齐检查在 IoMem::write_u32 内部完成.
-    iomem.write_u32(E1000_EERD as usize, ((addr as u32) << 2) | E1000_EERD_START);
-    let mut timeout: u32 = 0;
-    while timeout < E1000_TIMEOUT {
-        let val = iomem.read_u32(E1000_EERD as usize);
-        if val & E1000_EERD_DONE != 0 {
-            return ((val >> 16) & 0xFFFF) as u16;
-        }
-        timeout += 1;
-        core::hint::spin_loop();
-    }
-    klog_warn!(Net, "e1000: eeprom_read timeout addr={}", addr);
-    0xFFFF
+#[cfg(all(not(feature = "kernel_test"), feature = "e1000-real-hw"))]
+fn eeprom_read(io: &E1000Io, addr: u8) -> u16 {
+    io.eeprom_read(addr)
 }
 
 /// 读取 MAC 地址 (按 feature 切换).
@@ -221,20 +147,19 @@ fn eeprom_read(dev: &E1000Device, addr: u8) -> u16 {
 /// - 默认: 跳过所有 MMIO 读取, 使用 QEMU 默认 MAC.
 /// - `e1000-real-hw` 启用: 通过 EERD 读取 3 个 16 位 EEPROM 字 (word 0..=2),
 ///   拼成 6 字节 MAC. 真实 NIC 的 MAC 即在 EEPROM 偏移 0 处开始.
-fn read_mac_address(dev: &mut E1000Device) {
+#[cfg(not(feature = "kernel_test"))]
+fn read_mac_address(io: &E1000Io) -> [u8; 6] {
     #[cfg(not(feature = "e1000-real-hw"))]
     {
-        // QEMU 兼容路径: 调用 eeprom_read 获取哨兵值 (不执行 MMIO), 使用默认 MAC
-        let _ = eeprom_read(dev, 0);
-        dev.mac = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
+        let _ = eeprom_read(io, 0);
+        [0x52, 0x54, 0x00, 0x12, 0x34, 0x56]
     }
     #[cfg(feature = "e1000-real-hw")]
     {
-        // 真实硬件路径: 从 EEPROM 读 3 个字, 拼成 6 字节 MAC
-        let lo = eeprom_read(dev, 0);
-        let mid = eeprom_read(dev, 1);
-        let hi = eeprom_read(dev, 2);
-        dev.mac = [
+        let lo = eeprom_read(io, 0);
+        let mid = eeprom_read(io, 1);
+        let hi = eeprom_read(io, 2);
+        let mac = [
             (lo & 0xFF) as u8,
             ((lo >> 8) & 0xFF) as u8,
             (mid & 0xFF) as u8,
@@ -242,9 +167,14 @@ fn read_mac_address(dev: &mut E1000Device) {
             (hi & 0xFF) as u8,
             ((hi >> 8) & 0xFF) as u8,
         ];
-        klog_info!(Net, "e1000: MAC from EEPROM {:02x?}", dev.mac);
+        klog_info!(Net, "e1000: MAC from EEPROM {:02x?}", mac);
+        mac
     }
 }
+
+// ============================================================================
+// DMA 描述符环设置 (framework 层, unsafe)
+// ============================================================================
 
 #[cfg(not(feature = "kernel_test"))]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
@@ -273,7 +203,6 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
     dev.tx_tail = 0;
     dev.tx_descs = Some(tx_descs);
 
-    let iomem = dev.iomem.as_ref().expect("e1000: iomem 未初始化");
     {
         let tx_phys = virt_to_phys(tx_ptr as u64);
         klog_debug!(
@@ -283,11 +212,10 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
             tx_phys,
             tx_size
         );
-        iomem.write_u32(E1000_TDBAL as usize, (tx_phys & 0xFFFFFFFF) as u32);
-        iomem.write_u32(E1000_TDBAH as usize, (tx_phys >> 32) as u32);
-        iomem.write_u32(E1000_TDLEN as usize, tx_size as u32);
-        iomem.write_u32(E1000_TDH as usize, 0);
-        iomem.write_u32(E1000_TDT as usize, 0);
+        dev.driver_ref().set_tx_base(tx_phys);
+        dev.driver_ref().set_tx_len(tx_size as u32);
+        dev.driver_ref().set_tx_head(0);
+        dev.driver_ref().set_tx_tail(0);
     }
 
     let rx_size = core::mem::size_of::<E1000RxDesc>() * E1000_RX_RING_SIZE;
@@ -335,24 +263,19 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
             rx_phys,
             rx_size
         );
-        iomem.write_u32(E1000_RDBAL as usize, (rx_phys & 0xFFFFFFFF) as u32);
-        iomem.write_u32(E1000_RDBAH as usize, (rx_phys >> 32) as u32);
-        iomem.write_u32(E1000_RDLEN as usize, rx_size as u32);
-        iomem.write_u32(E1000_RDH as usize, 0);
-        iomem.write_u32(E1000_RDT as usize, (E1000_RX_RING_SIZE - 1) as u32);
+        dev.driver_ref().set_rx_base(rx_phys);
+        dev.driver_ref().set_rx_len(rx_size as u32);
+        dev.driver_ref().set_rx_head(0);
+        dev.driver_ref().set_rx_tail((E1000_RX_RING_SIZE - 1) as u32);
     }
     dev.rx_tail = 0;
 
     Ok(())
 }
 
-pub fn virt_to_phys(virt: u64) -> u64 {
-    if virt >= KERNEL_BASE {
-        virt - KERNEL_BASE
-    } else {
-        virt
-    }
-}
+// ============================================================================
+// Driver trait 实现
+// ============================================================================
 
 impl Driver for E1000Device {
     fn name(&self) -> &'static str {
@@ -365,167 +288,59 @@ impl Driver for E1000Device {
 
     #[cfg(not(feature = "kernel_test"))]
     fn init(&mut self) -> DriverResult<()> {
-        if self.iomem.is_none() {
-            return Err(DriverError::NotInitialized);
-        }
+        // 1. Services 层: 复位硬件并检测链路
+        self.driver_mut()
+            .reset_and_detect_link()
+            .map_err(|_| DriverError::HardwareError)?;
 
-        {
-            let iomem = self.iomem.as_ref().expect("e1000: iomem 未初始化");
-
-            iomem.write_u32(E1000_CTRL as usize, E1000_CTRL_RST);
-            for _ in 0..100000 {
-                let ctrl = iomem.read_u32(E1000_CTRL as usize);
-                if ctrl & E1000_CTRL_RST == 0 {
-                    break;
-                }
-                core::hint::spin_loop();
-            }
-
-            iomem.write_u32(E1000_IMC as usize, 0xFFFFFFFF);
-
-            {
-                let ctrl = iomem.read_u32(E1000_CTRL as usize);
-                let new_ctrl = (ctrl & !(E1000_CTRL_RST))
-                    | E1000_CTRL_SLU
-                    | E1000_CTRL_ASDE
-                    | E1000_CTRL_FRCSPD
-                    | E1000_CTRL_SPEED_1000
-                    | E1000_CTRL_FRCDPX
-                    | E1000_CTRL_FD;
-                iomem.write_u32(E1000_CTRL as usize, new_ctrl);
-            }
-
-            let mut link_ready = false;
-            for _ in 0..500000 {
-                let status = iomem.read_u32(E1000_STATUS as usize);
-                if status & E1000_STATUS_LU != 0 {
-                    link_ready = true;
-                    break;
-                }
-                core::hint::spin_loop();
-            }
-
-            if !link_ready {
-                klog_warn!(Net, "e1000: link not ready, continuing anyway");
-            } else {
-                let status = iomem.read_u32(E1000_STATUS as usize);
-                let speed = if status & E1000_STATUS_SPEED_1000 != 0 {
-                    "1000"
-                } else if status & E1000_STATUS_SPEED_100 != 0 {
-                    "100"
-                } else {
-                    "10"
-                };
-                let duplex = if status & E1000_STATUS_FD != 0 {
-                    "FD"
-                } else {
-                    "HD"
-                };
-                klog_info!(Net, "e1000: NIC Link is Up {} Mbps Full Duplex", speed);
-                let _ = duplex;
-            }
-        } // drop iomem borrow before setup_descriptor_rings
-
+        // 2. Framework 层: 分配 DMA 描述符环并配置基地址
         setup_descriptor_rings(self)?;
 
-        let iomem = self.iomem.as_ref().expect("e1000: iomem 未初始化");
-        let tctl = E1000_TCTL_EN | E1000_TCTL_PSP | E1000_TCTL_COLD_FD | E1000_TCTL_CT_FD;
-        iomem.write_u32(E1000_TCTL as usize, tctl);
+        // 3. Services 层: 完成初始化 (TCTL/RCTL/MAC/IPG/IMS)
+        self.driver_mut().complete_init();
 
-        let rctl = E1000_RCTL_EN
-            | E1000_RCTL_SBP
-            | E1000_RCTL_UPE
-            | E1000_RCTL_MPE
-            | E1000_RCTL_BAM
-            | E1000_RCTL_SECRC
-            | E1000_RCTL_BSIZE_2048;
-        iomem.write_u32(E1000_RCTL as usize, rctl);
-
-        {
-            let ral = (self.mac[0] as u32)
-                | ((self.mac[1] as u32) << 8)
-                | ((self.mac[2] as u32) << 16)
-                | ((self.mac[3] as u32) << 24);
-            let rah = (self.mac[4] as u32) | ((self.mac[5] as u32) << 8) | E1000_RAH_AV;
-            iomem.write_u32(E1000_RAL0 as usize, ral);
-            iomem.write_u32(E1000_RAH0 as usize, rah);
-            klog_info!(
-                Net,
-                "e1000: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                self.mac[0],
-                self.mac[1],
-                self.mac[2],
-                self.mac[3],
-                self.mac[4],
-                self.mac[5]
-            );
-        }
-
-        iomem.write_u32(E1000_RDT as usize, (E1000_RX_RING_SIZE - 1) as u32);
-        self.rx_tail = 0;
-
-        iomem.write_u32(E1000_IPG as usize, 0x0060200A);
-
-        iomem.write_u32(
-            E1000_IMS as usize,
-            E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC,
-        );
-
-        {
-            let ctrl = iomem.read_u32(E1000_CTRL as usize);
-            klog_info!(
-                Net,
-                "e1000: initialized (CTRL=0x{:x} RDLEN=0x{:x})",
-                ctrl,
-                iomem.read_u32(E1000_RDLEN as usize)
-            );
-        }
-
-        self.initialized = true;
         Ok(())
     }
 
     #[cfg(feature = "kernel_test")]
     fn init(&mut self) -> DriverResult<()> {
-        self.initialized = true;
+        self.driver_mut().mark_initialized();
         Ok(())
     }
 
     fn shutdown(&mut self) -> DriverResult<()> {
-        if !self.initialized || self.iomem.is_none() {
-            self.initialized = false;
+        if !self.driver_ref().is_ready() {
             return Ok(());
         }
-        {
-            let iomem = self.iomem.as_ref().expect("e1000: iomem 未初始化");
-            let mut ctrl = iomem.read_u32(E1000_CTRL as usize);
-            ctrl &= !(E1000_CTRL_SLU | E1000_CTRL_FD);
-            iomem.write_u32(E1000_CTRL as usize, ctrl);
-            iomem.write_u32(E1000_RCTL as usize, 0);
-            iomem.write_u32(E1000_TCTL as usize, 0);
-        }
-        self.initialized = false;
+        self.driver_mut().shutdown();
         Ok(())
     }
 
     fn is_ready(&self) -> bool {
-        self.initialized && self.iomem.is_some()
+        self.driver_ref().is_ready()
     }
 
     fn status(&self) -> &'static str {
-        if !self.initialized {
+        if !self.driver_ref().is_ready() {
             "Not initialized"
-        } else if self.iomem.is_none() {
-            "MMIO not mapped"
         } else {
             "Link ready"
         }
     }
 }
 
+// ============================================================================
+// E1000Device 方法 (DMA 收发 + 中断处理)
+// ============================================================================
+
 impl E1000Device {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 获取 MAC 地址
+    pub fn mac(&self) -> [u8; 6] {
+        self.driver_ref().mac
     }
 
     #[cfg(not(feature = "kernel_test"))]
@@ -588,7 +403,7 @@ impl E1000Device {
 
                         // SAFETY: 中断寄存器 (offset 0x3C)。
                         let irq_reg = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x3C) };
-                        self.irq = (irq_reg & 0xFF) as u8;
+                        let irq = (irq_reg & 0xFF) as u8;
 
                         // SAFETY: 命令寄存器 (offset 0x04)；开启 MMIO + Bus Master。
                         let mut cmd = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x04) };
@@ -596,26 +411,30 @@ impl E1000Device {
                         // SAFETY: 写回命令寄存器。
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x04, cmd) };
 
-                        let iomem = match IoMem::from_pci_bar(
+                        // 创建安全 MMIO 访问器 (services 层)
+                        let io = match crate::kernel::services::driver::net::e1000::E1000Io::new(
                             PhysAddr::new(self.mmio_phys),
                             128 * 1024, // E1000 BAR0 is 128KB
-                            "e1000-bar0",
                         ) {
                             Ok(m) => m,
                             Err(e) => {
-                                klog_err!(Net, "e1000: IoMem::from_pci_bar failed: {}", e);
+                                klog_err!(Net, "e1000: E1000Io::new failed: {}", e);
                                 return Err(DriverError::HardwareError);
                             }
                         };
+
+                        // 读取 MAC 地址 (feature-gated: QEMU 跳过 EERD)
+                        let mac = read_mac_address(&io);
+
+                        // 创建安全驱动实例
+                        self.driver = Some(E1000Driver::new(io, mac, irq));
+
                         klog_info!(
                             Net,
                             "e1000: MMIO phys=0x{:x} IRQ={}",
                             self.mmio_phys,
-                            self.irq
+                            irq
                         );
-                        self.iomem = Some(iomem);
-
-                        read_mac_address(self);
 
                         return Ok(());
                     }
@@ -667,7 +486,7 @@ impl E1000Device {
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
         self.tx_tail = (tail + 1) % E1000_TX_RING_SIZE;
-        self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_TDT as usize, self.tx_tail as u32);
+        self.driver_ref().set_tx_tail(self.tx_tail as u32);
 
         self.tx_count += 1;
         Ok(total_len)
@@ -687,7 +506,7 @@ impl E1000Device {
         let mut processed = 0u32;
 
         loop {
-            let rdh = self.iomem.as_ref().expect("e1000: iomem 未初始化").read_u32(E1000_RDH as usize) as usize;
+            let rdh = self.driver_ref().rx_head() as usize;
             if self.rx_tail == rdh {
                 break;
             }
@@ -729,7 +548,7 @@ impl E1000Device {
             let prev = self.rx_tail;
             self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
 
-            self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_RDT as usize, prev as u32);
+            self.driver_ref().set_rx_tail(prev as u32);
         }
 
         if processed > 0 {
@@ -754,7 +573,7 @@ impl E1000Device {
         let rx_descs = self.rx_descs?;
 
         loop {
-            let rdh = self.iomem.as_ref().expect("e1000: iomem 未初始化").read_u32(E1000_RDH as usize) as usize;
+            let rdh = self.driver_ref().rx_head() as usize;
             if self.rx_tail == rdh {
                 return None;
             }
@@ -781,7 +600,7 @@ impl E1000Device {
                 desc.status = 0;
                 let prev = self.rx_tail;
                 self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-                self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_RDT as usize, prev as u32);
+                self.driver_ref().set_rx_tail(prev as u32);
                 continue;
             }
 
@@ -802,7 +621,7 @@ impl E1000Device {
 
             let prev = self.rx_tail;
             self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-            self.iomem.as_ref().expect("e1000: iomem 未初始化").write_u32(E1000_RDT as usize, prev as u32);
+            self.driver_ref().set_rx_tail(prev as u32);
 
             return Some(copy_len);
         }
@@ -816,7 +635,7 @@ impl E1000Device {
             return;
         }
 
-        let icr = self.iomem.as_ref().expect("e1000: iomem 未初始化").read_u32(E1000_ICR as usize);
+        let icr = self.driver_ref().ack_interrupt();
         if icr == 0 {
             return;
         }
@@ -828,6 +647,7 @@ impl E1000Device {
         }
 
         if icr & E1000_ICR_LSC != 0 {
+            // 链路状态变化
             self.link_change_count += 1;
             klog_info!(Net, "e1000: link status change");
         }
@@ -836,8 +656,8 @@ impl E1000Device {
         if icr & E1000_ICR_RXO != 0 {
             klog_warn!(Net, "e1000: RX buffer overflow, clearing");
             // 清除 RDT 以恢复接收
-            let rdt = self.iomem.as_ref().unwrap().read_u32(E1000_RDT as usize);
-            self.iomem.as_ref().unwrap().write_u32(E1000_RDT as usize, rdt);
+            let rdt = self.driver_ref().read_reg(E1000_RDT);
+            self.driver_ref().write_reg(E1000_RDT, rdt);
         }
 
         if icr & (E1000_ICR_RXT0 | E1000_ICR_RXDMT0) != 0 {
@@ -862,6 +682,10 @@ impl E1000Device {
     }
 }
 
+// ============================================================================
+// 全局设备存储 + Chitin FFI 回调
+// ============================================================================
+
 #[cfg(not(feature = "kernel_test"))]
 static E1000_DEVICE: Mutex<Option<Box<E1000Device>>> = Mutex::new(None);
 
@@ -872,7 +696,9 @@ pub fn take_device() -> Option<Box<E1000Device>> {
 
 #[cfg(not(feature = "kernel_test"))]
 pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
-    if driver_data.is_null() || data.is_null() { return -1; }
+    if driver_data.is_null() || data.is_null() {
+        return -1;
+    }
     // SAFETY: driver_data 由驱动注册时设置, data 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     // SAFETY: data 是 NetOps 契约保证的合法用户/内核只读指针。
@@ -885,7 +711,9 @@ pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32
 
 #[cfg(not(feature = "kernel_test"))]
 pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
-    if driver_data.is_null() || buf.is_null() { return -1; }
+    if driver_data.is_null() || buf.is_null() {
+        return -1;
+    }
     // SAFETY: 同上。
     let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
@@ -897,15 +725,21 @@ pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u3
 
 #[cfg(not(feature = "kernel_test"))]
 pub extern "C" fn e1000_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
-    if driver_data.is_null() { return; }
+    if driver_data.is_null() {
+        return;
+    }
     // SAFETY: driver_data 由驱动注册时设置, mac 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &*(driver_data as *const E1000Device) };
-    unsafe { *mac = dev.mac; }
+    unsafe {
+        *mac = dev.mac();
+    }
 }
 
 #[cfg(not(feature = "kernel_test"))]
 pub extern "C" fn e1000_net_irq(driver_data: *mut u8) {
-    if driver_data.is_null() { return; }
+    if driver_data.is_null() {
+        return;
+    }
     // SAFETY: driver_data 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     dev.handle_interrupt();
@@ -934,44 +768,44 @@ pub extern "C" fn e1000_probe() -> i32 {
     {
         let mut need_probe = false;
         {
-        let guard = E1000_DEVICE.lock();
-        if guard.is_none() {
-            need_probe = true;
-        }
-    }
-
-    if need_probe {
-        let mut dev = Box::new(E1000Device::new());
-        match dev.probe() {
-            Ok(()) => {
-                let raw_ptr: *mut E1000Device = &mut *dev;
-                static E1000_NET_OPS: crate::kernel::framework::chitin::NetOps =
-                    crate::kernel::framework::chitin::NetOps {
-                        send: e1000_net_send,
-                        try_receive: e1000_net_recv,
-                        get_mac: e1000_net_get_mac,
-                        handle_irq: Some(e1000_net_irq),
-                    };
-                let _id = crate::kernel::framework::chitin::chitin_register_with_ops(
-                    "e1000",
-                    crate::kernel::framework::chitin::ChitinProto::Net,
-                    Some(dev.mmio_phys),
-                    Some(dev.irq),
-                    raw_ptr as *mut u8,
-                    crate::kernel::framework::chitin::ChitinOps::Net(&E1000_NET_OPS),
-                );
-                *E1000_DEVICE.lock() = Some(dev);
-                return 0;
+            let guard = E1000_DEVICE.lock();
+            if guard.is_none() {
+                need_probe = true;
             }
-            Err(_) => return -1,
         }
-    }
 
-    // 已存在
-    match &*E1000_DEVICE.lock() {
-        Some(_) => 0,
-        None => -1,
-    }
+        if need_probe {
+            let mut dev = Box::new(E1000Device::new());
+            match dev.probe() {
+                Ok(()) => {
+                    let raw_ptr: *mut E1000Device = &mut *dev;
+                    static E1000_NET_OPS: crate::kernel::framework::chitin::NetOps =
+                        crate::kernel::framework::chitin::NetOps {
+                            send: e1000_net_send,
+                            try_receive: e1000_net_recv,
+                            get_mac: e1000_net_get_mac,
+                            handle_irq: Some(e1000_net_irq),
+                        };
+                    let _id = crate::kernel::framework::chitin::chitin_register_with_ops(
+                        "e1000",
+                        crate::kernel::framework::chitin::ChitinProto::Net,
+                        Some(dev.mmio_phys),
+                        Some(dev.driver_ref().irq),
+                        raw_ptr as *mut u8,
+                        crate::kernel::framework::chitin::ChitinOps::Net(&E1000_NET_OPS),
+                    );
+                    *E1000_DEVICE.lock() = Some(dev);
+                    return 0;
+                }
+                Err(_) => return -1,
+            }
+        }
+
+        // 已存在
+        match &*E1000_DEVICE.lock() {
+            Some(_) => 0,
+            None => -1,
+        }
     }
 }
 
@@ -991,24 +825,21 @@ pub extern "C" fn e1000_dump_regs() {
     {
         let guard = E1000_DEVICE.lock();
         if let Some(ref dev) = *guard {
-            let iomem = match dev.iomem.as_ref() {
-                Some(m) => m,
-                None => return,
-            };
+            let io = dev.driver_ref().io();
             {
-                let ctrl = iomem.read_u32(E1000_CTRL as usize);
-                let status = iomem.read_u32(E1000_STATUS as usize);
-                let tctl = iomem.read_u32(E1000_TCTL as usize);
-                let rctl = iomem.read_u32(E1000_RCTL as usize);
-                let icr = iomem.read_u32(E1000_ICR as usize);
-                let ims = iomem.read_u32(E1000_IMS as usize);
-                let tdh = iomem.read_u32(E1000_TDH as usize);
-                let tdt = iomem.read_u32(E1000_TDT as usize);
-                let rdh = iomem.read_u32(E1000_RDH as usize);
-                let rdt = iomem.read_u32(E1000_RDT as usize);
-                let rdbal = iomem.read_u32(E1000_RDBAL as usize);
-                let rdbah = iomem.read_u32(E1000_RDBAH as usize);
-                let rdlen = iomem.read_u32(E1000_RDLEN as usize);
+                let ctrl = io.read32(0x0000); // E1000_CTRL
+                let status = io.read32(0x0008); // E1000_STATUS
+                let tctl = io.read32(0x0400); // E1000_TCTL
+                let rctl = io.read32(0x0100); // E1000_RCTL
+                let icr = io.read32(0x00C0); // E1000_ICR
+                let ims = io.read32(0x00D0); // E1000_IMS
+                let tdh = io.read32(0x3810); // E1000_TDH
+                let tdt = io.read32(0x3818); // E1000_TDT
+                let rdh = io.read32(0x2810); // E1000_RDH
+                let rdt = io.read32(0x2818); // E1000_RDT
+                let rdbal = io.read32(0x2800); // E1000_RDBAL
+                let rdbah = io.read32(0x2804); // E1000_RDBAH
+                let rdlen = io.read32(0x2808); // E1000_RDLEN
                 klog_info!(Net, "=== E1000 Register Dump ===");
                 klog_info!(Net, "CTRL=0x{:x} STATUS=0x{:x}", ctrl, status);
                 klog_info!(Net, "TCTL=0x{:x} RCTL=0x{:x}", tctl, rctl);
@@ -1101,6 +932,10 @@ pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     KALLOC_OFF.store(new_off + s, core::sync::atomic::Ordering::Relaxed);
     ptr
 }
+
+// ============================================================================
+// 测试
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
