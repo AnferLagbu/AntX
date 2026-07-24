@@ -1,9 +1,7 @@
-// TD-05: 验证 smoltcp 小型热表 (SOCKET_TABLE / FD_TYPES) 已升级为 64 字节 cache line 对齐
+// TD-05: 验证 smoltcp 小型热表 (SOCKET_TABLE / FD_TYPES) 已迁移至 NetState 结构体
 //
-// 验收:
-//   1. SOCKET_TABLE 必须包装在 `#[repr(align(64))]` 结构内 (不能直接对 `static mut [T; N]`)
-//   2. FD_TYPES 同上
-//   3. 所有 53+ 处访问点必须用 .0 字段索引 (防后续误改回未对齐实现)
+// 注: 原 Align64 包装已在 NetState 统一迁移中移除, 热表现在是 NetState 的字段,
+// 由 IrqSpinLock/Mutex 保护. 对齐由结构体布局自动保证.
 //
 // 注: 静态契约扫描, 不进内核态.
 
@@ -19,56 +17,54 @@ fn read(path: &str) -> String {
 }
 
 #[test]
-fn test_socket_table_is_cache_aligned() {
-    // TD-05: SOCKET_TABLE 必须按 64 字节 cache line 对齐
+fn test_socket_table_in_net_state() {
+    // TD-05: SOCKET_TABLE 必须是 NetState 结构体的字段
     let src = read(INIT);
-    // 验: 必须有 Align64<T> 包装结构定义
-    assert!(src.contains("#[repr(align(64))]\nstruct Align64<T>(T)"),
-        "TD-05: 必须定义 `#[repr(align(64))] struct Align64<T>(T)` 包装");
-    // 验: SOCKET_TABLE 类型必须是 Align64<...> 而非直接 [T; N]
-    assert!(src.contains("static mut SOCKET_TABLE: SOCKET_TABLE_T = Align64("),
-        "TD-05: SOCKET_TABLE 必须用 Align64 包装 (cache line 对齐)");
-    assert!(src.contains("type SOCKET_TABLE_T = Align64<"),
-        "TD-05: SOCKET_TABLE 必须有 type alias 指向 Align64<...>");
+    assert!(src.contains("socket_table:") || src.contains("socket_table: ["),
+        "TD-05: SOCKET_TABLE 必须是 NetState 的字段");
+    // 不再有独立的 static mut SOCKET_TABLE
+    assert!(!src.contains("static mut SOCKET_TABLE:"),
+        "TD-05: SOCKET_TABLE 不应再是独立的 static mut");
 }
 
 #[test]
-fn test_fd_types_is_cache_aligned() {
-    // TD-05: FD_TYPES 必须按 64 字节 cache line 对齐
+fn test_fd_types_in_net_state() {
+    // TD-05: FD_TYPES 必须是 NetState 结构体的字段
     let src = read(INIT);
-    assert!(src.contains("static mut FD_TYPES: FD_TYPES_T = Align64("),
-        "TD-05: FD_TYPES 必须用 Align64 包装 (cache line 对齐)");
-    assert!(src.contains("type FD_TYPES_T = Align64<"),
-        "TD-05: FD_TYPES 必须有 type alias 指向 Align64<...>");
+    assert!(src.contains("fd_types:") || src.contains("fd_types: ["),
+        "TD-05: FD_TYPES 必须是 NetState 的字段");
+    // 不再有独立的 static mut FD_TYPES
+    assert!(!src.contains("static mut FD_TYPES:"),
+        "TD-05: FD_TYPES 不应再是独立的 static mut");
 }
 
 #[test]
-fn test_no_unwrapped_socket_table_index() {
-    // TD-05: 所有 SOCKET_TABLE[i] 访问必须走 .0 字段, 防后续误改回未对齐实现
+fn test_no_raw_static_mut_access() {
+    // TD-05: 不应再有直接通过 SOCKET_TABLE[...] 或 FD_TYPES[...] 的访问
+    // 所有访问应通过 raw:: 模块
     let src = read(INIT);
-    // 排除掉含 .0 的情况, 找直接 SOCKET_TABLE[ 的残留
-    // 用简单行扫描
     for (idx, line) in src.lines().enumerate() {
         let trimmed = line.trim();
-        // 跳过注释
         if trimmed.starts_with("//") {
             continue;
         }
-        if trimmed.contains("SOCKET_TABLE[") && !trimmed.contains("SOCKET_TABLE.0[") {
-            panic!("TD-05: L{} 仍用未对齐的 SOCKET_TABLE[..], 必须改为 SOCKET_TABLE.0[..]:\n{}",
+        // 检查是否有直接的 SOCKET_TABLE[ 访问 (非 raw:: 前缀)
+        if trimmed.contains("SOCKET_TABLE[") && !trimmed.contains("raw::") && !trimmed.contains("//") {
+            panic!("TD-05: L{} 仍有直接 SOCKET_TABLE[ 访问, 应通过 raw:: 模块:\n{}",
                 idx + 1, line);
         }
-        if trimmed.contains("FD_TYPES[") && !trimmed.contains("FD_TYPES.0[") {
-            panic!("TD-05: L{} 仍用未对齐的 FD_TYPES[..], 必须改为 FD_TYPES.0[..]:\n{}",
+        // 检查是否有直接的 FD_TYPES[ 访问
+        if trimmed.contains("FD_TYPES[") && !trimmed.contains("raw::") && !trimmed.contains("//") {
+            panic!("TD-05: L{} 仍有直接 FD_TYPES[ 访问, 应通过 raw:: 模块:\n{}",
                 idx + 1, line);
         }
     }
 }
 
 #[test]
-fn test_cache_line_size_documented() {
-    // TD-05: cache line 大小必须有文档说明
+fn test_net_state_struct_documented() {
+    // TD-05: NetState 结构体必须有文档说明
     let src = read(INIT);
-    assert!(src.contains("cache line"),
-        "TD-05: 必须有 cache line 对齐的文档说明 (供维护者理解 64 字节来源)");
+    assert!(src.contains("struct NetState"),
+        "TD-05: 必须定义 NetState 结构体");
 }

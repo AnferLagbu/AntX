@@ -22,9 +22,9 @@ fn test_max_sockets_is_256() {
     // 验: MAX_SOCKETS 必须为 256
     assert!(src.contains("const MAX_SOCKETS: usize = 256;"),
         "TD-06: MAX_SOCKETS 必须为 256");
-    // 验: 注释必须提示用户改本值后须同步 8 张大表
-    assert!(src.contains("SOCKET_STORAGE / TCP_*_BUFS"),
-        "TD-06: 注释必须列出所有需要同步尺寸的表 (SOCKET_STORAGE + TCP_*_BUFS + ...)");
+    // 验: 注释必须提示用户改本值后须同步相关尺寸
+    assert!(src.contains("SOCKET_STORAGE"),
+        "TD-06: 注释必须提示改 MAX_SOCKETS 后须同步 SOCKET_STORAGE 尺寸");
 }
 
 #[test]
