@@ -13,3 +13,12 @@ pub mod ddc;
 
 /// HDMI 控制器驱动
 pub mod hdmi;
+
+/// DisplayPort 控制器驱动 (从 framework 迁移, 0 unsafe)
+pub mod dp;
+
+// 重新导出 DisplayPort 公共类型
+pub use dp::{
+    AuxCommand, AuxTransaction, DpController, DpError, Dpcd, DpIo, LaneCount,
+    LinkRate, TrainingState, REQUIRED_IOMEM_SIZE, assert_iomem_size_at_least,
+};

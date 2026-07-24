@@ -30,8 +30,11 @@ pub use framebuffer::{colors, Color, Framebuffer, PixelFormat, Point, Rect};
 // 导出HDMI类型
 pub use hdmi::{Edid, HdmiController, VideoMode, VideoModeFlags, STANDARD_VIDEO_MODES};
 
-// 导出DisplayPort类型
-pub use dp::{DpController, Dpcd, LaneCount, LinkRate, TrainingState};
+// 导出DisplayPort类型 (从 services 层 re-export)
+pub use dp::{
+    AuxCommand, AuxTransaction, DpController, DpError, Dpcd, DpIo, LaneCount, LinkRate,
+    TrainingState, REQUIRED_IOMEM_SIZE, assert_iomem_size_at_least,
+};
 
 // 导出控制器类型
 pub use controller::{DisplayController, DisplayManager, DisplayMode, DisplayOutput, MonitorInfo};
