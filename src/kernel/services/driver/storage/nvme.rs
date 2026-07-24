@@ -694,9 +694,9 @@ impl NvmeController {
         let cq_phys = self.admin_cq_phys;
         let depth = self.admin_queue.depth();
         let db_stride = self.admin_queue.db_stride();
-        let tail = self.admin_queue.sq_tail();
-        let cq_head = self.admin_queue.cq_head();
-        let phase = self.admin_queue.admin_cq_phase();
+        let _tail = self.admin_queue.sq_tail();
+        let _cq_head = self.admin_queue.cq_head();
+        let _phase = self.admin_queue.admin_cq_phase();
 
         // 通过 framework safe wrapper 执行 unsafe 队列操作
         let result = crate::kernel::framework::driver::storage::nvme_submit_admin_cmd(

@@ -400,9 +400,9 @@ const AHCI_CMD_HDR_SIZE: usize = 32;
 const AHCI_CMD_TBL_SIZE: usize = 256;
 
 /// NVMe 队列对 — services 层可持有的 safe 句柄
-///
 /// 内部指向 framework 分配的 DMA 内存 (SQ/CQ ring),
 /// 通过 nvme_queue_* 函数操作, 无需 unsafe。
+#[allow(dead_code)]
 pub struct NvmeQueueHandle {
     /// 队列 ID
     qid: u16,
@@ -472,7 +472,6 @@ impl NvmeQueueHandle {
 /// 失败返回 None (DMA 分配不足)。
 pub fn nvme_alloc_admin_queues() -> Option<(u64, u64)> {
     use crate::kernel::framework::dma::get_dma;
-    use crate::kernel::framework::mm::PAGE_SIZE;
 
     let dma = get_dma();
     if !dma.is_initialized() {
@@ -554,7 +553,7 @@ pub fn nvme_submit_admin_cmd(
     cq_head: &mut u32,
     phase: &mut u16,
     depth: u32,
-    db_stride: u32,
+    _db_stride: u32,
     iomem: &IoMem,
     cid: u16,
 ) -> Result<u16, ()> {
@@ -613,7 +612,7 @@ pub fn nvme_submit_io_cmd(
     cq_head: &mut u32,
     phase: &mut u16,
     depth: u32,
-    db_stride: u32,
+    _db_stride: u32,
     iomem: &IoMem,
     cid: u16,
     io_queue_db_offset: usize,
@@ -872,5 +871,38 @@ pub fn ahci_fill_prdt(cmd_table_virt: u64, entry_index: usize, data_phys: u64, b
             rsvd: 0,
             dbc: (byte_count - 1) | (if ioc { 1u32 << 31 } else { 0 }),
         };
+    }
+}
+
+// ============================================================================
+// xHCI Transfer Ring safe wrapper API (services 层可调用的 0 unsafe 入口)
+//
+// 将 framework 中 unsafe 的 Transfer Ring 操作封装为 safe 函数,
+// 使 services 层可执行完整的 USB 传输逻辑而不引入 unsafe。
+// ============================================================================
+
+/// 向 Transfer Ring 写入一个 TRB (16 字节).
+///
+/// `ring_vaddr` — Transfer Ring DMA 虚拟地址
+/// `index` — TRB 索引 (0-based)
+/// `trb_src` — 源 TRB 字节指针 (调用方保证指向有效 16 字节内存)
+pub fn xhci_write_trb(ring_vaddr: u64, index: u32, trb_src: *const u8) {
+    // SAFETY: ring_vaddr 由 DMA 分配保证有效; trb_src 由调用方保证指向有效 16 字节内存
+    unsafe {
+        let dst = (ring_vaddr as *mut u8).add((index as usize) * 16);
+        core::ptr::copy_nonoverlapping(trb_src, dst, 16);
+    }
+}
+
+/// 从 Transfer Ring 读取一个 TRB (16 字节) 到缓冲区.
+///
+/// `ring_vaddr` — Transfer Ring DMA 虚拟地址
+/// `index` — TRB 索引 (0-based)
+/// `dst` — 目标缓冲区 (至少 16 字节)
+pub fn xhci_read_trb(ring_vaddr: u64, index: u32, dst: *mut u8) {
+    // SAFETY: ring_vaddr 由 DMA 分配保证有效; dst 由调用方保证有效
+    unsafe {
+        let src = (ring_vaddr as *const u8).add((index as usize) * 16);
+        core::ptr::copy_nonoverlapping(src, dst, 16);
     }
 }

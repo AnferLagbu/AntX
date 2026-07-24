@@ -732,3 +732,308 @@ impl XhciController {
         self.set_dcbaap(dcbaa_phys);
     }
 }
+
+// ============================================================================
+// Transfer Ring — xHCI 规范 §4.9.2
+// ============================================================================
+
+/// 传输环 — 端点级传输队列, Host 生产 / Controller 消费.
+///
+/// 每个活动端点拥有独立 Transfer Ring, 通过 Doorbell (slot * 4 + ep) 触发.
+/// 环形缓冲区由 Normal / Link TRB 组成, 末尾 Link TRB 回绕到起点并翻转 cycle.
+///
+/// 所有 DMA 操作通过 framework safe wrapper 执行, 0 unsafe。
+pub struct TransferRing {
+    /// TRB 缓冲区虚拟地址 (DMA 分配)
+    vaddr: u64,
+    /// TRB 缓冲区物理地址 (写 Doorbell 前需用)
+    paddr: u64,
+    /// 缓冲区实际字节数
+    buf_size: usize,
+    /// 队列深度 (TRB 条目数)
+    depth: u32,
+    /// 当前 enqueue 位置 (下一个可写 TRB 索引)
+    enqueue_index: u32,
+    /// 当前 cycle bit (写入 TRB 时设置)
+    cycle: bool,
+}
+
+impl TransferRing {
+    /// 创建并分配 Transfer Ring DMA 内存.
+    ///
+    /// # 参数
+    /// - `max_trbs`: 最大 TRB 数量 (建议 64 或 128).
+    ///
+    /// # 返回
+    /// - `Some(TransferRing)`: 分配成功
+    /// - `None`: DMA 分配失败
+    pub fn new(max_trbs: u32) -> Option<Self> {
+        let buf_size = (max_trbs as usize) * core::mem::size_of::<Trb>();
+        let (vaddr, paddr, actual_size) =
+            crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size)?;
+
+        // 清零 — 通过 framework safe wrapper
+        crate::kernel::framework::driver::storage::nvme_zero_dma(vaddr, actual_size);
+
+        let depth = (actual_size / core::mem::size_of::<Trb>()) as u32;
+
+        Some(Self {
+            vaddr,
+            paddr,
+            buf_size: actual_size,
+            depth,
+            enqueue_index: 0,
+            cycle: true,
+        })
+    }
+
+    /// 释放 Transfer Ring DMA 内存.
+    pub fn free(&self) {
+        if self.vaddr != 0 {
+            crate::kernel::framework::driver::storage::nvme_free_dma_buffer(
+                self.vaddr,
+                self.buf_size,
+            );
+        }
+    }
+
+    /// 获取物理地址 (用于设置 Endpoint Context dequeue pointer).
+    pub fn physical_address(&self) -> u64 {
+        self.paddr
+    }
+
+    /// 获取当前 enqueue 偏移 (字节), 用于更新 Endpoint Context.
+    pub fn enqueue_offset(&self) -> u64 {
+        (self.enqueue_index as u64) * 16 // 每个 TRB 16 字节
+    }
+
+    /// 获取当前 cycle bit.
+    pub fn cycle(&self) -> bool {
+        self.cycle
+    }
+
+    /// 写入一个 TRB 到 enqueue 位置, 自动设置 cycle bit.
+    ///
+    /// 到达末尾时写入 Link TRB 并翻转 cycle, 回绕到起点.
+    /// 返回 `Err` 表示 ring 已满 (无空间).
+    fn push_trb(&mut self, mut trb: Trb) -> bool {
+        if self.enqueue_index >= self.depth {
+            return false;
+        }
+
+        // 设置 cycle bit
+        if self.cycle {
+            trb.control |= 1;
+        } else {
+            trb.control &= !1;
+        }
+
+        // 通过 framework safe wrapper 写入 TRB
+        // 创建 raw pointer 是 safe 操作; 实际解引用由 framework 内部 unsafe 完成
+        let trb_ptr: *const u8 = &trb as *const Trb as *const u8;
+        crate::kernel::framework::driver::storage::xhci_write_trb(
+            self.vaddr,
+            self.enqueue_index,
+            trb_ptr,
+        );
+
+        self.enqueue_index += 1;
+
+        // 到达末尾前最后一项: 写 Link TRB 回绕
+        if self.enqueue_index >= self.depth - 1 {
+            let link_control = (TrbType::Link as u32) << 10
+                | 1 << 1 // Toggle Cycle
+                | if self.cycle { 1 } else { 0 };
+            let link_trb = Trb::new(self.paddr, 0, link_control);
+            let link_ptr: *const u8 = &link_trb as *const Trb as *const u8;
+            crate::kernel::framework::driver::storage::xhci_write_trb(
+                self.vaddr,
+                self.enqueue_index,
+                link_ptr,
+            );
+            self.enqueue_index = 0;
+            self.cycle = !self.cycle;
+        }
+
+        true
+    }
+
+    /// 提交控制传输 (Setup → Data → Status, xHCI 规范 §4.11.2.3).
+    ///
+    /// # 参数
+    /// - `setup_packet`: 8 字节 Setup Packet (bmRequestType, bRequest, wValue, wIndex, wLength)
+    /// - `data_phys`: 数据缓冲区物理地址 (In 方向从设备读, Out 方向写设备)
+    /// - `data_len`: 数据阶段字节数 (0 = 无数据阶段, 仅 Setup+Status)
+    /// - `is_device_to_host`: true = IN (Device→Host), false = OUT (Host→Device)
+    /// - `trb_interrupt_on_completion`: 是否在 Status Stage TRB 上设置 IOC
+    pub fn push_control_transfer(
+        &mut self,
+        setup_packet: &[u8; 8],
+        data_phys: u64,
+        data_len: u32,
+        is_device_to_host: bool,
+        trb_interrupt_on_completion: bool,
+    ) -> bool {
+        // Setup Stage TRB (USB-1.5 §6.4.1.1)
+        let setup_parameter = u64::from_ne_bytes(*setup_packet);
+        let setup_control = (TrbType::SetupStage as u32) << 10
+            | 1 << 6 // ICE (Interrupt on Completion)
+            | 1 << 5 // IOC
+            | 1 << 2 // IDT (Immediate Data)
+            | if is_device_to_host { 1u32 << 16 } else { 0 };
+        let setup_status = 8u32; // Setup packet 固定 8 字节
+        if !self.push_trb(Trb::new(setup_parameter, setup_status, setup_control)) {
+            return false;
+        }
+
+        // Data Stage TRB (仅当 data_len > 0)
+        if data_len > 0 {
+            let data_control = (TrbType::DataStage as u32) << 10
+                | 1 << 5 // IOC
+                | if is_device_to_host {
+                    1u32 << 16 // DIR: IN (Device→Host)
+                } else {
+                    0 // DIR: OUT (Host→Device)
+                };
+            let data_status = data_len & 0x0001_FFFF; // Transfer Length (低 17 位)
+            if !self.push_trb(Trb::new(data_phys, data_status, data_control)) {
+                return false;
+            }
+        }
+
+        // Status Stage TRB
+        let status_control = (TrbType::StatusStage as u32) << 10
+            | if trb_interrupt_on_completion { 1u32 << 5 } else { 0 } // IOC
+            | if is_device_to_host {
+                0 // Status OUT
+            } else {
+                1u32 << 16 // Status IN
+            };
+        self.push_trb(Trb::new(0, 0, status_control))
+    }
+
+    /// 提交批量传输 (Normal TRB, xHCI 规范 §4.11.2.1).
+    ///
+    /// # 参数
+    /// - `data_phys`: 数据缓冲区物理地址
+    /// - `data_len`: 传输字节数 (最大 65536, 超大传输需拆分为多个 TRB)
+    /// - `interrupt_on_completion`: 是否设置 IOC
+    pub fn push_bulk_transfer(
+        &mut self,
+        data_phys: u64,
+        data_len: u32,
+        interrupt_on_completion: bool,
+    ) -> bool {
+        // 每个 Normal TRB 最多传输 65536 字节 (17-bit transfer length, 0 = 65536)
+        let mut remaining = data_len;
+        let mut offset = 0u64;
+
+        while remaining > 0 {
+            let chunk = if remaining > 65536 { 65536 } else { remaining };
+            let is_last = chunk == remaining;
+            let is_ioc = is_last && interrupt_on_completion;
+
+            let control = (TrbType::Normal as u32) << 10
+                | if is_ioc { 1u32 << 5 } else { 0 }
+                | if is_last { 0 } else { 1u32 << 4 }; // CH (Continue on Chain) — 最后一个不设置
+            let status = if chunk == 65536 {
+                0u32 // 0 表示 65536 字节
+            } else {
+                chunk
+            };
+
+            if !self.push_trb(Trb::new(data_phys + offset, status, control)) {
+                return false;
+            }
+
+            remaining -= chunk;
+            offset += chunk as u64;
+        }
+
+        true
+    }
+
+    /// 提交中断传输 (Normal TRB + IOC, 与批量类似但用于中断端点).
+    ///
+    /// # 参数
+    /// - `data_phys`: 数据缓冲区物理地址
+    /// - `data_len`: 传输字节数 (通常很小, 键盘 8 字节, 鼠标 4 字节)
+    pub fn push_interrupt_transfer(&mut self, data_phys: u64, data_len: u32) -> bool {
+        // 中断传输总是设置 IOC (每次轮询到都需通知 host)
+        self.push_bulk_transfer(data_phys, data_len, true)
+    }
+
+    /// 清空 Transfer Ring (重置所有 TRB, 回到初始状态).
+    pub fn reset(&mut self) {
+        // 通过 framework safe wrapper 清零
+        crate::kernel::framework::driver::storage::nvme_zero_dma(self.vaddr, self.buf_size);
+        self.enqueue_index = 0;
+        self.cycle = true;
+    }
+}
+
+// ============================================================================
+// USB 传输类型枚举
+// ============================================================================
+
+/// USB 端点传输类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsbTransferType {
+    /// 控制传输 (端点 0, 默认)
+    Control,
+    /// 批量传输
+    Bulk,
+    /// 中断传输
+    Interrupt,
+    /// 等时传输 (暂不支持)
+    Isochronous,
+}
+
+/// USB 端点方向
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsbTransferDirection {
+    /// IN (Device → Host)
+    In,
+    /// OUT (Host → Device)
+    Out,
+}
+
+// ============================================================================
+// 端点传输上下文 (per-endpoint)
+// ============================================================================
+
+/// 单个端点的传输上下文
+pub struct EndpointTransfer {
+    /// 端点号 (1-15, xHCI endpoint ID)
+    pub endpoint_id: u8,
+    /// 传输类型
+    pub transfer_type: UsbTransferType,
+    /// 传输方向
+    pub direction: UsbTransferDirection,
+    /// 该端点的 Transfer Ring
+    pub transfer_ring: TransferRing,
+}
+
+impl EndpointTransfer {
+    /// 创建端点传输上下文
+    ///
+    /// # 参数
+    /// - `endpoint_id`: xHCI 端点 ID (1-15)
+    /// - `transfer_type`: 传输类型
+    /// - `direction`: 传输方向
+    /// - `ring_size`: Transfer Ring TRB 数量
+    pub fn new(
+        endpoint_id: u8,
+        transfer_type: UsbTransferType,
+        direction: UsbTransferDirection,
+        ring_size: u32,
+    ) -> Option<Self> {
+        let transfer_ring = TransferRing::new(ring_size)?;
+        Some(Self {
+            endpoint_id,
+            transfer_type,
+            direction,
+            transfer_ring,
+        })
+    }
+}

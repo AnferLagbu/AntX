@@ -38,7 +38,6 @@
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
-use crate::kernel::framework::driver::storage::ahci as fw_ahci;
 
 // Services 层日志
 use crate::slog_info;
