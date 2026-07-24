@@ -251,6 +251,153 @@ impl VirtQueue {
     }
 }
 
+// ============================================================================
+// DMA 缓冲区 (safe API, 供 services 层调用)
+// ============================================================================
+
+/// DMA 缓冲区: 物理连续的内核页, 供 VirtIO 设备 DMA 访问.
+///
+/// 提供 safe 的字节级读写方法, 使 services 层无需 unsafe 即可
+/// 构造请求头和读写数据.
+pub struct DmaBuffer {
+    /// 缓冲区物理地址 (设备 DMA 使用)
+    phys: u64,
+    /// 缓冲区虚拟地址 (内核读写使用)
+    virt: *mut u8,
+    /// 分配的页数 (Drop 时用于释放, 当前 PMM 未提供释放接口)
+    pages: usize,
+    /// 缓冲区总大小 (字节)
+    size: usize,
+}
+
+// SAFETY: DmaBuffer 拥有 PMM 分配的独占页; 单一所有者
+unsafe impl Send for DmaBuffer {}
+
+impl DmaBuffer {
+    /// 分配指定大小的 DMA 缓冲区.
+    ///
+    /// 返回 `Some(DmaBuffer)` 表示分配成功, `None` 表示内存不足.
+    /// 缓冲区内容初始化为零.
+    pub fn new(size: usize) -> Option<Self> {
+        let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+        unsafe extern "C" {
+            fn pmm_alloc_pages(count: u64) -> *mut u8;
+        }
+        // SAFETY: pmm_alloc_pages 由 PMM 模块提供, 参数与返回值类型匹配
+        let ptr = unsafe { pmm_alloc_pages(pages as u64) };
+        if ptr.is_null() {
+            return None;
+        }
+        let phys = ptr as u64;
+        let virt = (phys + KERNEL_BASE) as *mut u8;
+        // SAFETY: virt 指向有效内核页, 长度 pages * PAGE_SIZE >= size
+        unsafe {
+            core::ptr::write_bytes(virt, 0, size);
+        }
+        Some(Self {
+            phys,
+            virt,
+            pages,
+            size,
+        })
+    }
+
+    /// 物理地址 (用于 VirtQueue 描述符)
+    #[inline]
+    pub fn phys_addr(&self) -> u64 {
+        self.phys
+    }
+
+    /// 缓冲区总大小
+    #[inline]
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    /// 从缓冲区 `offset` 处读取一个字节.
+    ///
+    /// # Panic
+    /// `offset >= size` 时 panic.
+    pub fn read_byte(&self, offset: usize) -> u8 {
+        assert!(offset < self.size, "DmaBuffer::read_byte: offset out of bounds");
+        // SAFETY: virt 指向有效内核页, offset < size 已检查
+        unsafe { *self.virt.add(offset) }
+    }
+
+    /// 向缓冲区 `offset` 处写入一个字节.
+    pub fn write_byte(&mut self, offset: usize, val: u8) {
+        assert!(offset < self.size, "DmaBuffer::write_byte: offset out of bounds");
+        // SAFETY: virt 指向有效内核页, offset < size 已检查, &mut self 保证独占
+        unsafe {
+            *self.virt.add(offset) = val;
+        }
+    }
+
+    /// 从缓冲区 `offset` 处读取一个 u32 (小端).
+    pub fn read_u32(&self, offset: usize) -> u32 {
+        let b0 = self.read_byte(offset) as u32;
+        let b1 = self.read_byte(offset + 1) as u32;
+        let b2 = self.read_byte(offset + 2) as u32;
+        let b3 = self.read_byte(offset + 3) as u32;
+        b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    }
+
+    /// 向缓冲区 `offset` 处写入一个 u32 (小端).
+    pub fn write_u32(&mut self, offset: usize, val: u32) {
+        self.write_byte(offset, val as u8);
+        self.write_byte(offset + 1, (val >> 8) as u8);
+        self.write_byte(offset + 2, (val >> 16) as u8);
+        self.write_byte(offset + 3, (val >> 24) as u8);
+    }
+
+    /// 从缓冲区 `offset` 处读取一个 u64 (小端).
+    pub fn read_u64(&self, offset: usize) -> u64 {
+        let lo = self.read_u32(offset) as u64;
+        let hi = self.read_u32(offset + 4) as u64;
+        lo | (hi << 32)
+    }
+
+    /// 向缓冲区 `offset` 处写入一个 u64 (小端).
+    pub fn write_u64(&mut self, offset: usize, val: u64) {
+        self.write_u32(offset, val as u32);
+        self.write_u32(offset + 4, (val >> 32) as u32);
+    }
+
+    /// 从 `src` 拷贝 `len` 字节到缓冲区 `offset` 处.
+    pub fn write_slice(&mut self, offset: usize, src: &[u8]) {
+        let len = src.len();
+        assert!(
+            offset + len <= self.size,
+            "DmaBuffer::write_slice: out of bounds"
+        );
+        // SAFETY: virt 指向有效内核页, offset + len <= size 已检查, &mut self 保证独占
+        unsafe {
+            core::ptr::copy_nonoverlapping(src.as_ptr(), self.virt.add(offset), len);
+        }
+    }
+
+    /// 从缓冲区 `offset` 处拷贝 `len` 字节到 `dst`.
+    pub fn read_slice(&self, offset: usize, dst: &mut [u8]) {
+        let len = dst.len();
+        assert!(
+            offset + len <= self.size,
+            "DmaBuffer::read_slice: out of bounds"
+        );
+        // SAFETY: virt 指向有效内核页, offset + len <= size 已检查
+        unsafe {
+            core::ptr::copy_nonoverlapping(self.virt.add(offset), dst.as_mut_ptr(), len);
+        }
+    }
+}
+
+impl Drop for DmaBuffer {
+    fn drop(&mut self) {
+        // 当前 PMM 不提供 pmm_free_pages, 缓冲区生命周期由系统管理.
+        // 占位: PMM 增量后接入实际释放. self.pages 记录分配页数供将来使用.
+        let _pages = self.pages;
+    }
+}
+
 /// 将 `val` 向上对齐到 `align` 的下一个倍数.
 fn align_up(val: usize, align: usize) -> usize {
     (val + align - 1) & !(align - 1)

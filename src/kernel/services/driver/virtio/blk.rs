@@ -21,6 +21,7 @@
 //! Phase 2.1.3 任务: VirtIO-blk 块设备迁移
 
 use super::transport::{VirtioDevice, DEVICE_ID_BLOCK, VIRTIO_F_VERSION_1};
+use crate::kernel::framework::driver::virtio::queue::{DmaBuffer, VirtQueue};
 use crate::slog_info;
 use crate::slog_warn;
 
@@ -156,6 +157,8 @@ pub struct VirtioBlkDriver {
     capacity_sectors: u64,
     /// 设备支持的特性位
     negotiated_features: u64,
+    /// VirtQueue (单请求队列, 块设备通常仅 vq0)
+    vq: VirtQueue,
 }
 
 impl VirtioBlkDriver {
@@ -221,6 +224,10 @@ impl VirtioBlkDriver {
             return None;
         }
 
+        // 分配 VirtQueue (块设备通常仅 vq0)
+        let is_legacy = device.is_legacy();
+        let vq = VirtQueue::new(is_legacy)?;
+
         // 读取配置空间: 容量
         let cap_lo = device.read_config32(BLK_CONFIG_CAPACITY_LO) as u64;
         let cap_hi = device.read_config32(BLK_CONFIG_CAPACITY_HI) as u64;
@@ -237,6 +244,7 @@ impl VirtioBlkDriver {
             device,
             capacity_sectors: capacity,
             negotiated_features: driver_features,
+            vq,
         })
     }
 
@@ -350,6 +358,157 @@ impl VirtioBlkDriver {
     /// 通知设备: 指定队列有新描述符.
     pub fn notify(&self, vq_index: u16) {
         self.device.notify_queue(vq_index);
+    }
+
+    // ── 数据路径: 块读写 ──
+
+    /// 读取单个扇区 (512 字节) 到调用方缓冲区.
+    ///
+    /// 使用链式描述符: 请求头 → 数据缓冲区 → 状态字节.
+    /// DMA 缓冲区通过 framework DmaBuffer 分配.
+    pub fn read_sector(&mut self, lba: u64, buf: &mut [u8]) -> Result<(), ()> {
+        if buf.len() < BLK_SECTOR_SIZE {
+            return Err(());
+        }
+        self.do_sector_io(lba, VIRTIO_BLK_T_IN, buf)
+    }
+
+    /// 从调用方缓冲区写入单个扇区 (512 字节).
+    pub fn write_sector(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
+        if buf.len() < BLK_SECTOR_SIZE {
+            return Err(());
+        }
+        // 写操作: 将数据拷贝到 DMA, 设备读取
+        self.do_sector_io_write(lba, buf)
+    }
+
+    /// 执行读扇区 I/O (设备 → DMA → buf).
+    fn do_sector_io(&mut self, lba: u64, req_type: u32, buf: &mut [u8]) -> Result<(), ()> {
+        let req_size = BlkRequest::header_size();
+        let data_size = BLK_SECTOR_SIZE;
+        let status_size = 1;
+        let total_dma = req_size + data_size + status_size;
+
+        let mut dma = match DmaBuffer::new(total_dma) {
+            Some(b) => b,
+            None => {
+                slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
+                return Err(());
+            }
+        };
+        let dma_phys = dma.phys_addr();
+
+        // 构造请求头
+        dma.write_u32(0, req_type.to_le());
+        dma.write_u32(4, 0);
+        dma.write_u64(8, lba.to_le());
+
+        self.submit_and_wait(dma_phys, req_size, data_size, status_size, req_type, &dma)?;
+
+        // 读操作: 从 DMA 缓冲区拷贝到调用方
+        let mut tmp = [0u8; BLK_SECTOR_SIZE];
+        dma.read_slice(req_size, &mut tmp);
+        let copy_len = BLK_SECTOR_SIZE.min(buf.len());
+        for i in 0..copy_len {
+            buf[i] = tmp[i];
+        }
+        Ok(())
+    }
+
+    /// 执行写扇区 I/O (buf → DMA → 设备).
+    fn do_sector_io_write(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
+        let req_size = BlkRequest::header_size();
+        let data_size = BLK_SECTOR_SIZE;
+        let status_size = 1;
+        let total_dma = req_size + data_size + status_size;
+
+        let mut dma = match DmaBuffer::new(total_dma) {
+            Some(b) => b,
+            None => {
+                slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
+                return Err(());
+            }
+        };
+        let dma_phys = dma.phys_addr();
+
+        // 构造请求头
+        dma.write_u32(0, VIRTIO_BLK_T_OUT.to_le());
+        dma.write_u32(4, 0);
+        dma.write_u64(8, lba.to_le());
+
+        // 复制写入数据到 DMA 缓冲区
+        let copy_len = data_size.min(buf.len());
+        dma.write_slice(req_size, &buf[..copy_len]);
+
+        self.submit_and_wait(dma_phys, req_size, data_size, status_size, VIRTIO_BLK_T_OUT, &dma)
+    }
+
+    /// 提交描述符链并等待设备完成.
+    ///
+    /// 描述符链: [请求头] → [数据] → [状态字节].
+    /// 返回 Ok(status) 或 Err(status_byte).
+    fn submit_and_wait(
+        &mut self,
+        dma_phys: u64,
+        req_size: usize,
+        data_size: usize,
+        status_size: usize,
+        req_type: u32,
+        dma: &DmaBuffer,
+    ) -> Result<(), ()> {
+        // ── 准备描述符链 ──
+        let desc_req = self.vq.prepare_desc(dma_phys, req_size as u32, false);
+        let desc_data = self.vq.prepare_desc(
+            dma_phys + req_size as u64,
+            data_size as u32,
+            req_type == VIRTIO_BLK_T_IN,
+        );
+        let desc_status = self
+            .vq
+            .prepare_desc(dma_phys + (req_size + data_size) as u64, status_size as u32, true);
+
+        if desc_req == 0xFFFF || desc_data == 0xFFFF || desc_status == 0xFFFF {
+            if desc_status != 0xFFFF {
+                self.vq.reclaim_desc(desc_status);
+            }
+            if desc_data != 0xFFFF {
+                self.vq.reclaim_desc(desc_data);
+            }
+            if desc_req != 0xFFFF {
+                self.vq.reclaim_desc(desc_req);
+            }
+            slog_warn!(Driver, "virtio-blk: 描述符耗尽");
+            return Err(());
+        }
+
+        // 链接: req → data → status
+        self.vq.link_desc(desc_req, desc_data);
+        self.vq.link_desc(desc_data, desc_status);
+
+        // 提交并通知设备
+        self.vq.submit(desc_req);
+        self.vq.commit_and_kick();
+        self.device.notify_queue(0);
+
+        // ── 等待完成 (轮询 used ring) ──
+        loop {
+            if let Some((_id, _len)) = self.vq.pop_used() {
+                let status = dma.read_byte(req_size + data_size);
+
+                self.vq.reclaim_desc(desc_status);
+                self.vq.reclaim_desc(desc_data);
+                self.vq.reclaim_desc(desc_req);
+
+                if status != VIRTIO_BLK_S_OK {
+                    if status == VIRTIO_BLK_S_IOERR {
+                        slog_warn!(Driver, "virtio-blk: I/O 错误");
+                    }
+                    return Err(());
+                }
+                return Ok(());
+            }
+            core::hint::spin_loop();
+        }
     }
 }
 
