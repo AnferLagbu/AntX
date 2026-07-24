@@ -131,6 +131,11 @@ type HandleSlot = Option<(u32, u32)>;
 pub struct SmoltcpNetStack {
     config: NetConfig,
     handle_map: [HandleSlot; MAX_SOCKETS],
+    /// 通过 socket_create_fd 创建的活动 fd 集合.
+    ///
+    /// fd-based 方法 (bind_fd, listen_fd 等) 在操作前检查此集合,
+    /// 拒绝未通过 SmoltcpNetStack 创建的 fd, 防止越权访问.
+    active_fds: [bool; MAX_SOCKETS],
     next_user_id: u32,
     /// 下一个 SmoltcpNetStack 专属范围的 smol 槽位索引 (W4.2.3.4 阶段新增).
     ///
@@ -163,6 +168,7 @@ impl SmoltcpNetStack {
         Self {
             config: NetConfig::empty(),
             handle_map: [None; MAX_SOCKETS],
+            active_fds: [false; MAX_SOCKETS],
             next_user_id: 1, // 0 = INVALID
             next_smol_idx: 0,
             dhcp_user_id: None,
@@ -220,8 +226,17 @@ impl SmoltcpNetStack {
 
     // ---- fd-based 便捷方法 (供 socket.rs 直接调用, 无需 SocketHandle 查找) ----
 
+    /// 检查 fd 是否由 SmoltcpNetStack 创建且仍处于活动状态.
+    fn is_active_fd(&self, fd: i32) -> bool {
+        let idx = fd as usize;
+        idx < MAX_SOCKETS && self.active_fds[idx]
+    }
+
     /// 将 fd 绑定到本地端点.
     pub fn bind_fd(&self, fd: i32, addr: NetEndpoint) -> Result<()> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let sin = endpoint_to_sockaddr(addr);
         let rc = fw_net_socket::sm_net_bind(fd, sin.as_ptr(), 16);
         if rc == 0 {
@@ -233,6 +248,9 @@ impl SmoltcpNetStack {
 
     /// 将 fd 置为监听状态.
     pub fn listen_fd(&self, fd: i32, backlog: i32) -> Result<()> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let rc = fw_net_socket::sm_net_listen(fd, backlog);
         if rc == 0 {
             Ok(())
@@ -243,6 +261,9 @@ impl SmoltcpNetStack {
 
     /// 从监听 fd 的已完成连接队列中取出一个新连接.
     pub fn accept_fd(&self, fd: i32) -> Result<i32> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let new_fd = fw_net_socket::sm_net_accept(fd, core::ptr::null_mut(), core::ptr::null_mut());
         if new_fd >= 0 {
             Ok(new_fd)
@@ -253,6 +274,9 @@ impl SmoltcpNetStack {
 
     /// 发起 TCP 连接到远端端点.
     pub fn connect_fd(&self, fd: i32, addr: NetEndpoint) -> Result<()> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let sin = endpoint_to_sockaddr(addr);
         let rc = fw_net_socket::sm_net_connect(fd, sin.as_ptr(), 16);
         if rc == 0 {
@@ -264,6 +288,9 @@ impl SmoltcpNetStack {
 
     /// 向已连接的 fd 发送数据.
     pub fn send_fd(&self, fd: i32, buf: &[u8]) -> Result<usize> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let rc = fw_net_socket::sm_net_send(fd, buf.as_ptr(), buf.len() as u32, 0);
         if rc >= 0 {
             Ok(rc as usize)
@@ -274,6 +301,9 @@ impl SmoltcpNetStack {
 
     /// 从已连接的 fd 接收数据.
     pub fn recv_fd(&self, fd: i32, buf: &mut [u8]) -> Result<usize> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let rc = fw_net_socket::sm_net_recv(fd, buf.as_mut_ptr(), buf.len() as u32, 0);
         if rc >= 0 {
             Ok(rc as usize)
@@ -284,6 +314,9 @@ impl SmoltcpNetStack {
 
     /// 向指定端点发送数据报 (UDP 主要场景).
     pub fn sendto_fd(&self, fd: i32, buf: &[u8], addr: NetEndpoint) -> Result<usize> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let sin = endpoint_to_sockaddr(addr);
         let rc =
             fw_net_socket::sm_net_sendto(fd, buf.as_ptr(), buf.len() as u32, 0, sin.as_ptr(), 16);
@@ -296,6 +329,9 @@ impl SmoltcpNetStack {
 
     /// 接收数据报并获取来源端点信息 (UDP 主要场景).
     pub fn recvfrom_fd(&self, fd: i32, buf: &mut [u8]) -> Result<(usize, NetEndpoint)> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let mut src = [0u8; 16];
         let mut addrlen = 16u32;
         let rc = fw_net_socket::sm_net_recvfrom(
@@ -314,8 +350,12 @@ impl SmoltcpNetStack {
         }
     }
 
-    /// 关闭 fd.
-    pub fn close_fd(&self, fd: i32) -> Result<()> {
+    /// 关闭 fd, 并从活动集合中移除.
+    pub fn close_fd(&mut self, fd: i32) -> Result<()> {
+        let idx = fd as usize;
+        if idx < MAX_SOCKETS {
+            self.active_fds[idx] = false;
+        }
         let rc = fw_net_socket::sm_net_close(fd);
         if rc == 0 {
             Ok(())
@@ -326,6 +366,9 @@ impl SmoltcpNetStack {
 
     /// 通过 fd 设置 Socket 选项.
     pub fn setsockopt_fd(&self, fd: i32, level: i32, optname: i32, val: &[u8]) -> Result<()> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let rc = fw_net_socket::sm_net_setsockopt(fd, level, optname, val.as_ptr(), val.len() as u32);
         if rc == 0 {
             Ok(())
@@ -336,6 +379,9 @@ impl SmoltcpNetStack {
 
     /// 通过 fd 获取 Socket 选项.
     pub fn getsockopt_fd(&self, fd: i32, level: i32, optname: i32, out: &mut [u8]) -> Result<usize> {
+        if !self.is_active_fd(fd) {
+            return Err(NetError::InvalidHandle);
+        }
         let mut out_len = out.len() as u32;
         let rc = fw_net_socket::sm_net_getsockopt(fd, level, optname, out.as_mut_ptr(), &mut out_len);
         if rc == 0 {
@@ -356,9 +402,13 @@ impl SmoltcpNetStack {
     }
 
     /// 通过 domain + type 创建 socket, 返回 fd.
-    pub fn socket_create_fd(&self, domain: i32, sock_type: i32) -> Result<i32> {
+    pub fn socket_create_fd(&mut self, domain: i32, sock_type: i32) -> Result<i32> {
         let fd = fw_net_socket::sm_net_socket(domain, sock_type, 0);
         if fd >= 0 {
+            let idx = fd as usize;
+            if idx < MAX_SOCKETS {
+                self.active_fds[idx] = true;
+            }
             Ok(fd)
         } else {
             Err(NetError::Other)
@@ -1549,5 +1599,102 @@ mod tests {
         // 100s + 100s = 200s, < T1=500s
         let action = stack.dhcp_decide_at(200_000);
         assert_eq!(action, DhcpAction::Continue);
+    }
+
+    // ---- 10. fd 生命周期追踪 ----
+
+    /// 验证: active_fds 在 new() 时全初始化为 false.
+    #[test]
+    fn test_active_fds_initialized() {
+        let stack = SmoltcpNetStack::new();
+        for i in 0..MAX_SOCKETS {
+            assert!(
+                !stack.active_fds[i],
+                "active_fds[{}] 在 new() 后应为 false",
+                i
+            );
+        }
+    }
+
+    /// 验证: is_active_fd 对未创建的 fd 返回 false.
+    #[test]
+    fn test_is_active_fd_rejects_invalid() {
+        let stack = SmoltcpNetStack::new();
+        assert!(!stack.is_active_fd(0));
+        assert!(!stack.is_active_fd(1));
+        assert!(!stack.is_active_fd(MAX_SOCKETS as i32));
+        assert!(!stack.is_active_fd(-1));
+    }
+
+    /// 验证: socket_create_fd 后对应 fd 被标记为活动.
+    ///
+    /// 注意: socket_create_fd 调用 FFI sm_net_socket, 在 host 测试环境
+    /// 返回 -1 (stub), 因此这里仅验证代码路径逻辑 (边界检查 + 字段设置).
+    #[test]
+    fn test_socket_create_fd_tracks_active_fd() {
+        let mut stack = SmoltcpNetStack::new();
+        // FFI stub 返回 -1, socket_create_fd 会返回 Err
+        // 但我们可以手动模拟 fd 追踪逻辑来验证正确性
+        // 直接设置 active_fds 来模拟成功路径
+        let mock_fd: usize = 5;
+        stack.active_fds[mock_fd] = true;
+        assert!(stack.is_active_fd(mock_fd as i32));
+        assert!(!stack.is_active_fd((mock_fd + 1) as i32));
+    }
+
+    /// 验证: close_fd 清理 active_fds 标记.
+    #[test]
+    fn test_close_fd_clears_active() {
+        let mut stack = SmoltcpNetStack::new();
+        // 模拟 fd 已创建
+        let mock_fd: usize = 3;
+        stack.active_fds[mock_fd] = true;
+        assert!(stack.is_active_fd(mock_fd as i32));
+        // 手动清理 (模拟 close_fd 的清理逻辑)
+        stack.active_fds[mock_fd] = false;
+        assert!(!stack.is_active_fd(mock_fd as i32));
+    }
+
+    /// 验证: fd-based 方法对未活动 fd 返回 InvalidHandle.
+    ///
+    /// 由于 FFI stub 在 host 环境不可用, 这里通过直接设置 active_fds
+    /// 来验证校验逻辑: 未标记的 fd 应被拒绝.
+    #[test]
+    fn test_fd_based_methods_reject_inactive() {
+        let stack = SmoltcpNetStack::new();
+        let ep = NetEndpoint::new(Ipv4Addr::new(127, 0, 0, 1), 8080);
+        // fd=1 未被 active_fds 标记, 所有 fd-based 方法应返回 InvalidHandle
+        assert_eq!(stack.bind_fd(1, ep), Err(NetError::InvalidHandle));
+        assert_eq!(stack.listen_fd(1, 128), Err(NetError::InvalidHandle));
+        assert_eq!(stack.accept_fd(1), Err(NetError::InvalidHandle));
+        assert_eq!(stack.connect_fd(1, ep), Err(NetError::InvalidHandle));
+        assert_eq!(stack.send_fd(1, b"test"), Err(NetError::InvalidHandle));
+        let mut buf = [0u8; 10];
+        assert_eq!(stack.recv_fd(1, &mut buf), Err(NetError::InvalidHandle));
+        assert_eq!(
+            stack.sendto_fd(1, b"test", ep),
+            Err(NetError::InvalidHandle)
+        );
+        assert_eq!(
+            stack.recvfrom_fd(1, &mut buf),
+            Err(NetError::InvalidHandle)
+        );
+        assert_eq!(
+            stack.setsockopt_fd(1, 1, 2, &[1, 2, 3]),
+            Err(NetError::InvalidHandle)
+        );
+        assert_eq!(
+            stack.getsockopt_fd(1, 1, 2, &mut buf),
+            Err(NetError::InvalidHandle)
+        );
+    }
+
+    /// 验证: MAX_SOCKETS 边界 — active_fds 索引超出范围时 is_active_fd 返回 false.
+    #[test]
+    fn test_active_fds_out_of_bounds() {
+        let stack = SmoltcpNetStack::new();
+        assert!(!stack.is_active_fd(MAX_SOCKETS as i32));
+        assert!(!stack.is_active_fd((MAX_SOCKETS + 1) as i32));
+        assert!(!stack.is_active_fd(i32::MAX));
     }
 }

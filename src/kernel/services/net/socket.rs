@@ -103,7 +103,7 @@ impl SockAddrIn {
 ///
 /// 成功返回新 socket 的 FD, 失败返回 `SocketError`。
 pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResult<i32> {
-    let s = net_stack().lock();
+    let mut s = net_stack().lock();
     s.socket_create_fd(domain as i32, sock_type as i32)
         .map_err(|_| SocketError::InvalidArgument)
 }
@@ -165,7 +165,7 @@ pub fn recvfrom(fd: i32, out: &mut [u8]) -> SocketResult<(usize, SockAddrIn)> {
 
 /// POSIX `close(fd)`
 pub fn close(fd: i32) -> SocketResult<()> {
-    let s = net_stack().lock();
+    let mut s = net_stack().lock();
     s.close_fd(fd).map_err(|_| SocketError::InvalidArgument)
 }
 
