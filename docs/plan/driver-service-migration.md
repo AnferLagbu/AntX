@@ -28,7 +28,7 @@
 | 2.1.2 | VirtIO 传输层 | [X] | ~60% | services: transport + blk + net; framework: queue/FFI |
 | 2.1.3 | NVMe 存储 | [X] | ~50% | services: 队列管理/命令提交/读写; framework: DMA/PCI |
 | 2.1.4 | AHCI/ATA 存储 | [X] | ~50% | services: AHCI + ATA 骨架; framework: DMA/FFI |
-| 2.1.5 | 字符/显示设备 | [X] | ~75% | services: serial+VGA+ddc+hdmi 1084行; dp.rs 未迁移 |
+| 2.1.5 | 字符/显示设备 | [X] | ~90% | services: serial+VGA+ddc+hdmi+dp 2607行; framework: 仅 re-export |
 | 2.1.6 | USB/XHCI | [X] | ~70% | services: 7 个文件 +343行; xhci unsafe 留 framework |
 
 ### 方案
