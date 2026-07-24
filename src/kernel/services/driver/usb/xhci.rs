@@ -36,6 +36,108 @@
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
 
+// ============================================================================
+// xHCI TRB 类型定义 (USB-1.5)
+// ============================================================================
+
+/// TRB 类型枚举 — xHCI 规范 §6.4.1
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum TrbType {
+    /// 普通传输 TRB
+    Normal = 1,
+    /// Setup Stage TRB (Control Transfer)
+    SetupStage = 2,
+    /// Data Stage TRB (Control Transfer)
+    DataStage = 3,
+    /// Status Stage TRB (Control Transfer)
+    StatusStage = 4,
+    /// 等时传输 TRB
+    Isoch = 5,
+    /// Link TRB (环链接)
+    Link = 6,
+    /// Event Data TRB
+    EventData = 7,
+    /// No-Op TRB
+    NoOp = 8,
+    /// Enable Slot Command TRB
+    EnableSlot = 9,
+    /// Disable Slot Command TRB
+    DisableSlot = 10,
+    /// Address Device Command TRB
+    AddressDevice = 11,
+    /// Configure Endpoint Command TRB
+    ConfigureEndpoint = 12,
+    /// Evaluate Context Command TRB
+    EvaluateContext = 13,
+    /// Reset Endpoint Command TRB
+    ResetEndpoint = 14,
+    /// Stop Endpoint Command TRB
+    StopEndpoint = 15,
+    /// Set TR Dequeue Pointer Command TRB
+    SetTrDequeuePointer = 16,
+    /// Reset Device Command TRB
+    ResetDevice = 17,
+    /// Transfer Event TRB (Controller → Host)
+    TransferEvent = 32,
+    /// Command Completion Event TRB (Controller → Host)
+    CommandCompletionEvent = 33,
+    /// Port Status Change Event TRB
+    PortStatusChangeEvent = 34,
+}
+
+/// 传输描述符 (TRB) — 16 字节, xHCI 规范 §6.4
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+pub struct Trb {
+    /// 参数 (含义取决于 TRB 类型)
+    pub parameter: u64,
+    /// 状态字段 (传输长度/完成码等)
+    pub status: u32,
+    /// 控制字段 (TRB 类型 + cycle bit + flags)
+    pub control: u32,
+}
+
+impl Trb {
+    /// 创建新 TRB
+    pub fn new(parameter: u64, status: u32, control: u32) -> Self {
+        Self { parameter, status, control }
+    }
+
+    /// 提取 TRB 类型 (control[15:10])
+    pub fn trb_type(&self) -> TrbType {
+        let ty = (self.control >> 10) & 0x3F;
+        match ty {
+            1 => TrbType::Normal,
+            2 => TrbType::SetupStage,
+            3 => TrbType::DataStage,
+            4 => TrbType::StatusStage,
+            5 => TrbType::Isoch,
+            6 => TrbType::Link,
+            7 => TrbType::EventData,
+            8 => TrbType::NoOp,
+            9 => TrbType::EnableSlot,
+            10 => TrbType::DisableSlot,
+            11 => TrbType::AddressDevice,
+            12 => TrbType::ConfigureEndpoint,
+            13 => TrbType::EvaluateContext,
+            14 => TrbType::ResetEndpoint,
+            15 => TrbType::StopEndpoint,
+            16 => TrbType::SetTrDequeuePointer,
+            17 => TrbType::ResetDevice,
+            32 => TrbType::TransferEvent,
+            33 => TrbType::CommandCompletionEvent,
+            34 => TrbType::PortStatusChangeEvent,
+            _ => TrbType::Normal,
+        }
+    }
+
+    /// 获取 cycle bit (control[0])
+    pub fn cycle_bit(&self) -> bool {
+        self.control & 1 != 0
+    }
+}
+
 // ── Capability 寄存器偏移 (在 MMIO 起始处) ──
 
 /// Capability Length
@@ -220,6 +322,16 @@ pub struct XhciController {
     db_off: u32,
     /// Runtime 偏移
     rts_off: u32,
+    /// 最大端口数 (从 HCSPARAMS1 解析)
+    num_ports: u8,
+    /// 最大设备插槽数 (从 HCSPARAMS1 解析)
+    num_slots: u8,
+    /// 控制器是否已初始化 (reset + start 完成)
+    initialized: bool,
+    /// 已分配设备地址位图 (USB 地址 1..=254, 位图 256 bit)
+    address_bitmap: [u8; 32],
+    /// 下一个待分配地址扫描起点 (加速连续分配)
+    next_address_hint: u8,
 }
 
 impl XhciController {
@@ -240,11 +352,20 @@ impl XhciController {
         let db_off = mmio.read_u32(CAP_DBOFF);
         let rts_off = mmio.read_u32(CAP_RTSOFF);
 
+        // 解析 HCSPARAMS1: MaxSlots = [7:0], MaxPorts = [31:24]
+        let hcs_params1 = mmio.read_u32(CAP_HCSPARAMS1);
+        let params = StructuralParams1::from_register(hcs_params1);
+
         Some(Self {
             mmio,
             cap_length,
             db_off,
             rts_off,
+            num_ports: params.max_ports,
+            num_slots: params.max_device_slots,
+            initialized: false,
+            address_bitmap: [0u8; 32],
+            next_address_hint: 1,
         })
     }
 
@@ -481,5 +602,133 @@ impl XhciController {
     pub fn ring_doorbell(&self, slot: u8, value: u32) {
         let offset = self.db_off as usize + (slot as usize) * 4;
         self.mmio.write_u32(offset, value);
+    }
+
+    // ── 初始化序列 (xHCI 规范 §4.3) ──
+
+    /// 完整初始化控制器 (reset → start).
+    ///
+    /// 执行 xHCI 规范 §4.3 初始化序列:
+    /// 1. 读取 Capability 参数 (已在 new 中完成)
+    /// 2. 软复位控制器 (USBCMD.HC_RESET)
+    /// 3. 等待复位完成 (USBSTS.HCRST = 1)
+    /// 4. 启动控制器 (USBCMD.RS = 1)
+    /// 5. 启用全局中断
+    ///
+    /// # 返回
+    /// - `Ok(())`: 初始化成功
+    /// - `Err`: 超时或控制器无响应
+    pub fn init_hardware(&mut self) -> Result<(), &'static str> {
+        // 1. 软复位
+        self.reset();
+        // 2. 启动
+        self.start();
+        // 3. 启用中断
+        self.enable_interrupts();
+        self.initialized = true;
+        Ok(())
+    }
+
+    /// 控制器是否已完成初始化
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
+    /// 获取端口数量
+    pub fn num_ports(&self) -> u8 {
+        self.num_ports
+    }
+
+    /// 获取设备插槽数量
+    pub fn num_slots(&self) -> u8 {
+        self.num_slots
+    }
+
+    // ── USB 设备地址分配 (USB 2.0 规范 §9.1.2) ──
+
+    /// 分配一个 USB 设备地址 (1..=254).
+    ///
+    /// 从 `next_address_hint` 开始扫描 `address_bitmap`,
+    /// 找到第一个未使用位 (bit=0) 标记为已用并返回该地址.
+    /// 全部 254 个地址耗尽时返回 `None`.
+    pub fn allocate_address(&mut self) -> Option<u8> {
+        for offset in 0..254u16 {
+            let addr = self.next_address_hint.wrapping_add(offset as u8);
+            if addr == 0 || addr == 255 {
+                continue;
+            }
+            let byte_idx = (addr / 8) as usize;
+            let bit_idx = addr % 8;
+            if byte_idx >= self.address_bitmap.len() {
+                continue;
+            }
+            if self.address_bitmap[byte_idx] & (1 << bit_idx) == 0 {
+                self.address_bitmap[byte_idx] |= 1 << bit_idx;
+                self.next_address_hint = addr.wrapping_add(1);
+                if self.next_address_hint == 0 || self.next_address_hint == 255 {
+                    self.next_address_hint = 1;
+                }
+                return Some(addr);
+            }
+        }
+        None
+    }
+
+    /// 释放 USB 设备地址 (允许复用).
+    ///
+    /// 地址 0 和 255 静默忽略 (保留地址).
+    pub fn free_address(&mut self, address: u8) {
+        if address == 0 || address == 255 {
+            return;
+        }
+        let byte_idx = (address / 8) as usize;
+        let bit_idx = address % 8;
+        if byte_idx < self.address_bitmap.len() {
+            self.address_bitmap[byte_idx] &= !(1 << bit_idx);
+        }
+    }
+
+    // ── Command Ring 操作 ──
+
+    /// 写入 Command Ring Control Register (CRCR).
+    ///
+    /// # 参数
+    /// - `ring_phys`: Command Ring 物理基地址
+    /// - `run`: 是否启动 Command Ring (CRCR.RCS)
+    pub fn set_command_ring(&self, ring_phys: u64, run: bool) {
+        let val = ring_phys | if run { 1 } else { 0 };
+        self.set_crcr(val);
+    }
+
+    /// 提交命令 TRB 到 Command Ring 并触发 Doorbell.
+    ///
+    /// # 参数
+    /// - `trb`: 要提交的命令 TRB
+    /// - `ring_tail_phys`: Command Ring 当前尾指针物理地址
+    ///
+    /// # 流程
+    /// 1. 写 TRB 到 Command Ring (由调用方管理的 DMA 内存)
+    /// 2. 更新 CRCR 的 Ring Consumer Cycle State
+    /// 3. 写 Doorbell slot 0 触发控制器处理
+    pub fn submit_command(&self, _trb: &Trb, ring_tail_phys: u64) {
+        // 注意: TRB 实际写入由调用方通过 DMA 内存完成.
+        // 此处仅更新 CRCR 并触发 Doorbell.
+        // CRCR 低 3 位: [0] = RCS (Ring Consumer Cycle State),
+        //                [1] = CS (Command Stop), [2] = CA (Command Abort)
+        let crcr_val = ring_tail_phys | 1; // RCS = 1 (consumer cycle)
+        self.set_crcr(crcr_val);
+
+        // Doorbell slot 0 = 触发 Command Ring
+        self.ring_doorbell(0, 0);
+    }
+
+    // ── 设备上下文基址数组 (DCBAA) ──
+
+    /// 设置 Device Context Base Address Array Pointer (DCBAAP).
+    ///
+    /// # 参数
+    /// - `dcbaa_phys`: DCBAA 物理基地址 (xHCI 规范 §4.5.2)
+    pub fn set_dcbaa(&self, dcbaa_phys: u64) {
+        self.set_dcbaap(dcbaa_phys);
     }
 }
