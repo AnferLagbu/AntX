@@ -6,7 +6,8 @@
 >
 > **创建时间**: 2026-07-21
 >
-> **已完成**: 2/38 (CPU_INFO, KB_READ_SLOT)
+> **已完成**: 7/38 (CPU_INFO, KB_READ_SLOT, VGA_DRIVER, GLOBAL_FRAMEBUFFER, SERIAL_PORTS, GLOBAL_DMA, GRANT_RECORDS)
+> **最近迁移**: Task 1 低复杂度 5 个 (commit 2335ae14, 2026-07-22)
 
 ---
 
@@ -70,11 +71,11 @@
 
 ## 三、实施任务
 
-### Task 1: 低复杂度迁移 (5 个)
+### Task 1: 低复杂度迁移 (5 个) **状态: [X]** (commit 2335ae14)
 
 **Files**: `vga.rs`, `display/mod.rs`, `serial.rs`, `dma/engine.rs`, `credo/grant.rs`
 
-**Approach**: 使用 `OnceLock` + `UnsafeCell` 包装需要内部可变性的类型
+**Approach**: 使用 `IrqSpinLock` 替代 `static mut`, 统一锁保护模式
 
 ### Task 2: 中复杂度迁移 (10 个)
 
