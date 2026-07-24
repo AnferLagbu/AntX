@@ -18,6 +18,7 @@
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::framework::driver::net::e1000::{TxRing, RxRing};
 
 // Services 层安全日志宏 (无 unsafe 展开)
 use crate::slog_info;
@@ -402,6 +403,10 @@ pub struct E1000Driver {
     pub mac: [u8; 6],
     pub irq: u8,
     initialized: bool,
+    /// TX 描述符环 (安全包装, 由 framework 层分配)
+    tx_ring: Option<TxRing>,
+    /// RX 描述符环 (安全包装, 由 framework 层分配)
+    rx_ring: Option<RxRing>,
 }
 
 impl E1000Driver {
@@ -412,6 +417,8 @@ impl E1000Driver {
             mac,
             irq,
             initialized: false,
+            tx_ring: None,
+            rx_ring: None,
         }
     }
 
@@ -627,5 +634,138 @@ impl E1000Driver {
     /// 写入指定寄存器
     pub fn write_reg(&self, reg: u32, val: u32) {
         self.io.write32(reg, val);
+    }
+
+    // ── DMA 环安装 (由 framework 层分配后调用) ──
+
+    /// 安装 TX/RX 描述符环 (framework 层分配后传入)
+    pub fn install_rings(&mut self, tx_ring: TxRing, rx_ring: RxRing) {
+        self.tx_ring = Some(tx_ring);
+        self.rx_ring = Some(rx_ring);
+    }
+
+    // ── 数据路径 (services 层, 0 unsafe) ──
+
+    /// 发送一个数据包
+    ///
+    /// 通过 TxRing 安全包装设置 DMA 描述符, 写入 TDT 寄存器通知硬件。
+    pub fn send_packet(&mut self, data: &[u8]) -> Result<usize, &'static str> {
+        let tx_ring = self.tx_ring.as_mut().ok_or("tx ring not initialized")?;
+
+        let tail = tx_ring.tail();
+        let mut timeout: u32 = E1000_TIMEOUT;
+        while !tx_ring.is_done(tail) && timeout > 0 {
+            timeout -= 1;
+            core::hint::spin_loop();
+        }
+        if timeout == 0 {
+            return Err("tx timeout");
+        }
+
+        let total_len = data.len().min(2048);
+        tx_ring.prepare_from_virt(data.as_ptr() as u64, total_len as u16);
+
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+
+        tx_ring.advance_tail();
+        self.io.set_tx_tail(tx_ring.tail() as u32);
+
+        Ok(total_len)
+    }
+
+    /// 接收一个数据包
+    ///
+    /// 通过 RxRing 安全包装检查描述符状态, 复制数据到调用方缓冲区。
+    /// 跳过错误描述符, 继续查找有效数据包。
+    pub fn receive_packet(&mut self, buf: &mut [u8]) -> Option<usize> {
+        let rx_ring = self.rx_ring.as_mut()?;
+
+        loop {
+            let tail = rx_ring.tail();
+            let rdh = self.io.rx_head() as usize;
+            if tail == rdh {
+                return None;
+            }
+
+            if !rx_ring.is_done(tail) {
+                break;
+            }
+
+            if rx_ring.has_errors(tail) {
+                slog_warn!(
+                    Net,
+                    "e1000: try_receive skip error desc[{}] errors=0x{:x}",
+                    tail,
+                    rx_ring.errors(tail)
+                );
+                rx_ring.clear_status(tail);
+                let prev = tail;
+                rx_ring.advance_tail();
+                self.io.set_rx_tail(prev as u32);
+                continue;
+            }
+
+            let copy_len = rx_ring.copy_packet(tail, buf);
+            rx_ring.clear_status(tail);
+            let prev = tail;
+            rx_ring.advance_tail();
+            self.io.set_rx_tail(prev as u32);
+
+            return Some(copy_len);
+        }
+
+        None
+    }
+
+    /// 批量处理接收描述符 (中断路径调用)
+    ///
+    /// 遍历所有就绪的 RX 描述符, 清除状态并推进 tail。
+    /// 返回本次处理的数据包数量 (不含错误包)。
+    pub fn process_rx(&mut self) -> u32 {
+        let rx_ring = match self.rx_ring.as_mut() {
+            Some(r) => r,
+            None => return 0,
+        };
+
+        let mut processed = 0u32;
+        loop {
+            let tail = rx_ring.tail();
+            let rdh = self.io.rx_head() as usize;
+            if tail == rdh {
+                break;
+            }
+
+            if !rx_ring.is_done(tail) {
+                slog_warn!(
+                    Net,
+                    "e1000: rx_tail={} != rdh={} but DD=0, errors=0x{:x}",
+                    tail,
+                    rdh,
+                    rx_ring.errors(tail)
+                );
+                break;
+            }
+
+            let len = rx_ring.packet_length(tail);
+
+            if !rx_ring.has_errors(tail) {
+                processed += 1;
+            } else {
+                slog_warn!(
+                    Net,
+                    "e1000: RX desc[{}] errors=0x{:x} len={}",
+                    tail,
+                    rx_ring.errors(tail),
+                    len
+                );
+            }
+
+            rx_ring.clear_status(tail);
+            let prev = tail;
+            rx_ring.advance_tail();
+            self.io.set_rx_tail(prev as u32);
+        }
+
+        processed
     }
 }

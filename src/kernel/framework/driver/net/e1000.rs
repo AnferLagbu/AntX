@@ -20,6 +20,8 @@ use crate::klog_warn;
 #[cfg(not(feature = "kernel_test"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "kernel_test"))]
+use alloc::vec::Vec;
+#[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[cfg(not(feature = "kernel_test"))]
 // 网络性能统计: 接收包计数
@@ -43,8 +45,6 @@ pub use crate::kernel::services::driver::net::e1000::{
 // 从 services 层导入安全驱动逻辑
 use crate::kernel::services::driver::net::e1000::{E1000Driver, E1000Io};
 
-const E1000_TIMEOUT: u32 = 100000;
-
 // ============================================================================
 // 虚拟地址 → 物理地址转换 (framework 层)
 // ============================================================================
@@ -54,6 +54,223 @@ pub fn virt_to_phys(virt: u64) -> u64 {
         virt - KERNEL_BASE
     } else {
         virt
+    }
+}
+
+// ============================================================================
+// DMA 描述符环安全包装 (framework 层, 封装 unsafe 指针操作)
+// ============================================================================
+
+/// TX 描述符环安全包装
+///
+/// 封装 E1000 TX DMA 描述符环的 unsafe 指针操作, 提供安全公共 API。
+/// 内部管理描述符内存分配、物理地址转换、DD 状态检查。
+pub struct TxRing {
+    ptr: *mut E1000TxDesc,
+    phys: u64,
+    count: usize,
+    tail: usize,
+}
+
+impl TxRing {
+    /// 分配并初始化 TX 描述符环
+    #[cfg(not(feature = "kernel_test"))]
+    pub fn alloc(count: usize) -> Option<Self> {
+        let size = core::mem::size_of::<E1000TxDesc>() * count;
+        // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器; size > 0, align = 16 (2^4)。
+        let ptr = unsafe { kmalloc_align(size as u64, 16) };
+        if ptr.is_null() {
+            return None;
+        }
+        let desc_ptr = ptr as *mut E1000TxDesc;
+        for i in 0..count {
+            // SAFETY: desc_ptr 由 kmalloc_align 分配, 大小为 size;
+            // i < count 保证索引在分配范围内。
+            unsafe {
+                (*desc_ptr.add(i)).addr = 0;
+                (*desc_ptr.add(i)).length = 0;
+                (*desc_ptr.add(i)).cmd = 0;
+                (*desc_ptr.add(i)).status = E1000_TXD_STAT_DD;
+            }
+        }
+        Some(Self {
+            ptr: desc_ptr,
+            phys: virt_to_phys(ptr as u64),
+            count,
+            tail: 0,
+        })
+    }
+
+    /// TX 描述符环物理地址 (用于硬件 TDBAL/TDBAH)
+    pub fn phys_addr(&self) -> u64 {
+        self.phys
+    }
+
+    /// TX 描述符环字节长度 (用于硬件 TDLEN)
+    pub fn len_bytes(&self) -> usize {
+        self.count * core::mem::size_of::<E1000TxDesc>()
+    }
+
+    /// 当前 tail 索引
+    pub fn tail(&self) -> usize {
+        self.tail
+    }
+
+    /// 准备一个描述符用于发送 (物理地址版本)
+    ///
+    /// 设置 buffer 物理地址、长度、命令字, 清除 DD 状态。
+    /// 调用方需先确认当前 tail 位置的描述符已完成 (DD=1)。
+    pub fn prepare(&mut self, buf_phys: u64, buf_len: u16) {
+        // SAFETY: tail 在 0..count 范围内; ptr 由 kmalloc_align 分配且大小足够。
+        let desc = unsafe { &mut *self.ptr.add(self.tail) };
+        desc.addr = buf_phys;
+        desc.length = buf_len;
+        desc.cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS;
+        desc.status = 0;
+    }
+
+    /// 准备一个描述符用于发送 (虚拟地址版本, 内部转换物理地址)
+    pub fn prepare_from_virt(&mut self, buf_virt: u64, buf_len: u16) {
+        let buf_phys = virt_to_phys(buf_virt);
+        self.prepare(buf_phys, buf_len);
+    }
+
+    /// 检查指定索引的描述符是否完成 (DD bit)
+    pub fn is_done(&self, idx: usize) -> bool {
+        // SAFETY: idx 在 0..count 范围内; ptr 已分配。
+        let desc = unsafe { &*self.ptr.add(idx) };
+        desc.status & E1000_TXD_STAT_DD != 0
+    }
+
+    /// 推进 tail 指针到下一个描述符
+    pub fn advance_tail(&mut self) {
+        self.tail = (self.tail + 1) % self.count;
+    }
+}
+
+/// RX 描述符环安全包装
+///
+/// 封装 E1000 RX DMA 描述符环的 unsafe 指针操作, 提供安全公共 API。
+/// 内部管理描述符内存分配、接收缓冲区分配、物理地址转换、DD 状态检查。
+pub struct RxRing {
+    ptr: *mut E1000RxDesc,
+    phys: u64,
+    count: usize,
+    bufs: Vec<*mut u8>,
+    tail: usize,
+    buf_size: usize,
+}
+
+impl RxRing {
+    /// 分配并初始化 RX 描述符环及接收缓冲区
+    #[cfg(not(feature = "kernel_test"))]
+    pub fn alloc(count: usize, buf_size: usize) -> Option<Self> {
+        let size = core::mem::size_of::<E1000RxDesc>() * count;
+        // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器。
+        let ptr = unsafe { kmalloc_align(size as u64, 16) };
+        if ptr.is_null() {
+            return None;
+        }
+        let desc_ptr = ptr as *mut E1000RxDesc;
+        let mut bufs = Vec::new();
+        for i in 0..count {
+            // SAFETY: kmalloc_align 分配 RX 缓冲区, 16 字节对齐。
+            let buf_ptr = unsafe { kmalloc_align(buf_size as u64, 16) };
+            if buf_ptr.is_null() {
+                return None;
+            }
+            bufs.push(buf_ptr as *mut u8);
+            let buf_phys = virt_to_phys(buf_ptr as u64);
+            // SAFETY: desc_ptr 已分配; i < count。
+            unsafe {
+                (*desc_ptr.add(i)).addr = buf_phys;
+                (*desc_ptr.add(i)).length = 0;
+                (*desc_ptr.add(i)).status = 0;
+            }
+        }
+        Some(Self {
+            ptr: desc_ptr,
+            phys: virt_to_phys(ptr as u64),
+            count,
+            bufs,
+            tail: 0,
+            buf_size,
+        })
+    }
+
+    /// RX 描述符环物理地址 (用于硬件 RDBAL/RDBAH)
+    pub fn phys_addr(&self) -> u64 {
+        self.phys
+    }
+
+    /// RX 描述符环字节长度 (用于硬件 RDLEN)
+    pub fn len_bytes(&self) -> usize {
+        self.count * core::mem::size_of::<E1000RxDesc>()
+    }
+
+    /// 当前 tail 索引
+    pub fn tail(&self) -> usize {
+        self.tail
+    }
+
+    /// 环大小 (描述符个数)
+    pub fn count(&self) -> usize {
+        self.count
+    }
+
+    /// 检查指定索引的描述符是否包含就绪数据包 (DD bit)
+    pub fn is_done(&self, idx: usize) -> bool {
+        // SAFETY: idx 在 0..count 范围内; ptr 已分配。
+        let desc = unsafe { &*self.ptr.add(idx) };
+        desc.status & E1000_RXD_STAT_DD != 0
+    }
+
+    /// 检查描述符是否有接收错误
+    pub fn has_errors(&self, idx: usize) -> bool {
+        let desc = unsafe { &*self.ptr.add(idx) };
+        desc.errors
+            & (E1000_RXD_ERR_CE
+                | E1000_RXD_ERR_SE
+                | E1000_RXD_ERR_SEQ
+                | E1000_RXD_ERR_RXE)
+            != 0
+    }
+
+    /// 获取描述符的接收长度
+    pub fn packet_length(&self, idx: usize) -> usize {
+        let desc = unsafe { &*self.ptr.add(idx) };
+        desc.length as usize
+    }
+
+    /// 获取描述符的错误码
+    pub fn errors(&self, idx: usize) -> u8 {
+        let desc = unsafe { &*self.ptr.add(idx) };
+        desc.errors
+    }
+
+    /// 从指定索引的缓冲区复制数据到调用方缓冲区
+    pub fn copy_packet(&self, idx: usize, buf: &mut [u8]) -> usize {
+        let len = self.packet_length(idx).min(buf.len()).min(self.buf_size);
+        if !self.bufs[idx].is_null() && len > 0 {
+            // SAFETY: bufs[idx] 由 kmalloc_align 分配, 大小为 buf_size;
+            // buf 由调用方保证有效; len <= buf_size && len <= buf.len()。
+            unsafe {
+                core::ptr::copy_nonoverlapping(self.bufs[idx], buf.as_mut_ptr(), len);
+            }
+        }
+        len
+    }
+
+    /// 清除指定索引的 DD 状态位
+    pub fn clear_status(&mut self, idx: usize) {
+        // SAFETY: idx 在 0..count 范围内; ptr 已分配。
+        let desc = unsafe { &mut *self.ptr.add(idx) };
+        desc.status = 0;
+    }
+
+    /// 推进 tail 指针到下一个描述符
+    pub fn advance_tail(&mut self) {
+        self.tail = (self.tail + 1) % self.count;
     }
 }
 
@@ -68,14 +285,11 @@ pub struct E1000Device {
     mmio_phys: u64,
     /// 安全驱动逻辑 (services 层, 0 unsafe)
     driver: Option<E1000Driver>,
-    /// DMA 发送描述符环 (framework 层管理, 需要 unsafe 指针操作)
-    tx_descs: Option<*mut E1000TxDesc>,
-    tx_tail: usize,
+    /// TX 描述符环 (安全包装, 封装 unsafe 指针操作)
+    tx_ring: Option<TxRing>,
     tx_count: u64,
-    /// DMA 接收描述符环 (framework 层管理, 需要 unsafe 指针操作)
-    rx_descs: Option<*mut E1000RxDesc>,
-    rx_buffers: [*mut u8; E1000_RX_RING_SIZE],
-    rx_tail: usize,
+    /// RX 描述符环 (安全包装, 封装 unsafe 指针操作)
+    rx_ring: Option<RxRing>,
     rx_count: u64,
     isr_count: u64,
     link_change_count: u64,
@@ -90,12 +304,9 @@ impl Default for E1000Device {
             func: 0,
             mmio_phys: 0,
             driver: None,
-            tx_descs: None,
-            tx_tail: 0,
+            tx_ring: None,
             tx_count: 0,
-            rx_descs: None,
-            rx_buffers: [core::ptr::null_mut(); E1000_RX_RING_SIZE],
-            rx_tail: 0,
+            rx_ring: None,
             rx_count: 0,
             isr_count: 0,
             link_change_count: 0,
@@ -178,97 +389,39 @@ fn read_mac_address(io: &E1000Io) -> [u8; 6] {
 
 #[cfg(not(feature = "kernel_test"))]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
-    unsafe extern "C" {
-        fn kmalloc_align(size: u64, align: u64) -> *mut u8;
-    }
+    let tx_ring = TxRing::alloc(E1000_TX_RING_SIZE).ok_or_else(|| {
+        klog_err!(Net, "e1000: TX ring alloc failed");
+        DriverError::HardwareError
+    })?;
 
-    let tx_size = core::mem::size_of::<E1000TxDesc>() * E1000_TX_RING_SIZE;
-    // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器；要求 size > 0, align = 2^n。
-    let tx_ptr = unsafe { kmalloc_align(tx_size as u64, 16) };
-    if tx_ptr.is_null() {
-        klog_err!(Net, "e1000: TX desc alloc failed");
-        return Err(DriverError::HardwareError);
-    }
-    let tx_descs = tx_ptr as *mut E1000TxDesc;
-    for i in 0..E1000_TX_RING_SIZE {
-        // SAFETY: tx_descs 由 kmalloc_align 分配，大小 tx_size；
-        // E1000_TX_RING_SIZE 计数保证 i < 数组长度。
-        unsafe {
-            (*tx_descs.add(i)).addr = 0;
-            (*tx_descs.add(i)).length = 0;
-            (*tx_descs.add(i)).cmd = 0;
-            (*tx_descs.add(i)).status = E1000_TXD_STAT_DD;
-        }
-    }
-    dev.tx_tail = 0;
-    dev.tx_descs = Some(tx_descs);
+    klog_debug!(
+        Net,
+        "e1000: TX ring phys=0x{:x} len={}",
+        tx_ring.phys_addr(),
+        tx_ring.len_bytes()
+    );
+    dev.driver_ref().set_tx_base(tx_ring.phys_addr());
+    dev.driver_ref().set_tx_len(tx_ring.len_bytes() as u32);
+    dev.driver_ref().set_tx_head(0);
+    dev.driver_ref().set_tx_tail(0);
+    dev.tx_ring = Some(tx_ring);
 
-    {
-        let tx_phys = virt_to_phys(tx_ptr as u64);
-        klog_debug!(
-            Net,
-            "e1000: TX ring virt=0x{:x} phys=0x{:x} len={}",
-            tx_ptr as u64,
-            tx_phys,
-            tx_size
-        );
-        dev.driver_ref().set_tx_base(tx_phys);
-        dev.driver_ref().set_tx_len(tx_size as u32);
-        dev.driver_ref().set_tx_head(0);
-        dev.driver_ref().set_tx_tail(0);
-    }
+    let rx_ring = RxRing::alloc(E1000_RX_RING_SIZE, E1000_RX_BUFFER_SIZE).ok_or_else(|| {
+        klog_err!(Net, "e1000: RX ring alloc failed");
+        DriverError::HardwareError
+    })?;
 
-    let rx_size = core::mem::size_of::<E1000RxDesc>() * E1000_RX_RING_SIZE;
-    // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器。
-    let rx_ptr = unsafe { kmalloc_align(rx_size as u64, 16) };
-    if rx_ptr.is_null() {
-        klog_err!(Net, "e1000: RX desc alloc failed");
-        return Err(DriverError::HardwareError);
-    }
-    let rx_descs = rx_ptr as *mut E1000RxDesc;
-
-    for i in 0..E1000_RX_RING_SIZE {
-        // SAFETY: kmalloc_align 分配 RX 缓冲区，16 字节对齐。
-        let buf_ptr = unsafe { kmalloc_align(E1000_RX_BUFFER_SIZE as u64, 16) };
-        if buf_ptr.is_null() {
-            klog_err!(Net, "e1000: RX buf[{}] alloc failed", i);
-            return Err(DriverError::HardwareError);
-        }
-        dev.rx_buffers[i] = buf_ptr as *mut u8;
-        let buf_phys = virt_to_phys(buf_ptr as u64);
-        // SAFETY: rx_descs 数组已分配；i < E1000_RX_RING_SIZE。
-        unsafe {
-            (*rx_descs.add(i)).addr = buf_phys;
-            (*rx_descs.add(i)).length = 0;
-            (*rx_descs.add(i)).status = 0;
-        }
-        if i == 0 {
-            klog_debug!(
-                Net,
-                "e1000: RX buf[0] virt=0x{:x} phys=0x{:x}",
-                buf_ptr as u64,
-                buf_phys
-            );
-        }
-    }
-    dev.rx_tail = 0;
-    dev.rx_descs = Some(rx_descs);
-
-    {
-        let rx_phys = virt_to_phys(rx_ptr as u64);
-        klog_debug!(
-            Net,
-            "e1000: RX ring virt=0x{:x} phys=0x{:x} len={}",
-            rx_ptr as u64,
-            rx_phys,
-            rx_size
-        );
-        dev.driver_ref().set_rx_base(rx_phys);
-        dev.driver_ref().set_rx_len(rx_size as u32);
-        dev.driver_ref().set_rx_head(0);
-        dev.driver_ref().set_rx_tail((E1000_RX_RING_SIZE - 1) as u32);
-    }
-    dev.rx_tail = 0;
+    klog_debug!(
+        Net,
+        "e1000: RX ring phys=0x{:x} len={}",
+        rx_ring.phys_addr(),
+        rx_ring.len_bytes()
+    );
+    dev.driver_ref().set_rx_base(rx_ring.phys_addr());
+    dev.driver_ref().set_rx_len(rx_ring.len_bytes() as u32);
+    dev.driver_ref().set_rx_head(0);
+    dev.driver_ref().set_rx_tail((E1000_RX_RING_SIZE - 1) as u32);
+    dev.rx_ring = Some(rx_ring);
 
     Ok(())
 }
@@ -455,41 +608,12 @@ impl E1000Device {
             return Err(DriverError::NotInitialized);
         }
 
-        let tx_descs = match self.tx_descs {
-            Some(descs) => descs,
-            None => return Err(DriverError::NotInitialized),
-        };
-
-        let tail = self.tx_tail;
-        // SAFETY: tx_descs 是 E1000_TX_RING_SIZE 大小的循环数组；
-        // tail % E1000_TX_RING_SIZE 落在有效索引内。
-        let desc = unsafe { &mut *tx_descs.add(tail) };
-
-        let mut timeout: u32 = E1000_TIMEOUT;
-        while desc.status & E1000_TXD_STAT_DD == 0 && timeout > 0 {
-            timeout -= 1;
-            core::hint::spin_loop();
-        }
-
-        if timeout == 0 {
-            return Err(DriverError::Timeout);
-        }
-
-        let total_len = data.len().min(2048);
-        let phys = virt_to_phys(data.as_ptr() as u64);
-
-        desc.addr = phys;
-        desc.length = total_len as u16;
-        desc.cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS;
-        desc.status = 0;
-
-        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-
-        self.tx_tail = (tail + 1) % E1000_TX_RING_SIZE;
-        self.driver_ref().set_tx_tail(self.tx_tail as u32);
-
+        let len = self
+            .driver_mut()
+            .send_packet(data)
+            .map_err(|_| DriverError::Timeout)?;
         self.tx_count += 1;
-        Ok(total_len)
+        Ok(len)
     }
 
     #[cfg(not(feature = "kernel_test"))]
@@ -498,60 +622,9 @@ impl E1000Device {
             return;
         }
 
-        let rx_descs = match self.rx_descs {
-            Some(descs) => descs,
-            None => return,
-        };
-
-        let mut processed = 0u32;
-
-        loop {
-            let rdh = self.driver_ref().rx_head() as usize;
-            if self.rx_tail == rdh {
-                break;
-            }
-
-            // SAFETY: rx_descs 是 E1000_RX_RING_SIZE 循环数组；
-            // rx_tail % E1000_RX_RING_SIZE 落在有效索引内。
-            let desc = unsafe { &mut *rx_descs.add(self.rx_tail) };
-            if desc.status & E1000_RXD_STAT_DD == 0 {
-                klog_warn!(
-                    Net,
-                    "e1000: rx_tail={} != rdh={} but DD=0, errors=0x{:x}",
-                    self.rx_tail,
-                    rdh,
-                    desc.errors
-                );
-                break;
-            }
-
-            let len = desc.length as usize;
-
-            if desc.errors
-                & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE | E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE)
-                == 0
-            {
-                processed += 1;
-            } else {
-                klog_warn!(
-                    Net,
-                    "e1000: RX desc[{}] errors=0x{:x} len={}",
-                    self.rx_tail,
-                    desc.errors,
-                    len
-                );
-            }
-
-            desc.status = 0;
-            self.rx_count += 1;
-
-            let prev = self.rx_tail;
-            self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-
-            self.driver_ref().set_rx_tail(prev as u32);
-        }
-
+        let processed = self.driver_mut().process_rx();
         if processed > 0 {
+            self.rx_count += processed as u64;
             klog_debug!(
                 Net,
                 "e1000: RX processed {} packets (total={})",
@@ -570,63 +643,11 @@ impl E1000Device {
         // 网络性能统计: 递增接收计数
         POLL_COUNT.fetch_add(1, Ordering::Relaxed);
 
-        let rx_descs = self.rx_descs?;
-
-        loop {
-            let rdh = self.driver_ref().rx_head() as usize;
-            if self.rx_tail == rdh {
-                return None;
-            }
-
-            // SAFETY: rx_descs 是 E1000_RX_RING_SIZE 循环数组；
-            // rx_tail % E1000_RX_RING_SIZE 落在有效索引内。
-            let desc = unsafe { &mut *rx_descs.add(self.rx_tail) };
-            if desc.status & E1000_RXD_STAT_DD == 0 {
-                break;
-            }
-
-            let len = desc.length as usize;
-
-            if desc.errors
-                & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE | E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE)
-                != 0
-            {
-                klog_warn!(
-                    Net,
-                    "e1000: try_receive skip error desc[{}] errors=0x{:x}",
-                    self.rx_tail,
-                    desc.errors
-                );
-                desc.status = 0;
-                let prev = self.rx_tail;
-                self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-                self.driver_ref().set_rx_tail(prev as u32);
-                continue;
-            }
-
-            let copy_len = len.min(buffer.len());
-            if !self.rx_buffers[self.rx_tail].is_null() {
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        self.rx_buffers[self.rx_tail],
-                        buffer.as_mut_ptr(),
-                        copy_len,
-                    );
-                }
-            }
-
-            desc.status = 0;
+        let result = self.driver_mut().receive_packet(buffer);
+        if result.is_some() {
             self.rx_count += 1;
-
-            let prev = self.rx_tail;
-            self.rx_tail = (self.rx_tail + 1) % E1000_RX_RING_SIZE;
-            self.driver_ref().set_rx_tail(prev as u32);
-
-            return Some(copy_len);
         }
-
-        None
+        result
     }
 
     #[cfg(not(feature = "kernel_test"))]
@@ -845,7 +866,8 @@ pub extern "C" fn e1000_dump_regs() {
                 klog_info!(Net, "TCTL=0x{:x} RCTL=0x{:x}", tctl, rctl);
                 klog_info!(Net, "ICR=0x{:x} IMS=0x{:x}", icr, ims);
                 klog_info!(Net, "TDH={} TDT={}", tdh, tdt);
-                klog_info!(Net, "RDH={} RDT={} rx_tail={}", rdh, rdt, dev.rx_tail);
+                let rx_tail = dev.rx_ring.as_ref().map_or(0, |r| r.tail());
+                klog_info!(Net, "RDH={} RDT={} rx_tail={}", rdh, rdt, rx_tail);
                 klog_info!(
                     Net,
                     "RDBAL=0x{:x} RDBAH=0x{:x} RDLEN={}",
