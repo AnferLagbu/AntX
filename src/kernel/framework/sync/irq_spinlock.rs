@@ -173,6 +173,18 @@ impl<T> IrqSpinLock<T> {
         })
     }
 
+    /// 返回被保护数据的裸指针 (用于 `static` 场景下获取 `&'static mut T`)。
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须持有本锁 (通过 `lock()` 或 `try_lock()`)，且不得同时通过
+    /// `IrqSpinLockGuard` 的 `DerefMut` 借用同一字段。
+    #[inline(always)]
+    pub unsafe fn data_ptr(&self) -> *mut T {
+        // SAFETY: UnsafeCell::get 返回 *mut T，调用方保证互斥访问。
+        self.data.get()
+    }
+
     /// 消费锁, 取出内部数据 (调用方需保证无并发访问)。
     ///
     /// # Safety

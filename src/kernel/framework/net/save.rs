@@ -136,18 +136,17 @@ impl NetSnapshot {
 }
 
 // ============================================================================
-// 全局快照 (NET_LOCK 保护)
+// 全局快照 (NET_SNAPSHOT_LOCK 保护)
 // ============================================================================
 
-static NET_SNAPSHOT_LOCK: Mutex<()> = Mutex::new(());
-static mut NET_SNAPSHOT: NetSnapshot = NetSnapshot::empty();
+static NET_SNAPSHOT_LOCK: Mutex<NetSnapshot> = Mutex::new(NetSnapshot::empty());
 
-/// 写快照 (NET_LOCK 已持有, 不要二次加锁)
+/// 写快照 (NET_SNAPSHOT_LOCK 已持有, 不要二次加锁)
 ///
 /// # SAFETY
 ///
-/// 调用方必须持有 `NET_SNAPSHOT_LOCK` (这是本文件私有约定, 与外部 NET_LOCK
-/// 互不干涉). 该函数对 `static mut NET_SNAPSHOT` 赋值, 必须串行调用.
+/// 调用方必须持有 `NET_SNAPSHOT_LOCK` (这是本文件私有约定, 与外部 NET_STATE
+/// 互不干涉). 通过 data_ptr 直接写入快照数据, 必须串行调用.
 pub unsafe fn save_unchecked<F>(filler: F)
 where
     F: FnOnce(&mut NetSnapshot),
@@ -156,20 +155,21 @@ where
     filler(&mut snap);
     snap.seal();
     // SAFETY: NET_SNAPSHOT_LOCK 由调用方独占持有, 写路径串行, 与 `save()` 互斥.
-    NET_SNAPSHOT = snap;
+    let ptr = NET_SNAPSHOT_LOCK.data_ptr();
+    *ptr = snap;
 }}
 
-/// 读快照副本 (NET_LOCK 持有)
+/// 读快照副本 (NET_SNAPSHOT_LOCK 持有)
 ///
 /// # SAFETY
 ///
 /// 调用方必须持有 `NET_SNAPSHOT_LOCK`. 返回值是 `NetSnapshot` 的副本, 不
 /// 持有对全局静态的可变引用, 调用方后续修改不会影响全局.
 pub unsafe fn load_unchecked() -> NetSnapshot { unsafe {
-    NET_SNAPSHOT
+    *NET_SNAPSHOT_LOCK.data_ptr()
 }}
 
-/// 通过 NET_LOCK 串行化的保存入口
+/// 通过 NET_SNAPSHOT_LOCK 串行化的保存入口
 pub fn save<F>(filler: F)
 where
     F: FnOnce(&mut NetSnapshot),
@@ -179,7 +179,7 @@ where
     unsafe { save_unchecked(filler) };
 }
 
-/// 通过 NET_LOCK 串行化的读取入口
+/// 通过 NET_SNAPSHOT_LOCK 串行化的读取入口
 pub fn load() -> NetSnapshot {
     let _guard = NET_SNAPSHOT_LOCK.lock();
     // SAFETY: NET_SNAPSHOT_LOCK 由本调用方独占持有, 读路径串行, 内存
@@ -192,7 +192,7 @@ pub fn clear() {
     let _guard = NET_SNAPSHOT_LOCK.lock();
     // SAFETY: NET_SNAPSHOT_LOCK 由本调用方独占持有, 写路径串行.
     unsafe {
-        NET_SNAPSHOT = NetSnapshot::empty();
+        *NET_SNAPSHOT_LOCK.data_ptr() = NetSnapshot::empty();
     }
 }
 

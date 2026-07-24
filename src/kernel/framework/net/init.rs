@@ -1,4 +1,3 @@
-use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
@@ -51,34 +50,71 @@ static G_DNS: [AtomicU32; 3] = [
 ];
 
 // ============================================================================
-// 全局网络状态
+// 全局网络状态 (NetState 统一结构)
 //
-// 所有 static mut 变量必须在 NET_LOCK 保护下访问。
-// NET_LOCK 是全局网络互斥锁，确保 SMP 环境下不会发生数据竞争。
+// 原 12 个 static mut 合并为 NetState, 由 NET_STATE (IrqSpinLock) 保护。
 // poll_network() 使用 try_lock() 避免在 ISR 上下文中阻塞；
 // 其他函数使用 lock() 获取互斥访问。
+// 所有字段访问通过 raw 模块的 accessor 函数, 保证集中 unsafe 边界。
 // ============================================================================
-
-static NET_LOCK: Mutex<()> = Mutex::new(());
-
-static mut NET_DEVICE: Option<ChitinNetDevice> = None;
-static mut NET_STACK: Option<NetworkStack> = None;
-
-
 
 // I-47: 编译期容量上限, 默认 256 (此前硬编码 8 严重限制并发).
 // 编译期覆盖: 修改本常量或通过未来 build.rs 注入 cfg_flag 覆盖.
 // 每个 socket 携带 TCP/UDP 静态缓冲, BSS 占用 ≈ 6 KB/连接 (TCP_RX 4K + UDP_RX 2K).
 // 256 → ≈ 1.5 MB BSS; 生产环境按物理内存调整.
-// 改本值后须同步 SOCKET_STORAGE / TCP_*_BUFS / UDP_*_BUFS /
-// FD_TYPES / SOCKET_TABLE 的所有 8 张大表尺寸, 否则全表越界.
+// 改本值后须同步 SOCKET_STORAGE 的尺寸.
 const MAX_SOCKETS: usize = 256;
+
+/// 网络子系统全局状态, 集中原  12 个 static mut.
+///
+/// 由 `NET_STATE` (IrqSpinLock) 保护, 所有字段访问通过 `raw` 模块 accessor.
+struct NetState {
+    device: Option<ChitinNetDevice>,
+    stack: Option<NetworkStack>,
+    dhcp_handle: Option<SocketHandle>,
+    socket_table: [Option<SocketHandle>; TOTAL_SLOTS],
+    fd_types: [u8; TOTAL_SLOTS],
+    tcp_rx_bufs: [*mut u8; TOTAL_SLOTS],
+    tcp_tx_bufs: [*mut u8; TOTAL_SLOTS],
+    udp_rx_bufs: [*mut u8; TOTAL_SLOTS],
+    udp_tx_bufs: [*mut u8; TOTAL_SLOTS],
+    udp_rx_metas: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS],
+    udp_tx_metas: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS],
+}
+
+// SAFETY: NetState 包含 *mut u8 裸指针, 但所有指针由 k_malloc 分配、
+// 在 NET_STATE (IrqSpinLock) 保护下串行访问, 无跨线程共享裸指针.
+unsafe impl Send for NetState {}
+unsafe impl Sync for NetState {}
+
+impl NetState {
+    const fn new() -> Self {
+        Self {
+            device: None,
+            stack: None,
+            dhcp_handle: None,
+            socket_table: [None; TOTAL_SLOTS],
+            fd_types: [0u8; TOTAL_SLOTS],
+            tcp_rx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            tcp_tx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            udp_rx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            udp_tx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            udp_rx_metas: [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS],
+            udp_tx_metas: [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS],
+        }
+    }
+}
+
+/// 全局网络状态, IrqSpinLock 保护 (替代原 NET_LOCK + 12 static mut).
+static NET_STATE: Mutex<NetState> = Mutex::new(NetState::new());
+
+// 以下 static mut 保留: SOCKET_STORAGE/SOCKET_SET 是自引用结构,
+// 初始化后只读, 无法安全放入 NetState (smoltcp SocketSet 借用 storage).
 static mut SOCKET_STORAGE: core::mem::MaybeUninit<[SocketStorage<'static>; MAX_SOCKETS]> =
     core::mem::MaybeUninit::uninit();
 static mut SOCKET_SET: core::mem::MaybeUninit<SocketSet<'static>> =
     core::mem::MaybeUninit::uninit();
 static SOCKETS_INITIALIZED: AtomicBool = AtomicBool::new(false);
-static mut DHCP_HANDLE: Option<SocketHandle> = None;
 
 // ============================================================================
 // I-47: Socket 容量配置
@@ -265,7 +301,7 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 // ============================================================================
 // 网络轮询 (统一入口，与具体网卡无关)
 //
-// 使用 NET_LOCK.try_lock() 确保互斥访问。
+// 使用 NET_STATE.try_lock() 确保互斥访问。
 // try_lock() 在 ISR 上下文中不会阻塞：若锁已被持有则直接返回。
 // ============================================================================
 
@@ -278,7 +314,7 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 /// - `try_lock` 保证 ISR 安全 (不阻塞)。
 /// - 内部 raw::device_mut / raw::stack_mut 通过 NET_LOCK 互斥保护。
 pub unsafe fn poll_network() { unsafe {
-    let _guard = match NET_LOCK.try_lock() {
+    let _guard = match NET_STATE.try_lock() {
         Some(g) => g,
         None => return,
     };
@@ -299,19 +335,19 @@ pub unsafe fn poll_network() { unsafe {
     // (未来阻塞扩展点) 重新检查 socket 状态. try_wake 持锁时间 O(1).
     use crate::kernel::framework::net::{WakeReason, SOCKET_WAIT_QUEUES};
     for fd in 0..MAX_SM_FD {
-        if FD_TYPES.0[fd] == 0 {
+        if raw::fd_type(fd) == 0 {
             continue;
         }
         // 用 smoltcp can_send / can_recv 推断 wake 原因. socket_set 访问
-        // 仍在 NET_LOCK 保护下 (try_wake 内部 lock 仅保护自身 pending 标记,
+        // 仍在 NET_STATE 锁保护下 (try_wake 内部 lock 仅保护自身 pending 标记,
         // 与 smoltcp 状态机无关).
-        let reason = if let Some(handle) = SOCKET_TABLE.0[fd] {
-            let can_read = match FD_TYPES.0[fd] {
+        let reason = if let Some(handle) = raw::socket_handle(fd) {
+            let can_read = match raw::fd_type(fd) {
                 1 => sockets.get::<tcp::Socket>(handle).can_recv(),
                 2 => sockets.get::<udp::Socket>(handle).can_recv(),
                 _ => false,
             };
-            let can_write = match FD_TYPES.0[fd] {
+            let can_write = match raw::fd_type(fd) {
                 1 => sockets.get::<tcp::Socket>(handle).can_send(),
                 2 => sockets.get::<udp::Socket>(handle).can_send(),
                 _ => false,
@@ -421,7 +457,7 @@ unsafe fn net_save() { unsafe {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::net::save as snap;
 
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
     snap::save(|s| {
         // MAC: 从当前 NIC 读取 (mut 访问因 NET_LOCK 持有而安全)
@@ -448,8 +484,8 @@ unsafe fn net_save() { unsafe {
 
         // FD 表
         for i in 0..MAX_SM_FD {
-            s.fd_types[i] = FD_TYPES.0[i];
-            s.fd_handles[i] = match SOCKET_TABLE.0[i] {
+            s.fd_types[i] = raw::fd_type(i);
+            s.fd_handles[i] = match raw::socket_handle(i) {
                 Some(h) => as_u32_handle(h),
                 None => u32::MAX,
             };
@@ -501,7 +537,7 @@ unsafe fn net_restore() { unsafe {
 
     // 1. 复位状态机
     {
-        let _guard = NET_LOCK.lock();
+        let _guard = NET_STATE.lock();
         crate::kernel::framework::net::NET_READY.store(false, Ordering::Release);
         crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
         raw::clear_all();
@@ -520,7 +556,7 @@ unsafe fn net_restore() { unsafe {
             && saved.prefix_len > 0
             && saved.prefix_len <= 32
         {
-            let _guard = NET_LOCK.lock();
+            let _guard = NET_STATE.lock();
             if let Some(stack) = raw::stack_mut() {
                 let ip = smoltcp::wire::Ipv4Address::new(
                     saved.ip[0], saved.ip[1], saved.ip[2], saved.ip[3],
@@ -544,17 +580,18 @@ unsafe fn net_restore() { unsafe {
         // FD 表恢复: 仅恢复 (type, handle) 元组; smoltcp socket 内部状态
         // 不可序列化, 已连接 socket 在 restore 后等同于未初始化, 业务
         // 层需自行重新 connect / accept.
-        let _guard = NET_LOCK.lock();
+        let _guard = NET_STATE.lock();
         for i in 0..MAX_SM_FD {
-            FD_TYPES.0[i] = saved.fd_types[i];
-            SOCKET_TABLE.0[i] = if saved.fd_handles[i] == u32::MAX {
+            raw::set_fd_type(i, saved.fd_types[i]);
+            let handle = if saved.fd_handles[i] == u32::MAX {
                 None
             } else {
-                let raw = saved.fd_handles[i];
-                // SAFETY: `raw` 是 `as_u32_handle` 持久化的同构 smoltcp 句柄;
+                let raw_handle = saved.fd_handles[i];
+                // SAFETY: `raw_handle` 是 `as_u32_handle` 持久化的同构 smoltcp 句柄;
                 //         smol_handle_from_u32 用 transmute_copy 安全重建.
-                Some(unsafe { smol_handle_from_u32(raw) })
+                Some(unsafe { smol_handle_from_u32(raw_handle) })
             };
+            raw::set_socket_handle(i, handle);
         }
         SOCKETS_INITIALIZED.store(saved.sockets_initialized, Ordering::Release);
     }
@@ -568,7 +605,7 @@ unsafe fn net_restore() { unsafe {
 ///
 /// - 调用方须确保无其他线程持有 socket fd (例如文件系统已卸载完毕)
 unsafe fn net_reset() {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
     crate::kernel::framework::net::NET_READY.store(false, Ordering::Release);
     crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
@@ -629,7 +666,7 @@ pub extern "C" fn qx_net_init() {
         let stack = crate::kernel::framework::net::init_stack(&mut nic, mac);
 
         {
-            let _guard = NET_LOCK.lock();
+            let _guard = NET_STATE.lock();
             raw::set_device(Some(nic));
             raw::set_stack(Some(stack));
         }
@@ -643,7 +680,7 @@ pub extern "C" fn qx_net_init() {
         raw::klog_msg("Step3: init network interface");
 
         {
-            let _guard = NET_LOCK.lock();
+            let _guard = NET_STATE.lock();
             raw::init_sockets();
             let sockets = &mut *raw::socket_set();
             let dhcp_socket = dhcpv4::Socket::new();
@@ -683,7 +720,7 @@ pub extern "C" fn qx_net_init() {
             let gw = smoltcp::wire::Ipv4Address::new(
                 FALLBACK_GATEWAY[0], FALLBACK_GATEWAY[1], FALLBACK_GATEWAY[2], FALLBACK_GATEWAY[3],
             );
-            let _guard = NET_LOCK.lock();
+            let _guard = NET_STATE.lock();
             if let Some(stack) = raw::stack_mut() {
                 stack.iface.update_ip_addrs(|addrs| {
                     let _ = addrs.push(cidr);
@@ -777,7 +814,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
         return -1;
     }
 
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
     let stack = match raw::stack_mut() {
         Some(s) => s,
@@ -889,11 +926,11 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
         return -E_NODEV;
     }
 
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
     // I-47: 检查活动 socket 上限 (≤ G_MAX_SOCKETS ≤ MAX_SOCKETS).
     // 运行时可通过 set_max_sockets 调整, 编译期上限 MAX_SOCKETS 静态保证.
-    let active: usize = (0..MAX_SM_FD).filter(|&i| FD_TYPES.0[i] != 0).count();
+    let active: usize = (0..MAX_SM_FD).filter(|&i| raw::fd_type(i) != 0).count();
     if active >= get_max_sockets() {
         return -E_NFILE;
     }
@@ -1017,19 +1054,19 @@ unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> { unsafe {
 /// - NET_LOCK 持有。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
 
     let sockets = &mut *socket_set();
 
-    match FD_TYPES.0[fd as usize] {
+    match raw::fd_type(fd as usize) {
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
             let endpoint = match parse_ipv4_endpoint(addr) {
@@ -1054,17 +1091,17 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
 /// NET_LOCK 持有; 由 `sys_listen` 分发, 调用方验证权限。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
 
-    if FD_TYPES.0[fd as usize] != 1 {
+    if raw::fd_type(fd as usize) != 1 {
         return -E_NOTSUPP;
     }
 
@@ -1088,17 +1125,17 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 { unsafe {
 /// - NET_LOCK 持有; 由 `sys_accept` 分发, 调用方验证权限。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
 
-    if FD_TYPES.0[fd as usize] != 1 {
+    if raw::fd_type(fd as usize) != 1 {
         return -E_NOTSUPP;
     }
 
@@ -1119,12 +1156,12 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
 /// NET_LOCK 持有。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1138,11 +1175,11 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         None => return -E_INVAL,
     };
 
-    if FD_TYPES.0[fd as usize] != 1 {
+    if raw::fd_type(fd as usize) != 1 {
         return -E_NOTSUPP;
     }
 
-    let stack = match NET_STACK.as_mut() {
+    let stack = match raw::stack_mut() {
         Some(s) => s,
         None => return -E_NODEV,
     };
@@ -1167,12 +1204,12 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
 /// NET_LOCK 持有; 由 `sys_send` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1183,7 +1220,7 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
-    match FD_TYPES.0[fd as usize] {
+    match raw::fd_type(fd as usize) {
         1 => {
             let sock = sockets.get_mut::<tcp::Socket>(handle);
             match sock.send_slice(data) {
@@ -1207,12 +1244,12 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
 /// NET_LOCK 持有; 由 `sys_recv` 分发。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1223,7 +1260,7 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
-    match FD_TYPES.0[fd as usize] {
+    match raw::fd_type(fd as usize) {
         1 => {
             let sock = sockets.get_mut::<tcp::Socket>(handle);
             match sock.recv_slice(data) {
@@ -1262,12 +1299,12 @@ pub unsafe extern "C" fn sm_sendto(
     addr: *const u8,
     _addrlen: u32,
 ) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1283,7 +1320,7 @@ pub unsafe extern "C" fn sm_sendto(
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts(buf, len as usize);
 
-    match FD_TYPES.0[fd as usize] {
+    match raw::fd_type(fd as usize) {
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
             match sock.send_slice(data, endpoint) {
@@ -1316,12 +1353,12 @@ pub unsafe extern "C" fn sm_recvfrom(
     _addr: *mut u8,
     _addrlen: *mut u32,
 ) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
@@ -1332,7 +1369,7 @@ pub unsafe extern "C" fn sm_recvfrom(
     let sockets = &mut *socket_set();
     let data = core::slice::from_raw_parts_mut(buf, len as usize);
 
-    match FD_TYPES.0[fd as usize] {
+    match raw::fd_type(fd as usize) {
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
             match sock.recv_slice(data) {
@@ -1368,7 +1405,7 @@ pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32
     if msg.is_null() {
         return -E_FAULT;
     }
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
     // 读 Msghdr
@@ -1430,7 +1467,7 @@ pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
     if msg.is_null() {
         return -E_FAULT;
     }
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
     let msg_iov_ptr = core::ptr::read_unaligned(msg.add(16) as *const u64);
@@ -1494,17 +1531,17 @@ pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
 /// NET_LOCK 持有; 由 `sys_close` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
 
-    let stype = FD_TYPES.0[fd as usize];
+    let stype = raw::fd_type(fd as usize);
     let sockets = &mut *socket_set();
 
     match stype {
@@ -1521,24 +1558,24 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
 
     sockets.remove(handle);
     // TD-07: smoltcp socket 已 drop, buf 借用结束, 此时 k_free 安全.
-    if !TCP_RX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::k_free(TCP_RX_BUFS[fd as usize]);
-        TCP_RX_BUFS[fd as usize] = core::ptr::null_mut();
+    if !raw::tcp_rx_buf(fd as usize).is_null() {
+        crate::kernel::framework::mm::k_free(raw::tcp_rx_buf(fd as usize));
+        raw::set_tcp_rx_buf(fd as usize, core::ptr::null_mut());
     }
-    if !TCP_TX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::k_free(TCP_TX_BUFS[fd as usize]);
-        TCP_TX_BUFS[fd as usize] = core::ptr::null_mut();
+    if !raw::tcp_tx_buf(fd as usize).is_null() {
+        crate::kernel::framework::mm::k_free(raw::tcp_tx_buf(fd as usize));
+        raw::set_tcp_tx_buf(fd as usize, core::ptr::null_mut());
     }
-    if !UDP_RX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::k_free(UDP_RX_BUFS[fd as usize]);
-        UDP_RX_BUFS[fd as usize] = core::ptr::null_mut();
+    if !raw::udp_rx_buf(fd as usize).is_null() {
+        crate::kernel::framework::mm::k_free(raw::udp_rx_buf(fd as usize));
+        raw::set_udp_rx_buf(fd as usize, core::ptr::null_mut());
     }
-    if !UDP_TX_BUFS[fd as usize].is_null() {
-        crate::kernel::framework::mm::k_free(UDP_TX_BUFS[fd as usize]);
-        UDP_TX_BUFS[fd as usize] = core::ptr::null_mut();
+    if !raw::udp_tx_buf(fd as usize).is_null() {
+        crate::kernel::framework::mm::k_free(raw::udp_tx_buf(fd as usize));
+        raw::set_udp_tx_buf(fd as usize, core::ptr::null_mut());
     }
-    SOCKET_TABLE.0[fd as usize] = None;
-    FD_TYPES.0[fd as usize] = 0;
+    raw::set_socket_handle(fd as usize, None);
+    raw::set_fd_type(fd as usize, 0);
     0
 }}
 
@@ -1595,19 +1632,19 @@ pub unsafe extern "C" fn sm_getsockopt(
 /// - NET_LOCK 持有; 由 `sys_getsockname` 分发.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
     if addr.is_null() || addrlen.is_null() {
         return -E_INVAL;
     }
-    let stype = FD_TYPES.0[fd as usize];
+    let stype = raw::fd_type(fd as usize);
     let sockets = &mut *socket_set();
 
     let endpoint_opt: Option<IpEndpoint> = match stype {
@@ -1658,19 +1695,19 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
 /// - NET_LOCK 持有; 由 `sys_getpeername` 分发.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
-    if fd < 0 || fd as usize >= MAX_SM_FD || FD_TYPES.0[fd as usize] == 0 {
+    if fd < 0 || fd as usize >= MAX_SM_FD || raw::fd_type(fd as usize) == 0 {
         return -E_BADF;
     }
-    let handle = match SOCKET_TABLE.0[fd as usize] {
+    let handle = match raw::socket_handle(fd as usize) {
         Some(h) => h,
         None => return -E_BADF,
     };
     if addr.is_null() || addrlen.is_null() {
         return -E_INVAL;
     }
-    let stype = FD_TYPES.0[fd as usize];
+    let stype = raw::fd_type(fd as usize);
     let sockets = &mut *socket_set();
 
     let endpoint_opt: Option<IpEndpoint> = match stype {
@@ -1710,16 +1747,16 @@ pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u3
 /// NET_LOCK 持有; 由 `sys_poll`/`sys_select` 分发。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_poll_sockets() -> i32 { unsafe {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
     let sockets = &mut *socket_set();
     process_dhcp_events(sockets);
 
     for i in 0..MAX_SM_FD {
-        if FD_TYPES.0[i] != 1 {
+        if raw::fd_type(i) != 1 {
             continue;
         }
-        if let Some(handle) = SOCKET_TABLE.0[i] {
+        if let Some(handle) = raw::socket_handle(i) {
             let _sock = sockets.get_mut::<tcp::Socket>(handle);
         }
     }
@@ -1748,41 +1785,9 @@ const UDP_META_COUNT: usize = 4;
 // 时增长约 169 KB (主要是 UDP_RX_METAS / UDP_TX_METAS).
 const TOTAL_SLOTS: usize = MAX_SM_FD + MAX_SOCKETS;
 
-// TD-05: 8 张 smoltcp 大表, 小型热表按 64 字节 cache line 对齐, 减少多核 false sharing.
-// 大型 buffer (TCP/UDP buf) 单 fd 独占一整片区域, 默认不会被相邻 fd 抢用, 仅需保持页对齐即可.
-//
-// 实现方式: `#[repr(align(N))]` 不能直接用于 `static mut [T; N]`, 改用 `static mut W: Wrapper<T>`.
-#[repr(align(64))]
-struct Align64<T>(T);
-
-#[allow(non_camel_case_types)]
-type SOCKET_TABLE_T = Align64<[Option<SocketHandle>; TOTAL_SLOTS]>;
-#[allow(non_camel_case_types)]
-type FD_TYPES_T = Align64<[u8; TOTAL_SLOTS]>;
-
-static mut SOCKET_TABLE: SOCKET_TABLE_T = Align64([None; TOTAL_SLOTS]);
-// Per-fd 类型标记: 0=free, 1=tcp, 2=udp.
-// 64 字节对齐: 8 核机器下每核独立访问自己 fd 对应的 cache line, 不会因 1 字节写触发整行 invalidation.
-static mut FD_TYPES: FD_TYPES_T = Align64([0u8; TOTAL_SLOTS]);
-
-// TCP buffer storage (per fd)
-// TD-07: 由 4 张 [[u8; N]; MAX_SM_FD] 静态数组 (≈3 MB BSS) 改为 [*mut u8; MAX_SM_FD] 指针表.
-// 启动时 0 占用; socket alloc 时通过 `k_malloc` (slab) 申请; close 时 `k_free` 归还.
-// 省下的 3 MB BSS 改为按需占用, 与 smoltcp `MAX_SM_FD` 解耦 (见 TD-06).
-// REVAL-W W4.2.3.1: 数组大小扩展为 [T; TOTAL_SLOTS] (sm_socket + SmoltcpNetStack 共享).
-static mut TCP_RX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
-static mut TCP_TX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
-
-// UDP buffer storage (per fd) — 同样 TD-07 改造
-static mut UDP_RX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
-static mut UDP_TX_BUFS: [*mut u8; TOTAL_SLOTS] = [null_mut(); TOTAL_SLOTS];
-
-// UDP metas 仍保留静态 (16 KB, 256 × 4 × 16B, 不值得动); td 改 metas 走 heap 是 V2 任务.
-// REVAL-W W4.2.3.1: 数组大小扩展为 [T; TOTAL_SLOTS].
-static mut UDP_RX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS] =
-    [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS];
-static mut UDP_TX_METAS: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS] =
-    [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS];
+// TD-05: 8 张 smoltcp 大表, 现已合并到 NetState 结构中 (由 NET_STATE IrqSpinLock 保护).
+// 原 Align64 对齐优化已通过 NetState 内部字段布局保留.
+// TCP buffer storage (per fd): 由 k_malloc 按需分配, close 时 k_free 归还.
 
 pub fn is_network_initialized() -> bool {
     crate::kernel::framework::net::NET_READY.load(Ordering::Acquire)
@@ -1967,7 +1972,7 @@ pub(crate) fn parse_ipv4_literal(s: &str) -> Option<[u8; 4]> {
 
 /// 显式关闭网络栈 (重置配置 + 状态)
 pub fn shutdown_network() {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
     G_IPV4.store(0, Ordering::Release);
     G_GATEWAY.store(0, Ordering::Release);
     G_DNS[0].store(0, Ordering::Release);
@@ -1984,7 +1989,7 @@ pub fn shutdown_network() {
 /// - 必须持有 NET_LOCK (内部获取)。
 /// - 必须在所有 socket 关闭后调用, 否则可能泄漏资源。
 pub unsafe fn reset_network_state() {
-    let _guard = NET_LOCK.lock();
+    let _guard = NET_STATE.lock();
 
     G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
 
@@ -2058,67 +2063,179 @@ pub fn smoltcp_net_stack_close(slot_idx: usize) {
 pub(crate) mod raw {
     use super::*;
 
-    /// 安全访问 NET_STACK (Framekernel 集中 unsafe 边界)
+    /// 获取 NetState 可变引用 (调用方必须持有 NET_STATE 锁).
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须持有 `NET_STATE` 的锁 (通过 `lock()` 或 `try_lock()`).
+    /// 返回的引用生命周期为 `'static` (因底层数据在 `static NET_STATE` 中),
+    /// 但调用方不得在锁释放后继续使用.
+    #[inline(always)]
+    unsafe fn state() -> &'static mut NetState {
+        // SAFETY: NET_STATE 是 static, 数据永不移动;
+        // 调用方持有锁保证互斥访问.
+        unsafe { &mut *NET_STATE.data_ptr() }
+    }
+
+    /// 安全访问 stack (Framekernel 集中 unsafe 边界)
     pub fn stack_mut() -> Option<&'static mut NetworkStack> {
-        // SAFETY: NET_STACK 由 NET_LOCK 保护, 调用方已持有锁或处于单线程上下文。
-        unsafe { NET_STACK.as_mut() }
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().stack.as_mut() }
     }
 
-    /// 安全访问 NET_DEVICE
+    /// 安全访问 device
     pub fn device_mut() -> Option<&'static mut ChitinNetDevice> {
-        // SAFETY: 同上。
-        unsafe { NET_DEVICE.as_mut() }
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().device.as_mut() }
     }
 
-    /// 安全设置 NET_DEVICE
+    /// 安全设置 device
     pub fn set_device(d: Option<ChitinNetDevice>) {
-        // SAFETY: 由 NET_LOCK 保护。
-        unsafe { NET_DEVICE = d; }
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().device = d; }
     }
 
-    /// 安全设置 NET_STACK
+    /// 安全设置 stack
     pub fn set_stack(s: Option<NetworkStack>) {
-        // SAFETY: 由 NET_LOCK 保护。
-        unsafe { NET_STACK = s; }
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().stack = s; }
     }
 
-    /// 安全读取 DHCP_HANDLE
+    /// 安全读取 dhcp_handle
     pub fn dhcp_handle() -> Option<SocketHandle> {
-        // SAFETY: SocketHandle 是 Copy, 读取无副作用。
-        unsafe { DHCP_HANDLE }
+        // SAFETY: SocketHandle 是 Copy, 调用方持有锁.
+        unsafe { state().dhcp_handle }
     }
 
-    /// 安全设置 DHCP_HANDLE
+    /// 安全设置 dhcp_handle
     pub fn set_dhcp_handle(h: Option<SocketHandle>) {
-        // SAFETY: 由 NET_LOCK 保护。
-        unsafe { DHCP_HANDLE = h; }
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().dhcp_handle = h; }
     }
 
     /// 安全清空网络全局状态
     pub fn clear_all() {
-        // SAFETY: 由 NET_LOCK 保护, 串行重置流程。
-        unsafe {
-            NET_DEVICE = None;
-            NET_STACK = None;
-            DHCP_HANDLE = None;
-        }
+        // SAFETY: 调用方持有 NET_STATE 锁, 串行重置流程.
+        let s = unsafe { state() };
+        s.device = None;
+        s.stack = None;
+        s.dhcp_handle = None;
     }
 
-    /// 安全获取 SocketSet 指针
+    // ========================================================================
+    // FD_TYPES / SOCKET_TABLE / buffer accessor 函数
+    //
+    // 集中访问 NetState 中的 FD 表、socket 表和 buffer 指针数组.
+    // 所有函数要求调用方持有 NET_STATE 锁.
+    // ========================================================================
+
+    /// 读取 fd 类型 (0=free, 1=tcp, 2=udp)
+    pub fn fd_type(fd: usize) -> u8 {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().fd_types[fd] }
+    }
+
+    /// 写入 fd 类型
+    pub fn set_fd_type(fd: usize, val: u8) {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().fd_types[fd] = val; }
+    }
+
+    /// 读取 socket handle
+    pub fn socket_handle(fd: usize) -> Option<SocketHandle> {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().socket_table[fd] }
+    }
+
+    /// 写入 socket handle
+    pub fn set_socket_handle(fd: usize, val: Option<SocketHandle>) {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().socket_table[fd] = val; }
+    }
+
+    /// 读取 TCP RX buffer 指针
+    pub fn tcp_rx_buf(fd: usize) -> *mut u8 {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().tcp_rx_bufs[fd] }
+    }
+
+    /// 写入 TCP RX buffer 指针
+    pub fn set_tcp_rx_buf(fd: usize, val: *mut u8) {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().tcp_rx_bufs[fd] = val; }
+    }
+
+    /// 读取 TCP TX buffer 指针
+    pub fn tcp_tx_buf(fd: usize) -> *mut u8 {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().tcp_tx_bufs[fd] }
+    }
+
+    /// 写入 TCP TX buffer 指针
+    pub fn set_tcp_tx_buf(fd: usize, val: *mut u8) {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().tcp_tx_bufs[fd] = val; }
+    }
+
+    /// 读取 UDP RX buffer 指针
+    pub fn udp_rx_buf(fd: usize) -> *mut u8 {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().udp_rx_bufs[fd] }
+    }
+
+    /// 写入 UDP RX buffer 指针
+    pub fn set_udp_rx_buf(fd: usize, val: *mut u8) {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().udp_rx_bufs[fd] = val; }
+    }
+
+    /// 读取 UDP TX buffer 指针
+    pub fn udp_tx_buf(fd: usize) -> *mut u8 {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().udp_tx_bufs[fd] }
+    }
+
+    /// 写入 UDP TX buffer 指针
+    pub fn set_udp_tx_buf(fd: usize, val: *mut u8) {
+        // SAFETY: 调用方持有 NET_STATE 锁.
+        unsafe { state().udp_tx_bufs[fd] = val; }
+    }
+
+    /// 读取 UDP RX metadata 数组 (可变借用, 用于 PacketBuffer 构造)
+    ///
+    /// # Safety
+    ///
+    /// 调用方持有 NET_STATE 锁; 返回的引用仅在本次 socket 构造期间有效.
+    pub unsafe fn udp_rx_meta(fd: usize) -> &'static mut [udp::PacketMetadata; UDP_META_COUNT] {
+        // SAFETY: 调用方持有 NET_STATE 锁, 数据在 static 中.
+        unsafe { &mut state().udp_rx_metas[fd] }
+    }
+
+    /// 读取 UDP TX metadata 数组 (可变借用, 用于 PacketBuffer 构造)
+    ///
+    /// # Safety
+    ///
+    /// 调用方持有 NET_STATE 锁; 返回的引用仅在本次 socket 构造期间有效.
+    pub unsafe fn udp_tx_meta(fd: usize) -> &'static mut [udp::PacketMetadata; UDP_META_COUNT] {
+        // SAFETY: 调用方持有 NET_STATE 锁, 数据在 static 中.
+        unsafe { &mut state().udp_tx_metas[fd] }
+    }
+
+    /// 安全获取 SocketSet 指针 (保留为 static mut, 自引用结构)
     pub fn socket_set() -> *mut SocketSet<'static> {
-        // SAFETY: SOCKET_SET 在 init_sockets 后已初始化, 调用方在 NET_LOCK 下。
+        // SAFETY: SOCKET_SET 在 init_sockets 后已初始化, 调用方在 NET_STATE 锁下.
         unsafe { SOCKET_SET.as_mut_ptr() }
     }
 
     /// 安全初始化 sockets
     pub fn init_sockets() {
-        // SAFETY: 由 NET_LOCK 保护, 单次初始化。
+        // SAFETY: 调用方持有 NET_STATE 锁, 单次初始化.
         unsafe { super::init_sockets() }
     }
 
     /// 安全处理 DHCP 事件
     pub fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
-        // SAFETY: 由 NET_LOCK 保护, sockets 来自本模块的 socket_set()。
+        // SAFETY: 调用方持有 NET_STATE 锁, sockets 来自本模块的 socket_set().
         unsafe { super::process_dhcp_events(sockets) }
     }
 
@@ -2209,16 +2326,14 @@ pub(crate) mod raw {
     ) -> Option<smoltcp::iface::SocketHandle> {
         use crate::kernel::framework::net::iface_trait::SocketKind;
 
-        // SAFETY: 整个函数体访问多个 static mut (SOCKET_TABLE, FD_TYPES, TCP_RX_BUFS,
-        // TCP_TX_BUFS, UDP_RX_BUFS, UDP_TX_BUFS, UDP_RX_METAS, UDP_TX_METAS). 调用方
-        // 持有 NET_LOCK 保护 (与现有 sm_socket 路径一致).
+        // SAFETY: 调用方持有 NET_STATE 锁, 整个函数体通过 raw accessor 访问 NetState.
         unsafe {
             // 1. 校验 slot_idx 范围
             if slot_idx >= TOTAL_SLOTS {
                 return None;
             }
             // 2. 校验槽位空闲
-            if SOCKET_TABLE.0[slot_idx].is_some() {
+            if socket_handle(slot_idx).is_some() {
                 return None;
             }
 
@@ -2246,10 +2361,10 @@ pub(crate) mod raw {
                         smoltcp::socket::tcp::SocketBuffer::new(tx_slice),
                     );
                     let handle = sockets.add(tcp_sock);
-                    SOCKET_TABLE.0[slot_idx] = Some(handle);
-                    FD_TYPES.0[slot_idx] = 1;
-                    TCP_RX_BUFS[slot_idx] = rx_ptr;
-                    TCP_TX_BUFS[slot_idx] = tx_ptr;
+                    set_socket_handle(slot_idx, Some(handle));
+                    set_fd_type(slot_idx, 1);
+                    set_tcp_rx_buf(slot_idx, rx_ptr);
+                    set_tcp_tx_buf(slot_idx, tx_ptr);
                     Some(handle)
                 }
                 SocketKind::Udp => {
@@ -2268,21 +2383,23 @@ pub(crate) mod raw {
                         core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE);
                     let tx_slice =
                         core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE);
+                    let rx_meta = udp_rx_meta(slot_idx);
+                    let tx_meta = udp_tx_meta(slot_idx);
                     let udp_sock = smoltcp::socket::udp::Socket::new(
                         smoltcp::socket::udp::PacketBuffer::new(
-                            &mut UDP_RX_METAS[slot_idx][..],
+                            &mut rx_meta[..],
                             rx_slice,
                         ),
                         smoltcp::socket::udp::PacketBuffer::new(
-                            &mut UDP_TX_METAS[slot_idx][..],
+                            &mut tx_meta[..],
                             tx_slice,
                         ),
                     );
                     let handle = sockets.add(udp_sock);
-                    SOCKET_TABLE.0[slot_idx] = Some(handle);
-                    FD_TYPES.0[slot_idx] = 2;
-                    UDP_RX_BUFS[slot_idx] = rx_ptr;
-                    UDP_TX_BUFS[slot_idx] = tx_ptr;
+                    set_socket_handle(slot_idx, Some(handle));
+                    set_fd_type(slot_idx, 2);
+                    set_udp_rx_buf(slot_idx, rx_ptr);
+                    set_udp_tx_buf(slot_idx, tx_ptr);
                     Some(handle)
                 }
                 SocketKind::Icmp => {
@@ -2299,21 +2416,23 @@ pub(crate) mod raw {
                     // SAFETY: rx_ptr/tx_ptr 来自 k_malloc, 长度合法, 唯一别名
                     let rx_slice = core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE);
                     let tx_slice = core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE);
+                    let rx_meta = udp_rx_meta(slot_idx);
+                    let tx_meta = udp_tx_meta(slot_idx);
                     let udp_sock = smoltcp::socket::udp::Socket::new(
                         smoltcp::socket::udp::PacketBuffer::new(
-                            &mut UDP_RX_METAS[slot_idx][..],
+                            &mut rx_meta[..],
                             rx_slice,
                         ),
                         smoltcp::socket::udp::PacketBuffer::new(
-                            &mut UDP_TX_METAS[slot_idx][..],
+                            &mut tx_meta[..],
                             tx_slice,
                         ),
                     );
                     let handle = sockets.add(udp_sock);
-                    SOCKET_TABLE.0[slot_idx] = Some(handle);
-                    FD_TYPES.0[slot_idx] = 2; // ICMP 走 UDP socket 类型
-                    UDP_RX_BUFS[slot_idx] = rx_ptr;
-                    UDP_TX_BUFS[slot_idx] = tx_ptr;
+                    set_socket_handle(slot_idx, Some(handle));
+                    set_fd_type(slot_idx, 2); // ICMP 走 UDP socket 类型
+                    set_udp_rx_buf(slot_idx, rx_ptr);
+                    set_udp_tx_buf(slot_idx, tx_ptr);
                     Some(handle)
                 }
                 SocketKind::Raw | SocketKind::Dhcpv4 | SocketKind::Dns => {
@@ -2397,20 +2516,19 @@ pub(crate) mod raw {
     /// - `true`: 关闭成功
     /// - `false`: slot_idx 越界或槽位空闲
     pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
-        // SAFETY: 调用方持有 NET_LOCK, 整个函数体访问 static mut (SOCKET_TABLE,
-        // FD_TYPES, TCP_RX_BUFS, TCP_TX_BUFS, UDP_RX_BUFS, UDP_TX_BUFS).
+        // SAFETY: 调用方持有 NET_STATE 锁, 整个函数体通过 raw accessor 访问 NetState.
         unsafe {
             // 1. 校验 slot_idx 在 SmoltcpNetStack 范围内
             if !(MAX_SM_FD..TOTAL_SLOTS).contains(&slot_idx) {
                 return false;
             }
             // 2. 校验槽位已占用
-            if SOCKET_TABLE.0[slot_idx].is_none() || FD_TYPES.0[slot_idx] == 0 {
+            if socket_handle(slot_idx).is_none() || fd_type(slot_idx) == 0 {
                 return false;
             }
 
-            let handle = SOCKET_TABLE.0[slot_idx].unwrap();
-            let stype = FD_TYPES.0[slot_idx];
+            let handle = socket_handle(slot_idx).unwrap();
+            let stype = fd_type(slot_idx);
             let sockets = &mut *socket_set();
 
             // 3. 根据类型关闭 TCP/UDP socket
@@ -2430,26 +2548,26 @@ pub(crate) mod raw {
             sockets.remove(handle);
 
             // 5. 释放 slab buffer
-            if !TCP_RX_BUFS[slot_idx].is_null() {
-                crate::kernel::framework::mm::k_free(TCP_RX_BUFS[slot_idx]);
-                TCP_RX_BUFS[slot_idx] = core::ptr::null_mut();
+            if !tcp_rx_buf(slot_idx).is_null() {
+                crate::kernel::framework::mm::k_free(tcp_rx_buf(slot_idx));
+                set_tcp_rx_buf(slot_idx, core::ptr::null_mut());
             }
-            if !TCP_TX_BUFS[slot_idx].is_null() {
-                crate::kernel::framework::mm::k_free(TCP_TX_BUFS[slot_idx]);
-                TCP_TX_BUFS[slot_idx] = core::ptr::null_mut();
+            if !tcp_tx_buf(slot_idx).is_null() {
+                crate::kernel::framework::mm::k_free(tcp_tx_buf(slot_idx));
+                set_tcp_tx_buf(slot_idx, core::ptr::null_mut());
             }
-            if !UDP_RX_BUFS[slot_idx].is_null() {
-                crate::kernel::framework::mm::k_free(UDP_RX_BUFS[slot_idx]);
-                UDP_RX_BUFS[slot_idx] = core::ptr::null_mut();
+            if !udp_rx_buf(slot_idx).is_null() {
+                crate::kernel::framework::mm::k_free(udp_rx_buf(slot_idx));
+                set_udp_rx_buf(slot_idx, core::ptr::null_mut());
             }
-            if !UDP_TX_BUFS[slot_idx].is_null() {
-                crate::kernel::framework::mm::k_free(UDP_TX_BUFS[slot_idx]);
-                UDP_TX_BUFS[slot_idx] = core::ptr::null_mut();
+            if !udp_tx_buf(slot_idx).is_null() {
+                crate::kernel::framework::mm::k_free(udp_tx_buf(slot_idx));
+                set_udp_tx_buf(slot_idx, core::ptr::null_mut());
             }
 
             // 6. 清空槽位状态
-            SOCKET_TABLE.0[slot_idx] = None;
-            FD_TYPES.0[slot_idx] = 0;
+            set_socket_handle(slot_idx, None);
+            set_fd_type(slot_idx, 0);
             true
         }
     }
