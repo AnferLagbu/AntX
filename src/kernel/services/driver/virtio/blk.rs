@@ -409,9 +409,7 @@ impl VirtioBlkDriver {
         let mut tmp = [0u8; BLK_SECTOR_SIZE];
         dma.read_slice(req_size, &mut tmp);
         let copy_len = BLK_SECTOR_SIZE.min(buf.len());
-        for i in 0..copy_len {
-            buf[i] = tmp[i];
-        }
+        buf[..copy_len].copy_from_slice(&tmp[..copy_len]);
         Ok(())
     }
 
