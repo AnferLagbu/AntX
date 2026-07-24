@@ -2,8 +2,6 @@
 //!
 //! 提供完整的显示支持：
 //! - **Framebuffer**: 帧缓冲驱动
-//! - **HDMI**: 高清多媒体接口
-//! - **DisplayPort**: 数字显示接口
 //! - **显示控制器**: 统一的显示管理
 //! - **多显示器**: 支持多个显示设备
 //!
@@ -12,29 +10,16 @@
 //! ```text
 //! Display Subsystem
 //! ├── framebuffer.rs  # Framebuffer驱动
-//! ├── hdmi.rs         # HDMI驱动
-//! ├── dp.rs           # DisplayPort驱动
 //! └── controller.rs   # 显示控制器抽象
 //! ```
 
 pub mod controller;
-pub mod dp;
 pub mod font;
 pub mod framebuffer;
-pub mod hdmi;
 pub mod self_test;
 
 // 导出Framebuffer类型
 pub use framebuffer::{colors, Color, Framebuffer, PixelFormat, Point, Rect};
-
-// 导出HDMI类型
-pub use hdmi::{Edid, HdmiController, VideoMode, VideoModeFlags, STANDARD_VIDEO_MODES};
-
-// 导出DisplayPort类型 (从 services 层 re-export)
-pub use dp::{
-    AuxCommand, AuxTransaction, DpController, DpError, Dpcd, DpIo, LaneCount, LinkRate,
-    TrainingState, REQUIRED_IOMEM_SIZE, assert_iomem_size_at_least,
-};
 
 // 导出控制器类型
 pub use controller::{DisplayController, DisplayManager, DisplayMode, DisplayOutput, MonitorInfo};

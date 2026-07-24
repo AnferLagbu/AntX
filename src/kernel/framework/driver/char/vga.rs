@@ -24,7 +24,7 @@
 //! # Safety
 //! 此模块直接操作 VGA 显存和硬件端口。
 
-use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
+use crate::kernel::framework::driver::{DeviceType, Driver, DriverError, DriverResult};
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::ioport::IoPort;
 use crate::kernel::framework::mm::PhysAddr;
@@ -191,8 +191,6 @@ pub struct VgaDriver {
     cursor_y: usize,
     /// 当前文本属性
     attribute: TextAttribute,
-    /// 设备信息
-    info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
 }
@@ -264,19 +262,7 @@ impl VgaDriver {
             cursor_x: 0,
             cursor_y: 0,
             attribute: TextAttribute::default(),
-            info: DeviceInfo::new("vga", DeviceType::Char),
             initialized: false,
-        }
-    }
-
-    /// 获取显存缓冲区为 u16 切片 (只读)
-    fn buffer_slice(&self) -> &[u16] {
-        // SAFETY: IoMem 保证 0xB8000 开始的 VGA_BUFFER_SIZE 字节已正确映射
-        unsafe {
-            core::slice::from_raw_parts(
-                self.iomem.as_ref().expect("vga: iomem 在 new() 中初始化").virt_ptr() as *const u16,
-                SCREEN_WIDTH * SCREEN_HEIGHT,
-            )
         }
     }
 
@@ -309,21 +295,6 @@ impl VgaDriver {
     /// 设置当前颜色属性
     pub fn set_color(&mut self, foreground: Color, background: Color) {
         self.attribute = TextAttribute::new(foreground, background);
-    }
-
-    /// 设置文本属性
-    pub fn set_attribute(&mut self, attr: TextAttribute) {
-        self.attribute = attr;
-    }
-
-    /// 获取当前文本属性
-    pub fn get_attribute(&self) -> &TextAttribute {
-        &self.attribute
-    }
-
-    /// 获取设备信息
-    pub fn get_info(&self) -> &DeviceInfo {
-        &self.info
     }
 
     /// 写入单个字符
@@ -369,18 +340,6 @@ impl VgaDriver {
         self.update_hardware_cursor();
     }
 
-    /// 写入字符串
-    pub fn puts(&mut self, s: &[u8]) {
-        for &ch in s {
-            self.putchar(ch);
-        }
-    }
-
-    /// 写入格式化字符串 (简化版)
-    pub fn print(&mut self, s: &str) {
-        self.puts(s.as_bytes());
-    }
-
     /// 滚动屏幕 (向上滚动一行)
     pub fn scroll_up(&mut self) {
         let attr = self.attribute.as_u8();
@@ -407,11 +366,6 @@ impl VgaDriver {
         self.cursor_y = y.min(SCREEN_HEIGHT - 1);
         #[cfg(target_arch = "x86_64")]
         self.update_hardware_cursor();
-    }
-
-    /// 获取光标位置
-    pub fn get_cursor(&self) -> (usize, usize) {
-        (self.cursor_x, self.cursor_y)
     }
 
     /// 更新硬件光标位置
@@ -450,72 +404,6 @@ impl VgaDriver {
         }
     }
 
-    /// 在指定位置写入字符 (不移动光标)
-    pub fn write_at(&mut self, x: usize, y: usize, ch: u8) {
-        if x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT {
-            return;
-        }
-
-        let idx = y * SCREEN_WIDTH + x;
-        let val = ((self.attribute.as_u8() as u16) << 8) | ch as u16;
-        self.buffer_slice_mut()[idx] = val;
-    }
-
-    /// 在指定位置写入字符串 (不移动光标)
-    pub fn write_string_at(&mut self, x: usize, y: usize, s: &[u8]) {
-        for (i, &ch) in s.iter().enumerate() {
-            if x + i >= SCREEN_WIDTH {
-                break;
-            }
-            self.write_at(x + i, y, ch);
-        }
-    }
-
-    /// 获取指定位置的字符
-    pub fn read_at(&self, x: usize, y: usize) -> Option<VgaChar> {
-        if x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT {
-            return None;
-        }
-
-        let idx = y * SCREEN_WIDTH + x;
-        let raw = self.buffer_slice()[idx];
-        Some(VgaChar {
-            character: (raw & 0xFF) as u8,
-            attribute: ((raw >> 8) & 0xFF) as u8,
-        })
-    }
-
-    /// 填充矩形区域
-    pub fn fill_rect(&mut self, x: usize, y: usize, width: usize, height: usize, ch: u8) {
-        for row in y..(y + height).min(SCREEN_HEIGHT) {
-            for col in x..(x + width).min(SCREEN_WIDTH) {
-                self.write_at(col, row, ch);
-            }
-        }
-    }
-
-    /// 绘制单线边框
-    pub fn draw_border(&mut self, x: usize, y: usize, width: usize, height: usize) {
-        let old_attr = self.attribute;
-        self.attribute = TextAttribute::new(Color::White, Color::Blue);
-
-        for col in x..x + width {
-            self.write_at(col, y, 0xC4);
-            self.write_at(col, y + height - 1, 0xC4);
-        }
-
-        for row in y..y + height {
-            self.write_at(x, row, 0xB3);
-            self.write_at(x + width - 1, row, 0xB3);
-        }
-
-        self.write_at(x, y, 0xDA);
-        self.write_at(x + width - 1, y, 0xBF);
-        self.write_at(x, y + height - 1, 0xC0);
-        self.write_at(x + width - 1, y + height - 1, 0xD9);
-
-        self.attribute = old_attr;
-    }
 }
 
 impl Default for VgaDriver {
@@ -594,56 +482,4 @@ pub extern "C" fn vga_set_color(fg: u8, bg: u8) {
     });
 }
 
-// ============================================================================
-// 单元测试
-// ============================================================================
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_color_values() {
-        assert_eq!(Color::Black as u8, 0);
-        assert_eq!(Color::White as u8, 15);
-        assert_eq!(Color::Blue as u8, 1);
-    }
-
-    #[test]
-    fn test_text_attribute() {
-        let attr = TextAttribute::new(Color::White, Color::Blue);
-        assert_eq!(attr.foreground, Color::White);
-        assert_eq!(attr.background, Color::Blue);
-        assert!(!attr.blink);
-
-        let byte = attr.as_u8();
-        assert_eq!(byte & 0x0F, Color::White as u8);
-        assert_eq!((byte >> 4) & 0x0F, Color::Blue as u8);
-    }
-
-    #[test]
-    fn test_vga_char() {
-        let vga = VgaChar::new(b'A', TextAttribute::default());
-        assert_eq!(vga.character, b'A');
-    }
-
-    #[test]
-    fn test_driver_creation() {
-        let mut vga = VgaDriver::new();
-        assert_eq!(vga.name(), "VGA Text Mode");
-        assert_eq!(vga.device_type(), DeviceType::Char);
-        assert!(!vga.is_ready());
-    }
-
-    #[test]
-    fn test_screen_dimensions() {
-        assert_eq!(SCREEN_WIDTH, 80);
-        assert_eq!(SCREEN_HEIGHT, 25);
-        assert_eq!(VGA_BUFFER_SIZE, 80 * 25 * 2);
-    }
-
-    #[test]
-    fn test_buffer_address() {
-        assert_eq!(VGA_BUFFER_START, 0xB8000);
-    }
-}

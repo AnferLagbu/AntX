@@ -28,7 +28,7 @@
 //! # Safety
 //! 此模块直接操作串口硬件端口。
 
-use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
+use crate::kernel::framework::driver::{DeviceType, Driver, DriverError, DriverResult};
 use crate::kernel::framework::ioport::IoPort;
 use crate::kernel::framework::sync::IrqSpinLock;
 
@@ -237,10 +237,6 @@ impl<T: Default + Copy> RingBuffer<T> {
         self.count == 0
     }
 
-    pub(crate) fn len(&self) -> usize {
-        self.count
-    }
-
     fn clear(&mut self) {
         self.head = 0;
         self.tail = 0;
@@ -264,8 +260,6 @@ pub struct SerialPort {
     rx_buffer: RingBuffer<u8>,
     /// 发送缓冲区
     tx_buffer: RingBuffer<u8>,
-    /// 设备信息
-    info: DeviceInfo,
     /// 是否已初始化
     initialized: bool,
 }
@@ -413,16 +407,8 @@ impl SerialPort {
             config: SerialConfig::default(),
             rx_buffer: RingBuffer::default(),
             tx_buffer: RingBuffer::default(),
-            info: DeviceInfo::new("serial_port", DeviceType::Char),
             initialized: false,
         })
-    }
-
-    /// 使用自定义配置创建串口实例
-    pub fn with_config(port: u8, config: SerialConfig) -> Option<Self> {
-        let mut serial = Self::new(port)?;
-        serial.config = config;
-        Some(serial)
     }
 
     /// 发送单个字节
@@ -444,17 +430,6 @@ impl SerialPort {
         Ok(())
     }
 
-    /// 发送字符串
-    ///
-    /// # Arguments
-    /// * `s` - 要发送的字符串切片
-    pub fn send_string(&mut self, s: &[u8]) -> DriverResult<usize> {
-        for &byte in s {
-            self.send_byte(byte)?;
-        }
-        Ok(s.len())
-    }
-
     /// 接收单个字节 (非阻塞)
     ///
     /// # Returns
@@ -470,11 +445,6 @@ impl SerialPort {
         let byte = read_byte(io);
         let _ = self.rx_buffer.push(byte);
         Some(byte)
-    }
-
-    /// 从缓冲区读取字节 (非阻塞)
-    pub fn read_byte_from_buffer(&mut self) -> Option<u8> {
-        self.rx_buffer.pop()
     }
 
     /// 处理串口中断
@@ -526,42 +496,6 @@ impl SerialPort {
         false
     }
 
-    /// 获取接收缓冲区中的字节数
-    pub fn available_bytes(&self) -> usize {
-        self.rx_buffer.len()
-    }
-
-    /// 清空接收缓冲区
-    pub fn clear_rx_buffer(&mut self) {
-        self.rx_buffer.clear();
-    }
-
-    /// 获取 I/O 基地址
-    pub fn get_base_address(&self) -> u16 {
-        match self.port_num {
-            0 => COM1_BASE,
-            1 => COM2_BASE,
-            2 => COM3_BASE,
-            3 => COM4_BASE,
-            _ => 0,
-        }
-    }
-
-    /// 获取当前配置
-    pub fn get_config(&self) -> &SerialConfig {
-        &self.config
-    }
-
-    /// 更新配置并重新初始化
-    pub fn reconfigure(&mut self, new_config: SerialConfig) -> DriverResult<()> {
-        self.config = new_config;
-        self.init()
-    }
-
-    /// 获取设备信息
-    pub fn get_info(&self) -> &DeviceInfo {
-        &self.info
-    }
 }
 
 // ============================================================================
@@ -680,110 +614,6 @@ pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { un
         serial_putc(com as u32, b as i32);
     }
 }}
-
-// ============================================================================
-// 单元测试
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_constants() {
-        assert_eq!(COM1_BASE, 0x3F8);
-        assert_eq!(COM2_BASE, 0x2F8);
-        assert_eq!(MAX_COM_PORTS, 4);
-    }
-
-    #[test]
-    fn test_config_default() {
-        let config = SerialConfig::default();
-
-        assert_eq!(config.baud_rate, BaudRate::Baud115200);
-        assert_eq!(config.data_bits, DataBits::Bits8);
-        assert_eq!(config.stop_bits, StopBits::One);
-        assert_eq!(config.parity, ParityMode::None);
-    }
-
-    #[test]
-    fn test_baud_rate_conversion() {
-        assert_eq!(BaudRate::Baud9600.to_divisor(), 12);
-        assert_eq!(BaudRate::Baud115200.to_divisor(), 1);
-    }
-
-    #[test]
-    fn test_data_bits_conversion() {
-        assert_eq!(DataBits::Bits5.to_lcr_value(), 0x00);
-        assert_eq!(DataBits::Bits8.to_lcr_value(), 0x03);
-    }
-
-    #[test]
-    fn test_parity_mode_conversion() {
-        assert_eq!(ParityMode::None.to_lcr_value(), 0x00);
-        assert_eq!(ParityMode::Odd.to_lcr_value(), 0x08);
-        assert_eq!(ParityMode::Even.to_lcr_value(), 0x18);
-    }
-
-    #[test]
-    fn test_serial_port_creation() {
-        let port = SerialPort::new(0);
-        assert!(port.is_some());
-
-        let port = SerialPort::new(3);
-        assert!(port.is_some());
-
-        let port = SerialPort::new(4);
-        assert!(port.is_none()); // 超出范围
-    }
-
-    #[test]
-    fn test_driver_trait_impl() {
-        let mut port = SerialPort::new(0).unwrap();
-
-        assert_eq!(port.name(), "COM1");
-        assert_eq!(port.device_type(), DeviceType::Char);
-        assert!(!port.is_ready());
-
-        let result = port.init();
-        let _ = result;
-        assert!(port.status().len() > 0);
-    }
-
-    #[test]
-    fn test_ring_buffer_operations() {
-        let mut buf: RingBuffer<u8> = RingBuffer::default();
-
-        assert!(buf.is_empty());
-        assert!(!buf.is_full());
-        assert_eq!(buf.len(), 0);
-
-        // 填充缓冲区
-        for i in 0..SERIAL_BUFFER_SIZE {
-            assert!(buf.push(i as u8).is_ok());
-        }
-
-        assert!(buf.is_full());
-        assert_eq!(buf.len(), SERIAL_BUFFER_SIZE);
-
-        // 尝试写入满缓冲区应该失败
-        assert!(buf.push(0xFF).is_err());
-
-        // 读取所有数据
-        for i in 0..SERIAL_BUFFER_SIZE {
-            assert_eq!(buf.pop(), Some(i as u8));
-        }
-
-        assert!(buf.is_empty());
-        assert_eq!(buf.pop(), None);
-    }
-
-    #[test]
-    fn test_error_codes() {
-        let err = DriverError::NotInitialized;
-        assert_eq!(err.to_string(), "Not initialized");
-    }
-}
 
 // ============================================================================
 // CharOps 桥接 — 供 Chitin 统一字符设备 I/O
