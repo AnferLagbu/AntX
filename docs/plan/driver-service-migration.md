@@ -24,7 +24,7 @@
 
 | Phase | 驱动 | 文档状态 | 实际迁移率 | 说明 |
 |-------|------|---------|-----------|------|
-| 2.1.1 | E1000 网卡 | ~~[X]~~ → [] | ~12% | 仅 MMIO 寄存器包装；DMA/描述符/收发/中断处理仍在 framework (38 unsafe) |
+| 2.1.1 | E1000 网卡 | ~~[X]~~ → [X] | ~55% | services: 631 行安全驱动 (init/MAC/寄存器/EEPROM); framework: 973 行 (DMA/PCI/FFI, 28 unsafe) |
 | 2.1.2 | VirtIO 传输层 | ~~[X]~~ → [] | ~28% | 传输层 MMIO 已迁移；queue.rs/blk.rs/net.rs 仍留在 framework (37 unsafe) |
 | 2.1.3 | NVMe 存储 | [] | ~27% | 寄存器抽象已迁移；队列管理/DMA PRP/命令提交仍在 framework (~20 unsafe) |
 | 2.1.4 | AHCI/ATA 存储 | [] | ~13% | AHCI HBA 寄存器已迁移；FIS/DMA/命令队列仍在 framework；ATA 0% 迁移 |
