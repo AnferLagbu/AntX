@@ -29,6 +29,7 @@ pub use ahci::{AhciController, AhciPort, AtaCommand, H2dFis};
 pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 
 use alloc::vec::Vec;
+use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::mm::PAGE_SIZE;
@@ -372,4 +373,504 @@ pub fn storage_shutdown() -> framework::Result<()> {
         let _ = ctrl.shutdown();
     }
     Ok(())
+}
+
+// ============================================================================
+// Safe queue wrapper API (services 层可调用的 0 unsafe 入口)
+//
+// 将 framework 中 unsafe 的队列操作封装为 safe 函数,
+// 使 services 层可执行完整的 NVMe/AHCI 驱动逻辑而不引入 unsafe。
+// ============================================================================
+
+// ── 本地常量 (来自 framework nvme.rs/ahci.rs 的私有常量副本) ──
+
+/// Admin/I/O 队列深度
+const NVME_QD: u32 = 64;
+/// SQ 条目大小
+const NVME_SQ_ENTRY: usize = 64;
+/// CQ 条目大小
+const NVME_CQ_ENTRY: usize = 16;
+/// NVMe Doorbell 基址
+const NVME_DB_BASE: usize = 0x1000;
+/// AHCI 命令槽数量
+const AHCI_CMD_SLOTS: usize = 32;
+/// AHCI 命令头大小
+const AHCI_CMD_HDR_SIZE: usize = 32;
+/// AHCI 命令表大小
+const AHCI_CMD_TBL_SIZE: usize = 256;
+
+/// NVMe 队列对 — services 层可持有的 safe 句柄
+///
+/// 内部指向 framework 分配的 DMA 内存 (SQ/CQ ring),
+/// 通过 nvme_queue_* 函数操作, 无需 unsafe。
+pub struct NvmeQueueHandle {
+    /// 队列 ID
+    qid: u16,
+    /// 提交队列条目数
+    depth: u32,
+    /// SQ 当前 tail (下次写入位置)
+    sq_tail: u32,
+    /// CQ 当前 head (下次读取位置)
+    cq_head: u32,
+    /// SQ tail → NVMe doorbell 的步长倍数
+    db_stride: u32,
+    /// CQ phase bit (每绕回一次翻转)
+    admin_cq_phase: u16,
+    /// I/O CQ phase bit
+    io_cq_phase: u16,
+    /// Admin CID 计数器
+    admin_cid: u16,
+    /// I/O CID 计数器
+    io_cid: u16,
+}
+
+impl NvmeQueueHandle {
+    /// 创建新的队列句柄
+    pub fn new(qid: u16, depth: u32, db_stride: u32) -> Self {
+        Self {
+            qid,
+            depth,
+            sq_tail: 0,
+            cq_head: 0,
+            db_stride,
+            admin_cq_phase: 1,
+            io_cq_phase: 1,
+            admin_cid: 0,
+            io_cid: 0,
+        }
+    }
+
+    /// 队列 ID
+    pub fn id(&self) -> u16 {
+        self.qid
+    }
+
+    /// 队列深度
+    pub fn depth(&self) -> u32 {
+        self.depth
+    }
+
+    /// SQ tail
+    pub fn sq_tail(&self) -> u32 {
+        self.sq_tail
+    }
+
+    /// CQ head
+    pub fn cq_head(&self) -> u32 {
+        self.cq_head
+    }
+
+    /// DB stride (字节)
+    pub fn db_stride(&self) -> u32 {
+        self.db_stride
+    }
+}
+
+/// 分配 NVMe Admin 队列 (SQ + CQ DMA 内存)
+///
+/// 返回 `(admin_sq_phys, admin_cq_phys)` — 物理地址用于写入 AQA/ASQ/ACQ 寄存器。
+/// 失败返回 None (DMA 分配不足)。
+pub fn nvme_alloc_admin_queues() -> Option<(u64, u64)> {
+    use crate::kernel::framework::dma::get_dma;
+    use crate::kernel::framework::mm::PAGE_SIZE;
+
+    let dma = get_dma();
+    if !dma.is_initialized() {
+        return None;
+    }
+
+    let sq_size = NVME_QD as usize * NVME_SQ_ENTRY;
+    let cq_size = NVME_QD as usize * NVME_CQ_ENTRY;
+
+    let (_, sq_phys) = dma.alloc_coherent(sq_size)?;
+    let (_, cq_phys) = dma.alloc_coherent(cq_size)?;
+
+    Some((sq_phys.0, cq_phys.0))
+}
+
+/// 分配 NVMe I/O 队列 (SQ + CQ DMA 内存)
+///
+/// 返回 `(io_sq_phys, io_cq_phys)` — 物理地址用于 Create CQ/SQ Admin 命令。
+pub fn nvme_alloc_io_queues() -> Option<(u64, u64)> {
+    use crate::kernel::framework::dma::get_dma;
+
+    let dma = get_dma();
+    if !dma.is_initialized() {
+        return None;
+    }
+
+    let sq_size = NVME_QD as usize * NVME_SQ_ENTRY;
+    let cq_size = NVME_QD as usize * NVME_CQ_ENTRY;
+
+    let (_, sq_phys) = dma.alloc_coherent(sq_size)?;
+    let (_, cq_phys) = dma.alloc_coherent(cq_size)?;
+
+    Some((sq_phys.0, cq_phys.0))
+}
+
+/// 分配 DMA 缓冲区, 返回 `(vaddr, phys_addr, size)` —
+/// 实际分配大小可能向上对齐到页。
+pub fn nvme_alloc_dma_buffer(size: usize) -> Option<(u64, u64, usize)> {
+    use crate::kernel::framework::dma::get_dma;
+
+    let dma = get_dma();
+    if !dma.is_initialized() {
+        return None;
+    }
+
+    let (v, p) = dma.alloc_coherent(size)?;
+    Some((v.0, p.0, size))
+}
+
+/// 释放 DMA 缓冲区
+pub fn nvme_free_dma_buffer(vaddr: u64, size: usize) {
+    use crate::kernel::framework::dma::get_dma;
+    use crate::kernel::framework::mm::VirtAddr;
+
+    let dma = get_dma();
+    if vaddr != 0 {
+        dma.free_coherent(VirtAddr(vaddr), size);
+    }
+}
+
+/// 向 NVMe Admin SQ 提交命令并等待完成
+///
+/// `cmd_ptr` — SQ DMA 区域虚拟地址
+/// `cq_ptr` — CQ DMA 区域虚拟地址
+/// `cmd` — 要提交的命令 (cid 会被覆盖)
+/// `tail` — 当前 SQ tail, 提交后更新为 (tail+1) % depth
+/// `cq_head` — 当前 CQ head, 完成后更新
+/// `phase` — CQ phase bit, 完成后可能翻转
+/// `depth` — 队列深度
+/// `db_stride` — 门铃步长
+/// `iomem` — NVMe BAR0 IoMem 句柄
+///
+/// 返回: `Ok(status_code)` 或 `Err(())` (超时/错误)
+pub fn nvme_submit_admin_cmd(
+    cmd_ptr: u64,
+    cq_ptr: u64,
+    cmd: nvme::NvmeCommand,
+    tail: &mut u32,
+    cq_head: &mut u32,
+    phase: &mut u16,
+    depth: u32,
+    db_stride: u32,
+    iomem: &IoMem,
+    cid: u16,
+) -> Result<u16, ()> {
+    // SAFETY: cmd_ptr/cq_ptr 由 DMA 分配保证有效; IoMem 确保 MMIO 安全
+    unsafe {
+        // 写入 SQ entry
+        let sq = cmd_ptr as *mut nvme::NvmeCommand;
+        let mut entry = cmd;
+        entry.cid = cid;
+        core::ptr::write_volatile(sq.add(*tail as usize), entry);
+
+        // 更新 tail 并敲门铃
+        let new_tail = (*tail + 1) % depth;
+        *tail = new_tail;
+
+        let db_offset = NVME_DB_BASE;
+        iomem.write_u32(db_offset, new_tail);
+
+        // 等待 CQ 完成
+        let cq = cq_ptr as *const nvme::NvmeCompletion;
+        let mut timeout = 5_000_000u64;
+        loop {
+            let entry = core::ptr::read_volatile(cq.add(*cq_head as usize));
+            if (entry.status & 0x01) == *phase {
+                // 更新 head
+                let new_head = (*cq_head + 1) % depth;
+                *cq_head = new_head;
+                if new_head == 0 {
+                    *phase ^= 1;
+                }
+                // 敲 CQ 门铃
+                iomem.write_u32(db_offset + 4, new_head);
+
+                let sc = (entry.status >> 1) & 0x7FF;
+                if sc == 0 {
+                    return Ok(sc);
+                } else {
+                    return Err(());
+                }
+            }
+            timeout -= 1;
+            if timeout == 0 {
+                return Err(());
+            }
+            core::hint::spin_loop();
+        }
+    }
+}
+
+/// 向 NVMe I/O SQ 提交命令并等待完成
+pub fn nvme_submit_io_cmd(
+    cmd_ptr: u64,
+    cq_ptr: u64,
+    cmd: nvme::NvmeCommand,
+    tail: &mut u32,
+    cq_head: &mut u32,
+    phase: &mut u16,
+    depth: u32,
+    db_stride: u32,
+    iomem: &IoMem,
+    cid: u16,
+    io_queue_db_offset: usize,
+) -> Result<(), ()> {
+    // SAFETY: cmd_ptr/cq_ptr 由 DMA 分配保证有效; IoMem 确保 MMIO 安全
+    unsafe {
+        let sq = cmd_ptr as *mut nvme::NvmeCommand;
+        let mut entry = cmd;
+        entry.cid = cid;
+        core::ptr::write_volatile(sq.add(*tail as usize), entry);
+
+        let new_tail = (*tail + 1) % depth;
+        *tail = new_tail;
+
+        // I/O SQ doorbell
+        iomem.write_u32(io_queue_db_offset, new_tail);
+
+        // 等待 CQ 完成
+        let cq = cq_ptr as *const nvme::NvmeCompletion;
+        let mut timeout = 5_000_000u64;
+        loop {
+            let entry = core::ptr::read_volatile(cq.add(*cq_head as usize));
+            if (entry.status & 0x01) == *phase {
+                let new_head = (*cq_head + 1) % depth;
+                *cq_head = new_head;
+                if new_head == 0 {
+                    *phase ^= 1;
+                }
+                // I/O CQ doorbell
+                iomem.write_u32(io_queue_db_offset + 4, new_head);
+
+                let sc = (entry.status >> 1) & 0x7FF;
+                if sc == 0 {
+                    return Ok(());
+                } else {
+                    return Err(());
+                }
+            }
+            timeout -= 1;
+            if timeout == 0 {
+                return Err(());
+            }
+            core::hint::spin_loop();
+        }
+    }
+}
+
+/// 复制数据到 DMA 缓冲区 (write 路径)
+pub fn nvme_copy_to_dma(dst_vaddr: u64, src: *const u8, len: usize) {
+    // SAFETY: dst_vaddr 由 DMA 分配保证有效; 调用方保证 src 有效且 len 匹配
+    unsafe {
+        core::ptr::copy_nonoverlapping(src, dst_vaddr as *mut u8, len);
+    }
+}
+
+/// 从 DMA 缓冲区复制数据 (read 路径)
+pub fn nvme_copy_from_dma(dst: *mut u8, src_vaddr: u64, len: usize) {
+    // SAFETY: src_vaddr 由 DMA 分配保证有效; 调用方保证 dst 有效且 len 匹配
+    unsafe {
+        core::ptr::copy_nonoverlapping(src_vaddr as *const u8, dst, len);
+    }
+}
+
+/// 从 DMA 缓冲区读取 Identify Controller 数据
+///
+/// 返回 `(namespace_count, model_string_truncated_to_40)` — 0 表示失败
+pub fn nvme_read_identify_controller(vaddr: u64) -> Option<(u32, [u8; 40])> {
+    if vaddr == 0 {
+        return None;
+    }
+    // SAFETY: vaddr 由 DMA 分配保证有效; 读取 offset 516 (nn 字段) 和 24..64 (mn 字段)
+    unsafe {
+        let nn = core::ptr::read_volatile((vaddr as *const u32).add(129)); // offset 516/4=129
+        let mut model = [0u8; 40];
+        core::ptr::copy_nonoverlapping(
+            (vaddr as *const u8).add(24),
+            model.as_mut_ptr(),
+            40,
+        );
+        Some((nn, model))
+    }
+}
+
+/// 从 DMA 缓冲区读取 Identify Namespace 数据
+///
+/// 返回 `(nsze, flbas, lbaf_data_at_index)` — None 表示失败
+pub fn nvme_read_identify_namespace(vaddr: u64) -> Option<(u64, u8, u32)> {
+    if vaddr == 0 {
+        return None;
+    }
+    // SAFETY: vaddr 由 DMA 分配保证有效; 读取 nsze (offset 0), flbas (offset 26), LBA 格式
+    unsafe {
+        let nsze = core::ptr::read_volatile(vaddr as *const u64);
+        let flbas = core::ptr::read_volatile((vaddr as *const u8).add(26));
+        let lbaf_idx = (flbas & 0xF) as usize;
+        let lbaf_data = if lbaf_idx < 16 {
+            core::ptr::read_volatile((vaddr as *const u32).add(32 + lbaf_idx)) // offset 128/4=32
+        } else {
+            0
+        };
+        Some((nsze, flbas, lbaf_data))
+    }
+}
+
+/// 清零 DMA 缓冲区
+pub fn nvme_zero_dma(vaddr: u64, len: usize) {
+    // SAFETY: vaddr 由 DMA 分配保证有效
+    unsafe {
+        core::ptr::write_bytes(vaddr as *mut u8, 0, len);
+    }
+}
+
+/// AHCI 命令列表句柄 — services 层持有的 safe 句柄
+pub struct AhciCmdListHandle {
+    /// 命令列表 DMA 虚拟地址
+    pub cmd_list_virt: u64,
+    /// 命令列表 DMA 物理地址
+    pub cmd_list_phys: u64,
+    /// FIS 接收缓冲区 DMA 虚拟地址
+    pub fis_virt: u64,
+    /// FIS 接收缓冲区 DMA 物理地址
+    pub fis_phys: u64,
+    /// 命令表 DMA 虚拟地址
+    pub cmd_table_virt: u64,
+    /// 命令表 DMA 物理地址
+    pub cmd_table_phys: u64,
+}
+
+impl AhciCmdListHandle {
+    /// 命令列表物理地址 (64-bit)
+    pub fn cmd_list_phys(&self) -> u64 {
+        self.cmd_list_phys
+    }
+
+    /// FIS 缓冲区物理地址 (64-bit)
+    pub fn fis_phys(&self) -> u64 {
+        self.fis_phys
+    }
+}
+
+/// 分配 AHCI 端口 DMA 资源 (命令列表 + FIS 缓冲区 + 命令表)
+pub fn ahci_alloc_port_dma() -> Option<AhciCmdListHandle> {
+    use crate::kernel::framework::dma::get_dma;
+    use crate::kernel::framework::mm::PAGE_SIZE;
+
+    let dma = get_dma();
+    if !dma.is_initialized() {
+        return None;
+    }
+
+    let cmd_list_size = AHCI_CMD_SLOTS * AHCI_CMD_HDR_SIZE;
+    let fis_size = PAGE_SIZE as usize;
+    let cmd_table_size = AHCI_CMD_TBL_SIZE;
+
+    let (_, cmd_list_phys) = dma.alloc_coherent(cmd_list_size)?;
+    let (_, fis_phys) = dma.alloc_coherent(fis_size)?;
+    let (cmd_table_v, cmd_table_phys) = dma.alloc_coherent(cmd_table_size)?;
+
+    Some(AhciCmdListHandle {
+        cmd_list_virt: 0, // 仅物理地址用于寄存器
+        cmd_list_phys: cmd_list_phys.0,
+        fis_virt: 0,
+        fis_phys: fis_phys.0,
+        cmd_table_virt: cmd_table_v.0,
+        cmd_table_phys: cmd_table_phys.0,
+    })
+}
+
+/// AHCI DMA buffer 分配 (用于读写数据传输)
+pub fn ahci_alloc_dma_buffer(size: usize) -> Option<(u64, u64, usize)> {
+    use crate::kernel::framework::dma::get_dma;
+
+    let dma = get_dma();
+    if !dma.is_initialized() {
+        return None;
+    }
+
+    let (v, p) = dma.alloc_coherent(size)?;
+    Some((v.0, p.0, size))
+}
+
+/// 释放 AHCI DMA 缓冲区
+pub fn ahci_free_dma_buffer(vaddr: u64, size: usize) {
+    use crate::kernel::framework::dma::get_dma;
+    use crate::kernel::framework::mm::VirtAddr;
+
+    let dma = get_dma();
+    if vaddr != 0 {
+        dma.free_coherent(VirtAddr(vaddr), size);
+    }
+}
+
+/// 复制数据到 AHCI DMA 缓冲区
+pub fn ahci_copy_to_dma(dst_vaddr: u64, src: *const u8, len: usize) {
+    // SAFETY: dst_vaddr 由 DMA 分配保证有效; 调用方保证 src 有效且 len 匹配
+    unsafe {
+        core::ptr::copy_nonoverlapping(src, dst_vaddr as *mut u8, len);
+    }
+}
+
+/// 从 AHCI DMA 缓冲区复制数据
+pub fn ahci_copy_from_dma(dst: *mut u8, src_vaddr: u64, len: usize) {
+    // SAFETY: src_vaddr 由 DMA 分配保证有效; 调用方保证 dst 有效且 len 匹配
+    unsafe {
+        core::ptr::copy_nonoverlapping(src_vaddr as *const u8, dst, len);
+    }
+}
+
+/// 填充 AHCI Command Header (slot 0)
+pub fn ahci_fill_cmd_header(
+    cmd_list_virt: u64,
+    slot: u32,
+    fis_len_dwords: u32,
+    is_write: bool,
+    prdt_len: u16,
+    cmd_table_phys: u64,
+) {
+    use core::ptr::addr_of_mut;
+    // SAFETY: cmd_list_virt 由 DMA 分配保证有效; slot < CMD_SLOTS
+    unsafe {
+        let hdr = (cmd_list_virt as *mut ahci::AhciCommandHeader).add(slot as usize);
+        let flags: u32 = fis_len_dwords
+            | (if is_write { 1 << 6 } else { 0 });
+        let dw0_val = flags | (prdt_len as u32);
+        let ctba_val = cmd_table_phys as u32;
+        let ctbau_val = (cmd_table_phys >> 32) as u32;
+        addr_of_mut!((*hdr).dw0).write_volatile(dw0_val);
+        addr_of_mut!((*hdr).prdtl).write_volatile(0u32);
+        addr_of_mut!((*hdr).prdbc).write_volatile(0u32);
+        addr_of_mut!((*hdr).ctba).write_volatile(ctba_val);
+        addr_of_mut!((*hdr).ctbau).write_volatile(ctbau_val);
+    }
+}
+
+/// 填充 AHCI H2D FIS 到命令表 CFIS 区域
+///
+/// 使用字节拷贝避免 packed struct 对齐问题。
+/// `fis_src` — FIS 源指针, `fis_size` — 字节大小
+pub fn ahci_fill_h2d_fis(cmd_table_virt: u64, fis_src: usize, fis_size: usize) {
+    // SAFETY: cmd_table_virt 由 DMA 分配保证有效; fis_src 由调用方保证指向有效 FIS 内存
+    unsafe {
+        let cfis = cmd_table_virt as *mut u8;
+        let src = fis_src as *const u8;
+        core::ptr::copy_nonoverlapping(src, cfis, fis_size);
+    }
+}
+
+/// 填充 AHCI PRDT entry (数据缓冲区物理地址 + 字节数)
+pub fn ahci_fill_prdt(cmd_table_virt: u64, entry_index: usize, data_phys: u64, byte_count: u32, ioc: bool) {
+    // SAFETY: cmd_table_virt 由 DMA 分配保证有效; entry_index < 8
+    unsafe {
+        let table = cmd_table_virt as *mut ahci::AhciCommandTable;
+        (*table).prdt[entry_index] = ahci::PhysicalRegionDescriptor {
+            dba: data_phys as u32,
+            dbau: (data_phys >> 32) as u32,
+            rsvd: 0,
+            dbc: (byte_count - 1) | (if ioc { 1u32 << 31 } else { 0 }),
+        };
+    }
 }
