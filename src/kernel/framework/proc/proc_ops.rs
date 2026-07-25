@@ -665,228 +665,49 @@ pub fn proc_sleep_ms(ms: u64) {
     SCHEDULER.schedule();
 }
 
-/// fork 系统调用实现 (COW 共享物理页)
+/// fork 系统调用实现 (共享页表, 无 COW)
 #[unsafe(no_mangle)]
 pub fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
-    if parent_pid == 0 {
-        // SAFETY: klog_ffi_info is unsafe extern "C". msg is a valid static byte slice.
-        raw::klog_info(b"[FORK] No current process\n\0");
-        return 0;
-    }
+    if parent_pid == 0 { return 0; }
 
-    // COW: 共享物理页, 双方标记只读
-    let parent_cr3 = PROCESS_TABLE
-        .with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst))
-        .unwrap_or(0);
-    if parent_cr3 == 0 {
-        return 0;
-    }
-
-    // SAFETY: parent_cr3 来自 process.cr3, 已被 vmm_clone_user_page_table_cow 接受。
-    let child_cr3 = raw::clone_user_page_table_cow(parent_cr3);
-    if child_cr3 == 0 {
-        // SAFETY: klog_ffi_info is unsafe extern "C".
-        raw::klog_info(b"[FORK] COW page table clone failed\n\0");
-        return 0;
-    }
+    // 共享父进程页表 (无 COW)
+    let parent_cr3 = PROCESS_TABLE.with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst)).unwrap_or(0);
+    if parent_cr3 == 0 { return 0; }
 
     // Allocate child PID
     let child_pid = proc_alloc_pid();
-    if child_pid == 0 {
-        // SAFETY: child_cr3 来自 vmm_clone_user_page_table_cow 成功返回。
-        raw::destroy_user_page_table(child_cr3);
-        return 0;
-    }
+    if child_pid == 0 { return 0; }
 
-    // 克隆父进程名
-    let name_str = PROCESS_TABLE
-        .with_process(parent_pid, |p| {
-            let name = p.name.lock();
-            alloc::string::String::clone(&*name)
-        })
-        .unwrap_or_default();
-    let name_ref = name_str.as_str();
-
-    // 创建子进程 Process
-    // SAFETY: alloc_process 拥有 child 内存的所有权; 错误路径由 dealloc/drop 释放。
-    let child_ptr = raw::alloc_process(child_pid, name_ref, Some(ProcessId(parent_pid)));
+    // 创建子进程 (共享 CR3)
+    let child_ptr = raw::alloc_process(child_pid, "", Some(ProcessId(parent_pid)));
     let child = raw::process_ref_mut(child_ptr);
+    child.cr3.store(parent_cr3, Ordering::SeqCst);  // 共享页表
+    child.pwm.store(0, Ordering::SeqCst);
 
-    // 复制父进程属性到子进程
-    let (parent_pwm, parent_sched_policy, parent_rt_priority) = PROCESS_TABLE
-        .with_process(parent_pid, |p| {
-            (
-                p.pwm.load(Ordering::SeqCst),
-                p.sched_policy.load(Ordering::SeqCst),
-                p.rt_priority.load(Ordering::SeqCst),
-            )
-        })
-        .unwrap_or((0, 0, 0));
-    child.pwm.store(parent_pwm, Ordering::SeqCst);
-    child.cr3.store(child_cr3, Ordering::SeqCst);
-    child.sched_policy.store(parent_sched_policy, Ordering::SeqCst);
-    child.rt_priority.store(parent_rt_priority, Ordering::SeqCst);
+    // 分配内核栈
+    if !child.allocate_kernel_stack() { raw::drop_boxed_process(child_ptr); return 0; }
 
-    // 继承父进程 rlimit 表
-    {
-        let parent_rlimit = PROCESS_TABLE
-            .with_process(parent_pid, |p| p.rlimit_table.lock().clone())
-            .unwrap_or_default();
-        *child.rlimit_table.lock() = parent_rlimit;
+    // 复制父进程内核栈
+    let parent_kstack = PROCESS_TABLE.with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst)).unwrap_or(0);
+    if parent_kstack != 0 {
+        raw::copy_kstack(child.kernel_stack.load(Ordering::SeqCst), parent_kstack, 65536);
+        crate::kernel::framework::proc::kernel_stack_write_canary(child.kernel_stack.load(Ordering::SeqCst));
     }
 
-    // 继承父进程 session_id 和 pgid
-    {
-        let (parent_sid, parent_pgid) = PROCESS_TABLE
-            .with_process(parent_pid, |p| {
-                (
-                    p.session_id.load(core::sync::atomic::Ordering::SeqCst),
-                    p.pgid.load(core::sync::atomic::Ordering::SeqCst),
-                )
-            })
-            .unwrap_or((0, 0));
-        child
-            .session_id
-            .store(parent_sid, core::sync::atomic::Ordering::SeqCst);
-        let effective_pgid = if parent_pgid == 0 {
-            parent_pid
-        } else {
-            parent_pgid
-        };
-        child
-            .pgid
-            .store(effective_pgid, core::sync::atomic::Ordering::SeqCst);
-        // P1 #14: 继承父进程 stack canary
-        {
-            let parent_canary = PROCESS_TABLE
-                .with_process(parent_pid, |p| p.stack_canary.load(Ordering::SeqCst))
-                .unwrap_or(0);
-            child.stack_canary.store(parent_canary, Ordering::SeqCst);
-        }
-        // C7: 继承父进程 Seccomp 过滤器
-        {
-            let parent_seccomp = PROCESS_TABLE
-                .with_process(parent_pid, |p| {
-                    let mode = p.seccomp.get_mode();
-                    let no_new_privs = p.seccomp.is_no_new_privs();
-                    let filters = p.seccomp.filters.lock();
-                    (mode, no_new_privs, filters.clone())
-                })
-                .unwrap_or((
-                    crate::kernel::framework::proc::SeccompMode::Disabled,
-                    false,
-                    alloc::vec::Vec::new(),
-                ));
-            child
-                .seccomp
-                .mode
-                .store(parent_seccomp.0 as u8, Ordering::SeqCst);
-            child
-                .seccomp
-                .no_new_privs
-                .store(parent_seccomp.1 as u8, Ordering::SeqCst);
-            *child.seccomp.filters.lock() = parent_seccomp.2;
-        }
-        // D1: 继承父进程 Namespace 集合
-        {
-            let parent_ns = PROCESS_TABLE
-                .with_process(parent_pid, |p| {
-                    crate::kernel::framework::proc::NamespaceSet::fork_from(&p.namespaces.lock())
-                })
-                .unwrap_or_else(crate::kernel::framework::proc::NamespaceSet::new_init);
-            *child.namespaces.lock() = parent_ns;
-        }
-        // D2: 继承父进程 cgroup ID
-        {
-            let parent_cg = PROCESS_TABLE
-                .with_process(parent_pid, |p| {
-                    p.cgroup_id
-                        .load(core::sync::atomic::Ordering::Acquire)
-                })
-                .unwrap_or(0);
-            child
-                .cgroup_id
-                .store(parent_cg, core::sync::atomic::Ordering::Release);
-            if crate::kernel::framework::proc::cgroup_is_initialized() {
-                let sub = crate::kernel::framework::proc::cgroup_subsystem();
-                if let Some(cg) = sub.find(parent_cg) {
-                    cg.attach_proc(child_pid);
-                }
-            }
-        }
-        // D3: 继承父进程 NUMA 策略
-        {
-            let parent_policy = PROCESS_TABLE
-                .with_process(parent_pid, |p| {
-                    let policy = p.numa_policy.lock();
-                    let mode = *policy.mode.lock();
-                    let mask = *policy.nodemask.lock();
-                    (mode, mask)
-                })
-                .unwrap_or((crate::kernel::framework::mm::numa::NumaPolicy::Default, 0));
-            let child_policy = child.numa_policy.lock();
-            *child_policy.mode.lock() = parent_policy.0;
-            *child_policy.nodemask.lock() = parent_policy.1;
-        }
-    }
-
-    // 将子进程加入父进程的子进程列表
-    PROCESS_TABLE.with_process(parent_pid, |p| {
-        p.children.lock().push(ProcessId(child_pid));
-    });
-
-    // 为子进程分配内核栈
-    if !child.allocate_kernel_stack() {
-        // SAFETY: child_ptr 来自 alloc_process, 需要释放。
-        raw::drop_boxed_process(child_ptr);
-        // SAFETY: child_cr3 来自 vmm_clone_user_page_table_cow 成功返回。
-        raw::destroy_user_page_table(child_cr3);
-        return 0;
-    }
-
-    // 复制父进程内核栈内容到子进程
-    {
-        let parent_kstack = PROCESS_TABLE
-            .with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
-            .unwrap_or(0);
-        let child_kstack = child.kernel_stack.load(Ordering::SeqCst);
-        let stack_size: usize = 65536;
-        // SAFETY: parent_kstack 与 child_kstack 都是已分配的内核栈, 区间不重叠。
-        raw::copy_kstack(child_kstack, parent_kstack, stack_size);
-        crate::kernel::framework::proc::kernel_stack_write_canary(child_kstack);
-    }
-
-    // 复制父进程 ProcessContext 到子进程, 但把 RAX 置 0
-    let parent_ctx = match PROCESS_TABLE.with_process(parent_pid, |p| *p.context.lock()) {
-        Some(ctx) => ctx,
-        None => {
-            klog_error!("fork: 父进程 {} 在 PROCESS_TABLE 中未找到", parent_pid);
-            raw::drop_boxed_process(child_ptr);
-            raw::destroy_user_page_table(child_cr3);
-            return 0;
-        }
-    };
-    {
+    // 复制上下文, RAX=0 (子进程返回 0)
+    if let Some(parent_ctx) = PROCESS_TABLE.with_process(parent_pid, |p| *p.context.lock()) {
         let mut child_ctx = child.context.lock();
         *child_ctx = parent_ctx;
-        child_ctx.cr3 = child_cr3;
+        child_ctx.cr3 = parent_cr3;
         child_ctx.rax = 0;
     }
 
-    // Register child in process table
+    // 注册到进程表
     PROCESS_TABLE.insert(child as *const Process as *mut Process);
+    PROCESS_TABLE.with_process(parent_pid, |p| { p.children.lock().push(ProcessId(child_pid)); });
 
-    // 为子进程创建 UserProc
-    if USER_PROC_MANAGER.get(parent_pid).is_some() {
-        let clone_result = user_proc_clone(parent_pid, child_pid);
-        if clone_result < 0 {
-            PROCESS_TABLE.remove_and_free(child_pid);
-            return 0;
-        }
-    }
-
-    // Add child to scheduler
+    // 加入调度器
     let _ = child.set_state_safe(ProcessState::Ready);
     SCHEDULER.add_to_run_queue(child_pid);
 

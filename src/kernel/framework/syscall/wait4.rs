@@ -93,8 +93,31 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
         return 0;
     }
 
-    // 阻塞等待
-    api::proc_wait_child(child_pid) as i64
+    // 阻塞等待: 循环检查子进程状态, 直到变为 Zombie
+    loop {
+        let state = api::process_with(child_pid, |p| p.get_state())
+            .unwrap_or(ProcessState::Terminated);
+
+        if state == ProcessState::Zombie {
+            // 子进程已退出, 收集状态
+            let exit_code = api::process_with(child_pid, |p| p.exit_code.load(Ordering::SeqCst))
+                .unwrap_or(0);
+
+            if wstatus_ptr != 0 {
+                // SAFETY: wstatus_ptr 由 check_user_ptr 验证
+                unsafe {
+                    let status: i32 = (exit_code as i32) << 8;
+                    core::ptr::write_volatile(wstatus_ptr as *mut i32, status);
+                }
+            }
+
+            api::process_remove_and_free(child_pid);
+            return child_pid as i64;
+        }
+
+        // 子进程未退出, 阻塞当前进程并调度到子进程
+        crate::kernel::framework::proc::scheduler_yield();
+    }
 }
 
 /// 查找可等待的子进程
