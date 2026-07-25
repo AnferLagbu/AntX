@@ -294,20 +294,14 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
         core::ptr::copy_nonoverlapping(src.add(256), dst.add(256), 256);
     }
 
-    // 4. 清除 [0..256] 中所有条目的 USER 位 (位 2)
-    // 解析路径: walk 4 级页表, 找到带 U/S=1 的 PML4/PDPT/PD/PT, 清 U 位
-    // 注: 实际 KPTI 中 USER 范围 [0, KERNEL_BASE) 应仅在 USER_PML4 保留用户映射,
-    //     内核页 (高半区) 不会出现在 [0..256] 中, 此处主动清位作为防御。
-    // SAFETY: 4 KiB PML4 完整归属 USER_PML4
-    unsafe {
-        let pml4_base = user_pml4_virt.0 as *mut u64;
-        for i in 0..256 {
-            let entry = core::ptr::read_volatile(pml4_base.add(i));
-            if entry & 0x4 != 0 {
-                core::ptr::write_volatile(pml4_base.add(i), entry & !0x4u64);
-            }
-        }
-    }
+    // 4. [已移除] 原清除 [0..256] USER 位的循环.
+    //
+    // 低半区 [0..256] 仅包含用户页 (代码 0x400000, 栈 0x7FFFFFFFE000 等),
+    // 内核页全部在高半区 [256..512]. 清除低半区 USER 位会导致 Ring 3
+    // 无法执行用户代码 → #PF → 内核重启. 该循环无安全收益.
+    //
+    // KPTI 安全性由高半区加固 (step 4.5) 保证: 仅 trampoline 代码页保留 RX,
+    // 其余内核代码页设为 RO+NX, 数据页限制权限.
 
     // 4.5 Trampoline 页权限加固: USER_PML4 高半区页表遍历
     //

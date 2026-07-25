@@ -55,6 +55,11 @@ impl SyscallDispatch for ServicesSyscallDispatch {
         use crate::kernel::services::syscall::types::*;
         let [a0, a1, a2, a3, a4, a5] = args;
 
+        // [DEBUG] 打印所有 syscall 号
+        // if num == 57 || num == 60 || num == 61 {
+        //     crate::klog_info!(Process, "[SVC] num={} a0={}", num, a0);
+        // }
+
         match num {
             // ==================== 文件 I/O (已迁移) ====================
             SYS_open => as_ret(crate::kernel::services::fs::open::open_syscall(a0, a1 as i32, a2 as i32)),

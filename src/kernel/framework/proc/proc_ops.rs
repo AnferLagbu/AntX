@@ -671,43 +671,64 @@ pub fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     if parent_pid == 0 { return 0; }
 
-    // 共享父进程页表 (无 COW)
+    // 共享父进程页表 (无 COW — clone_user_page_table_cow 崩溃)
     let parent_cr3 = PROCESS_TABLE.with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst)).unwrap_or(0);
     if parent_cr3 == 0 { return 0; }
 
-    // Allocate child PID
     let child_pid = proc_alloc_pid();
     if child_pid == 0 { return 0; }
 
-    // 创建子进程 (共享 CR3)
     let child_ptr = raw::alloc_process(child_pid, "", Some(ProcessId(parent_pid)));
     let child = raw::process_ref_mut(child_ptr);
-    child.cr3.store(parent_cr3, Ordering::SeqCst);  // 共享页表
+    child.cr3.store(parent_cr3, Ordering::SeqCst);
     child.pwm.store(0, Ordering::SeqCst);
 
-    // 分配内核栈
-    if !child.allocate_kernel_stack() { raw::drop_boxed_process(child_ptr); return 0; }
+    // 继承 rlimit / session / pgid / stack canary
+    if let Some(rlim) = PROCESS_TABLE.with_process(parent_pid, |p| p.rlimit_table.lock().clone()) {
+        *child.rlimit_table.lock() = rlim;
+    }
+    if let Some((sid, pgid, canary)) = PROCESS_TABLE.with_process(parent_pid, |p| {
+        (p.session_id.load(Ordering::SeqCst), p.pgid.load(Ordering::SeqCst), p.stack_canary.load(Ordering::SeqCst))
+    }) {
+        child.session_id.store(sid, Ordering::SeqCst);
+        child.pgid.store(if pgid == 0 { parent_pid } else { pgid }, Ordering::SeqCst);
+        child.stack_canary.store(canary, Ordering::SeqCst);
+    }
 
-    // 复制父进程内核栈
-    let parent_kstack = PROCESS_TABLE.with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst)).unwrap_or(0);
-    if parent_kstack != 0 {
-        raw::copy_kstack(child.kernel_stack.load(Ordering::SeqCst), parent_kstack, 65536);
-        crate::kernel::framework::proc::kernel_stack_write_canary(child.kernel_stack.load(Ordering::SeqCst));
+    // 继承 seccomp (NamespaceSet::fork_from 在锁内崩溃, 使用 new_init)
+    if let Some((mode, nnp, filters)) = PROCESS_TABLE.with_process(parent_pid, |p| {
+        (p.seccomp.get_mode(), p.seccomp.is_no_new_privs(), p.seccomp.filters.lock().clone())
+    }) {
+        child.seccomp.mode.store(mode as u8, Ordering::SeqCst);
+        child.seccomp.no_new_privs.store(nnp as u8, Ordering::SeqCst);
+        *child.seccomp.filters.lock() = filters;
+    }
+    *child.namespaces.lock() = crate::kernel::framework::proc::NamespaceSet::new_init();
+
+    if let Some(cg) = PROCESS_TABLE.with_process(parent_pid, |p| p.cgroup_id.load(Ordering::Acquire)) {
+        child.cgroup_id.store(cg, Ordering::Release);
+    }
+
+    // 分配内核栈 + 拷贝
+    if !child.allocate_kernel_stack() { raw::drop_boxed_process(child_ptr); return 0; }
+    if let Some(parent_kstack) = PROCESS_TABLE.with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst)) {
+        if parent_kstack != 0 {
+            raw::copy_kstack(child.kernel_stack.load(Ordering::SeqCst), parent_kstack, 65536);
+            crate::kernel::framework::proc::kernel_stack_write_canary(child.kernel_stack.load(Ordering::SeqCst));
+        }
     }
 
     // 复制上下文, RAX=0 (子进程返回 0)
-    if let Some(parent_ctx) = PROCESS_TABLE.with_process(parent_pid, |p| *p.context.lock()) {
+    if let Some(ctx) = PROCESS_TABLE.with_process(parent_pid, |p| *p.context.lock()) {
         let mut child_ctx = child.context.lock();
-        *child_ctx = parent_ctx;
+        *child_ctx = ctx;
         child_ctx.cr3 = parent_cr3;
         child_ctx.rax = 0;
     }
 
-    // 注册到进程表
+    // 注册到进程表 + 调度器
     PROCESS_TABLE.insert(child as *const Process as *mut Process);
     PROCESS_TABLE.with_process(parent_pid, |p| { p.children.lock().push(ProcessId(child_pid)); });
-
-    // 加入调度器
     let _ = child.set_state_safe(ProcessState::Ready);
     SCHEDULER.add_to_run_queue(child_pid);
 
