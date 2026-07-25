@@ -84,6 +84,7 @@ USER_SHELL_ELF = $(RUST_USER_TARGET)/eash
 USER_INSTALL_ELF = $(RUST_USER_TARGET)/install
 USER_FBTERM_ELF = $(RUST_USER_TARGET)/fbterm
 USER_HTTPSRV_ELF = $(RUST_USER_TARGET)/httpsrv
+USER_TEST_ELF = $(RUST_USER_TARGET)/proctest
 
 STAGE1_BIN = build/stage1.bin
 DISK_IMAGE = build/antx.img
@@ -122,16 +123,17 @@ $(shell echo $(ARCH) > $(ARCH_STAMP))
 
 # ====== x86_64 Rust user programs ======
 ifeq ($(ARCH),x86_64)
-user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF)
+user: $(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF) $(USER_TEST_ELF)
 	@mkdir -p build/user
 	@cp $(USER_INIT_ELF) build/user/init.bin
 	@cp $(USER_SHELL_ELF) build/user/eash.bin
 	@cp $(USER_INSTALL_ELF) build/user/install.bin
 	@cp $(USER_FBTERM_ELF) build/user/fbterm.bin
 	@cp $(USER_HTTPSRV_ELF) build/user/httpsrv.bin
+	@cp $(USER_TEST_ELF) build/user/proctest.bin
 	@echo "User programs built successfully (Rust)"
 
-$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF):
+$(USER_INIT_ELF) $(USER_SHELL_ELF) $(USER_INSTALL_ELF) $(USER_FBTERM_ELF) $(USER_HTTPSRV_ELF) $(USER_TEST_ELF):
 	@echo "Building Rust user programs..."
 	cd $(RUST_USER_DIR) && RUSTFLAGS="-C link-arg=-T$$(pwd)/link.x -C link-arg=-nostdlib -C link-arg=-no-pie" cargo build --release --target $(RUST_TARGET)
 
