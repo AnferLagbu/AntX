@@ -1,0 +1,290 @@
+//! 调度器操作子模块 — 调度器查询/控制/初始化
+//!
+//! 从 `api.rs` 拆分而来, 包含所有 `scheduler_*` 函数、`sched_*` 内部函数
+//! 以及调度器相关的 `proc_*` 包装函数。
+//!
+//! ## 依赖
+//! - `process::PROCESS_TABLE` — 进程表
+//! - `scheduler::SCHEDULER` — 主调度器
+//! - `scheduler_ex::SCHEDULER_EX` — 扩展调度器
+//! - `thread::THREAD_MANAGER` — 线程管理
+
+use super::process::PROCESS_TABLE;
+use super::scheduler::SCHEDULER;
+use super::scheduler_ex::SCHEDULER_EX;
+use super::thread::THREAD_MANAGER;
+use super::types::*;
+
+// ============================================================================
+// 调度器查询与控制
+// ============================================================================
+
+/// 获取当前调度线程的 CPU 时间 (纳秒).
+pub fn scheduler_current_cputime() -> u64 {
+    let current = SCHEDULER_EX
+        .current
+        .load(core::sync::atomic::Ordering::Acquire)
+        as *mut super::thread::Thread;
+    if current.is_null() {
+        return 0;
+    }
+    // SAFETY: current 是调度器维护的有效线程指针
+    unsafe { (*current).cpu_time.load(core::sync::atomic::Ordering::Acquire) }
+}
+
+/// 解除进程阻塞 (加入就绪队列).
+pub fn scheduler_unblock(pid: u32) {
+    SCHEDULER.unblock(pid);
+}
+
+/// 阻塞当前进程并让出 CPU.
+pub fn scheduler_block(reason: BlockReason) {
+    SCHEDULER.block(reason);
+}
+
+/// 将进程加入就绪队列.
+pub fn scheduler_add_to_run_queue(pid: u32) {
+    SCHEDULER.add_to_run_queue(pid);
+}
+
+/// 是否有可运行进程.
+#[unsafe(no_mangle)]
+pub fn proc_has_runnable() -> i32 {
+    if SCHEDULER.has_any_runnable() {
+        1
+    } else {
+        0
+    }
+}
+
+/// 获取当前线程.
+#[unsafe(no_mangle)]
+pub fn thread_get_current() -> u64 {
+    THREAD_MANAGER.get_current_thread().unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_yield_ex() {
+    SCHEDULER_EX.yield_current();
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_yield() {
+    SCHEDULER.yield_current();
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_schedule() -> Pid {
+    SCHEDULER.schedule().unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_add(pid: Pid) {
+    SCHEDULER.add(pid);
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_tick() {
+    SCHEDULER_EX.tick();
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_init() {
+    super::scheduler::init();
+    SCHEDULER_EX.init();
+
+    // 注册 tick 查询回调, 解耦 barrier→proc::scheduler 依赖
+    // SAFETY: get_tick 是 'static 函数指针, 在内核运行期间始终有效.
+    unsafe {
+        crate::kernel::framework::tick_query::register_tick_query(
+            crate::kernel::framework::proc::get_tick,
+        );
+    }
+    // D2: 初始化 cgroup 子系统
+    super::cgroup::cgroup_init();
+    // D3: 初始化 NUMA 拓扑 (UMA 回退, 后续接入 ACPI SRAT)
+    crate::kernel::framework::mm::numa_init(
+        crate::kernel::framework::mm::pmm_get_total_pages()
+            * crate::kernel::framework::mm::PAGE_SIZE,
+        crate::kernel::framework::config::MAX_CPUS as u32,
+    );
+    // D4: 初始化 eBPF 子系统
+    crate::kernel::framework::debug::bpf_init();
+    // T4-3: 注册标准 BPF 验证器 (Safe Policy Injection)
+    crate::kernel::framework::debug::bpf_subsystem().set_verifier(
+        &crate::kernel::services::debug::ebpf_verifier::STANDARD_VERIFIER,
+    );
+    // D5: 初始化电源管理子系统
+    crate::kernel::framework::driver::pm_init(crate::kernel::framework::config::MAX_CPUS as u32);
+    // D6: 初始化安全启动 + TPM (移至 credo_init, 消除 proc→credo 依赖)
+    crate::kernel::framework::credo::credo_init();
+    // D7: 初始化 CET (Shadow Stack)
+    crate::kernel::framework::arch::cet_init();
+    // D8: 初始化 Tickless (NO_HZ)
+    crate::kernel::framework::timer::tickless_init(
+        crate::kernel::framework::config::MAX_CPUS as u32,
+    );
+    // D9: 初始化 NTP/PTP 时钟同步
+    crate::kernel::framework::timer::timesync_init();
+    // D10: 初始化 kexec
+    crate::kernel::framework::driver::kexec_init();
+    // D11: 初始化 UEFI (0 = 无 UEFI 固件, 实际由 bootloader 传入)
+    crate::kernel::framework::driver::uefi_init(0);
+}
+
+#[unsafe(no_mangle)]
+pub fn process_init() {}
+
+#[unsafe(no_mangle)]
+pub fn thread_init() {
+    super::thread::init();
+}
+
+// ============================================================================
+// 调度器配置
+// ============================================================================
+
+#[unsafe(no_mangle)]
+pub fn scheduler_get_current_pwm() -> u64 {
+    SCHEDULER
+        .current()
+        .and_then(|pid| PROCESS_TABLE.with_process(pid, |p| p.get_pwm()))
+        .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_set_quota(pwm: u64, max_runtime: u64, period: u64) {
+    SCHEDULER.set_quota(pwm, max_runtime, period);
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_remove_quota(pwm: u64) {
+    SCHEDULER.remove_quota(pwm);
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
+    SCHEDULER.set_limit(pwm, max_procs);
+}
+
+// ============================================================================
+// 调度器内部函数 (供 C/汇编调用)
+// ============================================================================
+
+#[unsafe(no_mangle)]
+pub fn proc_exit_internal(exit_code: u32) {
+    SCHEDULER.exit(exit_code);
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_get_current_pid_internal() -> Pid {
+    SCHEDULER.current().unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_yield_internal() {
+    SCHEDULER.yield_current();
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_block(reason: u32) {
+    let block_reason = BlockReason::from_u8(reason as u8);
+    SCHEDULER.block(block_reason);
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_unblock(pid: Pid) {
+    SCHEDULER.unblock(pid);
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
+    if PROCESS_TABLE
+        .with_process(pid, |p| {
+            p.set_priority(ProcessPriority::from_u32(priority));
+        })
+        .is_some()
+    {
+        0
+    } else {
+        -1
+    }
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_get_state(pid: Pid) -> u32 {
+    PROCESS_TABLE
+        .with_process(pid, |p| p.get_state() as u32)
+        .unwrap_or(ProcessState::Terminated as u32)
+}
+
+#[unsafe(no_mangle)]
+pub fn sched_init_internal() {
+    SCHEDULER.init();
+}
+
+#[unsafe(no_mangle)]
+pub fn sched_add_internal(pid: Pid) {
+    SCHEDULER.add(pid);
+}
+
+#[unsafe(no_mangle)]
+pub fn sched_schedule_internal() -> Pid {
+    SCHEDULER.schedule().unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub fn sched_should_reschedule() -> i32 {
+    if SCHEDULER.should_reschedule() {
+        1
+    } else {
+        0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub fn sched_set_current(pid: Pid) {
+    SCHEDULER.set_current(pid);
+}
+
+#[unsafe(no_mangle)]
+pub fn sched_get_current() -> Pid {
+    SCHEDULER.current().unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_get_exit_code(pid: Pid) -> i32 {
+    PROCESS_TABLE
+        .with_process(pid, |p| p.exit_code.load(core::sync::atomic::Ordering::SeqCst) as i32)
+        .unwrap_or(-1)
+}
+
+#[unsafe(no_mangle)]
+pub fn proc_is_initialized() -> i32 {
+    if SCHEDULER.is_initialized() {
+        1
+    } else {
+        0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
+    use super::scheduler::SchedPolicy;
+    SCHEDULER.add_rt_task(pid, rt_priority, SchedPolicy::from_u32(policy))
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32 {
+    use super::scheduler::SchedPolicy;
+    if SCHEDULER.set_sched_policy(pid, SchedPolicy::from_u32(policy), rt_priority) {
+        0
+    } else {
+        -1
+    }
+}
+
+#[unsafe(no_mangle)]
+pub fn scheduler_get_rt_count() -> usize {
+    SCHEDULER.get_rt_count()
+}

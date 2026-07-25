@@ -50,6 +50,8 @@ pub mod coredump;
 pub mod cpu_queue;
 pub mod elf;
 pub mod api;
+pub mod proc_ops;
+pub mod sched_ops;
 pub mod madvise_mlock;
 /// L-02: 机制 API 集中导出 — 供 services 层策略实现调用
 pub mod mechanism;
@@ -92,8 +94,12 @@ pub use cpu_queue::init_cpu_queue;
 // api 公共接口 re-export — 避免跨子系统直接访问 proc::api 内部
 pub use api::*;
 
-// api::raw 公共接口 re-export — 避免跨子系统直接访问 proc::api::raw 内部
-pub use api::raw;
+// proc_ops / sched_ops 公共接口 re-export
+pub use proc_ops::*;
+pub use sched_ops::*;
+
+// raw 公共接口 re-export — 避免跨子系统直接访问 proc::proc_ops::raw 内部
+pub use proc_ops::raw;
 
 // fd_alloc 公共接口 re-export — 避免跨子系统直接访问 proc::fd_alloc 内部
 pub use fd_alloc::{FdPlan, FdSubsystem, fd_at, idx_of};
