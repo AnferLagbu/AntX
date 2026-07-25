@@ -44,8 +44,6 @@ pub use sendfile::{sys_sendfile, sys_splice, SPLICE_F_MOVE, SPLICE_F_NONBLOCK, S
 pub use dispatch_trait::{SyscallDispatch, FallbackSyscallDispatch, register_syscall_dispatch, current_syscall_dispatch};
 pub mod types;
 
-#[cfg(target_arch = "x86_64")]
-use crate::kernel::framework::idt::InterruptFrame;
 pub use dispatch::*;
 
 pub fn validate_user_ptr(ptr: u64) -> bool {

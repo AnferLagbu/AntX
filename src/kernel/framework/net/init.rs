@@ -10,7 +10,7 @@ use smoltcp::socket::{tcp, udp};
 // 翻译层访问 (services 边界), 直接使用 smoltcp wire 类型仅在 framework
 // 翻译 helper 内部 (qemu_net_skel 一类适配器). W4.4 阶段先把最常用的
 // 4 处 (net_save + setup + parse_ipv4_endpoint + endpoint 访问) 替换.
-use smoltcp::wire::{IpCidr, IpAddress};
+use smoltcp::wire::IpCidr;
 
 // REVAL-W W4.1 (2026-06-25): 引入 SmoltcpNetStack 实例, 这是 NetStack
 // trait 的 smoltcp 实现 (W3.2 产物). 重构后, init.rs 中的 smoltcp 直接

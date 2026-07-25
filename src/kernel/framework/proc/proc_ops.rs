@@ -19,8 +19,8 @@ use super::user_proc::{user_proc_clone, USER_PROC_MANAGER};
 pub use super::user_proc::proc_alloc_pid;
 use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::mm::{
-    get_kernel_pml4, pmm_alloc_pages, pmm_free_pages, vmm_clone_user_page_table_cow,
-    vmm_destroy_page_table, vmm_switch_page_table, PAGE_SIZE,
+    get_kernel_pml4, vmm_clone_user_page_table_cow,
+    vmm_destroy_page_table, vmm_switch_page_table,
 };
 use crate::kernel::framework::racy_cell::RacyCell;
 use crate::kernel::framework::timer::timer_get_ticks;

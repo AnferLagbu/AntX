@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 const VFS_API: &str = "src/kernel/framework/fs/vfs/api.rs";
-const HVFS: &str = "src/kernel/services/fs/hvfs/hvfs.rs";
+const HVFS: &str = "src/kernel/services/fs/hvfs/hvfs_data.rs";
 
 fn read(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))

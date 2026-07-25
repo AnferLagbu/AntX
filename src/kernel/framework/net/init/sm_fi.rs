@@ -67,6 +67,7 @@ pub(crate) fn endpoint_to_smol(
 }
 
 /// 把 smoltcp 的 `IpEndpoint` 翻译回 trait 抽象的 `NetEndpoint`.
+#[allow(dead_code)]
 pub(crate) fn endpoint_from_smol(
     ep: IpEndpoint,
 ) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {

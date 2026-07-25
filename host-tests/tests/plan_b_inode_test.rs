@@ -140,7 +140,7 @@ fn tmpfs_has_native_inode() {
 
 #[test]
 fn hvfs_has_native_inode() {
-    let src = read_file("services/fs/hvfs/hvfs.rs");
+    let src = read_file("services/fs/hvfs/hvfs_inode.rs");
     assert!(src.contains("pub struct HvfsInode"), "HvFS 必须有原生 HvfsInode");
     assert!(src.contains("impl Inode for HvfsInode"), "HvfsInode 必须 impl Inode");
 }
@@ -234,7 +234,7 @@ fn filesystem_has_fs_resolve_inode() {
 
 #[test]
 fn ramfs_implements_fs_resolve_inode() {
-    let src = read_file("services/fs/ramfs_core.rs");
+    let src = read_file("services/fs/ramfs_core/mod.rs");
     assert!(src.contains("fn fs_resolve_inode"), "RamFs 必须实现 fs_resolve_inode");
 }
 

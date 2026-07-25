@@ -31,7 +31,6 @@ use core::sync::atomic::Ordering;
 use super::proc_ops;
 use super::sched_ops;
 use super::scheduler::SCHEDULER;
-use super::types::*;
 use super::user_proc::USER_PROC_MANAGER;
 use crate::kernel::framework::mm::{pmm_alloc_pages, pmm_free_pages, PAGE_SIZE};
 

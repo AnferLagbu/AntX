@@ -46,7 +46,8 @@ fn trait_has_fs_sync_default() {
 
 #[test]
 fn hvfs_overrides_fs_sync() {
-    let src = read_src("src/kernel/services/fs/hvfs/hvfs.rs");
+    // 拆分后 FileSystem impl 在 hvfs_inode.rs (原在 hvfs.rs)
+    let src = read_src("src/kernel/services/fs/hvfs/hvfs_inode.rs");
     let impl_block = src
         .rsplit_once("impl crate::kernel::framework::fs::FileSystem for HvfsData")
         .map(|(_, b)| b)
@@ -63,7 +64,8 @@ fn hvfs_overrides_fs_sync() {
 
 #[test]
 fn ramfs_inherits_default() {
-    let src = read_src("src/kernel/services/fs/ramfs_core.rs");
+    // 拆分后 FileSystem impl 在 ramfs_core/mod.rs (原在 ramfs_core.rs)
+    let src = read_src("src/kernel/services/fs/ramfs_core/mod.rs");
     let impl_block = src
         .rsplit_once("impl FileSystem for RamFsData")
         .map(|(_, b)| b)
@@ -179,7 +181,8 @@ fn trait_object_method_signature() {
 
 #[test]
 fn hvfs_sync_returns_ioerror_on_nonzero() {
-    let src = read_src("src/kernel/services/fs/hvfs/hvfs.rs");
+    // 拆分后 FileSystem impl 在 hvfs_inode.rs
+    let src = read_src("src/kernel/services/fs/hvfs/hvfs_inode.rs");
     let impl_block = src
         .rsplit_once("impl crate::kernel::framework::fs::FileSystem for HvfsData")
         .map(|(_, b)| b)

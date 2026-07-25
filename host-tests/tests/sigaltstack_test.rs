@@ -155,8 +155,8 @@ fn source_signal_uses_sigaltstack() {
 
 #[test]
 fn source_syscall_clears_onstack_on_sigreturn() {
-    // P1-I-45 源码静态扫描: syscall/mod.rs::sys_rt_sigreturn 必须清 SS_ONSTACK
-    let source = include_str!("../../src/kernel/framework/syscall/mod.rs");
+    // P1-I-45 源码静态扫描: syscall/dispatch.rs::sys_rt_sigreturn 必须清 SS_ONSTACK
+    let source = include_str!("../../src/kernel/framework/syscall/dispatch.rs");
     let rt_sigreturn_start = source
         .find("fn sys_rt_sigreturn() -> i64 {")
         .expect("必须存在 sys_rt_sigreturn");

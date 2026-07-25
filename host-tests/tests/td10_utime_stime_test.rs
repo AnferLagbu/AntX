@@ -10,9 +10,9 @@
 
 use std::fs;
 
-const PROC_API: &str = "../src/kernel/framework/proc/api.rs";
+const PROC_API: &str = "../src/kernel/framework/proc/proc_ops.rs";
 const SCHED: &str = "../src/kernel/framework/proc/scheduler_ex.rs";
-const SYSCALL_MOD: &str = "../src/kernel/framework/syscall/mod.rs";
+const SYSCALL_MOD: &str = "../src/kernel/framework/syscall/dispatch.rs";
 const PROC_STRUCT: &str = "../src/kernel/framework/proc/process.rs";
 
 fn read(p: &str) -> String {
@@ -31,7 +31,7 @@ fn test_proc_set_and_get_in_kern() {
     let src = read(PROC_API);
     assert!(src.contains("fn proc_set_in_kern(v: u32)"), "必须有 proc_set_in_kern 入口");
     assert!(src.contains("fn proc_get_in_kern() -> u32"), "必须有 proc_get_in_kern 读取");
-    assert!(src.contains("static CURRENT_IN_KERN: AtomicU64"), "必须有 CURRENT_IN_KERN 状态");
+    assert!(src.contains("CURRENT_IN_KERN: AtomicU64") || src.contains("CURRENT_IN_KERN: core::sync::atomic::AtomicU64"), "必须有 CURRENT_IN_KERN 状态");
 }
 
 #[test]

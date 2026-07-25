@@ -10,6 +10,7 @@ use std::fs;
 use std::path::Path;
 
 const NET_INIT: &str = "src/kernel/framework/net/init.rs";
+const NET_SM_FI: &str = "src/kernel/framework/net/init/sm_fi.rs";
 
 fn read(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -53,7 +54,8 @@ fn test_socket_close_uses_kfree() {
 #[test]
 fn test_buf_lifetime_safe_through_socket_remove() {
     // TD-07: smoltcp socket 必须先 `sockets.remove(handle)` (drop), 才能 k_free 缓冲.
-    let src = read(NET_INIT);
+    // sm_close 已移至 sm_fi.rs
+    let src = read(NET_SM_FI);
     let close_marker = "pub unsafe extern \"C\" fn sm_close(";
     let start = src.find(close_marker).expect("sm_close not found");
     let body = &src[start..start + 5000];
