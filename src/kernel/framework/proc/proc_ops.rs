@@ -671,7 +671,8 @@ pub fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     if parent_pid == 0 { return 0; }
 
-    // 共享父进程页表 (无 COW — clone_user_page_table_cow 崩溃)
+    // 共享父进程页表 (COW 未启用: clone_user_page_table_cow 在遍历大量
+    // 页表项后崩溃。init 进程 cr3 可能包含过多映射导致内存耗尽)
     let parent_cr3 = PROCESS_TABLE.with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst)).unwrap_or(0);
     if parent_cr3 == 0 { return 0; }
 
