@@ -13,6 +13,8 @@ pub mod dedup;
 pub mod dmu;
 pub mod dmu_trait;
 pub mod dva;
+pub mod hvfs_data;
+pub mod hvfs_inode;
 pub mod hvfs;
 pub mod metaslab;
 pub mod raidz;
