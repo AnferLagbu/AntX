@@ -98,7 +98,7 @@ pub const PxIS: usize = 0x10;
 pub const PxIE: usize = 0x14;
 /// Command and Status
 pub const PxCMD: usize = 0x18;
-/// Task File Data
+/// 任务文件数据
 pub const PxTFD: usize = 0x20;
 /// Signature
 pub const PxSIG: usize = 0x24;
@@ -154,7 +154,7 @@ pub const PxSSTS_DET: u32 = 0xF;
 pub const PxIS_DHRS: u32 = 1 << 0;
 /// DMA Setup FIS
 pub const PxIS_DPS: u32 = 1 << 5;
-/// Port Connect Change
+/// 端口连接变更
 pub const PxIS_PCS: u32 = 1 << 9;
 /// Task File Error
 pub const PxIS_TFE: u32 = 1 << 30;

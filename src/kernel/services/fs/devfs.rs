@@ -421,54 +421,42 @@ impl SafeDevFs {
     }
 
     /// 注册设备
-    /// I-20: 内部 `register_device` 改 KernelResult 后, 错误码通过映射传播到
-    /// `&'static str` (保持 services 层公开 API 表面不变).
-    pub fn register(&self, name: &str, kind: DevKind) -> Result<(), &'static str> {
-        match self.inner.register_device(name, kind as u8) {
-            Ok(()) => Ok(()),
-            Err(KernelError::AlreadyExists) => Err("device already exists"),
-            Err(KernelError::NoSpace) => Err("devfs table full"),
-            Err(_) => Err("register failed"),
-        }
+    pub fn register(&self, name: &str, kind: DevKind) -> Result<(), KernelError> {
+        self.inner.register_device(name, kind as u8)
     }
 
     /// 注销设备
-    /// I-20: 同上, NotFound 直接映射为 `device not found`.
-    pub fn unregister(&self, name: &str) -> Result<(), &'static str> {
-        match self.inner.unregister_device(name) {
-            Ok(()) => Ok(()),
-            Err(KernelError::FileNotFound) => Err("device not found"),
-            Err(_) => Err("unregister failed"),
-        }
+    pub fn unregister(&self, name: &str) -> Result<(), KernelError> {
+        self.inner.unregister_device(name)
     }
 
     /// 打开设备
-    pub fn open(&self, path: &str) -> Result<DevFile, &'static str> {
+    pub fn open(&self, path: &str) -> Result<DevFile, KernelError> {
         match self.inner.open(path) {
             Some((index, dev_type)) => {
                 let kind = DevKind::from_u8(dev_type)
-                    .ok_or("unknown device type")?;
+                    .ok_or(KernelError::InvalidArgument)?;
                 Ok(DevFile { index, kind })
             }
-            None => Err("device not found"),
+            None => Err(KernelError::FileNotFound),
         }
     }
 
     /// 从设备读
-    pub fn read(&self, dev: &DevFile, buf: &mut [u8]) -> Result<usize, &'static str> {
+    pub fn read(&self, dev: &DevFile, buf: &mut [u8]) -> Result<usize, KernelError> {
         let rc = self.inner.read(dev.kind as u8, buf);
         if rc < 0 {
-            Err("read failed")
+            Err(KernelError::Io)
         } else {
             Ok(rc as usize)
         }
     }
 
     /// 向设备写
-    pub fn write(&self, dev: &DevFile, buf: &[u8]) -> Result<usize, &'static str> {
+    pub fn write(&self, dev: &DevFile, buf: &[u8]) -> Result<usize, KernelError> {
         let rc = self.inner.write(dev.kind as u8, buf);
         if rc < 0 {
-            Err("write failed")
+            Err(KernelError::Io)
         } else {
             Ok(rc as usize)
         }
@@ -520,12 +508,12 @@ pub fn global() -> &'static SafeDevFs {
 // ============================================================================
 
 /// 注册设备到全局 DevFS
-pub fn register(name: &str, kind: DevKind) -> Result<(), &'static str> {
+pub fn register(name: &str, kind: DevKind) -> Result<(), KernelError> {
     global().register(name, kind)
 }
 
 /// 打开全局 DevFS 设备
-pub fn open(path: &str) -> Result<DevFile, &'static str> {
+pub fn open(path: &str) -> Result<DevFile, KernelError> {
     global().open(path)
 }
 

@@ -19,6 +19,7 @@
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
 use crate::kernel::framework::driver::net::e1000::{TxRing, RxRing};
+use crate::kernel::services::error::KernelError;
 
 // Services 层安全日志宏 (无 unsafe 展开)
 use crate::slog_info;
@@ -188,8 +189,9 @@ impl E1000Io {
     /// # 参数
     /// - `phys`: E1000 BAR0 物理地址 (来自 PCI 枚举)
     /// - `len`: MMIO 区域大小 (通常 128KB)
-    pub fn new(phys: PhysAddr, len: usize) -> Result<Self, &'static str> {
-        let mmio = IoMem::from_pci_bar(phys, len, "e1000-bar0")?;
+    pub fn new(phys: PhysAddr, len: usize) -> Result<Self, KernelError> {
+        let mmio = IoMem::from_pci_bar(phys, len, "e1000-bar0")
+            .map_err(|_| KernelError::Io)?;
         Ok(Self { mmio })
     }
 
@@ -431,7 +433,7 @@ impl E1000Driver {
     ///
     /// 执行 E1000 软复位, 清除中断, 配置链路/速率/双工, 并等待链路 UP。
     /// 应在 DMA 环分配前调用。
-    pub fn reset_and_detect_link(&mut self) -> Result<(), &'static str> {
+    pub fn reset_and_detect_link(&mut self) -> Result<(), KernelError> {
         // 1. 软复位: 写 CTRL.RST, 轮询直到清零
         self.io.write32(E1000_CTRL, E1000_CTRL_RST);
         let mut timeout = 0u32;
@@ -443,7 +445,7 @@ impl E1000Driver {
             core::hint::spin_loop();
         }
         if timeout >= E1000_TIMEOUT {
-            return Err("e1000: reset timeout");
+            return Err(KernelError::Io);
         }
 
         // 2. 清除所有待处理中断
@@ -649,8 +651,8 @@ impl E1000Driver {
     /// 发送一个数据包
     ///
     /// 通过 TxRing 安全包装设置 DMA 描述符, 写入 TDT 寄存器通知硬件。
-    pub fn send_packet(&mut self, data: &[u8]) -> Result<usize, &'static str> {
-        let tx_ring = self.tx_ring.as_mut().ok_or("tx ring not initialized")?;
+    pub fn send_packet(&mut self, data: &[u8]) -> Result<usize, KernelError> {
+        let tx_ring = self.tx_ring.as_mut().ok_or(KernelError::NotInitialized)?;
 
         let tail = tx_ring.tail();
         let mut timeout: u32 = E1000_TIMEOUT;
@@ -659,7 +661,7 @@ impl E1000Driver {
             core::hint::spin_loop();
         }
         if timeout == 0 {
-            return Err("tx timeout");
+            return Err(KernelError::Io);
         }
 
         let total_len = data.len().min(2048);

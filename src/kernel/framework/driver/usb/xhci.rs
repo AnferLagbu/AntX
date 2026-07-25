@@ -751,7 +751,7 @@ impl Driver for XhciController {
     }
 
     fn init(&mut self) -> Result<()> {
-        self.init_hardware()?;
+        self.init_hardware().map_err(|_| DriverError::HardwareError)?;
         self.initialized = true;
         Ok(())
     }

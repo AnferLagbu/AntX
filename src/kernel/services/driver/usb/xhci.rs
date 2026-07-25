@@ -35,6 +35,7 @@
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::services::error::KernelError;
 
 // ============================================================================
 // xHCI TRB 类型定义 (USB-1.5)
@@ -46,11 +47,11 @@ use crate::kernel::framework::mm::PhysAddr;
 pub enum TrbType {
     /// 普通传输 TRB
     Normal = 1,
-    /// Setup Stage TRB (Control Transfer)
+    /// Setup Stage TRB (控制传输)
     SetupStage = 2,
-    /// Data Stage TRB (Control Transfer)
+    /// Data Stage TRB (控制传输)
     DataStage = 3,
-    /// Status Stage TRB (Control Transfer)
+    /// Status Stage TRB (控制传输)
     StatusStage = 4,
     /// 等时传输 TRB
     Isoch = 5,
@@ -66,23 +67,23 @@ pub enum TrbType {
     DisableSlot = 10,
     /// Address Device Command TRB
     AddressDevice = 11,
-    /// Configure Endpoint Command TRB
+    /// 配置端点命令 TRB
     ConfigureEndpoint = 12,
-    /// Evaluate Context Command TRB
+    /// 评估上下文命令 TRB
     EvaluateContext = 13,
-    /// Reset Endpoint Command TRB
+    /// 重置端点命令 TRB
     ResetEndpoint = 14,
     /// Stop Endpoint Command TRB
     StopEndpoint = 15,
-    /// Set TR Dequeue Pointer Command TRB
+    /// 设置 TR 出队指针命令 TRB
     SetTrDequeuePointer = 16,
-    /// Reset Device Command TRB
+    /// 重置设备命令 TRB
     ResetDevice = 17,
-    /// Transfer Event TRB (Controller → Host)
+    /// 传输事件 TRB (控制器 → 主机)
     TransferEvent = 32,
-    /// Command Completion Event TRB (Controller → Host)
+    /// 命令完成事件 TRB (控制器 → 主机)
     CommandCompletionEvent = 33,
-    /// Port Status Change Event TRB
+    /// 端口状态变更事件 TRB
     PortStatusChangeEvent = 34,
 }
 
@@ -618,7 +619,7 @@ impl XhciController {
     /// # 返回
     /// - `Ok(())`: 初始化成功
     /// - `Err`: 超时或控制器无响应
-    pub fn init_hardware(&mut self) -> Result<(), &'static str> {
+    pub fn init_hardware(&mut self) -> Result<(), KernelError> {
         // 1. 软复位
         self.reset();
         // 2. 启动
@@ -713,8 +714,8 @@ impl XhciController {
     pub fn submit_command(&self, _trb: &Trb, ring_tail_phys: u64) {
         // 注意: TRB 实际写入由调用方通过 DMA 内存完成.
         // 此处仅更新 CRCR 并触发 Doorbell.
-        // CRCR 低 3 位: [0] = RCS (Ring Consumer Cycle State),
-        //                [1] = CS (Command Stop), [2] = CA (Command Abort)
+        // CRCR 低 3 位: [0] = RCS (环消费者循环状态),
+        //                [1] = CS (命令停止), [2] = CA (命令中止)
         let crcr_val = ring_tail_phys | 1; // RCS = 1 (consumer cycle)
         self.set_crcr(crcr_val);
 
@@ -874,7 +875,7 @@ impl TransferRing {
         is_device_to_host: bool,
         trb_interrupt_on_completion: bool,
     ) -> bool {
-        // Setup Stage TRB (USB-1.5 §6.4.1.1)
+        // Setup Stage TRB 构造 (USB-1.5 §6.4.1.1)
         let setup_parameter = u64::from_ne_bytes(*setup_packet);
         let setup_control = (TrbType::SetupStage as u32) << 10
             | 1 << 6 // ICE (Interrupt on Completion)

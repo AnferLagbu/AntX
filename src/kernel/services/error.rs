@@ -76,6 +76,43 @@ pub enum KernelError {
     Other(i32),
 }
 
+impl core::fmt::Display for KernelError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::PermissionDenied => write!(f, "权限不足"),
+            Self::Io => write!(f, "I/O 错误"),
+            Self::FileNotFound => write!(f, "文件不存在"),
+            Self::NoSuchProcess => write!(f, "进程不存在"),
+            Self::BadFd => write!(f, "文件描述符无效"),
+            Self::WouldBlock => write!(f, "操作会阻塞"),
+            Self::NoMemory => write!(f, "内存不足"),
+            Self::Fault => write!(f, "错误地址"),
+            Self::NoDevice => write!(f, "设备不存在"),
+            Self::InvalidArgument => write!(f, "无效参数"),
+            Self::ProcessFileLimit => write!(f, "进程打开文件过多"),
+            Self::NotSupported => write!(f, "操作不支持"),
+            Self::AddrFamilyNotSupported => write!(f, "地址族不支持"),
+            Self::AddrInUse => write!(f, "地址已被使用"),
+            Self::AddrNotAvailable => write!(f, "地址不可用"),
+            Self::ConnectionReset => write!(f, "连接被重置"),
+            Self::NotConnected => write!(f, "未连接"),
+            Self::ConnectionRefused => write!(f, "连接被拒绝"),
+            Self::NotReady => write!(f, "未就绪"),
+            Self::AlreadyExists => write!(f, "已存在"),
+            Self::Busy => write!(f, "资源忙"),
+            Self::NotADirectory => write!(f, "不是目录"),
+            Self::IsDirectory => write!(f, "是目录"),
+            Self::ReadOnlyFilesystem => write!(f, "文件系统只读"),
+            Self::NameTooLong => write!(f, "文件名过长"),
+            Self::NoSpace => write!(f, "空间不足"),
+            Self::CrossDevice => write!(f, "跨设备链接"),
+            Self::NotInitialized => write!(f, "未初始化"),
+            Self::Overflow => write!(f, "数值溢出"),
+            Self::Other(code) => write!(f, "错误码 {}", code),
+        }
+    }
+}
+
 // 向后兼容别名 (fs 层旧变体名 → 统一变体名)
 impl KernelError {
     /// fs 层旧名: NotFound → FileNotFound

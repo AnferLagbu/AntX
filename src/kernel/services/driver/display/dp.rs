@@ -22,6 +22,7 @@
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::services::error::KernelError;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -233,8 +234,9 @@ impl DpIo {
     /// # 参数
     /// - `phys`: DP BAR0 物理地址 (来自 PCI 枚举)
     /// - `len`: MMIO 区域大小 (>= REQUIRED_IOMEM_SIZE)
-    pub fn new(phys: PhysAddr, len: usize) -> Result<Self, &'static str> {
-        let mmio = IoMem::from_pci_bar(phys, len, "dp-bar0")?;
+    pub fn new(phys: PhysAddr, len: usize) -> Result<Self, KernelError> {
+        let mmio = IoMem::from_pci_bar(phys, len, "dp-bar0")
+            .map_err(|_| KernelError::Io)?;
         Ok(Self { mmio })
     }
 

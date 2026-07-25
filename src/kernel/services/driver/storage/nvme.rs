@@ -82,9 +82,9 @@ pub const CC_CSS_NVM: u32 = 0 << 4;
 pub const CC_AMS_RR: u32 = 0 << 11;
 /// MPS Memory Page Size shift (CC.MPS, 4-bit @ bit 7)
 pub const CC_MPS_SHIFT: u32 = 7;
-/// IOCQES value for 16-byte CQ entries: log2(16) = 4
+/// IOCQES 值: 16 字节 CQ 条目, log2(16) = 4
 pub const CC_IOCQES_VAL: u32 = 4 << 20;
-/// IOSQES value for 64-byte SQ entries: log2(64) = 6
+/// IOSQES 值: 64 字节 SQ 条目, log2(64) = 6
 pub const CC_IOSQES_VAL: u32 = 6 << 24;
 
 // ============================================================================
@@ -1122,8 +1122,8 @@ mod tests {
     fn test_nvme_cmd_entry_create_cq() {
         let cmd = NvmeCmdEntry::create_cq(1, 0x5000, 64);
         assert_eq!(cmd.opcode, OP_ADMIN_CREATE_IOCQ);
-        assert_eq!(cmd.cdw10 & 0xFFFF, 0); // QID=1 → wait, let me check
-        // cdw10 = ((depth-1) << 16) | qid = (63 << 16) | 1
+        assert_eq!(cmd.cdw10 & 0xFFFF, 0); // QID=1 → 验证低位
+        // cdw10 布局: ((depth-1) << 16) | qid = (63 << 16) | 1
         assert_eq!(cmd.cdw10, (63 << 16) | 1);
     }
 

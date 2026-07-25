@@ -1,9 +1,10 @@
 //! Socket FFI 公共 API (sm_* 函数)
 //!
-//! 从 init.rs 拆分, 集中 POSIX socket FFI 实现 (sm_socket, sm_bind, sm_listen,
-//! sm_accept, sm_connect, sm_send, sm_recv, sm_sendto, sm_recvfrom, sm_sendmsg,
-//! sm_recvmsg, sm_close, sm_setsockopt, sm_getsockopt, sm_getsockname,
-//! sm_getpeername, sm_poll_sockets).
+//! 从 init.rs 拆分, 集中 POSIX socket FFI 实现:
+//! sm_socket、sm_bind、sm_listen、sm_accept、sm_connect、sm_send、
+//! sm_recv、sm_sendto、sm_recvfrom、sm_sendmsg、sm_recvmsg、sm_close、
+//! sm_setsockopt、sm_getsockopt、sm_getsockname、sm_getpeername、
+//! sm_poll_sockets 等函数.
 //!
 //! ## 依赖
 //!

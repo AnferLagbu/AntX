@@ -320,7 +320,7 @@ fn syscall_dispatch_impl(
             b"cet\0"
         ),
 
-        // ==================== D8: Tickless (NO_HZ) ====================
+        // ==================== D8: 无 tick 模式 (NO_HZ) ====================
         QX_TICKLESS => dispatch!(
             crate::kernel::framework::timer::sys_tickless(a0, a1, a2),
             b"tickless\0"
@@ -982,7 +982,7 @@ fn sys_fb_release(_vaddr: u64) -> i64 {
 }
 
 // ============================================================================
-// Boot install (x86_64 only)
+// 引导安装 (仅 x86_64)
 // ============================================================================
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]

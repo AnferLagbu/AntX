@@ -162,7 +162,7 @@ pub fn usb_init() -> framework::Result<()> {
 ///
 /// 调用方必须保证 `ctrl` 由 `discover_xhci_controllers` 创建 (IoMem 边界已保证).
 unsafe fn init_xhci_controller(ctrl: &mut XhciController) -> framework::Result<()> {
-    ctrl.init_hardware()?;
+    ctrl.init_hardware().map_err(|_| super::framework::DriverError::HardwareError)?;
     Ok(())
 }
 
