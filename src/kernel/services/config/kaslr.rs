@@ -10,6 +10,8 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use crate::kernel::services::error::KernelError;
+
 /// KASLR 是否启用 (派生自 Cargo feature `kaslr`).
 pub const KASLR_ENABLED: bool = cfg!(feature = "kaslr");
 
@@ -55,17 +57,17 @@ pub fn is_aligned(offset: u64) -> bool {
 /// - 偏移必须不超过 `KASLR_MAX_OFFSET`
 ///
 /// 返回错误细节 (供 validate 框架统一报告).
-pub fn validate_kaslr_offset() -> Result<(), &'static str> {
+pub fn validate_kaslr_offset() -> Result<(), KernelError> {
     let off = get_kaslr_offset();
 
     if !is_aligned(off) {
-        return Err("KASLR offset not aligned to KASLR_ALIGN");
+        return Err(KernelError::InvalidArgument);
     }
     if off > KASLR_MAX_OFFSET {
-        return Err("KASLR offset exceeds KASLR_MAX_OFFSET");
+        return Err(KernelError::InvalidArgument);
     }
     if KASLR_ENABLED && off == 0 {
-        return Err("KASLR enabled but runtime offset is zero");
+        return Err(KernelError::NotInitialized);
     }
     Ok(())
 }

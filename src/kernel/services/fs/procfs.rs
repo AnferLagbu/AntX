@@ -16,6 +16,7 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.2.3 任务: 进程文件系统迁移
 
+use crate::kernel::services::error::KernelError;
 use crate::kernel::services::fs::procfs_core::{ProcfsData, PROCFS_MAX_NAME};
 
 // ============================================================================
@@ -80,33 +81,33 @@ impl SafeProcFs {
     /// 挂载 ProcFS
     ///
     /// # 返回
-    /// 成功: Ok(()); 失败: `&'static str` 错误信息
-    pub fn mount(&self, mount_point: &str) -> Result<(), &'static str> {
+    /// 成功: Ok(()); 失败: KernelError
+    pub fn mount(&self, mount_point: &str) -> Result<(), KernelError> {
         let rc = self.inner.mount(mount_point);
         if rc == 0 {
             Ok(())
         } else {
-            Err("mount failed")
+            Err(KernelError::Io)
         }
     }
 
     /// 注册进程
-    pub fn add_process(&self, pid: u32, name: &str) -> Result<(), &'static str> {
+    pub fn add_process(&self, pid: u32, name: &str) -> Result<(), KernelError> {
         let rc = self.inner.add_process(pid, name);
         if rc == 0 {
             Ok(())
         } else {
-            Err("procfs table full")
+            Err(KernelError::NoSpace)
         }
     }
 
     /// 注销进程
-    pub fn remove_process(&self, pid: u32) -> Result<(), &'static str> {
+    pub fn remove_process(&self, pid: u32) -> Result<(), KernelError> {
         let rc = self.inner.remove_process(pid);
         if rc == 0 {
             Ok(())
         } else {
-            Err("process not found")
+            Err(KernelError::NoSuchProcess)
         }
     }
 
@@ -114,10 +115,10 @@ impl SafeProcFs {
     ///
     /// # 返回
     /// 成功: 实际写入 `buf` 的字节数
-    pub fn read(&self, name: &str, buf: &mut [u8]) -> Result<usize, &'static str> {
+    pub fn read(&self, name: &str, buf: &mut [u8]) -> Result<usize, KernelError> {
         let rc = self.inner.read(name, buf);
         if rc < 0 {
-            Err("read failed")
+            Err(KernelError::Io)
         } else {
             Ok(rc as usize)
         }
@@ -172,17 +173,17 @@ pub fn global() -> &'static SafeProcFs {
 // ============================================================================
 
 /// 注册进程到全局 ProcFS
-pub fn add_process(pid: u32, name: &str) -> Result<(), &'static str> {
+pub fn add_process(pid: u32, name: &str) -> Result<(), KernelError> {
     global().add_process(pid, name)
 }
 
 /// 注销进程
-pub fn remove_process(pid: u32) -> Result<(), &'static str> {
+pub fn remove_process(pid: u32) -> Result<(), KernelError> {
     global().remove_process(pid)
 }
 
 /// 读全局 ProcFS 条目
-pub fn read(name: &str, buf: &mut [u8]) -> Result<usize, &'static str> {
+pub fn read(name: &str, buf: &mut [u8]) -> Result<usize, KernelError> {
     global().read(name, buf)
 }
 
