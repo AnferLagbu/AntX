@@ -15,7 +15,7 @@ use super::process::{Process, PROCESS_TABLE};
 use super::scheduler::SCHEDULER;
 use super::session::SESSION_MANAGER;
 use super::types::*;
-use super::user_proc::{user_proc_clone, USER_PROC_MANAGER};
+use super::user_proc::USER_PROC_MANAGER;
 pub use super::user_proc::proc_alloc_pid;
 use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::mm::{
@@ -24,7 +24,6 @@ use crate::kernel::framework::mm::{
 };
 use crate::kernel::framework::racy_cell::RacyCell;
 use crate::kernel::framework::timer::timer_get_ticks;
-use crate::klog_error;
 
 // === 特权层: 进程子系统裸指针/FFI 桥接集中地 ===
 //
@@ -665,8 +664,6 @@ pub fn proc_sleep_ms(ms: u64) {
     SCHEDULER.schedule();
 }
 
-/// fork 系统调用实现 (共享页表, 无 COW)
-#[unsafe(no_mangle)]
 /// fork 系统调用实现 (共享页表 + new_init namespace)
 ///
 /// 已知限制:
