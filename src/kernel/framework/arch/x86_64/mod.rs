@@ -314,7 +314,7 @@ impl MmuArch for X8664 {
     }
 
     /// 进入用户态 (iretq)。
-    #[inline(always)]
+    #[inline(never)]
     fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> ! {
         const USER_DS: u64 = 0x1B;
         const USER_CS: u64 = 0x23;
@@ -340,14 +340,20 @@ impl MmuArch for X8664 {
                 "cli",
                 // 切换到进程内核栈 (高半部分地址)
                 "mov rsp, r14",
-                // 计算高半部分地址并跳转
-                "lea rax, [rip + 2f]",
+                // lea rax, [rip] → rax = lea_addr + 7
+                "lea rax, [rip]",
                 "mov rcx, {kbase_hi}",
-                "add rax, rcx",
+                "add rax, rcx",              // rax = lea+7 + KERNEL_BASE (高半)
+                // 跳到 mov cr3: 需跳过 mov(10) + add(3) + add(4) + jmp(2) = 19 bytes
+                "add rax, 19",
                 "jmp rax",
-                "2:",
-                // --- 以下在高半部分执行 ---
                 "mov cr3, r15",                // 切换到用户页表
+                // 清除输入寄存器中的低物理地址, 防止编译代码通过 [reg] 访问
+                "xor r15d, r15d",              // 清 R15 (原 user_cr3 物理地址)
+                "xor r14d, r14d",              // 清 R14 (原 kstack 高半地址 → 无用)
+                "xor r13d, r13d",              // 清 R13 (原 user_stack 低地址)
+                "xor r12d, r12d",              // 清 R12 (原 entry=0x400000 低地址)
+                "xor ebp, ebp",                // 清 RBP (原 kstack 物理地址)  
                 "mov ecx, {user_ds}",
                 "mov ds, cx",
                 "mov es, cx",

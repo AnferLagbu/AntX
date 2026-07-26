@@ -1040,6 +1040,20 @@ impl UserProcManager {
             );
         }
 
+        // 将内核栈的物理地址也恒等映射到用户 PML4, 防止 CR3 切换后
+        // 残留的低地址引用 (如 RBP = kstack - KERNEL_BASE) 触发 #PF.
+        {
+            let kphys = kstack - crate::kernel::framework::mm::KERNEL_BASE as u64;
+            let kpage_phys = kphys & !(PAGE_SIZE - 1);
+            crate::kernel::framework::mm::get_vmm().map_page_in_table(
+                cr3,
+                crate::kernel::framework::mm::VirtAddr(kpage_phys),
+                crate::kernel::framework::mm::PhysAddr(kpage_phys),
+                crate::kernel::framework::mm::PageFlags::PRESENT
+                    | crate::kernel::framework::mm::PageFlags::WRITABLE,
+            );
+        }
+
         // SAFETY: enter_user 是平台特定的 arch 入口, 不会返回, 由调用方保证上下文有效。
         // user_cr3 传入用户页表物理地址, 由 enter_user 汇编在 iretq 前切换.
         unsafe {
