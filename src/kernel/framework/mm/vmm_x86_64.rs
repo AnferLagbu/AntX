@@ -1453,6 +1453,11 @@ impl VirtualMemoryManager {
     #[inline(always)]
     pub fn acquire_lock(&self) -> IrqSaveFlags {
         let flags = disable_interrupts();
+        // 单核可重入: 如果锁已被当前线程持有 (中断禁用时无其他线程),
+        // 直接返回避免死锁 (page fault handler 在 COW 持锁期间触发)
+        if VMM_LOCK.load(Ordering::Acquire) {
+            return flags;
+        }
         while VMM_LOCK
             .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
