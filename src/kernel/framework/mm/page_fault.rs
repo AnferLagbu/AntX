@@ -72,22 +72,29 @@ pub fn handle_page_fault(mm: &MmStruct, info: PageFaultInfo) -> PfResult {
         return PfResult::SignalBus;
     }
 
+    // 内核内部路径: 调用方保证 CR3 正确, 使用硬件 CR3
+    let user_cr3 = vmm::get_current_pml4();
+
     if let Some(vma) = mm.find_vma(addr) {
         if vma.is_guard() {
             return PfResult::SignalSegv;
         }
-        return handle_vma_fault_with_mm(mm, &vma, &info);
+        return handle_vma_fault_with_mm(mm, &vma, &info, user_cr3);
     }
 
     if info.user && is_stack_expansion_candidate(addr) {
-        return handle_stack_expansion(mm, addr);
+        return handle_stack_expansion(mm, addr, user_cr3);
     }
 
     PfResult::SignalSegv
 }
 
 /// 用户态缺页简化入口 (无需传递 MmStruct，直接分配并映射)
+///
+/// 从汇编层保存的 `USER_CR3_SAVE` 读取用户页表 PML4 物理地址.
+/// 汇编在 KPTI 切换前将硬件 CR3 写入此变量.
 pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
+    let user_cr3 = super::read_user_cr3_asm();
     let addr = info.fault_addr as usize;
 
     if info.reserved {
@@ -96,7 +103,7 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
 
     // Swap-in: PTE 为 swap entry (present=0 但非零)
     if !info.present && info.user {
-        let pml4 = vmm::get_current_pml4();
+        let pml4 = user_cr3;
         let vmm_inst = vmm::get_vmm();
         if let Some(pte) = vmm_inst.get_pte_value(pml4, VirtAddr(info.fault_addr)) {
             if super::swap::is_swap_pte(pte) {
@@ -118,14 +125,14 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
             if vma.is_guard() {
                 return PfResult::SignalSegv;
             }
-            return handle_vma_fault_with_mm(mm, &vma, &info);
+            return handle_vma_fault_with_mm(mm, &vma, &info, user_cr3);
         }
     }
 
     // COW: 写已存在但只读的页 (VMA 未覆盖的 fallback 路径,
     // 例如 fork 后子进程写 COW 页但 VMA 尚未同步)
     if info.write && info.present {
-        let pml4 = vmm::get_current_pml4();
+        let pml4 = user_cr3;
         return match super::cow::cow_handle_fault(pml4, info.fault_addr) {
             Some(_) => {
                 PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -136,13 +143,13 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
     }
 
     if info.user && is_stack_expansion_candidate(addr) {
-        return handle_stack_expansion_simple(addr);
+        return handle_stack_expansion_simple(addr, user_cr3);
     }
 
     PfResult::SignalSegv
 }
 
-fn handle_stack_expansion_simple(addr: usize) -> PfResult {
+fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
     let guard_end = stack_base + USER_STACK_GUARD_PAGES * PAGE_SIZE;
@@ -166,7 +173,7 @@ fn handle_stack_expansion_simple(addr: usize) -> PfResult {
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vmm_inst = vmm::get_vmm();
     vmm_inst.map_page_in_table(
-        vmm::get_current_pml4(),
+        user_cr3,
         VirtAddr(page_aligned as u64),
         phys,
         flags,
@@ -176,17 +183,17 @@ fn handle_stack_expansion_simple(addr: usize) -> PfResult {
     PfResult::Fixed
 }
 
-fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> PfResult {
+fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user_cr3: u64) -> PfResult {
     let aligned = (info.fault_addr as usize) & !(PAGE_SIZE as usize - 1);
 
     // ── FileBacked VMA: 从 Page Cache 获取缓存页 ──
     if vma.vma_type == VmaType::FileBacked && vma.inode_id != 0 {
-        return handle_file_fault(mm, vma, info, aligned);
+        return handle_file_fault(mm, vma, info, aligned, user_cr3);
     }
 
     // ── COW: 写入只读页 ──
     if info.write && !vma.flags.contains(PageFlags::WRITABLE) {
-        return do_cow_copy_with_mm(mm, vma, aligned);
+        return do_cow_copy_with_mm(mm, vma, aligned, user_cr3);
     }
 
     // ── 普通匿名页分配 ──
@@ -204,7 +211,7 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> P
 
     let flags = vma.flags | PageFlags::PRESENT;
     let vmm_inst = vmm::get_vmm();
-    let pml4 = vmm::get_current_pml4();
+    let pml4 = user_cr3;
 
     vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), phys, flags);
 
@@ -213,7 +220,7 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo) -> P
 }
 
 /// 文件映射缺页处理: 从 Page Cache 获取/创建缓存页
-fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize) -> PfResult {
+fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize, user_cr3: u64) -> PfResult {
     let page_index = ((aligned - vma.start) as u64 + vma.offset) / PAGE_SIZE;
 
     // Demand Paging (B2 第三步真语义): miss 时同步从 vfs 读 4KB 填 pcache.
@@ -248,7 +255,7 @@ fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: u
     };
 
     let vmm_inst = vmm::get_vmm();
-    let pml4 = vmm::get_current_pml4();
+    let pml4 = user_cr3;
 
     if vma.shared {
         // MAP_SHARED: 可写映射, 写入回写 Page Cache
@@ -317,7 +324,7 @@ fn is_stack_expansion_candidate(addr: usize) -> bool {
     (USER_STACK_TOP - USER_STACK_DEFAULT_SIZE..USER_STACK_TOP).contains(&a)
 }
 
-fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
+fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
     let guard_end = stack_base + USER_STACK_GUARD_PAGES * PAGE_SIZE;
@@ -345,7 +352,7 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vmm_inst = vmm::get_vmm();
     vmm_inst.map_page_in_table(
-        vmm::get_current_pml4(),
+        user_cr3,
         VirtAddr(page_aligned as u64),
         phys,
         flags,
@@ -360,7 +367,7 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
     if mm.insert_vma(stack_vma).is_err() {
         // insert_vma 失败: unmap 刚映射的页面并释放物理页, 防止无 VMA 跟踪的
         // 孤儿映射 (后续 munmap/mprotect 无法覆盖此区域)
-        vmm_inst.unmap_page_in_table(vmm::get_current_pml4(), VirtAddr(page_aligned as u64));
+        vmm_inst.unmap_page_in_table(user_cr3, VirtAddr(page_aligned as u64));
         pmm_inst.free_page(phys);
         return PfResult::Oom;
     }
@@ -371,9 +378,9 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize) -> PfResult {
 
 // ── COW (Copy-on-Write) ──
 
-fn do_cow_copy_with_mm(_mm: &MmStruct, _vma: &Vma, addr: usize) -> PfResult {
+fn do_cow_copy_with_mm(_mm: &MmStruct, _vma: &Vma, addr: usize, user_cr3: u64) -> PfResult {
     let vmm_inst = vmm::get_vmm();
-    let pml4 = vmm::get_current_pml4();
+    let pml4 = user_cr3;
 
     let old_phys = match vmm_inst.get_physical_in_pml4(pml4, VirtAddr(addr as u64)) {
         Some(p) => p,

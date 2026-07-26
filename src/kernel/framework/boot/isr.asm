@@ -18,6 +18,12 @@ section .text
 extern exception_handler
 extern irq_handler
 
+; 用户态 CR3 临时保存 (KPTI: 汇编在切换到内核页表前写入, Rust page fault handler 读取)
+section .bss
+align 8
+global USER_CR3_SAVE
+USER_CR3_SAVE: resq 1
+
 ; ── 通用 ISR stub (无 CPU 错误码) ───────────────────────────────────────
 %macro isr_noerr 1
 global isr%1
@@ -63,6 +69,9 @@ isr_common:
     cmp word [rsp+24], 0x23
     jne .isr_no_kpti_enter
     swapgs
+    ; 保存用户 CR3: 硬件 CR3 此时仍是用户页表
+    mov rax, cr3
+    mov [USER_CR3_SAVE], rax
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
     swapgs
@@ -149,6 +158,15 @@ syscall_entry:
     swapgs
     xchg rsp, [gs:KERNEL_RSP_OFF]
 
+    ; 诊断: 标记 syscall 入口到达
+    push rax
+    mov rax, cr3
+    mov [USER_CR3_SAVE], rax        ; 用户 CR3
+    mov dx, 0x3F8
+    mov al, 0x53                    ; 'S'
+    out dx, al
+    pop rax
+
     ; ── 保存 RAX (含 syscall 号), 因为后续 KPTI 切换会破坏 RAX ──
     push rax
 
@@ -156,6 +174,10 @@ syscall_entry:
     ; swapgs 后 GS 指向 per-CPU SyscallPerCpu, [gs:KERNEL_PML4_OFF]
     ; 含内核 PML4 物理地址. KPTI 未激活时 kernel_pml4 == user_pml4,
     ; 此 mov cr3 无实际切换效果.
+    ;
+    ; 保存用户 CR3: 硬件 CR3 此时仍是用户页表 (swapgs 不影响 CR3)
+    mov rax, cr3
+    mov [USER_CR3_SAVE], rax
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
 
@@ -246,6 +268,9 @@ irq_common:
     cmp word [rsp+24], 0x23
     jne .irq_no_kpti_enter
     swapgs
+    ; 保存用户 CR3
+    mov rax, cr3
+    mov [USER_CR3_SAVE], rax
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
     swapgs
@@ -432,6 +457,9 @@ syscall_handler:
     cmp word [rsp+24], 0x23
     jne .syscall_handler_no_kpti_enter
     swapgs
+    ; 保存用户 CR3
+    mov rax, cr3
+    mov [USER_CR3_SAVE], rax
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
     swapgs
@@ -497,6 +525,9 @@ isr0x82:
     cmp word [rsp+24], 0x23
     jne .isr0x82_no_kpti_enter
     swapgs
+    ; 保存用户 CR3
+    mov rax, cr3
+    mov [USER_CR3_SAVE], rax
     mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
     swapgs

@@ -13,6 +13,30 @@ extern crate alloc;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+// 汇编层定义的用户态 CR3 临时保存 (isr.asm .bss)
+// KPTI 开启时, 中断入口在切换到内核页表前将硬件 CR3 (用户页表) 写入此变量.
+#[cfg(target_arch = "x86_64")]
+unsafe extern "C" {
+    #[link_name = "USER_CR3_SAVE"]
+    static USER_CR3_SAVE_ASM: AtomicU64;
+}
+
+// 读取汇编层保存的用户 CR3 (page fault handler 使用)
+// x86_64: 从 isr.asm .bss 中的 USER_CR3_SAVE 读取, 汇编在 KPTI 切换前写入.
+// aarch64: 回退到硬件 CR3 (aarch64 KPTI 实现不同).
+pub fn read_user_cr3_asm() -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        // SAFETY: USER_CR3_SAVE 在 isr.asm .bss 中定义, 汇编入口在切换 CR3 前写入;
+        // 读取发生在中断上下文, 无竞争.
+        unsafe { USER_CR3_SAVE_ASM.load(Ordering::Acquire) }
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        vmm::get_current_pml4()
+    }
+}
+
 pub mod pmm;
 
 #[cfg(target_arch = "x86_64")]

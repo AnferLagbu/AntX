@@ -676,10 +676,9 @@ pub fn sys_fork() -> Pid {
     let child_ptr = raw::alloc_process(child_pid, "", Some(ProcessId(parent_pid)));
     let child = raw::process_ref_mut(child_ptr);
 
-    // 共享父进程页表 (暂时禁用 COW, 先确认 fork 基础功能)
-    // child_cr3 = parent_cr3: 父子共享物理页 (无隔离, 但 fork 功能正确)
-    // TODO: COW 页表克隆在 KPTI 下需要修复 page fault handler (get_current_pml4 返回内核 PML4)
-    let child_cr3 = parent_cr3;
+    // COW 页表克隆: 父子共享物理页, 写入时触发 page fault 复制
+    // KPTI 修复: page fault handler 现在使用 get_user_pml4() 获取正确的用户页表
+    let child_cr3 = crate::kernel::framework::mm::cow::clone_user_page_table_cow(parent_cr3).unwrap_or(parent_cr3);
     child.cr3.store(child_cr3, Ordering::SeqCst);
     child.pwm.store(0, Ordering::SeqCst);
     // rlimit
@@ -702,9 +701,13 @@ pub fn sys_fork() -> Pid {
         child.seccomp.no_new_privs.store(nnp as u8, Ordering::SeqCst);
         *child.seccomp.filters.lock() = filters;
     }
-    // namespace (new_init — fork_from/Arc::clone 在 with_process 内导致 triple fault)
-    // TODO: 分析 fork_from 为何在 with_process 闭包内导致崩溃
-    *child.namespaces.lock() = super::NamespaceSet::new_init();
+    // namespace: 从父进程继承 (fork_from 仅 7 个 Arc::clone, 无锁交互)
+    // 先提取 NamespaceSet 到局部变量, 再赋值给 child, 避免在 with_process 闭包内操作 child
+    if let Some(parent_ns) = PROCESS_TABLE.with_process(parent_pid, |p| {
+        super::NamespaceSet::fork_from(&p.namespaces.lock())
+    }) {
+        *child.namespaces.lock() = parent_ns;
+    }
     // cgroup
     if let Some(cg) = PROCESS_TABLE.with_process(parent_pid, |p| p.cgroup_id.load(Ordering::Acquire)) {
         child.cgroup_id.store(cg, Ordering::Release);
