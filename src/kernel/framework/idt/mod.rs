@@ -363,6 +363,7 @@ pub extern "C" fn idt_init() -> i32 {
 /// # Safety
 /// 此函数在中断上下文中调用，必须快速执行
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".kpti_trampoline")]
 pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
     let manager = IdtManager::instance();
     manager.handle_exception(frame);
@@ -377,6 +378,7 @@ pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
 /// 此函数在中断上下文中调用，需要发送 EOI
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
+#[unsafe(link_section = ".kpti_trampoline")]
 pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
     if frame.is_null() {
         return;

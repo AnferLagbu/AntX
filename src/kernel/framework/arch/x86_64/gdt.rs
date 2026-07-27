@@ -496,9 +496,20 @@ pub fn gdt_init() -> i32 {
             gdt.syscall.user_pml4 = current_cr3;
         }
 
-        // IA32_KERNEL_GS_BASE — swapgs 时切换到该地址
+        // IA32_GS_BASE — 内核态 GS 基地址 (swapgs 前)
+        // IA32_KERNEL_GS_BASE — 用户态 GS 基地址 (swapgs 后)
+        //
+        // 本内核 GS 约定:
+        //   内核态: IA32_GS_BASE = per_cpu_addr, IA32_KERNEL_GS_BASE = 0
+        //   用户态: IA32_GS_BASE = 0, IA32_KERNEL_GS_BASE = per_cpu_addr
+        //
+        // 进入 enter_user_asm 时在内核态, IA32_GS_BASE = per_cpu_addr.
+        // 执行 swapgs 后, IA32_GS_BASE = 0 (用户态), IA32_KERNEL_GS_BASE = per_cpu_addr.
+        // 用户态执行 syscall 时, syscall_entry 的 swapgs 将其换回 per_cpu_addr.
+        const IA32_GS_BASE: u32 = 0xC0000101;
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
-        crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &gdt.syscall as *const _ as u64);
+        crate::kernel::framework::cpu::msr::write_msr(IA32_GS_BASE, &gdt.syscall as *const _ as u64);
+        crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, 0);
 
         crate::klog_boot_info!(
             "[GDT] syscall base={:#x}, kernel_rsp={:#x}, kernel_pml4={:#x}, user_pml4={:#x}",

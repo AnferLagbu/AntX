@@ -134,10 +134,11 @@ pub fn pcid_is_enabled() -> bool {
 // KPTI trampoline 代码范围: _kernel_text_start ~ _kpti_trampoline_end
 // 这些页在 USER_PML4 中需要保持可执行 (X), 其余代码页设为 NX.
 
+// SAFETY: 链接脚本定义的符号, 地址有效 (只读引用).
 unsafe extern "C" {
-    static _kernel_text_start: u8;
-    static _kpti_trampoline_end: u8;
-    static _kernel_text_end: u8;
+    pub(super) static _kernel_text_start: u8;
+    pub(super) static _kpti_trampoline_end: u8;
+    pub(super) static _kernel_text_end: u8;
 }
 
 // ── 公共状态 ──────────────────────────────────────────────────────
@@ -303,108 +304,33 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     // KPTI 安全性由高半区加固 (step 4.5) 保证: 仅 trampoline 代码页保留 RX,
     // 其余内核代码页设为 RO+NX, 数据页限制权限.
 
-    // 4.5 Trampoline 页权限加固: USER_PML4 高半区页表遍历
+    // 4.5 映射整个 .text 区域到 USER_PML4 (USER+RX)
     //
-    // 策略: 仅修改 .text 区域 (_kernel_text_start ~ _kernel_text_end) 的页,
-    // 数据页 (.rodata/.data/.bss) 保持原权限不变 (trampoline 需要读写 per-CPU 数据).
+    // 策略: 将 _kernel_text_start ~ _kernel_text_end 的所有页面映射到用户页表,
+    // 权限 USER+RX (Ring 3 可访问、可执行、只读).
     //
-    // .text 区域:
-    //   - Trampoline 代码页 (_kernel_text_start ~ _kpti_trampoline_end): RX (只读+可执行)
-    //   - 其余代码页: RO+NX (只读+不可执行)
+    // 原因: 异常处理代码 (isr0-isr31, irq0-irq15) 位于 .text 区域,
+    // 用户态触发异常时 CPU 使用 USER_PML4 寻址, 必须能访问这些代码页.
+    // 此前仅映射 trampoline 子范围 (_kernel_text_start ~ _kpti_trampoline_end)
+    // 导致异常处理代码不可执行或未映射 → #PF → Triple Fault.
     //
-    // NX 位 (bit 63): 若设置, 页不可执行.
-    // W 位  (bit 1):  若清除, 页只读.
+    // 安全性: .text 区域为只读代码, 暴露给用户态不会导致数据篡改.
+    // KPTI 核心保护 (数据页隔离) 不受影响.
     //
-    // SAFETY: user_pml4_virt 有效, 遍历只修改 USER_PML4 的 PTE, 不影响 KERNEL_PML4.
+    // SAFETY: user_pml4_virt 有效, 映射操作只修改 USER_PML4, 不影响 KERNEL_PML4.
     unsafe {
-        let tramp_start = core::ptr::addr_of!(_kernel_text_start) as u64;
-        let tramp_end = core::ptr::addr_of!(_kpti_trampoline_end) as u64;
+        let text_start = core::ptr::addr_of!(_kernel_text_start) as u64;
         let text_end = core::ptr::addr_of!(_kernel_text_end) as u64;
 
-        let pml4 = user_pml4_virt.0 as *mut u64;
+        // 诊断: 打印 .text 地址范围 (LMA)
+        crate::klog_boot_info!(
+            "[KPTI] text region: start={:#X} end={:#X} ({} pages)",
+            text_start, text_end,
+            (text_end - text_start + PAGE_SIZE as u64 - 1) / PAGE_SIZE as u64
+        );
 
-        for pml4_idx in 256u64..512 {
-            let pml4e = core::ptr::read_volatile(pml4.add(pml4_idx as usize));
-            if pml4e & 1 == 0 { continue; }
-
-            let pdpt_phys = pml4e & 0x000FFFFFFFFFF000;
-            let pdpt = (pdpt_phys + KERNEL_BASE) as *mut u64;
-
-            for pdpt_idx in 0u64..512 {
-                let pdpte = core::ptr::read_volatile(pdpt.add(pdpt_idx as usize));
-                if pdpte & 1 == 0 { continue; }
-                if pdpte & 0x80 != 0 {
-                    // 1 GiB 大页: 检查是否与 .text 区域重叠
-                    let page_start = (pml4_idx << 39) | (pdpt_idx << 30);
-                    let page_end = page_start + (1u64 << 30);
-                    if page_start >= text_end || page_end <= tramp_start { continue; }
-                    // 大页与 .text 重叠 — 设置 NX, 清除 W
-                    let mut new = pdpte | (1u64 << 63);
-                    new &= !0x2u64;
-                    if page_start < tramp_end && page_end > tramp_start {
-                        new &= !(1u64 << 63); // trampoline 保持可执行
-                        new |= 0x4u64;         // 设置 USER 位: Ring 3 可访问
-                    }
-                    if new != pdpte {
-                        core::ptr::write_volatile(pdpt.add(pdpt_idx as usize), new);
-                    }
-                    continue;
-                }
-
-                let pd_phys = pdpte & 0x000FFFFFFFFFF000;
-                let pd = (pd_phys + KERNEL_BASE) as *mut u64;
-
-                for pd_idx in 0u64..512 {
-                    let pde = core::ptr::read_volatile(pd.add(pd_idx as usize));
-                    if pde & 1 == 0 { continue; }
-                    if pde & 0x80 != 0 {
-                        // 2 MiB 大页
-                        let page_start = (pml4_idx << 39) | (pdpt_idx << 30) | (pd_idx << 21);
-                        let page_end = page_start + (1u64 << 21);
-                        if page_start >= text_end || page_end <= tramp_start { continue; }
-                        let mut new = pde | (1u64 << 63);
-                        new &= !0x2u64;
-                        if page_start < tramp_end && page_end > tramp_start {
-                            new &= !(1u64 << 63);  // 清除 NX: 保持可执行
-                            new |= 0x4u64;          // 设置 USER 位: Ring 3 可访问
-                        }
-                        if new != pde {
-                            core::ptr::write_volatile(pd.add(pd_idx as usize), new);
-                        }
-                        continue;
-                    }
-
-                    let pt_phys = pde & 0x000FFFFFFFFFF000;
-                    let pt = (pt_phys + KERNEL_BASE) as *mut u64;
-
-                    for pt_idx in 0u64..512 {
-                        let pte = core::ptr::read_volatile(pt.add(pt_idx as usize));
-                        if pte & 1 == 0 { continue; }
-
-                        let page_start = (pml4_idx << 39) | (pdpt_idx << 30)
-                            | (pd_idx << 21) | (pt_idx << 12);
-                        let page_end = page_start + PAGE_SIZE as u64;
-
-                        // 跳过 .text 区域之外的页
-                        if page_start >= text_end || page_end <= tramp_start { continue; }
-
-                        let mut new = pte;
-                        new |= 1u64 << 63;  // NX: 代码页默认不可执行
-                        new &= !0x2u64;     // RO: 代码页只读
-
-                        // Trampoline 代码页: 恢复可执行 + 设置 USER 位
-                        if page_start < tramp_end && page_end > tramp_start {
-                            new &= !(1u64 << 63);  // 清除 NX: 保持可执行
-                            new |= 0x4u64;          // 设置 USER 位: Ring 3 可访问
-                        }
-
-                        if new != pte {
-                            core::ptr::write_volatile(pt.add(pt_idx as usize), new);
-                        }
-                    }
-                }
-            }
-        }
+        // 映射整个 .text 区域到 USER_PML4 (高半区 VMA + 低半区 LMA)
+        map_text_region_in_user_pml4(user_pml4_virt.0 as *mut u64, text_start, text_end);
     }
 
     // 5. 启用 PCID (如果 CPU 支持 INVPCID)
@@ -473,6 +399,160 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     USER_PML4.store(user_pml4_phys, Ordering::Release);
     LAST_KERNEL_PML4.store(kernel_pml4, Ordering::Release);
     KPTI_READY.store(true, Ordering::Release);
+}
+
+// ── .text 区域映射 ──────────────────────────────────────────────
+
+/// 在 USER_PML4 中映射整个 .text 区域 (USER+RX).
+///
+/// 映射 _kernel_text_start ~ _kernel_text_end 的所有页面到用户页表,
+/// 包括高半区 VMA (CPU 实际取指地址) 和低半区 LMA (恒等映射, 备用).
+///
+/// 原因: 异常处理代码 (isr0-isr31, irq0-irq15, syscall_entry) 位于 .text 区域,
+/// 用户态触发异常时 CPU 使用 USER_PML4 寻址, 必须能访问这些代码页.
+/// 此前仅映射 trampoline 子范围导致异常处理代码不可执行或未映射 → Triple Fault.
+///
+/// 权限: USER (Ring 3 可访问) + RX (可执行, 不可写).
+///
+/// # Safety
+///
+/// 调用方保证: `user_pml4` 是有效的 USER_PML4 虚拟地址指针;
+/// `text_start`/`text_end` 是 .text 物理地址范围;
+/// 在 boot 阶段单线程执行, 无并发修改页表.
+pub(super) unsafe fn map_text_region_in_user_pml4(
+    user_pml4: *mut u64,
+    text_start_phys: u64,
+    text_end_phys: u64,
+) {
+    // LMA 转 VMA (链接脚本定义: VMA = LMA + 0xFFFF800001000000)
+    let vma_offset = 0xFFFF800001000000u64;
+    let text_start_vma = text_start_phys + vma_offset;
+    let text_end_vma = text_end_phys + vma_offset;
+
+    // 页对齐: 向下对齐起始地址, 向上对齐结束地址
+    let page_start_vma = text_start_vma & !(PAGE_SIZE as u64 - 1);
+    let page_end_vma = (text_end_vma + PAGE_SIZE as u64 - 1) & !(PAGE_SIZE as u64 - 1);
+
+    crate::klog_boot_info!(
+        "[KPTI] map_text_region: lma={:#X}-{:#X}, vma={:#X}-{:#X} ({} pages)",
+        text_start_phys,
+        text_end_phys,
+        page_start_vma,
+        page_end_vma,
+        (page_end_vma - page_start_vma) / PAGE_SIZE as u64
+    );
+
+    // 权限位: PRESENT (bit 0) + USER (bit 2) = 0x5
+    // 不设置 WRITABLE (bit 1) → 只读
+    // 不设置 NX (bit 63) → 可执行
+    const FLAGS: u64 = 0x5; // PRESENT | USER
+
+    // SAFETY: 调用方保证 user_pml4 有效; text_start/text_end 是合法地址范围;
+    // boot 阶段单线程执行, 无并发修改页表. PMM 分配的页已对齐且属于内核.
+    unsafe {
+        let mut vma_addr = page_start_vma;
+        let mut phys_addr = text_start_phys & !(PAGE_SIZE as u64 - 1);
+        while vma_addr < page_end_vma {
+            // 映射高半区 VMA (CPU 实际取指地址)
+            map_text_page(user_pml4, vma_addr, phys_addr, FLAGS, "high-half VMA");
+
+            // 同时映射低半区恒等映射 (物理地址, 备用)
+            map_text_page(user_pml4, phys_addr, phys_addr, FLAGS, "low-half identity");
+
+            vma_addr += PAGE_SIZE as u64;
+            phys_addr += PAGE_SIZE as u64;
+        }
+    }
+}
+
+/// 映射单个 trampoline 页面到用户页表.
+///
+/// # Safety
+///
+/// 调用方保证: `user_pml4` 有效; `vma` 和 `phys` 对齐;
+/// boot 阶段单线程执行, 无并发修改页表.
+unsafe fn map_text_page(
+    user_pml4: *mut u64,
+    vma: u64,
+    phys: u64,
+    flags: u64,
+    desc: &str,
+) {
+    // SAFETY: 调用方保证 user_pml4 有效; vma/phys 是合法地址;
+    // boot 阶段单线程执行, 无并发修改页表. PMM 分配的页已对齐且属于内核.
+    unsafe {
+        // 计算 4 级页表索引
+        let pml4_idx = (vma >> 39) & 0x1FF;
+        let pdpt_idx = (vma >> 30) & 0x1FF;
+        let pd_idx = (vma >> 21) & 0x1FF;
+        let pt_idx = (vma >> 12) & 0x1FF;
+
+        // 确保 PML4[pml4_idx] 存在 (分配 PDPT 页)
+        let pml4e = core::ptr::read_volatile(user_pml4.add(pml4_idx as usize));
+        let pdpt_phys = if pml4e & 1 != 0 {
+            pml4e & 0x000FFFFFFFFFF000
+        } else {
+            let new_page = pmm_alloc_page() as u64;
+            if new_page == 0 {
+                panic!("[KPTI] map_text_page: alloc PDPT failed");
+            }
+            let new_page_virt = PhysAddr(new_page).to_virt();
+            // SAFETY: new_page 由 PMM 分配, 属于内核; 清零 4KB
+            core::ptr::write_bytes(new_page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
+            // 设置 PML4 项: PRESENT + WRITABLE + USER
+            core::ptr::write_volatile(user_pml4.add(pml4_idx as usize), new_page | 0x7);
+            new_page
+        };
+        let pdpt = (pdpt_phys + KERNEL_BASE) as *mut u64;
+
+        // 确保 PDPT[pdpt_idx] 存在 (分配 PD 页)
+        let pdpte = core::ptr::read_volatile(pdpt.add(pdpt_idx as usize));
+        let pd_phys = if pdpte & 1 != 0 {
+            pdpte & 0x000FFFFFFFFFF000
+        } else {
+            let new_page = pmm_alloc_page() as u64;
+            if new_page == 0 {
+                panic!("[KPTI] map_text_page: alloc PD failed");
+            }
+            let new_page_virt = PhysAddr(new_page).to_virt();
+            // SAFETY: new_page 由 PMM 分配, 属于内核; 清零 4KB
+            core::ptr::write_bytes(new_page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
+            core::ptr::write_volatile(pdpt.add(pdpt_idx as usize), new_page | 0x7);
+            new_page
+        };
+        let pd = (pd_phys + KERNEL_BASE) as *mut u64;
+
+        // 确保 PD[pd_idx] 存在 (分配 PT 页)
+        let pde = core::ptr::read_volatile(pd.add(pd_idx as usize));
+        let pt_phys = if pde & 1 != 0 {
+            pde & 0x000FFFFFFFFFF000
+        } else {
+            let new_page = pmm_alloc_page() as u64;
+            if new_page == 0 {
+                panic!("[KPTI] map_text_page: alloc PT failed");
+            }
+            let new_page_virt = PhysAddr(new_page).to_virt();
+            // SAFETY: new_page 由 PMM 分配, 属于内核; 清零 4KB
+            core::ptr::write_bytes(new_page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
+            core::ptr::write_volatile(pd.add(pd_idx as usize), new_page | 0x7);
+            new_page
+        };
+        let pt = (pt_phys + KERNEL_BASE) as *mut u64;
+
+        // 设置 PT[pt_idx] = phys | flags
+        core::ptr::write_volatile(pt.add(pt_idx as usize), phys | flags);
+
+        crate::klog_boot_info!(
+            "[KPTI] map_text ({}): vma={:#X} -> phys={:#X} (PML4[{}] PDPT[{}] PD[{}] PT[{}])",
+            desc,
+            vma,
+            phys,
+            pml4_idx,
+            pdpt_idx,
+            pd_idx,
+            pt_idx
+        );
+    }
 }
 
 // ── 测试辅助 (host-tests) ────────────────────────────────────────

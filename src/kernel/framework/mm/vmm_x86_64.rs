@@ -535,6 +535,18 @@ impl VirtualMemoryManager {
 
         self.release_lock(&_flags);
 
+        // 关键修复: 在进程页表中恒等映射 trampoline 物理页 (USER+RX)
+        // enter_user_asm 在低半区 LMA 地址执行, mov cr3 切换到进程页表后
+        // CPU 继续取指执行, 因此 trampoline 代码页必须在进程页表低半区有映射.
+        // 权限: USER (Ring 3 可访问) + RX (可执行, 不可写).
+        if crate::kernel::framework::mm::kpti::kpti_is_active() {
+            unsafe {
+                let text_start = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_start) as u64;
+                let text_end = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_end) as u64;
+                crate::kernel::framework::mm::kpti::map_text_region_in_user_pml4(pml4_virt.0 as *mut u64, text_start, text_end);
+            }
+        }
+
         // 映射 GDT / IDT / TSS 所在的低半部分页到用户页表.
         // iretq 和段寄存器加载需要访问 GDT, 中断入口需要 IDT,
         // 用户态中断触发时 CPU 需要从 TSS 读取 RSP0/IST 栈指针.

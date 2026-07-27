@@ -372,11 +372,12 @@ impl MmuArch for X8664 {
 // - r8 = kstack (内核栈高半区地址)
 //
 // 执行流程:
-// 1. 切换到内核栈 (r8)
-// 2. 跳转到高半区地址 (VMA = LMA + 0xFFFF800001000000)
-// 3. 在高半区切换 CR3 到用户页表
-// 4. 构建 iretq 帧
-// 5. 清除寄存器 + 加载段寄存器 + iretq
+// 1. 诊断输出 (CPL=0, 内核栈)
+// 2. 切换到用户栈 (CPL=0, 仍可访问高半区)
+// 3. 在用户栈构建 iretq 帧
+// 4. 切换 CR3 到用户页表 (CPL=0, 高半区 trampoline 可执行)
+// 5. 加载用户段寄存器 (CPL→3)
+// 6. iretq (从用户栈读取帧)
 core::arch::global_asm!(r#"
     .section .kpti_trampoline
     .global enter_user_asm
@@ -385,23 +386,31 @@ enter_user_asm:
     // 参数: rdi=entry, rsi=stack, rdx=arg, rcx=user_cr3, r8=kstack
     cli
 
-    // 切换到内核栈 (高半区地址)
-    mov rsp, r8
+    // 诊断点 1: 进入 enter_user_asm
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x41                    // 'A' - 标记进入 enter_user_asm
+    out dx, al
+    pop rax
 
     // 保存 user_cr3 到 rax (在清除寄存器前)
     mov rax, rcx
 
-    // 构建 iretq 帧 (在低半区完成)
-    push 0x1B           // SS (用户数据段)
-    push rsi            // RSP (用户栈)
-    push 0x202          // RFLAGS (IF 位)
-    push 0x23           // CS (用户代码段)
-    push rdi            // RIP (用户入口)
+    // 保存 entry 到 r12 (在清除寄存器前)
+    mov r12, rdi
+
+    // 诊断点 2: 准备切换到用户栈
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x42                    // 'B' - 准备切换 RSP 到用户栈
+    out dx, al
+    pop rax
 
     // 清除寄存器 (防止泄露内核信息到用户态)
     // 注意：rax 保存 user_cr3，稍后用于切换 CR3
+    // 注意：rsi 保存用户栈地址，稍后用于切换 RSP
+    mov r8, rsi                     // 暂存用户栈到 r8
     xor ecx, ecx        // 清 rcx
-    xor r8d, r8d        // 清 r8
     xor esi, esi        // 清 rsi
     xor edi, edi        // 清 rdi
     xor ebp, ebp        // 清 rbp
@@ -409,29 +418,214 @@ enter_user_asm:
     xor r10d, r10d      // 清 r10
     xor r11d, r11d      // 清 r11
 
-    // 加载用户态段寄存器
+    // 切换到用户栈 (CPL=0, 仍可访问高半区)
+    mov rsp, r8
+
+    // 诊断点 3: 已切换到用户栈, 构建 iretq 帧
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C' - 已切换 RSP, 构建 iretq 帧
+    out dx, al
+    pop rax
+
+    // 在用户栈构建 iretq 帧
+    // ⚠ 关键修复 (TRACK-INIT-RING3):
+    // iretq 帧必须在用户栈上, 而非内核栈.
+    // 原因: 切换 CR3 到 USER_PML4 后, 内核栈页面没有 USER 位,
+    // iretq 尝试从内核栈读取帧数据会触发 #PF.
+    push 0x1B           // SS (用户数据段)
+    
+    // 诊断点 C1: SS 已 push
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C1' - SS pushed
+    out dx, al
+    pop rax
+    
+    push r8             // RSP (用户栈, 当前 RSP 值)
+    
+    // 诊断点 C2: RSP 已 push
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C2' - RSP pushed
+    out dx, al
+    pop rax
+    
+    push 0x202          // RFLAGS (IF 位)
+    
+    // 诊断点 C3: RFLAGS 已 push
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C3' - RFLAGS pushed
+    out dx, al
+    pop rax
+    
+    push 0x23           // CS (用户代码段)
+    
+    // 诊断点 C4: CS 已 push
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C4' - CS pushed
+    out dx, al
+    pop rax
+    
+    push r12            // RIP (用户入口, 使用保存的 r12)
+    
+    // 诊断点 C5: RIP 已 push, iretq 帧构建完成
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C5' - RIP pushed, frame complete
+    out dx, al
+    pop rax
+
+    // ⚠ 关键修复 (TRACK-INIT-RING3):
+    // 加载用户态段寄存器 (必须在 mov cr3 之前!).
+    // 原因: mov ds/es/fs/gs 需要读取 GDT, GDT 在高半区 (0x2c50c8).
+    // 切换 CR3 到用户页表后, 高半区未映射, 无法访问 GDT → #PF.
+    // 此时 CPL=0, 内核页表仍有效, GDT 可访问.
     mov cx, 0x1B
     mov ds, cx
+    
+    // 诊断点 C6: DS 已加载
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C6' - DS loaded
+    out dx, al
+    pop rax
+    
     mov es, cx
+    
+    // 诊断点 C7: ES 已加载
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C7' - ES loaded
+    out dx, al
+    pop rax
+    
     mov fs, cx
-    mov gs, cx
 
-    // ⚠ 教训 (TRACK-INIT-RING3): 此处不可 swapgs!
+    // 诊断点 C8: FS 已加载
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C8' - FS loaded
+    out dx, al
+    pop rax
+
+    mov gs, cx
+    
+    // 诊断点 C9: GS 已加载, 段寄存器全部加载完成
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x43                    // 'C9' - GS loaded, all segments ready
+    out dx, al
+    pop rax
+
+    // ⚠ 关键修复 (TRACK-INIT-RING3):
+    // 直接 fall-through 到 trampoline 后续代码.
+    // 原因: 代码顺序执行, 无需显式跳转.
+    // 高半区 VMA 已在用户页表中映射 (map_text_region_in_user_pml4),
+    // 切换 CR3 后 CPU 仍可继续执行.
+    
+    // 诊断点 D: 即将切换 CR3
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x44                    // 'D' - about to switch CR3
+    out dx, al
+    pop rax
+
+    // ⚠ 关键修复 (TRACK-INIT-RING3):
+    // 切换 CR3 到用户页表.
+    // rax 保存 user_cr3.
+    // 高半区 VMA 已在用户页表中映射, 切换后 CPU 可继续执行.
+    mov cr3, rax
+    
+    // 诊断点 F: CR3 已切换, 即将执行 iretq
+    // 注意: 此时已在用户页表, 但低半区有映射, 可以继续执行
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x46                    // 'F' - CR3 switched, about to iretq
+    out dx, al
+    pop rax
+
+    // ═══ 自检式调试: 输出 iretq 帧关键值 (hex) ═══
+    // 输出 'G' 标记
+    mov r14, rax
+    mov rax, 0x47
+    mov dx, 0x3F8
+    out dx, al
+    mov rax, r14
+    // 输出 RIP (r12 = 用户入口地址), 16 个 hex 数字
+    mov r14, r12
+    mov r15, 16
+99: rol r14, 4
+    mov al, r14b
+    and al, 0x0F
+    cmp al, 10
+    jb 98f
+    add al, 0x27
+98: add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    dec r15
+    jnz 99b
+    // 输出 'H' 标记
+    mov r14, rax
+    mov rax, 0x48
+    mov dx, 0x3F8
+    out dx, al
+    mov rax, r14
+    // 输出 RSP (当前栈指针 = iretq 帧地址)
+    mov r14, rsp
+    mov r15, 16
+99: rol r14, 4
+    mov al, r14b
+    and al, 0x0F
+    cmp al, 10
+    jb 98f
+    add al, 0x27
+98: add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    dec r15
+    jnz 99b
+    // 输出 'I' 标记
+    mov r14, rax
+    mov rax, 0x49
+    mov dx, 0x3F8
+    out dx, al
+    mov rax, r14
+    // 输出 CR3 (rax = user_cr3)
+    mov r14, rax
+    mov r15, 16
+99: rol r14, 4
+    mov al, r14b
+    and al, 0x0F
+    cmp al, 10
+    jb 98f
+    add al, 0x27
+98: add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    dec r15
+    jnz 99b
+    // 恢复 rax = user_cr3 (r14 在最后一次 hex 输出后 = 0)
+    mov rax, r14
+    // ═══ 自检式调试结束 ═══
+
+    // ⚠ 关键修复 (TRACK-INIT-RING3): 必须在 iretq 前执行 swapgs!
     // 本内核的 GS 约定:
     //   IA32_GS_BASE = 0 (用户态)
     //   IA32_KERNEL_GS_BASE = per_cpu_addr (内核态)
-    // 若在此 swapgs，会导致 syscall_entry 的 swapgs 将其换回 KERNEL_GS_BASE，
-    // 使 GS_BASE=0，[gs:0x0] 访问地址 0 → page fault。
-
-    // 切换到用户页表 (rax 保存 user_cr3)
-    // 注意: 代码已在高半区 trampoline 区域执行，切换 CR3 后可继续执行
-    mov cr3, rax
+    // 进入 enter_user_asm 时在内核态, IA32_GS_BASE = per_cpu_addr.
+    // 必须执行 swapgs 将其切换到 0, 否则用户态 GS 基地址错误.
+    // 用户态执行 syscall 时, syscall_entry 的 swapgs 会将其换回 per_cpu_addr.
+    swapgs
 
     // 清除 rax (防止泄露)
     xor eax, eax
 
     // iretq 返回用户态
-    // iretq 从栈上恢复: RIP, CS, RFLAGS, RSP, SS
+    // iretq 从用户栈恢复: RIP, CS, RFLAGS, RSP, SS
     iretq
     .size enter_user_asm, . - enter_user_asm
 "#);

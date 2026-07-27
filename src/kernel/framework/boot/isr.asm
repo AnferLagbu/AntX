@@ -69,6 +69,8 @@ isr_common:
     ; ── KPTI: 如果来自用户态, 切换到内核页表 ──────────────────────
     ; 检查栈上 CS: 用户代码段 = 0x23, 内核代码段 = 0x08
     ; 来自用户态时 GS 仍为用户 GS, 需要 swapgs 才能读 per-CPU PML4
+    ; ⚠ 关键修复 (TRACK-INIT-RING3): 必须在 push rax 之前检查 CS,
+    ; 否则栈偏移会被诊断代码破坏.
     cmp word [rsp+24], 0x23
     jne .isr_no_kpti_enter
     swapgs
@@ -95,6 +97,27 @@ isr_common:
     push r13
     push r14
     push r15
+
+    ; ═══ 自检式调试: 异常入口到达 (TRACK-INIT-RING3) ═══
+    ; 在寄存器全部保存后输出 'E' + 异常向量号
+    ; 此时栈偏移安全, 不会影响 KPTI 检查 (已在上方完成)
+    push rax
+    mov dx, 0x3F8
+    mov al, 0x45                    ; 'E' - exception entry
+    out dx, al
+    ; 异常向量号: 原始栈上 [rsp+0] = int_no, 但 push 16 个寄存器后偏移 +128
+    ; 加上 push rax 后偏移 +8, 所以 int_no 在 [rsp + 136]
+    mov al, [rsp + 136]             ; int_no (低字节)
+    and al, 0x0F
+    cmp al, 10
+    jb .isr_hex_digit
+    add al, 0x27
+.isr_hex_digit:
+    add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    pop rax
+    ; ═══ 自检式调试结束 ═══
 
     mov rdi, rsp
     call exception_handler
@@ -161,14 +184,32 @@ syscall_entry:
     swapgs
     xchg rsp, [gs:KERNEL_RSP_OFF]
 
-    ; 诊断: 标记 syscall 入口到达
+    ; 诊断: 标记 syscall 入口到达 (push rax 保护后)
     push rax
     mov rax, cr3
     mov [USER_CR3_SAVE], rax        ; 用户 CR3
     mov dx, 0x3F8
-    mov al, 0x53                    ; 'S'
+    mov al, 0x53                    ; 'S' - syscall 入口到达
     out dx, al
-    pop rax
+    pop rax                         ; 恢复原始 RAX (syscall 号)
+    ; 输出 syscall 号 (RAX), 16 个 hex 数字
+    push rax                        ; 再次保存 syscall 号
+    mov r14, rax                    ; r14 = syscall 号 (用于 hex 输出)
+    mov r15, 16
+.syscall_hex_loop:
+    rol r14, 4
+    mov al, r14b
+    and al, 0x0F
+    cmp al, 10
+    jb .syscall_hex_digit
+    add al, 0x27
+.syscall_hex_digit:
+    add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    dec r15
+    jnz .syscall_hex_loop
+    pop rax                         ; 恢复 syscall 号到 RAX
 
     ; ── 保存 RAX (含 syscall 号), 因为后续 KPTI 切换会破坏 RAX ──
     push rax

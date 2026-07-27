@@ -933,9 +933,18 @@ impl UserProcManager {
         let aslr_stack_top = crate::kernel::framework::config::aslr_stack_top();
         let stack_virt = aslr_stack_top - USER_STACK_SIZE - USER_STACK_GUARD;
 
+        crate::klog_boot_info!(
+            "[USER] create: mapping user stack: aslr_top={:#X} stack_virt={:#X} stack_phys={:#X} pages={}",
+            aslr_stack_top, stack_virt, stack_phys, USER_STACK_SIZE / PAGE_SIZE
+        );
+
         for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
             let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
             let sphys = stack_phys + i * PAGE_SIZE;
+            crate::klog_boot_info!(
+                "[USER] create: mapping stack page {}/{}: virt={:#X} phys={:#X}",
+                i + 1, USER_STACK_SIZE / PAGE_SIZE, svirt, sphys
+            );
             raw::vmm_map_user_page(
                 cr3_val,
                 svirt,
@@ -944,8 +953,21 @@ impl UserProcManager {
             );
         }
 
-        proc.store_user_stack(aslr_stack_top);
-        let initial_stack_bottom = aslr_stack_top - USER_STACK_SIZE;
+        // 验证用户栈映射是否成功
+        let check_virt = aslr_stack_top - PAGE_SIZE; // 检查栈顶第一页
+        let check_phys = raw::virt_to_phys(cr3_val, check_virt);
+        crate::klog_boot_info!(
+            "[USER] create: verify stack mapping: virt={:#X} -> phys={:#X} {}",
+            check_virt, check_phys, if check_phys != 0 { "✓" } else { "✗ FAILED" }
+        );
+
+        // 关键修复: user_stack 必须指向栈顶的**已映射地址**，而非 guard page 边界。
+        // aslr_stack_top 是栈顶边界（未映射），iretq 后第一次 push 会触发 #PF。
+        // 已映射栈页范围: [stack_virt + USER_STACK_GUARD, stack_virt + USER_STACK_GUARD + USER_STACK_SIZE)
+        // 栈顶已映射地址 = stack_virt + USER_STACK_GUARD + USER_STACK_SIZE - 8（考虑 8 字节对齐）。
+        let initial_rsp = stack_virt + USER_STACK_GUARD + USER_STACK_SIZE - 8;
+        proc.store_user_stack(initial_rsp);
+        let initial_stack_bottom = stack_virt + USER_STACK_GUARD;
         proc.store_stack_bottom(initial_stack_bottom);
 
         // 分配内核栈
@@ -1079,6 +1101,146 @@ impl UserProcManager {
         // enter_user_asm 在切换 CR3 前已清除所有寄存器 (包括 RBP/RSP),
         // 切换后不会残留低地址引用。
 
+        // 自检式调试: 验证用户页表关键映射
+        #[cfg(target_arch = "x86_64")]
+        {
+            let vmm = crate::kernel::framework::mm::get_vmm();
+            
+            // 检查用户代码页 (0x400000) — 含 PTE 权限位自检
+            let code_page_virt = rip_val & !(PAGE_SIZE - 1);
+            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt)) {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: user_code virt={:#X} -> phys={:#X} ✓",
+                    code_page_virt,
+                    phys.0
+                );
+                // 检查 PTE 原始值: 验证 PRESENT/USER/NX 位
+                if let Some(pte_raw) = vmm.get_pte_value(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt)) {
+                    let present = (pte_raw & 0x001) != 0;
+                    let writable = (pte_raw & 0x002) != 0;
+                    let user = (pte_raw & 0x004) != 0;
+                    let nx = (pte_raw & (1u64 << 63)) != 0;
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK: user_code PTE={:#018X} P={} W={} U={} NX={} (NX must be 0 for exec)",
+                        pte_raw, present as u8, writable as u8, user as u8, nx as u8
+                    );
+                    if nx {
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** BUG: user_code page has NX=1! CPU cannot execute! ***"
+                        );
+                    }
+                    if !user {
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** BUG: user_code page has U=0! Ring 3 cannot access! ***"
+                        );
+                    }
+                } else {
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK: user_code PTE: could not read (page table level missing)"
+                    );
+                }
+            } else {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: user_code virt={:#X} NOT MAPPED ✗",
+                    code_page_virt
+                );
+            }
+            
+            // 检查用户栈页 (第一次压栈将访问 rsp - 8 所在页)
+            let first_access_virt = (rsp_val - 8) & !(PAGE_SIZE - 1);
+            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(first_access_virt)) {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: user_stack_first_access virt={:#X} (rsp-8={:#X}) -> phys={:#X} ✓",
+                    first_access_virt, rsp_val - 8, phys.0
+                );
+            } else {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: user_stack_first_access virt={:#X} (rsp-8={:#X}) NOT MAPPED ✗",
+                    first_access_virt, rsp_val - 8
+                );
+            }
+            
+            // 检查 RSP 指向的地址本身 (应该是 guard page 或未映射)
+            let rsp_page = rsp_val & !(PAGE_SIZE - 1);
+            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(rsp_page)) {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: user_stack_rsp_page virt={:#X} -> phys={:#X} (unexpected: should be guard/unmapped)",
+                    rsp_page, phys.0
+                );
+            } else {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: user_stack_rsp_page virt={:#X} NOT MAPPED (expected: guard page) ✓",
+                    rsp_page
+                );
+            }
+            
+            // 检查内核栈页 (RSP0, iretq 帧所在页)
+            let rsp0_check_virt = (kstack - 40) & !(PAGE_SIZE - 1);
+            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(rsp0_check_virt)) {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: rsp0_stack virt={:#X} -> phys={:#X} ✓",
+                    rsp0_check_virt,
+                    phys.0
+                );
+            } else {
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: rsp0_stack virt={:#X} NOT MAPPED ✗",
+                    rsp0_check_virt
+                );
+            }
+            
+            crate::klog_boot_info!(
+                "[USER] SELF-CHECK: entering user mode with rip={:#X} rsp={:#X} cr3={:#X}",
+                rip_val, rsp_val, cr3
+            );
+            
+            // 扩展自检: 验证 GDT 段描述符
+            // 用户代码段 CS = 0x23 (GDT_USER_CODE | 0x03)
+            // 用户数据段 SS = 0x1B (GDT_USER_DATA | 0x03)
+            crate::klog_boot_info!(
+                "[USER] SELF-CHECK: GDT segments: CS={:#X} (expect 0x23) SS={:#X} (expect 0x1B)",
+                GDT_USER_CODE | 0x03, GDT_USER_DATA | 0x03
+            );
+            
+            // 扩展自检: 验证 iretq 帧参数
+            // iretq 从栈上恢复: RIP, CS, RFLAGS, RSP, SS
+            crate::klog_boot_info!(
+                "[USER] SELF-CHECK: iretq frame: RIP={:#X} CS={:#X} RFLAGS={:#X} RSP={:#X} SS={:#X}",
+                rip_val, GDT_USER_CODE | 0x03, 0x202, rsp_val, GDT_USER_DATA | 0x03
+            );
+            
+            // 扩展自检: 验证内核栈指针
+            crate::klog_boot_info!(
+                "[USER] SELF-CHECK: kstack={:#X} (high-half, will be used as RSP0)",
+                kstack
+            );
+            
+            // 扩展自检: 验证用户代码页内容 (检查是否有有效指令)
+            let code_page_virt = rip_val & !(PAGE_SIZE - 1);
+            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt)) {
+                // 通过内核映射读取用户代码页内容
+                let kernel_virt = phys.0 + crate::kernel::framework::mm::KERNEL_BASE as u64;
+                let code_ptr = kernel_virt as *const u8;
+                // 读取前 16 字节作为指令样本
+                let mut instr_sample = [0u8; 16];
+                // SAFETY: code_ptr 指向已映射的物理页 (经 KERNEL_BASE 偏移后内核可访问), 读取 16 字节在页内。
+                unsafe {
+                    for i in 0..16 {
+                        instr_sample[i] = *code_ptr.add(i);
+                    }
+                }
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK: user_code first 16 bytes: {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}",
+                    instr_sample[0], instr_sample[1], instr_sample[2], instr_sample[3],
+                    instr_sample[4], instr_sample[5], instr_sample[6], instr_sample[7],
+                    instr_sample[8], instr_sample[9], instr_sample[10], instr_sample[11],
+                    instr_sample[12], instr_sample[13], instr_sample[14], instr_sample[15]
+                );
+            }
+        }
+
+        crate::klog_boot_info!("[USER] SELF-CHECK: calling enter_user_asm...");
+        
         // SAFETY: enter_user 是平台特定的 arch 入口, 不会返回, 由调用方保证上下文有效。
         // user_cr3 传入用户页表物理地址, 由 enter_user 汇编在 iretq 前切换.
         unsafe {
