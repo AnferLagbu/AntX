@@ -961,6 +961,10 @@ impl UserProcManager {
         }
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
         proc.store_kernel_stack(kstack_top);
+        crate::klog_boot_info!(
+            "[USER] create: kstack_phys={:#X} kstack_top={:#X} (KERNEL_BASE={:#X})",
+            kstack as u64, kstack_top, KERNEL_BASE
+        );
         crate::kernel::framework::proc::kernel_stack_write_canary(kstack_top);
 
         // ✅ PID 分配延后到所有内存/页表/栈资源就绪后:
@@ -995,7 +999,9 @@ impl UserProcManager {
     }
 
     pub fn enter(&self, proc: *mut UserProcess) {
+        crate::klog_boot_info!("[USER] enter() called with proc={:#X}", proc as u64);
         if proc.is_null() {
+            crate::klog_boot_info!("[USER] enter() proc is null, returning");
             return;
         }
 
@@ -1008,6 +1014,12 @@ impl UserProcManager {
         let rip_val = proc_ref.entry();
         let rsp_val = proc_ref.load_user_stack();
         let cr3 = proc_ref.load_cr3();
+
+        // 调试日志: 追踪 kstack 值
+        crate::klog_boot_info!(
+            "[USER] enter: kstack={:#X} rip={:#X} rsp={:#X} cr3={:#X}",
+            kstack, rip_val, rsp_val, cr3
+        );
         let _ss_val = GDT_USER_DATA | 0x03;
         let _cs_val = GDT_USER_CODE | 0x03;
         let _rflags_val: u64 = 0x3202;
@@ -1027,12 +1039,35 @@ impl UserProcManager {
         // 将 RSP0 栈页映射到用户页表 (添加 USER 位).
         // 用户态中断触发时 CPU 从 TSS 读取 RSP0 并切换到该栈,
         // 但内核大页映射没有 USER 位, 需要显式映射为 USER 可访问.
+        // 使用 map_kernel_page_in_table 绕过 KPTI 安全门 (pml4_idx >= 256),
+        // 因为 RSP0 位于内核高半区但仍需在用户页表中可见.
+        // 仅 x86_64 需要 (TSS RSP0 机制); aarch64 使用 sp_el0 切换, 无需此映射.
+        #[cfg(target_arch = "x86_64")]
         {
-            let rsp0_page = kstack & !(PAGE_SIZE - 1);
-            let rsp0_phys = rsp0_page - crate::kernel::framework::mm::KERNEL_BASE as u64;
-            crate::kernel::framework::mm::get_vmm().map_page_in_table(
+            // 关键修复: iretq 帧位于 kstack - 40 (5 个 8 字节值: SS, RSP, RFLAGS, CS, RIP)
+            // 必须映射包含 iretq 帧的页面, 而非 kstack 顶部页面
+            let iretq_frame_addr = kstack - 40;
+
+            // 检测 iretq_frame_addr 是物理地址还是虚拟地址
+            // 物理地址 < KERNEL_BASE，虚拟地址 >= KERNEL_BASE
+            let (rsp0_virt, rsp0_phys) = if iretq_frame_addr < crate::kernel::framework::mm::KERNEL_BASE as u64 {
+                // iretq_frame_addr 是物理地址，转换为虚拟地址
+                let virt = iretq_frame_addr + crate::kernel::framework::mm::KERNEL_BASE as u64;
+                (virt & !(PAGE_SIZE - 1), iretq_frame_addr & !(PAGE_SIZE - 1))
+            } else {
+                // iretq_frame_addr 是虚拟地址，转换为物理地址
+                let phys = iretq_frame_addr - crate::kernel::framework::mm::KERNEL_BASE as u64;
+                (iretq_frame_addr & !(PAGE_SIZE - 1), phys & !(PAGE_SIZE - 1))
+            };
+
+            crate::klog_boot_info!(
+                "[USER] RSP0 mapping: kstack={:#X} iretq_frame={:#X} rsp0_virt={:#X} rsp0_phys={:#X}",
+                kstack, iretq_frame_addr, rsp0_virt, rsp0_phys
+            );
+
+            crate::kernel::framework::mm::get_vmm().map_kernel_page_in_table(
                 cr3,
-                crate::kernel::framework::mm::VirtAddr(rsp0_page),
+                crate::kernel::framework::mm::VirtAddr(rsp0_virt),
                 crate::kernel::framework::mm::PhysAddr(rsp0_phys),
                 crate::kernel::framework::mm::PageFlags::PRESENT
                     | crate::kernel::framework::mm::PageFlags::WRITABLE
@@ -1040,19 +1075,9 @@ impl UserProcManager {
             );
         }
 
-        // 将内核栈的物理地址也恒等映射到用户 PML4, 防止 CR3 切换后
-        // 残留的低地址引用 (如 RBP = kstack - KERNEL_BASE) 触发 #PF.
-        {
-            let kphys = kstack - crate::kernel::framework::mm::KERNEL_BASE as u64;
-            let kpage_phys = kphys & !(PAGE_SIZE - 1);
-            crate::kernel::framework::mm::get_vmm().map_page_in_table(
-                cr3,
-                crate::kernel::framework::mm::VirtAddr(kpage_phys),
-                crate::kernel::framework::mm::PhysAddr(kpage_phys),
-                crate::kernel::framework::mm::PageFlags::PRESENT
-                    | crate::kernel::framework::mm::PageFlags::WRITABLE,
-            );
-        }
+        // 注意: 不再需要低地址恒等映射。
+        // enter_user_asm 在切换 CR3 前已清除所有寄存器 (包括 RBP/RSP),
+        // 切换后不会残留低地址引用。
 
         // SAFETY: enter_user 是平台特定的 arch 入口, 不会返回, 由调用方保证上下文有效。
         // user_cr3 传入用户页表物理地址, 由 enter_user 汇编在 iretq 前切换.

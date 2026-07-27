@@ -50,11 +50,8 @@
 ### 剩余问题: 页表走查错位
 
 - 描述: `PML4[256..511]` 复制后, 用户 PML4 的页表走查 (PML4[256] → pdpt_high → pd_high) 映射到 BSS/数据段物理页, 而非内核代码所在物理页. `-d in_asm` 追踪印证: `mov cr3, r15` 后 CPU 从 `0x14befb0`(BSS) 开始执行 `00 00` (`addb %al,(%rax)`), 遇到 `0x60` (`pusha` → #UD in 64-bit 模式).
-- 方案: **未修复**. 建议在 QEMU monitor 中用 `info tlb` 在 `mov cr3, r15` 前后分别 dump 页表, 精确比对用户 PML4 与 KERNEL_PML4 的映射差异.
-  - 检查点 1: `KERNEL_PML4` 的值是否正确 (boot PML4 物理地址)
-  - 检查点 2: `create_user_page_table` 中 `phys_to_virt` 是否映射到正确的物理页
-  - 检查点 3: pd_high 的 2MB 大页条目是否在 `split_2mb_page` 后被修改
-- 状态: []
+- 方案: **部分修复**. 2026-07-27 修复 RSP0 映射页错误 (iretq 帧位于 kstack-40 而非 kstack 顶部), 系统成功进入 Ring 3 并达到 VFS ready 里程碑, 但 init 进程仍无输出. 需进一步排查用户态代码执行问题.
+- 状态: [X] (RSP0 映射修复) / [] (init 输出问题)
 
 ## 第三阶段: 已提交的改动
 

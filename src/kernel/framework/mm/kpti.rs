@@ -343,6 +343,7 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
                     new &= !0x2u64;
                     if page_start < tramp_end && page_end > tramp_start {
                         new &= !(1u64 << 63); // trampoline 保持可执行
+                        new |= 0x4u64;         // 设置 USER 位: Ring 3 可访问
                     }
                     if new != pdpte {
                         core::ptr::write_volatile(pdpt.add(pdpt_idx as usize), new);
@@ -364,7 +365,8 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
                         let mut new = pde | (1u64 << 63);
                         new &= !0x2u64;
                         if page_start < tramp_end && page_end > tramp_start {
-                            new &= !(1u64 << 63);
+                            new &= !(1u64 << 63);  // 清除 NX: 保持可执行
+                            new |= 0x4u64;          // 设置 USER 位: Ring 3 可访问
                         }
                         if new != pde {
                             core::ptr::write_volatile(pd.add(pd_idx as usize), new);
@@ -390,9 +392,10 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
                         new |= 1u64 << 63;  // NX: 代码页默认不可执行
                         new &= !0x2u64;     // RO: 代码页只读
 
-                        // Trampoline 代码页: 恢复可执行
+                        // Trampoline 代码页: 恢复可执行 + 设置 USER 位
                         if page_start < tramp_end && page_end > tramp_start {
-                            new &= !(1u64 << 63);
+                            new &= !(1u64 << 63);  // 清除 NX: 保持可执行
+                            new |= 0x4u64;          // 设置 USER 位: Ring 3 可访问
                         }
 
                         if new != pte {

@@ -24,6 +24,9 @@ align 8
 global USER_CR3_SAVE
 USER_CR3_SAVE: resq 1
 
+; 切换回 .text 段, 后续代码必须在 .text 段 (不能在 .bss)
+section .text
+
 ; ── 通用 ISR stub (无 CPU 错误码) ───────────────────────────────────────
 %macro isr_noerr 1
 global isr%1

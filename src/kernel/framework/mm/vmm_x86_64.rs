@@ -611,11 +611,12 @@ impl VirtualMemoryManager {
             // 注意: RSP0 在 create_user_page_table 调用时可能尚未设置,
             // 实际映射在 enter_user 的 set_kernel_stack 之后完成.
             // 这里仅做尝试, 如果 RSP0 为 0 则跳过.
+            // 使用 map_kernel_page_in_table 绕过 KPTI 安全门 (pml4_idx >= 256).
             let rsp0 = crate::kernel::framework::arch::tss::tss_get_kernel_stack();
             if rsp0 != 0 {
                 let rsp0_page = rsp0 & !(PAGE_SIZE as u64 - 1);
                 let rsp0_phys = rsp0_page - crate::kernel::framework::mm::KERNEL_BASE as u64;
-                self.map_page_in_table(
+                self.map_kernel_page_in_table(
                     pml4_phys.as_u64(),
                     VirtAddr(rsp0_page),
                     PhysAddr(rsp0_phys),
@@ -683,6 +684,81 @@ impl VirtualMemoryManager {
                 // SAFETY: ptr.add(idx) stays within the 512-entry table.
                 // 此处 pml4_idx < 256 (上方门检查保证), pdpt/PD 是 user 自己的页表,
                 // 不与 kernel 共享, 设 USER 位安全.
+                (*pml4_ptr.add(virt.pml4_idx())).set_user(true);
+                (*pdpt.add(virt.pdpt_idx())).set_user(true);
+                (*pd.add(virt.pd_idx())).set_user(true);
+            }
+
+            let pte = &mut *pt.add(virt.pt_idx());
+            pte.set_frame(phys);
+            pte.set_flags(flags);
+
+            self.flush_tlb(virt.0);
+        }
+
+        self.release_lock(&_flags);
+    }
+
+    /// 映射内核高半区页到用户页表 (绕过 KPTI 安全门)
+    ///
+    /// 用于映射 RSP0 等内核结构到用户页表,使其在用户态可访问.
+    /// 该函数绕过 `map_page_in_table` 的 KPTI 安全门 (pml4_idx >= 256),
+    /// 因为 RSP0 等内核结构位于高半区,但仍需在用户页表中可见.
+    ///
+    /// # Safety
+    ///
+    /// 调用方保证:
+    /// - `pml4` 是有效的用户页表物理地址
+    /// - `virt` 是内核高半区虚拟地址 (pml4_idx >= 256)
+    /// - `phys` 是对应的物理地址
+    /// - 仅用于映射内核栈 (RSP0) 等必要内核结构
+    pub fn map_kernel_page_in_table(&self, pml4: u64, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) {
+        if pml4 == 0 {
+            return;
+        }
+
+        // 仅允许内核高半区地址
+        if virt.pml4_idx() < 256 {
+            crate::klog_boot_info!(
+                "[VMM] map_kernel_page_in_table: reject user-half virt={:#X} pml4_idx={}",
+                virt.0, virt.pml4_idx()
+            );
+            return;
+        }
+
+        let _flags = self.acquire_lock();
+
+        // SAFETY: pml4 is a valid PML4 address; VMM_LOCK held
+        let pml4_virt = PhysAddr(pml4).to_virt();
+
+        // SAFETY: 完整 4 级页表遍历与按需创建.
+        unsafe {
+            let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
+
+            let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true, 0);
+            if pdpt.is_null() {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
+            if pd.is_null() {
+                self.release_lock(&_flags);
+                return;
+            }
+
+            let pt = self.get_or_create_table_entry(pd.add(virt.pd_idx()), true, PAGE_SIZE);
+            if pt.is_null() {
+                crate::klog_boot_info!(
+                    "[VMM] map_kernel_page_in_table: failed to get/create PT for {:#x}",
+                    virt.0
+                );
+                self.release_lock(&_flags);
+                return;
+            }
+
+            if flags.contains(PageFlags::USER) {
+                // 设置 USER 位: 允许用户态访问
                 (*pml4_ptr.add(virt.pml4_idx())).set_user(true);
                 (*pdpt.add(virt.pdpt_idx())).set_user(true);
                 (*pd.add(virt.pd_idx())).set_user(true);

@@ -210,9 +210,16 @@ impl InterruptArch for X8664 {
                 crate::kernel::framework::cpu::msr::write_msr(IA32_STAR, star);
 
                 // LSTAR: syscall 入口点 (高半部分地址, KPTI 用户页表只映射高半区)
+                // 注意: 函数指针返回的是 LMA (低地址), 需要转换为 VMA (高地址)
+                // 链接脚本定义: _kernel_text_vma = 0xFFFF800001000000 + _kernel_text_lma
+                // 因此偏移量 = 0xFFFF800001000000 (不是 KERNEL_BASE)
                 unsafe extern "C" { fn syscall_entry(); }
-                let entry_hi = syscall_entry as *const () as u64
-                    + crate::kernel::framework::mm::KERNEL_BASE as u64;
+                let entry_lma = syscall_entry as *const () as u64;
+                let entry_hi = entry_lma + 0xFFFF800001000000u64;
+                crate::klog_boot_info!(
+                    "[SYSCALL] syscall_entry LMA={:#X}, LSTAR VMA={:#X}",
+                    entry_lma, entry_hi
+                );
                 crate::kernel::framework::cpu::msr::write_msr(IA32_LSTAR, entry_hi);
 
                 // SFMASK: 进入内核时清除 IF
@@ -314,82 +321,26 @@ impl MmuArch for X8664 {
     }
 
     /// 进入用户态 (iretq)。
+    ///
+    /// 通过 `global_asm!` 在汇编层面定义，确保在 `.kpti_trampoline` section。
+    /// 切换到用户页表后，CPU 需要继续执行当前指令（构建 iretq 帧并执行 iretq），
+    /// 如果不在 trampoline 区域，用户页表中该地址没有 USER 位，会导致 #PF。
+    ///
+    /// 调用约定 (System V AMD64 ABI):
+    /// - rdi = entry (用户态 RIP)
+    /// - rsi = stack (用户态 RSP)
+    /// - rdx = arg (用户态参数，当前未使用)
+    /// - rcx = user_cr3 (用户页表物理地址)
+    /// - r8 = kstack (内核栈高半区地址)
     #[inline(never)]
     fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> ! {
-        const USER_DS: u64 = 0x1B;
-        const USER_CS: u64 = 0x23;
-        const RFLAGS_IF: u64 = 0x202;
-        // KERNEL_BASE 高半部分偏移, 用于将低半部分地址转换为高半部分地址.
-        const KBASE_HI: u64 = 0xFFFF800000000000u64;
-
-        // SAFETY: 调用方保证 entry/stack/user_cr3/kstack 有效.
-        // 策略:
-        // 1. 先切换到进程内核栈 (kstack, 高半部分地址)
-        // 2. 跳转到高半部分地址执行
-        // 3. 在高半部分切换 CR3 到用户页表
-        // 4. 加载段寄存器 + iretq
-        // 这样 CR3 切换后, 栈和指令都在高半部分, 用户页表有高半部分映射.
-        //
-        // 仅使用 callee-saved 寄存器 (r12-r15) 传递关键参数,
-        // 避免编译器寄存器分配冲突导致参数错位 (之前 in("r11") user_cr3
-        // 被编译器重映射为 rdx 导致 CR3 写入错误值).
-        // 常量通过 const 操作数传递, 由汇编器直接编码为立即数.
-        // SAFETY: 见上方完整注释 — 调用方保证 entry/stack/user_cr3/kstack 有效.
+        // SAFETY: 调用方保证 entry/stack/user_cr3/kstack 有效。
+        // 通过 FFI 调用汇编实现的 enter_user_asm。
         unsafe {
-            core::arch::asm!(
-                "cli",
-                // 切换到进程内核栈 (高半部分地址)
-                "mov rsp, r14",
-                // lea rax, [rip] → rax = lea_addr + 7
-                "lea rax, [rip]",
-                "mov rcx, {kbase_hi}",
-                "add rax, rcx",              // rax = lea+7 + KERNEL_BASE (高半)
-                // 跳到 mov cr3: 需跳过 mov(10) + add(3) + add(4) + jmp(2) = 19 bytes
-                "add rax, 19",
-                "jmp rax",
-                "mov cr3, r15",                // 切换到用户页表
-                // 清除输入寄存器中的低物理地址, 防止编译代码通过 [reg] 访问
-                "xor r15d, r15d",              // 清 R15 (原 user_cr3 物理地址)
-                "xor r14d, r14d",              // 清 R14 (原 kstack 高半地址 → 无用)
-                "xor r13d, r13d",              // 清 R13 (原 user_stack 低地址)
-                "xor r12d, r12d",              // 清 R12 (原 entry=0x400000 低地址)
-                "xor ebp, ebp",                // 清 RBP (原 kstack 物理地址)  
-                "mov ecx, {user_ds}",
-                "mov ds, cx",
-                "mov es, cx",
-                "mov fs, cx",
-                "mov gs, cx",
-                // ⚠ 教训 (TRACK-INIT-RING3): 此处不可 swapgs!
-                //
-                // 本内核的 GS 约定与 Linux 不同:
-                //   IA32_GS_BASE      = 0 (从不显式设置)
-                //   IA32_KERNEL_GS_BASE = per_cpu_addr (gdt_init 设置)
-                //
-                // 内核态常态: GS_BASE=0, KERNEL_GS_BASE=per_cpu_addr
-                // 访问 per-CPU: swapgs → gs:offset → swapgs
-                //
-                // 若在此 swapgs, 会将 per_cpu_addr 交换到 GS_BASE,
-                // 导致 syscall_entry 的 swapgs 将其换回 KERNEL_GS_BASE,
-                // 使 GS_BASE=0, [gs:0x0] 访问地址 0 → page fault.
-                // 此前曾在此处错误地插入了 swapgs, 导致 iretq 后
-                // 第一个 syscall 即触发 page fault.
-                "push {user_ds}",              // SS
-                "push r13",                    // RSP (stack)
-                "push {rflags_if}",            // RFLAGS
-                "push {user_cs}",              // CS
-                "push r12",                    // RIP (entry)
-                "iretq",
-                in("r12") entry,
-                in("r13") stack,
-                in("r14") kstack,
-                in("r15") user_cr3,
-                in("rdi") arg,
-                kbase_hi = const KBASE_HI,
-                user_ds = const USER_DS,
-                user_cs = const USER_CS,
-                rflags_if = const RFLAGS_IF,
-                options(noreturn)
-            );
+            unsafe extern "C" {
+                fn enter_user_asm(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> !;
+            }
+            enter_user_asm(entry, stack, arg, user_cr3, kstack)
         }
     }
 
@@ -402,6 +353,88 @@ impl MmuArch for X8664 {
         }
     }
 }
+
+// ============================================================================
+// enter_user 汇编实现 (KPTI trampoline)
+// ============================================================================
+
+// 进入用户态的汇编实现。
+//
+// 必须放在 `.kpti_trampoline` section，因为切换到用户页表后，
+// CPU 需要继续执行当前指令（构建 iretq 帧并执行 iretq）。
+// 如果不在 trampoline 区域，用户页表中该地址没有 USER 位，会导致 #PF。
+//
+// 调用约定 (System V AMD64 ABI):
+// - rdi = entry (用户态 RIP)
+// - rsi = stack (用户态 RSP)
+// - rdx = arg (用户态参数，当前未使用)
+// - rcx = user_cr3 (用户页表物理地址)
+// - r8 = kstack (内核栈高半区地址)
+//
+// 执行流程:
+// 1. 切换到内核栈 (r8)
+// 2. 跳转到高半区地址 (VMA = LMA + 0xFFFF800001000000)
+// 3. 在高半区切换 CR3 到用户页表
+// 4. 构建 iretq 帧
+// 5. 清除寄存器 + 加载段寄存器 + iretq
+core::arch::global_asm!(r#"
+    .section .kpti_trampoline
+    .global enter_user_asm
+    .type enter_user_asm, @function
+enter_user_asm:
+    // 参数: rdi=entry, rsi=stack, rdx=arg, rcx=user_cr3, r8=kstack
+    cli
+
+    // 切换到内核栈 (高半区地址)
+    mov rsp, r8
+
+    // 保存 user_cr3 到 rax (在清除寄存器前)
+    mov rax, rcx
+
+    // 构建 iretq 帧 (在低半区完成)
+    push 0x1B           // SS (用户数据段)
+    push rsi            // RSP (用户栈)
+    push 0x202          // RFLAGS (IF 位)
+    push 0x23           // CS (用户代码段)
+    push rdi            // RIP (用户入口)
+
+    // 清除寄存器 (防止泄露内核信息到用户态)
+    // 注意：rax 保存 user_cr3，稍后用于切换 CR3
+    xor ecx, ecx        // 清 rcx
+    xor r8d, r8d        // 清 r8
+    xor esi, esi        // 清 rsi
+    xor edi, edi        // 清 rdi
+    xor ebp, ebp        // 清 rbp
+    xor r9d, r9d        // 清 r9
+    xor r10d, r10d      // 清 r10
+    xor r11d, r11d      // 清 r11
+
+    // 加载用户态段寄存器
+    mov cx, 0x1B
+    mov ds, cx
+    mov es, cx
+    mov fs, cx
+    mov gs, cx
+
+    // ⚠ 教训 (TRACK-INIT-RING3): 此处不可 swapgs!
+    // 本内核的 GS 约定:
+    //   IA32_GS_BASE = 0 (用户态)
+    //   IA32_KERNEL_GS_BASE = per_cpu_addr (内核态)
+    // 若在此 swapgs，会导致 syscall_entry 的 swapgs 将其换回 KERNEL_GS_BASE，
+    // 使 GS_BASE=0，[gs:0x0] 访问地址 0 → page fault。
+
+    // 切换到用户页表 (rax 保存 user_cr3)
+    // 注意: 代码已在高半区 trampoline 区域执行，切换 CR3 后可继续执行
+    mov cr3, rax
+
+    // 清除 rax (防止泄露)
+    xor eax, eax
+
+    // iretq 返回用户态
+    // iretq 从栈上恢复: RIP, CS, RFLAGS, RSP, SS
+    iretq
+    .size enter_user_asm, . - enter_user_asm
+"#);
 
 // ── SystemArch: 端口 IO + 电源管理 ───────────────────────────────────
 
