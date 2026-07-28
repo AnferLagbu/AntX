@@ -29,6 +29,23 @@ build_arch() {
     fi
 }
 
+# 链接最终内核镜像 (kernel.flat / kernel.bin).
+# cargo build 仅生成 Rust 静态库 (.a), 必须通过 make 链接汇编对象
+# 才能生成可启动的内核二进制. 跳过此步骤会导致 QEMU 使用过期镜像.
+# 注意: 双架构不能同时链接 (共用 build/kernel.bin 输出路径),
+#       因此 all 模式下仅链接主架构 (x86_64).
+link_kernel() {
+    local arch=$1
+    echo -e "${YELLOW}[CI] Linking ARCH=${arch} kernel image...${NC}"
+    if make ARCH="${arch}" 2>&1 | tail -5; then
+        echo -e "${GREEN}[CI] ARCH=${arch}: link passed${NC}"
+        return 0
+    else
+        echo -e "${RED}[CI] ARCH=${arch}: link FAILED${NC}"
+        return 1
+    fi
+}
+
 run_host_tests() {
     echo -e "${YELLOW}[CI] Running host-side unit tests...${NC}"
     pushd host-tests > /dev/null
@@ -80,15 +97,20 @@ FAILED=0
 case "$ARCH" in
     x86_64)
         build_arch "x86_64" "x86_64-unknown-none" && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
+        link_kernel "x86_64" && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
         ;;
     aarch64)
         build_arch "aarch64" "aarch64-unknown-none" && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
+        link_kernel "aarch64" && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
         ;;
     all)
         build_arch "x86_64" "x86_64-unknown-none" && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
         build_arch "aarch64" "aarch64-unknown-none" && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
         run_host_tests && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
         check_forbidden_patterns && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
+        # 双架构共享 build/kernel.bin 输出路径, 仅链接主架构.
+        # aarch64 链接验证在单独 `./ci/build.sh aarch64` 时完成.
+        link_kernel "x86_64" && PASSED=$((PASSED+1)) || FAILED=$((FAILED+1))
         ;;
     *)
         echo "Usage: $0 [x86_64|aarch64|all]"

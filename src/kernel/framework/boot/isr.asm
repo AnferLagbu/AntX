@@ -500,13 +500,74 @@ syscall_entry:
 
     ; 构建 InterruptFrame (与 int 0x80 中断帧布局一致)
     push 0x1B                         ; SS = 用户数据段 (0x18|3)
+    ; ── 诊断: 标记 push SS 完成 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x31                    ; '1' - push SS done
+    out dx, al
+    pop rdx
+    pop rax
+
     push qword [gs:KERNEL_RSP_OFF]    ; 用户 RSP (xchg 时已存入 per-CPU)
+    ; ── 诊断: 标记 push RSP 完成 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x32                    ; '2' - push RSP done
+    out dx, al
+    pop rdx
+    pop rax
+
     push r11                          ; RFLAGS
+    ; ── 诊断: 标记 push RFLAGS 完成 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x33                    ; '3' - push RFLAGS done
+    out dx, al
+    pop rdx
+    pop rax
+
     push 0x23                         ; CS = 用户代码段 (0x20|3)
+    ; ── 诊断: 标记 push CS 完成 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x34                    ; '4' - push CS done
+    out dx, al
+    pop rdx
+    pop rax
+
     push rcx                          ; RIP
+    ; ── 诊断: 标记 push RIP 完成 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x35                    ; '5' - push RIP done
+    out dx, al
+    pop rdx
+    pop rax
 
     push 0                            ; err_code
+    ; ── 诊断: 标记 push err_code 完成 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x36                    ; '6' - push err_code done
+    out dx, al
+    pop rdx
+    pop rax
+
     push 0x80                         ; int_no
+    ; ── 诊断: 标记 push int_no 完成 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x37                    ; '7' - push int_no done
+    out dx, al
+    pop rdx
+    pop rax
 
     push rax
     push rbx
@@ -527,6 +588,15 @@ syscall_entry:
     mov rdi, rsp
     cld
     call syscall_dispatch_from_frame
+
+    ; ── 诊断: syscall dispatch 返回 ──
+    push rax
+    push rdx
+    mov dx, 0x3F8
+    mov al, 0x64                    ; 'd' - dispatch returned
+    out dx, al
+    pop rdx
+    pop rax
 
     pop r15
     pop r14

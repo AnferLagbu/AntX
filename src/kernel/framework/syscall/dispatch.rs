@@ -18,6 +18,22 @@ const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 ///
 /// 调用者处于内核上下文. `ptr` 是已校验的用户态字符串指针.
 pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) {
+    // ═══ 诊断: syscall dispatch 入口 ═══
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!(
+            "push rax",
+            "push rdx",
+            "mov dx, 0x3F8",
+            "mov al, 0x4A",  // 'J' - dispatch entered
+            "out dx, al",
+            "pop rdx",
+            "pop rax",
+            options(nomem, preserves_flags),
+        );
+    }
+    // ═══ 诊断结束 ═══
+
     unsafe {
         if frame.is_null() {
             return;

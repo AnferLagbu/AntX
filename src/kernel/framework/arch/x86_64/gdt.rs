@@ -313,6 +313,14 @@ const PER_CPU_SYSCALL_STACK_SIZE: usize = 8192;
 ///
 /// 所有 CPU 共享相同的段描述符 (flat model)，
 /// 但 TSS 描述符必须指向各自的 TSS 实例。
+///
+/// # Safety: repr(C) 强制
+///
+/// `#[repr(C)]` 保证字段按声明顺序排列且偏移可预测。
+/// 去掉 repr(C) 时 Rust 编译器可能将大数组 (syscall_stack) 重排到
+/// entries 之前, 导致 kernel_rsp == GDT base, 栈 push 覆盖 GDT
+/// entries → CPU 取指到 RIP=0x3 → #UD.
+#[repr(C)]
 struct PerCpuGdt {
     entries: [GdtEntry; GDT_MAX_ENTRIES],
     ptr: GdtPtr,

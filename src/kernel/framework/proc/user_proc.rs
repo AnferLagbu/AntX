@@ -1294,9 +1294,12 @@ impl UserProcManager {
                                 "[USER] SELF-CHECK LSTAR page: virt={:#x} -> phys={:#x} PTE={:#x} P={} U={} NX={}",
                                 lstar_page, phys.0, pte_raw, present as u8, user as u8, nx as u8
                             );
+                            // syscall 指令在取指之前已将 CPL 切换到 0,
+                            // 因此 LSTAR 页面 U=0 是正确行为 (内核页面不需要 USER 位).
+                            // 仅当 P=0 或 NX=1 时才是真正的 bug.
                             if !user {
                                 crate::klog_boot_info!(
-                                    "[USER] SELF-CHECK: *** BUG: LSTAR page U=0! syscall from Ring 3 will #PF before reaching kernel code! ***"
+                                    "[USER] SELF-CHECK LSTAR page U=0 (expected: syscall switches CPL→0 before instruction fetch)"
                                 );
                             }
                             if nx {
