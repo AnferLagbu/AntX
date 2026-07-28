@@ -511,6 +511,14 @@ pub fn gdt_init() -> i32 {
         crate::kernel::framework::cpu::msr::write_msr(IA32_GS_BASE, &gdt.syscall as *const _ as u64);
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, 0);
 
+        // 诊断: 验证 write_msr 后 IA32_GS_BASE 的实际值
+        let gs_base_readback = crate::kernel::framework::cpu::msr::read_msr(IA32_GS_BASE);
+        let kernel_gs_base_readback = crate::kernel::framework::cpu::msr::read_msr(IA32_KERNEL_GS_BASE);
+        crate::klog_boot_info!(
+            "[GDT] GS MSR verify: IA32_GS_BASE={:#x} (expect {:#x}), IA32_KERNEL_GS_BASE={:#x} (expect 0)",
+            gs_base_readback, &gdt.syscall as *const _ as u64, kernel_gs_base_readback
+        );
+
         crate::klog_boot_info!(
             "[GDT] syscall base={:#x}, kernel_rsp={:#x}, kernel_pml4={:#x}, user_pml4={:#x}",
             &gdt.syscall as *const _ as u64,
@@ -588,6 +596,16 @@ pub fn gdt_init_ap(cpu_index: u32) {
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
     }
+}
+
+/// 获取当前 CPU 的 SyscallPerCpu 结构的线性地址 (VMA)。
+///
+/// KPTI 入口代码通过 `[gs:KERNEL_PML4_OFF]` 访问 SyscallPerCpu,
+/// swapgs 后 GS_BASE = IA32_GS_BASE = 此函数返回的地址。
+/// 需要在用户页表中映射此地址所在的页面, 否则 KPTI 入口会触发 #PF。
+#[inline]
+pub fn get_syscall_per_cpu_base() -> u64 {
+    &per_cpu_gdt(0).syscall as *const _ as u64
 }
 
 /// 获取 GDT 表的引用 (调试用途)

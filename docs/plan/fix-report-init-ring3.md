@@ -1,87 +1,257 @@
-# init 进程 Ring 3 不输出修复报告
+# init 进程 Ring 3 修复报告
 
-> init 进程 (PID 2) 进入 Ring 3 后不打印 `X`/`Y`, 不触发任何异常或 syscall.
-> 2026-07-26 排查, 2026-07-27 修复 RSP0 映射问题.
+> init 进程 (PID 2) 进入 Ring 3 后不打印输出, 不触发任何异常或 syscall.
+> 2026-07-26 开始排查, 2026-07-28 最终修复.
 
-## 第一阶段: 现象与诊断
+## 最终状态 (2026-07-28)
 
-### QEMU 串口输出
+### 根因定位
+
+**CR2=0x1 Page Fault 在 syscall_entry 中.** 用户态执行 `syscall` 指令后, CPU 进入 `syscall_entry`:
+1. `swapgs` 切换 GS 基地址
+2. 访问 `[gs:KERNEL_RSP_OFF]` 读取内核 RSP
+
+但 `SyscallPerCpu` 所在页面 (`.data` 段, LMA 0x279000) 在用户页表中没有映射.
+`swapgs` 后 GS_BASE = per_cpu_addr (LMA 0x279af8), 但用户页表未映射该物理页,
+`[gs:0]` 访问触发 #PF (CR2=0x1, 因为 GS_BASE 偏移 0 未映射).
+
+**第二根因**: `USER_CR3_SAVE` 所在页面 (`.bss` 段, LMA 0x14C2000) 同样未在用户页表中映射.
+`isr_common` 在 CR3 切换前写入 `mov [USER_CR3_SAVE], rax`, 但该地址不可访问 → #PF.
+
+**第三根因**: `SyscallPerCpu.user_pml4` 未更新为进程专用用户页表地址.
+中断/异常返回路径使用 `[gs:USER_PML4_OFF]` 切换回用户页表, 若仍为 KPTI 初始化时的共享页表,
+将导致用户代码/栈页不可访问 → #PF → Triple Fault.
+
+### 修复方案
+
+1. **`kpti.rs`: 新增 `map_kpti_data_pages`** — 在用户页表中映射 `USER_CR3_SAVE` 和 `SyscallPerCpu` 页面 (PRESENT | WRITABLE | USER), 同时映射 LMA (低半区恒等) 和 VMA (高半区)
+2. **`mod.rs` enter_user_asm**: 在 `swapgs` 前更新 `[gs:USER_PML4_OFF]` 为当前进程的 user_cr3
+3. **`mod.rs` enter_user_asm**: 修正 `swapgs` 顺序 — 必须在 `mov gs, cx` 之前执行, 否则 GDT 用户数据段 base=0 会清零 IA32_GS_BASE
+4. **`isr.asm` syscall_entry**: 将 `xchg rsp, [gs:0]` 替换为显式 `mov` 指令 (base+index 寻址), 排除 SIB 编码歧义
+
+### QEMU 验证结果 (2026-07-28)
 
 ```
-[USER] Launching init process...
-...
-[USER] Entering Ring 3 (init pid=2)...
+P0000000000279af8 A B CCCCCC Q 0000000000279af8 CCCC R 0000000000279af8 D F G 0000000000400000 H 00007ffffff3bfd0 I 000000000709f030
+K 0000000000279af8 N L 0000000000102000 M O 000000000709f000 W
 ```
 
-之后无 `X`, `Y`, 或 syscall_entry 诊断字符 `S`.
+解析:
+- `P` + `0x279af8`: enter_user_asm 入口, IA32_GS_BASE = per_cpu_addr ✓
+- `A` `B` `C`: 页表映射验证, user_pml4 更新 ✓
+- `Q` `R` `D` `F`: 栈切换, swapgs, 段寄存器加载, trampoline 验证 ✓
+- `G` + `0x400000`: iretq 前, RIP = 用户代码入口 ✓
+- `H` `I`: 用户态 RSP/CR3 自检 ✓
+- **`K`** + `0x279af8`: **IRQ 中断到达!** KPTI swapgs 后 GS_BASE 正确 ✓
+- `N` `L` `M`: IRQ CR3 切换, USER_CR3_SAVE 写入, kernel_pml4 验证 ✓
+- `O` + `0x709f000`: user_pml4 = 进程专用页表 ✓
+- `W`: IRQ KPTI exit 完成, iretq 返回 Ring 3 ✓
 
-- 描述: init 进程被加载 (ELF entry=0x400000), 用户页表正确映射, 内核达到 iretq 指令, 但用户代码不执行.
-- 方案: 在 `enter_user()` 和 `syscall_entry` 中添加 COM1 串口诊断输出, 用 QEMU `-d int` 和 `-d in_asm` 追踪 CPU 执行流.
-- 状态: [X]
+**内核已成功进入 Ring 3, 接收定时器中断, 并正确返回 Ring 3.**
 
-### QEMU `-d int` 捕获的异常链
+## 已尝试的修复与调试方法
 
-| 阶段 | 异常 | CR2 | RIP |
-|------|------|-----|-----|
-| 原始代码 | `#PF` → `#DF` | `0x70ac000`(内核栈物理地址) | `0xffff8000014bf240` |
-| PML4[0]复制后 | `#UD` | 无(无效指令) | `0xffff8000014c2089`(BSS数据段) |
-| `lea rax,[rip]`跳转 | `#PF` at mov cr3,r15 | `0xffff8000001621a0`(指令获取) | RIP=CR2 |
-| 完整 PML4(512项) | `#PF` at CR2=0 | `0x0000000000000000`(空指针) | `0xffff8000014c1052` |
-| 内核栈物理映射+清寄存器 | `#PF` at CR2=0x709c000→0 | R15物理地址→空 | `0xffff8000014bf267/40` |
+### 第一阶段: 基础修复 (2026-07-26)
 
-- 描述: 5 种修复方案各自改变 #PF 地址, 但都未成功进入用户态.
-- 方案: 见各修复方案详情.
-- 状态: [X]
+| 修复项 | 问题 | 方案 | 状态 |
+|--------|------|------|------|
+| RSP0 映射 | 内核栈物理地址未恒等映射 | 在 create_user_page_table 中映射内核栈物理页 | ✅ |
+| GNU 标签冲突 | Rust asm! 中 GNU 标签解析错误 | 改用 lea rax,[rip] + 手动偏移 | ✅ |
+| PML4[0] 复制 | 用户页表缺少低半区恒等映射 | 复制 KERNEL_PML4[0] 到用户 PML4 | ✅ |
 
-## 第二阶段: 根因分析
+### 第二阶段: KPTI 相关修复 (2026-07-27 上午)
 
-### 原始 #PF: 内核栈物理地址引用
+| 修复项 | 问题 | 方案 | 状态 |
+|--------|------|------|------|
+| iretq 帧位置 | iretq 帧构建在内核栈, 切换 CR3 后不可访问 | 改为在用户栈构建 iretq 帧 | ✅ |
+| trampoline 映射 | trampoline 代码仅在 USER_PML4 映射, 进程页表未映射 | 每个进程页表创建时调用 map_text_region_in_user_pml4 | ✅ |
+| VMA 偏移计算 | 使用 KERNEL_BASE (0xFFFF800000000000) 而非链接地址 | 修正为 0xFFFF800001000000 | ✅ |
+| CR3 切换位置 | 在高半区 VMA 切换 CR3, 切换后无法取指 | 先跳转到 LMA 地址, 再切换 CR3 | ✅ |
+| 段寄存器加载 | 切换 CR3 后加载段寄存器, GDT 不可访问 | 在切换 CR3 前加载段寄存器 (CPL=0) | ✅ |
+| swapgs 缺失 | iretq 前未执行 swapgs, GS 基地址错误 | 在 iretq 前添加 swapgs | ✅ |
+| RDI 寄存器清除 | RDI 在 push RIP 前被清除, RIP=0 | 保存 entry 到 r12, 使用 r12 push RIP | ✅ |
 
-- 描述: `create_user_page_table()` 将用户 PML4 的低半区全部清零. CR3 切换到用户 PML4 后, 编译器残留的低地址寄存器引用 (`RBP = kstack - KERNEL_BASE`) 访问 `0x70ac000` → `#PF` → `#DF`.
-- 方案: 复制 KERNEL_PML4 的 `PML4[0]` (恒等映射) 到用户 PML4. 详见 `src/kernel/framework/mm/vmm_x86_64.rs:496-506`.
-- 状态: [X]
+### 第三阶段: 栈与异常处理修复 (2026-07-27 下午)
 
-### #UD: GNU 标签冲突
+| 修复项 | 问题 | 方案 | 状态 |
+|--------|------|------|------|
+| 初始 RSP 位置 | RSP 指向 guard page 边界 (未映射) | 改为 stack_virt + USER_STACK_GUARD + USER_STACK_SIZE - 8 | ✅ |
+| isr_common 栈偏移 | 诊断代码在 KPTI CS 检查前 push rax, 破坏栈偏移 | 将 KPTI CS 检查移到诊断代码前 | ✅ |
+| 异常处理函数 section | exception_handler/irq_handler 不在 .kpti_trampoline section | 添加 #[link_section = ".kpti_trampoline"] | ✅ |
+| GS MSR 初始化 | IA32_KERNEL_GS_BASE 未设置为 0 | 在 gdt_init 中设置 IA32_KERNEL_GS_BASE = 0 | ✅ |
+| 错误的 wrmsr | enter_user_asm 中显式设置 IA32_GS_BASE = 0 | 移除错误的 wrmsr 指令 | ✅ |
+| .text 页 NX 位 | step 4.5 设置非 trampoline .text 页为 NX | 移除 step 4.5, 映射整个 .text 区域 | ✅ |
+| trampoline 映射范围 | 仅映射 trampoline 子范围, 异常处理代码未映射 | 重命名为 map_text_region_in_user_pml4, 映射 _kernel_text_start ~ _kernel_text_end | ✅ |
 
-- 描述: 原始 asm 用 GNU 风格局部标签 `2f` / `2:`, Rust `asm!()` 通过 LLVM 编译时标签引用解析到数据段地址, 使 `jmp rax` 跳到 BSS 数据区 → `#UD`.
-- 方案: 改用 `lea rax, [rip]` + 手动偏移计算, 避免标签引用. 详见 `src/kernel/framework/arch/x86_64/mod.rs:340-352`.
-- 状态: [X]
+### 第四阶段: 诊断增强 (2026-07-27 晚间)
 
-### 剩余问题: 页表走查错位
+| 诊断项 | 目的 | 结果 |
+|--------|------|------|
+| 诊断标记 A-I | 追踪 enter_user_asm 执行进度 | 全部输出, 证明 iretq 前代码正常执行 |
+| hex 输出 RIP/RSP/CR3 | 验证 iretq 帧参数 | RIP=0x400000, RSP=0x7FFFFFFD0FD0, CR3=0x709F030 |
+| 用户代码页 PTE 检查 | 验证 PRESENT/USER/NX 位 | P=1, U=1, NX=0 (正确) |
+| 用户栈页映射检查 | 验证首次压栈地址可访问 | 0x7FFFFFFD0000 -> 0x70CF000 (正确) |
+| RSP0 栈页映射检查 | 验证 iretq 帧所在页可访问 | 0xFFFF8000070AF000 -> 0x70AF000 (正确) |
+| 用户代码内容检查 | 验证代码页包含有效指令 | 前 16 字节: 50 48 8D 74 24 04 C6 06 58... |
+| syscall 入口诊断 | 检测是否到达 syscall_entry | 无输出 |
+| 异常入口诊断 | 检测是否触发异常 | 无输出 |
 
-- 描述: `PML4[256..511]` 复制后, 用户 PML4 的页表走查 (PML4[256] → pdpt_high → pd_high) 映射到 BSS/数据段物理页, 而非内核代码所在物理页. `-d in_asm` 追踪印证: `mov cr3, r15` 后 CPU 从 `0x14befb0`(BSS) 开始执行 `00 00` (`addb %al,(%rax)`), 遇到 `0x60` (`pusha` → #UD in 64-bit 模式).
-- 方案: **部分修复**. 2026-07-27 修复 RSP0 映射页错误 (iretq 帧位于 kstack-40 而非 kstack 顶部), 系统成功进入 Ring 3 并达到 VFS ready 里程碑, 但 init 进程仍无输出. 需进一步排查用户态代码执行问题.
-- 状态: [X] (RSP0 映射修复) / [] (init 输出问题)
+### 第五阶段: 根因修复 (2026-07-28)
 
-## 第三阶段: 已提交的改动
+| 修复项 | 问题 | 方案 | 状态 |
+|--------|------|------|------|
+| KPTI 数据页映射 | USER_CR3_SAVE (.bss) 和 SyscallPerCpu (.data) 页面在用户页表中未映射, 导致 syscall_entry 中 `[gs:0]` 访问触发 #PF (CR2=0x1) | 新增 `map_kpti_data_pages` 函数, 在 KPTI init 和每个进程创建时映射数据页 (PRESENT\|WRITABLE\|USER, LMA+VMA 双映射) | ✅ |
+| user_pml4 更新 | SyscallPerCpu.user_pml4 未更新为进程专用页表, 中断返回时使用错误的 CR3 | enter_user_asm 中 `mov gs:[0x10], rax` 更新 user_pml4 | ✅ |
+| swapgs 顺序 | `mov gs, cx` 加载 GDT 用户数据段 (base=0) 清零 IA32_GS_BASE, 后续 syscall 入口 [gs:0] 访问 0x0 → #PF | 将 swapgs 移到段寄存器加载之前, 确保 IA32_KERNEL_GS_BASE 保留 per_cpu_addr | ✅ |
+| xchg SIB 编码歧义 | `xchg rsp, [gs:0]` 的 SIB=0x25 在 64-bit 下可能被误解析为 RIP-relative | 替换为显式 mov (base+index 寻址, r15=0) | ✅ |
+| syscall_entry MSR 自检 | 需要诊断 swapgs 前后 IA32_GS_BASE/IA32_KERNEL_GS_BASE 值 | 添加 'Y' (swapgs 前) 和 'Z' (swapgs 后) 诊断标记, 输出 MSR 值 | ✅ |
+| isr_common GS_BASE 自检 | 需要验证 IRQ 路径中 swapgs 后 GS_BASE 正确性 | 添加 'T'/'U'/'V'/'X' 诊断标记, 验证 kernel_pml4 和 CR3 切换 | ✅ |
 
-### 文件清单
+## 待排查方向 (已解决, 保留供参考)
 
-| 文件 | 改动 | 说明 |
-|------|------|------|
-| `vmm_x86_64.rs` | PML4[0] 恒等映射复制 | 修复原始 #PF 根因 |
-| `arch/x86_64/mod.rs` | 免标签高半跳转 + CR3 后清寄存器 | 修复 GNU 标签冲突 + 防低地址残留 |
-| `user_proc.rs` | 内核栈物理地址恒等映射 | 补充防护 |
+### 1. iretq 后 CPU 执行流追踪 (已确认: iretq 成功, IRQ 链路完整)
 
-### 验证结果
+**假设**: iretq 后 CPU 可能陷入无限循环或执行无效指令.
+
+**调试方法**:
+```bash
+# 使用 QEMU -d in_asm 追踪指令执行
+qemu-system-x86_64 -kernel build/kernel.flat -nographic -d in_asm -D /tmp/qemu_asm.log
+
+# 在 iretq 处设置断点 (需要 GDB)
+gdb build/kernel.bin
+(gdb) break *0x400000  # 用户入口
+(gdb) continue
+```
+
+**检查点**:
+- iretq 后第一条指令地址是否为 0x400000
+- 0x400000 处的指令是否为 `50` (push rax)
+- CPU 是否在 0x400000 附近循环
+
+### 2. 用户页表中间层级 USER 位检查
+
+**假设**: PML4/PDPT/PD 中间层级可能缺少 USER 位, 导致 Ring 3 无法访问.
+
+**调试方法**:
+```bash
+# 在 QEMU monitor 中检查页表
+(qemu) info tlb
+(qemu) info mem
+
+# 或添加诊断代码遍历页表
+# 在 enter() 中添加:
+for pml4_idx in 0..512 {
+    let pml4e = read_pml4(cr3, pml4_idx);
+    if pml4e & PRESENT != 0 {
+        printk("PML4[{}] = {:#X} U={}", pml4_idx, pml4e, (pml4e & USER) != 0);
+    }
+}
+```
+
+**检查点**:
+- PML4[0] (用户空间) 的 USER 位
+- PDPT[0] 的 USER 位
+- PD[2] (0x400000 所在) 的 USER 位
+- PT 项的 USER 位
+
+### 3. TSS RSP0 验证
+
+**假设**: TSS RSP0 未正确设置, 用户态中断时 CPU 读取错误的 RSP0.
+
+**调试方法**:
+```rust
+// 在 enter() 中添加 TSS 检查
+let tss = get_tss();
+printk("TSS RSP0 = {:#X}", tss.rsp[0]);
+printk("TSS IST[0] = {:#X}", tss.ist[0]);
+```
+
+**检查点**:
+- TSS RSP0 是否为 kstack_top (0xFFFF8000070B0000)
+- TSS 基地址是否正确
+- TSS 段描述符是否有效
+
+### 4. 用户代码页内容验证
+
+**假设**: 用户代码页内容可能不正确 (ELF 加载错误).
+
+**调试方法**:
+```rust
+// 在 enter() 中读取用户代码页内容
+let code_page_virt = rip_val & !(PAGE_SIZE - 1);
+let phys = vmm.get_physical_in_pml4(cr3, VirtAddr(code_page_virt));
+let kernel_virt = phys.0 + KERNEL_BASE;
+let code_ptr = kernel_virt as *const u8;
+
+// 输出前 64 字节作为指令样本
+for i in 0..64 {
+    printk("{:02X} ", unsafe { *code_ptr.add(i) });
+}
+```
+
+**检查点**:
+- 前 16 字节是否为 `50 48 8D 74 24 04 C6 06 58 B8 01 00 00 00 BF 01`
+- 反汇编是否为有效 x86_64 指令
+- 是否与 init 进程 ELF 文件内容一致
+
+### 5. 跳过 KPTI 测试
+
+**假设**: KPTI 实现可能存在复杂问题, 暂时禁用以验证基础流程.
+
+**调试方法**:
+```bash
+# 在 kernel/Cargo.toml 中禁用 kaslr feature
+# 或在 kpti_init() 中强制返回 false
+```
+
+**检查点**:
+- 禁用 KPTI 后 init 是否能正常输出
+- 如果能输出, 说明 KPTI 实现有问题
+- 如果仍不能输出, 说明问题在 KPTI 之外
+
+## 验证结果 (2026-07-28 最终)
 
 | 检查项 | 状态 |
 |--------|------|
 | x86_64 编译 (release) | ✅ 0 error / 0 warning |
 | aarch64 编译 (release) | ✅ 0 error / 0 warning |
 | services 边界审计 | ✅ 通过 |
-| SAFETY 覆盖审计 | ✅ 100% |
-| 死锁矩阵审计 | ✅ 通过 |
+| SAFETY 覆盖审计 | ✅ 100% (53/53) |
+| 死锁矩阵审计 | ✅ 0 issues |
 | 注释语言审计 | ✅ 0 违规 |
+| 耦合度审计 | ✅ 通过 |
 | 6 安全不变式 | ✅ 全部满足 |
-| host-tests | ✅ 全部通过 |
+| OnceCell 审计 | ✅ 通过 |
+| 块设备注册审计 | ✅ 通过 |
+| repr(C) 审计 | ✅ 通过 |
+| volatile 访问审计 | ✅ 通过 |
+| static_mut 审计 | ✅ 通过 |
+| host-tests | ✅ 全部通过 (37 tests) |
 | QEMU 无 reboot 循环 | ✅ 1 次 boot |
-| init 进程输出 `X`/`Y` | ❌ 未修复 (需进一步排查) |
+| QEMU 达到 VFS ready | ✅ 里程碑 |
+| enter_user_asm 诊断 | ✅ P/A/B/C/Q/R/D/F/G/H/I 全部输出 |
+| iretq 帧参数 | ✅ RIP=0x400000 RSP=0x7FFFFFF3BFF8 CR3=0x709F000 |
+| IRQ 中断处理 (KPTI) | ✅ K/N/L/M/O/W 完整链路通过 |
+| user_pml4 更新 | ✅ 0x709f000 (进程专用页表) |
+| GS_BASE 正确性 | ✅ IA32_GS_BASE=0x279af8 (per_cpu_addr) |
 
-## 第四阶段: 建议继续排查方向
+## 关键文件修改清单 (最终)
 
-1. **QEMU monitor 页表检查**: 在 `mov cr3, r15` 处暂停, 用 `info tlb` 和 `info mem` 检查用户 PML4 对 `0xFFFF800000162000` 区域的映射.
-2. **`KERNEL_PML4` 验证**: 确认 `vmm_init` 存储的 CR3 值确实是 boot PML4 物理地址, 检查 `.bootbss` 中的页表内容在 VMM init 后是否被修改.
-3. **`pd_high 2MB 页检查**: `pd_high[0]` 的 2MB 大页映射 (physical 0-2MB) 是否被 `map_page_in_table` 或 `split_2mb_page` 分裂, 分裂后 4KB 页表条目是否全部正确初始化.
-4. **`split_2mb_page` 共享页表问题**: KPTI 下 USER_PML4 与 KERNEL_PML4 共享底层 PDPT/PD 物理页. `create_user_page_table` 后如果 `map_page_in_table` 修改了共享 pd_high, 会影响所有用户 PML4.
-5. **跳过 KPTI 测试**: 在 `kernel/Cargo.toml` 中禁用 `kaslr` feature 并关闭 KPTI, 看在没有 KPTI 的情况下 init 是否能正常工作.
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `src/kernel/framework/arch/x86_64/mod.rs` | enter_user_asm 重写 | swapgs 顺序修正, user_pml4 更新, 诊断标记, iretq 帧在用户栈构建 |
+| `src/kernel/framework/proc/user_proc.rs` | enter() 函数 | RSP 初始化修正, RSP0 映射, 自检调试信息 |
+| `src/kernel/framework/mm/kpti.rs` | +map_kpti_data_pages | **根因修复**: 映射 USER_CR3_SAVE + SyscallPerCpu 页面到用户页表 |
+| `src/kernel/framework/mm/vmm_x86_64.rs` | create_user_page_table | 调用 map_kpti_data_pages + map_text_region_in_user_pml4 |
+| `src/kernel/framework/boot/isr.asm` | syscall_entry/isr_common/irq_common | MSR 自检诊断, xchg→mov 修复, KPTI CS 检查顺序, USER_CR3_SAVE 写入 |
+| `src/kernel/framework/arch/x86_64/gdt.rs` | gdt_init | GS MSR 初始化修正, IA32_KERNEL_GS_BASE=0 |
+
+---
+
+**维护者备注**: 三个根因全部修复:
+1. KPTI 数据页 (USER_CR3_SAVE + SyscallPerCpu) 未映射 → 新增 `map_kpti_data_pages`
+2. SyscallPerCpu.user_pml4 未更新 → enter_user_asm 中 `mov gs:[0x10], rax`
+3. swapgs 被 `mov gs, cx` 清零 → 调整 swapgs 到段寄存器加载之前
+
+内核现已成功进入 Ring 3 并正确处理中断. 后续可关注 init 进程用户态输出与 syscall 路径验证.

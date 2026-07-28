@@ -1239,6 +1239,175 @@ impl UserProcManager {
             }
         }
 
+            // ═══ 自检式调试: SYSCALL/SYSRET 配置验证 ═══
+            #[cfg(target_arch = "x86_64")]
+            {
+                const IA32_EFER: u32 = 0xC0000080;
+                const IA32_STAR: u32 = 0xC0000081;
+                const IA32_LSTAR: u32 = 0xC0000082;
+                const IA32_SFMASK: u32 = 0xC0000084;
+                const IA32_GS_BASE: u32 = 0xC0000101;
+                const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
+
+                // SAFETY: 仅读取 MSR, 无副作用, boot 阶段单线程
+                unsafe {
+                    let efer = crate::kernel::framework::cpu::msr::read_msr(IA32_EFER);
+                    let star = crate::kernel::framework::cpu::msr::read_msr(IA32_STAR);
+                    let lstar = crate::kernel::framework::cpu::msr::read_msr(IA32_LSTAR);
+                    let sfmask = crate::kernel::framework::cpu::msr::read_msr(IA32_SFMASK);
+                    let gs_base = crate::kernel::framework::cpu::msr::read_msr(IA32_GS_BASE);
+                    let kernel_gs_base = crate::kernel::framework::cpu::msr::read_msr(IA32_KERNEL_GS_BASE);
+
+                    let sce = (efer & 1) != 0;
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK SYSCALL: EFER={:#x} SCE={} STAR={:#x} LSTAR={:#x} SFMASK={:#x}",
+                        efer, sce, star, lstar, sfmask
+                    );
+                    if !sce {
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** BUG: EFER.SCE=0! syscall instruction will #UD! ***"
+                        );
+                    }
+
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK GS (before enter_user_asm): IA32_GS_BASE={:#x} IA32_KERNEL_GS_BASE={:#x}",
+                        gs_base, kernel_gs_base
+                    );
+                    if gs_base == 0 && kernel_gs_base == 0 {
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** BUG: Both GS MSRs are 0! swapgs in enter_user_asm will produce GS_BASE=0, syscall_entry [gs:0] will access NULL → #PF → Triple Fault! ***"
+                        );
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** ROOT CAUSE: gdt_init write_msr may have been overwritten, or &gdt.syscall returns 0 ***"
+                        );
+                    }
+
+                    // 验证 LSTAR 页面在用户页表中映射且可执行
+                    let lstar_page = lstar & !(PAGE_SIZE - 1);
+                    let vmm = crate::kernel::framework::mm::get_vmm();
+                    if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(lstar_page)) {
+                        if let Some(pte_raw) = vmm.get_pte_value(cr3, crate::kernel::framework::mm::VirtAddr(lstar_page)) {
+                            let present = (pte_raw & 0x001) != 0;
+                            let user = (pte_raw & 0x004) != 0;
+                            let nx = (pte_raw & (1u64 << 63)) != 0;
+                            crate::klog_boot_info!(
+                                "[USER] SELF-CHECK LSTAR page: virt={:#x} -> phys={:#x} PTE={:#x} P={} U={} NX={}",
+                                lstar_page, phys.0, pte_raw, present as u8, user as u8, nx as u8
+                            );
+                            if !user {
+                                crate::klog_boot_info!(
+                                    "[USER] SELF-CHECK: *** BUG: LSTAR page U=0! syscall from Ring 3 will #PF before reaching kernel code! ***"
+                                );
+                            }
+                            if nx {
+                                crate::klog_boot_info!(
+                                    "[USER] SELF-CHECK: *** BUG: LSTAR page NX=1! syscall_entry cannot execute! ***"
+                                );
+                            }
+                        }
+                    } else {
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** BUG: LSTAR page {:#x} NOT MAPPED in user page table! syscall from Ring 3 will #PF! ***",
+                            lstar_page
+                        );
+                    }
+                }
+            }
+
+            // ═══ 自检式调试: 用户代码页完整页表路径遍历 (检查中间层级 USER 位) ═══
+            // x86_64 页表遍历要求: PML4E→PDPTE→PDE→PTE 每一级都必须有 USER 位,
+            // 否则 Ring 3 访问该页面时触发 #PF, 即使最终 PTE 有 USER 位.
+            #[cfg(target_arch = "x86_64")]
+            {
+                let vaddr = rip_val;
+                let pml4_idx = (vaddr >> 39) & 0x1FF;
+                let pdpt_idx = (vaddr >> 30) & 0x1FF;
+                let pd_idx = (vaddr >> 21) & 0x1FF;
+                let pt_idx = (vaddr >> 12) & 0x1FF;
+
+                // SAFETY: 使用物理地址 + KERNEL_BASE 访问页表, 只读操作
+                unsafe {
+                    let pml4_virt = (cr3 + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
+                    let pml4e = pml4_virt.add(pml4_idx as usize).read_volatile();
+                    let pml4e_present = (pml4e & 1) != 0;
+                    let pml4e_user = (pml4e & 4) != 0;
+                    let pml4e_frame = pml4e & 0x000FFFFFFFFFF000;
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK PT-WALK user_code {:#x}: PML4E[{}]={:#x} P={} U={} frame={:#x}",
+                        vaddr, pml4_idx, pml4e, pml4e_present as u8, pml4e_user as u8, pml4e_frame
+                    );
+                    if pml4e_present && !pml4e_user {
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** BUG: PML4E[{}] U=0! Ring 3 cannot traverse to PDPT! ***",
+                            pml4_idx
+                        );
+                    }
+
+                    if pml4e_present {
+                        let pdpt_virt = (pml4e_frame + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
+                        let pdpte = pdpt_virt.add(pdpt_idx as usize).read_volatile();
+                        let pdpte_present = (pdpte & 1) != 0;
+                        let pdpte_user = (pdpte & 4) != 0;
+                        let pdpte_huge = (pdpte & 0x80) != 0;
+                        let pdpte_frame = pdpte & 0x000FFFFFFFFFF000;
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK PT-WALK: PDPTE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
+                            pdpt_idx, pdpte, pdpte_present as u8, pdpte_user as u8, pdpte_huge as u8, pdpte_frame
+                        );
+                        if pdpte_present && !pdpte_user {
+                            crate::klog_boot_info!(
+                                "[USER] SELF-CHECK: *** BUG: PDPTE[{}] U=0! Ring 3 cannot traverse to PD! ***",
+                                pdpt_idx
+                            );
+                        }
+
+                        if pdpte_present && !pdpte_huge {
+                            let pd_virt = (pdpte_frame + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
+                            let pde = pd_virt.add(pd_idx as usize).read_volatile();
+                            let pde_present = (pde & 1) != 0;
+                            let pde_user = (pde & 4) != 0;
+                            let pde_huge = (pde & 0x80) != 0;
+                            let pde_frame = pde & 0x000FFFFFFFFFF000;
+                            crate::klog_boot_info!(
+                                "[USER] SELF-CHECK PT-WALK: PDE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
+                                pd_idx, pde, pde_present as u8, pde_user as u8, pde_huge as u8, pde_frame
+                            );
+                            if pde_present && !pde_user {
+                                crate::klog_boot_info!(
+                                    "[USER] SELF-CHECK: *** BUG: PDE[{}] U=0! Ring 3 cannot traverse to PT! ***",
+                                    pd_idx
+                                );
+                            }
+
+                            if pde_present && !pde_huge {
+                                let pt_virt = (pde_frame + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
+                                let pte = pt_virt.add(pt_idx as usize).read_volatile();
+                                let pte_present = (pte & 1) != 0;
+                                let pte_user = (pte & 4) != 0;
+                                let pte_nx = (pte & (1u64 << 63)) != 0;
+                                let pte_frame = pte & 0x000FFFFFFFFFF000;
+                                crate::klog_boot_info!(
+                                    "[USER] SELF-CHECK PT-WALK: PTE[{}]={:#x} P={} U={} NX={} frame={:#x}",
+                                    pt_idx, pte, pte_present as u8, pte_user as u8, pte_nx as u8, pte_frame
+                                );
+                                if pte_present && !pte_user {
+                                    crate::klog_boot_info!(
+                                        "[USER] SELF-CHECK: *** BUG: PTE[{}] U=0! Ring 3 cannot access this page! ***",
+                                        pt_idx
+                                    );
+                                }
+                                if pte_present && pte_nx {
+                                    crate::klog_boot_info!(
+                                        "[USER] SELF-CHECK: *** BUG: PTE[{}] NX=1! Ring 3 cannot execute this page! ***",
+                                        pt_idx
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
         crate::klog_boot_info!("[USER] SELF-CHECK: calling enter_user_asm...");
         
         // SAFETY: enter_user 是平台特定的 arch 入口, 不会返回, 由调用方保证上下文有效。

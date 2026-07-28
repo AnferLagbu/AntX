@@ -544,6 +544,17 @@ impl VirtualMemoryManager {
                 let text_start = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_start) as u64;
                 let text_end = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_end) as u64;
                 crate::kernel::framework::mm::kpti::map_text_region_in_user_pml4(pml4_virt.0 as *mut u64, text_start, text_end);
+
+                // 映射 KPTI 入口数据页 (USER_CR3_SAVE, SyscallPerCpu) 到进程用户页表.
+                //
+                // 原因: KPTI 中断/异常入口 (isr_common/irq_common/syscall_entry) 在
+                // CR3 切换前访问 USER_CR3_SAVE (.bss) 和 SyscallPerCpu (.data),
+                // 这些页面必须在用户页表中有 USER 位映射, 否则触发 #PF → Triple Fault.
+                //
+                // kpti_init() 只映射了全局 USER_PML4, 每个进程的独立页表也需要映射.
+                // 不映射会导致 Ring 3 下第一个时钟中断 (IRQ 0) 在 irq_common 中
+                // mov [USER_CR3_SAVE], rax → #PF (写入不存在的页) → Double Fault → 死锁.
+                crate::kernel::framework::mm::kpti::map_kpti_data_pages(pml4_virt.0 as *mut u64);
             }
         }
 
@@ -571,16 +582,32 @@ impl VirtualMemoryManager {
                 sgdt.base as u64, actual_gdt_base
             );
 
-            // 读取 IDT 基地址和限制 (sidt 指令)
-            let idt_base: u64;
-            let idt_limit: u16;
-            // SAFETY: sidt 是特权指令, 仅读取 IDTR 到栈上, 不修改任何状态.
-            // sub rsp,10 / add rsp,10 保护红区.
+            // 读取 IDT 基地址和限制 (sidt 指令).
+            // IDTR 格式: 2 字节 limit + 8 字节 base (小端序).
+            // 修复 (TRACK-INIT-RING3-SYSCALL): 原栈操作 inline asm 中
+            // 读出的 idt_limit 为 0xFF (实际为 0x0FFF), 导致 idt_end 只覆盖
+            // 1 页, IRQ 向量 (0x20+) 的 IDT 条目落在第 2 页未映射 → #PF.
+            // 改用栈缓冲区 + 字节解码, 消除栈操作与编译器冲突.
+            let mut idtr_buf: [u8; 10] = [0; 10];
+            // SAFETY: sidt 是特权指令, 仅读取 IDTR 到缓冲区, 不修改其他状态.
             unsafe {
-                core::arch::asm!("sub rsp, 10", "sidt [rsp]", "mov rax, [rsp + 2]", "movzx cx, [rsp]", "add rsp, 10", out("rax") idt_base, out("cx") idt_limit);
+                core::arch::asm!(
+                    "sidt [{}]",
+                    in(reg) idtr_buf.as_mut_ptr(),
+                    options(nostack, preserves_flags),
+                );
             }
+            let idt_limit = u16::from_le_bytes([idtr_buf[0], idtr_buf[1]]);
+            let idt_base = u64::from_le_bytes([
+                idtr_buf[2], idtr_buf[3], idtr_buf[4], idtr_buf[5],
+                idtr_buf[6], idtr_buf[7], idtr_buf[8], idtr_buf[9],
+            ]);
             let idt_start = idt_base & !(PAGE_SIZE as u64 - 1);
-            let idt_end = (idt_base + idt_limit as u64 + 1 + PAGE_SIZE as u64 - 1) & !(PAGE_SIZE as u64 - 1);
+            let idt_end = ((idt_base + idt_limit as u64) & !(PAGE_SIZE as u64 - 1)) + PAGE_SIZE as u64;
+            crate::klog_boot_info!(
+                "[VMM] IDT raw: base={:#x} limit={:#x} start={:#x} end={:#x}",
+                idt_base, idt_limit, idt_start, idt_end
+            );
 
             // 读取 TSS 基地址 (从 GDT TSS 描述符)
             let tss_start = crate::kernel::framework::arch::gdt::get_tss_base() & !(PAGE_SIZE as u64 - 1);

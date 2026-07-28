@@ -467,6 +467,51 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     crate::kernel::framework::fs::vfs_read(fd as u32, buf, count as u32) as i64
 }
 
+/// 从用户空间缓冲区复制数据到内核缓冲区.
+///
+/// framekernel 架构下内核页表不映射用户页面, 需要通过用户页表
+/// 将用户虚拟地址转译为物理地址, 再通过 KERNEL_BASE 恒等映射访问.
+///
+/// 返回实际复制的字节数; 若任一转译失败则返回已复制字节数 (调用方按需处理).
+fn copy_from_user_buf(
+    user_buf: *const u8,
+    kernel_buf: &mut [u8],
+    user_cr3: u64,
+) -> usize {
+    if user_buf.is_null() || kernel_buf.is_empty() || user_cr3 == 0 {
+        return 0;
+    }
+    let vmm = crate::kernel::framework::mm::get_vmm();
+    let page_size = crate::kernel::framework::mm::PAGE_SIZE as u64;
+    let kernel_base = crate::kernel::framework::mm::KERNEL_BASE as u64;
+    let total = kernel_buf.len();
+    let mut copied: usize = 0;
+    while copied < total {
+        let user_va = user_buf as u64 + copied as u64;
+        let page_va = user_va & !(page_size - 1);
+        let offset = user_va & (page_size - 1);
+        let step = (page_size - offset).min((total - copied) as u64) as usize;
+        let phys = match vmm.get_physical_in_pml4(
+            user_cr3,
+            crate::kernel::framework::mm::VirtAddr(page_va),
+        ) {
+            Some(p) => p.as_u64(),
+            None => break,
+        };
+        let kernel_va = phys + kernel_base + offset;
+        // SAFETY: kernel_va 由用户页表转译 + KERNEL_BASE 偏移, 在恒等映射范围内.
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                kernel_va as *const u8,
+                kernel_buf.as_mut_ptr().add(copied),
+                step,
+            );
+        }
+        copied += step;
+    }
+    copied
+}
+
 fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 {
         return Errno::EINVAL.as_ret();
@@ -475,10 +520,23 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
         return Errno::EFAULT.as_ret();
     }
     if fd == 1 || fd == 2 {
-        if count > 0 {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            let data = unsafe { raw::read_slice(buf, count as usize) };
-            crate::kernel::framework::klog::serial_write_bytes(data);
+        let user_cr3 = crate::kernel::framework::mm::read_user_cr3_asm();
+        let mut remaining = (count as usize).min(4096);
+        let mut buf_off: usize = 0;
+        while remaining > 0 {
+            let chunk = remaining.min(256);
+            let mut kernel_buf = [0u8; 256];
+            let copied = copy_from_user_buf(
+                unsafe { buf.add(buf_off) },
+                &mut kernel_buf[..chunk],
+                user_cr3,
+            );
+            if copied == 0 {
+                return Errno::EFAULT.as_ret();
+            }
+            crate::kernel::framework::klog::serial_write_bytes(&kernel_buf[..copied]);
+            buf_off += copied;
+            remaining -= copied;
         }
         return count as i64;
     }
@@ -486,11 +544,39 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
         if count < 8 {
             return Errno::EINVAL.as_ret();
         }
-        // SAFETY: buf 由 check_user_buf 验证, 读取 8 字节 u64
-        let value = unsafe { core::ptr::read(buf as *const u64) };
+        let user_cr3 = crate::kernel::framework::mm::read_user_cr3_asm();
+        let mut val_buf = [0u8; 8];
+        if copy_from_user_buf(buf, &mut val_buf, user_cr3) < 8 {
+            return Errno::EFAULT.as_ret();
+        }
+        let value = u64::from_ne_bytes(val_buf);
         return crate::kernel::framework::syscall::eventfd::sys_eventfd_write(fd, value);
     }
-    crate::kernel::framework::fs::vfs_write(fd as u32, buf, count as u32) as i64
+    // 文件写入: 分块拷贝用户数据到内核缓冲区, 再走 VFS
+    let user_cr3 = crate::kernel::framework::mm::read_user_cr3_asm();
+    let total = (count as usize).min(4096);
+    let mut kernel_buf = [0u8; 256];
+    let mut written: usize = 0;
+    while written < total {
+        let chunk = (total - written).min(kernel_buf.len());
+        let copied = copy_from_user_buf(
+            unsafe { buf.add(written) },
+            &mut kernel_buf[..chunk],
+            user_cr3,
+        );
+        if copied == 0 {
+            break;
+        }
+        let n = crate::kernel::framework::fs::vfs_write_safe(
+            fd as u32,
+            &kernel_buf[..copied],
+        );
+        if n < 0 {
+            return n as i64;
+        }
+        written += copied;
+    }
+    written as i64
 }
 
 // ============================================================================

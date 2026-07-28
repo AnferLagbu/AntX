@@ -386,6 +386,34 @@ enter_user_asm:
     // 参数: rdi=entry, rsi=stack, rdx=arg, rcx=user_cr3, r8=kstack
     cli
 
+    // ── 诊断: enter_user_asm 入口处 GS_BASE ──
+    // 在任何操作之前读取 IA32_GS_BASE, 验证从 Rust 到汇编的 GS 状态
+    push rax
+    push rdx
+    push rcx
+    mov dx, 0x3F8
+    mov al, 0x50                   // 'P' - enter_user_asm 入口 GS_BASE
+    out dx, al
+    mov ecx, 0xC0000101            // IA32_GS_BASE
+    rdmsr                           // EDX:EAX = IA32_GS_BASE
+    mov r14, rax
+    mov r15, 16
+99: rol r14, 4
+    mov al, r14b
+    and al, 0x0F
+    cmp al, 10
+    jb 98f
+    add al, 0x27
+98: add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    dec r15
+    jnz 99b
+    pop rcx
+    pop rdx
+    pop rax
+    // ── 诊断结束 ──
+
     // 诊断点 1: 进入 enter_user_asm
     push rax
     mov dx, 0x3F8
@@ -478,11 +506,67 @@ enter_user_asm:
     out dx, al
     pop rax
 
-    // ⚠ 关键修复 (TRACK-INIT-RING3):
+    // ═══ 关键修复 (TRACK-INIT-RING3): 更新 SyscallPerCpu.user_pml4 ═══
+    // 中断/异常返回路径使用 [gs:USER_PML4_OFF] 切换回用户页表.
+    // 若不更新, 仍为 KPTI 初始化时的共享页表, 非当前进程的专用页表,
+    // 导致用户代码/栈页不可访问 → #PF → Triple Fault.
+    // 此时 IA32_GS_BASE = per_cpu_addr, [gs:USER_PML4_OFF] 可安全写入.
+    // rax = user_cr3 (当前进程的用户页表物理地址)
+    mov gs:[0x10], rax                  // USER_PML4_OFF = 16, 写入 user_pml4
+
+    // ═══ swapgs: 必须在加载 GS 段寄存器之前执行! ═══
+    // 根因: mov gs, cx 会从 GDT 描述符加载隐藏基址到 IA32_GS_BASE.
+    // 用户数据段描述符 base=0, 导致 IA32_GS_BASE 被清零.
+    // 若 swapgs 在 mov gs 之后, 两个 MSR 都为 0, syscall [gs:0] → #PF → Triple Fault.
+    // 正确顺序: swapgs (IA32_GS_BASE=0, IA32_KERNEL_GS_BASE=per_cpu_addr)
+    //           → mov gs, cx (IA32_GS_BASE 保持 0, IA32_KERNEL_GS_BASE 不受影响)
+    swapgs
+
+    // ═══ 自检式调试: 验证 swapgs 后 IA32_KERNEL_GS_BASE 非零 ═══
+    // swapgs 后: IA32_GS_BASE=0, IA32_KERNEL_GS_BASE=per_cpu_addr
+    // 若 IA32_KERNEL_GS_BASE=0 → swapgs 前两个 MSR 都为 0 → BUG
+    // 输出: 'Q' + 16 hex digits + ('!' 若 BUG)
+    push rax
+    push rdx
+    push rcx
+    mov dx, 0x3F8
+    mov al, 0x51                   // 'Q' - swapgs 后自检
+    out dx, al
+    mov ecx, 0xC0000102            // IA32_KERNEL_GS_BASE
+    rdmsr                          // EDX:EAX = IA32_KERNEL_GS_BASE
+    shl rdx, 32
+    or rdx, rax                    // RDX = 完整 64 位值
+    mov r14, rdx
+    mov r15, 16
+97: rol r14, 4
+    mov al, r14b
+    and al, 0x0F
+    cmp al, 10
+    jb 96f
+    add al, 0x27
+96: add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    dec r15
+    jnz 97b
+    // 自检: IA32_KERNEL_GS_BASE == 0 → 输出 '!' BUG 标记
+    test r14, r14
+    jnz 95f
+    mov dx, 0x3F8
+    mov al, 0x21                   // '!' - BUG: swapgs 后 KERNEL_GS_BASE=0!
+    out dx, al
+95: pop rcx
+    pop rdx
+    pop rax
+    // ═══ 自检式调试结束 ═══
+
     // 加载用户态段寄存器 (必须在 mov cr3 之前!).
-    // 原因: mov ds/es/fs/gs 需要读取 GDT, GDT 在高半区 (0x2c50c8).
+    // 原因: mov ds/es/fs/gs 需要读取 GDT, GDT 在高半区.
     // 切换 CR3 到用户页表后, 高半区未映射, 无法访问 GDT → #PF.
     // 此时 CPL=0, 内核页表仍有效, GDT 可访问.
+    // 注意: mov gs, cx 会将 GDT 描述符的 base(=0) 写入 IA32_GS_BASE,
+    // 但 swapgs 已在上方执行, IA32_GS_BASE 已为 0, 不受影响.
+    // IA32_KERNEL_GS_BASE 不受 mov gs 指令影响, 保持 per_cpu_addr.
     mov cx, 0x1B
     mov ds, cx
     
@@ -519,6 +603,44 @@ enter_user_asm:
     mov al, 0x43                    // 'C9' - GS loaded, all segments ready
     out dx, al
     pop rax
+
+    // ═══ 自检式调试: 验证 mov gs 后 IA32_KERNEL_GS_BASE 仍非零 ═══
+    // mov gs, cx 可能将 GDT 描述符 base(=0) 写入 IA32_GS_BASE,
+    // 但 IA32_KERNEL_GS_BASE 不受影响. 若为 0 → BUG
+    // 输出: 'R' + 16 hex digits + ('!' 若 BUG)
+    push rax
+    push rdx
+    push rcx
+    mov dx, 0x3F8
+    mov al, 0x52                   // 'R' - mov gs 后自检
+    out dx, al
+    mov ecx, 0xC0000102            // IA32_KERNEL_GS_BASE
+    rdmsr                          // EDX:EAX = IA32_KERNEL_GS_BASE
+    shl rdx, 32
+    or rdx, rax                    // RDX = 完整 64 位值
+    mov r14, rdx
+    mov r15, 16
+94: rol r14, 4
+    mov al, r14b
+    and al, 0x0F
+    cmp al, 10
+    jb 93f
+    add al, 0x27
+93: add al, 0x30
+    mov dx, 0x3F8
+    out dx, al
+    dec r15
+    jnz 94b
+    // 自检: IA32_KERNEL_GS_BASE == 0 → 输出 '!' BUG 标记
+    test r14, r14
+    jnz 92f
+    mov dx, 0x3F8
+    mov al, 0x21                   // '!' - BUG: mov gs 后 KERNEL_GS_BASE=0!
+    out dx, al
+92: pop rcx
+    pop rdx
+    pop rax
+    // ═══ 自检式调试结束 ═══
 
     // ⚠ 关键修复 (TRACK-INIT-RING3):
     // 直接 fall-through 到 trampoline 后续代码.
@@ -612,20 +734,12 @@ enter_user_asm:
     mov rax, r14
     // ═══ 自检式调试结束 ═══
 
-    // ⚠ 关键修复 (TRACK-INIT-RING3): 必须在 iretq 前执行 swapgs!
-    // 本内核的 GS 约定:
-    //   IA32_GS_BASE = 0 (用户态)
-    //   IA32_KERNEL_GS_BASE = per_cpu_addr (内核态)
-    // 进入 enter_user_asm 时在内核态, IA32_GS_BASE = per_cpu_addr.
-    // 必须执行 swapgs 将其切换到 0, 否则用户态 GS 基地址错误.
-    // 用户态执行 syscall 时, syscall_entry 的 swapgs 会将其换回 per_cpu_addr.
-    swapgs
-
     // 清除 rax (防止泄露)
     xor eax, eax
 
     // iretq 返回用户态
     // iretq 从用户栈恢复: RIP, CS, RFLAGS, RSP, SS
+    // swapgs 已在段寄存器加载前执行, IA32_KERNEL_GS_BASE = per_cpu_addr
     iretq
     .size enter_user_asm, . - enter_user_asm
 "#);

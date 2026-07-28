@@ -178,14 +178,6 @@ pub(crate) mod raw {
         unsafe { core::ptr::read_volatile(ptr) }
     }
 
-    /// 从用户指针读取 len 字节构造 slice。
-    /// # Safety
-    /// 调用方必须先调用 `check_user_buf(ptr as u64, len)` 验证。
-    pub unsafe fn read_slice<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
-        // SAFETY: 调用方已验证 [ptr, ptr+len) 完全在合法可读用户空间。
-        unsafe { core::slice::from_raw_parts(ptr, len) }
-    }
-
     /// 复制结构体到用户指针（repr(C) 类型）。
     /// # Safety
     /// 调用方必须先调用 `check_user_buf(ptr as u64, size_of::<T>())` 验证。
