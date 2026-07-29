@@ -415,21 +415,12 @@ impl RamFsData {
     }
 
     pub fn mount(&mut self, _path: &str) -> i32 {
-        for node in self.nodes.iter_mut() {
-            *node = RamFsNode::new();
-        }
-        for b in self.data_area.iter_mut() {
-            *b = 0;
-        }
-        for b in self.node_bitmap.iter_mut() {
-            *b = 0;
-        }
-        for b in self.block_bitmap.iter_mut() {
-            *b = 0;
-        }
-        for ace in self.aces.iter_mut() {
-            *ace = RamFsACE::new();
-        }
+        // 使用 fill(0) 替代逐字节循环——编译器会优化为高效的 memset
+        self.nodes.fill(RamFsNode::new());
+        self.data_area.fill(0);
+        self.node_bitmap.fill(0);
+        self.block_bitmap.fill(0);
+        self.aces.fill(RamFsACE::new());
 
         self.free_nodes
             .store((RAMFS_MAX_NODES - 1) as u32, Ordering::SeqCst);

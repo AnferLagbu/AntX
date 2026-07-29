@@ -26,6 +26,11 @@ SECTIONS
         _kernel_text_end = .;
     } :kernel
 
+    . = ALIGN(2048);
+    .vectors : {
+        *(.vectors)
+    } :kernel
+
     . = ALIGN(4096);
     .rodata : {
         *(.rodata)

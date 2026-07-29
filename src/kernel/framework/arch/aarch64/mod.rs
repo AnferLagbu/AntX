@@ -230,30 +230,45 @@ impl MmuArch for Aarch64 {
 
     /// 进入 EL0 (eret)。
     fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, _kstack: u64) -> ! {
-        // KPTI: 首次进入 EL0 前, 切换 TTBR1_EL1 到 trampoline 页表.
-        // 用户态运行时 TTBR1 指向最小化页表, 减少内核地址泄露面.
-        // SAFETY: kpti_trampoline_ttbr1_or_kernel 返回有效物理地址;
-        // 若 KPTI 未激活则返回 kernel_ttbr1 (无实际切换效果).
-        unsafe {
-            let tramp = if user_cr3 != 0 {
-                user_cr3
-            } else {
-                crate::kernel::framework::mm::kpti_trampoline_ttbr1_or_kernel(
-                    crate::kernel::framework::mm::get_kernel_pml4(),
-                )
-            };
-            core::arch::asm!(
-                "dsb ish",
-                "msr ttbr1_el1, {0}",
-                "isb",
-                in(reg) tramp,
-            );
-        }
+        // SPSR_EL1: EL0t (M[3:0]=0000), DAIF 全屏蔽 (F=1,I=1,A=1,D=1).
+        // 0x3C0 = (0b1111 << 6) | 0b0000.
+        let spsr: u64 = 0x3C0;
 
-        let spsr: u64 = 0x0000;
-        // SAFETY: 进入 EL0 标准序列 (msr sp_el0/elr_el1/spsr_el1 + eret)；
+        // SAFETY: 进入 EL0 标准序列:
+        // 1. TTBR1_EL1 保持 mmu::init 设置的 TTBR1_L0 表不动 (含高半区映射),
+        //    用于 VBAR_EL1 高地址访问异常向量表. KPTI 激活后由异常入口
+        //    汇编切换 TTBR1_EL1.
+        // 2. 设置 TTBR0_EL1 到用户页表 (user_cr3)
+        // 3. 设置 sp_el0/elr_el1/spsr_el1 后 eret 跳转到 EL0
         // entry/stack/arg 由调用方提供合法用户态值；options(noreturn)。
         unsafe {
+            // 切换 TTBR0_EL1 到用户页表
+            core::arch::asm!(
+                "dsb ish",
+                "msr ttbr0_el1, {ttbr0}",
+                "isb",
+                ttbr0 = in(reg) user_cr3,
+            );
+            // 刷新 TLB: 旧 identity mapping 的 TLB 条目 (AP=EL1 only) 可能
+            // 与用户页表条目 (AP=EL1+EL0) 冲突, 导致 EL0 取指权限错误.
+            core::arch::asm!(
+                "tlbi vmalle1is",
+                "dsb ish",
+                "isb",
+            );
+
+            // 诊断: 进入 EL0 前通过 UART MMIO 输出 'U' 标记
+            core::arch::asm!(
+                "mov x20, #0x09000000",
+                "mov w21, #'U'",
+                "str w21, [x20]",
+                "mov w21, #'\r'",
+                "str w21, [x20]",
+                "mov w21, #'\n'",
+                "str w21, [x20]",
+                out("x20") _, out("x21") _,
+            );
+
             asm!(
                 "msr sp_el0, {sp}",
                 "msr elr_el1, {entry}",
@@ -271,19 +286,8 @@ impl MmuArch for Aarch64 {
 
     /// 返回 EL0 (eret)。
     fn return_to_user() {
-        // KPTI: 返回 EL0 前, 切换 TTBR1_EL1 到 trampoline 页表.
-        // SAFETY: 同 enter_user 中的 TTBR1 切换逻辑.
-        unsafe {
-            let tramp = crate::kernel::framework::mm::kpti_trampoline_ttbr1_or_kernel(
-                crate::kernel::framework::mm::get_kernel_pml4(),
-            );
-            core::arch::asm!(
-                "dsb ish",
-                "msr ttbr1_el1, {0}",
-                "isb",
-                in(reg) tramp,
-            );
-        }
+        // TTBR1_EL1 保持 mmu::init 设置不动. KPTI 激活后由异常出口
+        // 汇编 (handle_el0_sync/handle_el0_irq 的 eret 前) 负责切换.
         // SAFETY: eret 是 aarch64 标准异常返回指令；
         // options(noreturn) 标识函数不会返回。
         unsafe {

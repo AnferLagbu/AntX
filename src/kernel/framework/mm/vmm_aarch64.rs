@@ -236,7 +236,7 @@ impl Aarch64Vmm {
             core::arch::asm!("mrs {}, ttbr0_el1", out(reg) current_l0);
         }
 
-        // 存储内核 L0 地址
+        // 存储内核 L0 地址 (TTBR0 identity mapping, 用于内核低地址映射)
         // 暂复用现有页表.
         // 完整实现中应创建独立的内核表.
         let kernel_l0_ptr = &raw const self.kernel_l0 as *mut u64;
@@ -246,22 +246,21 @@ impl Aarch64Vmm {
             ptr::write_volatile(kernel_l0_ptr, current_l0);
         }
 
-        // 确保 TTBR1_EL1 指向同一张表 (用于高半区访问)
+        // 读取当前 TTBR1_EL1 (由 mmu::init 设置 TTBR1_L0 表, 含高半区映射).
+        // 不覆盖 TTBR1_EL1 — 高半区映射用于 VBAR_EL1 高地址访问异常向量表.
+        let current_ttbr1: u64;
+        // SAFETY: mrs ttbr1_el1 是系统寄存器读取指令，无副作用.
         unsafe {
-            core::arch::asm!(
-                "msr ttbr1_el1, {}",
-                "isb",
-                in(reg) current_l0,
-            );
+            core::arch::asm!("mrs {}, ttbr1_el1", out(reg) current_ttbr1);
         }
 
         // 初始化 KPTI: 创建 trampoline TTBR1 页表.
         // 在用户态运行时, TTBR1_EL1 指向最小化页表 (仅含异常入口),
         // 减少内核地址空间泄露面. 异常入口时切换回完整内核页表.
-        // SAFETY: current_l0 是刚写入 TTBR1_EL1 的有效页表物理地址;
+        // SAFETY: current_ttbr1 是 mmu::init 写入 TTBR1_EL1 的有效页表物理地址;
         // KPTI 全局状态在 boot 阶段被独占写入; PMM 已初始化.
         unsafe {
-            super::kpti::kpti_init(current_l0);
+            super::kpti::kpti_init(current_ttbr1);
         }
     }
 
@@ -414,7 +413,7 @@ impl Aarch64Vmm {
                 let paddr = l1_entry & 0x0000_FFFF_FFFF_F000;
                 let new_desc = block_flags_to_descriptor(raw_flags, paddr, 1, 0x0000_FFFF_FFFF_F000);
                 ptr::write_volatile(l1.add(l1_idx), new_desc);
-                core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+                core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr >> 12);
                 self.release_lock(&_lock_flags);
                 return;
             }
@@ -436,7 +435,7 @@ impl Aarch64Vmm {
                 let paddr = l2_entry & 0x0000_FFFF_FFFF_F000;
                 let new_desc = block_flags_to_descriptor(raw_flags, paddr, 2, 0x0000_FFFF_FFFF_F000);
                 ptr::write_volatile(l2.add(l2_idx), new_desc);
-                core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+                core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr >> 12);
                 self.release_lock(&_lock_flags);
                 return;
             }
@@ -461,7 +460,7 @@ impl Aarch64Vmm {
             let paddr = l3_entry & 0x0000_FFFF_FFFF_F000;
             let new_desc = page_flags_to_descriptor(raw_flags, paddr);
             ptr::write_volatile(l3.add(l3_idx), new_desc);
-            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr >> 12);
         }
 
         self.release_lock(&_lock_flags);
@@ -484,7 +483,15 @@ impl Aarch64Vmm {
         phys: PhysAddr,
         flags: PageFlags,
     ) {
+        // UART 诊断: 进入 map_page_in_table
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
+
         let _lock_flags = self.acquire_lock();
+
+        // UART 诊断: 获取锁成功
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         let vaddr = virt.as_u64();
         let paddr = phys.as_u64();
@@ -492,6 +499,10 @@ impl Aarch64Vmm {
 
         let l0 = phys_to_virt(root_paddr) as *mut u64;
         let l0_idx = l0_index(vaddr);
+
+        // UART 诊断: 开始遍历 L0
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         let l1 = match self.ensure_next_level(l0, l0_idx) {
             Ok(t) => t,
@@ -502,6 +513,10 @@ impl Aarch64Vmm {
         };
         let l1_idx = l1_index(vaddr);
 
+        // UART 诊断: L1 遍历完成
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _); }
+
         let l2 = match self.ensure_next_level(l1, l1_idx) {
             Ok(t) => t,
             Err(_) => {
@@ -510,6 +525,10 @@ impl Aarch64Vmm {
             }
         };
         let l2_idx = l2_index(vaddr);
+
+        // UART 诊断: L2 遍历完成
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         let l3 = match self.ensure_next_level(l2, l2_idx) {
             Ok(t) => t,
@@ -520,6 +539,10 @@ impl Aarch64Vmm {
         };
         let l3_idx = l3_index(vaddr);
 
+        // UART 诊断: L3 遍历完成
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'5'; str w21, [x20]", out("x20") _, out("x21") _); }
+
         let desc = page_flags_to_descriptor(raw_flags, paddr);
         // SAFETY: l3 是 ensure_next_level 返回的 L3 页表基地址；
         // l3_idx < 512；write_volatile 写硬件页表。
@@ -527,11 +550,19 @@ impl Aarch64Vmm {
             ptr::write_volatile(l3.add(l3_idx), desc);
         }
 
+        // UART 诊断: 页描述符写入完成
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'6'; str w21, [x20]", out("x20") _, out("x21") _); }
+
         // SAFETY: dsb ishst / tlbi vaae1is / dsb ish / isb 是 aarch64 标准
-        // TLB 失效序列；输入 vaddr 是合法内核虚拟地址，无副作用。
+        // TLB 失效序列；ARM 架构要求 tlbi vaae1is 的操作数是虚拟地址右移12位（页帧号）。
         unsafe {
-            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr >> 12);
         }
+
+        // UART 诊断: TLB 失效完成
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'7'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         self.release_lock(&_lock_flags);
     }
@@ -546,12 +577,26 @@ impl Aarch64Vmm {
                 let paddr = entry & 0x0000_FFFF_FFFF_F000;
                 Ok(phys_to_virt(paddr) as *mut u64)
             } else {
+                // UART 诊断: 开始分配页表
+                #[cfg(target_arch = "aarch64")]
+                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'L'; str w21, [x20]", out("x20") _, out("x21") _);
+
                 let new_paddr = self
                     .alloc_table()
                     .ok_or("[VMM] Out of physical memory for page table")?;
+
+                // UART 诊断: 页表分配成功
+                #[cfg(target_arch = "aarch64")]
+                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'R'; str w21, [x20]", out("x20") _, out("x21") _);
+
                 let desc = table_descriptor(new_paddr);
                 ptr::write_volatile(table.add(idx), desc);
                 core::arch::asm!("dsb ishst");
+
+                // UART 诊断: 描述符写入完成
+                #[cfg(target_arch = "aarch64")]
+                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'W'; str w22, [x20]", out("x20") _, out("x21") _);
+
                 Ok(phys_to_virt(new_paddr) as *mut u64)
             }
         }
@@ -598,9 +643,9 @@ impl Aarch64Vmm {
         }
 
         // TLB 失效 — 必须在释放页表页前执行, 以避免投机性遍历落入已释放物理页.
-        // SAFETY: 标准 TLB 失效序列；vaddr 是有效内核虚拟地址。
+        // SAFETY: 标准 TLB 失效序列；ARM 架构要求 tlbi vaae1is 的操作数是虚拟地址右移12位（页帧号）。
         unsafe {
-            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr >> 12);
         }
 
         // 递归释放空的中间页表页, 避免 unmap 间内存泄漏
@@ -889,7 +934,8 @@ impl Aarch64Vmm {
             ptr::write_volatile(l3_ptr, raw_pte);
 
             // TLB invalidate (与 unmap_page_in_table 一致)
-            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr);
+            // ARM 架构要求 tlbi vaae1is 的操作数是虚拟地址右移12位（页帧号）
+            core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr >> 12);
         }
 
         self.release_lock(&_flags);

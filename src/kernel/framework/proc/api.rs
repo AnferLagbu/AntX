@@ -245,7 +245,17 @@ pub fn launch_first_user_process() -> ! {
         b"/\0".as_ptr(),
         b"ramfs\0".as_ptr(),
     );
+    // UART 诊断: vfs_mount 返回后立即输出（绕过 klog）
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
+    // UART 诊断: ramfs 挂载完成后 (在 klog 之前)
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
     crate::klog_boot_info!("[USER] ramfs mount result={}", mount_result);
+    // UART 诊断: klog 返回后立即输出
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'A'; str w21, [x20]", out("x20") _, out("x21") _); }
+
     if mount_result < 0 {
         crate::klog_boot_info!(
             "[USER] Warning: ramfs mount on / failed ({})",
@@ -253,8 +263,46 @@ pub fn launch_first_user_process() -> ! {
         );
     }
 
+    // UART 诊断: if 语句后
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'B'; str w21, [x20]", out("x20") _, out("x21") _); }
+
+    // UART 诊断: ramfs 挂载完成后 (在 klog 之前)
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _); }
+    
+    // UART 诊断: klog 调用前立即标记
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'K'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
+    
+    crate::klog_boot_info!("[USER] ramfs mount done, entering aarch64 path...");
+
+    // UART 诊断: klog 返回后立即标记
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'K'; str w21, [x20]", out("x20") _, out("x21") _); }
+
+    // UART 诊断: set_init_status 前
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _); }
+
+    // UART 诊断: set_init_status 调用前立即标记
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'S'; str w21, [x20]; mov w21, #'A'; str w21, [x20]", out("x20") _, out("x21") _); }
+
     // 2. 解压 initramfs (如果启用 feature "initramfs")
     set_init_status(1);
+
+    // UART 诊断: set_init_status 调用后立即标记
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'S'; str w21, [x20]; mov w21, #'B'; str w21, [x20]", out("x20") _, out("x21") _); }
+
+    // UART 诊断: set_init_status 后
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _); }
+
+    // UART 诊断: 进入 aarch64 块之前
+    #[cfg(target_arch = "aarch64")]
+    unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'R'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _); }
     #[cfg(all(target_arch = "x86_64", feature = "initramfs"))]
     {
         let initramfs = include_bytes!("../../../../build/user/initramfs.cpio");
@@ -358,14 +406,53 @@ pub fn launch_first_user_process() -> ! {
 
     #[cfg(target_arch = "aarch64")]
     {
-        let _ = crate::kernel::framework::fs::vfs_mount(
-            b"/\0".as_ptr(),
-            b"ramfs\0".as_ptr(),
-        );
-
+        // UART 诊断: 进入 aarch64 路径
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
+        crate::klog_boot_info!("[USER] aarch64: starting init ELF load...");
+        // UART 诊断: klog 返回后立即标记
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'9'; str w21, [x20]", out("x20") _, out("x21") _); }
+        
+        // UART 诊断: include_bytes 之前
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'A'; str w21, [x20]", out("x20") _, out("x21") _); }
+        
         let bin = include_bytes!("../../../../build/user/init.bin");
+        
+        // UART 诊断: include_bytes 之后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'B'; str w21, [x20]", out("x20") _, out("x21") _); }
+        
         let bin_ptr = bin.as_ptr();
+        
+        // UART 诊断: 获取 ptr 之后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'C'; str w21, [x20]", out("x20") _, out("x21") _); }
+        
         let bin_size = bin.len() as u64;
+        
+        // UART 诊断: 获取到 bin 大小
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _); }
+        
+        // UART 诊断: klog_boot_info 之前
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'X'; str w21, [x20]", out("x20") _, out("x21") _); }
+        
+        crate::klog_boot_info!("[USER] aarch64: init ELF size={}", bin_size);
+
+        // UART 诊断: klog_boot_info 之后 (立即)
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'Y'; str w21, [x20]", out("x20") _, out("x21") _); }
+
+        // UART 诊断: bin_size == 0 检查之前
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'Z'; str w21, [x20]", out("x20") _, out("x21") _); }
+
+        // UART 诊断: klog_boot_info 之后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         if bin_size == 0 {
             crate::klog_boot_info!("[USER] init ELF is empty");
@@ -374,7 +461,24 @@ pub fn launch_first_user_process() -> ! {
             }
         }
 
+        // UART 诊断: 检查 bin_size 后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _); }
+        crate::klog_boot_info!("[USER] aarch64: bin_size check passed");
+
+        // UART 诊断: 获取 bin_ptr 后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'C'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _); }
+        crate::klog_boot_info!("[USER] aarch64: bin_ptr={:#X}", bin_ptr as u64);
+
+        crate::klog_boot_info!("[USER] aarch64: calling load_elf_from_memory...");
+        // 诊断: 直接 UART 输出确认函数调用前后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'B'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
         let pid = USER_PROC_MANAGER.load_elf_from_memory(bin_ptr, bin_size, 0);
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'B'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _); }
+        crate::klog_boot_info!("[USER] aarch64: load_elf_from_memory returned pid={}", pid);
         if pid <= 0 {
             crate::klog_boot_info!("[USER] Failed to load init ELF");
             loop {
@@ -391,6 +495,7 @@ pub fn launch_first_user_process() -> ! {
             p.parent_pid = 1;
         });
 
+        crate::klog_boot_info!("[USER] aarch64: adding to scheduler...");
         SCHEDULER.add(pid_u32);
 
         crate::klog_boot_info!("[USER] Entering EL0 (init pid={})...", pid_u32);

@@ -91,10 +91,16 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     match fs_type {
         FsType::RamFs => {
             if !RAMFS_MOUNTED.swap(true, core::sync::atomic::Ordering::SeqCst) {
-                let mut ramfs = RAMFS_DATA.lock();
-                if ramfs.mount(path) != 0 {
-                    return -1;
-                }
+                crate::klog_boot_info!("[VFS] vfs_mount_internal: before RAMFS_DATA.lock() #1");
+                {
+                    let mut ramfs = RAMFS_DATA.lock();
+                    crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #1 acquired");
+                    if ramfs.mount(path) != 0 {
+                        return -1;
+                    }
+                    crate::klog_boot_info!("[VFS] vfs_mount_internal: ramfs.mount() done");
+                } // 显式 drop ramfs 释放锁
+                crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #1 released");
             }
         }
         FsType::HvFs => {
@@ -127,11 +133,18 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     // 生命周期为 'static. Mutex::lock() 返回的 MutexGuard 借用了 &'static Mutex,
     // 因此通过 &*guard 获得的 &RamFsData 实际生命周期为 'static.
     // 这里我们利用这一点将引用提升为 &'static 以存入 VfsMount.
+    crate::klog_boot_info!("[VFS] vfs_mount_internal: before E6-4 mount_with_fs");
     let fs: &'static dyn FileSystem = match fs_type {
         FsType::RamFs => {
+            crate::klog_boot_info!("[VFS] vfs_mount_internal: before RAMFS_DATA.lock() #2");
             let guard = RAMFS_DATA.lock();
+            crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #2 acquired");
             // SAFETY: guard 借用 &'static Mutex<RamFsData>, &*guard 生命周期为 'static
-            unsafe { &*(&*guard as *const RamFsData) }
+            let fs_ref = unsafe { &*(&*guard as *const RamFsData) };
+            #[cfg(target_arch = "aarch64")]
+            unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'V'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
+            crate::klog_boot_info!("[VFS] vfs_mount_internal: RamFsData ref created");
+            fs_ref
         }
         FsType::HvFs => get_hvfs(),
         FsType::DevFs => {
@@ -140,6 +153,7 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
         }
         _ => return VFS_MANAGER.mount(path, fs_name).as_i32(),
     };
+    crate::klog_boot_info!("[VFS] vfs_mount_internal: calling VFS_MANAGER.mount_with_fs");
     VFS_MANAGER.mount_with_fs(path, fs_name, fs).as_i32()
 }
 

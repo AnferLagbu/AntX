@@ -139,9 +139,11 @@ pub unsafe fn init_distributor() { unsafe {
     // 1. 禁用 Distributor
     gicd_write(GICD_CTLR, 0);
 
-    // 2. 设置所有 SPIs 为 Group 0
+    // 2. 设置所有 SPIs 为 Group 1 (Non-secure, IRQ 信号).
+    //    Group 0 会触发 FIQ, 但 FIQ handler 仅为 unexpected_exception 桩.
+    //    使用 Group 1 使中断走 handle_el1h_irq 正常处理路径.
     for i in 0..2 {
-        gicd_write(GICD_IGROUPR + (i as u64 * 4), 0);
+        gicd_write(GICD_IGROUPR + (i as u64 * 4), 0xFFFF_FFFF);
     }
 
     // 3. 设置中断优先级
@@ -167,21 +169,41 @@ pub unsafe fn init_distributor() { unsafe {
 ///
 /// 调用前需确保 Distributor 已初始化，GICR_BASE 已映射。
 pub unsafe fn init_redistributor() { unsafe {
+    // UART 诊断: 进入 init_redistributor
+    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _);
+
     // 1. 唤醒 redistributor
     let waker = gicr_read(GICR_WAKER);
+    // UART 诊断: 读取 waker 成功
+    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _);
+
     gicr_write(GICR_WAKER, waker & !(1 << 1)); // 清除 ProcessorSleep (bit 1)
-                                               // 等待 ChildrenAsleep == 0
+    // UART 诊断: 写入 waker 成功
+    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _);
+
+    // 等待 ChildrenAsleep == 0
+    let mut wait_count = 0;
     while gicr_read(GICR_WAKER) & (1 << 2) != 0 {
+        wait_count += 1;
+        if wait_count > 1000000 {
+            // UART 诊断: 等待超时
+            core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'X'; str w21, [x20]", out("x20") _, out("x21") _);
+            break;
+        }
         core::hint::spin_loop();
     }
+    // UART 诊断: 等待完成
+    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _);
 
     // 2. 设置 PPI 优先级 (SGI frame)
     gicr_sgi_write(GICR_IPRIORITYR, 0xA0A0_A0A0);
     gicr_sgi_write(GICR_IPRIORITYR + 4, 0xA0A0_A0A0);
     gicr_sgi_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0);
 
-    // 3. 配置 SGI/PPI 分组: 全部设为 Group 0
-    gicr_sgi_write(GICR_IGROUPR0, 0);
+    // 3. 配置 SGI/PPI 分组: 全部设为 Group 1 (Non-secure, IRQ 信号).
+    //    Group 0 会触发 FIQ, 但 FIQ handler 仅为 unexpected_exception 桩.
+    //    使用 Group 1 使 Timer PPI (30) 等中断走 handle_el1h_irq 正常路径.
+    gicr_sgi_write(GICR_IGROUPR0, 0xFFFF_FFFF);
 
     // 4. 配置 PPI 触发模式: Timer PPI 为 level-triggered
     let icfgr1_val = gicr_sgi_read(GICR_ICFGR1);

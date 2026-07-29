@@ -31,30 +31,12 @@ context_switch_asm:
     msr  daifset, #0xF
 
     // === Save current context to [x0] ===
-
-    // 被调用方保存的 GP 寄存器
-    str  x19, [x0, #0x00]
-    str  x20, [x0, #0x08]
-    str  x21, [x0, #0x10]
-    str  x22, [x0, #0x18]
-    str  x23, [x0, #0x20]
-    str  x24, [x0, #0x28]   // Field: rbx
-    str  x25, [x0, #0x30]   // Field: rbp
-    str  x26, [x0, #0x38]   // Field: rax
-    str  x27, [x0, #0x40]   // Field: rip → x24
-    str  x28, [x0, #0x48]   // Field: rsp → x25
-
-    // Actually let me remap to use ProcessContext offsets:
-    // ProcessContext: r15(0) r14(8) r13(16) r12(24) rbx(32) rbp(40) rax(48)
-    //                rip(56) rsp(64) rflags(72) cr3(80) cs(88) ds(96)
-    //                es(104) fs(112) gs(120) ss(128)
-
-    // Map aarch64 → x86_64 fields:
-    // x19→r15(0)  x20→r14(8)  x21→r13(16)  x22→r12(24)
-    // x23→rbx(32)  x24→rbp(40)  x25→rax(48)
-    // 寄存器对应: x26→rip(56)  x27→rsp(64)  x28→rflags(72)
-    // x29→cr3(80)  x30→cs(88)  sp→ds(96)
-    // 字段映射: ttbr0→es(104)  spsr→fs(112)  elr→gs(120)  0→ss(128)
+    //
+    // 映射: aarch64 寄存器 → ProcessContext 字段 (x86_64 命名):
+    //   x19→r15(0)   x20→r14(8)   x21→r13(16)  x22→r12(24)
+    //   x23→rbx(32)  x24→rbp(40)  x25→rax(48)  x26→rip(56)
+    //   x27→rsp(64)  x28→rflags(72)  x29→cr3(80)  x30→cs(88)
+    //   sp→ds(96)  TTBR0→es(104)  SPSR→fs(112)  ELR→gs(120) 0→ss(128)  (系统寄存器映射)
 
     str  x19, [x0, #0]
     str  x20, [x0, #8]
@@ -109,13 +91,7 @@ context_switch_asm:
     ldr  x2, [x1, #120]
     msr  elr_el1, x2
 
-    // 恢复中断状态 (从 SPSR_EL1)
-    ldr  x2, [x1, #112]   // SPSR_EL1
-    // 提取 DAIF bits 并恢复
-    and  x3, x2, #0x3C0   // DAIF mask
-    msr  daif, x3
-
-    // eret (跳转到 ELR_EL1 或 EL0 取决于 SPSR)
+    // eret 恢复 SPSR_EL1 → PSTATE (含 DAIF), 无需显式 msr daif.
     eret
 "#
 );

@@ -540,11 +540,51 @@ pub unsafe extern "C" fn memset(
         return s;
     }
 
-    let p = s as *mut u8;
-    let val = (c & 0xFF) as u8;
+    #[cfg(target_arch = "aarch64")]
+    {
+        let val = (c & 0xFF) as u8;
+        let mut dst = s;
+        let mut remaining = n;
 
-    for i in 0..n {
-        *p.add(i) = val;
+        // 逐字节对齐到 16 字节边界
+        while remaining > 0 && (dst as usize) & 0xF != 0 {
+            *dst = val;
+            dst = dst.add(1);
+            remaining -= 1;
+        }
+
+        // 16 字节批量写入 (stp 一次写 16 字节)
+        if remaining >= 16 {
+            let val64 = u64::from_le_bytes([val; 8]);
+            let mut blocks = remaining / 16;
+            // SAFETY: asm 使用 stp 指令, 仅写入 dst 指向的内存
+            core::arch::asm!(
+                "1:",
+                "stp {val}, {val}, [{dst}], #16",
+                "subs {blocks}, {blocks}, #1",
+                "b.ne 1b",
+                val = in(reg) val64,
+                dst = inout(reg) dst,
+                blocks = inout(reg) blocks,
+                options(nostack, readonly),
+            );
+            remaining &= 0xF;
+        }
+
+        // 处理剩余字节
+        for _ in 0..remaining {
+            *dst = val;
+            dst = dst.add(1);
+        }
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let p = s as *mut u8;
+        let val = (c & 0xFF) as u8;
+        for i in 0..n {
+            *p.add(i) = val;
+        }
     }
 
     s

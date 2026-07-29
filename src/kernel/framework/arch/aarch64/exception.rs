@@ -197,6 +197,17 @@ handle_el1h_irq:
 
 // -------- EL0 sync handler (SVC / 数据异常) --------
 handle_el0_sync:
+    // 诊断: 直接通过 UART MMIO 输出 'E' '0' 标记 EL0 同步异常入口
+    mov  x20, #0x09000000
+    mov  w21, #'E'
+    str  w21, [x20]
+    mov  w21, #'0'
+    str  w21, [x20]
+    mov  w21, #'\r'
+    str  w21, [x20]
+    mov  w21, #'\n'
+    str  w21, [x20]
+
     sub  sp, sp, #(8 * 35)
     stp  x0, x1, [sp, #(8 * 0)]
     stp  x2, x3, [sp, #(8 * 2)]
@@ -319,6 +330,17 @@ handle_svc:
 
 // -------- EL0 IRQ handler --------
 handle_el0_irq:
+    // 诊断: 直接通过 UART MMIO 输出 'I' '0' 标记 EL0 IRQ 入口
+    mov  x20, #0x09000000
+    mov  w21, #'I'
+    str  w21, [x20]
+    mov  w21, #'0'
+    str  w21, [x20]
+    mov  w21, #'\r'
+    str  w21, [x20]
+    mov  w21, #'\n'
+    str  w21, [x20]
+
     sub  sp, sp, #(8 * 35)
     stp  x0, x1, [sp, #(8 * 0)]
     stp  x2, x3, [sp, #(8 * 2)]
@@ -699,8 +721,14 @@ pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
 /// # Safety
 ///
 /// 仅在启动阶段调用，调用前需确保向量表已链接到内核镜像中。
+///
+/// VBAR_EL1 必须使用 TTBR1 高地址 (0xFFFF_0000_...), 因为进入 EL0 后
+/// TTBR0_EL1 指向用户页表, 低地址无法通过 TTBR0 访问。TTBR1_EL1 映射:
+/// VA = PA + 0xFFFF_0000_0000_0000, 所有相对跳转 (b/bl/adrp) 自动适配。
 pub unsafe fn init() { unsafe {
-    let vbar = &exception_vector_table as *const u8 as u64;
+    let vbar_low = &exception_vector_table as *const u8 as u64;
+    // 转换为 TTBR1 高地址: VA = PA + 0xFFFF_0000_0000_0000
+    let vbar = 0xFFFF_0000_0000_0000u64 + vbar_low;
     core::arch::asm!("msr vbar_el1, {}", in(reg) vbar);
 
     // 清除 DAIF (Debug/SError/IRQ/FIQ 掩码), 使能中断
