@@ -1,0 +1,39 @@
+# QueenX aarch64 GDB - 检查 GICR 页表映射
+set architecture aarch64
+target remote localhost:1235
+
+file build/kernel.bin
+
+set print pretty on
+set pagination off
+
+# 断点: GIC init 入口，此时 MMU 已启用，GICD 已初始化
+break _RNvNtNtNtNtNtCsb7KHu8L7cC6_6queenx6kernel9framework4arch7aarch643gic4init
+
+echo \n=== Continuing to GIC init...\n
+continue
+
+echo \n=== Hit GIC init, checking TTBR0_EL1 ===\n
+# 读取 TTBR0_EL1 获取 L0 页表基地址
+info registers ttbr0_el1
+
+echo \n=== Examine L0 page table entry for GIC region ===\n
+# L0 index for 0x08000000: VA[47:39] = 0x08000000 >> 39 = 0
+# So L0[0] should point to L1_IDMAP
+# Read TTBR0_EL1 value, then read the L0[0] entry
+
+echo \n=== Examine L1 entry for GIC region ===\n
+# L1 index for 0x08000000: VA[38:30] = 0x08000000 >> 30 = 0x2
+# So L1[2] should be the L2_DEVICE table
+
+echo \n=== Examine L2 entry for GICR at 0x080A_0000 ===\n
+# L2 index for 0x080A_0000: VA[29:21] = 0x080A_0000 >> 21 = 0x40 = 64
+# So L2_DEVICE[64] should have the block descriptor
+
+echo \n=== Read TTBR0_EL1 and page table entries ===\n
+# 先执行到 init_distributor 完成（在 UART 输出 G1 之前暂停）
+# 实际上，我们可以直接读取寄存器
+
+# 读取 TTBR0_EL1
+shell echo "TTBR0_EL1 value:"
+info registers ttbr0_el1

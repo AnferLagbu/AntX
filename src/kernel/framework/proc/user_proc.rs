@@ -957,16 +957,37 @@ impl UserProcManager {
         );
 
         for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
-            let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
-            let sphys = stack_phys + i * PAGE_SIZE;
-            crate::klog_boot_info!(
-                "[USER] create: mapping stack page {}/{}: virt={:#X} phys={:#X}",
-                i + 1, USER_STACK_SIZE / PAGE_SIZE, svirt, sphys
-            );
-
-            // UART 诊断: 映射第 i 页
+            // UART 诊断: 循环迭代开始
             #[cfg(target_arch = "aarch64")]
             unsafe {
+                core::arch::asm!("mov x20, #0x09000000; mov w21, #'L'; str w21, [x20]", out("x20") _);
+            }
+
+            let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
+            let sphys = stack_phys + i * PAGE_SIZE;
+
+            // UART 诊断: 地址计算完成
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]", out("x20") _);
+            }
+
+            // UART 诊断: klog 调用前
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                core::arch::asm!("mov x20, #0x09000000; mov w21, #'Z'; str w21, [x20]", out("x20") _);
+            }
+
+            // 暂时跳过 klog 以隔离 hang 原因
+            // crate::klog_boot_info!(
+            //     "[USER] create: mapping stack page {}/{}: virt={:#X} phys={:#X}",
+            //     i + 1, USER_STACK_SIZE / PAGE_SIZE, svirt, sphys
+            // );
+
+            // UART 诊断: klog 完成，开始映射
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                core::arch::asm!("mov x20, #0x09000000; mov w21, #'K'; str w21, [x20]", out("x20") _);
                 core::arch::asm!("mov x20, #0x09000000; mov w21, #'S'; str w21, [x20]", out("x20") _);
                 // 输出页号 (0-9)
                 let page_num = (i as u8) + b'0';

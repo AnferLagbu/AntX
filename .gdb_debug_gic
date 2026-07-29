@@ -1,0 +1,20 @@
+# QueenX aarch64 GDB - 调试 GICv3 挂起
+set architecture aarch64
+target remote localhost:1235
+
+# 加载符号
+file build/kernel.bin
+
+set print pretty on
+set pagination off
+
+# 断点: GICv3 init 入口
+break _RNvNtNtNtNtNtCsb7KHu8L7cC6_6queenx6kernel9framework4arch7aarch643gic4init
+
+echo \n=== GIC init breakpoint set, continuing...\n
+continue
+
+# 到达 GIC init 后，打印调用栈和寄存器
+echo \n=== Hit GIC init ===\n
+bt
+info registers x0 x1 x2 sp pc lr

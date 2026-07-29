@@ -1,0 +1,23 @@
+# QueenX aarch64 GDB 调试配置
+set architecture aarch64
+target remote localhost:1235
+
+# 加载符号
+file build/kernel.bin
+
+# 显示设置
+set print pretty on
+set print array on
+set print array-indexes on
+
+# 断点: entry 入口
+break entry
+
+# 断点: GICv3 init 入口
+break _RNvNtNtNtNtNtCsb7KHu8L7cC6_6queenx6kernel9framework4arch7aarch643gic4init
+
+echo \n
+echo ==========================================\n
+echo   QueenX aarch64 - GDB Debug Session\n
+echo ==========================================\n
+echo \n

@@ -1,0 +1,30 @@
+# QueenX aarch64 GDB - 调试 GICv3 gicr_read 挂起
+set architecture aarch64
+target remote localhost:1235
+
+file build/kernel.bin
+
+set print pretty on
+set pagination off
+
+# 断点: GICv3 init 入口
+break _RNvNtNtNtNtNtCsb7KHu8L7cC6_6queenx6kernel9framework4arch7aarch643gic4init
+
+echo \n=== Continuing to GIC init...\n
+continue
+
+echo \n=== Hit GIC init ===\n
+info registers x0 x1 x2 sp pc lr
+
+# 单步进入 init() 函数，直到 init_distributor 调用
+# 查看 init_distributor 的地址
+echo \n=== Disassembling GIC init ===\n
+x/30i $pc
+
+# 继续执行，直到下一次从 init_distributor 返回
+# 先看看 init_distributor 之后的代码
+echo \n=== Step 20 instructions to see init flow ===\n
+si 20
+echo \n=== After 20 steps ===\n
+x/10i $pc
+info registers pc sp lr

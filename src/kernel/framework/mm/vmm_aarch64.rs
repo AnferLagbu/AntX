@@ -216,7 +216,16 @@ impl Aarch64Vmm {
             VMM_LOCK_RECURSIVE.store(false, Ordering::Relaxed);
         }
         VMM_LOCK.store(false, Ordering::Release);
+
+        // UART 诊断: VMM_LOCK 释放后，restore_interrupts 前
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'V'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
+
         restore_interrupts(flags);
+
+        // UART 诊断: restore_interrupts 后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'V'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
     }
 
     // ─── 初始化 ──────────────────────────────────────────────
@@ -564,7 +573,15 @@ impl Aarch64Vmm {
         #[cfg(target_arch = "aarch64")]
         unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'7'; str w21, [x20]", out("x20") _, out("x21") _); }
 
+        // UART 诊断: release_lock 之前
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'L'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
+
         self.release_lock(&_lock_flags);
+
+        // UART 诊断: release_lock 之后
+        #[cfg(target_arch = "aarch64")]
+        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'L'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
     }
 
     /// Ensure the next-level page table exists at `table[idx]`.
