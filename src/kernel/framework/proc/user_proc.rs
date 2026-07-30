@@ -320,27 +320,16 @@ pub(crate) mod raw {
     pub fn vmm_map_user_page(cr3: u64, vaddr: u64, paddr: u64, flags: u64) {
         // SAFETY: cr3 来自 user proc 的 cr3 字段, 已建立。
         unsafe {
-            // UART 诊断: 进入 vmm_map_user_page
-            #[cfg(target_arch = "aarch64")]
-            core::arch::asm!("mov x20, #0x09000000; mov w21, #'M'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _);
+            // 整个用户页映射操作保持中断禁用，防止 timer 中断在 VMM 操作间干扰
+            let saved_if = crate::arch!(interrupt_disable()) as u64;
 
             vmm_map_page_in_table(cr3, vaddr, paddr, flags);
 
-            // UART 诊断: vmm_map_page_in_table 完成
-            #[cfg(target_arch = "aarch64")]
-            core::arch::asm!("mov x20, #0x09000000; mov w21, #'M'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _);
-
             vmm_map_page(vaddr, paddr, flags);
-
-            // UART 诊断: vmm_map_page 完成
-            #[cfg(target_arch = "aarch64")]
-            core::arch::asm!("mov x20, #0x09000000; mov w21, #'M'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _);
 
             vmm_ensure_path_user(vaddr);
 
-            // UART 诊断: vmm_ensure_path_user 完成
-            #[cfg(target_arch = "aarch64")]
-            core::arch::asm!("mov x20, #0x09000000; mov w21, #'M'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _);
+            crate::arch!(interrupt_restore(saved_if as usize));
         }
     }
 
@@ -957,42 +946,14 @@ impl UserProcManager {
         );
 
         for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
-            // UART 诊断: 循环迭代开始
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'L'; str w21, [x20]", out("x20") _);
-            }
-
             let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
             let sphys = stack_phys + i * PAGE_SIZE;
-
-            // UART 诊断: 地址计算完成
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]", out("x20") _);
-            }
-
-            // UART 诊断: klog 调用前
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'Z'; str w21, [x20]", out("x20") _);
-            }
 
             // 暂时跳过 klog 以隔离 hang 原因
             // crate::klog_boot_info!(
             //     "[USER] create: mapping stack page {}/{}: virt={:#X} phys={:#X}",
             //     i + 1, USER_STACK_SIZE / PAGE_SIZE, svirt, sphys
             // );
-
-            // UART 诊断: klog 完成，开始映射
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'K'; str w21, [x20]", out("x20") _);
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'S'; str w21, [x20]", out("x20") _);
-                // 输出页号 (0-9)
-                let page_num = (i as u8) + b'0';
-                core::arch::asm!("mov x20, #0x09000000; mov w21, w22; str w21, [x20]", in("w22") page_num, out("x20") _);
-            }
 
             raw::vmm_map_user_page(
                 cr3_val,
@@ -1001,11 +962,6 @@ impl UserProcManager {
                 (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER).bits(),
             );
 
-            // UART 诊断: 第 i 页映射完成
-            #[cfg(target_arch = "aarch64")]
-            unsafe {
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'E'; str w21, [x20]", out("x20") _);
-            }
         }
 
         // 验证用户栈映射是否成功
@@ -1613,23 +1569,16 @@ impl UserProcManager {
     }
 
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwm: u64) -> i32 {
-        // 诊断: 函数入口第一个操作，绕过日志系统
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
         crate::klog_boot_info!("[ELF] load_elf_from_memory: entry");
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
             crate::klog_boot_info!("[ELF] load_elf_from_memory: null or too small");
             return -1;
         }
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         // P1-I-33: 委托给 elf::verify::verify_elf 单一来源, 避免解析方式不一致
         //
         // SAFETY: elf_data 区间已校验 (非空 + size >= header), verify_elf 内部仅读借用。
         crate::klog_boot_info!("[ELF] calling verify_elf...");
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _); }
         let verified = match unsafe { super::elf::verify::verify_elf(elf_data, elf_size) } {
             Ok(v) => v,
             Err(_) => {
@@ -1637,8 +1586,6 @@ impl UserProcManager {
                 return -1;
             }
         };
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _); }
         crate::klog_boot_info!("[ELF] verify_elf OK, entry={:#x}", verified.entry);
 
         // SAFETY: verify_elf 已通过校验, header 引用安全

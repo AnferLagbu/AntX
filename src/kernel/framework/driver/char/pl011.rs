@@ -70,7 +70,7 @@ impl Pl011Driver {
     fn is_hw_enabled(&self) -> bool {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            let cr = core::ptr::read_volatile((uart::PL011_BASE + uart::UARTCR) as *const u32);
+            let cr = core::ptr::read_volatile((uart::base() + uart::UARTCR) as *const u32);
             cr & uart::UARTCR_UARTEN != 0
         }
     }
@@ -103,7 +103,7 @@ impl Driver for Pl011Driver {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             core::ptr::write_volatile(
-                (uart::PL011_BASE + uart::UARTCR) as *mut u32,
+                (uart::base() + uart::UARTCR) as *mut u32,
                 0,
             );
         }

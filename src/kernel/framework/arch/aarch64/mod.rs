@@ -112,13 +112,22 @@ impl InterruptArch for Aarch64 {
     }
 
     /// 恢复 DAIF。
+    ///
+    /// 仅恢复 IRQ 屏蔽位 (DAIF bit 7), 不恢复 D/A/F 位。
+    /// 使用 `msr daifset`/`msr daifclr` 而非 `msr daif` 以避免
+    /// `msr daif, Xt` 在 QEMU aarch64 上的挂起问题。
     #[inline(always)]
     fn interrupt_restore(flags: usize) {
-        // SAFETY: msr daif 恢复由 interrupt_disable 保存的标志位；
-        // 立即数 #2 写入 DAIF 启用 IRQ。
-        unsafe {
-            asm!("msr daif, {}", in(reg) flags as u64);
+        // SAFETY: msr daifset/daifclr 是立即数指令, 无内存副作用。
+        // flags 由 interrupt_disable 保存, 仅 bit 7 (IRQ) 有效。
+        let daif = flags as u64;
+        if (daif & (1 << 7)) == 0 {
+            // 原始 DAIF 中 IRQ 是启用的, 恢复启用
+            unsafe {
+                asm!("msr daifclr, #2");
+            }
         }
+        // 原始 DAIF 中 IRQ 是禁用的, 保持禁用 (no-op)
     }
 
     /// 启用 IRQ (msr daifclr)。
@@ -255,18 +264,6 @@ impl MmuArch for Aarch64 {
                 "tlbi vmalle1is",
                 "dsb ish",
                 "isb",
-            );
-
-            // 诊断: 进入 EL0 前通过 UART MMIO 输出 'U' 标记
-            core::arch::asm!(
-                "mov x20, #0x09000000",
-                "mov w21, #'U'",
-                "str w21, [x20]",
-                "mov w21, #'\r'",
-                "str w21, [x20]",
-                "mov w21, #'\n'",
-                "str w21, [x20]",
-                out("x20") _, out("x21") _,
             );
 
             asm!(

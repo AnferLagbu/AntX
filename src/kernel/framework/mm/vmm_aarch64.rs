@@ -217,15 +217,7 @@ impl Aarch64Vmm {
         }
         VMM_LOCK.store(false, Ordering::Release);
 
-        // UART 诊断: VMM_LOCK 释放后，restore_interrupts 前
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'V'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
-
         restore_interrupts(flags);
-
-        // UART 诊断: restore_interrupts 后
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'V'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
     }
 
     // ─── 初始化 ──────────────────────────────────────────────
@@ -492,15 +484,7 @@ impl Aarch64Vmm {
         phys: PhysAddr,
         flags: PageFlags,
     ) {
-        // UART 诊断: 进入 map_page_in_table
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
-
         let _lock_flags = self.acquire_lock();
-
-        // UART 诊断: 获取锁成功
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         let vaddr = virt.as_u64();
         let paddr = phys.as_u64();
@@ -508,10 +492,6 @@ impl Aarch64Vmm {
 
         let l0 = phys_to_virt(root_paddr) as *mut u64;
         let l0_idx = l0_index(vaddr);
-
-        // UART 诊断: 开始遍历 L0
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         let l1 = match self.ensure_next_level(l0, l0_idx) {
             Ok(t) => t,
@@ -522,10 +502,6 @@ impl Aarch64Vmm {
         };
         let l1_idx = l1_index(vaddr);
 
-        // UART 诊断: L1 遍历完成
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _); }
-
         let l2 = match self.ensure_next_level(l1, l1_idx) {
             Ok(t) => t,
             Err(_) => {
@@ -534,10 +510,6 @@ impl Aarch64Vmm {
             }
         };
         let l2_idx = l2_index(vaddr);
-
-        // UART 诊断: L2 遍历完成
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _); }
 
         let l3 = match self.ensure_next_level(l2, l2_idx) {
             Ok(t) => t,
@@ -548,10 +520,6 @@ impl Aarch64Vmm {
         };
         let l3_idx = l3_index(vaddr);
 
-        // UART 诊断: L3 遍历完成
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'5'; str w21, [x20]", out("x20") _, out("x21") _); }
-
         let desc = page_flags_to_descriptor(raw_flags, paddr);
         // SAFETY: l3 是 ensure_next_level 返回的 L3 页表基地址；
         // l3_idx < 512；write_volatile 写硬件页表。
@@ -559,29 +527,13 @@ impl Aarch64Vmm {
             ptr::write_volatile(l3.add(l3_idx), desc);
         }
 
-        // UART 诊断: 页描述符写入完成
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'6'; str w21, [x20]", out("x20") _, out("x21") _); }
-
         // SAFETY: dsb ishst / tlbi vaae1is / dsb ish / isb 是 aarch64 标准
         // TLB 失效序列；ARM 架构要求 tlbi vaae1is 的操作数是虚拟地址右移12位（页帧号）。
         unsafe {
             core::arch::asm!("dsb ishst", "tlbi vaae1is, {}", "dsb ish", "isb", in(reg) vaddr >> 12);
         }
 
-        // UART 诊断: TLB 失效完成
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'P'; str w21, [x20]; mov w21, #'7'; str w21, [x20]", out("x20") _, out("x21") _); }
-
-        // UART 诊断: release_lock 之前
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'L'; str w21, [x20]; mov w21, #'0'; str w21, [x20]", out("x20") _, out("x21") _); }
-
         self.release_lock(&_lock_flags);
-
-        // UART 诊断: release_lock 之后
-        #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'L'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
     }
 
     /// Ensure the next-level page table exists at `table[idx]`.
@@ -594,25 +546,13 @@ impl Aarch64Vmm {
                 let paddr = entry & 0x0000_FFFF_FFFF_F000;
                 Ok(phys_to_virt(paddr) as *mut u64)
             } else {
-                // UART 诊断: 开始分配页表
-                #[cfg(target_arch = "aarch64")]
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'L'; str w21, [x20]", out("x20") _, out("x21") _);
-
                 let new_paddr = self
                     .alloc_table()
                     .ok_or("[VMM] Out of physical memory for page table")?;
 
-                // UART 诊断: 页表分配成功
-                #[cfg(target_arch = "aarch64")]
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'R'; str w21, [x20]", out("x20") _, out("x21") _);
-
                 let desc = table_descriptor(new_paddr);
                 ptr::write_volatile(table.add(idx), desc);
                 core::arch::asm!("dsb ishst");
-
-                // UART 诊断: 描述符写入完成
-                #[cfg(target_arch = "aarch64")]
-                core::arch::asm!("mov x20, #0x09000000; mov w21, #'A'; str w21, [x20]; mov w21, #'W'; str w22, [x20]", out("x20") _, out("x21") _);
 
                 Ok(phys_to_virt(new_paddr) as *mut u64)
             }

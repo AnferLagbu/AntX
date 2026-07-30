@@ -6,7 +6,22 @@
 use core::ptr::{read_volatile, write_volatile};
 
 /// PL011 寄存器基地址 (QEMU virt)
-pub const PL011_BASE: u64 = 0x09000000;
+///
+/// 启动阶段使用物理地址 0x0900_0000 (identity mapping),
+/// 用户态初始化后切换为 TTBR1 高半区地址 (0xFFFF_0000_0900_0000).
+/// 高半区地址确保在 TTBR0_EL1 切换到用户页表后仍可访问。
+pub static PL011_BASE: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0x0900_0000);
+
+/// 切换到 TTBR1 高半区地址 (在用户态初始化前调用)
+pub fn switch_to_high_half() {
+    PL011_BASE.store(0xFFFF_0000_0900_0000, core::sync::atomic::Ordering::Release);
+}
+
+#[inline(always)]
+pub fn base() -> u64 {
+    PL011_BASE.load(core::sync::atomic::Ordering::Acquire)
+}
 
 /// PL011 寄存器偏移
 const UARTDR: u64 = 0x000; // Data Register
@@ -36,13 +51,13 @@ const UARTLCR_8N1: u32 = 0b11 << 5;
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn read(offset: u64) -> u32 { unsafe {
-    read_volatile((PL011_BASE + offset) as *const u32)
+    read_volatile((base() + offset) as *const u32)
 }}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn write(offset: u64, val: u32) { unsafe {
-    write_volatile((PL011_BASE + offset) as *mut u32, val);
+    write_volatile((base() + offset) as *mut u32, val);
 }}
 
 // ============================================================================

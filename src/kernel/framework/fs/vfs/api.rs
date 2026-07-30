@@ -141,8 +141,6 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
             crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #2 acquired");
             // SAFETY: guard 借用 &'static Mutex<RamFsData>, &*guard 生命周期为 'static
             let fs_ref = unsafe { &*(&*guard as *const RamFsData) };
-            #[cfg(target_arch = "aarch64")]
-            unsafe { core::arch::asm!("mov x20, #0x09000000; mov w21, #'V'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _); }
             crate::klog_boot_info!("[VFS] vfs_mount_internal: RamFsData ref created");
             fs_ref
         }
@@ -154,7 +152,8 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
         _ => return VFS_MANAGER.mount(path, fs_name).as_i32(),
     };
     crate::klog_boot_info!("[VFS] vfs_mount_internal: calling VFS_MANAGER.mount_with_fs");
-    VFS_MANAGER.mount_with_fs(path, fs_name, fs).as_i32()
+    let result = VFS_MANAGER.mount_with_fs(path, fs_name, fs).as_i32();
+    result
 }
 
 #[unsafe(no_mangle)]

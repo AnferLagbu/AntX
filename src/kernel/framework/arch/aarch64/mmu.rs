@@ -195,14 +195,27 @@ unsafe fn init_kernel_ttbr1() { unsafe {
     TTBR1_L0.0[511] = (TTBR1_L1.0.as_ptr() as u64) | PT_TYPE_TABLE;
 
     // L1 块映射 (每项 1GB, 4KB 粒度):
-    // L1[0]: VA 0xFFFF_0000_0000_0000 → PA 0x00000000 (0-1GB)
+    // L1[0]: VA 0xFFFF_0000_0000_0000 → 指向 L2_DEVICE 表 (2MB 粒度, Device memory)
+    //   QEMU virt 0-1GB 全为 MMIO (GIC, UART 等), 无 DRAM,
+    //   必须以 Device-nGnRnE 属性访问, 否则 Normal cacheable 会导致数据异常/挂死.
     // L1[1]: VA 0xFFFF_0000_4000_0000 → PA 0x40000000 (1-2GB, kernel @ 0x40080000)
-    TTBR1_L1.0[0] = 0x00000000 | PT_TYPE_BLOCK | PT_AF | PT_ATTR_NORMAL | PT_AP_EL1_RW;
+    TTBR1_L1.0[0] = (L2_DEVICE.0.as_ptr() as u64) | PT_TYPE_TABLE;
     TTBR1_L1.0[1] = 0x40000000 | PT_TYPE_BLOCK | PT_AF | PT_ATTR_NORMAL | PT_AP_EL1_RW;
 
     // 设置 TTBR1_EL1
-    set_ttbr1(TTBR1_L0.0.as_ptr() as u64);
+    // T1SZ=16 时, 硬件从 level 1 开始遍历 (跳过 level 0).
+    // 因此 TTBR1_EL1 必须直接指向 L1 表 (TTBR1_L1), 而非 L0 表.
+    set_ttbr1(TTBR1_L1.0.as_ptr() as u64);
+
+    // 刷新 TLB: MMU 启用后到 TTBR1_EL1 设置前的窗口期,
+    // CPU 可能投机翻译 TTBR1 地址 (TTBR1_EL1 旧值为 0),
+    // 缓存翻译失败条目。后续访问 TTBR1 地址会命中这些过期条目
+    // 导致 Translation fault。
+    // DSB 在 TLBI 前确保页表写入对 MMU walker 可见.
+    core::arch::asm!("dsb sy", "tlbi vmalle1", "dsb sy", "isb");
 }}
+
+
 
 /// 分配用户空间页表 (返回 TTBR0 值)。
 ///

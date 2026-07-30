@@ -63,7 +63,7 @@ pub fn char_init() {
     crate::kernel::framework::chitin::chitin_register_driver_with_ops(
         "pl011",
         crate::kernel::framework::chitin::ChitinProto::Char,
-        Some(crate::kernel::framework::arch::uart::PL011_BASE),
+        Some(crate::kernel::framework::arch::uart::base()),
         None,
         alloc::boxed::Box::new(pl011::Pl011Driver::new()),
         ChitinOps::Char(&pl011::PL011_CHAR_OPS),

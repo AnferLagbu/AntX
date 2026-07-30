@@ -145,11 +145,6 @@ handle_el1h_sync:
 
 // -------- EL1h IRQ handler --------
 handle_el1h_irq:
-    // 诊断: UART 输出 'T' 标记 IRQ 入口
-    mov  x20, #0x09000000
-    mov  w21, #'T'
-    str  w21, [x20]
-
     sub  sp, sp, #(8 * 35)
     stp  x0, x1, [sp, #(8 * 0)]
     stp  x2, x3, [sp, #(8 * 2)]
@@ -198,27 +193,10 @@ handle_el1h_irq:
     ldp  x26, x27, [sp, #(8 * 26)]
     ldp  x28, x29, [sp, #(8 * 28)]
     add  sp, sp, #(8 * 35)
-
-    // 诊断: UART 输出 'U' 标记 IRQ 返回
-    mov  x20, #0x09000000
-    mov  w21, #'U'
-    str  w21, [x20]
-
     eret
 
 // -------- EL0 sync handler (SVC / 数据异常) --------
 handle_el0_sync:
-    // 诊断: 直接通过 UART MMIO 输出 'E' '0' 标记 EL0 同步异常入口
-    mov  x20, #0x09000000
-    mov  w21, #'E'
-    str  w21, [x20]
-    mov  w21, #'0'
-    str  w21, [x20]
-    mov  w21, #'\r'
-    str  w21, [x20]
-    mov  w21, #'\n'
-    str  w21, [x20]
-
     sub  sp, sp, #(8 * 35)
     stp  x0, x1, [sp, #(8 * 0)]
     stp  x2, x3, [sp, #(8 * 2)]
@@ -341,17 +319,6 @@ handle_svc:
 
 // -------- EL0 IRQ handler --------
 handle_el0_irq:
-    // 诊断: 直接通过 UART MMIO 输出 'I' '0' 标记 EL0 IRQ 入口
-    mov  x20, #0x09000000
-    mov  w21, #'I'
-    str  w21, [x20]
-    mov  w21, #'0'
-    str  w21, [x20]
-    mov  w21, #'\r'
-    str  w21, [x20]
-    mov  w21, #'\n'
-    str  w21, [x20]
-
     sub  sp, sp, #(8 * 35)
     stp  x0, x1, [sp, #(8 * 0)]
     stp  x2, x3, [sp, #(8 * 2)]

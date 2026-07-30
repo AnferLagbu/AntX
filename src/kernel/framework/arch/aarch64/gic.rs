@@ -12,11 +12,14 @@ use core::ptr::{read_volatile, write_volatile};
 // ============================================================================
 
 /// Distributor 基地址 (每个CPU共享)
-const GICD_BASE: u64 = 0x08000000;
+///
+/// 使用 TTBR1_EL1 高半区地址 (0xFFFF_0000_0000_0000 + PA),
+/// 确保在 TTBR0_EL1 切换到用户页表后仍可访问。
+const GICD_BASE: u64 = 0xFFFF_0000_0800_0000;
 /// Redistributor RD frame 基地址 (每个CPU独立)
-const GICR_BASE: u64 = 0x080A_0000;
+const GICR_BASE: u64 = 0xFFFF_0000_080A_0000;
 /// Redistributor SGI frame 基地址 (SGI/PPI registers)
-const GICR_SGI_BASE: u64 = 0x080B_0000;
+const GICR_SGI_BASE: u64 = 0xFFFF_0000_080B_0000;
 
 /// GICD 寄存器偏移
 const GICD_CTLR: u64 = 0x0000; // Distributor Control
@@ -169,31 +172,20 @@ pub unsafe fn init_distributor() { unsafe {
 ///
 /// 调用前需确保 Distributor 已初始化，GICR_BASE 已映射。
 pub unsafe fn init_redistributor() { unsafe {
-    // UART 诊断: 进入 init_redistributor
-    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'1'; str w21, [x20]", out("x20") _, out("x21") _);
-
     // 1. 唤醒 redistributor
     let waker = gicr_read(GICR_WAKER);
-    // UART 诊断: 读取 waker 成功
-    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'2'; str w21, [x20]", out("x20") _, out("x21") _);
 
     gicr_write(GICR_WAKER, waker & !(1 << 1)); // 清除 ProcessorSleep (bit 1)
-    // UART 诊断: 写入 waker 成功
-    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'3'; str w21, [x20]", out("x20") _, out("x21") _);
 
     // 等待 ChildrenAsleep == 0
     let mut wait_count = 0;
     while gicr_read(GICR_WAKER) & (1 << 2) != 0 {
         wait_count += 1;
         if wait_count > 1000000 {
-            // UART 诊断: 等待超时
-            core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'X'; str w21, [x20]", out("x20") _, out("x21") _);
             break;
         }
         core::hint::spin_loop();
     }
-    // UART 诊断: 等待完成
-    core::arch::asm!("mov x20, #0x09000000; mov w21, #'G'; str w21, [x20]; mov w21, #'4'; str w21, [x20]", out("x20") _, out("x21") _);
 
     // 2. 设置 PPI 优先级 (SGI frame)
     gicr_sgi_write(GICR_IPRIORITYR, 0xA0A0_A0A0);
