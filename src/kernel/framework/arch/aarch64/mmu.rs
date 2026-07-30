@@ -71,17 +71,9 @@ static mut L2_DEVICE: AlignedPageTable = AlignedPageTable([0; 512]);
 // MMU 初始化
 // ============================================================================
 
-/// TTBR1 内核 L0 页表 (独立于 identity mapping)
-///
-/// # Safety 不变量
-///
-/// - **写入时机**: 仅在 `init()` 函数中写入 (启动最早期, MMU 启用前)
-/// - **运行时**: MMU 启用后硬件直接使用, 软件不可写入
-/// - **并发**: 写入时系统单线程 (AP 未启动), 无竞争
-/// - **对齐**: 4KB 对齐 (ARM MMU 硬件要求)
-static mut TTBR1_L0: AlignedPageTable = AlignedPageTable([0; 512]);
-
 /// TTBR1 内核 L1 页表 (覆盖 0xFFFF_0000_0000_0000 - 0xFFFF_0000_8000_0000, 2GB)
+///
+/// T1SZ=16 时硬件从 level 1 开始遍历，TTBR1_EL1 直接指向此表，无需 L0。
 ///
 /// # Safety 不变量
 ///
@@ -178,21 +170,17 @@ pub unsafe fn init() { unsafe {
 
 /// 初始化 TTBR1_EL1 内核页表。
 ///
-/// 将 0xFFFF_0000_0000_0000 - 0xFFFF_0000_4000_0000 (1GB) 映射到
-/// 物理地址 0x0000_0000 - 0x4000_0000 (1GB)。
+/// 将 0xFFFF_0000_0000_0000 - 0xFFFF_0000_8000_0000 (2GB) 映射到
+/// 物理地址 0x0000_0000 - 0x8000_0000 (2GB)。
 ///
-/// TTBR1 页表层级:
-///   TTBR1_L0[511] → TTBR1_L1
-///   TTBR1_L1[i]  → 2MB 块映射 (i * 2MB → i * 2MB 物理)
+/// T1SZ=16 时硬件从 level 1 开始遍历，TTBR1_EL1 直接指向 TTBR1_L1。
+/// 页表层级:
+///   TTBR1_L1[0] → L2_DEVICE (0-1GB, Device memory, 2MB 粒度)
+///   TTBR1_L1[1] → 1GB 块 (1-2GB, Normal memory)
 #[allow(clippy::identity_op)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn init_kernel_ttbr1() { unsafe {
-    ptr::write_bytes(TTBR1_L0.0.as_mut_ptr(), 0, 512);
     ptr::write_bytes(TTBR1_L1.0.as_mut_ptr(), 0, 512);
-
-    // TTBR1 覆盖高地址: VA[47:39] 索引 L0
-    // 0xFFFF_0000_0000_0000: L0 index = VA[47:39] = 0b111111111 = 511
-    TTBR1_L0.0[511] = (TTBR1_L1.0.as_ptr() as u64) | PT_TYPE_TABLE;
 
     // L1 块映射 (每项 1GB, 4KB 粒度):
     // L1[0]: VA 0xFFFF_0000_0000_0000 → 指向 L2_DEVICE 表 (2MB 粒度, Device memory)
@@ -204,7 +192,7 @@ unsafe fn init_kernel_ttbr1() { unsafe {
 
     // 设置 TTBR1_EL1
     // T1SZ=16 时, 硬件从 level 1 开始遍历 (跳过 level 0).
-    // 因此 TTBR1_EL1 必须直接指向 L1 表 (TTBR1_L1), 而非 L0 表.
+    // 因此 TTBR1_EL1 必须直接指向 L1 表 (TTBR1_L1).
     set_ttbr1(TTBR1_L1.0.as_ptr() as u64);
 
     // 刷新 TLB: MMU 启用后到 TTBR1_EL1 设置前的窗口期,

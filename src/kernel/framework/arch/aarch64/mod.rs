@@ -244,7 +244,7 @@ impl MmuArch for Aarch64 {
         let spsr: u64 = 0x3C0;
 
         // SAFETY: 进入 EL0 标准序列:
-        // 1. TTBR1_EL1 保持 mmu::init 设置的 TTBR1_L0 表不动 (含高半区映射),
+        // 1. TTBR1_EL1 保持 mmu::init 设置的 TTBR1_L1 表不动 (含高半区映射),
         //    用于 VBAR_EL1 高地址访问异常向量表. KPTI 激活后由异常入口
         //    汇编切换 TTBR1_EL1.
         // 2. 设置 TTBR0_EL1 到用户页表 (user_cr3)

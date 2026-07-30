@@ -247,7 +247,7 @@ impl Aarch64Vmm {
             ptr::write_volatile(kernel_l0_ptr, current_l0);
         }
 
-        // 读取当前 TTBR1_EL1 (由 mmu::init 设置 TTBR1_L0 表, 含高半区映射).
+        // 读取当前 TTBR1_EL1 (由 mmu::init 设置 TTBR1_L1 表, 含高半区映射).
         // 不覆盖 TTBR1_EL1 — 高半区映射用于 VBAR_EL1 高地址访问异常向量表.
         let current_ttbr1: u64;
         // SAFETY: mrs ttbr1_el1 是系统寄存器读取指令，无副作用.
