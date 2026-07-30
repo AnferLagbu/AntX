@@ -94,3 +94,12 @@ boot_disk*
 # ===== 工具锁文件 =====
 # 防止误提交的工具锁文件 (如 miri-tests/gitee..lock)
 *..lock
+
+# ===== GDB 临时调试脚本 =====
+# 一次性调试脚本 (如 .gdb_debug_gic, .gdb_pt_check)
+.gdb_debug_*
+.gdb_pt_*
+
+# ===== 构建缓存 =====
+# 构建架构缓存文件
+.build-arch
