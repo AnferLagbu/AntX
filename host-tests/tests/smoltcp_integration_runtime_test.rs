@@ -210,8 +210,8 @@ fn test_socket_create_fd_caller_uses_mut() {
         .expect("应存在 socket 函数");
     let body = &socket_rs[idx..idx + 300];
     assert!(
-        body.contains("let mut s = net_stack().lock()"),
-        "socket() 调用 socket_create_fd 需要 let mut s = net_stack().lock()"
+        body.contains("net_stack().ok_or(SocketError::NotReady)?"),
+        "socket() 应处理 net_stack() 返回的 Option"
     );
 }
 
@@ -223,8 +223,8 @@ fn test_close_fd_caller_uses_mut() {
         .expect("应存在 close 函数");
     let body = &socket_rs[idx..idx + 300];
     assert!(
-        body.contains("let mut s = net_stack().lock()"),
-        "close() 调用 close_fd 需要 let mut s = net_stack().lock()"
+        body.contains("net_stack().ok_or(SocketError::NotReady)?"),
+        "close() 应处理 net_stack() 返回的 Option"
     );
 }
 

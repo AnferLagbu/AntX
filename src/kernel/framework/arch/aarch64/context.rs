@@ -3,7 +3,7 @@
 //! AAPCS64 callee-saved 寄存器: x19-x30, SP
 //! 系统寄存器: TTBR0_EL1, SPSR_EL1, ELR_EL1
 //!
-//! 上下文布局 (复用 ProcessContext 偏移, 17×8=136 bytes):
+//! 上下文布局 (复用 ProcessContext 偏移, 17×8 + 64×8 = 648 bytes):
 //!   +0x00: x19       +0x40: x24       +0x80: x29 (FP)
 //!   +0x08: x20       +0x48: x25       +0x88: lr  (x30)
 //!   +0x10: x21       +0x50: x26       +0x90: sp
@@ -12,6 +12,7 @@
 //!   +0x28: rbx(未用/0)               +0xA8: elr_el1
 //!   +0x30: rbp(未用/0)               +0xB0: ss(未用/0)
 //!   +0x38: rax(未用/0)
+//!   +0xD8: fpu_state[64] (512 bytes, Phase 1 预留)
 
 use core::arch::global_asm;
 
@@ -64,6 +65,32 @@ context_switch_asm:
     // ss field (128): write 0
     str  xzr, [x0, #128]
 
+    // 保存 FPU/SIMD 状态 (V0-V31, FPCR, FPSR)
+    // fpu_state 在 offset 144 (18 * 8 = 144 bytes)
+    // 需要 16 字节对齐，ProcessContext 已添加 _fpu_pad 保证对齐
+    add  x2, x0, #144
+    stp  q0, q1, [x2, #0]
+    stp  q2, q3, [x2, #32]
+    stp  q4, q5, [x2, #64]
+    stp  q6, q7, [x2, #96]
+    stp  q8, q9, [x2, #128]
+    stp  q10, q11, [x2, #160]
+    stp  q12, q13, [x2, #192]
+    stp  q14, q15, [x2, #224]
+    stp  q16, q17, [x2, #256]
+    stp  q18, q19, [x2, #288]
+    stp  q20, q21, [x2, #320]
+    stp  q22, q23, [x2, #352]
+    stp  q24, q25, [x2, #384]
+    stp  q26, q27, [x2, #416]
+    stp  q28, q29, [x2, #448]
+    stp  q30, q31, [x2, #480]
+    // FPCR 和 FPSR 保存在 fpu_state[62] 和 fpu_state[63] (offset 144+496=640, 144+504=648)
+    mrs  x2, fpcr
+    str  x2, [x0, #640]
+    mrs  x2, fpsr
+    str  x2, [x0, #648]
+
     // === 从 [x1] 恢复下一个上下文 ===
     ldr  x19, [x1, #0]
     ldr  x20, [x1, #8]
@@ -90,6 +117,30 @@ context_switch_asm:
     msr  spsr_el1, x2
     ldr  x2, [x1, #120]
     msr  elr_el1, x2
+
+    // 恢复 FPU/SIMD 状态 (V0-V31, FPCR, FPSR)
+    add  x2, x1, #144
+    ldp  q0, q1, [x2, #0]
+    ldp  q2, q3, [x2, #32]
+    ldp  q4, q5, [x2, #64]
+    ldp  q6, q7, [x2, #96]
+    ldp  q8, q9, [x2, #128]
+    ldp  q10, q11, [x2, #160]
+    ldp  q12, q13, [x2, #192]
+    ldp  q14, q15, [x2, #224]
+    ldp  q16, q17, [x2, #256]
+    ldp  q18, q19, [x2, #288]
+    ldp  q20, q21, [x2, #320]
+    ldp  q22, q23, [x2, #352]
+    ldp  q24, q25, [x2, #384]
+    ldp  q26, q27, [x2, #416]
+    ldp  q28, q29, [x2, #448]
+    ldp  q30, q31, [x2, #480]
+    // FPCR 和 FPSR 从 fpu_state[62] 和 fpu_state[63] 恢复
+    ldr  x2, [x1, #640]
+    msr  fpcr, x2
+    ldr  x2, [x1, #648]
+    msr  fpsr, x2
 
     // eret 恢复 SPSR_EL1 → PSTATE (含 DAIF), 无需显式 msr daif.
     eret

@@ -177,6 +177,20 @@ pub struct ProcessContext {
     pub fs: u64,
     pub gs: u64,
     pub ss: u64,
+    /// 填充字段，确保 fpu_state 16 字节对齐
+    /// fxsave/fxrstor 要求内存地址 16 字节对齐
+    pub _fpu_pad: u64,
+    /// FPU/SSE 状态预留区域 (512 bytes for V0-V31)
+    ///
+    /// Phase 1: 预留空间，不实际保存/恢复
+    /// Phase 2: x86_64 使用 xsave/xrstor 保存 x87 + XMM
+    /// Phase 3: aarch64 使用 stp/ldp 保存 V0-V31 + FPCR + FPSR
+    /// Phase 4: 实现 lazy FPU 切换 (CR0.TS 位优化)
+    pub fpu_state: [u64; 64],
+    /// aarch64 浮点控制寄存器 (Floating-point Control Register)
+    pub fpcr: u64,
+    /// aarch64 浮点状态寄存器 (Floating-point Status Register)
+    pub fpsr: u64,
 }
 
 impl ProcessContext {
@@ -199,6 +213,10 @@ impl ProcessContext {
             fs: 0,
             gs: 0,
             ss: 0,
+            _fpu_pad: 0,
+            fpu_state: [0; 64],
+            fpcr: 0,
+            fpsr: 0,
         }
     }
 

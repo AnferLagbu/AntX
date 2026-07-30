@@ -96,7 +96,7 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
                     let mut ramfs = RAMFS_DATA.lock();
                     crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #1 acquired");
                     if ramfs.mount(path) != 0 {
-                        return -1;
+                        return KernelError::Io.as_i32();
                     }
                     crate::klog_boot_info!("[VFS] vfs_mount_internal: ramfs.mount() done");
                 } // 显式 drop ramfs 释放锁
@@ -125,7 +125,7 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
             // overlayfs 挂载由 OverlayFsFileSystem::fs_mount 处理
         }
 
-        FsType::Unknown => return -1,
+        FsType::Unknown => return KernelError::NotSupported.as_i32(),
     }
 
     // E6-4: 带 trait object 挂载
@@ -1205,7 +1205,10 @@ pub fn vfs_set_cwd(path: *const u8) {
 
 #[unsafe(no_mangle)]
 pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
-    let whence = VfsSeekWhence::from_u32(whence);
+    let whence = match VfsSeekWhence::from_u32(whence) {
+        Some(w) => w,
+        None => return KernelError::InvalidArgument.as_i32(),
+    };
 
     // Plan B: 通过 OpenFile 的 Inode trait 执行
     let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {

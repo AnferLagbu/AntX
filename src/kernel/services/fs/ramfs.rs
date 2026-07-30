@@ -353,7 +353,7 @@ impl SafeRamFs {
             Some(s) => s,
             None => return Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
         };
-        if VfsFileType::from_u8(st.file_type) != VfsFileType::Dir {
+        if VfsFileType::from_u8(st.file_type) != Some(VfsFileType::Dir) {
             return Err(FsError::Kernel(crate::kernel::services::error::KernelError::NotADirectory));
         }
 

@@ -329,18 +329,7 @@ impl FileSystem for TmpFsFileSystem {
         Ok(true)
     }
 
-    fn fs_symlink(&self, _target: &str, _link_path: &str, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::NotSupported)
-    }
-
-    fn fs_readlink(&self, _rel_path: &str, _buf: &mut [u8]) -> KernelResult<usize> {
-        Err(KernelError::NotSupported)
-    }
-
-    fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::NotSupported)
-    }
-
+    // L4 重构: 扩展方法实现 (override trait 默认实现)
     fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<Arc<dyn Inode>> {
         Some(Arc::new(TmpFsInode::new(inode_id, mount_idx)))
     }

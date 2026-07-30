@@ -513,7 +513,11 @@ impl Drop for Process {
 
 pub struct ProcessTable {
     processes: Mutex<[Option<NonNull<Process>>; MAX_PROCESSES]>,
-    next_pid: AtomicU32,
+    /// PID 位图: true = 已分配, false = 空闲
+    /// PID 0 (idle) 和 PID 1 (init) 在初始化时标记为已用
+    pid_bitmap: Mutex<[bool; MAX_PROCESSES]>,
+    /// 下次搜索起点 (环形扫描, 避免 O(n) 从头扫描)
+    next_search: Mutex<u32>,
 }
 
 // SAFETY: ProcessTable 始终通过静态 PROCESS_TABLE 访问.
@@ -528,16 +532,45 @@ impl ProcessTable {
     pub const fn new() -> Self {
         Self {
             processes: Mutex::new([None; MAX_PROCESSES]),
-            next_pid: AtomicU32::new(1),
+            pid_bitmap: Mutex::new([false; MAX_PROCESSES]),
+            next_search: Mutex::new(2), // 从 PID 2 开始搜索 (0=idle, 1=init 保留)
         }
     }
 
+    /// 分配一个新的 PID (支持回收)
+    ///
+    /// 从 `next_search` 位置开始环形扫描位图，找到第一个空闲 PID。
+    /// 如果位图已满，返回 `None`。
     pub fn allocate_pid(&self) -> Option<Pid> {
-        let pid = self.next_pid.fetch_add(1, Ordering::SeqCst);
-        if pid as usize >= MAX_PROCESSES {
-            None
-        } else {
-            Some(pid)
+        let mut bitmap = self.pid_bitmap.lock();
+        let mut search_idx = self.next_search.lock();
+
+        let start = *search_idx as usize;
+        let max = MAX_PROCESSES;
+
+        // 环形扫描: 从 start 到 max, 再从 0 到 start
+        for offset in 0..max {
+            let idx = (start + offset) % max;
+            if !bitmap[idx] {
+                bitmap[idx] = true;
+                // 更新下次搜索起点 (环形递增)
+                *search_idx = ((idx + 1) % max) as u32;
+                return Some(idx as u32);
+            }
+        }
+
+        // 位图已满
+        None
+    }
+
+    /// 回收 PID (在进程被释放时调用)
+    ///
+    /// 将 PID 对应的位图位清零，使其可被重新分配。
+    pub fn free_pid(&self, pid: Pid) {
+        let mut bitmap = self.pid_bitmap.lock();
+        let idx = pid as usize;
+        if idx < MAX_PROCESSES && bitmap[idx] {
+            bitmap[idx] = false;
         }
     }
 
@@ -634,6 +667,8 @@ impl ProcessTable {
                         let boxed = Box::from_raw(nn.as_ptr());
                         drop(boxed);
                     }
+                    // M5: 回收 PID
+                    self.free_pid(pid);
                 }
             }
             None => {}
@@ -674,6 +709,8 @@ impl ProcessTable {
                         let boxed = Box::from_raw(nn.as_ptr());
                         drop(boxed);
                     }
+                    // M5: 回收 PID
+                    self.free_pid(pid);
                 }
             }
             None => {}
@@ -699,7 +736,8 @@ pub static PROCESS_TABLE: ProcessTable = ProcessTable::new();
 
 #[derive(Clone, Copy)]
 struct ProcSnapshot {
-    next_pid: u32,
+    pid_bitmap: [bool; MAX_PROCESSES],
+    next_search: u32,
     slots: [Option<NonNull<Process>>; MAX_PROCESSES],
 }
 
@@ -715,7 +753,8 @@ static PROC_SNAPSHOT: Mutex<Option<ProcSnapshot>> = Mutex::new(None);
 pub fn proc_barrier_capture() {
     let table = &PROCESS_TABLE;
     *PROC_SNAPSHOT.lock() = Some(ProcSnapshot {
-        next_pid: table.next_pid.load(Ordering::SeqCst),
+        pid_bitmap: *table.pid_bitmap.lock(),
+        next_search: *table.next_search.lock(),
         slots: *table.processes.lock(),
     });
 }
@@ -723,7 +762,8 @@ pub fn proc_barrier_capture() {
 pub fn proc_barrier_rollback() -> bool {
     if let Some(ref snap) = *PROC_SNAPSHOT.lock() {
         let table = &PROCESS_TABLE;
-        table.next_pid.store(snap.next_pid, Ordering::SeqCst);
+        *table.pid_bitmap.lock() = snap.pid_bitmap;
+        *table.next_search.lock() = snap.next_search;
         *table.processes.lock() = snap.slots;
     }
     true

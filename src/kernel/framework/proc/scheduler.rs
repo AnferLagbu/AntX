@@ -22,7 +22,7 @@
 
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::{IrqSpinLock as Mutex, OnceLock};
 
 use super::cfs::{
     calc_vruntime_delta, cfs_should_preempt, nice_to_weight, CfsRunQueue,
@@ -47,15 +47,6 @@ pub(crate) mod raw {
             fn update_current_process_ptr(ptr: u64);
         }
         update_current_process_ptr(ptr);
-    }}
-
-    /// 从 `Option` 守护对象得到 `&'static PerCpuSched`.
-    ///
-    /// # Safety
-    /// - `guard` 必须为 `Some` 且指针在 `'static` 内保持有效
-    #[inline(always)]
-    pub unsafe fn per_cpu_from_option<T>(guard: &Option<T>) -> &T { unsafe {
-        guard.as_ref().unwrap_unchecked()
     }}
 }
 
@@ -158,24 +149,25 @@ struct PerCpuSched {
 
 // 所有字段 (Mutex<VecDeque<Pid>>, Mutex<CfsRunQueue>, Mutex<DlRunQueue>, Atomic*) 自动实现 Send + Sync.
 
-static PER_CPU_SCHED: [Mutex<Option<PerCpuSched>>; crate::kernel::framework::config::MAX_CPUS] =
-    [const { Mutex::new(None) }; crate::kernel::framework::config::MAX_CPUS];
+static PER_CPU_SCHED: [OnceLock<PerCpuSched>; crate::kernel::framework::config::MAX_CPUS] =
+    [const { OnceLock::new() }; crate::kernel::framework::config::MAX_CPUS];
 
 pub fn init_per_cpu_sched(cpu_id: u32) {
     let idx = (cpu_id as usize) % crate::kernel::framework::config::MAX_CPUS;
-    let mut guard = PER_CPU_SCHED[idx].lock();
-    if guard.is_some() {
-        return;
-    }
-    guard.replace(PerCpuSched {
-        rt_queue: Mutex::new(VecDeque::new()),
-        cfs_rq: Mutex::new(CfsRunQueue::new()),
-        dl_rq: Mutex::new(DlRunQueue::new()),
-        current: AtomicU32::new(0),
-        need_reschedule: AtomicBool::new(false),
-        rt_running: AtomicBool::new(false),
-        dl_running: AtomicBool::new(false),
-        fifo_watchdog: AtomicU64::new(0),
+    PER_CPU_SCHED[idx].get_or_init(|slot| {
+        // SAFETY: OnceLock::get_or_init 保证闭包仅执行一次, slot 未初始化.
+        unsafe {
+            slot.write(PerCpuSched {
+                rt_queue: Mutex::new(VecDeque::new()),
+                cfs_rq: Mutex::new(CfsRunQueue::new()),
+                dl_rq: Mutex::new(DlRunQueue::new()),
+                current: AtomicU32::new(0),
+                need_reschedule: AtomicBool::new(false),
+                rt_running: AtomicBool::new(false),
+                dl_running: AtomicBool::new(false),
+                fifo_watchdog: AtomicU64::new(0),
+            });
+        }
     });
 }
 
@@ -183,38 +175,19 @@ pub fn init_per_cpu_sched(cpu_id: u32) {
 fn per_cpu() -> &'static PerCpuSched {
     let cpu = crate::kernel::framework::smp::get_current_cpu();
     let idx = (cpu as usize) % crate::kernel::framework::config::MAX_CPUS;
-    {
-        let guard = PER_CPU_SCHED[idx].lock();
-        if guard.is_none() {
-            drop(guard);
-            init_per_cpu_sched(cpu);
-        }
-    }
-    let guard = PER_CPU_SCHED[idx].lock();
-    // SAFETY: init_per_cpu_sched 之后 guard 必为 Some; 指针在 PER_CPU_SCHED
-    // 静态生命周期内保持有效.
-    unsafe {
-        let per_cpu = raw::per_cpu_from_option(&guard);
-        &*(per_cpu as *const PerCpuSched)
-    }
+    // 确保已初始化 (幂等)
+    init_per_cpu_sched(cpu);
+    // SAFETY: init_per_cpu_sched 后 OnceLock 已初始化, get_or_init 返回 &'static 引用.
+    PER_CPU_SCHED[idx].get_or_init(|_| unreachable!())
 }
 
 #[inline]
 fn per_cpu_for(cpu_id: u32) -> &'static PerCpuSched {
     let idx = (cpu_id as usize) % crate::kernel::framework::config::MAX_CPUS;
-    {
-        let guard = PER_CPU_SCHED[idx].lock();
-        if guard.is_none() {
-            drop(guard);
-            init_per_cpu_sched(cpu_id);
-        }
-    }
-    let guard = PER_CPU_SCHED[idx].lock();
-    // SAFETY: same as per_cpu()
-    unsafe {
-        let per_cpu = raw::per_cpu_from_option(&guard);
-        &*(per_cpu as *const PerCpuSched)
-    }
+    // 确保已初始化 (幂等)
+    init_per_cpu_sched(cpu_id);
+    // SAFETY: init_per_cpu_sched 后 OnceLock 已初始化.
+    PER_CPU_SCHED[idx].get_or_init(|_| unreachable!())
 }
 
 pub struct Scheduler {
@@ -589,10 +562,10 @@ impl Scheduler {
             super::user_proc::USER_PROC_MANAGER.set_current(Some(user_proc));
             // 更新 per-CPU 用户页表 CR3, 使 syscall/中断返回用户态时
             // 从 [gs:USER_PML4_OFF] 读取到正确的进程用户页表.
-            // SAFETY: user_proc 来自 PROCESS_TABLE, cr3 字段有效;
+            // SAFETY: user_proc 来自 PROCESS_TABLE, 通过 process() 访问权威 Process;
             // 当前在调度器持锁上下文, 独占访问 per-CPU 数据.
             unsafe {
-                let user_cr3 = (*user_proc).cr3.load(Ordering::SeqCst);
+                let user_cr3 = (*user_proc).process().cr3.load(Ordering::SeqCst);
                 #[cfg(target_arch = "x86_64")]
                 crate::kernel::framework::arch::gdt::gdt_set_user_cr3(user_cr3);
                 let _ = user_cr3;
@@ -1025,10 +998,12 @@ impl Scheduler {
                             let old_vr = p.cfs_vruntime.load(Ordering::Acquire);
                             let weight = p.cfs_weight.load(Ordering::Acquire);
                             let delta = calc_vruntime_delta(weight);
-                            let new_vr = old_vr + delta;
+                            // L2 修复: 使用 saturating_add 防止 vruntime 溢出
+                            let new_vr = old_vr.saturating_add(delta);
                             p.cfs_vruntime.store(new_vr, Ordering::Release);
                             let sum = p.cfs_sum_exec_runtime.load(Ordering::Acquire);
-                            p.cfs_sum_exec_runtime.store(sum + 1, Ordering::Release);
+                            // L2 修复: 使用 saturating_add 防止 sum_exec_runtime 溢出
+                            p.cfs_sum_exec_runtime.store(sum.saturating_add(1), Ordering::Release);
                             new_vr
                         })
                         .unwrap_or(0);

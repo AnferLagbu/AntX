@@ -112,18 +112,20 @@ pub(crate) mod raw {
             Self(ptr)
         }
 
-        /// 访问 pid 字段 (读写)
+        /// 访问 pid 字段 (委托到 Process)
         #[inline(always)]
         pub fn pid(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).pid }
+            // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
+            unsafe { (*self.0).process().pid.0 }
         }
 
         #[inline(always)]
         pub fn set_pid(&self, v: u32) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
+            // 注意: Process::pid 是 ProcessId (newtype), 需要通过 ptr::write 更新
             unsafe {
-                (*self.0).pid = v;
+                let proc = (*self.0).process.as_ptr();
+                core::ptr::write(&mut (*proc).pid as *mut _, ProcessId(v));
             }
         }
 
@@ -150,60 +152,63 @@ pub(crate) mod raw {
             }
         }
 
-        /// 访问 pwm/cr3/kernel_stack/user_stack/stack_bottom/state 原子字段
+        /// 访问 pwm (委托到 Process)
         #[inline(always)]
         pub fn load_pwm(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).pwm.load(Ordering::SeqCst) }
+            // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
+            unsafe { (*self.0).process().pwm.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_pwm(&self, v: u64) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
-                (*self.0).pwm.store(v, Ordering::SeqCst);
+                (*self.0).process().pwm.store(v, Ordering::SeqCst);
             }
         }
 
+        /// 访问 cr3 (委托到 Process)
         #[inline(always)]
         pub fn load_cr3(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).cr3.load(Ordering::SeqCst) }
+            // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
+            unsafe { (*self.0).process().cr3.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_cr3(&self, v: u64) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
-                (*self.0).cr3.store(v, Ordering::SeqCst);
+                (*self.0).process().cr3.store(v, Ordering::SeqCst);
             }
         }
 
+        /// 访问 kernel_stack (委托到 Process)
         #[inline(always)]
         pub fn load_kernel_stack(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).kernel_stack.load(Ordering::SeqCst) }
+            // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
+            unsafe { (*self.0).process().kernel_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_kernel_stack(&self, v: u64) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
-                (*self.0).kernel_stack.store(v, Ordering::SeqCst);
+                (*self.0).process().kernel_stack.store(v, Ordering::SeqCst);
             }
         }
 
+        /// 访问 user_stack (委托到 Process)
         #[inline(always)]
         pub fn load_user_stack(&self) -> u64 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).user_stack.load(Ordering::SeqCst) }
+            // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
+            unsafe { (*self.0).process().user_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
         pub fn store_user_stack(&self, v: u64) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
-                (*self.0).user_stack.store(v, Ordering::SeqCst);
+                (*self.0).process().user_stack.store(v, Ordering::SeqCst);
             }
         }
 
@@ -221,19 +226,20 @@ pub(crate) mod raw {
             }
         }
 
+        /// 访问 state (委托到 Process)
         #[inline(always)]
         pub fn store_state(&self, v: u32) {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
-                (*self.0).state.store(v, Ordering::SeqCst);
+                (*self.0).process().state.store(v, Ordering::SeqCst);
             }
         }
 
-        /// 加载进程状态
+        /// 加载进程状态 (委托到 Process)
         #[inline(always)]
         pub fn load_state(&self) -> u32 {
-            // SAFETY: `self` 由调用方保证为有效指针; 只读访问
-            unsafe { (*self.0).state.load(Ordering::SeqCst) }
+            // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
+            unsafe { (*self.0).process().state.load(Ordering::SeqCst) }
         }
 
         /// 检查进程是否在运行状态 (Running = 2)
@@ -650,21 +656,7 @@ pub struct UserProcess {
     /// 构造时强制调用方提供 `Process` 句柄, 杜绝悬垂.
     pub(crate) process: NonNull<Process>,
 
-    // === 共享字段 (与 Process 镜像同步) ===
-    /// `Process::pid.0` 的扁平缓存. 业务访问应走 `self.process().pid`.
-    pub pid: u32,
-    /// `Process::pwm` 镜像. 业务访问应走 `self.process().pwm`.
-    pub pwm: AtomicU64,
-    /// `Process::cr3` 镜像. 业务访问应走 `self.process().cr3`.
-    pub cr3: AtomicU64,
-    /// `Process::kernel_stack` 镜像. 业务访问应走 `self.process().kernel_stack`.
-    pub kernel_stack: AtomicU64,
-    /// `Process::user_stack` 镜像. 业务访问应走 `self.process().user_stack`.
-    pub user_stack: AtomicU64,
-    /// `Process::state` 镜像. 业务访问应走 `self.process().state`.
-    pub state: AtomicU32,
-
-    // === FFI 独占字段 ===
+    // === FFI 独占字段 (用户态特有, 不存在于 Process) ===
     /// asm 跳转入口地址 (由 `enter()` 读取并执行 `jmp entry`).
     pub entry: u64,
     /// 用户栈底虚拟地址, `setup_user_stack()` 据此计算 argv/envp 摆放位置.
@@ -685,49 +677,6 @@ impl UserProcess {
         unsafe { self.process.as_ref() }
     }
 
-    /// 从权威 `Process` 拉取共享字段, 同步到本镜像.
-    ///
-    /// 适用场景: 业务代码修改了 `Process` 字段, 需要刷新本镜像 (例如调度器
-    /// 切换进程时, 将目标进程的 CR3 同步到 UserProcess 以便 enter() 读取).
-    pub fn sync_from_process(&self) {
-        let p = self.process();
-        self.pwm.store(p.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
-        self.cr3.store(p.cr3.load(Ordering::SeqCst), Ordering::SeqCst);
-        self.kernel_stack
-            .store(p.kernel_stack.load(Ordering::SeqCst), Ordering::SeqCst);
-        self.user_stack
-            .store(p.user_stack.load(Ordering::SeqCst), Ordering::SeqCst);
-        self.state.store(p.state.load(Ordering::SeqCst), Ordering::SeqCst);
-    }
-
-    /// 将本镜像的共享字段推送到权威 `Process`.
-    ///
-    /// 适用场景: FFI 桥接层 (如 `user_proc_clone()`) 创建/修改了本镜像, 需
-    /// 要将变更同步到 PROCESS_TABLE, 避免两侧脱节.
-    pub fn sync_to_process(&self) {
-        let p = self.process();
-        p.pwm.store(self.pwm.load(Ordering::SeqCst), Ordering::SeqCst);
-        p.cr3.store(self.cr3.load(Ordering::SeqCst), Ordering::SeqCst);
-        p.kernel_stack
-            .store(self.kernel_stack.load(Ordering::SeqCst), Ordering::SeqCst);
-        p.user_stack
-            .store(self.user_stack.load(Ordering::SeqCst), Ordering::SeqCst);
-        p.state.store(self.state.load(Ordering::SeqCst), Ordering::SeqCst);
-    }
-
-    /// 运行时不变量检查 (调试用).
-    ///
-    /// 校验 INV-USER-PROC-1: 本镜像共享字段与 Process 对应字段一致.
-    /// 不一致则返回 false, 调用方可触发 `sync_from_process()` 修复.
-    pub fn check_sync(&self) -> bool {
-        let p = self.process();
-        self.pid == p.pid.0
-            && self.pwm.load(Ordering::SeqCst) == p.pwm.load(Ordering::SeqCst)
-            && self.cr3.load(Ordering::SeqCst) == p.cr3.load(Ordering::SeqCst)
-            && self.kernel_stack.load(Ordering::SeqCst) == p.kernel_stack.load(Ordering::SeqCst)
-            && self.user_stack.load(Ordering::SeqCst) == p.user_stack.load(Ordering::SeqCst)
-            && self.state.load(Ordering::SeqCst) == p.state.load(Ordering::SeqCst)
-    }
 }
 
 pub struct UserProcManager {
@@ -879,21 +828,11 @@ impl UserProcManager {
             raw::destroy_user_page_table(old_cr3);
         }
 
-        // 2. 更新为新的地址空间
+        // 2. 更新为新的地址空间 (UserProcRef 已委托到 Process, 无需重复写入)
         proc_ref.store_cr3(new_cr3);
         proc_ref.set_entry(new_entry);
         proc_ref.store_user_stack(new_user_stack);
         proc_ref.store_stack_bottom(new_stack_bottom);
-
-        // 3. 同步到权威 Process 结构
-        // SAFETY: proc 来自 BTreeMap 中的 NonNull<UserProcess>, 其 process 字段
-        // 指向 PROCESS_TABLE 中有效的 Process, 在进程存活期间有效.
-        let kproc = unsafe { (*proc.as_ptr()).process.as_ptr() };
-        // SAFETY: kproc 来自 UserProcess::process NonNull 字段, 在进程存活期间有效.
-        unsafe {
-            (*kproc).cr3.store(new_cr3, Ordering::SeqCst);
-            (*kproc).user_stack.store(new_user_stack, Ordering::SeqCst);
-        }
     }
 
     /// 从管理器中移除进程索引但不释放任何资源.
@@ -913,9 +852,8 @@ impl UserProcManager {
         let proc_ptr = raw::alloc_user_process(kproc_nn)?;
         let proc = raw::new_proc_ref(proc_ptr);
 
-        // 创建用户页表
+        // 创建用户页表 (暂存到局部变量, 稍后通过 init_kernel_process_fields 写入 Process)
         let cr3_val = raw::create_user_page_table();
-        proc.store_cr3(cr3_val);
         if cr3_val == 0 {
             // 失败回滚 (DECISION-027): 页表创建失败, 必须释放已分配的
             // UserProcess + Process 内存. 顺序为 LIFO 反序: 先 UserProcess
@@ -977,9 +915,7 @@ impl UserProcManager {
         // 已映射栈页范围: [stack_virt + USER_STACK_GUARD, stack_virt + USER_STACK_GUARD + USER_STACK_SIZE)
         // 栈顶已映射地址 = stack_virt + USER_STACK_GUARD + USER_STACK_SIZE - 8（考虑 8 字节对齐）。
         let initial_rsp = stack_virt + USER_STACK_GUARD + USER_STACK_SIZE - 8;
-        proc.store_user_stack(initial_rsp);
         let initial_stack_bottom = stack_virt + USER_STACK_GUARD;
-        proc.store_stack_bottom(initial_stack_bottom);
 
         // 分配内核栈
         let kstack = raw::alloc_phys_pages(USER_KSTACK_SIZE / PAGE_SIZE);
@@ -993,7 +929,6 @@ impl UserProcManager {
             return None;
         }
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
-        proc.store_kernel_stack(kstack_top);
         crate::klog_boot_info!(
             "[USER] create: kstack_phys={:#X} kstack_top={:#X} (KERNEL_BASE={:#X})",
             kstack as u64, kstack_top, KERNEL_BASE
@@ -1005,25 +940,31 @@ impl UserProcManager {
         //   的 PID 留在 next_pid 计数器中造成 PID 泄漏. 早期失败 (页表/栈分配)
         //   只回滚物理页与页表, 不需要回滚 PID.
         let pid = PROCESS_TABLE.allocate_pid()?;
-        proc.set_pid(pid);
-        proc.set_entry(info.entry);
-        proc.store_pwm(pwm);
-        proc.store_state(1);
-        proc.set_create_time(crate::kernel::framework::timer::get_ticks());
 
-        self.processes
-            .lock()
-            .insert(pid, NonNull::new(proc_ptr)?);
-
-        // 在权威 Process 上写入基本字段 (与 UserProcess 镜像共享字段保持一致).
+        // 在权威 Process 上批量初始化基本字段 (通过 init_kernel_process_fields)
         raw::init_kernel_process_fields(
             kproc_ptr,
             pid,
             pwm,
             cr3_val,
-            proc.load_kernel_stack(),
-            proc.load_user_stack(),
+            kstack_top,
+            initial_rsp,
         );
+
+        // 通过 UserProcRef 设置 UserProcess 独占字段
+        proc.set_pid(pid);
+        proc.set_entry(info.entry);
+        proc.store_pwm(pwm);
+        proc.store_state(1);
+        proc.store_cr3(cr3_val);
+        proc.store_kernel_stack(kstack_top);
+        proc.store_user_stack(initial_rsp);
+        proc.store_stack_bottom(initial_stack_bottom);
+        proc.set_create_time(crate::kernel::framework::timer::get_ticks());
+
+        self.processes
+            .lock()
+            .insert(pid, NonNull::new(proc_ptr)?);
 
         // 插入 PROCESS_TABLE 完成权威注册.
         PROCESS_TABLE.insert(kproc_ptr);
@@ -1848,6 +1789,7 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         }
         let child_ref = UserProcRef::new_unchecked(child_up);
 
+        // 通过 UserProcRef 设置字段 (委托到 Process)
         child_ref.set_pid(child_pid);
         child_ref.store_pwm(parent_ref.load_pwm());
         child_ref.store_cr3((*child_kernel_proc.as_ptr()).cr3.load(Ordering::SeqCst));
@@ -1859,9 +1801,6 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         child_ref.set_entry(parent_ref.entry());
         child_ref.store_state(1);
         child_ref.set_create_time(crate::kernel::framework::timer::get_ticks());
-
-        // ✅ 同步子进程镜像共享字段到权威 Process (INV-USER-PROC-1).
-        (*child_up).sync_to_process();
 
         USER_PROC_MANAGER
             .processes

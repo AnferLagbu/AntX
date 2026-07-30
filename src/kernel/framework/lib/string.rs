@@ -568,6 +568,8 @@ pub unsafe extern "C" fn memset(
                 blocks = inout(reg) blocks,
                 options(nostack, readonly),
             );
+            // blocks 在汇编中被递减至 0, 明确丢弃
+            let _ = blocks;
             remaining &= 0xF;
         }
 

@@ -60,13 +60,16 @@ pub enum VfsFileType {
 }
 
 impl VfsFileType {
-    pub fn from_u8(value: u8) -> Self {
+    /// 从 u8 构造 VfsFileType
+    ///
+    /// 返回 `None` 表示非法值 (0-3 为合法值)
+    pub fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => VfsFileType::File,
-            1 => VfsFileType::Dir,
-            2 => VfsFileType::Dev,
-            3 => VfsFileType::Symlink,
-            _ => VfsFileType::File,
+            0 => Some(VfsFileType::File),
+            1 => Some(VfsFileType::Dir),
+            2 => Some(VfsFileType::Dev),
+            3 => Some(VfsFileType::Symlink),
+            _ => None,
         }
     }
 
@@ -104,12 +107,15 @@ pub enum VfsSeekWhence {
 }
 
 impl VfsSeekWhence {
-    pub fn from_u32(value: u32) -> Self {
+    /// 从 u32 构造 VfsSeekWhence
+    ///
+    /// 返回 `None` 表示非法值 (0-2 为合法值)
+    pub fn from_u32(value: u32) -> Option<Self> {
         match value {
-            0 => VfsSeekWhence::Set,
-            1 => VfsSeekWhence::Cur,
-            2 => VfsSeekWhence::End,
-            _ => VfsSeekWhence::Set,
+            0 => Some(VfsSeekWhence::Set),
+            1 => Some(VfsSeekWhence::Cur),
+            2 => Some(VfsSeekWhence::End),
+            _ => None,
         }
     }
 }
@@ -249,6 +255,10 @@ impl VfsDirEntry {
 // - 所有方法接收 `&self` (非 `&mut self`), 内部可变性由各 FS 自行管理
 //   (RamFS 用内部 Mutex, HvFS 用内部原子操作)
 // - pwm 参数由 VFS 层传入, FS 实现负责权限检查
+//
+// L4 重构: 核心方法必须实现, 扩展方法提供默认实现 (返回 NotSupported)
+// - 核心方法: 生命周期 + 文件操作 + 元数据 + 目录操作 (必须实现)
+// - 扩展方法: 符号链接 + 扩展操作 + 扩展属性 (默认返回 NotSupported, 可选择性 override)
 
 /// `fs_open` 返回结果
 #[derive(Debug, Clone, Copy)]
@@ -265,6 +275,9 @@ pub struct FsOpenResult {
 ///
 /// 所有方法返回 `KernelResult<T>`, 由 VFS api.rs 统一转为 i32 错误码.
 /// 新增文件系统只需实现本 trait 并注册到 VFS_MANAGER, 无需修改 framework.
+///
+/// L4 重构: 核心方法必须实现, 扩展方法提供默认实现 (返回 NotSupported).
+/// 实现者可以选择性地 override 扩展方法, 减少实现负担.
 pub trait FileSystem: Send + Sync {
     /// 文件系统名称 (如 "ramfs", "hvfs")
     fn name(&self) -> &'static str;
@@ -298,10 +311,6 @@ pub trait FileSystem: Send + Sync {
     fn fs_chmod(&self, rel_path: &str, mode: u16, pwm: u64) -> KernelResult<()>;
     /// 修改文件所有者
     fn fs_chown(&self, rel_path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> KernelResult<()>;
-    /// 设置文件时间戳 (atime, mtime)
-    fn fs_utimensat(&self, _rel_path: &str, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
-        Err(KernelError::NotSupported)
-    }
 
     // ---- 目录操作 ----
 
@@ -316,84 +325,56 @@ pub trait FileSystem: Send + Sync {
     /// 读取目录项, 返回 true 表示还有更多项
     fn fs_readdir(&self, handle: u32, offset: u64, entry: &mut VfsDirEntry) -> KernelResult<bool>;
 
-    // ---- 符号链接 ----
+    // ---- 扩展方法 (可选, 默认返回 NotSupported) ----
 
-    /// 创建符号链接
-    fn fs_symlink(&self, target: &str, link_path: &str, pwm: u64) -> KernelResult<()>;
-    /// 读取符号链接目标
-    fn fs_readlink(&self, rel_path: &str, buf: &mut [u8]) -> KernelResult<usize>;
-    /// 创建硬链接
-    fn fs_link(&self, old_path: &str, new_path: &str, pwm: u64) -> KernelResult<()>;
-
-    // ---- 扩展 (可选, 默认返回 NotSupported) ----
-
-    /// 截断文件
-    fn fs_truncate(&self, handle: u32, size: u64, pwm: u64) -> KernelResult<()> {
-        let _ = (handle, size, pwm);
+    // 符号链接
+    fn fs_symlink(&self, _target: &str, _link_path: &str, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+    fn fs_readlink(&self, _rel_path: &str, _buf: &mut [u8]) -> KernelResult<usize> {
+        Err(KernelError::NotSupported)
+    }
+    fn fs_link(&self, _old_path: &str, _new_path: &str, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::NotSupported)
     }
 
-    /// seek
-    fn fs_seek(&self, handle: u32, offset: i64, whence: VfsSeekWhence, current: u64) -> KernelResult<u64> {
-        let _ = (handle, offset, whence, current);
+    // 扩展操作
+    fn fs_utimensat(&self, _rel_path: &str, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::NotSupported)
     }
-
-    /// 解析路径到内部 handle (用于 inotify/flock 等需要 inode 的场景)
-    fn fs_resolve_path(&self, rel_path: &str) -> Option<u32> {
-        let _ = rel_path;
+    fn fs_truncate(&self, _handle: u32, _size: u64, _pwm: u64) -> KernelResult<()> {
+        Err(KernelError::NotSupported)
+    }
+    fn fs_seek(&self, _handle: u32, _offset: i64, _whence: VfsSeekWhence, _current: u64) -> KernelResult<u64> {
+        Err(KernelError::NotSupported)
+    }
+    fn fs_resolve_path(&self, _rel_path: &str) -> Option<u32> {
         None
     }
-
-    /// 从 inode_id + mount_idx 构造 Inode trait object (用于 open_by_handle_at)
-    ///
-    /// 各 FS 应 override 此方法, 返回原生 Inode.
-    /// 默认实现返回 None, 调用方应回退到 LegacyInode.
     fn fs_resolve_inode(&self, _inode_id: u32, _mount_idx: u32) -> Option<Arc<dyn Inode>> {
         None
     }
-
-    /// 创建文件 (CREAT 语义), 返回 Inode trait object
     fn fs_create(&self, parent_path: &str, name: &str, pwm: u64) -> KernelResult<Arc<dyn Inode>> {
         let _ = (parent_path, name, pwm);
         Err(KernelError::NotSupported)
     }
-
-    /// 把文件系统内存态同步到底层 (例如 HvFS 的 txg commit).
-    /// 大多数 FS (RamFS/DevFS) 没有持久化, 默认实现为 Ok(()). 需要实际
-    /// 刷盘/事务提交的 FS (HvFS) 应当 override 本方法.
     fn fs_sync(&self) -> KernelResult<()> {
         Ok(())
     }
-
-    /// 按 inode_id 直接读取 (mmap prewarm 用)
-    ///
-    /// 区别于 `fs_read`: 不依赖 fd handle, 直接按 inode 寻址.
-    /// 默认实现 NotSupported, 因为 mmap prewarm 不是所有 FS 都必须支持.
-    /// 真实实现 (RamFS) 应当 override 本方法, 在 mmap #PF miss 路径上被
-    /// `vfs_pread_inode` 调用以同步填 Page Cache.
     fn fs_pread_inode(&self, _node_id: u32, _offset: u64, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
         Err(KernelError::NotSupported)
     }
 
-    // ---- 扩展属性 (可选, 默认返回 NotSupported) ----
-
-    /// 设置扩展属性
+    // 扩展属性
     fn fs_setxattr(&self, _rel_path: &str, _name: &str, _value: &[u8], _pwm: u64) -> KernelResult<()> {
         Err(KernelError::NotSupported)
     }
-
-    /// 获取扩展属性
     fn fs_getxattr(&self, _rel_path: &str, _name: &str, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
         Err(KernelError::NotSupported)
     }
-
-    /// 列出扩展属性
     fn fs_listxattr(&self, _rel_path: &str, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
         Err(KernelError::NotSupported)
     }
-
-    /// 删除扩展属性
     fn fs_removexattr(&self, _rel_path: &str, _name: &str, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::NotSupported)
     }

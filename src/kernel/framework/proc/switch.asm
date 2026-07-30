@@ -28,6 +28,8 @@ extern user_entry_cr3
 ; +112:   fs
 ; +120:   gs
 ; +128:   ss
+; +136:   _fpu_pad (8 bytes padding for 16-byte alignment)
+; +144:   fpu_state[64] (512 bytes, Phase 2: fxsave/fxrstor)
 
 process_switch_asm:
     cli
@@ -62,6 +64,11 @@ process_switch_asm:
     mov [rdi + 120], gs
     mov [rdi + 128], ss
 
+    ; Save FPU/SSE state (fxsave requires 16-byte aligned memory)
+    ; fpu_state is at offset 144 (17 fields + 1 padding = 18 * 8 = 144 bytes)
+    lea rax, [rdi + 144]
+    fxsave [rax]
+
     ; Restore next context from [RSI] (next)
     mov r15, [rsi + 0]
     mov r14, [rsi + 8]
@@ -73,6 +80,22 @@ process_switch_asm:
     ; Set cr3
     mov rax, [rsi + 80]
     mov cr3, rax
+
+    ; Restore segment registers (ds, es, fs, gs)
+    ; cs and ss are restored via iretq frame
+    mov ax, [rsi + 96]
+    mov ds, ax
+    mov ax, [rsi + 104]
+    mov es, ax
+    mov ax, [rsi + 112]
+    mov fs, ax
+    mov ax, [rsi + 120]
+    mov gs, ax
+
+    ; Restore FPU/SSE state (fxrstor requires 16-byte aligned memory)
+    ; fpu_state is at offset 144 (17 fields + 1 padding = 18 * 8 = 144 bytes)
+    lea rax, [rsi + 144]
+    fxrstor [rax]
 
     ; Build iretq frame
     push qword [rsi + 128]      ; ss

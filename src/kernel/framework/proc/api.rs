@@ -194,9 +194,9 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
     let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER
         .with_process(pid, |proc| {
             (
-                proc.pid as u64,
-                proc.pwm.load(Ordering::SeqCst),
-                proc.state.load(Ordering::SeqCst),
+                proc.process().pid.0 as u64,
+                proc.process().pwm.load(Ordering::SeqCst),
+                proc.process().state.load(Ordering::SeqCst),
             )
         })
         .unwrap_or((0, 0, 0));
@@ -219,12 +219,11 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
 
     crate::klog_boot_info!("[USER] calling USER_PROC_MANAGER.get({})", pid);
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
-        // 诊断：打印从 UserProcess 和 Process 读取的 kernel_stack 值
-        let up_kstack = unsafe { (*proc).kernel_stack.load(core::sync::atomic::Ordering::SeqCst) };
-        let p_kstack = unsafe { (*proc).process.as_ref().kernel_stack.load(core::sync::atomic::Ordering::SeqCst) };
+        // 诊断：打印从 Process 读取的 kernel_stack 值
+        let p_kstack = unsafe { (*proc).process().kernel_stack.load(core::sync::atomic::Ordering::SeqCst) };
         crate::klog_boot_info!(
-            "[USER] got proc={:#X}, UserProcess.kstack={:#X}, Process.kstack={:#X}",
-            proc as u64, up_kstack, p_kstack
+            "[USER] got proc={:#X}, Process.kstack={:#X}",
+            proc as u64, p_kstack
         );
         crate::klog_boot_info!("[USER] calling enter()");
         USER_PROC_MANAGER.enter(proc);

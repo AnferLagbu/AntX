@@ -3,7 +3,7 @@
 //!
 //! ## 状态 (v2.11, 2026-06-04)
 //!
-//! Phase 2.5 进程迁移 (1/4): 封装 `kernel::crate::kernel::framework::proc::types` 强类型与状态/ID API:
+//! Phase 2.5 进程迁移 (1/4): 封装 `crate::kernel::framework::proc::types` 强类型与状态/ID API:
 //! - [x] types — `Pid` / `Tid` / `ProcessId` / `ThreadId` / `ProcessState` / `ProcessPriority`
 //! - [x] session — 初始化入口
 //! - [x] scheduler / scheduler_ex — 调度器初始化入口

@@ -821,7 +821,19 @@ impl PhysicalMemoryManager {
                 break;
             }
 
+            // M2: 显式验证伙伴块的 order
             let buddy_state = meta.read(buddy_pfn as usize);
+            
+            // 检查 buddy_state 是否为有效的 order 值 (0..=MAX_BUDDY_ORDER)
+            // 如果 buddy_state == BUDDY_ALLOCATED (0xFF)，说明已分配，不能合并
+            // 如果 buddy_state > MAX_BUDDY_ORDER 且 != BUDDY_ALLOCATED，说明元数据损坏
+            if buddy_state > MAX_BUDDY_ORDER {
+                // 已分配或元数据损坏，停止合并
+                break;
+            }
+            
+            // M2: 验证伙伴块的 order 必须等于当前 order 才能合并
+            // 这防止跨阶合并 (例如 order=3 的块与 order=5 的块合并)
             if buddy_state != order {
                 break;
             }
@@ -999,17 +1011,19 @@ impl PhysicalMemoryManager {
             return;
         }
 
+        // M1 修复: 在 buddy_ready 前后都检测 double-free
+        // 位图约定: 1 = 已分配, 0 = 空闲
+        if !self.test_bit(pfn as usize) {
+            klog_pmm!("[PMM] Warn: double free at pfn {} (addr=0x{:X})", pfn, addr.0);
+            return;
+        }
+
         if !self.buddy_ready.load(Ordering::Acquire) {
             let npages = 1u64 << order as u64;
             for i in 0..(npages as usize) {
                 self.clear_bit(pfn as usize + i);
             }
             self.stats_free(npages);
-            return;
-        }
-
-        if !self.test_bit(pfn as usize) {
-            klog_pmm!("[PMM] Warn: double free at pfn {}", pfn);
             return;
         }
 

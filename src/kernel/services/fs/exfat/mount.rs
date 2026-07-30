@@ -197,6 +197,7 @@ impl FileSystem for ExfatFileSystem {
         Ok(true)
     }
 
+    // L4 重构: 扩展方法实现 (override trait 默认实现)
     fn fs_symlink(&self, _target: &str, _link_path: &str, _pwm: u64) -> KernelResult<()> {
         Err(KernelError::ReadOnlyFilesystem)
     }

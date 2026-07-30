@@ -28,24 +28,24 @@ fn test_fstype_as_str() -> TestResult {
 
 fn test_vfs_file_type() -> TestResult {
     check!(
-        VfsFileType::from_u8(0) == VfsFileType::File,
+        VfsFileType::from_u8(0) == Some(VfsFileType::File),
         "0 should be File"
     );
     check!(
-        VfsFileType::from_u8(1) == VfsFileType::Dir,
+        VfsFileType::from_u8(1) == Some(VfsFileType::Dir),
         "1 should be Dir"
     );
     check!(
-        VfsFileType::from_u8(2) == VfsFileType::Dev,
+        VfsFileType::from_u8(2) == Some(VfsFileType::Dev),
         "2 should be Dev"
     );
     check!(
-        VfsFileType::from_u8(3) == VfsFileType::Symlink,
+        VfsFileType::from_u8(3) == Some(VfsFileType::Symlink),
         "3 should be Symlink"
     );
     check!(
-        VfsFileType::from_u8(99) == VfsFileType::File,
-        "invalid should fallback to File"
+        VfsFileType::from_u8(99).is_none(),
+        "invalid should return None"
     );
 
     check!(VfsFileType::Dir.as_u8() == 1, "Dir as_u8 should be 1");
@@ -54,20 +54,20 @@ fn test_vfs_file_type() -> TestResult {
 
 fn test_vfs_seek_whence() -> TestResult {
     check!(
-        VfsSeekWhence::from_u32(0) == VfsSeekWhence::Set,
+        VfsSeekWhence::from_u32(0) == Some(VfsSeekWhence::Set),
         "0 should be Set"
     );
     check!(
-        VfsSeekWhence::from_u32(1) == VfsSeekWhence::Cur,
+        VfsSeekWhence::from_u32(1) == Some(VfsSeekWhence::Cur),
         "1 should be Cur"
     );
     check!(
-        VfsSeekWhence::from_u32(2) == VfsSeekWhence::End,
+        VfsSeekWhence::from_u32(2) == Some(VfsSeekWhence::End),
         "2 should be End"
     );
     check!(
-        VfsSeekWhence::from_u32(99) == VfsSeekWhence::Set,
-        "invalid should fallback to Set"
+        VfsSeekWhence::from_u32(99).is_none(),
+        "invalid should return None"
     );
     TestResult::Pass
 }

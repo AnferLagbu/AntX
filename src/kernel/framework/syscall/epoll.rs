@@ -469,10 +469,16 @@ fn check_fd_ready(fd: i32, events: u32) -> u32 {
         }
     };
 
+    // M6: 处理非法 file_type
+    let vfs_file_type = match VfsFileType::from_u8(file_type) {
+        Some(t) => t,
+        None => return 0, // 非法类型视为无事件
+    };
+
     // REVAL-6.1: 通过 VfsPollPolicy trait dispatch 决策
     let ctx = VfsPollContext {
         valid,
-        file_type: VfsFileType::from_u8(file_type),
+        file_type: vfs_file_type,
     };
     let raw_revents = current_vfs_poll_policy().events_for(ctx);
 

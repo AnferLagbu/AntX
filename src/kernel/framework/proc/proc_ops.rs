@@ -542,14 +542,14 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
     // 阶段 2: 读取新进程的地址空间信息 (CR3/entry/stack)
     let new_addr_space = USER_PROC_MANAGER
         .with_process(new_pid_u32, |proc| {
-            let state = proc.state.load(Ordering::SeqCst);
+            let state = proc.process().state.load(Ordering::SeqCst);
             if state == 0 {
                 return None;
             }
             Some((
-                proc.cr3.load(Ordering::SeqCst),
+                proc.process().cr3.load(Ordering::SeqCst),
                 proc.entry,
-                proc.user_stack.load(Ordering::SeqCst),
+                proc.process().user_stack.load(Ordering::SeqCst),
                 proc.stack_bottom.load(Ordering::SeqCst),
             ))
         })

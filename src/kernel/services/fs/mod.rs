@@ -92,7 +92,8 @@ impl FsBackend for ServicesFsBackend {
         if rc == 0 {
             Ok(())
         } else {
-            Err(KernelError::Io)
+            // framework 层返回负 errno，转换为精确的 KernelError
+            Err(KernelError::from_i32(-rc))
         }
     }
 

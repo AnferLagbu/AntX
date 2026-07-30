@@ -38,6 +38,20 @@ pub use crate::kernel::services::error::KernelError as SocketError;
 /// services 层结果类型
 pub type SocketResult<T> = Result<T, SocketError>;
 
+/// 将 framework 层的 NetError 精确映射为 KernelError
+fn map_net_error(e: crate::kernel::framework::net::iface_trait::NetError) -> SocketError {
+    use crate::kernel::framework::net::iface_trait::NetError;
+    match e {
+        NetError::NoFreeSocket => SocketError::ProcessFileLimit,
+        NetError::InvalidHandle => SocketError::BadFd,
+        NetError::BadConfig => SocketError::InvalidArgument,
+        NetError::NotReady => SocketError::NotReady,
+        NetError::Timeout => SocketError::WouldBlock,
+        NetError::BufferTooSmall => SocketError::NoMemory,
+        NetError::Other => SocketError::Io,
+    }
+}
+
 // ============================================================================
 // 协议 / 类型
 // ============================================================================
@@ -103,70 +117,80 @@ impl SockAddrIn {
 ///
 /// 成功返回新 socket 的 FD, 失败返回 `SocketError`。
 pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResult<i32> {
-    let mut s = net_stack().lock();
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let mut s = s.lock();
     s.socket_create_fd(domain as i32, sock_type as i32)
-        .map_err(|_| SocketError::InvalidArgument)
+        .map_err(map_net_error)
 }
 
 /// POSIX `bind(fd, addr, addrlen)`
 pub fn bind(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
     let ep = NetEndpoint::new(Ipv4Addr::from_octets(addr.ip), addr.port);
-    let s = net_stack().lock();
-    s.bind_fd(fd, ep).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.bind_fd(fd, ep).map_err(map_net_error)
 }
 
 /// POSIX `listen(fd, backlog)`
 pub fn listen(fd: i32, backlog: i32) -> SocketResult<()> {
-    let s = net_stack().lock();
-    s.listen_fd(fd, backlog).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.listen_fd(fd, backlog).map_err(map_net_error)
 }
 
 /// POSIX `accept(fd, addr, addrlen)` — 返回新连接的 FD
 pub fn accept(fd: i32) -> SocketResult<i32> {
-    let s = net_stack().lock();
-    s.accept_fd(fd).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.accept_fd(fd).map_err(map_net_error)
 }
 
 /// POSIX `connect(fd, addr, addrlen)`
 pub fn connect(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
     let ep = NetEndpoint::new(Ipv4Addr::from_octets(addr.ip), addr.port);
-    let s = net_stack().lock();
-    s.connect_fd(fd, ep).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.connect_fd(fd, ep).map_err(map_net_error)
 }
 
 /// POSIX `send(fd, buf, len, flags)` → 实际发送字节数
 pub fn send(fd: i32, buf: &[u8]) -> SocketResult<usize> {
-    let s = net_stack().lock();
-    s.send_fd(fd, buf).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.send_fd(fd, buf).map_err(map_net_error)
 }
 
 /// POSIX `recv(fd, buf, len, flags)` → 实际接收字节数
 ///
 /// 写入 `out` 切片, 返回字节数; `WouldBlock` 表示无数据可读。
 pub fn recv(fd: i32, out: &mut [u8]) -> SocketResult<usize> {
-    let s = net_stack().lock();
-    s.recv_fd(fd, out).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.recv_fd(fd, out).map_err(map_net_error)
 }
 
 /// POSIX `sendto(fd, buf, len, flags, dest_addr, addrlen)`
 pub fn sendto(fd: i32, buf: &[u8], dest: &SockAddrIn) -> SocketResult<usize> {
     let ep = NetEndpoint::new(Ipv4Addr::from_octets(dest.ip), dest.port);
-    let s = net_stack().lock();
-    s.sendto_fd(fd, buf, ep).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.sendto_fd(fd, buf, ep).map_err(map_net_error)
 }
 
 /// POSIX `recvfrom(fd, buf, len, flags, src_addr, addrlen)` → (字节数, 源地址)
 pub fn recvfrom(fd: i32, out: &mut [u8]) -> SocketResult<(usize, SockAddrIn)> {
-    let s = net_stack().lock();
-    let (n, ep) = s.recvfrom_fd(fd, out).map_err(|_| SocketError::InvalidArgument)?;
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    let (n, ep) = s.recvfrom_fd(fd, out).map_err(map_net_error)?;
     let addr = SockAddrIn::new(ep.port, ep.addr.octets());
     Ok((n, addr))
 }
 
 /// POSIX `close(fd)`
 pub fn close(fd: i32) -> SocketResult<()> {
-    let mut s = net_stack().lock();
-    s.close_fd(fd).map_err(|_| SocketError::InvalidArgument)
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let mut s = s.lock();
+    s.close_fd(fd).map_err(map_net_error)
 }
 
 /// POSIX `setsockopt(fd, level, optname, optval, optlen)`
@@ -177,17 +201,19 @@ pub fn close(fd: i32) -> SocketResult<()> {
 /// - `val`: 选项值 (u32)
 pub fn setsockopt(fd: i32, level: i32, optname: i32, val: u32) -> SocketResult<()> {
     let val_bytes = val.to_ne_bytes();
-    let s = net_stack().lock();
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
     s.setsockopt_fd(fd, level, optname, &val_bytes)
-        .map_err(|_| SocketError::InvalidArgument)
+        .map_err(map_net_error)
 }
 
 /// POSIX `getsockopt(fd, level, optname, optval, optlen)` → u32
 pub fn getsockopt(fd: i32, level: i32, optname: i32) -> SocketResult<u32> {
     let mut buf = [0u8; 4];
-    let s = net_stack().lock();
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
     s.getsockopt_fd(fd, level, optname, &mut buf)
-        .map_err(|_| SocketError::InvalidArgument)?;
+        .map_err(map_net_error)?;
     Ok(u32::from_ne_bytes(buf))
 }
 
@@ -195,9 +221,9 @@ pub fn getsockopt(fd: i32, level: i32, optname: i32) -> SocketResult<u32> {
 ///
 /// 由 timer ISR 或专用网络任务周期性调用。
 pub fn poll_all() -> SocketResult<i32> {
-    let s = net_stack().lock();
-    s.poll_all_fd()
-        .map_err(|_| SocketError::InvalidArgument)?;
+    let s = net_stack().ok_or(SocketError::NotReady)?;
+    let s = s.lock();
+    s.poll_all_fd().map_err(map_net_error)?;
     Ok(0)
 }
 

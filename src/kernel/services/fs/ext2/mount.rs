@@ -291,6 +291,7 @@ impl FileSystem for Ext2FileSystem {
         Ok(true)
     }
 
+    // L4 重构: 扩展方法实现 (override trait 默认实现)
     fn fs_symlink(&self, target: &str, link_path: &str, _pwm: u64) -> KernelResult<()> {
         let mut fs_guard = EXT2_FS.lock();
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;

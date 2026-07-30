@@ -1212,8 +1212,9 @@ impl VirtualMemoryManager {
                 // 新帧地址 + 标志, 避免 set_frame→set_flags 两步操作中间出现
                 // "帧=新PT, 标志=旧值(含HUGE)" 的瞬时不一致状态.
                 // 单次原子 store 保证 CPU 页表遍历器不会观察到中间态.
+                // M9 修复: 中间页表页添加 NO_EXECUTE 位, 防止用户态执行页表页代码
                 let new_val = (page.as_u64() & 0x000FFFFFFFFFF000)
-                    | (PageFlags::PRESENT | PageFlags::WRITABLE).bits();
+                    | (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::NX).bits();
                 (*entry).set_value(new_val);
 
                 page_virt.0 as *mut PageTableEntry

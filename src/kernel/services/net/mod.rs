@@ -25,8 +25,10 @@ use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;
 static NET_STACK_INSTANCE: OnceLock<IrqSpinLock<SmoltcpNetStack>> = OnceLock::new();
 
 /// 获取全局 SmoltcpNetStack 实例的引用 (需在 `init()` 之后调用)
-pub fn net_stack() -> &'static IrqSpinLock<SmoltcpNetStack> {
-    NET_STACK_INSTANCE.get().expect("SmoltcpNetStack 未初始化")
+///
+/// 返回 `None` 表示网络子系统未初始化，调用方应返回 `NotReady` 错误而非 panic。
+pub fn net_stack() -> Option<&'static IrqSpinLock<SmoltcpNetStack>> {
+    NET_STACK_INSTANCE.get()
 }
 
 // ============================================================================

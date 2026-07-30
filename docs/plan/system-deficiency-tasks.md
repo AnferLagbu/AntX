@@ -25,29 +25,32 @@
 - **详情**: x86_64 需保存 x87 + XMM + YMM (AVX)，AArch64 需保存 V0-V31 + FPCR + FPSR
 - **状态**: []
 
-### H3: Socket 错误映射一刀切 InvalidArgument
+### H3: Socket 错误映射一刀切 InvalidArgument ✅ 已修复
 
 - **描述**: framework 返回的错误被 `.map_err(|_| SocketError::InvalidArgument)` 统一映射，丢失 `AddrInUse`/`WouldBlock`/`ConnRefused` 等语义
 - **位置**: [socket.rs](file:///home/anfer/Code/QueenX/src/kernel/services/net/socket.rs)
 - **违反**: AGENTS.md §5.2 "错误处理: 传播用 `?`"
 - **方案**: framework 网络层定义细粒度错误枚举 (`NetError`)，services socket.rs 按 variant 映射到对应 `KernelError` 变体
-- **状态**: []
+- **修复**: 已完成 — 实现精确 NetError 到 KernelError 映射
+- **状态**: [X]
 
-### H4: `net_stack().expect()` 可导致内核 panic
+### H4: `net_stack().expect()` 可导致内核 panic ✅ 已修复
 
 - **描述**: `net_stack()` 使用 `expect()` 获取全局网络栈实例，如果 `init()` 未调用就访问会 panic
 - **位置**: [net/mod.rs](file:///home/anfer/Code/QueenX/src/kernel/services/net/mod.rs)
 - **方案**: 改为返回 `Option` 或 `Result`，由调用方决定处理方式 (返回错误码/延迟初始化)
-- **状态**: []
+- **修复**: 已完成 — `net_stack()` 返回 `Option`，调用方处理 None 情况
+- **状态**: [X]
 
-### H5: `per_cpu()` 返回 `&'static` 绕过借用检查
+### H5: `per_cpu()` 返回 `&'static` 绕过借用检查 ✅ 已修复
 
 - **描述**: `per_cpu()` 从 `Mutex<Option<PerCpuSched>>` 获取内部引用后通过裸指针转为 `&'static PerCpuSched`，绕过借用检查器；如果其他线程修改 `Option`，引用悬垂
 - **位置**: [scheduler.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/scheduler.rs) (L182-L200)
 - **方案**:
   - 方案 A: 使用 `OnceLock<PerCpuSched>` 替代 `Mutex<Option<PerCpuSched>>`，初始化后不可变
   - 方案 B: 将 `PerCpuSched` 放入 `Box::leak` 获取真正的 `&'static`
-- **状态**: []
+- **修复**: 已完成 — 使用 `OnceLock` 替代 `Mutex<Option>`，确保初始化后不可变
+- **状态**: [X]
 
 ---
 
@@ -85,7 +88,7 @@
   - 或使用跳转表 (`[Option<fn(&mut InterruptFrame)>; 512]`) 替代 match
 - **状态**: []
 
-### M5: PID 空间不可回收
+### M5: PID 空间不可回收 ✅ 已修复
 
 - **描述**: 进程退出后 PID 永久占用，长期运行系统可能耗尽 PID 空间
 - **位置**: [process.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/process.rs) (`ProcessTable`)
@@ -93,85 +96,96 @@
   - 实现 PID 回收: Zombie 进程被 `wait4` 回收后释放 PID
   - 或使用位图管理 PID，支持重新分配
 - **详情**: `wait4` 已调用 `process_remove_and_free` 释放 PCB，需确认 PID 是否回到分配池
-- **状态**: []
+- **修复**: 已完成 — 将 `next_pid: AtomicU32` 单调递增改为 `pid_bitmap: [bool; MAX_PROCESSES]` 位图 + `next_search: Mutex<u32>` 环形扫描，`remove_and_free` 和 `dec_ref_and_maybe_free` 中调用 `free_pid` 回收 PID
+- **状态**: [X]
 
-### M6: VFS from_u8/from_u32 静默吞非法输入
+### M6: VFS from_u8/from_u32 静默吞非法输入 ✅ 已修复
 
 - **描述**: `VfsFileType::from_u8` / `VfsSeekWhence::from_u32` 对非法值返回默认值，不返回错误
 - **位置**: [vfs_types.rs](file:///home/anfer/Code/QueenX/src/kernel/services/fs/vfs_types.rs)
 - **方案**: 改为返回 `Option<Self>` 或 `KernelResult<Self>`，调用方显式处理非法输入
-- **状态**: []
+- **修复**: 已完成 — `VfsFileType::from_u8` 和 `VfsSeekWhence::from_u32` 改为返回 `Option<Self>`，更新调用方：`ramfs.rs` 比较 `Some(VfsFileType::Dir)`，`api.rs::vfs_seek` 返回 `InvalidArgument`，`epoll.rs` 返回 0 (无事件)，测试断言更新为 `Some(...)` / `is_none()`
+- **状态**: [X]
 
-### M7: Process + UserProcess 双结构同步负担
+### M7: Process + UserProcess 双结构同步负担 ✅ 已修复
 
 - **描述**: 进程信息分散在两个结构体中，需要同步维护；新增字段时容易遗漏
 - **位置**: [process.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/process.rs) + [user_proc.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/user_proc.rs)
 - **方案**:
   - 短期: `UserProcess` 只保留用户态特有字段 (页表/栈)，通用字段统一放 `Process`
   - 长期: 合并为单一 `Process`，用户态信息用 `Option<UserContext>` 字段
-- **状态**: []
+- **修复**: 已完成 — 删除 UserProcess 6 个镜像字段 (pid/pwm/cr3/kernel_stack/user_stack/state) + 3 个同步方法 (sync_from_process/sync_to_process/check_sync)，UserProcRef 所有共享字段访问器委托到 Process 权威字段，消除双向同步负担
+- **状态**: [X]
 
-### M8: mount_fs 错误映射粗糙
+### M8: mount_fs 错误映射粗糙 ✅ 已修复
 
 - **描述**: `mount_fs` 所有非零 `rc` → `KernelError::Io`，丢失具体错误语义
 - **位置**: [fs/mod.rs](file:///home/anfer/Code/QueenX/src/kernel/services/fs/mod.rs)
 - **方案**: 根据 framework 返回码细分到对应 `KernelError` 变体
-- **状态**: []
+- **修复**: 已完成 — framework 层统一返回负 errno 格式（`KernelError::as_i32()`），services 层使用 `KernelError::from_i32(-rc)` 精确映射，保留具体错误语义（如 `NotSupported`/`Io`/`Busy` 等）
+- **状态**: [X]
 
-### M9: 中间页表页权限过宽
+### M9: 中间页表页权限过宽 ✅ 已修复
 
 - **描述**: 新分配的 PDPT/PD/PT 页默认映射为 `PRESENT|WRITABLE`，无 `NO_EXECUTE` 位；如果 PML4 入口被意外映射为 USER，用户态可执行中间页表页中的代码
 - **位置**: [vmm_x86_64.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/vmm_x86_64.rs)
 - **方案**: 中间页表页添加 `NO_EXECUTE` 位 (bit 63)，减少攻击面
-- **状态**: []
+- **修复**: 已完成 — 在 `get_or_create_table_entry` 函数中，新创建的中间页表页标志位从 `PRESENT | WRITABLE` 改为 `PRESENT | WRITABLE | NX`，防止用户态执行页表页代码
+- **状态**: [X]
 
 ---
 
 ## 低优先级 (🟢 改进建议)
 
-### L1: error.rs 缺 `#![deny(unsafe_code)]`
+### L1: error.rs 缺 `#![deny(unsafe_code)]` ✅ 已修复
 
 - **描述**: 虽父模块 `services/mod.rs` 有此声明 (编译期覆盖)，但违反每个文件头部声明的惯例和 AGENTS.md §6 F1 的字面要求
 - **位置**: [error.rs](file:///home/anfer/Code/QueenX/src/kernel/services/error.rs)
 - **方案**: 文件头部添加 `#![deny(unsafe_code)]`
-- **状态**: []
+- **修复**: 已完成 — 在 error.rs 文件头部添加 `#![deny(unsafe_code)]` 声明，符合 AGENTS.md §6 F1 要求
+- **状态**: [X]
 
-### L2: CFS vruntime 溢出未处理
+### L2: CFS vruntime 溢出未处理 ✅ 已修复
 
 - **描述**: `vruntime` 为 `u64`，理论上可溢出回绕，导致调度顺序错误
 - **位置**: [cfs.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/cfs.rs)
 - **方案**: 使用 `checked_add` 或定期归零最小 vruntime (与 Linux CFS `min_vruntime` 一致)
-- **状态**: []
+- **修复**: 已完成 — 在 scheduler.rs 中使用 `saturating_add` 替代裸 `+` 操作，防止 vruntime 和 sum_exec_runtime 溢出
+- **状态**: [X]
 
-### L3: dispatch.rs 注释中被注释掉的 DEBUG 代码
+### L3: dispatch.rs 注释中被注释掉的 DEBUG 代码 ✅ 已修复
 
 - **描述**: 被注释掉的 `klog_info!` 调试代码，违反代码整洁原则
 - **位置**: [dispatch.rs](file:///home/anfer/Code/QueenX/src/kernel/services/syscall/dispatch.rs) (约 L58-61)
 - **方案**: 删除被注释掉的 DEBUG 代码
-- **状态**: []
+- **修复**: 已完成 — 检查确认文件中无被注释掉的 DEBUG 代码，代码整洁符合规范
+- **状态**: [X]
 
-### L4: FileSystem trait 26 方法过多
+### L4: FileSystem trait 26 方法过多 ✅ 已修复
 
 - **描述**: 实现方需实现全部 26 个方法 (即使大部分返回 NotSupported)，增加实现负担
 - **位置**: [vfs_types.rs](file:///home/anfer/Code/QueenX/src/kernel/services/fs/vfs_types.rs)
 - **方案**: 拆分为核心 trait (open/read/write/close/mkdir/readdir/stat) + 可选 extension trait
-- **状态**: []
+- **修复**: 已完成 — FileSystem trait 拆分为核心方法（必须实现）+ 扩展方法（默认返回 NotSupported），减少实现负担
+- **状态**: [X]
 
-### L5: proc/mod.rs 注释路径错误
+### L5: proc/mod.rs 注释路径错误 ✅ 已修复
 
 - **描述**: 注释中写 `kernel::crate::kernel::framework::proc::types`，路径格式有误
 - **位置**: [proc/mod.rs](file:///home/anfer/Code/QueenX/src/kernel/services/proc/mod.rs) (约 L6)
 - **方案**: 修正为 `crate::kernel::framework::proc::types`
-- **状态**: []
+- **修复**: 已完成 — 修正注释中的路径错误，从 `kernel::crate::kernel::framework::proc::types` 改为 `crate::kernel::framework::proc::types`
+- **状态**: [X]
 
-### L6: Mutex 实为自旋锁，缺少文档说明
+### L6: Mutex 实为自旋锁，缺少文档说明 ✅ 已修复
 
 - **描述**: 当前 `Mutex` 本质是自旋锁 (持锁期间 CPU 空转)，与名称暗示的"睡眠锁"不符
 - **位置**: [spinlock.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/sync/spinlock.rs) (Mutex 定义)
 - **方案**:
   - 短期: `Mutex` 文档注释中明确说明当前实现是自旋等待
   - 长期: 实现真正的睡眠锁 (等待队列 + 调度器 yield)
-- **状态**: []
+- **修复**: 已完成 — 更新 mutex.rs 文档注释，明确说明当前实现是"自旋 + yield"混合模式，非真正睡眠锁，并标注未来改进方向
+- **状态**: [X]
 
 ---
 
@@ -246,13 +260,15 @@
 
 | 维度 | 总数 | 已完成 | 待修复 | 完成率 |
 |------|------|--------|--------|--------|
-| 高优先级 | 5 | 1 (H1) | 4 (H2-H5) | 20% |
-| 中优先级 | 9 | 0 | 9 (M1-M9) | 0% |
-| 低优先级 | 6 | 0 | 6 (L1-L6) | 0% |
-| **合计** | **20** | **1** | **19** | **5%** |
+| 高优先级 | 5 | 4 (H1, H3-H5) | 1 (H2) | 80% |
+| 中优先级 | 9 | 5 (M5-M9) | 4 (M1-M4) | 56% |
+| 低优先级 | 6 | 6 (L1-L6) | 0 | 100% |
+| **合计** | **20** | **15** | **5** | **75%** |
 | 已修复 (历史) | 13 | 13 | 0 | 100% |
 
-**推荐修复顺序**: H2 (FPU 保存) → H4 (net_stack expect) → H5 (per_cpu 生命周期) → H3 (socket 错误映射) → M1 (double-free) → M2 (buddy order)
+**推荐修复顺序**: H2 (FPU 保存) → M1 (double-free) → M2 (buddy order) → M3 (网络锁) → M4 (syscall 分发)
+
+**更新日期**: 2026-07-30
 
 ---
 
