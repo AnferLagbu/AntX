@@ -44,10 +44,7 @@ pub mod usb;
 pub mod acpi;
 /// D5: 电源管理安全封装
 pub mod power;
-/// D8: Tickless (NO_HZ) 安全封装
-pub mod tickless;
-/// D9: NTP/PTP 时钟同步安全封装
-pub mod time_sync;
+
 /// D10: kexec 安全封装
 pub mod kexec;
 /// D11: UEFI 安全封装

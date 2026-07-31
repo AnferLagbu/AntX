@@ -194,7 +194,7 @@ pub mod futex;
 pub mod epoll;
 pub mod eventfd;
 pub mod signalfd;
-pub mod timerfd;
+
 pub mod irq_lock;
 pub mod once;
 

@@ -77,6 +77,12 @@ pub mod barrier;
 /// services 层的安全抽象 (闭包 API / 一次性初始化等)。
 pub mod sync;
 
+/// 定时器子系统 — sleep / POSIX Timer / timerfd / Tickless / NTP-PTP
+///
+/// 底层实现见 `framework::timer` (TCB); 本模块提供
+/// services 层的安全代理与参数验证 (0 unsafe)。
+pub mod timer;
+
 /// 内存管理 — Page Cache / Swap / mmap safe 代理
 ///
 /// 底层实现见 `framework::mm` (TCB); 本模块提供

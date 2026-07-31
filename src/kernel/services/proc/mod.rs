@@ -43,11 +43,9 @@ pub mod sched_policy;
 pub mod seccomp;
 pub mod session;
 pub mod signal;
-pub mod sleep;
 pub mod table;
 pub mod types;
 pub mod wait4;
-pub mod posix_timer;
 /// D7: Shadow Stack (CET) 安全封装
 pub mod shadow_stack;
 /// OOMD — 内存不足守护进程策略

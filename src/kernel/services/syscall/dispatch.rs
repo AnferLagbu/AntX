@@ -240,7 +240,7 @@ fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_gettimeofday => as_ret(crate::kernel::services::proc::info::gettimeofday_syscall(a0)),
 
         // 定时器
-        SYS_nanosleep => as_ret(crate::kernel::services::proc::sleep::nanosleep_syscall(a0, a1)),
+        SYS_nanosleep => as_ret(crate::kernel::services::timer::sleep::nanosleep_syscall(a0, a1)),
 
         // 进程创建/等待
         SYS_clone => as_ret(crate::kernel::services::proc::clone::clone_syscall(a0, a1, a2, a3, a4)),
@@ -345,9 +345,9 @@ fn dispatch_sync(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_signalfd4 => as_ret(crate::kernel::services::sync::signalfd::signalfd_syscall(a0 as i32, a1, a2 as i32)),
 
         // timerfd
-        SYS_timerfd_create => as_ret(crate::kernel::services::sync::timerfd::timerfd_create_syscall(a0 as i32, a1 as i32)),
-        SYS_timerfd_settime => as_ret(crate::kernel::services::sync::timerfd::timerfd_settime_syscall(a0 as i32, a1 as i32, a2, a3)),
-        SYS_timerfd_gettime => as_ret(crate::kernel::services::sync::timerfd::timerfd_gettime_syscall(a0 as i32, a1)),
+        SYS_timerfd_create => as_ret(crate::kernel::services::timer::timerfd::timerfd_create_syscall(a0 as i32, a1 as i32)),
+        SYS_timerfd_settime => as_ret(crate::kernel::services::timer::timerfd::timerfd_settime_syscall(a0 as i32, a1 as i32, a2, a3)),
+        SYS_timerfd_gettime => as_ret(crate::kernel::services::timer::timerfd::timerfd_gettime_syscall(a0 as i32, a1)),
 
         _ => return None,
     })
@@ -395,7 +395,7 @@ fn dispatch_credo(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_CREDO_PROC_CPUTIME => crate::kernel::services::proc::proc_mgmt::credo_proc_cputime_syscall(a0 as u32),
         SYS_CREDO_PROC_SLEEP => {
             let ns = a0 * 1_000_000;
-            as_ret(crate::kernel::services::proc::sleep::nanosleep_syscall(ns, a1))
+            as_ret(crate::kernel::services::timer::sleep::nanosleep_syscall(ns, a1))
         }
         SYS_CREDO_REBOOT => crate::kernel::services::proc::sysinfo::reboot_syscall(a0 as i32),
 

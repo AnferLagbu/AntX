@@ -9,10 +9,8 @@
 //!
 //! ## API 形态
 //!
-//! 与 libc 的 POSIX Timer API 对齐:
-//!
 //! ```ignore
-//! use crate::kernel::services::proc::posix_timer;
+//! use crate::kernel::services::timer::posix_timer;
 //!
 //! // 启动
 //! let new_value = Itimerspec { it_interval_sec: 1, it_interval_nsec: 0,
