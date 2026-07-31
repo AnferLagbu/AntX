@@ -18,16 +18,19 @@
 //! 评估日期: 2026-06-04
 
 use crate::kernel::framework::net_socket as fw_net_socket;
-use crate::kernel::framework::sync::{IrqSpinLock, OnceLock};
+use crate::kernel::framework::sync::{Mutex, OnceLock};
 use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;
 
 /// 全局 SmoltcpNetStack 实例, 由 `init()` 初始化, socket.rs 通过 `net_stack()` 访问
-static NET_STACK_INSTANCE: OnceLock<IrqSpinLock<SmoltcpNetStack>> = OnceLock::new();
+///
+/// M3 修复: 使用 Mutex 替代 IrqSpinLock, 因为网络操作 (socket/bind/listen 等)
+/// 都在进程上下文执行, 不在中断上下文, 可以使用睡眠锁减少 CPU 空转。
+static NET_STACK_INSTANCE: OnceLock<Mutex<SmoltcpNetStack>> = OnceLock::new();
 
 /// 获取全局 SmoltcpNetStack 实例的引用 (需在 `init()` 之后调用)
 ///
 /// 返回 `None` 表示网络子系统未初始化，调用方应返回 `NotReady` 错误而非 panic。
-pub fn net_stack() -> Option<&'static IrqSpinLock<SmoltcpNetStack>> {
+pub fn net_stack() -> Option<&'static Mutex<SmoltcpNetStack>> {
     NET_STACK_INSTANCE.get()
 }
 
@@ -191,8 +194,9 @@ impl From<init::InitState> for InitState {
 /// 如果无 NIC 则进入 "NoNetwork" 状态。
 pub fn init() {
     // 初始化全局 SmoltcpNetStack 实例
+    // M3 修复: 使用 Mutex 替代 IrqSpinLock
     NET_STACK_INSTANCE.get_or_init(|slot| {
-        slot.write(IrqSpinLock::new(SmoltcpNetStack::new()));
+        slot.write(Mutex::new(SmoltcpNetStack::new()));
     });
     fw_net_socket::qx_net_init();
 }

@@ -15,15 +15,16 @@
 - **修复**: 已完成 — 通过链接脚本排序 + KPTI map_text_region_in_user_pml4 全局映射
 - **状态**: [X]
 
-### H2: 上下文切换无 FPU/SSE 状态保存
+### H2: 上下文切换无 FPU/SSE 状态保存 ✅ 已修复
 
 - **描述**: 如果内核线程或用户进程使用浮点/SIMD 指令，上下文切换导致 FPU/XMM 寄存器数据损坏
-- **位置**: [switch.asm](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/switch.asm)
+- **位置**: [switch.asm](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/switch.asm) + [context.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/arch/aarch64/context.rs) + [types.rs](file:///home/anfer/Code/QueenX/src/kernel/services/proc/types.rs#L160-L194)
 - **方案**:
   - 短期: Process 结构体添加 FPU 状态区域，switch.asm 中使用 `xsave`/`xrstor` 保存/恢复
   - 长期: 实现 lazy FPU 切换 (CR0.TS 位)，仅在首次使用 FPU 时保存/恢复
 - **详情**: x86_64 需保存 x87 + XMM + YMM (AVX)，AArch64 需保存 V0-V31 + FPCR + FPSR
-- **状态**: []
+- **修复**: 已完成 — x86_64 `switch.asm` 使用 `fxsave`/`fxrstor` 保存/恢复 512 字节 FPU 状态；aarch64 `context.rs` 使用 `stp`/`ldp` 保存/恢复 V0-V31 + FPCR/FPSR；`ProcessContext` 包含 `fpu_state: [u64; 64]` (512 bytes) + `_fpu_pad` 16 字节对齐填充
+- **状态**: [X]
 
 ### H3: Socket 错误映射一刀切 InvalidArgument ✅ 已修复
 
@@ -56,37 +57,41 @@
 
 ## 中优先级 (🟡 代码质量/正确性/可维护性)
 
-### M1: PMM 无 double-free 检测
+### M1: PMM 无 double-free 检测 ✅ 已修复
 
 - **描述**: `free_pages` 重复释放同一物理页破坏 Buddy 空闲链表，导致后续分配返回已用页面
-- **位置**: [pmm.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/pmm.rs)
+- **位置**: [pmm.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/pmm.rs#L1014-L1019)
 - **方案**: 页帧元数据添加 `allocated` 标志位，`free_pages` 时检查；或使用 page frame 引用计数
-- **状态**: []
+- **修复**: 已完成 — `do_free` 中使用 bitmap 检测 double-free（bitmap 约定：1=已分配, 0=空闲），`test_bit(pfn)` 为 0 时打印警告并返回，在 `buddy_ready` 前后都检测
+- **状态**: [X]
 
-### M2: PMM Buddy 合并未验证伙伴 order
+### M2: PMM Buddy 合并未验证伙伴 order ✅ 已修复
 
 - **描述**: Buddy 合并时只检查伙伴页是否在空闲链表，未验证伙伴页的 `order` 字段是否匹配当前 order，可能导致跨阶合并
-- **位置**: [pmm.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/pmm.rs)
+- **位置**: [pmm.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/pmm.rs#L824-L839)
 - **方案**: 合并前检查 `buddy_order == current_order`，不匹配则停止合并
-- **状态**: []
+- **修复**: 已完成 — `buddy_try_merge` 中读取伙伴块 `buddy_state`，验证 `buddy_state <= MAX_BUDDY_ORDER` 且 `buddy_state == order`，不满足则停止合并，防止跨阶合并
+- **状态**: [X]
 
-### M3: 全局 IrqSpinLock 网络栈瓶颈
+### M3: 全局 IrqSpinLock 网络栈瓶颈 ✅ 已修复
 
 - **描述**: 每次 socket 操作锁住整个 `SmoltcpNetStack`，高并发下严重性能瓶颈
 - **位置**: [socket.rs](file:///home/anfer/Code/QueenX/src/kernel/services/net/socket.rs) + [net/mod.rs](file:///home/anfer/Code/QueenX/src/kernel/services/net/mod.rs)
 - **方案**:
   - 短期: `IrqSpinLock` 改为 `Mutex` (如果网络操作不在中断上下文)
   - 长期: 拆分为细粒度锁 (per-socket lock, 全局接口配置锁)
-- **状态**: []
+- **修复**: 已完成 — 短期方案实施：`NET_STACK_INSTANCE` 从 `IrqSpinLock<SmoltcpNetStack>` 改为 `Mutex<SmoltcpNetStack>`。网络操作（socket/bind/listen 等）均在进程上下文执行，不在中断上下文，使用 Mutex 的自旋+yield 模式可减少 CPU 空转。细粒度锁拆分作为长期目标待后续评估
+- **状态**: [X]
 
-### M4: 100+ 分支巨型 match 系统调用分发
+### M4: 100+ 分支巨型 match 系统调用分发 ✅ 已修复
 
 - **描述**: 单个 `match num` 块含 100+ 分支，可读性差，维护成本高
 - **位置**: [dispatch.rs](file:///home/anfer/Code/QueenX/src/kernel/services/syscall/dispatch.rs)
 - **方案**:
   - 按子系统拆分为独立函数 (`dispatch_fs`, `dispatch_proc`, `dispatch_net` 等)
   - 或使用跳转表 (`[Option<fn(&mut InterruptFrame)>; 512]`) 替代 match
-- **状态**: []
+- **修复**: 已完成 — 主 `dispatch` 函数按子系统拆分为 `dispatch_fs`/`dispatch_proc`/`dispatch_net`/`dispatch_mm`/`dispatch_sync`/`dispatch_credo`/`dispatch_other` 7 个独立函数，每个函数内部使用 match 处理对应子系统的 syscall
+- **状态**: [X]
 
 ### M5: PID 空间不可回收 ✅ 已修复
 
@@ -260,15 +265,15 @@
 
 | 维度 | 总数 | 已完成 | 待修复 | 完成率 |
 |------|------|--------|--------|--------|
-| 高优先级 | 5 | 4 (H1, H3-H5) | 1 (H2) | 80% |
-| 中优先级 | 9 | 5 (M5-M9) | 4 (M1-M4) | 56% |
+| 高优先级 | 5 | 5 (H1-H5) | 0 | 100% |
+| 中优先级 | 9 | 9 (M1-M9) | 0 | 100% |
 | 低优先级 | 6 | 6 (L1-L6) | 0 | 100% |
-| **合计** | **20** | **15** | **5** | **75%** |
+| **合计** | **20** | **20** | **0** | **100%** |
 | 已修复 (历史) | 13 | 13 | 0 | 100% |
 
-**推荐修复顺序**: H2 (FPU 保存) → M1 (double-free) → M2 (buddy order) → M3 (网络锁) → M4 (syscall 分发)
+**推荐修复顺序**: ~~H2 (FPU 保存)~~ → ~~M1 (double-free)~~ → ~~M2 (buddy order)~~ → ~~M3 (网络锁)~~ → ~~M4 (syscall 分发)~~
 
-**更新日期**: 2026-07-30
+**更新日期**: 2026-07-31
 
 ---
 

@@ -887,12 +887,6 @@ impl UserProcManager {
             let svirt = stack_virt + USER_STACK_GUARD + i * PAGE_SIZE;
             let sphys = stack_phys + i * PAGE_SIZE;
 
-            // 暂时跳过 klog 以隔离 hang 原因
-            // crate::klog_boot_info!(
-            //     "[USER] create: mapping stack page {}/{}: virt={:#X} phys={:#X}",
-            //     i + 1, USER_STACK_SIZE / PAGE_SIZE, svirt, sphys
-            // );
-
             raw::vmm_map_user_page(
                 cr3_val,
                 svirt,
