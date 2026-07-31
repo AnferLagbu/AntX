@@ -364,21 +364,25 @@ pub fn rcu_callback_count() -> u32 {
     rcu_data(cpu).callback_count.load(Ordering::Relaxed)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn rcu_read_lock() {
     rcu_read_lock_impl();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn rcu_read_unlock() {
     rcu_read_unlock_impl();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn synchronize_rcu() {
     synchronize_rcu_impl();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn rcu_init() {
     RCU_GP_COUNTER.store(1, Ordering::Release);

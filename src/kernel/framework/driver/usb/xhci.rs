@@ -613,6 +613,7 @@ impl XhciController {
 
         // Doorbell 寄存器 0 = 触发 Command Ring
         if let Some(mmio) = self.iomem.as_ref() {
+            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             let cap = unsafe { &*self.cap_regs };
             // SAFETY: mmio 由 IoMem 抽象提供, virt_ptr() 返回有效的虚拟地址
             let doorbell_base = unsafe { mmio.virt_ptr() } as usize + cap.db_off as usize;

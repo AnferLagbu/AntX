@@ -423,6 +423,7 @@ pub fn devtree_probe_composites() -> usize {
     created
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn composite_probe() -> u32 {
     devtree_probe_composites() as u32

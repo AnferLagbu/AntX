@@ -720,6 +720,7 @@ impl KeyboardDriver {
 static KEYBOARD_DEVICE: Mutex<Option<Box<KeyboardDriver>>> = Mutex::new(None);
 
 /// 初始化键盘 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_init() {
     let mut driver = Box::new(KeyboardDriver::new());
@@ -740,6 +741,7 @@ pub extern "C" fn keyboard_init() {
 
 /// 处理键盘中断 (C 兼容接口)
 /// IRQ 上下文使用 try_lock 避免与主代码路径死锁
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_irq_handler() {
     if let Some(mut guard) = KEYBOARD_DEVICE.try_lock() {
@@ -750,6 +752,7 @@ pub extern "C" fn keyboard_irq_handler() {
 }
 
 /// 读取字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_read_char() -> i32 {
     match crate::kernel::framework::chitin::chitin_input_read() {
@@ -759,6 +762,7 @@ pub extern "C" fn keyboard_read_char() -> i32 {
 }
 
 /// 检查是否有可读字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_has_char() -> i32 {
     if crate::kernel::framework::chitin::chitin_input_has_data() {
@@ -769,12 +773,14 @@ pub extern "C" fn keyboard_has_char() -> i32 {
 }
 
 /// C 兼容别名: keyboard_has_data (旧C代码/FFI调用的名称)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_has_data() -> bool {
     keyboard_has_char() != 0
 }
 
 /// C 兼容别名: keyboard_get_char
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_get_char() -> i32 {
     keyboard_read_char()

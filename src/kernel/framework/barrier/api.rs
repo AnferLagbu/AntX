@@ -26,6 +26,7 @@ use super::types::*;
 static RECOVERY_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 static BOOT_FINGERPRINTS_CHECKED: AtomicBool = AtomicBool::new(false);
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_barrier_maintenance() {
     let tick = crate::kernel::framework::tick_query::current_tick();
@@ -38,6 +39,7 @@ pub fn recovery_barrier_maintenance() {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_register(domain_id: u64) -> i32 {
     let domain: &'static RecoveryDomain = {
@@ -50,6 +52,7 @@ pub fn recovery_domain_register(domain_id: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_unregister(domain_id: u64) -> i32 {
     let mut mgr = super::RECOVERY_MANAGER.lock();
@@ -82,16 +85,19 @@ pub fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_panic_flag_is_set() -> bool {
     super::PANIC_FLAG.load(Ordering::SeqCst)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_panic_flag_clear() {
     super::PANIC_FLAG.store(false, Ordering::SeqCst)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_try_recover_from_idt() -> i32 {
     let tick = crate::kernel::framework::tick_query::current_tick();
@@ -153,12 +159,14 @@ pub fn recovery_try_recover_from_idt() -> i32 {
     -1
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_trigger_panic() -> ! {
     super::PANIC_FLAG.store(true, Ordering::SeqCst);
     panic!("[RECOVERY-TEST] Deliberate panic for barrier-stack E2E test");
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_was_attempted() -> i32 {
     if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) {
@@ -168,6 +176,7 @@ pub fn recovery_was_attempted() -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_set_cbs(
     domain_id: u64,
@@ -186,6 +195,7 @@ pub fn recovery_domain_set_cbs(
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -198,6 +208,7 @@ pub fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) ->
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_undo_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -208,6 +219,7 @@ pub fn recovery_undo_count(domain_id: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -225,6 +237,7 @@ pub fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_dep_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -235,6 +248,7 @@ pub fn recovery_domain_dep_count(domain_id: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -249,12 +263,14 @@ pub fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end: u64) -> i
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_rollback_log_count() -> i32 {
     let log = super::manager::ROLLBACK_LOG.lock();
     log.iter().filter(|e| e.is_some()).count() as i32
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_get_state(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -265,6 +281,7 @@ pub fn recovery_domain_get_state(domain_id: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn recovery_domain_get_failures(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();

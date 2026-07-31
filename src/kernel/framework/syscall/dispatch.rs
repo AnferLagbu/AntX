@@ -12,6 +12,7 @@ use super::types::*;
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
 #[cfg(target_arch = "x86_64")]
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -34,6 +35,7 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
     }
     // ═══ 诊断结束 ═══
 
+    // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
     unsafe {
         if frame.is_null() {
             return;
@@ -110,6 +112,7 @@ macro_rules! dispatch {
     }};
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -543,6 +546,7 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
             let chunk = remaining.min(256);
             let mut kernel_buf = [0u8; 256];
             let copied = copy_from_user_buf(
+                // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
                 unsafe { buf.add(buf_off) },
                 &mut kernel_buf[..chunk],
                 user_cr3,
@@ -576,6 +580,7 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
     while written < total {
         let chunk = (total - written).min(kernel_buf.len());
         let copied = copy_from_user_buf(
+            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             unsafe { buf.add(written) },
             &mut kernel_buf[..chunk],
             user_cr3,

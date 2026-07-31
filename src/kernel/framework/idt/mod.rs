@@ -128,6 +128,7 @@ pub extern "C" fn idt_init() -> i32 {
     let manager = IdtManager::instance();
 
     // 获取 ISR 地址表 (从 isr.asm 导出的符号, 使用 fn 指针)
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         fn isr0();
         fn isr1();
@@ -398,6 +399,7 @@ pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
 /// * `handler` - handler 地址
 /// * `selector` - 代码段选择子
 /// * `type_attr` - 类型属性标志
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: u8) {
     let manager = IdtManager::instance();
@@ -420,6 +422,7 @@ pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: 
 /// # Returns
 /// - `0`: 成功
 /// - `-1`: 参数无效
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_register_irq(
     irq: u8,
@@ -445,6 +448,7 @@ pub extern "C" fn idt_register_irq(
 }
 
 /// 注销 IRQ handler (FFI 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_unregister_irq(irq: u8, handler: CIrqHandler) -> i32 {
     let manager = IdtManager::instance();
@@ -456,6 +460,7 @@ pub extern "C" fn idt_unregister_irq(irq: u8, handler: CIrqHandler) -> i32 {
 }
 
 /// 启用指定 IRQ
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_enable_irq(irq: u8) {
     let manager = IdtManager::instance();
@@ -463,6 +468,7 @@ pub extern "C" fn idt_enable_irq(irq: u8) {
 }
 
 /// 禁用指定 IRQ
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_disable_irq(irq: u8) {
     let manager = IdtManager::instance();
@@ -470,6 +476,7 @@ pub extern "C" fn idt_disable_irq(irq: u8) {
 }
 
 /// 导出 IDT 状态 (用于调试)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_dump_state() {
     let manager = IdtManager::instance();
@@ -477,6 +484,7 @@ pub extern "C" fn idt_dump_state() {
 }
 
 /// 获取中断计数统计
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_get_interrupt_count(vector: u8) -> u64 {
     let manager = IdtManager::instance();
@@ -484,6 +492,7 @@ pub extern "C" fn idt_get_interrupt_count(vector: u8) -> u64 {
 }
 
 /// 打印详细的中断统计信息
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn idt_print_interrupt_stats() {
     let manager = IdtManager::instance();

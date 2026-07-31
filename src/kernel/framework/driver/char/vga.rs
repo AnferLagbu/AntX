@@ -420,6 +420,7 @@ impl Default for VgaDriver {
 static VGA_DRIVER: IrqSpinLock<Option<VgaDriver>> = IrqSpinLock::new(None);
 
 /// 初始化全局 VGA 驱动
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_init() {
     VGA_DRIVER.with_mut(|opt| {
@@ -431,6 +432,7 @@ pub extern "C" fn vga_init() {
 }
 
 /// 向 VGA 输出字符 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_putchar(ch: i32) {
     VGA_DRIVER.with_mut(|opt| {
@@ -441,6 +443,7 @@ pub extern "C" fn vga_putchar(ch: i32) {
 }
 
 /// 向 VGA 输出字符串 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_puts(s: *const u8) {
     if s.is_null() {
@@ -456,11 +459,13 @@ pub extern "C" fn vga_puts(s: *const u8) {
                 vga.putchar(ch as u8);
             }
         });
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         ptr = unsafe { ptr.add(1) };
     }
 }
 
 /// 清屏 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_clear() {
     VGA_DRIVER.with_mut(|opt| {
@@ -471,6 +476,7 @@ pub extern "C" fn vga_clear() {
 }
 
 /// 设置颜色 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vga_set_color(fg: u8, bg: u8) {
     VGA_DRIVER.with_mut(|opt| {

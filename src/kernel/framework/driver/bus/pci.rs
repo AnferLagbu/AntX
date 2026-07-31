@@ -35,6 +35,7 @@ impl Driver for PciBusDriver {
 /// 调用内核 PCI 模块执行总线扫描和设备枚举,
 /// 然后将 PCI 总线注册到 Chitin 框架。
 /// 返回发现的设备数量。
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn pci_init() -> i32 {
     let count = crate::kernel::framework::pci::init() as i32;

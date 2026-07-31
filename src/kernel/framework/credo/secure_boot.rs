@@ -625,6 +625,7 @@ pub fn tpm_is_initialized() -> bool {
 ///   1 = is_enabled() → bool
 ///   2 = is_locked() → bool
 ///   3 = stats() → (ok_count 位于高 32 位 | fail_count 位于低 32 位)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     match cmd {
@@ -669,6 +670,7 @@ pub fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 ///   3 = unseal(fd: a1) → bool (简化)
 ///   4 = quote(pcr 掩码: a1, nonce 指针: a2, nonce 长度: a3) → 哈希前8字节
 ///   5 = is_initialized() → 是否已初始化
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn sys_tpm(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !tpm_is_initialized() && cmd != 5 {

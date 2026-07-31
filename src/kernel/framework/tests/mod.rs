@@ -406,6 +406,7 @@ pub fn test_runner_init() {
     {
         let read_u64 = |phys: u64, idx: usize| -> u64 {
             let va = phys + crate::kernel::framework::mm::KERNEL_BASE + idx as u64 * 8;
+            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             unsafe { core::ptr::read_volatile(va as *const u64) }
         };
         let pd24 = read_u64(0x109000, 24);

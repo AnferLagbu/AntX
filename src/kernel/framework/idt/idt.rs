@@ -566,9 +566,11 @@ impl IdtManager {
 
             RecoveryAction::TerminateProcess(exit_code) => {
                 // User-mode 异常：终止进程
+                // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
                 unsafe extern "C" {
                     fn process_exit(code: u32);
                 }
+                // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
                 unsafe extern "C" {
                     fn scheduler_yield();
                 }
@@ -582,6 +584,7 @@ impl IdtManager {
 
             RecoveryAction::DomainRecovery => {
                 // 尝试域级恢复 (barrier-stack)
+                // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
                 unsafe extern "C" {
                     fn recovery_try_recover_from_idt() -> i32;
                 }

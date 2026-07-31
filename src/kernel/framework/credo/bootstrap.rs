@@ -73,6 +73,7 @@ pub fn pwm_now() -> u64 {
 pub(crate) mod raw {
     /// 安全获取 CPU TSC 频率 (C ABI 包装, 无内存不安全)
     pub fn tsc_frequency() -> u64 {
+        // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
             fn cpu_get_tsc_frequency() -> u64;
         }

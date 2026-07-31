@@ -62,12 +62,12 @@ def is_allowed_line(line: str, prev_lines: list[str] = None) -> bool:
         return True
     if "extern \"C\"" in line or "extern \"system\"" in line:
         return True
-    if "#[no_mangle]" in line:
+    if "no_mangle" in line:
         return True
-    # 检查前 3 行是否含 #[no_mangle] 属性 (跨行属性场景)
+    # 检查前 3 行是否含 no_mangle 属性 (跨行属性场景)
     if prev_lines:
         for prev in prev_lines[-3:]:
-            if "#[no_mangle]" in prev:
+            if "no_mangle" in prev:
                 return True
             if "extern \"C\"" in prev or "extern \"system\"" in prev:
                 return True
@@ -89,22 +89,24 @@ def main() -> int:
 
         rel = rs_file.relative_to(PROJECT_ROOT)
 
-        for lineno, line in enumerate(content.splitlines(), start=1):
-            if is_allowed_line(line, prev_lines=content.splitlines()[max(0, lineno-4):lineno-1]):
+        lines = content.splitlines()
+        # 预计算每行的 extern "C" 块嵌套深度 (O(n) 扫描)
+        extern_depth = [0] * (len(lines) + 1)
+        depth = 0
+        for i, line in enumerate(lines):
+            if 'extern "C"' in line and '{' in line:
+                depth += 1
+            elif depth > 0:
+                depth += line.count('{') - line.count('}')
+                depth = max(depth, 0)
+            extern_depth[i + 1] = depth
+
+        for lineno, line in enumerate(lines, start=1):
+            prev_lines = lines[max(0, lineno-4):lineno-1]
+            if is_allowed_line(line, prev_lines=prev_lines):
                 continue
 
-            # 计算到当前行时的 extern "C" 块嵌套深度 (>0 表示在块内)
-            in_extern_block = 0
-            for prev in content.splitlines()[:lineno]:
-                if 'extern "C"' in prev and "{" in prev:
-                    in_extern_block += 1
-                # 简单计数: 每行 { +1, } -1 (近似, 但对单行 extern 已足够)
-                if "{" in prev and 'extern "C"' in prev:
-                    pass  # 已计数
-                elif "{" in prev and in_extern_block > 0:
-                    in_extern_block += 1
-                elif "}" in prev and in_extern_block > 0:
-                    in_extern_block -= 1
+            in_extern_block = extern_depth[lineno]
 
             # C 类型后缀
             if C_TYPE_SUFFIX.search(line):

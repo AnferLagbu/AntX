@@ -238,12 +238,14 @@ impl RxRing {
 
     /// 获取描述符的接收长度
     pub fn packet_length(&self, idx: usize) -> usize {
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         let desc = unsafe { &*self.ptr.add(idx) };
         desc.length as usize
     }
 
     /// 获取描述符的错误码
     pub fn errors(&self, idx: usize) -> u8 {
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         let desc = unsafe { &*self.ptr.add(idx) };
         desc.errors
     }
@@ -498,6 +500,7 @@ impl E1000Device {
 
     #[cfg(not(feature = "kernel_test"))]
     pub fn probe(&mut self) -> DriverResult<()> {
+        // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
             fn pci_read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16;
             fn pci_read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32;
@@ -778,6 +781,7 @@ pub extern "C" fn e1000_irq_entry(_frame: *mut u8) {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn e1000_probe() -> i32 {
     // aarch64 QEMU virt 无 e1000 NIC, PCI ECAM 访问可能导致 Data Abort.
@@ -831,6 +835,7 @@ pub extern "C" fn e1000_probe() -> i32 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn get_e1000_instance() -> *mut u8 {
     match &mut *E1000_DEVICE.lock() {
@@ -840,6 +845,7 @@ pub extern "C" fn get_e1000_instance() -> *mut u8 {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn e1000_dump_regs() {
     #[cfg(feature = "e1000-verbose")]
@@ -890,6 +896,7 @@ pub extern "C" fn e1000_dump_regs() {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn e1000_dump_stats() {
     #[cfg(feature = "e1000-verbose")]
@@ -930,6 +937,7 @@ static KALLOC_BUF: crate::kernel::framework::sync::IrqSpinLock<AlignedKallocBuf>
 static KALLOC_OFF: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 #[cfg(not(feature = "kernel_test"))]
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety

@@ -54,6 +54,7 @@ pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
     crate::kernel::framework::userptr::validate_user_buf(ptr, len)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -100,6 +101,7 @@ pub unsafe extern "C" fn syscall_init() {
 
 pub(crate) mod raw {
     // ============= 集中 FFI 声明 =============
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         // 时间
         fn timer_get_ticks() -> u64;
@@ -114,6 +116,7 @@ pub(crate) mod raw {
 
     // x86_64 专属: 键盘
     #[cfg(target_arch = "x86_64")]
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         fn keyboard_has_data() -> bool;
         fn keyboard_get_char() -> i32;

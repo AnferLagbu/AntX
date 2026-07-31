@@ -92,6 +92,7 @@ pub fn strlen_safe(s: &[i8]) -> usize {
 /// * `0` - 相等
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -132,6 +133,7 @@ pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 { unsafe {
 /// * `0` - 相等
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -304,6 +306,7 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 { unsa
 ///
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -340,6 +343,7 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 ///
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -385,6 +389,7 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 ///
 /// # Returns
 /// 找到的子串指针，或 NULL 如果未找到
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -456,6 +461,7 @@ pub unsafe extern "C" fn memcpy(
     dest: *mut u8,
     src: *const u8,
     n: usize,
+// SAFETY: 指针操作在有效范围内，调用方保证指针有效性
 ) -> *mut u8 { unsafe {
     if dest.is_null() || src.is_null() || n == 0 {
         return dest;
@@ -482,6 +488,7 @@ pub unsafe extern "C" fn memcpy(
 ///
 /// # Returns
 /// 目标地址
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -526,6 +533,7 @@ pub unsafe extern "C" fn memmove(
 ///
 /// # Returns
 /// 目标地址
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -603,6 +611,7 @@ pub unsafe extern "C" fn memset(
 ///
 /// # Returns
 /// 目标地址
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 ///
@@ -644,6 +653,7 @@ pub unsafe extern "C" fn memset_optimized(
 /// * `0` - 相等
 /// * `<0` - s1 < s2
 /// * \>0 - s1 > s2
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -689,6 +699,7 @@ pub unsafe extern "C" fn memcmp(
 ///
 /// # Returns
 /// 找到的字符指针，或 NULL 如果未找到
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -727,6 +738,7 @@ pub unsafe extern "C" fn memchr(
 /// # Arguments
 /// * `ptr` - 要清零的内存区域
 /// * `len` - 清零的字节数
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety

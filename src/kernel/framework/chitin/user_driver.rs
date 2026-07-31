@@ -334,6 +334,7 @@ pub fn chitin_forward_irq(node_id: NodeId) -> bool {
     true
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn user_driver_bind(node_id: u32, pid: u32, pwm: u64) -> i32 {
     match devtree_bind_user_device(node_id, pid, pwm) {
@@ -342,6 +343,7 @@ pub fn user_driver_bind(node_id: u32, pid: u32, pwm: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn user_driver_unbind(
     node_id: u32,
@@ -363,6 +365,7 @@ pub fn user_driver_unbind(
 /// 向目标进程设置待处理信号 (SIGUSR1=10 for IRQ delivery).
 /// 通过进程引用计数保护, 确保目标进程在信号设置期间不会被销毁。
 /// 信号将在返回用户空间时由信号分发框架处理。
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn process_signal_pending_set(pid: u32, sig: u32) {
     if !process_try_inc_ref(pid) {
@@ -375,6 +378,7 @@ pub extern "C" fn process_signal_pending_set(pid: u32, sig: u32) {
 /// 进程退出时清理所有 Chitin 设备绑定
 /// 遍历设备树, 清除该进程在所有节点上的 user_mapped 标记,
 /// 防止残留标记导致设备节点永远无法被其他进程重新绑定
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn chitin_process_cleanup(pid: u32) {
     devtree_clear_user_mapped_by_pid(pid);

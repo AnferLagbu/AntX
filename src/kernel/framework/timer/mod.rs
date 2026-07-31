@@ -165,6 +165,7 @@ pub use time_sync::*;
 /// ```c
 /// void timer_init(void);
 /// ```
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -186,6 +187,7 @@ pub unsafe extern "C" fn timer_init_ffi() {
 /// ```c
 /// uint64_t timer_get_ticks(void);
 /// ```
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn timer_get_ticks() -> u64 {
     get_ticks()
@@ -197,6 +199,7 @@ pub extern "C" fn timer_get_ticks() -> u64 {
 /// ```c
 /// void timer_sleep(uint64_t ms);
 /// ```
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn timer_sleep(ms: u64) {
     let _ = timer_sleep_safe(ms);
@@ -208,6 +211,7 @@ pub extern "C" fn timer_sleep(ms: u64) {
 /// ```c
 /// void timer_sleep_busy(uint64_t ms);
 /// ```
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn timer_sleep_busy(ms: u64) {
     busy_wait_ms(ms);

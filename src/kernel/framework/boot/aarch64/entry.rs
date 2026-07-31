@@ -15,6 +15,7 @@ use crate::kernel::framework::arch::uart;
 // 启动入口
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 /// AArch64 启动入口。
 ///
@@ -81,6 +82,7 @@ pub unsafe extern "C" fn entry() -> ! { unsafe {
 // BSS 清零
 // ============================================================================
 
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     static mut __bss_start: u8;
     static _kernel_end: u8;

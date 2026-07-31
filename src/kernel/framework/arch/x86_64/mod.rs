@@ -213,6 +213,7 @@ impl InterruptArch for X8664 {
                 // 注意: 函数指针返回的是 LMA (低地址), 需要转换为 VMA (高地址)
                 // 链接脚本定义: _kernel_text_vma = 0xFFFF800001000000 + _kernel_text_lma
                 // 因此偏移量 = 0xFFFF800001000000 (不是 KERNEL_BASE)
+                // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
                 unsafe extern "C" { fn syscall_entry(); }
                 let entry_lma = syscall_entry as *const () as u64;
                 let entry_hi = entry_lma + 0xFFFF800001000000u64;
@@ -311,6 +312,7 @@ impl MmuArch for X8664 {
     /// 进程上下文切换 (process_switch_asm)。
     #[inline(always)]
     fn context_switch(from: *mut u8, to: *const u8) {
+        // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
             fn process_switch_asm(prev: *mut u8, next: *const u8);
         }

@@ -56,21 +56,25 @@ struct ApPerCpu {
 static mut AP_PER_CPU: [Option<*mut ApPerCpu>; super::acpi::MAX_CPUS] =
     [None; super::acpi::MAX_CPUS];
 
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     fn ap_trampoline_start();
     fn ap_trampoline_end();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn smp_init_bsp() {
     init();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn smp_ready() -> bool {
     SMP_FULLY_INITIALIZED.load(Ordering::Acquire)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn smp_get_ap_count() -> u32 {
     AP_STARTED_COUNT.load(Ordering::Acquire)

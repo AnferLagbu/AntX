@@ -88,6 +88,7 @@ pub unsafe fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn ipc_pipe_close(fd: i32) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();

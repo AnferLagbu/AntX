@@ -77,11 +77,13 @@ fn split_parent_name(rel_path: &str) -> (&str, &str) {
 // VFS 核心接口 (内部)
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_init_internal() {
     super::vfs::init();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     let path = ptr_to_str(path);
@@ -156,12 +158,14 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     result
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_unmount_internal(path: *const u8) -> i32 {
     let path = ptr_to_str(path);
     VFS_MANAGER.unmount(path).as_i32()
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -256,6 +260,7 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     let fd_idx_us = fd_idx as usize;
@@ -309,6 +314,7 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     0
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
@@ -398,6 +404,7 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 ///   0 表示无会话,framework 层 ramfs.read 应当返回 EACCES 而非降级为管理员。
 ///
 /// 返回: 实际读取字节数, 负数表示错误.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
@@ -428,6 +435,7 @@ pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64,
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -478,6 +486,7 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
 // 调整 framework 实现即可. 当前未保留 stub, 避免假实现.
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     let fd_idx = fd as usize;
@@ -506,6 +515,7 @@ pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     result.unwrap_or(-1)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
@@ -550,6 +560,7 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     result.unwrap_or(-1)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -581,6 +592,7 @@ pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -602,6 +614,7 @@ pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -645,6 +658,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     result
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     if entry.is_null() {
@@ -682,12 +696,14 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     result.unwrap_or(-1)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_set_cwd_internal(path: *const u8) {
     let path = ptr_to_str(path);
     VFS_MANAGER.set_cwd(path);
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
@@ -712,11 +728,13 @@ pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
 // Barrier 接口
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_barrier_capture() {
     VFS_MANAGER.capture_snapshot();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_barrier_restore() -> i32 {
     VFS_MANAGER.restore_from_snapshot();
@@ -727,11 +745,13 @@ pub fn vfs_barrier_restore() -> i32 {
 // 公共 VFS API
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_init() {
     vfs_init_internal();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
     vfs_mount_internal(path, fs_name)
@@ -859,31 +879,37 @@ pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_umount(path: *const u8, flags: i32) -> i32 {
     vfs_umount_internal(path, flags)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {
     vfs_open_internal(path, flags, pwm)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_close(fd: u32) -> i32 {
     vfs_close_internal(fd)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
     vfs_read_internal(fd, buf, count)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
     vfs_write_internal(fd, buf, count)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     vfs_stat_internal(path, st, pwm)
@@ -906,11 +932,13 @@ pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
     vfs_mkdir_internal(path, pwm)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -932,11 +960,13 @@ pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_chown(path: *const u8, owner_pwm: u64, pwm: u64) -> i32 {
     vfs_chown_ext(path, owner_pwm, 0, pwm)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_chown_ext(
     path: *const u8,
@@ -969,6 +999,7 @@ pub fn vfs_chown_ext(
 /// - `atime`: 访问时间 (纳秒), u64::MAX 表示不修改
 /// - `mtime`: 修改时间 (纳秒), u64::MAX 表示不修改
 /// - `pwm`: 权限凭证
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -992,6 +1023,7 @@ pub fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u64) -> i32 {
 // fchmod — 按 fd 修改文件权限
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
     // Plan B: 通过 OpenFile 的 Inode trait 执行
@@ -1014,6 +1046,7 @@ pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
 // fchown — 按 fd 修改文件所有者
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     // Plan B: 通过 OpenFile 的 Inode trait 执行
@@ -1032,6 +1065,7 @@ pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     result.unwrap_or(-9)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
     vfs_unlink_internal(path, pwm)
@@ -1039,6 +1073,7 @@ pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
 
 /// link(oldpath, newpath) — 创建硬链接.
 /// E6-5: 通过 trait object 分发
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(oldpath);
@@ -1064,6 +1099,7 @@ pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
 
 /// symlink(target, linkpath) — 创建符号链接.
 /// E6-5: 通过 trait object 分发
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
     let tgt = ptr_to_str(target);
@@ -1089,6 +1125,7 @@ pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
 
 /// readlink(path, buf, bufsiz) — 读取符号链接目标.
 /// E6-5: 通过 trait object 分发
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
     let _ = pwm;
@@ -1116,6 +1153,7 @@ pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(old);
@@ -1150,16 +1188,19 @@ pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_rmdir(path: *const u8, pwm: u64) -> i32 {
     vfs_rmdir_internal(path, pwm)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     vfs_readdir_internal(fd, entry)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_sync() -> i32 {
     // P3-I-18: 遍历所有挂载点, 通过 FileSystem trait 的 fs_sync 分发.
@@ -1193,16 +1234,19 @@ pub fn vfs_sync() -> i32 {
     last_err
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_get_cwd(buf: *mut u8, size: u32) -> i32 {
     vfs_get_cwd_internal(buf, size)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_set_cwd(path: *const u8) {
     vfs_set_cwd_internal(path);
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let whence = match VfsSeekWhence::from_u32(whence) {
@@ -1230,11 +1274,13 @@ pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     result.unwrap_or(KernelError::InvalidArgument.as_i32())
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_fd_table() -> *const u8 {
     VFS_MANAGER.fd_table.lock().as_ptr() as *const u8
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
     let fs_type_str = ptr_to_str(fs_type);
@@ -1270,6 +1316,7 @@ pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
 // fstat — 从 fd 获取文件属性
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
     if st.is_null() {
@@ -1340,6 +1387,7 @@ pub fn vfs_get_fd_handle(fd_idx: usize) -> Option<u32> {
 // dup / dup2 — 文件描述符复制
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_dup(oldfd: u32) -> i32 {
     let old_usize = oldfd as usize;
@@ -1369,6 +1417,7 @@ pub fn vfs_dup(oldfd: u32) -> i32 {
     -24 // EMFILE
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
     let old_usize = oldfd as usize;
@@ -1412,6 +1461,7 @@ pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
 // ============================================================================
 
 /// 设置扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_setxattr_internal(path: *const u8, name: *const u8, value: *const u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -1440,6 +1490,7 @@ pub fn vfs_setxattr_internal(path: *const u8, name: *const u8, value: *const u8,
 }
 
 /// 获取扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -1469,6 +1520,7 @@ pub fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, s
 }
 
 /// 列出扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -1497,6 +1549,7 @@ pub fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u6
 }
 
 /// 删除扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);

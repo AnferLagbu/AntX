@@ -530,6 +530,7 @@ impl KmemCache {
 
     /// 创建新的 Slab (分配一页物理内存)
     fn new_slab(&self) -> Option<*mut SlabHeader> {
+        // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
@@ -824,6 +825,7 @@ static SLAB_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::At
 /// 初始化 Slab 系统 (创建通用缓存池)
 ///
 /// **必须在内核启动早期调用一次**, 在任何 slab_alloc/slab_free 之前。
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn slab_system_init() -> i32 {
     klog_slab!("[SLAB] Initializing Slab allocator...");
@@ -895,6 +897,7 @@ pub(crate) fn get_all_cache_snapshots(out: &mut [SlabCacheSnapshot]) -> usize {
 /// # Returns
 /// 成功: 分配的内存指针
 /// 失败: NULL
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
     if size == 0 || size > SLAB_MAX_OBJECT_SIZE {
@@ -921,6 +924,7 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn slab_free(ptr: *mut u8) {
     if ptr.is_null() {
@@ -942,6 +946,7 @@ pub extern "C" fn slab_free(ptr: *mut u8) {
 }
 
 /// 获取系统级统计信息 (FFI 兼容)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn slab_get_system_stats(
     total_memory: *mut u64,
@@ -974,6 +979,7 @@ pub extern "C" fn slab_get_system_stats(
 }
 
 /// 打印所有缓存的状态 (调试用途)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn slab_dump_all_caches() {
     klog_slab!("[SLAB] === Slab Allocator Status ===");
@@ -994,6 +1000,7 @@ pub extern "C" fn slab_dump_all_caches() {
 }
 
 /// 打印指定缓存的 slab 链表详情 (调试用途)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn slab_dump_cache(name: *const u8) {
     // SAFETY: 调用方保证 name 为合法 C 字符串

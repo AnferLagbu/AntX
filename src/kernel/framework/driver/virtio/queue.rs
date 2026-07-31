@@ -105,6 +105,7 @@ impl VirtQueue {
         let total_size = align_up(used_off + used_size, PAGE_SIZE as usize);
 
         let pages = total_size.div_ceil(PAGE_SIZE as usize);
+        // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
@@ -280,6 +281,7 @@ impl DmaBuffer {
     /// 缓冲区内容初始化为零.
     pub fn new(size: usize) -> Option<Self> {
         let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+        // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }

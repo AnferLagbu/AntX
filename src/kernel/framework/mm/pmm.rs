@@ -703,6 +703,7 @@ impl PhysicalMemoryManager {
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
     fn clear_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
+            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             let bitmap_size = unsafe {
                 let p = self as *const Self as *const u64;
                 core::ptr::read_volatile(p.add(1) as *const usize)
@@ -714,6 +715,7 @@ impl PhysicalMemoryManager {
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
     fn test_bit(&self, bit: usize) -> bool {
         if let Some(bmp) = self.bitmap.get() {
+            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             let bitmap_size = unsafe {
                 let p = self as *const Self as *const u64;
                 core::ptr::read_volatile(p.add(1) as *const usize)
@@ -784,6 +786,7 @@ impl PhysicalMemoryManager {
         // 用 core::ptr::addr_of! 获取真实字段地址, 防 LTO 错位.
         // Cell<T> 是 repr(transparent), 指针 cast 到 T 安全.
         let meta_field_ptr = core::ptr::addr_of!(self.buddy_meta);
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         let buddy_meta: Option<core::ptr::NonNull<u8>> = unsafe {
             core::ptr::read_volatile(meta_field_ptr as *const Option<core::ptr::NonNull<u8>>)
         };

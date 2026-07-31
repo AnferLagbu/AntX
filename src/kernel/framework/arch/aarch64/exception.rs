@@ -434,6 +434,7 @@ pub struct ExceptionFrame {
 // 异常向量表导出 (供 boot 入口设置 VBAR_EL1)
 // ============================================================================
 
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     /// 异常向量表起始地址 (定义在 asm)
     pub static exception_vector_table: u8;
@@ -448,6 +449,7 @@ unsafe extern "C" {
 /// EL0 SVC 系统调用处理器。
 /// 从 EL0 通过 `svc #0` 进入。
 /// QueenX aarch64 系统调用约定: x0=syscall_num, x1-x4=args, 返回 x0。
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     let syscall_num = frame.x0;
@@ -543,6 +545,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 }
 
 /// 默认同步异常处理 (EL1h)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     let esr: u64;
@@ -609,6 +612,7 @@ unsafe fn exc_puthex(val: u64) { unsafe {
 }}
 
 /// 默认 IRQ 处理 (EL1h)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
     // GIC ACK
@@ -666,6 +670,7 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
         if crate::kernel::framework::proc::SCHEDULER_READY
             .load(core::sync::atomic::Ordering::Acquire)
         {
+            // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
             unsafe extern "C" {
                 fn scheduler_tick();
             }
@@ -680,10 +685,12 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
 }
 
 /// 默认 FIQ 处理 (EL1h)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn fiq_handler(_frame: &ExceptionFrame) {}
 
 /// 默认 SError 处理 (EL1h)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
     loop {

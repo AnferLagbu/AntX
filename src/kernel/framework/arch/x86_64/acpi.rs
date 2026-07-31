@@ -468,6 +468,7 @@ pub extern "C" fn acpi_parse_madt(mb2_ptr: u64) -> bool {
     parse_madt(mb2_ptr)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn acpi_get_ap_count() -> u32 {
     get_ap_count()
@@ -875,16 +876,19 @@ pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
 // C-ABI 兼容接口
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn acpi_parse_all(mb2_ptr: u64) -> bool {
     parse_all_tables(mb2_ptr)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn acpi_shutdown_system() -> ! {
     acpi_shutdown()
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn acpi_reboot_system() -> ! {
     acpi_reboot()

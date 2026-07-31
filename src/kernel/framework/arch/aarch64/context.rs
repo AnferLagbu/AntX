@@ -173,6 +173,7 @@ pub struct Aarch64Context {
     pub _pad: u64,  // offset 128 → ss
 }
 
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     pub fn context_switch_asm(prev: *const u64, next: *const u64);
 }

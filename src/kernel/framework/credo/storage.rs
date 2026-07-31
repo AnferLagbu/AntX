@@ -18,6 +18,7 @@ fn as_cstr(p: &[u8]) -> *const u8 {
 const ENTRY_SZ: usize = 8 + 8 + 1 + 2 + 128 + PWM_NOTE_LEN + PWM_HASH_LEN + 8 + 8;
 const HDR_SZ: usize = 4 + 2 + 2 + 4;
 
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32;
     fn vfs_close_internal(fd_idx: u32) -> i32;

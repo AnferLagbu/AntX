@@ -507,6 +507,7 @@ static SERIAL_PORTS: IrqSpinLock<[Option<SerialPort>; MAX_COM_PORTS]> =
     IrqSpinLock::new([None, None, None, None]);
 
 /// 初始化指定串口 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_init(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
@@ -520,6 +521,7 @@ pub extern "C" fn serial_init(com: u32) {
 }
 
 /// 发送字符到串口 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_putc(com: u32, ch: i32) {
     if (com as usize) < MAX_COM_PORTS {
@@ -532,6 +534,7 @@ pub extern "C" fn serial_putc(com: u32, ch: i32) {
 }
 
 /// 发送字符串到串口 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_puts(com: u32, s: *const u8) {
     if (com as usize) < MAX_COM_PORTS && !s.is_null() {
@@ -544,12 +547,14 @@ pub extern "C" fn serial_puts(com: u32, s: *const u8) {
                     let _ = port.send_byte(ch as u8);
                 }
             });
+            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             ptr = unsafe { ptr.add(1) };
         }
     }
 }
 
 /// 从串口读取字符 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_getc(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
@@ -566,6 +571,7 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
 }
 
 /// 检查串口是否有数据 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
@@ -585,6 +591,7 @@ pub extern "C" fn serial_has_char(com: u32) -> i32 {
 }
 
 /// 处理串口中断 (C 兼容接口)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_irq_handler(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
@@ -597,12 +604,14 @@ pub extern "C" fn serial_irq_handler(com: u32) {
 }
 
 /// C 兼容别名: serial_has_data
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_has_data(com: i32) -> bool {
     serial_has_char(com as u32) != 0
 }
 
 /// C 兼容别名: serial_write(buf, count 参数交换以匹配旧 C API)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety

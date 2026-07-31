@@ -428,6 +428,7 @@ pub fn kexec_is_initialized() -> bool {
 ///   5 = get_state() → state
 ///   6 = get_segment_count() → count
 ///   7 = is_initialized() → 是否已初始化
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !kexec_is_initialized() && cmd != 7 {

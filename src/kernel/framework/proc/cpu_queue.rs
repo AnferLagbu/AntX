@@ -116,6 +116,7 @@ pub fn resched_cpu(target_cpu: u32) {
 
 /// IPI 重新调度入口 (由 IPI handler 调用，在目标 CPU 上执行)
 /// 通过 softirq 延迟执行 schedule()
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn resched_ipi_handler() {
     crate::kernel::framework::irq::raise_softirq(crate::kernel::framework::irq::SoftirqVec::Sched);
@@ -133,11 +134,13 @@ fn sched_softirq_handler() {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn cpq_init(cpu_id: u32, idle_pid: Pid) {
     init_cpu_queue(cpu_id, idle_pid);
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn cpq_resched_cpu(target_cpu: u32) {
     resched_cpu(target_cpu);

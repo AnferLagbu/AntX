@@ -31,11 +31,13 @@ static KPTI_READY: AtomicBool = AtomicBool::new(false);
 
 /// Trampoline TTBR1_EL1 物理地址 (最小化内核页表, EL0 运行时使用).
 /// `#[unsafe(no_mangle)]` 供汇编直接 `adrp+ldr` 读取.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 static TRAMP_TTBR1: AtomicU64 = AtomicU64::new(0);
 
 /// 完整内核 TTBR1_EL1 物理地址 (异常入口时切换回).
 /// `#[unsafe(no_mangle)]` 供汇编直接 `adrp+ldr` 读取.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 static KERNEL_TTBR1: AtomicU64 = AtomicU64::new(0);
 

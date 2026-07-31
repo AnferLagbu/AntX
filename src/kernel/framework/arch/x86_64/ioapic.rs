@@ -334,22 +334,27 @@ pub fn delivery_extint() -> u64 {
 // extern "C" FFI 包装 (保持不变)
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_init(base_addr: u64) {
     init(base_addr);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_mask_irq(irq: u8) {
     mask_irq(irq);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_unmask_irq(irq: u8) {
     unmask_irq(irq);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
     set_irq(irq, vector, apic_id, masked);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_set_irq_with_mode(
     irq: u8,
@@ -360,6 +365,7 @@ pub extern "C" fn ioapic_set_irq_with_mode(
 ) {
     set_irq_with_mode(irq, vector, apic_id, masked, mode);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn ioapic_route_irq_to_cpu(irq: u8, apic_id: u8) {
     route_irq_to_cpu(irq, apic_id);

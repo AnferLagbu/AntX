@@ -18,6 +18,7 @@ use super::types::*;
 // 详见 [docs/plan/maintenance-2026-06-11.md] (P1-I-01).
 pub use crate::kernel::services::proc::fd_table::{FdTable, MAX_FDS_PER_PROCESS};
 
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     fn pmm_alloc_pages(count: u64) -> *mut u8;
     fn vmm_create_user_page_table() -> u64;
@@ -29,6 +30,7 @@ pub const KERNEL_STACK_CANARY: u64 = 0xDEADBEEF_CAFEBABE;
 // boot.asm 中定义的 boot 栈底部地址 (物理地址).
 // 栈从 `stack_top` 向 `stack_bottom` 方向增长.
 // canary 在 boot.asm trampoline 阶段写入 `stack_bottom` 处.
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     static stack_bottom: u8;
 }

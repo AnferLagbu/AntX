@@ -212,6 +212,7 @@ pub fn calibrate_timer(_pit_hz: u64, target_ms: u64) -> u64 {
     apic_write(APIC_LVT_TIMER, LVT_MASK);
     apic_write(APIC_TIMER_ICR, 0xFFFFFFFF);
 
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         fn timer_sleep_busy(ms: u64);
     }
@@ -264,38 +265,47 @@ pub fn unmask_lint1(mode: u32) {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_init() {
     init();
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_eoi() {
     eoi();
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_is_ready() -> bool {
     is_initialized()
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_get_id() -> u32 {
     get_id()
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_send_ipi(apic_id: u8, vector: u8) {
     send_ipi(apic_id, vector);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_broadcast_ipi(vector: u8) {
     broadcast_ipi(vector);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_init_timer(vector: u8, periodic: bool, divisor: u32) {
     init_timer(vector, periodic, divisor);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_set_timer_count(count: u32) {
     set_timer_count(count);
 }
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn apic_calibrate_timer(pit_hz: u64, target_ms: u64) -> u64 {
     calibrate_timer(pit_hz, target_ms)

@@ -16,6 +16,7 @@ use crate::kernel::framework::proc::process_get_current_pid;
 // ============================================================================
 
 /// FFI: 创建共享内存段
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
     let ns = super::IPC_NAMESPACE.get_mut();
@@ -51,6 +52,7 @@ pub unsafe fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
 }
 
 /// FFI: 分离共享内存段
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn ipc_shm_detach(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
@@ -62,6 +64,7 @@ pub fn ipc_shm_detach(id: IpcId) -> i32 {
 }
 
 /// FFI: 销毁共享内存段
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn ipc_shm_destroy(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();

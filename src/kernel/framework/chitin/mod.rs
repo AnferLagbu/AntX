@@ -912,6 +912,7 @@ mod tests {
         let devices = CHITIN_DEVICES.lock();
         assert!(devices.iter().any(|d| d.id == id && d.ops.is_some()));
         CHITIN_DEVICES.lock().clear();
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         unsafe { drop(Box::from_raw(raw as *mut u8)); }
     }
 

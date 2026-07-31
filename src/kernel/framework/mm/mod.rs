@@ -16,6 +16,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 // 汇编层定义的用户态 CR3 临时保存 (isr.asm .bss)
 // KPTI 开启时, 中断入口在切换到内核页表前将硬件 CR3 (用户页表) 写入此变量.
 #[cfg(target_arch = "x86_64")]
+// SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
     #[link_name = "USER_CR3_SAVE"]
     static USER_CR3_SAVE_ASM: AtomicU64;

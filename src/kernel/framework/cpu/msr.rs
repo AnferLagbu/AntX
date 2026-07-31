@@ -50,6 +50,7 @@ pub unsafe fn write_msr(msr: u32, value: u64) { unsafe {
 }}
 
 /// FFI 兼容: 读取 MSR (返回两个 32 位值)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -69,6 +70,7 @@ pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -
 }}
 
 /// FFI 兼容: 写入 MSR
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -80,6 +82,7 @@ pub unsafe extern "C" fn cpu_write_msr(msr: u32, low: u32, high: u32) -> i32 { u
 }}
 
 /// FFI 兼容: 读取 64 位 MSR
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety

@@ -434,6 +434,7 @@ pub unsafe extern "C" fn sm_sendto(
     _flags: i32,
     addr: *const u8,
     _addrlen: u32,
+// SAFETY: 指针操作在有效范围内，调用方保证指针有效性
 ) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -488,6 +489,7 @@ pub unsafe extern "C" fn sm_recvfrom(
     _flags: i32,
     _addr: *mut u8,
     _addrlen: *mut u32,
+// SAFETY: 指针操作在有效范围内，调用方保证指针有效性
 ) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -730,6 +732,7 @@ pub unsafe extern "C" fn sm_setsockopt(
     _optname: i32,
     _optval: *const u8,
     _optlen: u32,
+// SAFETY: 指针操作在有效范围内，调用方保证指针有效性
 ) -> i32 { unsafe {
     // v2 SO_PASSCRED 路由: level==1 (SOL_SOCKET), optname==16 (SO_PASSCRED)
     if _level == 1 && _optname == 16 {

@@ -105,6 +105,7 @@ pub mod raw {
 // ============================================================================
 
 /// FFI: 创建消息队列
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn ipc_msgq_create(perm: i32) -> IpcId {
     let ns = super::IPC_NAMESPACE.get_mut();
@@ -193,6 +194,7 @@ pub unsafe fn ipc_msgq_recv(
 }
 
 /// FFI: 销毁消息队列
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn ipc_msgq_destroy(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();

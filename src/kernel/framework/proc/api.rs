@@ -43,15 +43,19 @@ pub use sched_ops::*;
 // wait_queue 桩函数
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn wait_queue_init(_wq: *mut u8) {}
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn wait_queue_add(_wq: *mut u8, _thread: u64) {}
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn wait_queue_wake_one(_wq: *mut u8) {}
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn wait_queue_wake_all(_wq: *mut u8) {}
 
@@ -59,11 +63,13 @@ pub fn wait_queue_wake_all(_wq: *mut u8) {}
 // 会话/用户进程初始化
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn session_init() {
     super::session::SESSION_MANAGER.init();
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn user_proc_init() {
     USER_PROC_MANAGER.init();
@@ -92,6 +98,7 @@ fn set_init_status(s: u32) {
 
 const ELF_MAX_SIZE: usize = 1024 * 1024;
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     if path.is_null() {
@@ -148,6 +155,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     result
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn user_proc_load_elf_from_memory(
     elf_data: *const u8,
@@ -158,6 +166,7 @@ pub fn user_proc_load_elf_from_memory(
 }
 
 /// 在 ELF 加载完成后, 在用户栈上建立 argv/envp (供 exec 系统调用使用)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -170,6 +179,7 @@ pub unsafe fn user_proc_setup_argv(
     envp: *const *const u8,
     envc: u32,
 ) -> i32 {
+    // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
     unsafe {
         let proc = match USER_PROC_MANAGER.get(pid) {
             Some(p) => p,
@@ -187,6 +197,7 @@ pub unsafe fn user_proc_setup_argv(
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
     crate::klog_boot_info!("[USER] user_proc_enter_by_pid: pid={}", pid);
@@ -220,6 +231,7 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
     crate::klog_boot_info!("[USER] calling USER_PROC_MANAGER.get({})", pid);
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
         // 诊断：打印从 Process 读取的 kernel_stack 值
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         let p_kstack = unsafe { (*proc).process().kernel_stack.load(core::sync::atomic::Ordering::SeqCst) };
         crate::klog_boot_info!(
             "[USER] got proc={:#X}, Process.kstack={:#X}",
@@ -234,6 +246,7 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");

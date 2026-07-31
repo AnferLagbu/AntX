@@ -48,6 +48,7 @@ pub fn busy_wait_ns(ns: u64) {
 
     let start = read_tsc();
 
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         fn cpu_get_tsc_frequency() -> u64;
     }
@@ -341,6 +342,7 @@ pub fn adaptive_sleep(ms: u64) {
 ///
 /// # Arguments
 /// * `ms` - 睡眠时间 (毫秒)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn timer_sleep_compat(ms: u64) {
     adaptive_sleep(ms);
@@ -352,6 +354,7 @@ pub extern "C" fn timer_sleep_compat(ms: u64) {
 ///
 /// # Arguments
 /// * `ms` - 忙等待时间 (毫秒)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn timer_sleep_busy_compat(ms: u64) {
     busy_wait_ms(ms);

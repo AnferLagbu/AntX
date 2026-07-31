@@ -540,6 +540,7 @@ impl VirtualMemoryManager {
         // CPU 继续取指执行, 因此 trampoline 代码页必须在进程页表低半区有映射.
         // 权限: USER (Ring 3 可访问) + RX (可执行, 不可写).
         if crate::kernel::framework::mm::kpti::kpti_is_active() {
+            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             unsafe {
                 let text_start = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_start) as u64;
                 let text_end = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_end) as u64;

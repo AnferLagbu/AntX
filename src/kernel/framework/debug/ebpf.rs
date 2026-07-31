@@ -1165,6 +1165,7 @@ pub fn bpf_is_initialized() -> bool {
 ///   2 = MAP_UPDATE_ELEM
 ///   3 = MAP_DELETE_ELEM
 ///   5 = PROG_LOAD
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
     if !bpf_is_initialized() {

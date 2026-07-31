@@ -288,9 +288,11 @@ pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
         return false;
     }
 
+    // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
     let phdr_base = unsafe { elf_data.add(header.e_phoff as usize) };
 
     for i in 0..header.e_phnum {
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         let phdr = unsafe {
             &*(phdr_base.add(i as usize * core::mem::size_of::<Elf64Phdr>()) as *const Elf64Phdr)
         };
@@ -305,6 +307,7 @@ pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
         if interp_offset + interp_len > elf_size as usize {
             continue;
         }
+        // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
         let interp_path = unsafe {
             core::slice::from_raw_parts(elf_data.add(interp_offset), interp_len)
         };

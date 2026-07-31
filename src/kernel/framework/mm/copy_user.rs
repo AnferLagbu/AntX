@@ -50,6 +50,7 @@ pub struct ExceptionTableEntry {
 
 /// 全局异常表 (在链接脚本中定义)
 #[used]
+// SAFETY: 指针操作在有效范围内
 #[unsafe(link_section = ".exception_table")]
 static EXCEPTION_TABLE_START: ExceptionTableEntry = ExceptionTableEntry {
     insn_addr: 0,

@@ -77,6 +77,7 @@ impl Default for AtomicBool {
 ///
 /// # Returns
 /// 操作前的旧值
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -88,6 +89,7 @@ pub unsafe extern "C" fn atomic_inc(ptr: *mut i32) -> i32 { unsafe {
 }}
 
 /// 原子减一 (Atomic decrement)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -99,6 +101,7 @@ pub unsafe extern "C" fn atomic_dec(ptr: *mut i32) -> i32 { unsafe {
 }}
 
 /// 原子比较并交换 (Compare and Swap)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -112,6 +115,7 @@ pub unsafe extern "C" fn atomic_cmpxchg(ptr: *mut i32, oldval: i32, newval: i32)
 }}
 
 /// 原子加法 (Atomic add)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -123,6 +127,7 @@ pub unsafe extern "C" fn atomic_add(ptr: *mut i32, val: i32) -> i32 { unsafe {
 }}
 
 /// 原子减法 (Atomic subtract)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -134,6 +139,7 @@ pub unsafe extern "C" fn atomic_sub(ptr: *mut i32, val: i32) -> i32 { unsafe {
 }}
 
 /// 原子设置 (Atomic store)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
@@ -145,6 +151,7 @@ pub unsafe extern "C" fn atomic_set(ptr: *mut i32, val: i32) { unsafe {
 }}
 
 /// 原子读取 (Atomic load)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety

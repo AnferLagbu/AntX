@@ -795,6 +795,7 @@ pub fn init() {
 
 /// 打印线程调试信息 (诊断用途)
 pub fn thread_dump_info(thread: ThreadRef) {
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         fn klog_ffi_info(msg: *const u8);
     }

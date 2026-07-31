@@ -144,12 +144,14 @@ static CURRENT_IN_KERN: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
 /// TD-10: 设置当前 CPU 是否处于内核态.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_set_in_kern(v: u32) {
     CURRENT_IN_KERN.store(v as u64, Ordering::SeqCst);
 }
 
 /// TD-10: 读取当前 CPU 是否处于内核态.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_get_in_kern() -> u32 {
     CURRENT_IN_KERN.load(Ordering::SeqCst) as u32
@@ -193,6 +195,7 @@ pub(crate) static C_CURRENT_PROCESS: RacyCell<CProcess> = RacyCell::new(CProcess
 // 进程查询与操作
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_get_current() -> u64 {
     let ptr = CURRENT_PROCESS_PTR.load(Ordering::SeqCst);
@@ -238,6 +241,7 @@ pub fn update_current_process_ptr(ptr: u64) {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_get_current_pid() -> u32 {
     SCHEDULER.current().unwrap_or(0)
@@ -319,6 +323,7 @@ pub fn process_insert(process: *mut super::process::Process) -> bool {
     PROCESS_TABLE.insert(process)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_get_by_pid(_pid: u32) -> u64 {
     if _pid as u64 == C_CURRENT_PROCESS.map(|p| p.pid) {
@@ -328,6 +333,7 @@ pub fn process_get_by_pid(_pid: u32) -> u64 {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_get_current_pwm() -> u64 {
     let pid = SCHEDULER.current().unwrap_or(0);
@@ -337,6 +343,7 @@ pub fn process_get_current_pwm() -> u64 {
     PROCESS_TABLE.with_process(pid, |p| p.get_pwm()).unwrap_or(0)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_get_pwm_by_pid(pid: u32) -> u64 {
     if pid == 0 {
@@ -345,11 +352,13 @@ pub fn process_get_pwm_by_pid(pid: u32) -> u64 {
     PROCESS_TABLE.with_process(pid, |p| p.get_pwm()).unwrap_or(0)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_create(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     proc_create_internal(name, parent_pid, pwm)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_exit(exit_code: u32) {
     let current_pid = SCHEDULER.current().unwrap_or(0);
@@ -369,6 +378,7 @@ pub fn process_exit(exit_code: u32) {
 }
 
 /// 阻塞当前进程 (用于 futex wait / 等待 I/O 等)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_block(pid: u32) {
     use super::types::BlockReason;
@@ -384,6 +394,7 @@ pub fn process_block(pid: u32) {
 }
 
 /// 解除进程阻塞 (用于 futex wake / I/O 完成等)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_unblock(pid: u32) {
     if pid == 0 {
@@ -392,6 +403,7 @@ pub fn process_unblock(pid: u32) {
     SCHEDULER.unblock(pid);
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_kill(pid: u32, exit_code: u32) {
     if pid == 0 {
@@ -417,6 +429,7 @@ pub fn process_kill(pid: u32, exit_code: u32) {
     }
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn process_find_by_pid(pid: Pid) -> u64 {
     PROCESS_TABLE.get(pid).map(|p| p as u64).unwrap_or(0)
@@ -426,6 +439,7 @@ pub fn process_find_by_pid(pid: Pid) -> u64 {
 // 进程创建内部实现
 // ============================================================================
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     if name.is_null() {
@@ -446,6 +460,7 @@ pub fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u64) -> Pid {
     SCHEDULER.create_process(name_str, parent, pwm).unwrap_or(0)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_create_user(
     path: *const u8,
@@ -517,6 +532,7 @@ pub fn proc_create_user(
     child_pid
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> i32 {
     if path.is_null() {
@@ -605,6 +621,7 @@ pub fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> 
     0
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_wait_child(pid: Pid) -> i32 {
     if pid == 0 {
@@ -637,6 +654,7 @@ pub fn proc_wait_child(pid: Pid) -> i32 {
     -2
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_sleep_ms(ms: u64) {
     if ms == 0 {
@@ -665,6 +683,7 @@ pub fn proc_sleep_ms(ms: u64) {
 }
 
 /// fork 系统调用实现 (COW 页表克隆 + namespace 继承)
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
@@ -735,6 +754,7 @@ pub fn sys_fork() -> Pid {
     child_pid
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_get_ppid(pid: Pid) -> Pid {
     PROCESS_TABLE
@@ -742,6 +762,7 @@ pub fn proc_get_ppid(pid: Pid) -> Pid {
         .unwrap_or(0)
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
     if PROCESS_TABLE
@@ -759,6 +780,7 @@ pub fn proc_set_pwm(pid: Pid, pwm: u64) -> i32 {
 // ============================================================================
 
 /// 累加当前进程的 user/sys 时间
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_account_tick(in_kern: u32) {
     let pid = CURRENT_PROCESS_PTR.load(Ordering::SeqCst);
@@ -776,6 +798,7 @@ pub fn proc_account_tick(in_kern: u32) {
 }
 
 /// 取得进程的 user/sys 时间 (jiffies 累积).
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_get_times(pid: u32, out_user: *mut u64, out_sys: *mut u64) -> i32 {
     if out_user.is_null() || out_sys.is_null() {
@@ -801,6 +824,7 @@ pub fn proc_get_times(pid: u32, out_user: *mut u64, out_sys: *mut u64) -> i32 {
 }
 
 /// 取得当前进程启动时刻 jiffies.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_get_start_jiffies(pid: u32) -> u64 {
     PROCESS_TABLE
@@ -809,6 +833,7 @@ pub fn proc_get_start_jiffies(pid: u32) -> u64 {
 }
 
 /// 标记进程启动时刻 (process_create 后调用).
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_set_start_jiffies(pid: u32, j: u64) {
     PROCESS_TABLE.with_process(pid as Pid, |p| {
@@ -817,6 +842,7 @@ pub fn proc_set_start_jiffies(pid: u32, j: u64) {
 }
 
 /// 获取用户进程创建时间戳 (ticks).
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_get_create_time(pid: u32) -> u64 {
     USER_PROC_MANAGER
@@ -825,6 +851,7 @@ pub fn proc_get_create_time(pid: u32) -> u64 {
 }
 
 /// alarm(seconds) — 设置 alarm 剩余秒数对应的 jiffies 到期时刻.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_alarm(pid: u32, seconds: u32) -> u32 {
     let hz = crate::kernel::framework::timer::get_frequency() as u64;
@@ -854,6 +881,7 @@ pub fn proc_alarm(pid: u32, seconds: u32) -> u32 {
 }
 
 /// 调度器 tick 时检查 alarm 是否到期.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_check_alarm(pid: u32) -> i32 {
     let now = crate::kernel::framework::timer::get_ticks();
@@ -878,6 +906,7 @@ pub fn proc_check_alarm(pid: u32) -> i32 {
 }
 
 /// setitimer(ITIMER_REAL, new, old) — Framekernel 只实现 ITIMER_REAL.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_setitimer_real(
     pid: u32,
@@ -924,6 +953,7 @@ pub fn proc_setitimer_real(
 }
 
 /// getitimer(ITIMER_REAL, value) — 读取当前 ITIMER_REAL 剩余.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_getitimer_real(pid: u32, out_remaining_seconds: *mut u64) -> i32 {
     if out_remaining_seconds.is_null() {
@@ -977,6 +1007,7 @@ pub fn proc_check_itimer_real(pid: u32) -> i32 {
 }
 
 /// POSIX getrusage(who, rusage) — 写回进程/子进程 user/sys 时间.
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
     if out.is_null() || out_len < 32 {

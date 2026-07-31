@@ -80,6 +80,7 @@ pub fn barrier_trigger_recovery() {
 /// 此函数在 IRQ 上下文 (EL1h) 执行, 不需要额外压栈/出栈.
 /// 如果恢复成功, IRQ handler 正常返回 (eret), 调用点继续执行.
 pub fn barrier_sgi_handler() -> i32 {
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         fn recovery_try_recover_from_idt() -> i32;
     }

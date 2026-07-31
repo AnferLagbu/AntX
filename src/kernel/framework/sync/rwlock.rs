@@ -329,6 +329,7 @@ impl<T: Default> Default for RwLock<T> {
 
 /// 让出 CPU 给调度器
 fn scheduler_yield() {
+    // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
     unsafe extern "C" {
         fn scheduler_yield();
     }

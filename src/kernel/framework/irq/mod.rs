@@ -148,6 +148,7 @@ pub fn pending_softirq() -> bool {
     SOFTIRQ.pending.load(Ordering::Acquire) != 0
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn softirq_init() {
     // 注册 Tasklet softirq 处理程序
@@ -155,6 +156,7 @@ pub extern "C" fn softirq_init() {
     // 默认: Timer/NetRx/NetTx/Block 由各子系统在初始化时注册.
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn softirq_do() {
     do_softirq();

@@ -540,6 +540,7 @@ pub fn cet_is_initialized() -> bool {
 ///   0 = capabilities() → 功能标志
 ///   1 = create_user_shadow_stack(size: a1) → SSP
 ///   2 = is_initialized() → 返回 bool, 是否已初始化
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub fn sys_cet(cmd: u64, a1: u64, _a2: u64) -> i64 {
     match cmd {
