@@ -40,7 +40,7 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock;
-use crate::kernel::framework::mm::PAGE_SIZE;
+use crate::kernel::framework::config::PAGE_SIZE;
 
 // ============================================================================
 // 常量

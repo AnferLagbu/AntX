@@ -392,6 +392,10 @@ def check_services_inter_module_deps():
         ('driver', 'config'),
         # barrier 依赖 credo 是合理的 (故障恢复权限检查)
         ('barrier', 'credo'),
+        # fs 依赖 syscall 是合理的 (fs 系统调用实现使用 syscall 的 Errno 类型)
+        ('fs', 'syscall'),
+        # proc 依赖 fs 是合理的 (memfd_create 等需要 OpenFile/AnonymousFs)
+        ('proc', 'fs'),
     }
 
     for mod in modules:
