@@ -18,7 +18,6 @@ pub const VFS_MAX_NAME: usize = 64;
 pub const VFS_MAX_FDS: usize = 32;
 pub const VFS_MAX_MOUNTS: usize = 8;
 
-extern crate alloc;
 
 // 统一到顶层 KernelError
 pub use crate::kernel::services::error::KernelError;

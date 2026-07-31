@@ -33,7 +33,6 @@
 //!
 //! REVAL-W 第 6 组 (W6), 2026-06-25 实装.
 
-extern crate alloc;
 
 use crate::kernel::framework::net::iface_trait::{DhcpState, Ipv4Addr, NetConfig};
 

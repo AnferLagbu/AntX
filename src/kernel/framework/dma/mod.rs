@@ -6,7 +6,6 @@
 //! 取代 `src/kernel/dma.c` 中的 C 实现, 采用类型安全的
 //! `PhysAddr`/`VirtAddr` 与无锁统计.
 
-extern crate alloc;
 
 use crate::kernel::framework::mm::get_vmm;
 use crate::kernel::framework::mm::{PhysAddr, VirtAddr, KERNEL_BASE, CACHE_LINE_SIZE, PAGE_SIZE};

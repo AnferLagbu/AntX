@@ -15,7 +15,6 @@
 //! - Linux name_to_handle_at(2) 手册页
 //! - Linux open_by_handle_at(2) 手册页
 
-extern crate alloc;
 
 use alloc::sync::Arc;
 use crate::kernel::framework::syscall::Errno;

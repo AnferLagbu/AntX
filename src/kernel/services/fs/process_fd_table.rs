@@ -17,7 +17,6 @@
 //! 每个 FD 直接持有 `Arc<OpenFile>`, dup 通过 `Arc::clone` 共享,
 //! close 通过 `Arc::drop` 减少引用计数.
 
-extern crate alloc;
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;

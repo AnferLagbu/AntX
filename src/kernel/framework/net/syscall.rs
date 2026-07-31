@@ -396,4 +396,3 @@ pub fn getpeername_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> i64 {
     rc as i64
 }
 
-extern crate alloc;

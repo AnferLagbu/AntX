@@ -3,7 +3,6 @@
 //!
 //! 热插拔监听 + 公共类型重导出.
 
-extern crate alloc;
 
 use alloc::boxed::Box;
 use crate::kernel::framework::driver::hotplug::{HotplugListener, HotplugEvent};

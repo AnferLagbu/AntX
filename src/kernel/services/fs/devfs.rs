@@ -29,7 +29,6 @@ pub const DEVFS_MAX_NAME: usize = 32;
 // 设备类型
 // ============================================================================
 
-extern crate alloc;
 
 /// 设备类型 (强类型枚举, 替代裸 `u8`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

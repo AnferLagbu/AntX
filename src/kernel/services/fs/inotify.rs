@@ -20,7 +20,6 @@
 
 #![deny(unsafe_code)]
 
-extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;

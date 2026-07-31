@@ -2,7 +2,6 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! tmpfs 基于内存的文件系统
 
-extern crate alloc;
 
 use alloc::sync::Arc;
 use crate::kernel::framework::fs::KernelError;

@@ -1,6 +1,5 @@
 #![deny(unsafe_code)]
 
-extern crate alloc;
 
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::driver::block;

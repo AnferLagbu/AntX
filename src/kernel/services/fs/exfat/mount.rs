@@ -2,7 +2,6 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! exFAT FileSystem trait 实现
 
-extern crate alloc;
 
 use crate::kernel::framework::fs::KernelError;
 use crate::kernel::services::fs::vfs_types::*;

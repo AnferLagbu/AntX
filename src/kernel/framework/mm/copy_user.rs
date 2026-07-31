@@ -33,7 +33,6 @@
 //! - 复制前已校验缓冲区边界
 //! - 异常恢复机制能处理复制过程中的任何缺页
 
-use super::*;
 use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 
 /// 用户态地址最大值 (规范形式)

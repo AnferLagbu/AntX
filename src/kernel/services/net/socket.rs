@@ -19,7 +19,6 @@
 //!
 //! 评估日期: 2026-06-04
 
-extern crate alloc;
 
 use super::net_stack;
 use crate::kernel::framework::net::iface_trait::{Ipv4Addr, NetEndpoint};

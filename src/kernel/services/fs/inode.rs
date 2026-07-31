@@ -19,7 +19,6 @@
 //! 这保证 POSIX dup 共享 offset 语义: 多个 fd 通过同一个 OpenFile
 //! 共享 offset, Inode 本身是无状态的 I/O 执行器.
 
-extern crate alloc;
 
 use alloc::sync::Arc;
 

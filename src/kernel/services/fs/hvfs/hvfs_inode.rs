@@ -1,6 +1,5 @@
 #![deny(unsafe_code)]
 
-extern crate alloc;
 
 use crate::kernel::services::fs::inode::Inode;
 use crate::kernel::framework::fs::{KernelError, KernelResult, VfsStat, VfsSeekWhence, VfsFileType};

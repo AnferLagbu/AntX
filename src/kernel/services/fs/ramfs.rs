@@ -23,7 +23,6 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.2.1 任务: 文件系统迁移
 
-extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 

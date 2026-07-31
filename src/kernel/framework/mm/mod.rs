@@ -8,7 +8,6 @@
 //! framework 内部依赖: sync, syscall, proc, tests
 //! services 依赖: services::mm (安全代理)
 
-extern crate alloc;
 
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
