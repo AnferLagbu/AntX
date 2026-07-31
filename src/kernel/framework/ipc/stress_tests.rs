@@ -19,6 +19,8 @@ use crate::kernel::services::ipc::types::PIPE_BUFFER_SIZE;
 #[cfg(test)]
 mod stress_tests {
     use super::*;
+    use alloc::format;
+    use alloc::vec;
 
     /// 测试管道高频读写 (1000 次循环)
     #[test]
@@ -89,10 +91,6 @@ mod stress_tests {
             }
         }
 
-        println!(
-            "Successfully sent {} messages before queue full",
-            success_count
-        );
         assert!(success_count > 0, "Should send at least some messages");
 
         // 接收所有消息
@@ -211,6 +209,7 @@ mod stress_tests {
 #[cfg(test)]
 mod boundary_tests {
     use super::*;
+    use alloc::vec;
 
     /// 测试空数据读写
     #[test]

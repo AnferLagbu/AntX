@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn cross_layer_handler_basic() {
-        let m = InMemoryMatrix(CapMatrix::empty());
+        let m = InMemoryMatrix::new();
         let mut records = [
             DomainFailureRecord::new(0),
             DomainFailureRecord::new(1),
@@ -379,7 +379,7 @@ mod tests {
     /// 完整流: services 域失败 → 自动降级 cap
     #[test]
     fn full_flow_failure_downgrade() {
-        let m = InMemoryMatrix(CapMatrix::empty());
+        let m = InMemoryMatrix::new();
         let mut records = [DomainFailureRecord::new(0); 16];
         let mut h = CrossLayerHandler::new(&m, &mut records, 100);
         for _ in 0..5 {

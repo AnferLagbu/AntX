@@ -537,6 +537,7 @@ pub trait NetStack {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     /// 验证 SocketHandle 的 INVALID 哨兵.
     #[test]

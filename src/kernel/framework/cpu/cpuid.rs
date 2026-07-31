@@ -50,6 +50,7 @@ pub fn is_leaf_supported(leaf: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn test_cpuid_leaf_0() {

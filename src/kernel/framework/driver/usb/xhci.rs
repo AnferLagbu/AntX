@@ -985,6 +985,7 @@ impl HostController for XhciController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::framework::driver::usb::usb_core;
 
     #[test]
     fn test_xhci_controller_creation() {

@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_error_flags() {
-        let flags = ErrorFlags::PRESENT | ErrorFlags::WRITE | Error::USER;
+        let flags = ErrorFlags::PRESENT | ErrorFlags::WRITE | ErrorFlags::USER;
         assert!(flags.contains(ErrorFlags::PRESENT));
         assert!(flags.contains(ErrorFlags::WRITE));
         assert!(flags.contains(ErrorFlags::USER));

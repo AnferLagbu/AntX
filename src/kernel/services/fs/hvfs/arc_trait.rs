@@ -175,6 +175,8 @@ impl ArcCache for StandardArc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     /// 1. new + uninitialized
     #[test]

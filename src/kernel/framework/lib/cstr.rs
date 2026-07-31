@@ -139,7 +139,7 @@ impl CStrExt for *mut u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::ffi::CString;
+    use alloc::ffi::CString;
 
     #[test]
     fn null_ptr_returns_empty() {

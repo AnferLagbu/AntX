@@ -1825,6 +1825,7 @@ mod tests {
     use crate::kernel::framework::net::iface_trait::{
         Ipv4Addr as TraitIpv4Addr, NetEndpoint as TraitEndpoint,
     };
+    use smoltcp::wire::IpAddress;
 
     /// W4.4: 验证 wire_to_smol_v4 / endpoint_to_smol 翻译不丢字段.
     #[test]

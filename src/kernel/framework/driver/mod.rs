@@ -335,6 +335,9 @@ pub extern "C" fn driver_shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use crate::kernel::framework::driver::input::KeyboardDriver;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_module_structure() {

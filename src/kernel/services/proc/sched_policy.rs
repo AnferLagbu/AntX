@@ -403,6 +403,9 @@ pub fn register_default_policy() -> Result<(), ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::services::config::{
+        SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
+    };
 
     /// 1. nice_to_weight: -20..19 全范围
     #[test]

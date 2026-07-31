@@ -342,6 +342,8 @@ fn scheduler_yield() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::string::String;
 
     #[test]
     fn test_rwlock_basic_read() {

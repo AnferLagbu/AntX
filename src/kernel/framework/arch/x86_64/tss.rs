@@ -317,8 +317,6 @@ mod tests {
 
         // TSS 必须 16-byte 对齐
         assert_eq!(TSS_SIZE % 16, 0);
-
-        println!("TSS size: {} bytes", TSS_SIZE);
     }
 }
 #[cfg(feature = "kernel_test")]

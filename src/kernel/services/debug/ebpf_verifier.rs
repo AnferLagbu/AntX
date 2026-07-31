@@ -368,6 +368,9 @@ fn is_valid_helper(id: u32) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::framework::debug::BpfProgType;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use crate::kernel::framework::debug::opcode;
 
     fn make_insn(op: u8, dst: u8, src: u8, off: i16, imm: i32) -> BpfInsn {
         BpfInsn { op, dst, src, off, imm }

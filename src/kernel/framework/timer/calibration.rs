@@ -338,7 +338,7 @@ mod tests {
     fn test_quick_calibrate_alias() {
         // quick_calibrate 应该是 calibrate_tsc 的别名
         // 验证接口一致性
-        let _fn_ptr: fn(u64) -> Result<u64, &str> = quick_calibrate;
+        let _fn_ptr: fn(u64) -> Result<u64, &'static str> = quick_calibrate;
     }
 
     #[test]

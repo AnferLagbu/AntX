@@ -453,6 +453,7 @@ pub fn get_detailed_statistics() -> &'static DetailedStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::framework::idt::handlers::PanicInfo;
 
     #[test]
     fn test_statistics_initialization() {

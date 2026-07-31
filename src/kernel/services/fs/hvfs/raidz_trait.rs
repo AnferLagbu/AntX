@@ -131,6 +131,9 @@ impl RaidzEngine for StandardRaidz {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use core::iter;
 
     /// 1. new + level/ncols
     #[test]
@@ -266,7 +269,7 @@ mod tests {
         let parity = r.generate_parity(&data);
         assert_eq!(parity.len(), 1);
         // 验证 parity
-        let parity_full = parity.iter().chain(std::iter::once(&data)).collect::<Vec<_>>();
+        let parity_full = parity.iter().chain(iter::once(&data)).collect::<Vec<_>>();
         // I2 审计修复: 避免 `(*v).` 模式触发 services 裸指针解引用误报.
         // 语义等价改写: `cloned()` 对 `&Vec<u8>` 调用 `Clone::clone` → `Vec<u8>`.
         let _ = r.verify_parity(&parity_full.iter().cloned().collect::<Vec<_>>());

@@ -406,6 +406,7 @@ impl HidDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use crate::kernel::framework::driver::usb::usb_core::EndpointDescriptor;
     use crate::kernel::framework::driver::usb::usb_core::InterfaceDescriptor;
     use crate::kernel::framework::driver::usb::usb_core::UsbSpeed;

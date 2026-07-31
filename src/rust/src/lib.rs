@@ -327,6 +327,7 @@ fn write_hex_to_buf(buf: &mut [u8], cursor: &mut usize, value: u64) {
     }
 }
 
+#[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_error(layout: alloc::alloc::Layout) -> ! {
     panic!("Allocation error: {:?}", layout);

@@ -320,6 +320,7 @@ pub fn remove_database() -> StorageResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn sha256_empty() {

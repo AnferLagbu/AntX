@@ -109,6 +109,7 @@ impl ZilPersist for StandardZilPersist {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use crate::kernel::services::fs::hvfs::zil::{HvZil, HvZilRecordType};
 
     /// 1. serialize 记录为空 → None

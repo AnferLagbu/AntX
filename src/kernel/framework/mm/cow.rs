@@ -313,8 +313,8 @@ mod tests {
 
     #[test]
     fn test_virt_index_functions() {
-        let v = 0x0000_7FFF_0000_0000u64;
-        assert_eq!(virt_pml4_idx(v), 0);
-        assert_eq!(virt_pt_idx(v), 0);
+        let v = VirtAddr(0x0000_7FFF_0000_0000u64);
+        assert_eq!(v.pml4_idx(), 0);
+        assert_eq!(v.pt_idx(), 0);
     }
 }

@@ -99,7 +99,9 @@ pub fn register_default_swap_policy() -> Result<(), ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use crate::kernel::framework::mm::swap_trait::{SwapPolicyContext, LruPageInfo};
+    use alloc::vec::Vec;
 
     fn make_ctx(free_pages: u64, total_pages: u64, used_slots: u64, total_slots: u64) -> SwapPolicyContext {
         SwapPolicyContext {

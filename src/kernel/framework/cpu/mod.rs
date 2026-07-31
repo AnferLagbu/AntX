@@ -1395,6 +1395,7 @@ fn calibrate_tsc(max_std: u32, vendor: CpuVendor) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn test_cpu_vendor_recognition() {

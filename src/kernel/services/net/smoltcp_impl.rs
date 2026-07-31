@@ -940,6 +940,7 @@ impl SmoltcpNetStack {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::collections::BTreeSet;
 
     // ---- 1. 构造与默认状态 ----
 
@@ -1302,7 +1303,7 @@ mod tests {
             random_seed: 0,
         };
         stack.init(cfg).unwrap();
-        let mut handles = std::collections::HashSet::new();
+        let mut handles = BTreeSet::new();
         for _ in 0..10 {
             let h = stack.socket_open(SocketKind::Tcp).unwrap();
             assert!(handles.insert(h), "句柄重复: {:?}", h);
@@ -1327,7 +1328,7 @@ mod tests {
 
     // ---- 8. W6: DHCP 策略接入 ----
 
-    use super::dhcp_policy::{DefaultDhcpPolicy, DhcpPolicy, DhcpPolicyConfig};
+    use crate::kernel::services::net::dhcp_policy::{DefaultDhcpPolicy, DhcpPolicy, DhcpPolicyConfig};
     use crate::kernel::framework::net::iface_trait::Ipv4Addr;
 
     /// 验证: Idle 状态接入默认策略 → Continue.

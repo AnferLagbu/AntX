@@ -1284,12 +1284,12 @@ mod tests {
 
     #[test]
     fn test_aux_register_offsets_within_required_iomem_size() {
-        assert!(AUX_CMD_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(AUX_STA_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(AUX_DAT0_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(AUX_DAT1_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(AUX_DAT2_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(AUX_DAT3_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
+        assert!((AUX_CMD_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((AUX_STA_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((AUX_DAT0_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((AUX_DAT1_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((AUX_DAT2_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((AUX_DAT3_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
         assert!(AUX_DAT3_REG_OFFSET as usize + 4 <= REQUIRED_IOMEM_SIZE);
     }
 
@@ -1470,16 +1470,16 @@ mod tests {
 
     #[test]
     fn test_dp_timing_register_offsets_within_required_iomem_size() {
-        assert!(DP_H_TOTAL_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_H_ACTIVE_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_V_TOTAL_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_V_ACTIVE_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_H_SYNC_OFFSET_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_H_SYNC_PW_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_V_SYNC_OFFSET_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_V_SYNC_PW_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_SYNC_POL_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
-        assert!(DP_OUTPUT_ENABLE_REG_OFFSET as usize < REQUIRED_IOMEM_SIZE);
+        assert!((DP_H_TOTAL_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_H_ACTIVE_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_V_TOTAL_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_V_ACTIVE_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_H_SYNC_OFFSET_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_H_SYNC_PW_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_V_SYNC_OFFSET_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_V_SYNC_PW_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_SYNC_POL_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
+        assert!((DP_OUTPUT_ENABLE_REG_OFFSET as usize) < REQUIRED_IOMEM_SIZE);
         assert!(DP_H_TOTAL_REG_OFFSET as usize + 2 <= REQUIRED_IOMEM_SIZE);
         assert!(DP_V_SYNC_PW_REG_OFFSET as usize + 2 <= REQUIRED_IOMEM_SIZE);
         assert!(DP_SYNC_POL_REG_OFFSET as usize + 1 <= REQUIRED_IOMEM_SIZE);
