@@ -113,7 +113,7 @@ cargo test -p host-tests           # 等价
 ## 3. 工具链
 
 - **Rust nightly** 锁定在 `src/rust/rust-toolchain.toml`
-- **Edition:** 2021 (与上游对齐, QueenX 未升 2024)
+- **Edition:** 2024 (2026-07-31 起全项目统一; vendored smoltcp 跟随其上游)
 - **目标架构:** x86\_64 (主) + aarch64 (次)
 - **`rustfmt.toml`:** 4 空格缩进, 尾逗号允许
 - **Clippy 配置:** `clippy.toml` (cognitive-complexity-threshold = 25, missing-docs-in-crate-items = true)
