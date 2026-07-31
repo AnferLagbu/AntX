@@ -400,20 +400,20 @@ fn dispatch_credo(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_CREDO_REBOOT => crate::kernel::services::proc::sysinfo::reboot_syscall(a0 as i32),
 
         // 存储设备
-        SYS_CREDO_DISK_LIST => as_ret(crate::kernel::services::storage::disk::disk_list(a0, a1 as u32).map(|n| n as usize)),
-        SYS_CREDO_DISK_INFO => match crate::kernel::services::storage::disk::disk_info(a0 as u32, a1) {
+        SYS_CREDO_DISK_LIST => as_ret(crate::kernel::services::credo::storage::disk::disk_list(a0, a1 as u32).map(|n| n as usize)),
+        SYS_CREDO_DISK_INFO => match crate::kernel::services::credo::storage::disk::disk_info(a0 as u32, a1) {
             Ok(()) => 0,
             Err(e) => e.as_ret(),
         },
-        SYS_CREDO_DISK_FORMAT => match crate::kernel::services::storage::disk::disk_format(a0 as u32, a1) {
+        SYS_CREDO_DISK_FORMAT => match crate::kernel::services::credo::storage::disk::disk_format(a0 as u32, a1) {
             Ok(()) => 0,
             Err(e) => e.as_ret(),
         },
-        SYS_CREDO_DISK_PARTITION => match crate::kernel::services::storage::disk::disk_partition(a0 as u32, a1) {
+        SYS_CREDO_DISK_PARTITION => match crate::kernel::services::credo::storage::disk::disk_partition(a0 as u32, a1) {
             Ok(()) => 0,
             Err(e) => e.as_ret(),
         },
-        SYS_CREDO_FAT_FORMAT => match crate::kernel::services::storage::disk::fat_format(a0 as u32) {
+        SYS_CREDO_FAT_FORMAT => match crate::kernel::services::credo::storage::disk::fat_format(a0 as u32) {
             Ok(()) => 0,
             Err(e) => e.as_ret(),
         },

@@ -36,6 +36,8 @@ pub mod sha256;
 /// T6-7: Credo 类型定义 (原 framework/credo/types.rs)
 pub mod types;
 pub mod uid;
+/// Credo 私有存储子系统 — 块设备/格式化/分区 safe 代理
+pub mod storage;
 
 pub use audit::{AuditEvent, AuditEventKind, AuditLog, HashChainNode, AUDIT_BUFFER_SIZE};
 pub use grants::{
