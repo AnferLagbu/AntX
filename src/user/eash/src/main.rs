@@ -64,5 +64,5 @@ fn shell_main() {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn _start() -> ! { shell_main(); proc_exit(0); }

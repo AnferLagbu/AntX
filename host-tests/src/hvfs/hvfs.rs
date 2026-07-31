@@ -16,7 +16,7 @@ use std::boxed::Box;
 use std::vec;
 use std::vec::Vec;
 
-extern "C" {
+unsafe extern "C" {
     fn klog_ffi_info(msg: *const u8);
     fn pwid_get_privilege_level(pwid: u64) -> u8;
     fn pwid_has_capability(pwid: u64, domain: u16, required: u64) -> bool;
@@ -203,7 +203,7 @@ impl HvfsData {
     }
 
     fn read_partition_start(&self) -> u32 {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
         let mut cfg = [0u8; 512];
@@ -217,7 +217,7 @@ impl HvfsData {
     }
 
     fn probe_partition_size(&self, part_start: u32) -> u64 {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_disk_present(disk: u8) -> i32;
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }

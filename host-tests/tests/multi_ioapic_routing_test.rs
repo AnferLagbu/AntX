@@ -16,7 +16,7 @@ struct IoApicInfo {
 /// 镜像内核 gsi_to_ioapic 路由逻辑 (无 I/O 副作用, 纯计算)
 fn gsi_to_ioapic(ioapics: &[Option<IoApicInfo>], gsi: u32) -> Option<(usize, u8)> {
     for (i, ioapic) in ioapics.iter().enumerate() {
-        if let Some(ref info) = ioapic {
+        if let Some(info) = ioapic {
             if gsi >= info.gsi_base && gsi < info.gsi_base + info.max_irq as u32 {
                 return Some((i, (gsi - info.gsi_base) as u8));
             }

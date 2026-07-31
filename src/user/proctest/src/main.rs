@@ -382,7 +382,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     proc_exit(1);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     println("");
     println("========================================");

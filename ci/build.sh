@@ -63,11 +63,14 @@ run_host_tests() {
 check_forbidden_patterns() {
     echo -e "${YELLOW}[CI] Checking forbidden asm patterns...${NC}"
 
-    # 查找所有 asm! 调用（排除 arch/x86_64 和 arch/mod.rs）
-    # 同时过滤掉行内 cfg 门控
+    # 查找所有 asm! 调用（排除架构特定目录和文件）
+    # 架构特定目录: arch/x86_64/, arch/aarch64/, boot/aarch64/
+    # 这些目录内的代码天然受模块系统 cfg 约束
     local matches
     matches=$(grep -rFn 'asm!("' src/kernel/ --include='*.rs' 2>/dev/null \
         | grep -v 'arch/x86_64/' \
+        | grep -v 'arch/aarch64/' \
+        | grep -v 'boot/aarch64/' \
         | grep -v 'arch/mod.rs' \
         | grep -v '#\[cfg' \
         | grep -v '#!\[cfg' \
@@ -78,11 +81,53 @@ check_forbidden_patterns() {
         return 0
     fi
 
-    # 显示发现并标注为人工审查
-    echo "$matches" | while IFS=: read -r file line rest; do
+    # 过滤掉已有 cfg(target_arch) 门控的 asm! 调用
+    local filtered=""
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local file
+        file=$(echo "$line" | cut -d: -f1)
+        
+        # 检查文件是否有文件级 cfg(target_arch) 门控 (前 50 行)
+        if head -50 "$file" | grep -qE '^#!\[cfg\(target_arch'; then
+            continue
+        fi
+        
+        # 检查文件是否是架构特定文件 (文件名含 _x86_64 或 _aarch64)
+        local basename
+        basename=$(basename "$file")
+        if echo "$basename" | grep -qE '_x86_64\.rs$|_aarch64\.rs$'; then
+            continue
+        fi
+        
+        # 检查 asm! 前 50 行是否有 cfg(target_arch) 门控
+        # 这包括:
+        # - 块级 #[cfg(target_arch)] 直接包裹 asm!
+        # - 函数/模块级 #[cfg(target_arch)] 包裹包含 asm! 的函数
+        # - 复合条件 #[cfg(all(..., target_arch = "..."))]
+        local lineno
+        lineno=$(echo "$line" | cut -d: -f2)
+        local start=$((lineno > 50 ? lineno - 50 : 1))
+        if sed -n "${start},${lineno}p" "$file" | grep -qE '#\[cfg\(.*target_arch'; then
+            continue
+        fi
+        
+        filtered="${filtered}${line}"$'\n'
+    done <<< "$matches"
+
+    if [ -z "$(echo "$filtered" | tr -d '[:space:]')" ]; then
+        echo -e "${GREEN}[CI] Forbidden patterns check: clean (all asm! calls have cfg gating)${NC}"
+        return 0
+    fi
+
+    # 显示真正缺少 cfg gating 的 asm! 调用
+    echo "$filtered" | while IFS=: read -r file line rest; do
+        [ -z "$file" ] && continue
         echo -e "  ${YELLOW}→${NC} $file:$line$rest"
     done
-    echo -e "${YELLOW}[CI] Forbidden patterns: found $(echo "$matches" | wc -l) asm! calls (above). Verify cfg gating.${NC}"
+    local count
+    count=$(echo "$filtered" | grep -c '.' || true)
+    echo -e "${YELLOW}[CI] Forbidden patterns: found ${count} asm! calls without cfg gating (above). Verify cfg gating.${NC}"
     return 0
 }
 

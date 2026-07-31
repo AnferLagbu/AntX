@@ -178,7 +178,7 @@ impl HvSpa {
     }
 
     fn generate_guid() -> u64 {
-        extern "C" {
+        unsafe extern "C" {
             fn timer_get_ticks() -> u64;
         }
         let t = unsafe { timer_get_ticks() };
@@ -191,7 +191,7 @@ impl HvSpa {
     }
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
         if buf.len() < 512 {
@@ -202,7 +202,7 @@ impl HvSpa {
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         }
         if buf.len() < 512 {
@@ -379,7 +379,7 @@ impl HvSpa {
         let _ = self.write_sector(sector, &sector_buf);
         self.last_sync_time.store(
             unsafe {
-                extern "C" {
+                unsafe extern "C" {
                     fn timer_get_ticks() -> u64;
                 }
                 timer_get_ticks()

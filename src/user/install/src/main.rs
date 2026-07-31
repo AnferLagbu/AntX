@@ -18,7 +18,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     proc_exit(1);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn _start() -> ! {
     install::wizard::run();
     proc_exit(0);

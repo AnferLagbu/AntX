@@ -110,7 +110,7 @@ impl HvVdev {
     }
 
     pub fn probe_disk_size(drive: u8) -> u64 {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_disk_present(disk: u8) -> i32;
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
@@ -149,7 +149,7 @@ impl HvVdev {
     }
 
     pub fn open(&mut self) {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_disk_present(disk: u8) -> i32;
         }
         if self.config.vdev_type == HV_VDEV_TYPE_DISK {
@@ -169,7 +169,7 @@ impl HvVdev {
     }
 
     pub fn read_sectors(&mut self, sector: u64, count: u32, buf: &mut [u8]) -> i32 {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
         let need_bytes = (count as u64) * 512;
@@ -201,7 +201,7 @@ impl HvVdev {
     }
 
     pub fn write_sectors(&mut self, sector: u64, count: u32, buf: &[u8]) -> i32 {
-        extern "C" {
+        unsafe extern "C" {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         }
         let need_bytes = (count as u64) * 512;

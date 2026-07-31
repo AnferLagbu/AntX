@@ -84,27 +84,27 @@ pub type KernelResult<T> = Result<T, KernelError>;
 use std::sync::atomic::{AtomicU64, Ordering};
 static TICK_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn timer_get_ticks() -> u64 {
     TICK_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ata_disk_present(_disk: u8) -> i32 {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ata_read_sector(_disk: u8, _sector: u32, _buf: *mut u8) -> i32 {
     -1
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ata_write_sector(_disk: u8, _sector: u32, _buf: *const u8) -> i32 {
     -1
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn klog_ffi_info(msg: *const u8) {
     let mut len = 0usize;
     while len < 256 {
@@ -120,12 +120,12 @@ pub extern "C" fn klog_ffi_info(msg: *const u8) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pwid_get_privilege_level(_pwid: u64) -> u8 {
     3
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pwid_has_capability(_pwid: u64, _domain: u16, _required: u64) -> bool {
     true
 }

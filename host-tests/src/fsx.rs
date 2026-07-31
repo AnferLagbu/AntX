@@ -266,14 +266,22 @@ impl FsxFs {
         let filepath = self.config.test_dir.join(filename);
 
         let new_size = self.rng.next_range(self.config.max_file_size);
-        let content: Vec<u8> = vec![0u8; new_size];
 
-        match fs::write(&filepath, &content) {
-            Ok(_) => {
-                if let Some(data) = self.files.get_mut(filename) {
-                    data.content = content;
+        // 使用真正的 truncate 操作 (需要写权限)
+        match fs::OpenOptions::new().write(true).open(&filepath) {
+            Ok(file) => {
+                match file.set_len(new_size as u64) {
+                    Ok(_) => {
+                        // 更新跟踪的内容
+                        if let Some(data) = self.files.get_mut(filename) {
+                            data.content.resize(new_size, 0);
+                        }
+                        self.stats.truncates += 1;
+                    }
+                    Err(_) => {
+                        self.stats.errors += 1;
+                    }
                 }
-                self.stats.truncates += 1;
             }
             Err(_) => {
                 self.stats.errors += 1;

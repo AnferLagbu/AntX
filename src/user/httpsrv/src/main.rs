@@ -150,7 +150,7 @@ fn handle_client(fd: i32, resp: &mut [u8]) {
     close_socket(fd);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn _start() -> ! {
     print("[httpsrv] Starting HTTP server on port 80...\n");
 

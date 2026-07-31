@@ -9,7 +9,7 @@ use userlib::sys::*;
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! { proc_exit(1); }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     print_char(b'X');
     print_char(b'\n');

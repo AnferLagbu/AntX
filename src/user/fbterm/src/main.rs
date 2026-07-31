@@ -171,7 +171,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     proc_exit(1);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn _start() -> ! {
     println("[fbterm] Starting user-space terminal...");
 
