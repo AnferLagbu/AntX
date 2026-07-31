@@ -35,6 +35,9 @@
 
 use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 
+#[cfg(test)]
+use super::PAGE_SIZE;
+
 /// 用户态地址最大值 (规范形式)
 const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_F000;
 
