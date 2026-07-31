@@ -7,6 +7,7 @@ license = "MIT"
 [lib]
 name = "queenx"
 crate-type = ["staticlib"]
+test = false
 
 [profile.dev]
 panic = "abort"
