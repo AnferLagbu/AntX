@@ -270,15 +270,13 @@ test(integration): DRIVER-2 QEMU virtio-vga 双层验证
 
 ### 8.4 Remote 命名约定
 
-项目使用 Gitee 作为唯一远程仓库, remote 名为 `Gitee`.
+项目使用 Gitee 作为唯一远程仓库, remote 名为 `origin` (2026-07-31 起统一).
 
 ```bash
-git remote add Gitee git@gitee.com:AnferLagbu/QueenX.git
-git push Gitee main
-git pull Gitee main --rebase
+git remote add origin git@gitee.com:AnferLagbu/QueenX.git
+git push origin main
+git pull origin main --rebase
 ```
-
-**禁止:** 用 `origin` 模糊命名; 脚本/CI 中硬编码 `"origin"` 字面字符串.
 
 **历史归档例外:** `docs/plan/archive/*` 中 git 命令示例保留 `origin` 字面字符串 (2026-06-13 历史快照), 不得修改. `docs/plan/smoltcp-framekernel-wrapper.md` 中 `git fetch origin` 指 smoltcp 子模块的 origin (非 QueenX remote), 不得修改.
 
