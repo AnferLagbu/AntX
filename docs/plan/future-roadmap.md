@@ -73,10 +73,20 @@
 
 ---
 
+## F5: IPv4/IPv6 双栈支持
+
+- **描述**: 将 NetEndpoint/NetStack 抽象从 IPv4-only 升级为 IPv4/IPv6 双栈, 支持绑定/连接/收发 IPv6 套接字
+- **设计决策**: enum IpAddr { V4, V6 } 破坏性改造 (DECISION-032), 详见 [ipv6-dual-stack.md](./ipv6-dual-stack.md)
+- **规模**: ~930 行新增 / ~280 行修改 (excl. DHCPv6), 9 文件
+- **工作量**: 1-2 周 (Phase 1-5, 7-8), Phase 6 (DHCPv6) 远期
+
+---
+
 ## 实施时间线
 
 ```text
 Week 1-2:   F1 mdBook 文档体系
 Week 3-10:  F2 RISC-V / F3 TDX
 Week 11+:   F4 NFS (需内核模块框架)
+TBD:        F5 IPv6 双栈 (DECISION-032 已定, 代码未启动)
 ```
