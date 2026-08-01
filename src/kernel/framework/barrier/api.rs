@@ -72,6 +72,7 @@ pub fn recovery_domain_unregister(domain_id: u64) -> i32 {
     -1
 }
 
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[cfg(feature = "kernel_test")]
 #[unsafe(no_mangle)]
 pub fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
