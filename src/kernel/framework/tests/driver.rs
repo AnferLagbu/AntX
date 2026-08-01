@@ -1,13 +1,15 @@
-use crate::kernel::framework::driver::{
-    BaudRate, DataBits, ParityMode, RingBuffer, SerialConfig, SerialPort, StopBits, COM1_BASE,
-    COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE,
-};
-use crate::kernel::framework::driver::Driver;
-
 use crate::kernel::framework::driver::{DeviceInfo, DeviceType, DriverError, DriverResult};
+#[cfg(target_arch = "x86_64")]
+use crate::kernel::framework::driver::Driver;
+#[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::driver::keyboard::{
     get_special_key, KeyboardBuffer, KeyboardDriver, ModifierState, SpecialKey, KB_LED_CAPS_LOCK,
     KB_LED_NUM_LOCK, SCANCODE_TABLE, SHIFT_TABLE,
+};
+#[cfg(target_arch = "x86_64")]
+use crate::kernel::framework::driver::{
+    BaudRate, DataBits, ParityMode, RingBuffer, SerialConfig, SerialPort, StopBits, COM1_BASE,
+    COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE,
 };
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::driver::{
@@ -78,6 +80,7 @@ fn driver_result_type() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn keyboard_scancode_table() -> TestResult {
     assert_eq_test!(SCANCODE_TABLE[0x02], b'1', "scancode 0x02");
     assert_eq_test!(SCANCODE_TABLE[0x03], b'2', "scancode 0x03");
@@ -87,6 +90,7 @@ fn keyboard_scancode_table() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn keyboard_shift_table() -> TestResult {
     assert_eq_test!(SHIFT_TABLE[0x02], b'!', "shift 0x02");
     assert_eq_test!(SHIFT_TABLE[0x03], b'@', "shift 0x03");
@@ -95,6 +99,7 @@ fn keyboard_shift_table() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn keyboard_special_keys() -> TestResult {
     assert_eq_test!(get_special_key(0x0D), SpecialKey::Enter, "Enter");
     assert_eq_test!(get_special_key(0x0E), SpecialKey::Backspace, "Backspace");
@@ -105,6 +110,7 @@ fn keyboard_special_keys() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn keyboard_modifier_default() -> TestResult {
     let mods = ModifierState::default();
     check!(!mods.shift_pressed(), "no shift");
@@ -115,6 +121,7 @@ fn keyboard_modifier_default() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn keyboard_modifier_operations() -> TestResult {
     let mut mods = ModifierState { left_shift: true, ..Default::default() };
     check!(mods.shift_pressed(), "left shift");
@@ -130,6 +137,7 @@ fn keyboard_modifier_operations() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn keyboard_buffer() -> TestResult {
     let mut buf = KeyboardBuffer::default();
     check!(buf.is_empty(), "empty initially");
@@ -145,6 +153,7 @@ fn keyboard_buffer() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn keyboard_driver_trait() -> TestResult {
     let mut driver = KeyboardDriver::new();
     assert_eq_test!(driver.name(), "PS/2 Keyboard", "name");
@@ -155,6 +164,7 @@ fn keyboard_driver_trait() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn serial_constants() -> TestResult {
     assert_eq_test!(COM1_BASE, 0x3F8, "COM1");
     assert_eq_test!(COM2_BASE, 0x2F8, "COM2");
@@ -162,6 +172,7 @@ fn serial_constants() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn serial_config_default() -> TestResult {
     let config = SerialConfig::default();
     assert_eq_test!(config.baud_rate, BaudRate::Baud115200, "baud");
@@ -171,18 +182,21 @@ fn serial_config_default() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn serial_baud_rate() -> TestResult {
     assert_eq_test!(BaudRate::Baud9600.to_divisor(), 12, "9600 divisor");
     assert_eq_test!(BaudRate::Baud115200.to_divisor(), 1, "115200 divisor");
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn serial_data_bits() -> TestResult {
     assert_eq_test!(DataBits::Bits5.to_lcr_value(), 0x00, "5 bits");
     assert_eq_test!(DataBits::Bits8.to_lcr_value(), 0x03, "8 bits");
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn serial_parity() -> TestResult {
     assert_eq_test!(ParityMode::None.to_lcr_value(), 0x00, "none parity");
     assert_eq_test!(ParityMode::Odd.to_lcr_value(), 0x08, "odd parity");
@@ -190,6 +204,7 @@ fn serial_parity() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn serial_port_creation() -> TestResult {
     check!(SerialPort::new(0).is_some(), "port 0 valid");
     check!(SerialPort::new(3).is_some(), "port 3 valid");
@@ -197,6 +212,7 @@ fn serial_port_creation() -> TestResult {
     TestResult::Pass
 }
 
+#[cfg(target_arch = "x86_64")]
 fn serial_ring_buffer() -> TestResult {
     let mut buf: RingBuffer<u8> = RingBuffer::default();
     check!(buf.is_empty(), "empty");
@@ -282,16 +298,10 @@ pub fn register_ata_tests() {
 #[cfg(not(target_arch = "x86_64"))]
 pub fn register_ata_tests() {}
 
-pub fn register_tests() {
+#[cfg(target_arch = "x86_64")]
+pub fn register_keyboard_serial_tests() {
     let r = runner();
     register_tests_inner! { r:
-        "driver::framework": {
-            "error_codes": driver_error_codes,
-            "device_types": driver_device_types,
-            "device_info_creation": driver_device_info_creation,
-            "device_info_builder": driver_device_info_builder,
-            "result_type": driver_result_type,
-        },
         "driver::keyboard": {
             "scancode_table": keyboard_scancode_table,
             "shift_table": keyboard_shift_table,
@@ -311,5 +321,22 @@ pub fn register_tests() {
             "ring_buffer": serial_ring_buffer,
         },
     }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+pub fn register_keyboard_serial_tests() {}
+
+pub fn register_tests() {
+    let r = runner();
+    register_tests_inner! { r:
+        "driver::framework": {
+            "error_codes": driver_error_codes,
+            "device_types": driver_device_types,
+            "device_info_creation": driver_device_info_creation,
+            "device_info_builder": driver_device_info_builder,
+            "result_type": driver_result_type,
+        },
+    }
+    register_keyboard_serial_tests();
     register_ata_tests();
 }

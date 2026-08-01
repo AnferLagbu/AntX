@@ -241,13 +241,13 @@ impl<T: Default + Copy> RingBuffer<T> {
     ///
     /// 当 `count` 达到 `SERIAL_BUFFER_SIZE` 时视为已满,
     /// 后续 `push` 将返回 `Err(DriverError::Busy)`.
-    #[cfg(feature = "kernel_test")]
+    #[cfg(all(target_arch = "x86_64", feature = "kernel_test"))]
     pub(crate) fn is_full(&self) -> bool {
         self.count >= SERIAL_BUFFER_SIZE
     }
 
     /// 当前缓冲区元素数量.
-    #[cfg(feature = "kernel_test")]
+    #[cfg(all(target_arch = "x86_64", feature = "kernel_test"))]
     pub(crate) fn len(&self) -> usize {
         self.count
     }

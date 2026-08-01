@@ -68,7 +68,6 @@ pub(crate) fn endpoint_to_smol(
 }
 
 /// 把 smoltcp 的 `IpEndpoint` 翻译回 trait 抽象的 `NetEndpoint`.
-#[allow(dead_code)]
 pub(crate) fn endpoint_from_smol(
     ep: IpEndpoint,
 ) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
@@ -80,6 +79,36 @@ pub(crate) fn endpoint_from_smol(
         _ => None,
     }
 }
+
+/// 将 `NetEndpoint` 写入 sockaddr_in C 结构体 (供 recvfrom/accept 返回对端地址).
+///
+/// 调用方提供 `addr` 指针与 `addrlen` 指针:
+/// - `addr` 为 NULL: 跳过写入 (调用方不关心对端地址)
+/// - `addrlen` 为 NULL: 仅写 addr, 不回写长度
+/// - 正常情况: 写入 sockaddr_in 并将 addrlen 更新为 sizeof(sockaddr_in) = 16
+///
+/// # Safety
+/// `addr` 非空时必须指向至少 16 字节可写内存; `addrlen` 非空时必须指向有效 u32.
+pub(crate) unsafe fn write_sockaddr_in(
+    addr: *mut u8,
+    addrlen: *mut u32,
+    ep: &crate::kernel::framework::net::iface_trait::NetEndpoint,
+) { unsafe {
+    if addr.is_null() {
+        return;
+    }
+    let octets = ep.addr.octets();
+    let sin = SockaddrIn {
+        sin_family: 2, // AF_INET
+        sin_port: ep.port.to_be(),
+        sin_addr: octets,
+        sin_zero: [0; 8],
+    };
+    core::ptr::write(addr as *mut SockaddrIn, sin);
+    if !addrlen.is_null() {
+        core::ptr::write(addrlen, 16);
+    }
+}}
 
 #[repr(C)]
 struct SockaddrIn {
@@ -479,7 +508,7 @@ pub unsafe extern "C" fn sm_sendto(
 /// POSIX `recvfrom(fd, buf, len, flags, addr, addrlen)` 内核实现。
 ///
 /// # Safety
-/// `buf` 必须是有效可写指针, 至少 `len` 字节; `addr`/`_addrlen` 可选地写入对端地址。
+/// `buf` 必须是有效可写指针, 至少 `len` 字节; `addr`/`addrlen` 可选地写入对端地址。
 /// NET_LOCK 持有; 由 `sys_recvfrom` 分发。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_recvfrom(
@@ -487,8 +516,8 @@ pub unsafe extern "C" fn sm_recvfrom(
     buf: *mut u8,
     len: u32,
     _flags: i32,
-    _addr: *mut u8,
-    _addrlen: *mut u32,
+    addr: *mut u8,
+    addrlen: *mut u32,
 // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
 ) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -511,7 +540,14 @@ pub unsafe extern "C" fn sm_recvfrom(
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
             match sock.recv_slice(data) {
-                Ok((n, _meta)) => n as i32,
+                Ok((n, meta)) => {
+                    // 通过 endpoint_from_smol 将 smoltcp IpEndpoint 翻译为 NetEndpoint,
+                    // 再写入 sockaddr_in 供用户态读取对端地址.
+                    if let Some(ep) = endpoint_from_smol(meta.endpoint) {
+                        write_sockaddr_in(addr, addrlen, &ep);
+                    }
+                    n as i32
+                }
                 Err(_) => -E_AGAIN,
             }
         }
