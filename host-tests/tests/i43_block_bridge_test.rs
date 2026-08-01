@@ -24,11 +24,10 @@ fn collect_rs_files(dir: &Path) -> Vec<String> {
             let path = entry.path();
             if path.is_dir() {
                 result.extend(collect_rs_files(&path));
-            } else if path.extension().map_or(false, |e| e == "rs") {
-                if let Some(s) = path.to_str() {
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && let Some(s) = path.to_str() {
                     result.push(s.to_string());
                 }
-            }
         }
     }
     result

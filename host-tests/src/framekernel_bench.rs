@@ -150,7 +150,7 @@ pub fn iomem_alias_bench(iters: u64) -> u128 {
     let mut sink: u64 = 0;
     for i in 0..iters {
         for j in 0..BATCH {
-            let phys = 0x50000 + ((i * BATCH + j) as u64 & 0xFFFF) * 0x100;
+            let phys = 0x50000 + ((i * BATCH + j) & 0xFFFF) * 0x100;
             let len = 0x800;
             if r.check_conflict(phys, len) { sink ^= 1; }
         }
@@ -341,7 +341,7 @@ fn classify(rec: &FaultRecord) -> FaultAttribution {
         if rec.holding_lock {
             FaultAttribution::CrossLayer { framework_fn: "spinlock_acquire", services_fn: "domain_visit" }
         } else {
-            FaultAttribution::Service { domain: (rec.cs & 0xF) as u16, recoverable: true }
+            FaultAttribution::Service { domain: (rec.cs & 0xF), recoverable: true }
         }
     } else {
         FaultAttribution::Service { domain: 0, recoverable: false }
@@ -781,6 +781,12 @@ pub struct MockBpfSubsystem {
     next_prog_fd: AtomicI64,
 }
 
+impl Default for MockBpfSubsystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockBpfSubsystem {
     pub const fn new() -> Self {
         Self {
@@ -889,6 +895,7 @@ impl MockSysctlEntry {
         }
     }
 
+    #[allow(clippy::result_unit_err)] // bench 框架简化错误类型, 不影响内核
     pub fn write(&mut self, val: MockSysctlValue) -> Result<(), ()> {
         let k = match val {
             MockSysctlValue::Int(_) => MockSysctlKind::Int,
@@ -911,6 +918,12 @@ pub struct MockSysctlTable {
     slots: StdMutex<[Option<MockSysctlEntry>; MOCK_SYSCTL_SLOTS]>,
 }
 
+impl Default for MockSysctlTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockSysctlTable {
     pub const fn new() -> Self {
         // 用 const { None } 数组初始化 (Rust 1.79+)
@@ -919,6 +932,7 @@ impl MockSysctlTable {
         }
     }
 
+    #[allow(clippy::result_unit_err)] // bench 框架简化错误类型, 不影响内核
     pub fn register(
         &self,
         name: &'static str,
@@ -928,9 +942,8 @@ impl MockSysctlTable {
         let mut g = self.slots.lock().unwrap();
         // 重复检测
         for s in g.iter() {
-            if let Some(e) = s {
-                if e.name == name { return Err(()); }
-            }
+            if let Some(e) = s
+                && e.name == name { return Err(()); }
         }
         // 找一个空槽
         for s in g.iter_mut() {
@@ -942,12 +955,12 @@ impl MockSysctlTable {
         Err(())
     }
 
+    #[allow(clippy::result_unit_err)] // bench 框架简化错误类型, 不影响内核
     pub fn write(&self, name: &str, val: MockSysctlValue) -> Result<(), ()> {
         let mut g = self.slots.lock().unwrap();
         for s in g.iter_mut() {
-            if let Some(e) = s {
-                if e.name == name { return e.write(val); }
-            }
+            if let Some(e) = s
+                && e.name == name { return e.write(val); }
         }
         Err(())
     }
@@ -955,9 +968,8 @@ impl MockSysctlTable {
     pub fn read(&self, name: &str) -> Option<MockSysctlValue> {
         let g = self.slots.lock().unwrap();
         for s in g.iter() {
-            if let Some(e) = s {
-                if e.name == name { return Some(e.read()); }
-            }
+            if let Some(e) = s
+                && e.name == name { return Some(e.read()); }
         }
         None
     }
@@ -1010,7 +1022,7 @@ pub fn sysctl_bench(iters: u64) -> u128 {
             };
             let val = match kind {
                 MockSysctlKind::Int => MockSysctlValue::Int(i as i64 + (r as i64) * 1000),
-                MockSysctlKind::UInt => MockSysctlValue::UInt(i as u64 + r * 1000),
+                MockSysctlKind::UInt => MockSysctlValue::UInt(i + r * 1000),
                 MockSysctlKind::Bool => MockSysctlValue::Bool(r % 2 == 0),
             };
             let _ = table.write(names[idx], val);
@@ -1137,7 +1149,7 @@ pub fn blk_dev_dispatch_bench(iters: u64) -> u128 {
     let mut buf = [0u8; 512];
     for r in 0..iters {
         // 1 轮: 1 读 + 1 写 (16 扇区 旋转)
-        let sector = (r & 0xF) as u64;
+        let sector = r & 0xF;
         let _ = chitin.blk_read(sector, &mut buf);
         sink ^= u64::from(buf[0]) | (u64::from(buf[1]) << 8);
         let _ = chitin.blk_write(sector, &buf);
@@ -1277,6 +1289,12 @@ pub struct MockEpollInterestItem {
     pub data: u64,
 }
 
+impl Default for MockEpollInstance {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockEpollInstance {
     pub fn new() -> Self {
         Self { interest_list: Vec::new(), ready_list: Vec::new() }
@@ -1321,6 +1339,12 @@ pub struct MockEpollPwake {
     pub instances: Vec<MockEpollInstance>,
 }
 
+impl Default for MockEpollPwake {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockEpollPwake {
     pub fn new() -> Self {
         Self { instances: Vec::new() }
@@ -1357,12 +1381,21 @@ pub trait HostZapStore: Send + Sync {
     fn remove(&self, name: &str) -> bool;
     fn contains(&self, name: &str) -> bool;
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn capacity(&self) -> usize;
 }
 
 /// host-only StandardZap (Mutex<HashMap>)
 pub struct StandardHostZap {
     pub map: std::sync::Mutex<(HashMap<String, Vec<u8>>, usize)>,
+}
+
+impl Default for StandardHostZap {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StandardHostZap {
@@ -1485,6 +1518,12 @@ pub struct StandardHostTxg {
     pub state: std::sync::Mutex<MockTxgState>,
 }
 
+impl Default for StandardHostTxg {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StandardHostTxg {
     pub fn new() -> Self {
         Self {
@@ -1601,6 +1640,12 @@ pub struct DmuState {
     pub root_id: u64,
 }
 
+impl Default for StandardHostDmu {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StandardHostDmu {
     pub fn new() -> Self {
         Self {
@@ -1652,8 +1697,8 @@ impl HostDmuManager for StandardHostDmu {
     }
     fn update_obj(&self, obj: MockDmuObject) -> bool {
         let mut s = self.state.lock().unwrap();
-        if s.objects.contains_key(&obj.obj_id) {
-            s.objects.insert(obj.obj_id, obj);
+        if let std::collections::hash_map::Entry::Occupied(mut e) = s.objects.entry(obj.obj_id) {
+            e.insert(obj);
             true
         } else {
             false
@@ -1740,6 +1785,12 @@ pub trait HostSpaManager: Send + Sync {
 /// host-only StandardSpa (Mutex<SpaState>)
 pub struct StandardHostSpa {
     pub state: std::sync::Mutex<SpaState>,
+}
+
+impl Default for StandardHostSpa {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StandardHostSpa {
@@ -1961,6 +2012,12 @@ pub struct ArcState {
     pub evicts: u64,
 }
 
+impl Default for StandardHostArc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StandardHostArc {
     pub fn new() -> Self {
         Self {
@@ -2098,6 +2155,12 @@ pub struct ZilLogState {
     pub enabled: bool,
 }
 
+impl Default for StandardHostZil {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StandardHostZil {
     pub fn new() -> Self {
         Self {
@@ -2202,6 +2265,12 @@ pub struct StandardHostZilPersist {
 
 pub struct MockZilPersistState {
     pub written: bool,
+}
+
+impl Default for StandardHostZilPersist {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StandardHostZilPersist {
@@ -2467,6 +2536,7 @@ fn measure<F: Fn() -> u128>(name: &str, category: &str, default_iters: u64, f: F
     }
 }
 
+#[allow(clippy::vec_init_then_push)] // 80+ 项基准测试, vec![] 宏可读性差
 pub fn run_all() -> BenchReport {
     let mut results = Vec::new();
     results.push(measure("page_flags_bits", "mm", 100_000, ||
@@ -2570,7 +2640,7 @@ mod tests {
         let mut pte = MockPte::new(0xFFFF_FFFF_FFFF_FFFF);
         pte.set_flags(PageFlags::PRESENT | PageFlags::WRITABLE);
         assert!(pte.is_present());
-        let mut pte2 = MockPte::new(0x0);
+        let pte2 = MockPte::new(0x0);
         assert!(!pte2.is_present());
     }
 
@@ -2579,7 +2649,7 @@ mod tests {
         let mut r = AliasRegistry::new();
         assert!(r.register(0x1000, 0x800).is_ok());
         assert!(r.register(0x2000, 0x800).is_ok());
-        assert!(r.check_conflict(0x3000, 0x800) == false);
+        assert!(!r.check_conflict(0x3000, 0x800));
     }
 
     #[test]
@@ -2587,12 +2657,12 @@ mod tests {
         let mut r = AliasRegistry::new();
         r.register(0x1000, 0x800).unwrap();
         // 0x1000-0x17FF 已被占用
-        assert!(r.check_conflict(0x1100, 0x800) == true);   // 完全在内
-        assert!(r.check_conflict(0x1000, 0x400) == true);   // 起点边界
-        assert!(r.check_conflict(0x1500, 0x800) == true);   // 起点在内, 越界
-        assert!(r.check_conflict(0x0800, 0x900) == true);   // 起点在外, 末端在内
-        assert!(r.check_conflict(0x1800, 0x800) == false);  // 完全不相邻
-        assert!(r.check_conflict(0x0000, 0x1000) == false); // 完全在外
+        assert!(r.check_conflict(0x1100, 0x800));   // 完全在内
+        assert!(r.check_conflict(0x1000, 0x400));   // 起点边界
+        assert!(r.check_conflict(0x1500, 0x800));   // 起点在内, 越界
+        assert!(r.check_conflict(0x0800, 0x900));   // 起点在外, 末端在内
+        assert!(!r.check_conflict(0x1800, 0x800));  // 完全不相邻
+        assert!(!r.check_conflict(0x0000, 0x1000)); // 完全在外
     }
 
     #[test]
@@ -2796,7 +2866,7 @@ mod tests {
         assert_eq!(chitin.blk_read(0, &mut buf), 0);
         assert_eq!(buf[0], 0);
         // 写 sector 1
-        let mut wbuf = [0xAB; 512];
+        let wbuf = [0xAB; 512];
         assert_eq!(chitin.blk_write(1, &wbuf), 0);
         // 再读 sector 1
         let mut rbuf = [0u8; 512];

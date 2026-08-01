@@ -2,8 +2,11 @@
 """
 audit_volatile_access.py — LTO 错位防线: volatile 字段访问检查 (2026-07-02 新增)
 
-检查关键字段 (bitmap_size, free_list_head 等) 是否使用 volatile 访问.
+检查关键字段 (bitmap_size, free_list_head, heap_end 等) 是否使用 volatile 访问.
 已知 LTO 错位 bug: set_bit 内 self.bitmap_size.get() 被错位到 self.failed_allocs.
+
+2026-07-31 扩展: 新增 heap_end 字段检测, 兼容 Ref 抽象访问模式
+(FreeListHeadRef / HeapEndRef, 通过 addr_of! + read_volatile/write_volatile).
 
 用法: python3 scripts/audit_volatile_access.py
 退出码: 0=通过, 1=有风险
@@ -16,45 +19,51 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src/kernel")
 
 # 高风险字段: 曾经被 LTO 错位或有 LTO 错位风险
-# 格式: (文件, 字段名, 期望访问方式)
+# 格式: (文件, 字段名, Ref 抽象名 or None)
+# - Ref 抽象名非空: 通过 XxxRef::new(addr_of!(self.field)) 访问
+# - Ref 抽象名为 None: 通过 raw self.field.get() 直接访问 (pmm.rs 模式)
 RISKY_FIELDS = [
-    ("framework/mm/pmm.rs", "bitmap_size", "read_volatile"),
-    ("framework/mm/kmalloc.rs", "free_list_head", "read_volatile"),
-    ("framework/sync/pi_mutex.rs", "effective_priority", "AtomicU32.load"),
+    ("framework/mm/pmm.rs", "bitmap_size", None),
+    ("framework/mm/kmalloc.rs", "free_list_head", "FreeListHeadRef"),
+    ("framework/mm/kmalloc.rs", "heap_end", "HeapEndRef"),
+    ("framework/sync/pi_mutex.rs", "effective_priority", None),
 ]
 
-def check_field_access(filename, field_name, expected_pattern):
-    """检查指定字段在文件中的访问方式."""
-    path = os.path.join(SRC, filename)
-    if not os.path.exists(path):
-        return None, f"文件不存在: {filename}"
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read()
+# Ref 抽象使用模式: XxxRef::new(addr_of!(self.field))
+REF_ACCESS_RE_TEMPLATE = r'{ref_name}\s*::\s*new\s*\(\s*core\s*::\s*ptr\s*::\s*addr_of!\s*\(\s*self\.{field}\s*\)\s*\)'
 
-    # 查找字段名的所有访问点 (self.field_name)
-    access_pattern = re.compile(
-        r'self\.' + re.escape(field_name) + r'\.get\(\)',
+# 直接 UnsafeCell.get() 访问模式: self.field.get()
+DIRECT_ACCESS_RE_TEMPLATE = r'self\.{field}\.get\(\)'
+
+def check_ref_access(content, field_name, ref_name):
+    """检查通过 Ref 抽象访问的字段: XxxRef::new(addr_of!(self.field))."""
+    pattern = re.compile(
+        REF_ACCESS_RE_TEMPLATE.format(ref_name=re.escape(ref_name), field=re.escape(field_name)),
         re.MULTILINE,
     )
-    accesses = list(access_pattern.finditer(content))
+    return list(pattern.finditer(content))
 
-    if not accesses:
-        return None, f"未找到 self.{field_name}.get() 访问"
+def check_direct_access(content, field_name):
+    """检查直接 self.field.get() 访问 (pmm.rs 模式: 搭配 read_volatile/raw ptr)."""
+    pattern = re.compile(
+        DIRECT_ACCESS_RE_TEMPLATE.format(field=re.escape(field_name)),
+        re.MULTILINE,
+    )
+    return list(pattern.finditer(content))
 
-    # 检查每个访问是否在 raw pointer + read_volatile 内
+def check_direct_access_violations(content, field_name, accesses):
+    """检查直接访问是否在 raw pointer + read_volatile 上下文中."""
     violations = []
     for m in accesses:
-        # 取前后 200 字符检查 context
         start = max(0, m.start() - 500)
         end = min(len(content), m.end() + 200)
         context = content[start:end]
-        # 排除注释行 (// 注释中的 .get() 不是实际访问)
+        # 排除注释行
         line_start = content.rfind('\n', 0, m.start()) + 1
         line_text = content[line_start:m.start()]
         if line_text.strip().startswith('//'):
             continue
         # 排除 init-only 路径 (count_free_pages 仅在 init 时调用, 非热路径)
-        # 向上查找最近的 fn 声明
         fn_search_start = max(0, m.start() - 500)
         fn_match = re.search(r'fn\s+(\w+)', content[fn_search_start:m.start()])
         if fn_match and fn_match.group(1) == 'count_free_pages':
@@ -64,19 +73,41 @@ def check_field_access(filename, field_name, expected_pattern):
         if not has_volatile and not has_raw_ptr:
             line_no = content[:m.start()].count('\n') + 1
             violations.append((line_no, content[m.start():m.end()]))
+    return violations
 
-    return violations, None
+def check_field_access(filename, field_name, ref_name):
+    """检查指定字段的访问方式 (Ref 抽象 or 直接访问)."""
+    path = os.path.join(SRC, filename)
+    if not os.path.exists(path):
+        return None, f"文件不存在: {filename}"
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+
+    if ref_name is not None:
+        # Ref 抽象模式: 检查 XxxRef::new(addr_of!(self.field))
+        ref_accesses = check_ref_access(content, field_name, ref_name)
+        if not ref_accesses:
+            return None, f"未找到 {ref_name}::new(addr_of!(self.{field_name})) 访问"
+        # Ref 抽象内部用 read_volatile/write_volatile (已审计), 外部访问点视为安全
+        return [], None
+    else:
+        # 直接访问模式 (pmm.rs 模式): 检查 self.field.get() 是否在 volatile 上下文中
+        direct_accesses = check_direct_access(content, field_name)
+        if not direct_accesses:
+            return None, f"未找到 self.{field_name}.get() 访问"
+        return check_direct_access_violations(content, field_name, direct_accesses), None
 
 def main():
     all_violations = []
-    for filename, field, expected in RISKY_FIELDS:
-        violations, err = check_field_access(filename, field, expected)
+    for filename, field, ref_name in RISKY_FIELDS:
+        violations, err = check_field_access(filename, field, ref_name)
         if err:
             print(f"  ⚠ {filename}:{field}: {err}")
         elif violations:
             all_violations.extend([(filename, field, lv) for lv in violations])
         else:
-            print(f"  ✓ {filename}:{field}: 已用 volatile/raw pointer 访问")
+            access_desc = f"{ref_name}::new(addr_of!(self.{field}))" if ref_name else "volatile/raw pointer"
+            print(f"  ✓ {filename}:{field}: 已用 {access_desc} 访问")
 
     print(f"=== audit_volatile_access: 检查 {len(RISKY_FIELDS)} 个高风险字段 ===")
     if all_violations:

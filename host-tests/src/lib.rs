@@ -6,9 +6,9 @@
 //!
 //! ### 1. 库代码 (供 bin/ 和 tests/ 引用)
 //! - `hvfs`        — 模拟内核中的 HvFS 文件系统实现, 内部通过 `crate::kernel` 树
-//!                    引用 hvfs_mock 重导出的虚拟内核 API
+//!   引用 hvfs_mock 重导出的虚拟内核 API
 //! - `hvfs_mock`   — host 端 std 桩, 模拟 `kernel::sync::mutex::Mutex` 等
-//!                    内核 API 树, 让 HvFS 代码在无 OS 环境下 host-runnable
+//!   内核 API 树, 让 HvFS 代码在无 OS 环境下 host-runnable
 //! - `framekernel_bench` — 微基准测试库, 供 `bin/framekernel_bench` 调用
 //!
 //! ### 2. 单元测试 (内联在各源文件 `#[cfg(test)] mod tests`)

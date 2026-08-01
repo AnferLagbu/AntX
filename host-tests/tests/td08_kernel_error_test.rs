@@ -8,7 +8,6 @@
 //   4. From<fw::UdsError> 单一映射, 9 个变体全数下沉
 
 use std::fs;
-use std::path::Path;
 
 const SERVICES_ERROR: &str = "../src/kernel/services/error.rs";
 const NET_SOCKET: &str = "../src/kernel/services/net/socket.rs";

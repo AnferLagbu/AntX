@@ -28,14 +28,14 @@ fn test_ext2_block_size() {
         data[1024 + 27],
     ]);
     let block_size = 1024u32 << log_block_size;
-    assert!(block_size >= 1024 && block_size <= 65536, "块大小无效");
+    assert!((1024..=65536).contains(&block_size), "块大小无效");
 }
 
 #[test]
 fn test_ext2_inode_count() {
     let data = fs::read("ext2_test.img").unwrap();
     let inode_count = u32::from_le_bytes([
-        data[1024 + 0],
+        data[1024],
         data[1024 + 1],
         data[1024 + 2],
         data[1024 + 3],

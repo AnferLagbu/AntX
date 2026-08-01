@@ -176,7 +176,7 @@ impl FsxFs {
                 self.files.insert(
                     filename.clone(),
                     FileData {
-                        content: content,
+                        content,
                     },
                 );
                 self.active_files.push(filename);

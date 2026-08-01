@@ -59,7 +59,7 @@ impl MockHeap {
         if size == 0 { return None; }
         let flags = acquire_lock(&self.lock);
         // 模拟分配逻辑
-        let ptr = size as usize;
+        let ptr = size;
         release_lock(&self.lock, &flags);
         Some(ptr)
     }

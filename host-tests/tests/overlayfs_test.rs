@@ -7,9 +7,8 @@ fn test_overlayfs_concept() {
     // 2. upperdir 包含修改后的文件
     // 3. merged 视图合并两者
     // 4. whiteout 标记删除的文件
-    
-    // 概念验证
-    assert!(true);
+    //
+    // 占位测试: 概念模型待实现, 当前仅验证编译通过
 }
 
 #[test]
@@ -26,7 +25,6 @@ fn test_overlayfs_copy_up() {
     // 1. 文件在 lowerdir
     // 2. 写入时 copy_up 到 upperdir
     // 3. 后续操作在 upperdir 进行
-    
-    // 概念验证
-    assert!(true);
+    //
+    // 占位测试: copy_up 逻辑待实现, 当前仅验证编译通过
 }

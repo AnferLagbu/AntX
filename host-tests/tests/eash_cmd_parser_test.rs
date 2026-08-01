@@ -230,7 +230,9 @@ fn test_as_str_invalid_utf8_fallback() {
 #[test]
 fn test_cmd_realistic_eash_commands() {
     // 来自 eash 真实命令, 验证不会因空白/大小写问题误解析
-    let cases: &[(&[u8], usize, &[&[u8]])] = &[
+    // 类型别名: (输入, 期望 token 数, 期望 token 切片)
+    type CmdCase<'a> = (&'a [u8], usize, &'a [&'a [u8]]);
+    let cases: &[CmdCase<'_>] = &[
         (b"help", 1, &[b"help"]),
         (b"echo QueenX Shell", 3, &[b"echo", b"QueenX", b"Shell"]),
         (b"dir /bin", 2, &[b"dir", b"/bin"]),

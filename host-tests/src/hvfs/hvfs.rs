@@ -803,12 +803,10 @@ impl HvfsData {
             if let Some(new_bp) =
                 self.spa
                     .allocate(target_bytes.len() as u64, cksum_type, comp_type, txg)
-            {
-                if let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
+                && let Some(mut obj) = ds.objset.get_obj_mut(obj_id) {
                     obj.bp = new_bp;
                     ds.objset.update_obj(&obj);
                 }
-            }
 
             // 添加到目录
             if !ds.link(link_name, obj_id) {

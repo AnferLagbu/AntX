@@ -30,7 +30,7 @@ fn test_page_fault_uses_vma_flags_for_user_fault() {
         .expect("page_fault.rs 缺少 handle_page_fault");
     // 找函数体 — 假设缩进 4 空格, 函数体首行是 4 空格缩进
     let body_lines: Vec<&str> = src[fn_start..].lines()
-        .take_while(|l| {
+        .take_while(|_l| {
             // 截到下一个 `fn ` 顶层 (4 空格缩进才进入) 或文件末尾
             // 简化: 截到 200 行即可覆盖主函数
             true

@@ -219,8 +219,8 @@ impl HvArc {
         let mut promote_to_mfu = false;
 
         for &idx in &inner.hash_table[bucket_idx] {
-            if let Some(ref buf) = inner.buffers[idx] {
-                if buf.key.vdev_id == key.vdev_id
+            if let Some(ref buf) = inner.buffers[idx]
+                && buf.key.vdev_id == key.vdev_id
                     && buf.key.offset == key.offset
                     && buf.key.birth_txg == key.birth_txg
                 {
@@ -241,7 +241,6 @@ impl HvArc {
                     found_idx = Some(idx);
                     break;
                 }
-            }
         }
         if let Some(idx) = found_idx {
             if promote_to_mfu {
@@ -326,15 +325,14 @@ impl HvArc {
         let bucket_idx = (key.hash() as usize) % HV_ARC_HASH_BUCKETS;
         let mut found: Option<usize> = None;
         for (pos, &idx) in inner.hash_table[bucket_idx].iter().enumerate() {
-            if let Some(ref buf) = inner.buffers[idx] {
-                if buf.key.vdev_id == key.vdev_id
+            if let Some(ref buf) = inner.buffers[idx]
+                && buf.key.vdev_id == key.vdev_id
                     && buf.key.offset == key.offset
                     && buf.key.birth_txg == key.birth_txg
                 {
                     found = Some(pos);
                     break;
                 }
-            }
         }
         if let Some(pos) = found {
             let idx = inner.hash_table[bucket_idx].remove(pos);
@@ -353,8 +351,8 @@ impl HvArc {
         let current: usize = inner.mru.len() + inner.mfu.len();
         if current + 1 > inner.max_size {
             if inner.mru.len() > inner.p {
-                if let Some(idx) = inner.mru.pop_front() {
-                    if let Some(buf) = inner.buffers[idx].take() {
+                if let Some(idx) = inner.mru.pop_front()
+                    && let Some(buf) = inner.buffers[idx].take() {
                         let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
                         inner.hash_table[bucket_idx].retain(|&i| i != idx);
                         inner.ghost_mru.push_back(buf.key);
@@ -366,10 +364,9 @@ impl HvArc {
                             .fetch_sub(buf.size as u64, Ordering::Relaxed);
                         self.stats.evicts.fetch_add(1, Ordering::Relaxed);
                     }
-                }
             } else {
-                if let Some(idx) = inner.mfu.pop_front() {
-                    if let Some(buf) = inner.buffers[idx].take() {
+                if let Some(idx) = inner.mfu.pop_front()
+                    && let Some(buf) = inner.buffers[idx].take() {
                         let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
                         inner.hash_table[bucket_idx].retain(|&i| i != idx);
                         inner.ghost_mfu.push_back(buf.key);
@@ -381,7 +378,6 @@ impl HvArc {
                             .fetch_sub(buf.size as u64, Ordering::Relaxed);
                         self.stats.evicts.fetch_add(1, Ordering::Relaxed);
                     }
-                }
             }
             if inner.ghost_mru.len() > inner.max_size {
                 inner.ghost_mru.pop_front();

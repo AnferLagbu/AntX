@@ -8,7 +8,7 @@
 //!
 //! 主机端镜像 Process 结构和 reset 逻辑.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 struct FakeProcess {
     pending_signals: AtomicU64,

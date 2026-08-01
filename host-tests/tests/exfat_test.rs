@@ -30,7 +30,7 @@ fn test_exfat_sector_size() {
     let data = fs::read("exfat_test.img").unwrap();
     let bytes_per_sector_shift = data[102];
     let sector_size = 1u32 << bytes_per_sector_shift.min(12); // 限制最大 12，防止溢出
-    assert!(sector_size >= 512 && sector_size <= 4096, "扇区大小无效");
+    assert!((512..=4096).contains(&sector_size), "扇区大小无效");
 }
 
 #[test]

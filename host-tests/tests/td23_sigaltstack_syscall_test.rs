@@ -57,7 +57,7 @@ fn sigaltstack_op(state: AltStackState, ss: Option<StackT>, old_ss_query: bool) 
             // 启用: 写 addr/size, 清 ONSTACK/DISABLE
             s.addr = new_ss.ss_sp;
             s.size = new_ss.ss_size;
-            s.flags = s.flags & !(SS_ONSTACK | SS_DISABLE);
+            s.flags &= !(SS_ONSTACK | SS_DISABLE);
         }
     }
     (s, written)

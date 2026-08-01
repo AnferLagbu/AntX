@@ -23,6 +23,7 @@ enum VmaType {
 
 /// 模型 Vma (镜像 queenx Vma 字段集, 用于语义测试)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Vma {
     start: usize,
     end: usize,

@@ -42,10 +42,11 @@ fn test_fd_table_overflow() {
     fds[4] = Some(20);
 
     let mut allocated = false;
-    for i in 3..max_fds {
-        if fds[i].is_none() {
-            fds[i] = Some(30);
+    for (i, slot) in fds.iter_mut().enumerate().skip(3).take(max_fds - 3) {
+        if slot.is_none() {
+            *slot = Some(30);
             allocated = true;
+            let _ = i; // i 仅用于调试, 不在断言中使用
             break;
         }
     }
@@ -101,6 +102,7 @@ fn test_wasi_rights() {
 
 #[test]
 fn test_filestat_structure() {
+    #[allow(dead_code)]
     struct Filestat {
         dev: u64,
         ino: u64,
@@ -147,8 +149,9 @@ fn test_wasi_errno_posix_alignment() {
 
 #[test]
 fn test_iovec_structure() {
+    #[allow(dead_code)]
     struct IoVec { buf: u32, len: u32 }
-    let iovecs = vec![IoVec { buf: 100, len: 256 }, IoVec { buf: 400, len: 128 }];
+    let iovecs = [IoVec { buf: 100, len: 256 }, IoVec { buf: 400, len: 128 }];
     let total: u32 = iovecs.iter().map(|iov| iov.len).sum();
     assert_eq!(total, 384);
 }

@@ -116,6 +116,7 @@ fn test_active_socket_counting() {
 }
 
 #[test]
+#[allow(clippy::assertions_on_constants)] // 编译期回归断言, 故意用常量
 fn test_old_hardcoded_limit_was_8() {
     // 文档化回归: 旧硬编码 = 8 (8 个并发 socket).
     // 修复后默认 256 (32x), 编译期可调.

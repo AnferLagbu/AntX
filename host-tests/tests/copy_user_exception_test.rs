@@ -10,6 +10,9 @@
 //! 验证调用方语义: 返回 Result<usize, ()>, 失败时调用方必须
 //! 把 EFAULT / SIG_IGN 路径走通.
 
+// 单元素 &[Range] 是 unmapped 区间的合理表示 (测试用单区间), 抑制 clippy 误报
+#![allow(clippy::single_range_in_vec_init)]
+
 // ============================================================================
 // 模型: 异常表保护版 copy API 契约
 // ============================================================================
@@ -53,9 +56,9 @@ fn coredump_user_buf_mapped_succeeds() {
 #[test]
 fn coredump_user_buf_munmapped_returns_efault() {
     // 用户在 coredump 遍历 VMA 过程中 munmap 了当前段
-    let unmapped = vec![0x1000..0x2000];
+    let unmapped: &[std::ops::Range<u64>] = &[0x1000..0x2000];
     let mut buf = [0u8; 256];
-    let r = mock_copy_from_user(&mut buf, 0x1000, 256, &unmapped);
+    let r = mock_copy_from_user(&mut buf, 0x1000, 256, unmapped);
     assert_eq!(r, CopyOutcome::Efault, "I-36 修复: coredump 读 munmap 段必须 EFAULT, 不能 panic");
 }
 
@@ -65,26 +68,26 @@ fn coredump_user_buf_munmapped_returns_efault() {
 
 #[test]
 fn socket_send_user_buf_munmapped_returns_efault() {
-    let unmapped = vec![0x4000_0000..0x4000_1000];
+    let unmapped: &[std::ops::Range<u64>] = &[0x4000_0000..0x4000_1000];
     let buf = [0xABu8; 512];
-    let r = mock_copy_to_user(0x4000_0000, &buf, 512, &unmapped);
+    let r = mock_copy_to_user(0x4000_0000, &buf, 512, unmapped);
     assert_eq!(r, CopyOutcome::Efault, "I-37 修复: send 缓冲区失效必须 EFAULT");
 }
 
 #[test]
 fn socket_recv_user_buf_munmapped_returns_efault() {
-    let unmapped = vec![0x5000_0000..0x5000_1000];
+    let unmapped: &[std::ops::Range<u64>] = &[0x5000_0000..0x5000_1000];
     let mut buf = [0u8; 512];
-    let r = mock_copy_from_user(&mut buf, 0x5000_0000, 512, &unmapped);
+    let r = mock_copy_from_user(&mut buf, 0x5000_0000, 512, unmapped);
     assert_eq!(r, CopyOutcome::Efault, "I-37 修复: recv 缓冲区失效必须 EFAULT");
 }
 
 #[test]
 fn socket_sockaddr_user_buf_munmapped_returns_efault() {
     // sockaddr_in 仅 8 字节, 跨越 munmap 边界
-    let unmapped = vec![0x6000_0004..0x6000_0008];
+    let unmapped: &[std::ops::Range<u64>] = &[0x6000_0004..0x6000_0008];
     let mut buf = [0u8; 8];
-    let r = mock_copy_from_user(&mut buf, 0x6000_0000, 8, &unmapped);
+    let r = mock_copy_from_user(&mut buf, 0x6000_0000, 8, unmapped);
     assert_eq!(r, CopyOutcome::Efault, "I-37 修复: sockaddr 跨越 munmap 边界必须 EFAULT");
 }
 
@@ -93,14 +96,15 @@ fn socket_sockaddr_user_buf_munmapped_returns_efault() {
 // ============================================================================
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 struct SignalFrame {
-    #[allow(dead_code)] r15: u64, r14: u64, r13: u64, r12: u64,
-    #[allow(dead_code)] r11: u64, r10: u64, r9: u64, r8: u64,
-    #[allow(dead_code)] rdi: u64, rsi: u64, rbp: u64, rdx: u64,
-    #[allow(dead_code)] rcx: u64, rbx: u64, rax: u64,
-    #[allow(dead_code)] int_no: u64, err_code: u64,
-    #[allow(dead_code)] rip: u64, cs: u64, rflags: u64, rsp: u64, ss: u64,
-    #[allow(dead_code)] signum: u64,
+    r15: u64, r14: u64, r13: u64, r12: u64,
+    r11: u64, r10: u64, r9: u64, r8: u64,
+    rdi: u64, rsi: u64, rbp: u64, rdx: u64,
+    rcx: u64, rbx: u64, rax: u64,
+    int_no: u64, err_code: u64,
+    rip: u64, cs: u64, rflags: u64, rsp: u64, ss: u64,
+    signum: u64,
 }
 
 /// 模拟 I-38 修复后的 signal 投递:
@@ -131,7 +135,7 @@ fn try_deliver_signal(
 
 #[test]
 fn signal_stack_mapped_delivers() {
-    let unmapped: Vec<std::ops::Range<u64>> = vec![];
+    let unmapped: &[std::ops::Range<u64>] = &[];
     let sigframe = SignalFrame {
         r15: 0, r14: 0, r13: 0, r12: 0, r11: 0, r10: 0, r9: 0, r8: 0,
         rdi: 0, rsi: 0, rbp: 0, rdx: 0, rcx: 0, rbx: 0, rax: 0,
@@ -139,13 +143,13 @@ fn signal_stack_mapped_delivers() {
         signum: 9,
     };
     let trampoline = [0u8; 16];
-    assert!(try_deliver_signal(0x7000_0000, &sigframe, &trampoline, &unmapped));
+    assert!(try_deliver_signal(0x7000_0000, &sigframe, &trampoline, unmapped));
 }
 
 #[test]
 fn signal_stack_munmapped_rolls_back() {
     // 用户栈在信号投递前被 munmap
-    let unmapped = vec![0x7000_0000..0x7000_1000];
+    let unmapped: &[std::ops::Range<u64>] = &[0x7000_0000..0x7000_1000];
     let sigframe = SignalFrame {
         r15: 0, r14: 0, r13: 0, r12: 0, r11: 0, r10: 0, r9: 0, r8: 0,
         rdi: 0, rsi: 0, rbp: 0, rdx: 0, rcx: 0, rbx: 0, rax: 0,
@@ -153,7 +157,7 @@ fn signal_stack_munmapped_rolls_back() {
         signum: 9,
     };
     let trampoline = [0u8; 16];
-    let delivered = try_deliver_signal(0x7000_0000, &sigframe, &trampoline, &unmapped);
+    let delivered = try_deliver_signal(0x7000_0000, &sigframe, &trampoline, unmapped);
     assert!(!delivered, "I-38 修复: 栈帧写入失败时, 信号必须不投递, 进程继续运行");
 }
 
@@ -161,7 +165,7 @@ fn signal_stack_munmapped_rolls_back() {
 fn signal_trampoline_page_munmapped_rolls_back() {
     // ret_addr 写入成功, 但 trampoline 所在页被 munmap
     // frame_rsp=0x7000_0000, frame_size=192, trampoline 起点 = 0x7000_00C8
-    let unmapped = vec![0x7000_00C8..0x7000_00D8];
+    let unmapped: &[std::ops::Range<u64>] = &[0x7000_00C8..0x7000_00D8];
     let sigframe = SignalFrame {
         r15: 0, r14: 0, r13: 0, r12: 0, r11: 0, r10: 0, r9: 0, r8: 0,
         rdi: 0, rsi: 0, rbp: 0, rdx: 0, rcx: 0, rbx: 0, rax: 0,
@@ -169,6 +173,6 @@ fn signal_trampoline_page_munmapped_rolls_back() {
         signum: 9,
     };
     let trampoline = [0u8; 16];
-    let delivered = try_deliver_signal(0x7000_0000, &sigframe, &trampoline, &unmapped);
+    let delivered = try_deliver_signal(0x7000_0000, &sigframe, &trampoline, unmapped);
     assert!(!delivered);
 }

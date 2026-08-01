@@ -90,7 +90,7 @@ fn sigill_default_action_is_core() {
 fn all_signals_1_to_31_defined() {
     // 镜像 test_default_action_coverage, 验证 SIGILL 在 1..=31 范围内
     for sig in 1u8..=31 {
-        assert!(sig >= 1 && sig <= 31);
+        assert!((1..=31).contains(&sig));
     }
     assert_eq!(SIGILL, 4);
 }

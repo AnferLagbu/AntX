@@ -53,6 +53,7 @@ impl PageFlags {
     const PRESENT: Self = Self { bits: 0x01 };
     const WRITABLE: Self = Self { bits: 0x02 };
     const USER: Self = Self { bits: 0x04 };
+    #[allow(dead_code)] // 镜像内核 PTE NX 位, 保留以对应内核布局
     const NO_EXEC: Self = Self { bits: 0x08 };
 
     fn contains(&self, other: Self) -> bool {

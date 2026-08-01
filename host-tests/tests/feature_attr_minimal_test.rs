@@ -93,12 +93,11 @@ fn test_kernel_uses_core_arch_asm_not_bare_asm() {
                         // 跳过注释与字符串
                         if trimmed.starts_with("//") { continue; }
                         // 检查裸 `asm!(...)` 调用
-                        if trimmed.starts_with("asm!") {
-                            if !line.contains("core::arch::") && !has_qualified_use {
+                        if trimmed.starts_with("asm!")
+                            && !line.contains("core::arch::") && !has_qualified_use {
                                 let rel = p.strip_prefix(framework_root).unwrap_or(&p);
                                 out.push(format!("{}:{}: {}", rel.display(), n + 1, line.trim()));
                             }
-                        }
                         // 旧式 llvm_asm!
                         if trimmed.contains("llvm_asm!") {
                             let rel = p.strip_prefix(framework_root).unwrap_or(&p);

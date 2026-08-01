@@ -11,7 +11,7 @@ use std::fs;
 
 fn read_file(relative_path: &str) -> String {
     let path = format!("{}/../src/kernel/{}", env!("CARGO_MANIFEST_DIR"), relative_path);
-    fs::read_to_string(&path).expect(&format!("read {}", relative_path))
+    fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {}", relative_path))
 }
 
 // ============================================================================

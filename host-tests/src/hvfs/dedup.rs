@@ -36,12 +36,11 @@ impl CasIndex {
 
     pub fn lookup(&self, hash: &CasHash) -> Option<HvBlockPointer> {
         let index = self.hash_to_dva.lock().unwrap();
-        if let Some(dvas) = index.get(hash) {
-            if let Some(bp) = dvas.first() {
+        if let Some(dvas) = index.get(hash)
+            && let Some(bp) = dvas.first() {
                 self.hits.fetch_add(1, Ordering::Relaxed);
                 return Some(*bp);
             }
-        }
         self.misses.fetch_add(1, Ordering::Relaxed);
         None
     }

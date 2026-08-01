@@ -137,7 +137,8 @@ fn pi_mutex_error_uses_kernel_wrapper() {
 #[test]
 fn no_legacy_pi_mutex_error_variants() {
     let src = read(PIMUTEX_RS);
-    for legacy in &["PiMutexError::WouldBlock"] {
+    {
+        let legacy = &"PiMutexError::WouldBlock";
         assert!(
             !src.contains(legacy),
             "{} 已废弃, 应改走 PiMutexError::Kernel(KernelError::WouldBlock)",

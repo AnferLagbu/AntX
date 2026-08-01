@@ -10,7 +10,6 @@
 //!
 //! 本测试验证修复通过静态扫描 source 存在, 防止后续误删.
 
-use std::path::Path;
 use std::fs;
 
 const TESTS_MOD_PATH: &str = "../src/kernel/framework/tests/mod.rs";

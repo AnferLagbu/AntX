@@ -17,8 +17,8 @@ fn load_elf_mock(cpu_id: u32, page_count: usize) -> Vec<u64> {
     let allocated_pages: &mut [u64] = &mut allocated_pages;
 
     let actual = page_count.min(MAX_LOAD_PAGES);
-    for i in 0..actual {
-        allocated_pages[i] = (cpu_id as u64) * 0x1_0000_0000 + i as u64;
+    for (i, page) in allocated_pages.iter_mut().enumerate().take(actual) {
+        *page = (cpu_id as u64) * 0x1_0000_0000 + i as u64;
     }
     allocated_pages[..actual].to_vec()
 }

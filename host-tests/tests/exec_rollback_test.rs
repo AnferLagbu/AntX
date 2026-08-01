@@ -85,8 +85,9 @@ fn exec_replace_transactional(
     };
 
     // 阶段 2: 加载成功, 现在销毁旧进程
-    if let Some(mut old) = table.remove(current_pid) {
-        old.state = ProcState::Destructed;
+    // 从表移除即销毁, old 出 scope 自动 drop (state 字段标记仅用于调试, 测试不读)
+    if table.remove(current_pid).is_some() {
+        // 已移除, 无需额外操作
     }
 
     new_pid as i32
@@ -104,8 +105,9 @@ fn exec_replace_legacy(
     }
 
     // 阶段 1: 销毁旧 (旧版)
-    if let Some(mut old) = table.remove(current_pid) {
-        old.state = ProcState::Destructed;
+    // 从表移除即销毁, old 出 scope 自动 drop (旧版语义, state 标记仅用于调试)
+    if table.remove(current_pid).is_some() {
+        // 已移除, 无需额外操作
     }
 
     // 阶段 2: 加载新 (旧版)

@@ -27,11 +27,10 @@ fn test_nic_probe_all_no_arch_mutex() {
     // 找下一个 `fn ` 顶层的最早位置
     let mut body_end = after.len();
     for marker in ["\nfn ", "\nstatic ", "\nunsafe fn ", "\nasync fn "] {
-        if let Some(idx) = after.find(marker) {
-            if idx > 0 && idx < body_end {
+        if let Some(idx) = after.find(marker)
+            && idx > 0 && idx < body_end {
                 body_end = idx;
             }
-        }
     }
     let body = &after[..body_end];
 
@@ -81,9 +80,8 @@ fn test_e1000_driver_no_arch_probe_mutex() {
         let after = &src[idx..];
         let mut body_end = after.len();
         for marker in ["\n    pub fn ", "\n    fn ", "\n    unsafe fn "] {
-            if let Some(p) = after.find(marker) {
-                if p > 0 && p < body_end { body_end = p; }
-            }
+            if let Some(p) = after.find(marker)
+                && p > 0 && p < body_end { body_end = p; }
         }
         let body = &after[..body_end];
         let forbidden = ["cfg(target_arch", "cfg(arch"];
