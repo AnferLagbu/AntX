@@ -9,7 +9,6 @@
 //! 模拟 transactional 流程并断言状态转换.
 
 /// 镜像 queenx 进程表 (简化版, 关注 PID 生命周期)
-#[allow(dead_code)] // ProcState 镜像 queenx 状态机, 保留供扩展用例
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProcState {
     Active,
@@ -18,7 +17,6 @@ enum ProcState {
 }
 
 /// 镜像 queenx Process / UserProc 双源真相
-#[allow(dead_code)] // 字段镜像 queenx Process 关键字段
 #[derive(Debug, Clone)]
 struct Process {
     pid: u32,
@@ -183,4 +181,22 @@ fn transactional_keeps_process_invariant() {
             current = ret as u32;
         }
     }
+}
+
+#[test]
+fn proc_state_transitions_cover_all_variants() {
+    // 镜像 queenx 进程状态机: Active → Loading → Destructed
+    // 验证所有变体可被构造且互不相等 (供后续扩展加载/销毁用例使用)
+    let active = ProcState::Active;
+    let loading = ProcState::Loading;
+    let destructed = ProcState::Destructed;
+    assert_ne!(active, loading, "Active 与 Loading 必须可区分");
+    assert_ne!(loading, destructed, "Loading 与 Destructed 必须可区分");
+    assert_ne!(active, destructed, "Active 与 Destructed 必须可区分");
+
+    // 验证 Process 可携带所有状态变体
+    let p_loading = Process { pid: 1, state: ProcState::Loading, pwm: 0 };
+    let p_destructed = Process { pid: 2, state: ProcState::Destructed, pwm: 0 };
+    assert_eq!(p_loading.state, ProcState::Loading);
+    assert_eq!(p_destructed.state, ProcState::Destructed);
 }

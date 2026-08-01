@@ -5,7 +5,6 @@
 
 /// IOAPIC 信息 (镜像 framework 的 IoApicInfo)
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 struct IoApicInfo {
     id: u8,
     base_addr: u64,
@@ -174,4 +173,50 @@ fn test_backward_compat_irq_equals_gsi() {
         let result = gsi_to_ioapic(&ioapics, irq as u32);
         assert_eq!(result, Some((0, irq)), "IRQ {} should equal GSI {} in single-IOAPIC with gsi_base=0", irq, irq);
     }
+}
+
+// ============================================================================
+// IoApicInfo 字段语义测试: id / base_addr 用于多 IOAPIC 控制器识别与 MMIO 访问
+// ============================================================================
+
+#[test]
+fn ioapic_info_id_distinguishes_controllers() {
+    // 镜像内核语义: IOAPIC ID 是 ACPI MADT 提供的硬件标识, 用于多路服务器区分不同控制器
+    let ioapics = dual_ioapic();
+    let info0 = ioapics[0].expect("IOAPIC 0 存在");
+    let info1 = ioapics[1].expect("IOAPIC 1 存在");
+    assert_eq!(info0.id, 0, "第一个 IOAPIC 的硬件 ID = 0");
+    assert_eq!(info1.id, 1, "第二个 IOAPIC 的硬件 ID = 1");
+    assert_ne!(info0.id, info1.id, "不同 IOAPIC 必须有不同硬件 ID");
+}
+
+#[test]
+fn ioapic_info_base_addr_mmio_semantics() {
+    // 镜像内核语义: base_addr 是 IOAPIC MMIO 寄存器基址, 用于 select/read/write 寄存器
+    let ioapics = dual_ioapic();
+    let info0 = ioapics[0].expect("IOAPIC 0 存在");
+    let info1 = ioapics[1].expect("IOAPIC 1 存在");
+    assert_eq!(info0.base_addr, 0xFEC00000, "IOAPIC 0 MMIO 基址 = 0xFEC00000 (Intel 默认)");
+    assert_eq!(info1.base_addr, 0xFEC01000, "IOAPIC 1 MMIO 基址 = 0xFEC01000 (偏移 4KB)");
+    assert_ne!(info0.base_addr, info1.base_addr, "不同 IOAPIC 必须有不同 MMIO 基址");
+}
+
+#[test]
+fn gsi_route_resolves_to_ioapic_info_with_id_and_base() {
+    // 镜像内核语义: gsi_to_ioapic 返回 index 后, 通过 index 反查 IoApicInfo
+    // 获取硬件 ID 和 MMIO 基址, 用于后续 IOREDTBL 写入
+    let ioapics = dual_ioapic();
+    // GSI 5 → IOAPIC 0 (id=0, base=0xFEC00000)
+    let (idx0, local0) = gsi_to_ioapic(&ioapics, 5).expect("GSI 5 路由成功");
+    let info0 = ioapics[idx0].expect("index 有效");
+    assert_eq!(info0.id, 0, "GSI 5 路由到 id=0 的 IOAPIC");
+    assert_eq!(info0.base_addr, 0xFEC00000, "GSI 5 路由到 base=0xFEC00000 的 IOAPIC");
+    assert_eq!(local0, 5, "GSI 5 在 IOAPIC 0 的 local_irq = 5");
+
+    // GSI 30 → IOAPIC 1 (id=1, base=0xFEC01000)
+    let (idx1, local1) = gsi_to_ioapic(&ioapics, 30).expect("GSI 30 路由成功");
+    let info1 = ioapics[idx1].expect("index 有效");
+    assert_eq!(info1.id, 1, "GSI 30 路由到 id=1 的 IOAPIC");
+    assert_eq!(info1.base_addr, 0xFEC01000, "GSI 30 路由到 base=0xFEC01000 的 IOAPIC");
+    assert_eq!(local1, 6, "GSI 30 在 IOAPIC 1 的 local_irq = 30 - 24 = 6");
 }

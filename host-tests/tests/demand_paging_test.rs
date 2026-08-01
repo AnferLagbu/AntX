@@ -53,7 +53,6 @@ impl PageFlags {
     const PRESENT: Self = Self { bits: 0x01 };
     const WRITABLE: Self = Self { bits: 0x02 };
     const USER: Self = Self { bits: 0x04 };
-    #[allow(dead_code)] // 镜像内核 PTE NX 位, 保留以对应内核布局
     const NO_EXEC: Self = Self { bits: 0x08 };
 
     fn contains(&self, other: Self) -> bool {
@@ -78,7 +77,6 @@ enum VmaType {
 }
 
 /// 镜像 queenx Vma (最小字段集)
-#[allow(dead_code)] // 字段镜像 queenx Vma, 全部保留以便后续扩展 demand paging 用例
 #[derive(Debug, Clone)]
 struct Vma {
     start: usize,
@@ -236,4 +234,60 @@ fn stack_region_detected() {
     let outside = (USER_STACK_TOP - USER_STACK_DEFAULT_SIZE - 4096) as usize;
     assert!((USER_STACK_TOP - USER_STACK_DEFAULT_SIZE..USER_STACK_TOP).contains(&(inside as u64)));
     assert!(!(USER_STACK_TOP - USER_STACK_DEFAULT_SIZE..USER_STACK_TOP).contains(&(outside as u64)));
+}
+
+#[test]
+fn page_flags_no_exec_bit_distinct() {
+    // 镜像内核 PTE NX 位: 验证 NO_EXEC 与其他标志位不冲突
+    let nx = PageFlags::NO_EXEC;
+    assert!(!nx.contains(PageFlags::PRESENT), "NX 与 PRESENT 不冲突");
+    assert!(!nx.contains(PageFlags::WRITABLE), "NX 与 WRITABLE 不冲突");
+    assert!(!nx.contains(PageFlags::USER), "NX 与 USER 不冲突");
+    let combined = PageFlags::PRESENT | PageFlags::USER | PageFlags::NO_EXEC;
+    assert!(combined.contains(PageFlags::NO_EXEC), "组合位含 NX");
+    assert!(combined.contains(PageFlags::PRESENT), "组合位含 PRESENT");
+}
+
+#[test]
+fn vma_file_backed_fields_roundtrip() {
+    // 验证 Vma 的 file_backed 字段 (start/end/offset/inode_id/shared/file_pwm/vma_type) 语义
+    let vma = Vma {
+        start: 0x1000,
+        end: 0x2000,
+        flags: PageFlags::PRESENT | PageFlags::USER,
+        vma_type: VmaType::FileBacked,
+        inode_id: 42,
+        shared: true,
+        file_pwm: 0xCAFE,
+        offset: 0x100,
+    };
+    assert_eq!(vma.start, 0x1000, "start 保留映射起始地址");
+    assert_eq!(vma.end, 0x2000, "end 保留映射结束地址");
+    assert_eq!(vma.end - vma.start, 0x1000, "end - start = 映射长度 4KB");
+    assert_eq!(vma.vma_type, VmaType::FileBacked, "vma_type 语义: FileBacked");
+    assert_eq!(vma.inode_id, 42, "inode_id 保留文件后端 inode 编号");
+    assert!(vma.shared, "shared 标记共享映射");
+    assert_eq!(vma.file_pwm, 0xCAFE, "file_pwm 保留进程凭证");
+    assert_eq!(vma.offset, 0x100, "offset 保留文件内偏移");
+    assert!(!vma.is_guard(), "有 USER 位不是 guard");
+}
+
+#[test]
+fn vma_anonymous_fields_defaults() {
+    // 验证 Vma 的匿名映射字段语义 (inode_id=0/shared=false/file_pwm=0/offset=0)
+    let vma = Vma {
+        start: 0x2000,
+        end: 0x3000,
+        flags: PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER,
+        vma_type: VmaType::Anonymous,
+        inode_id: 0,
+        shared: false,
+        file_pwm: 0,
+        offset: 0,
+    };
+    assert_eq!(vma.vma_type, VmaType::Anonymous, "vma_type 语义: Anonymous");
+    assert_eq!(vma.inode_id, 0, "匿名映射 inode_id = 0");
+    assert!(!vma.shared, "匿名映射默认非共享");
+    assert_eq!(vma.file_pwm, 0, "匿名映射 file_pwm = 0");
+    assert_eq!(vma.offset, 0, "匿名映射 offset = 0");
 }

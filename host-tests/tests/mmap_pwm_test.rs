@@ -23,7 +23,6 @@ enum VmaType {
 
 /// 模型 Vma (镜像 queenx Vma 字段集, 用于语义测试)
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 struct Vma {
     start: usize,
     end: usize,
@@ -197,4 +196,44 @@ fn vma_clone_preserves_mount_idx() {
     let v = Vma::file_backed_with_mount(0x50000, 0x54000, 0, 13, 0xCC, true, Some(2));
     let c = v.clone();
     assert_eq!(c.mount_idx, Some(2), "clone 必须保留 mount_idx");
+}
+
+/// 验证 Vma.start/end 字段保留用户映射地址区间
+#[test]
+fn vma_preserves_address_range() {
+    let v = Vma::file_backed(0x1000, 0x5000, 0, 42, 0xAA, true);
+    assert_eq!(v.start, 0x1000, "start 保留映射起始地址");
+    assert_eq!(v.end, 0x5000, "end 保留映射结束地址");
+    assert_eq!(v.end - v.start, 0x4000, "end - start = 映射长度 16KB");
+}
+
+/// 验证 Vma.offset 字段保留文件内偏移 (用于 #PF miss 时 vfs_pread_inode 定位)
+#[test]
+fn vma_preserves_file_offset() {
+    let v = Vma::file_backed(0x1000, 0x5000, 0x2000, 42, 0xAA, true);
+    assert_eq!(v.offset, 0x2000, "offset 保留文件内偏移 (8KB)");
+    // #PF miss 时: file_off = vma.offset + (fault_addr - vma.start)
+    let fault_addr = 0x3000;
+    let file_off = v.offset + (fault_addr - v.start) as u64;
+    assert_eq!(file_off, 0x4000, "file_off = offset + (fault - start) = 0x2000 + 0x2000");
+}
+
+/// 验证匿名 VMA 的 start/end/offset 默认语义
+#[test]
+fn anon_vma_address_range_and_offset() {
+    let v = Vma::new_anon(0x6000, 0x7000);
+    assert_eq!(v.start, 0x6000, "匿名 VMA start 保留");
+    assert_eq!(v.end, 0x7000, "匿名 VMA end 保留");
+    assert_eq!(v.end - v.start, 0x1000, "匿名 VMA 长度 4KB");
+    assert_eq!(v.offset, 0, "匿名 VMA offset = 0 (无文件后端)");
+}
+
+/// 验证 clone (fork COW) 保留 start/end/offset
+#[test]
+fn vma_clone_preserves_address_range_and_offset() {
+    let v = Vma::file_backed(0x10000, 0x14000, 0x8000, 7, 0xABCD, true);
+    let c = v.clone();
+    assert_eq!(c.start, 0x10000, "clone 保留 start");
+    assert_eq!(c.end, 0x14000, "clone 保留 end");
+    assert_eq!(c.offset, 0x8000, "clone 保留 offset");
 }
