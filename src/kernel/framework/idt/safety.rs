@@ -3,12 +3,9 @@
 //! 提供对 x86-64 底层硬件寄存器的安全访问接口。
 //! 封装内联汇编，提供类型安全的 API。
 
-// 以下 import 仅在 test 构建中使用
+// 以下 import 在地址校验函数与 test 构建中使用
 #[allow(unused_imports)]
-use crate::kernel::framework::mm::{KERNEL_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
-#[cfg(test)]
-#[allow(unused_imports)]
-use crate::kernel::framework::mm::KERNEL_TEXT_BASE;
+use crate::kernel::framework::mm::{KERNEL_BASE, KERNEL_TEXT_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
 
 /// CPU 特性检测结果
 #[derive(Debug, Clone)]
@@ -216,6 +213,57 @@ pub fn save_frame_pointer() -> u64 {
 /// 安全的空指针检查
 ///
 /// # Arguments
+
+/// 检查地址是否为 null 或低于用户地址下限的无效地址.
+///
+/// 地址 < `USER_ADDR_FLOOR` (4 KiB) 视为 null 或无效低地址.
+/// 典型分页机制下零页被刻意未映射, 用于捕获 null 解引用;
+/// 此函数把 `[0, USER_ADDR_FLOOR)` 区间统一判定为无效.
+///
+/// # Returns
+///
+/// - `true`: 地址为 null 或位于无效低地址区间
+/// - `false`: 地址位于有效区间 (>= `USER_ADDR_FLOOR`)
+pub fn is_null_or_invalid(addr: u64) -> bool {
+    addr < USER_ADDR_FLOOR
+}
+
+/// 检查地址是否位于用户地址空间.
+///
+/// 用户空间范围:
+/// - x86_64: `[USER_ADDR_MIN, KERNEL_BASE)` — 高半区内核映射模型
+/// - aarch64: `[USER_ADDR_MIN, KERNEL_TEXT_BASE)` — 恒等映射模型, 内核从 KERNEL_TEXT_BASE 起加载
+///
+/// 任何落在此区间外的地址 (null/低地址/内核地址) 均视为非用户地址.
+///
+/// # Returns
+///
+/// - `true`: 地址位于用户空间
+/// - `false`: 地址位于内核空间或无效低地址
+pub fn is_valid_user_address(addr: u64) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        (USER_ADDR_MIN..KERNEL_BASE).contains(&addr)
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        // aarch64 恒等映射: KERNEL_BASE=0, 用 KERNEL_TEXT_BASE 作为用户/内核分界
+        (USER_ADDR_MIN..KERNEL_TEXT_BASE).contains(&addr)
+    }
+}
+
+/// 检查地址是否位于内核地址空间.
+///
+/// 内核空间起点: `KERNEL_TEXT_BASE` (链接脚本定义的内核 .text 段起始).
+/// 任何 >= `KERNEL_TEXT_BASE` 的地址视为内核地址.
+///
+/// # Returns
+///
+/// - `true`: 地址位于内核空间
+/// - `false`: 地址位于用户空间或无效低地址
+pub fn is_valid_kernel_address(addr: u64) -> bool {
+    addr >= KERNEL_TEXT_BASE
+}
 
 #[cfg(test)]
 mod tests {

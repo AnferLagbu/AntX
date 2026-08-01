@@ -292,7 +292,7 @@ pub unsafe fn init() { unsafe {
 
 /// 校验中断号是否为有效的 PPI
 pub fn is_ppi(irq: u32) -> bool {
-    irq >= PPI_BASE && irq < SPI_BASE
+    (PPI_BASE..SPI_BASE).contains(&irq)
 }
 
 /// 校验中断号是否为有效的 SPI

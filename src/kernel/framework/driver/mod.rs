@@ -156,7 +156,7 @@ pub use char::serial::{RingBuffer, COM1_BASE, COM2_BASE, MAX_COM_PORTS, SERIAL_B
 
 // --- e1000 内部细节 re-export (供测试使用) ---
 #[cfg(not(feature = "kernel_test"))]
-pub use net::e1000::{virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_TX_RING_SIZE};
+pub use net::e1000::{E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_TX_RING_SIZE};
 
 // --- power/kexec/uefi 公共接口 re-export ---
 pub use power::*;

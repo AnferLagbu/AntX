@@ -4,7 +4,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::driver::DriverError;
 use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
+#[cfg(test)]
 use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::virt_to_phys;
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 #[cfg(not(feature = "kernel_test"))]
@@ -20,9 +22,8 @@ use crate::klog_warn;
 #[cfg(not(feature = "kernel_test"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "kernel_test"))]
-use alloc::vec::Vec;
-#[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use alloc::vec::Vec;
 #[cfg(not(feature = "kernel_test"))]
 // 网络性能统计: 接收包计数
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -43,19 +44,19 @@ pub use crate::kernel::services::driver::net::e1000::{
 };
 
 // 从 services 层导入安全驱动逻辑
-use crate::kernel::services::driver::net::e1000::{E1000Driver, E1000Io};
+use crate::kernel::services::driver::net::e1000::E1000Driver;
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::services::driver::net::e1000::E1000Io;
 
 // ============================================================================
-// 虚拟地址 → 物理地址转换 (framework 层)
+// 虚拟地址 → 物理地址转换
 // ============================================================================
-
-pub fn virt_to_phys(virt: u64) -> u64 {
-    if virt >= KERNEL_BASE {
-        virt - KERNEL_BASE
-    } else {
-        virt
-    }
-}
+//
+// 复用 mm::virt_to_phys (基于 KERNEL_BASE 常量, 自动适配架构:
+// - x86_64: KERNEL_BASE=0xFFFF800000000000, 减去得物理地址
+// - aarch64: KERNEL_BASE=0 (恒等映射), VA==PA, 减 0 无变化)
+//
+// 本文件不重复定义 virt_to_phys, 避免 I-53 架构互斥 cfg 检查失败.
 
 // ============================================================================
 // DMA 描述符环安全包装 (framework 层, 封装 unsafe 指针操作)
@@ -284,13 +285,16 @@ pub struct E1000Device {
     pub bus: u8,
     pub device: u8,
     pub func: u8,
+    #[cfg(not(feature = "kernel_test"))]
     mmio_phys: u64,
     /// 安全驱动逻辑 (services 层, 0 unsafe)
     driver: Option<E1000Driver>,
     /// TX 描述符环 (安全包装, 封装 unsafe 指针操作)
+    #[cfg(not(feature = "kernel_test"))]
     tx_ring: Option<TxRing>,
     tx_count: u64,
     /// RX 描述符环 (安全包装, 封装 unsafe 指针操作)
+    #[cfg(not(feature = "kernel_test"))]
     rx_ring: Option<RxRing>,
     rx_count: u64,
     isr_count: u64,
@@ -304,10 +308,13 @@ impl Default for E1000Device {
             bus: 0,
             device: 0,
             func: 0,
+            #[cfg(not(feature = "kernel_test"))]
             mmio_phys: 0,
             driver: None,
+            #[cfg(not(feature = "kernel_test"))]
             tx_ring: None,
             tx_count: 0,
+            #[cfg(not(feature = "kernel_test"))]
             rx_ring: None,
             rx_count: 0,
             isr_count: 0,

@@ -256,7 +256,16 @@ pub fn is_configured() -> bool {
 
 /// 当前初始化状态
 pub fn state() -> InitState {
-    InitState::from(init::get_init_state())
+    #[cfg(feature = "kernel_test")]
+    {
+        // kernel_test 模式: init 是 services::net::init 子模块, 返回 super::InitState, 无需转换
+        init::get_init_state()
+    }
+    #[cfg(not(feature = "kernel_test"))]
+    {
+        // 非 kernel_test: init 是 framework::net::init, 需 From 转换
+        InitState::from(init::get_init_state())
+    }
 }
 
 /// 重置网络状态 (恢复机制)
