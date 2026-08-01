@@ -78,7 +78,9 @@ pub use types::{
 };
 
 pub use safety::{
-    disable_interrupts, enable_interrupts, halt_loop, rdtsc, read_cr2, CpuFeatures,
+    disable_interrupts, enable_interrupts, halt_loop, rdtsc, read_cr2,
+    is_null_or_invalid, is_valid_kernel_address, is_valid_user_address,
+    CpuFeatures,
 };
 
 pub use idt::IdtManager;

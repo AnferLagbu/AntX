@@ -116,8 +116,7 @@ fn keyboard_modifier_default() -> TestResult {
 }
 
 fn keyboard_modifier_operations() -> TestResult {
-    let mut mods = ModifierState::default();
-    mods.left_shift = true;
+    let mut mods = ModifierState { left_shift: true, ..Default::default() };
     check!(mods.shift_pressed(), "left shift");
     mods.right_shift = true;
     check!(mods.shift_pressed(), "both shift");
@@ -152,7 +151,7 @@ fn keyboard_driver_trait() -> TestResult {
     assert_eq_test!(driver.device_type(), DeviceType::Input, "type");
     check!(!driver.is_ready(), "not ready");
     let _ = driver.init();
-    check!(driver.status().len() > 0, "status non-empty");
+    check!(!driver.status().is_empty(), "status non-empty");
     TestResult::Pass
 }
 

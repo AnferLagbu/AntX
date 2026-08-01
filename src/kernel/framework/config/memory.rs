@@ -82,8 +82,8 @@ fn test_aslr_random_offset_range() -> crate::kernel::framework::tests::TestResul
     let o1 = aslr_random_offset(8);
     let o2 = aslr_random_offset(8);
     // 偏移应页对齐
-    check!(o1 % PAGE_SIZE == 0, "offset1 page-aligned");
-    check!(o2 % PAGE_SIZE == 0, "offset2 page-aligned");
+    check!(o1.is_multiple_of(PAGE_SIZE), "offset1 page-aligned");
+    check!(o2.is_multiple_of(PAGE_SIZE), "offset2 page-aligned");
     // 偏移应在有效范围内
     let max = ((1u64 << 8) - 1) * PAGE_SIZE;
     check!(o1 <= max, "offset1 in range");
@@ -100,7 +100,7 @@ fn test_aslr_stack_top_range() -> crate::kernel::framework::tests::TestResult {
     // 栈顶应足够高 (在用户空间上半部分)
     check!(top > 0x7FFF00000000, "stack_top in upper half");
     // 栈顶应页对齐
-    check!(top % PAGE_SIZE == 0, "stack_top page-aligned");
+    check!(top.is_multiple_of(PAGE_SIZE), "stack_top page-aligned");
     TestResult::Pass
 }
 
@@ -113,7 +113,7 @@ fn test_aslr_pie_base_range() -> crate::kernel::framework::tests::TestResult {
     // PIE 基址应在用户空间
     check!(base < USER_STACK_TOP, "PIE base < stack_top");
     // 页对齐
-    check!(base % PAGE_SIZE == 0, "PIE base page-aligned");
+    check!(base.is_multiple_of(PAGE_SIZE), "PIE base page-aligned");
     TestResult::Pass
 }
 

@@ -612,25 +612,31 @@ unsafe fn map_text_page(
 /// 2. `mov rax, [gs:KERNEL_PML4_OFF]` — 从 SyscallPerCpu 读内核 PML4
 ///
 /// 这些访问发生在 CR3 切换前 (此时仍为用户页表), 因此这些数据页面
-/// 必须在用户页表中有 USER 位映射, 否则触发 #PF → Triple Fault。
+/// 必须在用户页表中有 PRESENT | WRITABLE 映射, 否则触发 #PF → Triple Fault。
 ///
-/// # 安全性权衡
+/// # 安全性
 ///
-/// 暴露这些数据页给用户态降低了 KPTI 的隔离效果:
-/// - USER_CR3_SAVE: 暴露当前用户页表物理地址 (信息泄露)
-/// - SyscallPerCpu: 暴露内核 PML4 物理地址和用户 PML4 物理地址
+/// 不设 USER 位. 访问路径 CPL 全部为 0 (syscall 指令强制 CPL=0,
+/// 中断入口 CPU 自动加载内核 CS), 因此不需要 USER 位即可访问.
+/// 用户态 (CPL=3) 无法读写这些数据页, 不暴露内核 PML4 物理地址
+/// 与 per-CPU 内核 RSP.
 ///
-/// 这是临时方案, 根本修复应重构 KPTI 入口代码, 使其在 CR3 切换前
-/// 不依赖 .data/.bss 中的数据 (如将内核 PML4 地址嵌入 trampoline 代码)。
+/// 根本修复方向: 重构 KPTI 入口 trampoline, 将内核 PML4 地址嵌入
+/// 代码本身 (立即数), 使 CR3 切换前不依赖 .data/.bss 中的数据.
 ///
 /// # Safety
 ///
 /// 调用方保证: `user_pml4` 是有效的 USER_PML4 虚拟地址指针;
 /// 在 boot 阶段单线程执行或持 VMM_LOCK, 无并发修改页表.
 pub(super) unsafe fn map_kpti_data_pages(user_pml4: *mut u64) {
-    // 权限: PRESENT (bit 0) + WRITABLE (bit 1) + USER (bit 2) = 0x7
-    // 可写: isr_common 会写入 USER_CR3_SAVE
-    const FLAGS: u64 = 0x7; // PRESENT | WRITABLE | USER
+    // 权限: PRESENT (bit 0) + WRITABLE (bit 1) = 0x3
+    //
+    // 安全: 不设 USER 位. 访问路径 CPL 全部为 0:
+    //   - syscall 指令入口: CPU 强制 CPL=0 (Intel SDM SYSCALL)
+    //   - isr_common/irq_common: CPU 自动加载内核 CS from TSS, CPL=0
+    // 移除 USER 位防止用户态 (CPL=3) 读 USER_CR3_SAVE / SyscallPerCpu,
+    // 避免暴露内核 PML4 物理地址与 per-CPU 内核 RSP.
+    const FLAGS: u64 = 0x3; // PRESENT | WRITABLE
 
     // 1. 映射 USER_CR3_SAVE 所在页面
     //    USER_CR3_SAVE 位于 .bss 段, isr.asm 使用绝对寻址 mov [USER_CR3_SAVE], rax

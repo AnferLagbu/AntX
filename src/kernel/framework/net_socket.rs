@@ -105,10 +105,6 @@ mod init {
     pub fn sm_poll_sockets() -> i32 {
         0
     }
-    // ── SmoltcpNetStack 桥接 safe wrappers (W4.2.3.4) ──
-    pub fn smoltcp_net_stack_socket_close(_slot_idx: usize) -> bool {
-        false
-    }
 }
 
 // ============================================================================
@@ -451,6 +447,7 @@ pub fn sm_net_close(fd: i32) -> i32 {
 ///
 /// `slot_idx` 必须在 `[smoltcp_net_stack_slot_base(), TOTAL_SLOTS)` 范围内,
 /// 由 SmoltcpNetStack 调用方保证.
+#[cfg(not(feature = "kernel_test"))]
 pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
     // SAFETY: 内部持有 NET_LOCK, slot_idx 范围由调用方保证
     unsafe { init::raw::smoltcp_net_stack_socket_close(slot_idx) }

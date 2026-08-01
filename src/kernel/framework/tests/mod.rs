@@ -396,6 +396,7 @@ pub fn test_runner_init() {
         crate::kernel::framework::syscall::eventfd::register_eventfd_tests();
         crate::kernel::framework::syscall::signalfd::register_signalfd_tests();
         crate::kernel::framework::syscall::timerfd::register_timerfd_tests();
+        crate::kernel::framework::syscall::sendfile::register_sendfile_tests();
     }
 
     let r = runner();

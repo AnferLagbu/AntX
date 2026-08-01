@@ -305,24 +305,24 @@ pub fn sys_splice(
 // ============================================================================
 
 #[cfg(feature = "kernel_test")]
-mod tests {
+pub(crate) mod tests {
     use crate::kernel::framework::tests::{check, TestResult};
 
-    fn test_sendfile_ebadf() -> TestResult {
+    pub(crate) fn test_sendfile_ebadf() -> TestResult {
         // in_fd 不是 VFS 文件 → EBADF
         let result = super::sys_sendfile(1, -1, 0, 1024);
         check!(result < 0, "sendfile with bad in_fd should fail");
         TestResult::Pass
     }
 
-    fn test_splice_einval_no_pipe() -> TestResult {
+    pub(crate) fn test_splice_einval_no_pipe() -> TestResult {
         // 两端都不是 pipe → EINVAL
         let result = super::sys_splice(3, 0, 4, 0, 1024, 0);
         check!(result < 0, "splice with no pipe end should fail");
         TestResult::Pass
     }
 
-    fn test_splice_einval_bad_flags() -> TestResult {
+    pub(crate) fn test_splice_einval_bad_flags() -> TestResult {
         // 非法 flags → EINVAL
         let result = super::sys_splice(0, 0, 0, 0, 1024, 0xFF);
         check!(result < 0, "splice with bad flags should fail");
@@ -345,3 +345,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(feature = "kernel_test")]
+pub use tests::register_sendfile_tests;

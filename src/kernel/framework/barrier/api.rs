@@ -73,7 +73,7 @@ pub fn recovery_domain_unregister(domain_id: u64) -> i32 {
 }
 
 #[cfg(feature = "kernel_test")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
     let tick = crate::kernel::framework::tick_query::current_tick();
     let mgr = super::RECOVERY_MANAGER.lock();
