@@ -1,6 +1,6 @@
-//! VirtIO 块设备驱动
+//! `VirtIO` 块设备驱动
 //!
-//! 实现 VirtIO 块设备规范 (设备 ID 2).
+//! 实现 `VirtIO` 块设备规范 (设备 ID 2).
 //! 使用 split virtqueue 进行 I/O 提交与完成.
 //!
 //! 每次请求读/写单个 512 字节扇区.
@@ -40,7 +40,7 @@ struct VirtioBlkRegistryEntry {
 unsafe impl Send for VirtioBlkRegistryEntry {}
 
 /// I-42: 全局设备注册表, IRQ 号 → 设备实例映射.
-/// enable_irq() 注册, ISR 查表. 替代原先的单静态指针.
+/// `enable_irq()` 注册, ISR 查表. 替代原先的单静态指针.
 #[cfg(target_arch = "x86_64")]
 static VIRTIO_BLK_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<[Option<VirtioBlkRegistryEntry>; MAX_VIRTIO_BLK_IRQS]> = {
     const NONE: Option<VirtioBlkRegistryEntry> = None;
@@ -55,7 +55,7 @@ static VIRTIO_BLK_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<[Option<
 // 当前 do_io 仍串行 (每次只用 token 0), 但数据结构已支持并发提交.
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// VirtQueue 最大深度 (与 queue.rs VQ_SIZE 一致)
+/// `VirtQueue` 最大深度 (与 queue.rs `VQ_SIZE` 一致)
 const VIRTIO_BLK_MAX_TOKENS: usize = 32;
 
 /// 多 outstanding I/O 完成事件数组
@@ -100,7 +100,7 @@ impl IoCompletionArray {
     }
 }
 
-/// VirtIO 块请求头 (小端).
+/// `VirtIO` 块请求头 (小端).
 #[repr(C)]
 #[derive(Debug)]
 struct BlkRequest {
@@ -109,7 +109,7 @@ struct BlkRequest {
     sector: u64, // LBA (小端)
 }
 
-/// VirtIO 块请求状态字节 (设备完成后写入).
+/// `VirtIO` 块请求状态字节 (设备完成后写入).
 const VIRTIO_BLK_S_OK: u8 = 0;
 const VIRTIO_BLK_S_IOERR: u8 = 1;
 const VIRTIO_BLK_S_UNSUPP: u8 = 2;
@@ -137,7 +137,7 @@ pub struct VirtioBlk {
     io_buffer_phys: u64,
     /// 最近一次已完成请求的状态字节.
     status_byte: u8,
-    /// I-42: 多 outstanding I/O 完成事件数组. ISR 按 token signal, do_io 等待指定 token.
+    /// I-42: 多 outstanding I/O 完成事件数组. ISR 按 token signal, `do_io` 等待指定 token.
     completion: IoCompletionArray,
     /// I-42: IRQ 是否已注册到 IDT. true = 走事件驱动, false = 退到原 spin-loop.
     irq_registered: bool,
@@ -154,7 +154,9 @@ impl VirtioBlk {
     /// 创建并初始化 virtio-blk 驱动实例.
     ///
     /// # Safety
-    /// `device` 必须具有 device_id == VIRTIO_ID_BLOCK.
+    /// `device` 必须具有 `device_id` == `VIRTIO_ID_BLOCK`.
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_BLOCK {
             return None;
@@ -182,8 +184,8 @@ impl VirtioBlk {
         device.set_driver_ok();
 
         // 从配置空间读取容量 (显式使用两个常量支持 >2TB)
-        let cap_lo = device.read_config32(BLK_CONFIG_CAPACITY_LO) as u64;
-        let cap_hi = device.read_config32(BLK_CONFIG_CAPACITY_HI) as u64;
+        let cap_lo = u64::from(device.read_config32(BLK_CONFIG_CAPACITY_LO));
+        let cap_hi = u64::from(device.read_config32(BLK_CONFIG_CAPACITY_HI));
         let capacity = cap_lo | (cap_hi << 32);
 
         // 分配 IO 缓冲区: 512 字节扇区数据 + 请求头 + 状态字节
@@ -226,6 +228,8 @@ impl VirtioBlk {
     }
 
     /// 读取单个扇区 (512 字节) 到 `buf`.
+    /// # Errors
+    /// 缓冲区长度不足 512 字节或底层 I/O 失败时返回 Err。
     pub fn read_sector(&mut self, lba: u64, buf: &mut [u8]) -> Result<(), ()> {
         if buf.len() < 512 {
             return Err(());
@@ -234,6 +238,8 @@ impl VirtioBlk {
     }
 
     /// 从 `buf` 写入单个扇区 (512 字节).
+    /// # Errors
+    /// 缓冲区长度不足 512 字节或底层 I/O 失败时返回 Err。
     pub fn write_sector(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
         if buf.len() < 512 {
             return Err(());
@@ -243,9 +249,11 @@ impl VirtioBlk {
 
     /// I-42: 注册 virtio-blk IRQ 到 IDT.
     ///
-    /// 调用后, do_io 走事件驱动路径: 提交后等待 `completion` 标志,
+    /// 调用后, `do_io` 走事件驱动路径: 提交后等待 `completion` 标志,
     /// 由 `virtio_blk_irq_handler` ISR signal. 失败 (例如 IDT 已满, IRQ 已被占用)
-    /// 保留 irq_registered = false, do_io 自动退到原 spin-loop 退路.
+    /// 保留 `irq_registered` = false, `do_io` 自动退到原 spin-loop 退路.
+    /// # Errors
+    /// IDT 已满或 IRQ 已被占用时返回 Err。
     #[cfg(target_arch = "x86_64")]
     pub fn enable_irq(&mut self) -> Result<(), &'static str> {
         use crate::kernel::framework::idt::IdtManager;
@@ -277,9 +285,11 @@ impl VirtioBlk {
     /// 执行单扇区 I/O 请求 (经 virtqueue).
     ///
     /// 使用链式描述符:
-    ///   desc[0] = BlkRequest 头 (设备读)
+    ///   desc[0] = `BlkRequest` 头 (设备读)
     ///   desc[1] = 数据缓冲区 (IN 时设备写, OUT 时设备读)
     ///   desc[2] = 状态字节 (设备写)
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     fn do_io(&mut self, lba: u64, req_type: u32, buf: &[u8]) -> Result<(), ()> {
         // ── 在 DMA 缓冲区构造请求 ──
         let req_size = core::mem::size_of::<BlkRequest>();

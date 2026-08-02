@@ -2,12 +2,12 @@
 //! Futex — services 层安全代理
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::syscall::futex。
+//! 所有 unsafe 操作已委托至 `framework::syscall::futex`。
 //!
 //! ## 职责
 //!
 //! - 提供类型安全的 futex 操作枚举 (Wait / Wake / Requeue)
-//! - flags 验证 (仅 PRIVATE_FLAG 0x80 / CLOCK_REALTIME 0x01)
+//! - flags 验证 (仅 `PRIVATE_FLAG` 0x80 / `CLOCK_REALTIME` 0x01)
 //! - op 解码基础操作 (WAIT/WAKE/REQUEUE 忽略时钟与位图变体)
 //! - 委托 framework 层执行
 //!
@@ -30,9 +30,9 @@ pub const FUTEX_WAIT: i32 = 0;
 pub const FUTEX_WAKE: i32 = 1;
 /// 基础操作: REQUEUE (从一 uaddr 唤醒并迁移到另一 uaddr)
 pub const FUTEX_REQUEUE: i32 = 3;
-/// 基础操作: WAIT_BITSET (带位图掩码的 WAIT, 用于选择性唤醒)
+/// 基础操作: `WAIT_BITSET` (带位图掩码的 WAIT, 用于选择性唤醒)
 pub const FUTEX_WAIT_BITSET: i32 = 9;
-/// 基础操作: WAKE_BITSET (带位图掩码的 WAKE)
+/// 基础操作: `WAKE_BITSET` (带位图掩码的 WAKE)
 pub const FUTEX_WAKE_BITSET: i32 = 10;
 /// 私有 flag: 进程内 futex (不跨进程)
 pub const FUTEX_PRIVATE_FLAG: i32 = 128;
@@ -61,6 +61,11 @@ pub fn is_wake_op(op: i32) -> bool {
 // ============================================================================
 
 /// 验证 futex 入参: uaddr 非 0 且 4 字节对齐 (u32 原子操作)
+///
+/// # Errors
+///
+/// - `uaddr == 0` → `EFAULT`
+/// - `uaddr` 未按 4 字节对齐 → `EINVAL`
 pub fn futex_validate_uaddr(uaddr: u64) -> Result<(), Errno> {
     if uaddr == 0 {
         return Err(Errno::EFAULT);
@@ -72,6 +77,10 @@ pub fn futex_validate_uaddr(uaddr: u64) -> Result<(), Errno> {
 }
 
 /// 验证 op 字段: 基础操作合法
+///
+/// # Errors
+///
+/// 当基础操作不是 WAIT/WAKE/REQUEUE 等受支持操作时返回 `ENOSYS`.
 pub fn futex_validate_op(op: i32) -> Result<(), Errno> {
     match futex_base_op(op) {
         FUTEX_WAIT | FUTEX_WAIT_BITSET
@@ -112,6 +121,12 @@ impl FutexResult {
 }
 
 /// safe 包装: futex 系统调用
+///
+/// # Errors
+///
+/// - 参数验证失败: `uaddr == 0` → `EFAULT`, 未对齐或 op 非法 → `EINVAL`/`ENOSYS`
+/// - 底层 `sys_futex` 返回负值: 按 errno 映射为 `EAGAIN`(值不匹配)、
+///   `EFAULT`、`EINVAL`、`ENOSYS` 等
 pub fn futex_syscall(
     uaddr: u64,
     op: i32,

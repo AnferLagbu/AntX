@@ -15,15 +15,15 @@ const USER_ADDR_MAX: u64 = 0x7FFF_FFFF_FFFF;
 #[cfg(target_arch = "aarch64")]
 const USER_ADDR_MAX: u64 = 0x0000_FFFF_FFFF_FFFF;
 
-/// 全局静态 brk 回退 (无 MmStruct 时使用)
+/// 全局静态 brk 回退 (无 `MmStruct` 时使用)
 static BRK: AtomicU64 = AtomicU64::new(0x400000 + 65536);
 
 /// brk 系统调用实现
 ///
 /// # Safety
 ///
-/// - 访问当前进程的 MmStruct (TCB 操作)
-/// - 可能分配物理页 (raw::alloc_pages)
+/// - 访问当前进程的 `MmStruct` (TCB 操作)
+/// - 可能分配物理页 (`raw::alloc_pages`)
 pub fn sys_brk(addr: u64) -> i64 {
     if addr == 0 {
         // 返回当前 brk (VMA 优先)

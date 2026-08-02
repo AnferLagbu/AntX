@@ -1,13 +1,13 @@
 #![deny(unsafe_code)]
-//! RamFS 核心实现 — services 层 (E6-5 迁移)
+//! `RamFS` 核心实现 — services 层 (E6-5 迁移)
 //!
 //! 从 framework/fs/ramfs/ramfs.rs 迁移而来。
-//! 本文件包含 RamFsData 数据结构及其所有方法实现。
+//! 本文件包含 `RamFsData` 数据结构及其所有方法实现。
 //! 0 unsafe, 100% safe Rust.
 //!
 //! ## 迁移变更
-//! - `IrqSpinLock` 改用 services::sync::irq_lock
-//! - `dcache` 改用 services::fs::dcache (直接引用)
+//! - `IrqSpinLock` 改用 `services::sync::irq_lock`
+//! - `dcache` 改用 `services::fs::dcache` (直接引用)
 //! - `credo::api` 保持 framework 引用 (公开 API)
 //! - `crate::arch!(timestamp())` 改用 framework 公开的时钟 API
 
@@ -18,7 +18,7 @@ pub use ramfs_node::*;
 pub use ramfs_data::*;
 
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
-use crate::kernel::framework::fs::*;
+use crate::kernel::framework::fs::{FileSystem, KernelResult, VfsOpenFlags, VfsStat, VfsFileType, VfsDirEntry, VFS_MAX_NAME, VfsSeekWhence};
 use crate::kernel::framework::fs::KernelError;
 
 pub(crate) const RAMFS_MAX_NODES: usize = 256;

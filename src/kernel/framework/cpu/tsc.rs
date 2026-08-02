@@ -4,8 +4,8 @@
 
 /// 读取当前 TSC 值 (时钟周期数)
 ///
-/// 通过 Arch trait 的 timestamp() 实现，架构无关。
-/// 在 x86_64 上映射为 rdtsc，在 ARM64 上映射为 CNTVCT_EL0 读取。
+/// 通过 Arch trait 的 `timestamp()` 实现，架构无关。
+/// 在 `x86_64` 上映射为 rdtsc，在 ARM64 上映射为 `CNTVCT_EL0` 读取。
 ///
 /// # Returns
 /// 自 CPU 复位以来的时钟周期数

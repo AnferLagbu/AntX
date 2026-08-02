@@ -92,7 +92,7 @@ pub const VIRTIO_ID_GPU: u32 = 16;
 // ── MMIO region ──
 
 /// QEMU virt (aarch64) 上 virtio-mmio 区域的基地址.
-/// 在 x86_64 QEMU microvm 上可能不同.
+/// 在 `x86_64` QEMU microvm 上可能不同.
 pub const VIRTIO_MMIO_BASE: u64 = 0x0a00_0000;
 /// virtio-mmio 设备之间的步长 (0x200 字节).
 pub const VIRTIO_MMIO_STRIDE: u64 = 0x200;
@@ -101,7 +101,7 @@ pub const VIRTIO_MMIO_MAX_DEVICES: u32 = 32;
 
 // ── Feature bits ──
 
-/// 通用特性: VIRTIO_F_VERSION_1 (必须确认以符合规范)
+/// 通用特性: `VIRTIO_F_VERSION_1` (必须确认以符合规范)
 pub const VIRTIO_F_VERSION_1: u64 = 1 << 32;
 
 /// 通过 MMIO 传输发现的 virtio 设备.
@@ -130,8 +130,8 @@ impl VirtioMmioDevice {
 
     /// 读取跨 Low/High 寄存器的 64 位值.
     fn read64(&self, low_off: usize, high_off: usize) -> u64 {
-        let lo = self.read32(low_off) as u64;
-        let hi = self.read32(high_off) as u64;
+        let lo = u64::from(self.read32(low_off));
+        let hi = u64::from(self.read32(high_off));
         lo | (hi << 32)
     }
 
@@ -188,7 +188,9 @@ impl VirtioMmioDevice {
     /// 1. Reset
     /// 2. Acknowledge
     /// 3. Negotiate features
-    /// 4. Set DRIVER_OK
+    /// 4. Set `DRIVER_OK`
+    /// # Errors
+    /// 设备驱动状态初始化失败时返回 Err。
     pub fn init(&self) -> Result<(), ()> {
         // Step 1: Reset
         self.write32(STATUS, 0);
@@ -250,7 +252,7 @@ impl VirtioMmioDevice {
         Ok(())
     }
 
-    /// 设置 DRIVER_OK (设备进入 live). 必须在所有 virtqueue 配置完成后调用.
+    /// 设置 `DRIVER_OK` (设备进入 live). 必须在所有 virtqueue 配置完成后调用.
     pub fn set_driver_ok(&self) {
         self.write32(
             STATUS,
@@ -259,13 +261,15 @@ impl VirtioMmioDevice {
     }
 
     /// 在此设备上配置 virtqueue.
+    /// # Errors
+    /// 队列配置失败时返回 Err。
     pub fn setup_vq(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
         // 选中 virtqueue
-        self.write32(QUEUE_SEL, vq_index as u32);
+        self.write32(QUEUE_SEL, u32::from(vq_index));
 
         // 检查最大队列大小
         let max_size = self.read32(QUEUE_NUM_MAX);
-        if vq.queue_size as u32 > max_size {
+        if u32::from(vq.queue_size) > max_size {
             klog_warn!(
                 Driver,
                 "virtio: queue size {} exceeds max {}",
@@ -276,7 +280,7 @@ impl VirtioMmioDevice {
         klog_info!(Driver, "virtio: vq{} max_size={}", vq_index, max_size);
 
         // Set queue size
-        self.write32(QUEUE_NUM, vq.queue_size as u32);
+        self.write32(QUEUE_NUM, u32::from(vq.queue_size));
         klog_info!(
             Driver,
             "virtio: vq{} QUEUE_NUM set, writing desc={:#x}",
@@ -299,13 +303,17 @@ impl VirtioMmioDevice {
         Ok(())
     }
 
-    /// 使用传统 QueuePFN 接口配置 virtqueue (VirtIO 0.9.5).
-    /// 当 VIRTIO_F_VERSION_1 未协商时使用 (传统/旧版设备).
+    /// 使用传统 `QueuePFN` 接口配置 virtqueue (`VirtIO` 0.9.5).
+    /// 当 `VIRTIO_F_VERSION_1` 未协商时使用 (传统/旧版设备).
+    /// # Errors
+    /// 队列配置失败时返回 Err。
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn setup_vq_legacy(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
-        self.write32(QUEUE_SEL, vq_index as u32);
+        self.write32(QUEUE_SEL, u32::from(vq_index));
 
         let max_size = self.read32(QUEUE_NUM_MAX);
-        if vq.queue_size as u32 > max_size {
+        if u32::from(vq.queue_size) > max_size {
             klog_warn!(
                 Driver,
                 "virtio: legacy queue size {} exceeds max {}",
@@ -314,7 +322,7 @@ impl VirtioMmioDevice {
             );
         }
 
-        self.write32(QUEUE_NUM, vq.queue_size as u32);
+        self.write32(QUEUE_NUM, u32::from(vq.queue_size));
 
         // 传统: 写队列的客户机物理页号
         // 队列 (desc + avail + used) 在单页内连续布局
@@ -333,7 +341,7 @@ impl VirtioMmioDevice {
 
     /// 通知设备新的描述符已在 virtqueue 上可用.
     pub fn notify(&self, vq_index: u16) {
-        self.write32(QUEUE_NOTIFY, vq_index as u32);
+        self.write32(QUEUE_NOTIFY, u32::from(vq_index));
     }
 
     /// 从设备特定配置空间读取 (偏移相对于 0x100).
@@ -345,7 +353,7 @@ impl VirtioMmioDevice {
         self.read64(0x100 + offset, 0x100 + offset + 4)
     }
 
-    /// I-42: 读取中断状态并写 ACK 寄存器 (VirtIO MMIO 规范要求).
+    /// I-42: 读取中断状态并写 ACK 寄存器 (`VirtIO` MMIO 规范要求).
     /// 驱动必须在处理完中断后调用此方法, 否则设备不会产生新中断.
     pub fn ack_interrupt(&self) {
         let status = self.read32(INTERRUPT_STATUS);
@@ -362,7 +370,7 @@ pub fn probe_all() -> alloc::vec::Vec<VirtioMmioDevice> {
     // 在没有 virtio-mmio 的平台上 (如 QEMU x86_64 pc 机型),
     // 第一次读将返回 0xFFFFFFFF 或导致错误.
     for i in 0..VIRTIO_MMIO_MAX_DEVICES {
-        let base = VIRTIO_MMIO_BASE + (i as u64) * VIRTIO_MMIO_STRIDE;
+        let base = VIRTIO_MMIO_BASE + u64::from(i) * VIRTIO_MMIO_STRIDE;
         if let Some(dev) = VirtioMmioDevice::probe(base) {
             devices.push(dev);
         }

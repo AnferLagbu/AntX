@@ -2,9 +2,9 @@
 //! 消息队列策略 — T6-1 从 framework/ipc/msgq.rs 提取
 //!
 //! 纯策略逻辑: 参数校验、资源查找、状态管理、链表操作.
-//! 所有 unsafe 操作通过 framework::ipc::msgq::raw (MessageRef) 安全方法完成.
+//! 所有 unsafe 操作通过 `framework::ipc::msgq::raw` (`MessageRef`) 安全方法完成.
 
-use crate::kernel::framework::ipc::types::*;
+use crate::kernel::framework::ipc::types::{IpcNamespace, MsgQueue, IpcId, MSG_QUEUE_MAX_MSGS, MSG_MAX_SIZE};
 use crate::kernel::framework::ipc::msgq::raw::{self, MessageRef};
 
 /// 查找空闲消息队列槽位
@@ -18,6 +18,9 @@ pub fn msgq_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&mut M
 }
 
 /// 创建消息队列 (策略: 槽位分配 + 初始化)
+///
+/// # Errors
+/// 当消息队列表已满、无空闲槽位时返回 `Err(-1)`.
 pub fn msgq_create_safe(
     namespace: &mut IpcNamespace,
     next_id: &mut IpcId,
@@ -49,6 +52,13 @@ pub fn msgq_create_safe(
 }
 
 /// 向消息队列发送消息 (策略: 参数校验 + 容量检查 + 入队 + 唤醒)
+///
+/// # Errors
+/// 当队列不存在时返回 `Err(-1)`; 当消息过大时返回 `Err(-2)`;
+/// 当队列已满时返回 `Err(-3)`; 当消息结构体分配失败时返回 `Err(-4)`.
+///
+/// # Panics
+/// 当队列尾指针 `tail` 本应为 `Some` 却为 `None` 时发生 panic (内部使用 `expect`).
 pub fn msgq_send_safe(
     namespace: &mut IpcNamespace,
     id: IpcId,
@@ -82,7 +92,7 @@ pub fn msgq_send_safe(
     // `msgq_recv_safe` 或 `msgq_destroy_safe` 释放.
     let msg_ref = msg_nn.get_mut();
     msg_ref.type_ = type_;
-    msg_ref.sender = current_pid as u64;
+    msg_ref.sender = u64::from(current_pid);
     msg_ref.size = size as u64;
     msg_ref.next = None;
 
@@ -115,6 +125,12 @@ pub fn msgq_send_safe(
 }
 
 /// 从消息队列接收消息 (策略: 出队 + 数据拷贝 + 释放 + 唤醒)
+///
+/// # Errors
+/// 当队列不存在时返回 `Err(-1)`; 当队列为空时返回 `Err(-2)`.
+///
+/// # Panics
+/// 当队列头指针 `head` 本应为 `Some` 却为 `None` 时发生 panic (内部使用 `expect`).
 pub fn msgq_recv_safe(
     namespace: &mut IpcNamespace,
     id: IpcId,
@@ -176,6 +192,9 @@ pub fn msgq_recv_safe(
 }
 
 /// 销毁消息队列 (策略: 释放所有消息 + 清理结构体)
+///
+/// # Errors
+/// 当队列不存在时返回 `Err(-1)`.
 pub fn msgq_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32> {
     let mq = match msgq_find_by_id(namespace, id) {
         Some(q) => q,

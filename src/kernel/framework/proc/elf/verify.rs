@@ -18,17 +18,17 @@ use super::{Elf64Header, Elf64Phdr, MAX_PHDR_COUNT};
 /// ELF64 验证结果 — 调用方据 `is_pie` / `machine` / `entry` 等字段做后续决策
 #[derive(Debug, Clone, Copy)]
 pub struct VerifyResult {
-    /// `e_machine`: 0x3E (x86_64) / 0xB7 (aarch64)
+    /// `e_machine`: 0x3E (`x86_64`) / 0xB7 (aarch64)
     pub machine: u16,
     /// `e_type == ET_DYN (3)`: PIE 共享对象
     pub is_pie: bool,
-    /// `e_entry`: 程序入口点虚拟地址 (未加 load_bias)
+    /// `e_entry`: 程序入口点虚拟地址 (未加 `load_bias`)
     pub entry: u64,
     /// `e_phoff`: program header table 偏移
     pub phoff: u64,
     /// `e_phentsize`: 单个 PHDR 大小 (字节), 必 == sizeof(Elf64Phdr)
     pub phentsize: u16,
-    /// `e_phnum`: PHDR 数量 (≤ MAX_PHDR_COUNT)
+    /// `e_phnum`: PHDR 数量 (≤ `MAX_PHDR_COUNT`)
     pub phnum: u16,
 }
 
@@ -36,11 +36,11 @@ pub struct VerifyResult {
 const ELF_MAGIC: &[u8; 4] = b"\x7FELF";
 /// ELFCLASS64
 const ELF_CLASS_64: u8 = 2;
-/// x86_64 机器码
+/// `x86_64` 机器码
 pub const EM_X86_64: u16 = 0x3E;
 /// aarch64 机器码
 pub const EM_AARCH64: u16 = 0xB7;
-/// ET_DYN: 共享对象 / PIE
+/// `ET_DYN`: 共享对象 / PIE
 pub const ET_DYN: u16 = 3;
 
 /// 验证 ELF 文件头 + program header table 边界
@@ -50,12 +50,18 @@ pub const ET_DYN: u16 = 3;
 /// 1. `elf_data != null && elf_size >= sizeof(Elf64Header)`  // 缓冲长度检查
 /// 2. `e_ident[0..4] == b"\x7FELF"`  // ELF 文件魔数
 /// 3. `e_ident[4] == 2` (ELFCLASS64)  // 64 位 ELF
-/// 4. `e_machine ∈ {0x3E, 0xB7}` (x86_64 / aarch64)  // 目标架构
+/// 4. `e_machine ∈ {0x3E, 0xB7}` (`x86_64` / aarch64)  // 目标架构
 /// 5. `e_phentsize == sizeof(Elf64Phdr)` (56)  // PHDR 项大小
 /// 6. `e_phnum <= MAX_PHDR_COUNT` (128)  // PHDR 数量上限
 /// 7. `e_phoff + e_phnum * e_phentsize <= elf_size` (PHDR 表不越界)  // 边界
 ///
-/// ## SAFETY
+/// # Errors
+/// 校验失败时返回对应的 `VerifyError`: `TooSmall` (指针为空或尺寸不足),
+/// `BadMagic` (魔数不匹配), `BadClass` (非 64 位 ELF), `BadMachine` (非 `x86_64/aarch64`),
+/// `BadPhentsize` (PHDR 项大小不符), `TooManyPhdr` (PHDR 数量超限),
+/// `PhdrOutOfBounds` (PHDR 表越出文件边界), `Overflow` (PHDR 表尺寸算术溢出).
+///
+/// # Safety
 ///
 /// - `elf_data` 必须指向 `elf_size` 字节的可读内核虚拟地址
 /// - 调用方负责保证指针/类型有效 (此函数本身不持有所有权)
@@ -88,8 +94,8 @@ pub unsafe fn verify_elf(elf_data: *const u8, elf_size: u64) -> Result<VerifyRes
         return Err(VerifyError::TooManyPhdr);
     }
     // phdr 表边界检查
-    let phdr_table_size = (header.e_phnum as u64)
-        .checked_mul(header.e_phentsize as u64)
+    let phdr_table_size = u64::from(header.e_phnum)
+        .checked_mul(u64::from(header.e_phentsize))
         .ok_or(VerifyError::Overflow)?;
     let phdr_end = header.e_phoff.checked_add(phdr_table_size).ok_or(VerifyError::Overflow)?;
     if phdr_end > elf_size {
@@ -115,11 +121,11 @@ pub enum VerifyError {
     BadMagic,
     /// 非 ELFCLASS64
     BadClass,
-    /// 非 x86_64 / aarch64
+    /// 非 `x86_64` / aarch64
     BadMachine,
     /// phentsize 与 sizeof(Elf64Phdr) 不符
     BadPhentsize,
-    /// phnum > MAX_PHDR_COUNT
+    /// phnum > `MAX_PHDR_COUNT`
     TooManyPhdr,
     /// PHDR 表溢出文件边界
     PhdrOutOfBounds,

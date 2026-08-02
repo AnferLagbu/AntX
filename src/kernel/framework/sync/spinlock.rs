@@ -1,4 +1,4 @@
-//! # 自旋锁 (SpinLock) 实现
+//! # 自旋锁 (`SpinLock`) 实现
 //!
 //! 高效的忙等待锁，基于原子交换指令 (xchg)。
 //!
@@ -20,13 +20,13 @@
 use core::sync::atomic::{fence, Ordering};
 
 pub use super::types::IrqSaveFlags;
-use super::types::*;
+use super::types::{SpinLockInner, TryLockResult, SpinLockGuard};
 #[cfg(debug_assertions)]
 use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
-/// 自旋锁 (SpinLock)
+/// 自旋锁 (`SpinLock`)
 ///
-/// 基于 x86_64 的 `xchg` 指令实现原子锁定。
+/// 基于 `x86_64` 的 `xchg` 指令实现原子锁定。
 /// 在自旋循环中插入 `pause` 指令以优化性能。
 pub struct SpinLock {
     /// 内部状态
@@ -107,7 +107,7 @@ impl SpinLock {
     /// ✅ P1-8 修复: 带超时的锁获取 (防止死锁)
     ///
     /// # Arguments
-    /// * `max_spins` - 最大自旋次数 (建议: 10_000_000 ≈ 数秒 @ GHz CPU)
+    /// * `max_spins` - 最大自旋次数 (建议: `10_000_000` ≈ 数秒 @ GHz CPU)
     ///
     /// # Returns
     /// - `TryLockResult::Acquired`: 成功获取
@@ -201,7 +201,7 @@ impl SpinLock {
 
     /// 获取锁并返回守卫 (RAII)
     ///
-    /// 推荐使用此方法而非 raw_lock/raw_unlock，
+    /// 推荐使用此方法而非 `raw_lock/raw_unlock`，
     /// 因为 Guard 在离开作用域时自动释放锁。
     ///
     /// # Example
@@ -286,12 +286,14 @@ impl SpinLock {
     }
 
     /// 断言当前线程持有锁 (仅 debug 模式)
+    ///
+    /// # Panics
+    /// 在 `debug_assertions` 构建下, 当锁未被持有 (数据竞争风险) 时触发 `assert!` panic,
+    /// 错误信息为 "SPINLOCK ASSERTION FAILED: lock not held".
     #[cfg(debug_assertions)]
     pub fn assert_held(&self) {
-        if !self.is_locked() {
-            // 不可恢复: 自旋锁断言失败意味着代码逻辑错误, 继续执行会导致数据竞争
-            panic!("SPINLOCK ASSERTION FAILED: lock not held");
-        }
+        // 不可恢复: 自旋锁断言失败意味着代码逻辑错误, 继续执行会导致数据竞争
+        assert!(self.is_locked(), "SPINLOCK ASSERTION FAILED: lock not held");
     }
 }
 
@@ -307,14 +309,14 @@ impl Default for SpinLock {
 
 /// 禁用中断并返回当前中断标志
 ///
-/// 通过 Arch trait 的 interrupt_disable 实现，架构无关。
+/// 通过 Arch trait 的 `interrupt_disable` 实现，架构无关。
 pub fn disable_interrupts() -> IrqSaveFlags {
     IrqSaveFlags(crate::arch!(interrupt_disable()) as u64)
 }
 
 /// 恢复中断标志
 ///
-/// 通过 Arch trait 的 interrupt_restore 实现，架构无关。
+/// 通过 Arch trait 的 `interrupt_restore` 实现，架构无关。
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
     crate::arch!(interrupt_restore(flags.0 as usize));
 }

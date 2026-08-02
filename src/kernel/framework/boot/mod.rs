@@ -63,11 +63,11 @@ pub struct MemoryMapEntry {
 
 impl MemoryMapEntry {
     pub fn base_addr(&self) -> u64 {
-        (self.base_addr_high as u64) << 32 | (self.base_addr_low as u64)
+        u64::from(self.base_addr_high) << 32 | u64::from(self.base_addr_low)
     }
 
     pub fn length(&self) -> u64 {
-        (self.length_high as u64) << 32 | (self.length_low as u64)
+        u64::from(self.length_high) << 32 | u64::from(self.length_low)
     }
 
     pub fn is_available(&self) -> bool {
@@ -109,6 +109,9 @@ unsafe extern "C" {
     static _kernel_end: u8;
 }
 
+/// 获取全局启动信息结构体。
+/// # Panics
+/// 启动信息尚未初始化时 panic。
 pub fn get_boot_info() -> &'static BootInfo {
     BOOT_INFO
         .get()
@@ -130,7 +133,7 @@ fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
     let mut mmap_entries: usize = 0;
 
     if mbi.flags & MBOOT1_FLAG_MEM != 0 {
-        mem_size = (mbi.mem_upper as u64 + 1024) * 1024;
+        mem_size = (u64::from(mbi.mem_upper) + 1024) * 1024;
     }
 
     if mbi.flags & MBOOT1_FLAG_MMAP != 0 {
@@ -191,7 +194,7 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
                 let _mem_lower = unsafe { *(basic_ptr as *const u32) };
                 // SAFETY: 指针由调用方保证有效, 偏移 1 不越界
                 let mem_upper = unsafe { *((basic_ptr as *const u32).add(1)) };
-                mem_size = (mem_upper as u64 + 1024) * 1024;
+                mem_size = (u64::from(mem_upper) + 1024) * 1024;
             }
             6 => {
                 // SAFETY: `const` 由调用方保证为有效指针; 只读访问
@@ -211,13 +214,13 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
                     let base = unsafe {
                         let lo = *(pos as *const u32);
                         let hi = *((pos as *const u32).add(1));
-                        ((hi as u64) << 32) | (lo as u64)
+                        (u64::from(hi) << 32) | u64::from(lo)
                     };
                     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                     let len = unsafe {
                         let lo = *((pos as *const u32).add(2));
                         let hi = *((pos as *const u32).add(3));
-                        ((hi as u64) << 32) | (lo as u64)
+                        (u64::from(hi) << 32) | u64::from(lo)
                     };
                     // SAFETY: 指针由调用方保证有效, 偏移 4 不越界
                     let mtype = unsafe { *((pos as *const u32).add(4)) };

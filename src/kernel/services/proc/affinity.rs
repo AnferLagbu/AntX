@@ -12,7 +12,7 @@
 
 use crate::kernel::framework::syscall::Errno;
 
-/// sched_setaffinity(pid, cpusetsize, mask) 策略
+/// `sched_setaffinity(pid`, cpusetsize, mask) 策略
 ///
 /// Linux 兼容 ABI:
 /// - `pid == 0` 表示当前进程
@@ -56,7 +56,7 @@ pub fn sched_setaffinity_syscall(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i6
     0
 }
 
-/// sched_getaffinity(pid, cpusetsize, mask) 策略
+/// `sched_getaffinity(pid`, cpusetsize, mask) 策略
 ///
 /// Linux 兼容 ABI:
 /// - `pid == 0` 表示当前进程

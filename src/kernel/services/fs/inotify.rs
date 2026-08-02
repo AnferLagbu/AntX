@@ -7,16 +7,16 @@
 //! inotify 的 watch 管理、事件队列管理、事件匹配是纯策略代码:
 //! - watch/事件队列逻辑不含 unsafe
 //! - 不直接操作硬件
-//! - 仅依赖 IrqSpinLock (framework 同步原语, services 已可用)
+//! - 仅依赖 `IrqSpinLock` (framework 同步原语, services 已可用)
 //!
-//! 注意: sys_inotify_read 的用户指针写入 (unsafe) 保留在 framework 层,
-//! 通过 pop_event() safe API 获取事件后在 framework 中写入用户缓冲区。
+//! 注意: `sys_inotify_read` 的用户指针写入 (unsafe) 保留在 framework 层,
+//! 通过 `pop_event()` safe API 获取事件后在 framework 中写入用户缓冲区。
 //!
 //! ## 安全契约
 //!
 //! - 全局状态由 `IrqSpinLock` 守护
-//! - inotify_notify 在 VFS 路径调用, 持锁时不可睡眠
-//! - 事件队列使用 IrqSpinLock 保护, 中断安全
+//! - `inotify_notify` 在 VFS 路径调用, 持锁时不可睡眠
+//! - 事件队列使用 `IrqSpinLock` 保护, 中断安全
 
 #![deny(unsafe_code)]
 
@@ -30,44 +30,44 @@ use core::sync::atomic::Ordering;
 // inotify 常量
 // ============================================================================
 
-/// IN_ACCESS: 文件被访问
+/// `IN_ACCESS`: 文件被访问
 pub const IN_ACCESS: u32 = 0x0000_0001;
-/// IN_MODIFY: 文件被修改
+/// `IN_MODIFY`: 文件被修改
 pub const IN_MODIFY: u32 = 0x0000_0002;
-/// IN_ATTRIB: 文件属性变化
+/// `IN_ATTRIB`: 文件属性变化
 pub const IN_ATTRIB: u32 = 0x0000_0004;
-/// IN_CLOSE_WRITE: 可写文件被关闭
+/// `IN_CLOSE_WRITE`: 可写文件被关闭
 pub const IN_CLOSE_WRITE: u32 = 0x0000_0008;
-/// IN_CLOSE_NOWRITE: 不可写文件被关闭
+/// `IN_CLOSE_NOWRITE`: 不可写文件被关闭
 pub const IN_CLOSE_NOWRITE: u32 = 0x0000_0010;
-/// IN_OPEN: 文件被打开
+/// `IN_OPEN`: 文件被打开
 pub const IN_OPEN: u32 = 0x0000_0020;
-/// IN_MOVED_FROM: 文件被移出监控目录
+/// `IN_MOVED_FROM`: 文件被移出监控目录
 pub const IN_MOVED_FROM: u32 = 0x0000_0040;
-/// IN_MOVED_TO: 文件被移入监控目录
+/// `IN_MOVED_TO`: 文件被移入监控目录
 pub const IN_MOVED_TO: u32 = 0x0000_0080;
-/// IN_CREATE: 在监控目录中创建文件
+/// `IN_CREATE`: 在监控目录中创建文件
 pub const IN_CREATE: u32 = 0x0000_0100;
-/// IN_DELETE: 在监控目录中删除文件
+/// `IN_DELETE`: 在监控目录中删除文件
 pub const IN_DELETE: u32 = 0x0000_0200;
-/// IN_DELETE_SELF: 被监控文件自身被删除
+/// `IN_DELETE_SELF`: 被监控文件自身被删除
 pub const IN_DELETE_SELF: u32 = 0x0000_0400;
-/// IN_MOVE_SELF: 被监控文件自身被移动
+/// `IN_MOVE_SELF`: 被监控文件自身被移动
 pub const IN_MOVE_SELF: u32 = 0x0000_0800;
 
-/// IN_ISDIR: 事件对象是目录
+/// `IN_ISDIR`: 事件对象是目录
 pub const IN_ISDIR: u32 = 0x4000_0000;
-/// IN_Q_OVERFLOW: 事件队列溢出
+/// `IN_Q_OVERFLOW`: 事件队列溢出
 pub const IN_Q_OVERFLOW: u32 = 0x0000_4000;
-/// IN_IGNORED: watch 被移除 (内核自动发送)
+/// `IN_IGNORED`: watch 被移除 (内核自动发送)
 pub const IN_IGNORED: u32 = 0x0000_8000;
 
-/// IN_NONBLOCK: 非阻塞模式 (inotify_init1 标志)
+/// `IN_NONBLOCK`: 非阻塞模式 (`inotify_init1` 标志)
 pub const IN_NONBLOCK: i32 = 0x0800;
-/// IN_CLOEXEC: 执行时关闭 (inotify_init1 标志)
+/// `IN_CLOEXEC`: 执行时关闭 (`inotify_init1` 标志)
 pub const IN_CLOEXEC: i32 = 0x0200_0000;
 
-/// IN_ALL_EVENTS: 所有事件的掩码
+/// `IN_ALL_EVENTS`: 所有事件的掩码
 pub const IN_ALL_EVENTS: u32 = IN_ACCESS
     | IN_MODIFY
     | IN_ATTRIB
@@ -87,7 +87,7 @@ const INOTIFY_MAX_INSTANCES: usize = 8;
 const INOTIFY_MAX_WATCHES: usize = 16;
 /// 每实例最大事件队列深度
 const INOTIFY_MAX_EVENTS: usize = 64;
-/// 文件名最大长度 (inotify_event.name)
+/// 文件名最大长度 (`inotify_event.name`)
 const INOTIFY_MAX_NAME: usize = 32;
 /// TD-02: 基址来源已迁移至 `framework::proc::FdPlan::INOTIFY` 单一来源, 不再硬编码.
 pub const INOTIFY_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::INOTIFY.base;
@@ -96,7 +96,7 @@ pub const INOTIFY_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::INOTIFY
 // inotify 数据结构
 // ============================================================================
 
-/// inotify_event — 用户空间事件结构 (与 Linux ABI 兼容)
+/// `inotify_event` — 用户空间事件结构 (与 Linux ABI 兼容)
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct InotifyEvent {
@@ -104,7 +104,7 @@ pub struct InotifyEvent {
     pub wd: i32,
     /// 事件掩码
     pub mask: u32,
-    /// 关联的 cookie (用于关联 IN_MOVED_FROM/TO, v1 暂为 0)
+    /// 关联的 cookie (用于关联 `IN_MOVED_FROM/TO`, v1 暂为 0)
     pub cookie: u32,
     /// name 字段长度 (含 \0)
     pub len: u32,
@@ -176,7 +176,7 @@ impl WatchEntry {
 
 /// inotify 实例
 struct InotifyInstance {
-    /// 实例 slot 索引 (fd = INOTIFY_FD_BASE + slot_idx)
+    /// 实例 slot 索引 (fd = `INOTIFY_FD_BASE` + `slot_idx`)
     slot_idx: usize,
     /// watch 表
     watches: [WatchEntry; INOTIFY_MAX_WATCHES],
@@ -339,7 +339,7 @@ static INOTIFY_OPS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU6
 // inotify 系统调用实现
 // ============================================================================
 
-/// inotify_init1 — 创建 inotify 实例
+/// `inotify_init1` — 创建 inotify 实例
 pub fn sys_inotify_init1(flags: i32) -> i64 {
     INOTIFY_OPS.fetch_add(1, Ordering::Relaxed);
 
@@ -367,10 +367,10 @@ pub fn sys_inotify_init1(flags: i32) -> i64 {
     };
     slot.init(slot_idx);
 
-    fd as i64
+    i64::from(fd)
 }
 
-/// inotify_add_watch — 添加 watch
+/// `inotify_add_watch` — 添加 watch
 pub fn sys_inotify_add_watch(fd: i64, ino: u32, mask: u32) -> i64 {
     INOTIFY_OPS.fetch_add(1, Ordering::Relaxed);
 
@@ -391,12 +391,12 @@ pub fn sys_inotify_add_watch(fd: i64, ino: u32, mask: u32) -> i64 {
     };
 
     match instance.add_watch(ino, mask) {
-        Ok(wd) => wd as i64,
+        Ok(wd) => i64::from(wd),
         Err(e) => e.as_ret(),
     }
 }
 
-/// inotify_rm_watch — 移除 watch
+/// `inotify_rm_watch` — 移除 watch
 pub fn sys_inotify_rm_watch(fd: i64, wd: i32) -> i64 {
     INOTIFY_OPS.fetch_add(1, Ordering::Relaxed);
 
@@ -429,7 +429,7 @@ pub fn sys_inotify_rm_watch(fd: i64, wd: i32) -> i64 {
     }
 }
 
-/// inotify_read — 从 inotify fd 读取事件 (safe 部分)
+/// `inotify_read` — 从 inotify fd 读取事件 (safe 部分)
 ///
 /// 返回事件列表和总字节数。用户指针写入由 framework 层处理。
 pub fn inotify_read_events(fd: i64, max_count: usize) -> Option<(Vec<InotifyEvent>, usize)> {

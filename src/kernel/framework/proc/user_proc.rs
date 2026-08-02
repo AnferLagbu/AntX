@@ -46,10 +46,10 @@ pub use super::types::{
     SCHED_RT_WATCHDOG_TICKS,
 };
 
-/// 派生常量: 用户栈自动扩展的下界 (USER_STACK_TOP - USER_STACK_MAX_SIZE)
+/// 派生常量: 用户栈自动扩展的下界 (`USER_STACK_TOP` - `USER_STACK_MAX_SIZE`)
 pub const USER_STACK_EXPAND_LIMIT: u64 = USER_STACK_TOP - USER_STACK_MAX_SIZE;
 
-/// PAGE_PRESENT / WRITABLE / USER — 旧式裸 u64 常量 (保留以兼容 C 端)
+/// `PAGE_PRESENT` / WRITABLE / USER — 旧式裸 u64 常量 (保留以兼容 C 端)
 /// 业务层推荐使用 `framework::mm::PageFlags` 类型化抽象, FFI 边界通过 `.bits()` 转换.
 #[deprecated(note = "use framework::mm::PageFlags 替代 (类型安全 + 编译期检查)")]
 pub const PAGE_PRESENT: u64 = 1;
@@ -58,7 +58,7 @@ pub const PAGE_WRITABLE: u64 = 2;
 #[deprecated(note = "use framework::mm::PageFlags::USER 替代")]
 pub const PAGE_USER: u64 = 4;
 
-/// 类型化页面标志 (从 framework::mm 引入, 在 FFI 边界通过 .bits() 转 u64)
+/// 类型化页面标志 (从 `framework::mm` 引入, 在 FFI 边界通过 .`bits()` 转 u64)
 use crate::kernel::framework::mm::PageFlags;
 
 pub const GDT_USER_DATA: u64 = 0x18;
@@ -91,7 +91,7 @@ pub struct UserProcInfo {
 // `unsafe impl Send/Sync` 在本子模块中声明, 因为类型定义本身需要这些 trait
 // 才能被 `static USER_PROC_MANAGER` 使用。
 pub(crate) mod raw {
-    use super::*;
+    use super::{UserProcess, ProcessId, Ordering, NonNull, pmm_free_page, vmm_destroy_page_table, vmm_get_physical_in_table, vmm_create_user_page_table, pmm_alloc_pages, raw, PAGE_SIZE, pmm_alloc_page, vmm_map_page_in_table, vmm_map_page, vmm_ensure_path_user, KERNEL_BASE, memset, memcpy, PageFlags, kmalloc, Process, AtomicU64, AtomicU32, ProcessState, ProcessPriority, Mutex, String, Vec, ProcessContext, FdTable};
 
     // === UserProcess 安全访问封装 (Framekernel privilege wrapper) ===
     //
@@ -185,7 +185,7 @@ pub(crate) mod raw {
             }
         }
 
-        /// 访问 kernel_stack (委托到 Process)
+        /// 访问 `kernel_stack` (委托到 Process)
         #[inline(always)]
         pub fn load_kernel_stack(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
@@ -200,7 +200,7 @@ pub(crate) mod raw {
             }
         }
 
-        /// 访问 user_stack (委托到 Process)
+        /// 访问 `user_stack` (委托到 Process)
         #[inline(always)]
         pub fn load_user_stack(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
@@ -259,10 +259,10 @@ pub(crate) mod raw {
         }
     }
 
-    /// 在 BTreeMap 中按 pid 索引得到的 NonNull 句柄转成安全引用。
+    /// 在 `BTreeMap` 中按 pid 索引得到的 `NonNull` 句柄转成安全引用。
     ///
     /// # Safety (内部)
-    /// - `nn` 必须由 USER_PROC_MANAGER 持有, 指向有效 UserProcess 分配。
+    /// - `nn` 必须由 `USER_PROC_MANAGER` 持有, 指向有效 `UserProcess` 分配。
     pub fn deref_non_null(nn: NonNull<UserProcess>) -> &'static UserProcess {
         // SAFETY: nn is from USER_PROC_MANAGER BTreeMap, allocation outlives the manager.
         unsafe { &*nn.as_ptr() }
@@ -453,7 +453,7 @@ pub(crate) mod raw {
     /// 分配并构造一个 `UserProcess` 内存, 清零后返回。
     ///
     /// # Arguments
-    /// - `process`: 与本 `UserProcess` 镜像关联的权威 `Process` NonNull 句柄.
+    /// - `process`: 与本 `UserProcess` 镜像关联的权威 `Process` `NonNull` 句柄.
     ///              构造时写入 `UserProcess::process` 字段, 后续通过
     ///              `UserProcess::process()` 安全访问.
     ///
@@ -508,7 +508,7 @@ pub(crate) mod raw {
     /// # Safety (内部)
     /// - `proc_ptr` 必须为 `alloc_user_process` 返回的合法指针, 且未再被使用.
     /// - 必须先于 `free_kernel_process` 调用 (LIFO 反序), 以避免
-    ///   `UserProcess::process` NonNull 字段成为悬挂指针.
+    ///   `UserProcess::process` `NonNull` 字段成为悬挂指针.
     pub fn free_user_process(proc_ptr: *mut UserProcess) {
         if proc_ptr.is_null() {
             return;
@@ -520,10 +520,10 @@ pub(crate) mod raw {
         }
     }
 
-    /// 从 PID/CR3 构造 UserProcRef 用于新创建进程。
+    /// 从 PID/CR3 构造 `UserProcRef` 用于新创建进程。
     ///
     /// # Safety (内部)
-    /// - `proc` 必须为 alloc_user_process 返回的合法指针, 拥有完整所有权。
+    /// - `proc` 必须为 `alloc_user_process` 返回的合法指针, 拥有完整所有权。
     pub fn new_proc_ref(proc: *mut UserProcess) -> UserProcRef {
         // SAFETY: proc 来自 alloc_user_process, 指向有效 UserProcess 分配。
         unsafe { UserProcRef::new_unchecked(proc) }
@@ -607,16 +607,16 @@ use raw::UserProcRef;
 ///
 /// # 设计: 单源真相 + FFI 镜像
 ///
-/// QueenX 进程子系统维护**两个并行结构**:
+/// `QueenX` 进程子系统维护**两个并行结构**:
 /// - `Process` (在 `process.rs` 中, 权威单一源) — 全量进程描述符, 包含调度/
 ///   信号/文件系统/会话等所有元数据, 由 `PROCESS_TABLE` 管理.
 /// - `UserProcess` (本结构, FFI 镜像) — 仅缓存进入 Ring 3 路径上**热访问**的
-///   字段 (pid/pwm/cr3/kernel_stack/user_stack/state), 以及**独占**的 FFI 字段
+///   字段 (`pid/pwm/cr3/kernel_stack/user_stack/state`), 以及**独占**的 FFI 字段
 ///   (`entry`、`stack_bottom`、`create_time`).
 ///
 /// # 字段分类
 ///
-/// ## 共享字段 (与 `Process` 重叠, 同步方向: Process → UserProcess)
+/// ## 共享字段 (与 `Process` 重叠, 同步方向: Process → `UserProcess`)
 ///
 /// - `pid`           对应 `Process::pid`
 /// - `pwm`           对应 `Process::pwm` (类型 `AtomicU64`)
@@ -638,7 +638,7 @@ use raw::UserProcRef;
 ///
 /// 1. **同步不变量**: 本结构共享字段值与 `Process` 对应字段**最终一致**.
 ///    同步通过 `sync_to_process()` / `sync_from_process()` 显式调用完成.
-/// 2. **生命周期不变量**: `process` NonNull 指向的 `Process` 存活期 ≥ 本结构.
+/// 2. **生命周期不变量**: `process` `NonNull` 指向的 `Process` 存活期 ≥ 本结构.
 ///    销毁本结构前必须先从 `USER_PROC_MANAGER.processes` 移除条目.
 /// 3. **FFI 安全不变量**: `#[repr(C)]` 保持稳定的内存布局, 避免跨 FFI 边界时
 ///    Rust 端重新布局导致 C 端解析错误.
@@ -655,7 +655,7 @@ unsafe impl Sync for UserProcess {}
 pub struct UserProcess {
     /// ✅ 权威引用: 指向 `PROCESS_TABLE` 中对应的 `Process`.
     ///
-    /// 持有 NonNull 而非裸指针, 表达"一定有值"的语义;
+    /// 持有 `NonNull` 而非裸指针, 表达"一定有值"的语义;
     /// 构造时强制调用方提供 `Process` 句柄, 杜绝悬垂.
     pub(crate) process: NonNull<Process>,
 
@@ -673,7 +673,7 @@ impl UserProcess {
     ///
     /// # Returns
     /// 对 `PROCESS_TABLE` 中存储的 `Process` 的 `&'static` 引用 (非空保证由
-    /// NonNull 字段提供).
+    /// `NonNull` 字段提供).
     pub fn process(&self) -> &Process {
         // SAFETY: UserProcess::process NonNull 字段的不变量 (INV-USER-PROC-2)
         // 保证其指向的 Process 在 UserProcess 存活期间有效.
@@ -752,7 +752,7 @@ impl UserProcManager {
     }
 
     /// 获取进程裸指针 (向后兼容接口)。
-    /// 内部存储为 NonNull, 转为 *mut 供外部调用。
+    /// 内部存储为 `NonNull`, 转为 *mut 供外部调用。
     pub fn get(&self, pid: u32) -> Option<*mut UserProcess> {
         self.processes.lock().get(&pid).map(|n| n.as_ptr())
     }
@@ -796,8 +796,8 @@ impl UserProcManager {
 
     /// 替换进程的用户地址空间 (execve 路径).
     ///
-    /// 销毁旧页表和用户栈物理页, 然后将 CR3/entry/user_stack/stack_bottom
-    /// 更新为新值. 不移除 BTreeMap 条目, 不释放内核栈, 不改变 PID —
+    /// 销毁旧页表和用户栈物理页, 然后将 `CR3/entry/user_stack/stack_bottom`
+    /// 更新为新值. 不移除 `BTreeMap` 条目, 不释放内核栈, 不改变 PID —
     /// 保持 POSIX execve 语义 (PID 不变).
     pub fn replace_user_space(
         &self,
@@ -1071,7 +1071,7 @@ impl UserProcManager {
                     let nx = (pte_raw & (1u64 << 63)) != 0;
                     crate::klog_boot_info!(
                         "[USER] SELF-CHECK: user_code PTE={:#018X} P={} W={} U={} NX={} (NX must be 0 for exec)",
-                        pte_raw, present as u8, writable as u8, user as u8, nx as u8
+                        pte_raw, u8::from(present), u8::from(writable), u8::from(user), u8::from(nx)
                     );
                     if nx {
                         crate::klog_boot_info!(
@@ -1241,7 +1241,7 @@ impl UserProcManager {
                             let nx = (pte_raw & (1u64 << 63)) != 0;
                             crate::klog_boot_info!(
                                 "[USER] SELF-CHECK LSTAR page: virt={:#x} -> phys={:#x} PTE={:#x} P={} U={} NX={}",
-                                lstar_page, phys.0, pte_raw, present as u8, user as u8, nx as u8
+                                lstar_page, phys.0, pte_raw, u8::from(present), u8::from(user), u8::from(nx)
                             );
                             // syscall 指令在取指之前已将 CPL 切换到 0,
                             // 因此 LSTAR 页面 U=0 是正确行为 (内核页面不需要 USER 位).
@@ -1286,7 +1286,7 @@ impl UserProcManager {
                     let pml4e_frame = pml4e & 0x000FFFFFFFFFF000;
                     crate::klog_boot_info!(
                         "[USER] SELF-CHECK PT-WALK user_code {:#x}: PML4E[{}]={:#x} P={} U={} frame={:#x}",
-                        vaddr, pml4_idx, pml4e, pml4e_present as u8, pml4e_user as u8, pml4e_frame
+                        vaddr, pml4_idx, pml4e, u8::from(pml4e_present), u8::from(pml4e_user), pml4e_frame
                     );
                     if pml4e_present && !pml4e_user {
                         crate::klog_boot_info!(
@@ -1304,7 +1304,7 @@ impl UserProcManager {
                         let pdpte_frame = pdpte & 0x000FFFFFFFFFF000;
                         crate::klog_boot_info!(
                             "[USER] SELF-CHECK PT-WALK: PDPTE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
-                            pdpt_idx, pdpte, pdpte_present as u8, pdpte_user as u8, pdpte_huge as u8, pdpte_frame
+                            pdpt_idx, pdpte, u8::from(pdpte_present), u8::from(pdpte_user), u8::from(pdpte_huge), pdpte_frame
                         );
                         if pdpte_present && !pdpte_user {
                             crate::klog_boot_info!(
@@ -1322,7 +1322,7 @@ impl UserProcManager {
                             let pde_frame = pde & 0x000FFFFFFFFFF000;
                             crate::klog_boot_info!(
                                 "[USER] SELF-CHECK PT-WALK: PDE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
-                                pd_idx, pde, pde_present as u8, pde_user as u8, pde_huge as u8, pde_frame
+                                pd_idx, pde, u8::from(pde_present), u8::from(pde_user), u8::from(pde_huge), pde_frame
                             );
                             if pde_present && !pde_user {
                                 crate::klog_boot_info!(
@@ -1340,7 +1340,7 @@ impl UserProcManager {
                                 let pte_frame = pte & 0x000FFFFFFFFFF000;
                                 crate::klog_boot_info!(
                                     "[USER] SELF-CHECK PT-WALK: PTE[{}]={:#x} P={} U={} NX={} frame={:#x}",
-                                    pt_idx, pte, pte_present as u8, pte_user as u8, pte_nx as u8, pte_frame
+                                    pt_idx, pte, u8::from(pte_present), u8::from(pte_user), u8::from(pte_nx), pte_frame
                                 );
                                 if pte_present && !pte_user {
                                     crate::klog_boot_info!(
@@ -1430,7 +1430,10 @@ impl UserProcManager {
             for i in 0..argc {
                 // SAFETY: argv 由调用方保证至少 argc 个有效指针。
                 let s = unsafe { *argv.add(i) };
-                if !s.is_null() {
+                if s.is_null() {
+                    arg_lens.push(1);
+                    string_bytes += 1;
+                } else {
                     let mut len: usize = 0;
                     // SAFETY: s 是 C 字符串, 不断读直到 NUL。
                     while unsafe { *s.add(len) } != 0 {
@@ -1438,9 +1441,6 @@ impl UserProcManager {
                     }
                     arg_lens.push(len + 1);
                     string_bytes += len + 1;
-                } else {
-                    arg_lens.push(1);
-                    string_bytes += 1;
                 }
             }
         }
@@ -1497,7 +1497,7 @@ impl UserProcManager {
         raw::write_user_u64(cr3, argv_start_off + argc * 8, 0u64);
 
         // envp 指针 (暂时全填 NULL)
-        for i in 0..(envc + 1) {
+        for i in 0..=envc {
             raw::write_user_u64(cr3, envp_start_off + i * 8, 0u64);
         }
 
@@ -1517,12 +1517,9 @@ impl UserProcManager {
         //
         // SAFETY: elf_data 区间已校验 (非空 + size >= header), verify_elf 内部仅读借用。
         crate::klog_boot_info!("[ELF] calling verify_elf...");
-        let verified = match unsafe { super::elf::verify::verify_elf(elf_data, elf_size) } {
-            Ok(v) => v,
-            Err(_) => {
-                crate::klog_boot_info!("[ELF] verify_elf failed");
-                return -1;
-            }
+        let verified = if let Ok(v) = unsafe { super::elf::verify::verify_elf(elf_data, elf_size) } { v } else {
+            crate::klog_boot_info!("[ELF] verify_elf failed");
+            return -1;
         };
         crate::klog_boot_info!("[ELF] verify_elf OK, entry={:#x}", verified.entry);
 
@@ -1548,15 +1545,12 @@ impl UserProcManager {
             };
 
             crate::klog_boot_info!("[ELF] calling self.create...");
-            let proc = match self.create(&info, pwm) {
-                Some(p) => {
-                    crate::klog_boot_info!("[ELF] self.create OK");
-                    p
-                }
-                None => {
-                    crate::klog_boot_info!("[ELF] self.create failed");
-                    return -1;
-                }
+            let proc = if let Some(p) = self.create(&info, pwm) {
+                crate::klog_boot_info!("[ELF] self.create OK");
+                p
+            } else {
+                crate::klog_boot_info!("[ELF] self.create failed");
+                return -1;
             };
 
             // SAFETY: proc 由 create 返回, 生命周期由 UserProcManager 管理。
@@ -1580,7 +1574,7 @@ impl UserProcManager {
 
             for i in 0..phnum {
                 let phdr_size = core::mem::size_of::<ElfPhdr>() as u64;
-                let phdr_offset = header.e_phoff + (i as u64) * header.e_phentsize as u64;
+                let phdr_offset = header.e_phoff + (i as u64) * u64::from(header.e_phentsize);
                 if phdr_offset + phdr_size > elf_size {
                     self.destroy_raw(proc, false);
                     return -1;
@@ -1753,15 +1747,15 @@ pub fn init() {
     }
 }
 
-/// 分配一个新的 PID（供 sys_fork 使用）
+/// 分配一个新的 PID（供 `sys_fork` 使用）
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn proc_alloc_pid() -> u32 {
     PROCESS_TABLE.allocate_pid().unwrap_or(0)
 }
 
-/// 克隆父进程的 UserProcess 给子进程（供 sys_fork 使用）
-/// 子进程的 CR3 和内核栈已在 sys_fork 中分配好，此处仅创建 UserProcess 记录
+/// 克隆父进程的 `UserProcess` 给子进程（供 `sys_fork` 使用）
+/// 子进程的 CR3 和内核栈已在 `sys_fork` 中分配好，此处仅创建 `UserProcess` 记录
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
@@ -1804,12 +1798,9 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         USER_PROC_MANAGER
             .processes
             .lock()
-            .insert(child_pid, match NonNull::new(child_up) {
-                Some(nn) => nn,
-                None => {
-                    klog_error!("user_proc_clone: 子进程指针为空");
-                    return -1;
-                }
+            .insert(child_pid, if let Some(nn) = NonNull::new(child_up) { nn } else {
+                klog_error!("user_proc_clone: 子进程指针为空");
+                return -1;
             });
     }
 

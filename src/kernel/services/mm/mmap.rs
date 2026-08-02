@@ -5,13 +5,13 @@
 //!
 //! ## 迁移记录
 //!
-//! 策略代码于 2026-06-17 从 framework::syscall::mmap 迁移至此。
+//! 策略代码于 2026-06-17 从 `framework::syscall::mmap` 迁移至此。
 //! framework 层仅保留 re-export 保持调用方兼容。
 //!
 //! ## 职责
 //!
 //! - mmap/munmap/mprotect 策略逻辑 (参数验证、VMA 创建决策)
-//! - VFS 交互: fd → inode_id 解析 (属于 services 层职责)
+//! - VFS 交互: fd → `inode_id` 解析 (属于 services 层职责)
 //! - 文件映射 Page Cache 引用释放
 
 use crate::kernel::framework::syscall::Errno;
@@ -22,13 +22,13 @@ use crate::kernel::framework::mm::{PageFlags as VmaFlags, PAGE_SIZE};
 // mmap 标志位
 // ============================================================================
 
-/// MAP_SHARED: 写入回写文件
+/// `MAP_SHARED`: 写入回写文件
 pub const MAP_SHARED: i32 = 0x01;
-/// MAP_PRIVATE: 写入触发 COW, 不回写文件
+/// `MAP_PRIVATE`: 写入触发 COW, 不回写文件
 pub const MAP_PRIVATE: i32 = 0x02;
-/// MAP_ANONYMOUS: 匿名映射 (无文件后端)
+/// `MAP_ANONYMOUS`: 匿名映射 (无文件后端)
 pub const MAP_ANONYMOUS: i32 = 0x20;
-/// MAP_FIXED: 强制使用指定地址
+/// `MAP_FIXED`: 强制使用指定地址
 pub const MAP_FIXED: i32 = 0x10;
 
 pub const SYS_MMAP_FLAGS: u64 = 0;
@@ -37,7 +37,7 @@ pub const SYS_MMAP_FLAGS: u64 = 0;
 // VFS 交互 (services 层职责)
 // ============================================================================
 
-/// 从 fd 获取 inode_id
+/// 从 fd 获取 `inode_id`
 ///
 /// 通过进程文件描述符表查找对应的 inode 编号.
 /// 此函数属于 services 层, 因为它涉及 VFS fdtable 查找.
@@ -47,11 +47,10 @@ pub fn fd_to_inode_id(fd: i32) -> u32 {
     }
     crate::kernel::framework::fs::VFS_MANAGER
         .get_fd_info(fd as usize)
-        .map(|(node_id, _, _)| node_id)
-        .unwrap_or(0)
+        .map_or(0, |(node_id, _, _)| node_id)
 }
 
-/// 通过 VFS_MANAGER 把 fd 反查为挂载点索引.
+/// 通过 `VFS_MANAGER` 把 fd 反查为挂载点索引.
 pub fn fd_to_mount_idx(fd: i32) -> Option<usize> {
     if fd < 0 {
         return None;
@@ -64,6 +63,16 @@ pub fn fd_to_mount_idx(fd: i32) -> Option<usize> {
 // ============================================================================
 
 #[inline]
+/// 执行 mmap 系统调用: 创建匿名或文件内存映射.
+///
+/// 根据 flags 区分匿名映射与文件映射, 对齐地址后插入 VMA.
+///
+/// # Errors
+///
+/// 以下情况返回 `Err`:
+/// - `length == 0`、映射同时或都不带 `MAP_SHARED`/`MAP_PRIVATE`、或文件映射 `offset` 未按页对齐 → `EINVAL`
+/// - 文件映射的 `fd` 无效 → `EBADF`
+/// - 地址分配或 VMA 插入失败(内存不足) → `ENOMEM`
 pub fn mmap_syscall(
     mm: &MmStruct,
     addr_hint: u64,
@@ -174,6 +183,13 @@ fn find_or_allocate_addr(mm: &MmStruct, addr_hint: u64, len_aligned: usize) -> R
 // ============================================================================
 
 #[inline]
+/// 执行 munmap 系统调用: 解除指定地址区间的内存映射.
+///
+/// 先释放文件映射区域的 Page Cache 引用, 再从进程地址空间移除对应 VMA.
+///
+/// # Errors
+///
+/// 当 `addr == 0` 或 `length == 0` 时返回 `EINVAL`.
 pub fn munmap_syscall(mm: &MmStruct, addr: u64, length: u64) -> Result<(), Errno> {
     if addr == 0 || length == 0 {
         return Err(Errno::EINVAL);
@@ -216,6 +232,13 @@ fn release_file_pages(mm: &MmStruct, start: usize, end: usize) {
 // ============================================================================
 
 #[inline]
+/// 执行 mprotect 系统调用: 修改指定地址区间的内存保护属性.
+///
+/// 将区间内所有重叠 VMA 的保护标志更新为目标 prot.
+///
+/// # Errors
+///
+/// 当 `addr == 0` 或 `length == 0` 时返回 `EINVAL`.
 pub fn mprotect_syscall(mm: &MmStruct, addr: u64, length: u64, prot: i32) -> Result<(), Errno> {
     if addr == 0 || length == 0 {
         return Err(Errno::EINVAL);

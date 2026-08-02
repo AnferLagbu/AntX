@@ -2,14 +2,14 @@
 use crate::register_tests_inner;
 
 use super::check;
-use crate::kernel::framework::fs::hvfs::arc::*;
-use crate::kernel::framework::fs::hvfs::bp::*;
+use crate::kernel::framework::fs::hvfs::arc::{HvArc, HvArcKey, HvArcBufType};
+use crate::kernel::framework::fs::hvfs::bp::{HvBlockPointer, HvDva, HvCksumType};
 use crate::kernel::framework::fs::hvfs::checksum::HvChecksum;
-use crate::kernel::framework::fs::hvfs::dmu::*;
-use crate::kernel::framework::fs::hvfs::spa::*;
-use crate::kernel::framework::fs::hvfs::txg::*;
-use crate::kernel::framework::fs::hvfs::zap::*;
-use crate::kernel::framework::fs::hvfs::zil::*;
+use crate::kernel::framework::fs::hvfs::dmu::{HvDmuObject, HvObjType};
+use crate::kernel::framework::fs::hvfs::spa::{HvSpaConfig, HvUberblock, HV_SPA_MAGIC};
+use crate::kernel::framework::fs::hvfs::txg::HvTxgGroup;
+use crate::kernel::framework::fs::hvfs::zap::HvZap;
+use crate::kernel::framework::fs::hvfs::zil::{HvZilRecord, HvZil};
 use crate::kernel::framework::tests::{runner, TestResult};
 
 fn test_bp_null() -> TestResult {

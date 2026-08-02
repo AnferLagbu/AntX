@@ -99,13 +99,13 @@ pub fn compute_fingerprint(panic_info: &core::panic::PanicInfo<'_>) -> u64 {
     if let Some(loc) = panic_info.location() {
         hash = hash.wrapping_add(loc.file().as_ptr() as u64);
         hash = hash.wrapping_mul(0x5851F42D4C957F2D);
-        hash = hash.wrapping_add(loc.line() as u64);
+        hash = hash.wrapping_add(u64::from(loc.line()));
     }
 
     if let Some(msg) = panic_info.message().as_str() {
         for byte in msg.bytes() {
             hash = hash.wrapping_mul(0x5851F42D4C957F2D);
-            hash = hash.wrapping_add(byte as u64);
+            hash = hash.wrapping_add(u64::from(byte));
         }
     }
 

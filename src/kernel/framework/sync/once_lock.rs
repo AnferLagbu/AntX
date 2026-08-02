@@ -82,7 +82,7 @@ impl InnerOnce {
                 struct PanicGuard<'a> {
                     state: &'a AtomicU8,
                 }
-                impl<'a> Drop for PanicGuard<'a> {
+                impl Drop for PanicGuard<'_> {
                     fn drop(&mut self) {
                         self.state.store(UNINITIALIZED, Ordering::Release);
                     }
@@ -103,7 +103,7 @@ impl InnerOnce {
                 // 退出循环后状态可能是 DONE (成功) 或 UNINITIALIZED (panic 后重置).
                 // 若为 UNINITIALIZED, 递归调用自身重试一次.
                 if self.state.load(Ordering::Acquire) == UNINITIALIZED {
-                    self.call_once(f)
+                    self.call_once(f);
                 }
             }
             _ => unreachable!("Once: unknown state"),
@@ -159,12 +159,12 @@ impl<T> OnceLock<T> {
     ///
     /// 2026-06-29 修复: 闭包签名改为 `FnOnce(&mut MaybeUninit<T>)`, 强制
     /// 调用方在 `&mut MaybeUninit<T>` 上**就地构造** T, 避免返回值通过
-    /// x86_64 SysV ABI 大对象返回约定 (隐藏指针 + 调用方栈帧分配) 产生的
+    /// `x86_64` `SysV` ABI 大对象返回约定 (隐藏指针 + 调用方栈帧分配) 产生的
     /// **栈溢出**. 之前签名 `FnOnce() -> T` 在 T 较大时 (如
     /// `IdentityTable` ≈ 78 KB) 即使闭包体内只 `unsafe { cell.write(f()) }`,
     /// 编译器仍会为 `f()` 返回值在调用方栈帧 (此处为 64 KB
-    /// KERNEL_STACK_SIZE) 分配 78 KB 槽位, 直接踩栈破坏后续函数 (如
-    /// `pmm_alloc_pages` 的 spin_lock 标志) 导致 QEMU 120s hang.
+    /// `KERNEL_STACK_SIZE`) 分配 78 KB 槽位, 直接踩栈破坏后续函数 (如
+    /// `pmm_alloc_pages` 的 `spin_lock` 标志) 导致 QEMU 120s hang.
     /// 新签名下, `f` 必须显式 `slot.write(value)`, 整个生命周期都在 BSS
     /// `value` cell 上, 零额外栈开销. SAFETY 不变: `call_once` 互斥保证
     /// cell 只被写一次.
@@ -188,6 +188,13 @@ impl<T> OnceLock<T> {
     /// 适用 T 通常较小 (指针/Option/Box), 栈分配可接受. 若 T 较大且需要
     /// 避免栈分配, 改用 `get_or_init(|slot| slot.write(value))` 配合 cell
     /// 已有 UNINIT 状态的预检.
+    ///
+    /// # Errors
+    /// 当值已被初始化时, 返回 `Err(value)`, 将本次传入的 `value` 原样退回给调用方.
+    ///
+    /// # Panics
+    /// 唯一潜在 panic 点是 `slot.take().expect("OnceLock: set slot empty")`;
+    /// 由于 `call_once` 首次执行闭包时 `slot` 必然为 `Some`, 实际不会触发.
     pub fn set(&self, value: T) -> Result<(), T> {
         let mut slot: Option<T> = Some(value);
         self.once.call_once(|| {
@@ -220,6 +227,11 @@ impl<T> OnceLock<T> {
     /// - `UNINITIALIZED` → panic 提示未初始化
     ///
     /// `name` 参数用于 panic 消息标识子系统 (如 "VMM", "PMM").
+    ///
+    /// # Panics
+    /// 当值尚未初始化 (UNINITIALIZED) 时 panic, 提示对应的 `name::init()` 未调用或失败;
+    /// 当初始化正在进行 (`IN_PROGRESS`) 时 panic, 提示初始化过程中发生了重入调用
+    /// (可能是页表损坏、初始化完成前开中断或栈溢出).
     #[inline]
     pub fn get_or_panic(&self, name: &str) -> &T {
         let state = self.once.debug_state();
@@ -241,9 +253,8 @@ impl<T> OnceLock<T> {
             }
             _ => {
                 panic!(
-                    "[{}] accessed before initialization. \
-                     {}::init() was never called or failed.",
-                    name, name
+                    "[{name}] accessed before initialization. \
+                     {name}::init() was never called or failed."
                 );
             }
         }

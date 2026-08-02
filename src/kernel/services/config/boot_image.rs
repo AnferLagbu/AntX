@@ -52,7 +52,7 @@ fn pack_u16(buf: &mut [u8], offset: usize, v: u16) {
     buf[offset + 1] = ((v >> 8) & 0xFF) as u8;
 }
 
-/// 将当前 `ConfigSummary` 编码到全局 boot_image 缓冲区.
+/// 将当前 `ConfigSummary` 编码到全局 `boot_image` 缓冲区.
 ///
 /// **调用语义**: 在 `config::init()` 末尾调用一次, 单线程上下文.
 pub fn encode_boot_image() {
@@ -94,7 +94,7 @@ pub fn encode_boot_image() {
 
     let mut xor = 0u64;
     for i in 0..48 {
-        xor ^= (buf[i] as u64) << ((i & 7) * 8);
+        xor ^= u64::from(buf[i]) << ((i & 7) * 8);
     }
     pack_u64(buf, 48, xor);
 
@@ -103,7 +103,7 @@ pub fn encode_boot_image() {
     }
 }
 
-/// Read a snapshot of the boot_image (供测试/调试).
+/// Read a snapshot of the `boot_image` (供测试/调试).
 pub fn read_boot_image() -> [u8; ENCODED_LEN] {
     *BOOT_IMAGE.lock()
 }

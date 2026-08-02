@@ -99,9 +99,9 @@ pub enum SpecialKey {
     Home,
     /// End 尾行
     End,
-    /// PageUp 上翻页
+    /// `PageUp` 上翻页
     PageUp,
-    /// PageDown 下翻页
+    /// `PageDown` 下翻页
     PageDown,
     /// 上箭头
     ArrowUp,
@@ -398,7 +398,7 @@ fn query_scancode_set(cmd_port: &IoPort, data_port: &IoPort) -> Option<u8> {
 
 /// 切换到指定扫描码集
 ///
-/// 发送 0xF0 + set_number, 等待 ACK.
+/// 发送 0xF0 + `set_number`, 等待 ACK.
 fn switch_scancode_set(cmd_port: &IoPort, data_port: &IoPort, set: u8) -> bool {
     let _ = keyboard_send_data(cmd_port, data_port, KB_CMD_SCANCODE);
     let _ = keyboard_send_data(cmd_port, data_port, set);
@@ -494,10 +494,10 @@ impl Driver for KeyboardDriver {
     }
 
     fn status(&self) -> &'static str {
-        if !self.initialized {
-            "Not initialized"
-        } else {
+        if self.initialized {
             "Ready"
+        } else {
+            "Not initialized"
         }
     }
 }
@@ -508,6 +508,8 @@ impl Driver for KeyboardDriver {
 
 impl KeyboardDriver {
     /// 创建新的键盘驱动实例
+    /// # Panics
+    /// PS/2 数据端口或命令端口初始化失败时 panic。
     pub fn new() -> Self {
         // SAFETY: PS/2 数据端口 (0x60) 和命令端口 (0x64) 是标准硬件端口,
         // 由 PC 枚举确定, 不与其他 IoPort 实例重叠.
@@ -651,6 +653,8 @@ impl KeyboardDriver {
     /// # Returns
     /// * `Ok(usize)` - 实际读取的字符数 (不含换行符)
     /// * `Err(DriverError)` - 错误
+    /// # Errors
+    /// 底层字符读取失败时返回 Err。
     pub fn read_line(&mut self, buffer: &mut [u8], max_len: usize) -> DriverResult<usize> {
         let mut count: usize = 0;
 
@@ -740,7 +744,7 @@ pub extern "C" fn keyboard_init() {
 }
 
 /// 处理键盘中断 (C 兼容接口)
-/// IRQ 上下文使用 try_lock 避免与主代码路径死锁
+/// IRQ 上下文使用 `try_lock` 避免与主代码路径死锁
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_irq_handler() {
@@ -756,7 +760,7 @@ pub extern "C" fn keyboard_irq_handler() {
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_read_char() -> i32 {
     match crate::kernel::framework::chitin::chitin_input_read() {
-        Some(ch) => ch as i32,
+        Some(ch) => i32::from(ch),
         None => -1,
     }
 }
@@ -765,21 +769,17 @@ pub extern "C" fn keyboard_read_char() -> i32 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_has_char() -> i32 {
-    if crate::kernel::framework::chitin::chitin_input_has_data() {
-        1
-    } else {
-        0
-    }
+    i32::from(crate::kernel::framework::chitin::chitin_input_has_data())
 }
 
-/// C 兼容别名: keyboard_has_data (旧C代码/FFI调用的名称)
+/// C 兼容别名: `keyboard_has_data` (旧C代码/FFI调用的名称)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_has_data() -> bool {
     keyboard_has_char() != 0
 }
 
-/// C 兼容别名: keyboard_get_char
+/// C 兼容别名: `keyboard_get_char`
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_get_char() -> i32 {
@@ -916,7 +916,7 @@ extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
     }
 }
 
-/// 临时存放 read_char 返回值的槽位 (原子操作保证线程安全)
+/// 临时存放 `read_char` 返回值的槽位 (原子操作保证线程安全)
 use core::sync::atomic::{AtomicU8, Ordering};
 static KB_READ_SLOT: AtomicU8 = AtomicU8::new(0);
 

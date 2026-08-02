@@ -10,7 +10,7 @@
 //!
 //! ## 设计
 //!
-//! - `RlimitTable`: 17 个资源限制条目 (RLIMIT_CPU..RLIMIT_NLIMITS=16)
+//! - `RlimitTable`: 17 个资源限制条目 (`RLIMIT_CPU..RLIMIT_NLIMITS=16`)
 //! - 每个条目 `{ cur: u64, max: u64 }` (soft/hard limit)
 //! - fork 时继承父进程 rlimit
 //! - `setrlimit`: 只允许降低 cur; 降低 max 需特权 (当前简化为允许 pid=1)
@@ -18,10 +18,10 @@
 //!
 //! ## 默认值
 //!
-//! - 大部分资源默认 RLIM_INFINITY
-//! - RLIMIT_NOFILE 默认 MAX_OPEN_FILES (32)
-//! - RLIMIT_NPROC 默认 MAX_PROCESSES (256)
-//! - RLIMIT_STACK 默认 8MB
+//! - 大部分资源默认 `RLIM_INFINITY`
+//! - `RLIMIT_NOFILE` 默认 `MAX_OPEN_FILES` (32)
+//! - `RLIMIT_NPROC` 默认 `MAX_PROCESSES` (256)
+//! - `RLIMIT_STACK` 默认 8MB
 
 use crate::kernel::framework::config::{MAX_OPEN_FILES, MAX_PROCESSES};
 use crate::kernel::framework::proc::process_get_current_pid;
@@ -50,7 +50,7 @@ pub const RLIMIT_RTPRIO: usize = 14;
 pub const RLIMIT_RTTIME: usize = 15;
 pub const RLIMIT_NLIMITS: usize = 16;
 
-/// POSIX RLIM_INFINITY
+/// POSIX `RLIM_INFINITY`
 pub const RLIM_INFINITY: u64 = u64::MAX;
 
 /// 单个资源限制条目
@@ -117,6 +117,11 @@ impl RlimitTable {
     /// 返回 Ok(()) 或 Err(Errno)
     /// - EPERM: 非特权进程试图提高 hard limit
     /// - EINVAL: cur > max
+    ///
+    /// # Errors
+    ///
+    /// - `resource` 超出范围或 `cur > max` → `EINVAL`
+    /// - 非特权进程试图提高 hard limit → `EPERM`
     pub fn set(&mut self, resource: usize, cur: u64, max: u64, is_privileged: bool) -> Result<(), Errno> {
         if resource >= RLIMIT_NLIMITS {
             return Err(Errno::EINVAL);
@@ -203,7 +208,7 @@ pub fn get_stack_limit() -> u64 {
     let table = &PROCESS_TABLE;
     table.with_process(pid, |proc| {
         let rlimit_table = proc.rlimit_table.lock();
-        rlimit_table.get(RLIMIT_STACK).map(|r| r.cur).unwrap_or(8 * 1024 * 1024)
+        rlimit_table.get(RLIMIT_STACK).map_or(8 * 1024 * 1024, |r| r.cur)
     }).unwrap_or(8 * 1024 * 1024)
 }
 
@@ -213,21 +218,21 @@ pub fn get_nofile_limit() -> u64 {
     let table = &PROCESS_TABLE;
     table.with_process(pid, |proc| {
         let rlimit_table = proc.rlimit_table.lock();
-        rlimit_table.get(RLIMIT_NOFILE).map(|r| r.cur).unwrap_or(MAX_OPEN_FILES as u64)
+        rlimit_table.get(RLIMIT_NOFILE).map_or(MAX_OPEN_FILES as u64, |r| r.cur)
     }).unwrap_or(MAX_OPEN_FILES as u64)
 }
 
-/// 获取当前进程的 RLIMIT_MEMLOCK (字节)
+/// 获取当前进程的 `RLIMIT_MEMLOCK` (字节)
 pub fn get_memlock_limit() -> u64 {
     let pid = process_get_current_pid();
     let table = &PROCESS_TABLE;
     table.with_process(pid, |proc| {
         let rlimit_table = proc.rlimit_table.lock();
-        rlimit_table.get(RLIMIT_MEMLOCK).map(|r| r.cur).unwrap_or(64 * 1024)
+        rlimit_table.get(RLIMIT_MEMLOCK).map_or(64 * 1024, |r| r.cur)
     }).unwrap_or(64 * 1024)
 }
 
-/// 检查 mlock 锁定字节数是否超 RLIMIT_MEMLOCK
+/// 检查 mlock 锁定字节数是否超 `RLIMIT_MEMLOCK`
 ///
 /// 返回 true 表示超额, mlock 应失败.
 pub fn check_memlock_exceeded(current_locked: u64, additional_bytes: u64) -> bool {
@@ -239,6 +244,11 @@ pub fn check_memlock_exceeded(current_locked: u64, additional_bytes: u64) -> boo
 }
 
 /// getrlimit — 获取资源限制 (委托 framework syscall 入口)
+///
+/// # Errors
+///
+/// 当底层 `sys_getrlimit` 返回负值(如资源编号非法或指针无效)时,
+/// 转换为对应的 `Errno`.
 pub fn getrlimit_syscall(resource: i32, rlim_ptr: u64) -> Result<usize, Errno> {
     let ret = crate::kernel::framework::proc::rlimit::sys_getrlimit(resource, rlim_ptr);
     if ret >= 0 {
@@ -249,6 +259,11 @@ pub fn getrlimit_syscall(resource: i32, rlim_ptr: u64) -> Result<usize, Errno> {
 }
 
 /// setrlimit — 设置资源限制 (委托 framework syscall 入口)
+///
+/// # Errors
+///
+/// 当底层 `sys_setrlimit` 返回负值(如权限不足或参数非法)时,
+/// 转换为对应的 `Errno`.
 pub fn setrlimit_syscall(resource: i32, rlim_ptr: u64) -> Result<usize, Errno> {
     let ret = crate::kernel::framework::proc::rlimit::sys_setrlimit(resource, rlim_ptr);
     if ret >= 0 {

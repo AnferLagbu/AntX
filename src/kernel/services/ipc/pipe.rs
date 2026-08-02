@@ -2,9 +2,9 @@
 //! 管道策略 — T6-1 从 framework/ipc/pipe.rs 提取
 //!
 //! 纯策略逻辑: 槽位查找、环形缓冲区读写、fd 管理、读者/写者计数.
-//! 自旋锁操作通过 framework::sync::IrqSpinLock 机制完成.
+//! 自旋锁操作通过 `framework::sync::IrqSpinLock` 机制完成.
 
-use crate::kernel::framework::ipc::types::*;
+use crate::kernel::framework::ipc::types::{IpcNamespace, IPC_MAX_PIPES, IpcId, PIPE_BUFFER_SIZE};
 use crate::kernel::framework::sync::IrqSpinLock;
 
 /// 管道全局自旋锁 (framework 机制, 短临界区)
@@ -35,6 +35,10 @@ pub fn is_pipe_fd(fd: i32) -> bool {
     pipe_find_by_fd_index(ns, fd).is_some()
 }
 
+/// 创建管道, 返回 (读 fd, 写 fd) 对.
+///
+/// # Errors
+/// 当管道表已满、无空闲槽位时返回 `Err(-1)`.
 pub fn pipe_create_safe(
     namespace: &mut IpcNamespace,
     next_id: &mut IpcId,
@@ -73,6 +77,11 @@ pub fn pipe_create_safe(
     Ok((pipe.read_fd, pipe.write_fd))
 }
 
+/// 从管道读取数据到 `buf`.
+///
+/// # Errors
+/// 当 fd 不是管道 fd 时返回 `Err(-1)`; 当 fd 不是读端时返回 `Err(-2)`;
+/// 当读端已空且无写者阻塞等待时返回 `Err(-4)`.
 pub fn pipe_read_safe(
     namespace: &mut IpcNamespace,
     fd: i32,
@@ -122,6 +131,11 @@ pub fn pipe_read_safe(
     Ok(read_count)
 }
 
+/// 将 `buf` 中的数据写入管道.
+///
+/// # Errors
+/// 当 fd 不是管道 fd 时返回 `Err(-1)`; 当 fd 不是写端时返回 `Err(-2)`;
+/// 当没有读者时返回 `Err(-3)`; 当管道缓冲区已满时返回 `Err(-4)`.
 pub fn pipe_write_safe(
     namespace: &mut IpcNamespace,
     fd: i32,
@@ -169,6 +183,10 @@ pub fn pipe_write_safe(
     Ok(written)
 }
 
+/// 关闭管道的一个端点 fd.
+///
+/// # Errors
+/// 当 fd 不是管道 fd 时返回 `Err(-1)`.
 pub fn pipe_close_safe(namespace: &mut IpcNamespace, fd: i32) -> Result<(), i32> {
     let _lock = PIPE_LOCK.lock();
 

@@ -31,7 +31,7 @@ const DELIVERY_SMI: u64 = 0x200;
 const DELIVERY_NMI: u64 = 0x400;
 /// INIT 投递 — 用于处理器初始化序列
 const DELIVERY_INIT: u64 = 0x500;
-/// 8259A 兼容中断 — 遗留 ISA 设备 (ExtINT 需配合 Local APIC LINT0)
+/// 8259A 兼容中断 — 遗留 ISA 设备 (`ExtINT` 需配合 Local APIC LINT0)
 const DELIVERY_EXTINT: u64 = 0x700;
 
 /// 最大 IOAPIC 控制器数量
@@ -58,8 +58,8 @@ static IOAPIC_COUNT: AtomicU32 = AtomicU32::new(0);
 fn ioapic_read_on(base: u64, reg: u32) -> u32 {
     // SAFETY: base 来自 ACPI MADT 枚举的 MMIO 地址, 调用方保证有效
     unsafe {
-        core::ptr::write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
-        core::ptr::read_volatile((base + IOWIN as u64) as *const u32)
+        core::ptr::write_volatile((base + u64::from(IOREGSEL)) as *mut u32, reg);
+        core::ptr::read_volatile((base + u64::from(IOWIN)) as *const u32)
     }
 }
 
@@ -67,8 +67,8 @@ fn ioapic_read_on(base: u64, reg: u32) -> u32 {
 fn ioapic_write_on(base: u64, reg: u32, value: u32) {
     // SAFETY: 同上
     unsafe {
-        core::ptr::write_volatile((base + IOREGSEL as u64) as *mut u32, reg);
-        core::ptr::write_volatile((base + IOWIN as u64) as *mut u32, value);
+        core::ptr::write_volatile((base + u64::from(IOREGSEL)) as *mut u32, reg);
+        core::ptr::write_volatile((base + u64::from(IOWIN)) as *mut u32, value);
     }
 }
 
@@ -80,6 +80,8 @@ fn ioapic_write_on(base: u64, reg: u32, value: u32) {
 ///
 /// 每次从 ACPI MADT 枚举到 IOAPIC 时调用此函数.
 /// 多次调用会依次注册多个控制器.
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn init(base_addr: u64) {
     let base = if base_addr == 0 {
         IOAPIC_BASE_DEFAULT
@@ -94,8 +96,8 @@ pub fn init(base_addr: u64) {
     for irq in 0..24u8 {
         ioapic_write_on(
             base,
-            IOREDTBL_BASE + (irq as u32) * 2,
-            (REDTBL_MASK | DELIVERY_FIXED | (irq as u64 + 32)) as u32,
+            IOREDTBL_BASE + u32::from(irq) * 2,
+            (REDTBL_MASK | DELIVERY_FIXED | (u64::from(irq) + 32)) as u32,
         );
     }
 
@@ -117,7 +119,7 @@ pub fn is_initialized() -> bool {
     IOAPIC_COUNT.load(Ordering::Acquire) > 0
 }
 
-/// 返回所有已注册 IOAPIC 中最大的 max_irq 值
+/// 返回所有已注册 IOAPIC 中最大的 `max_irq` 值
 pub fn get_max_irq() -> u8 {
     let ioapics = IOAPICS.lock();
     ioapics.iter().flatten().map(|s| s.max_irq).max().unwrap_or(0)
@@ -135,31 +137,35 @@ pub fn set_irq_gsi(gsi: u32, vector: u8, apic_id: u8, masked: bool) {
 }
 
 /// 按 IOAPIC 索引 + 本地 IRQ 设置
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn set_irq_on(ioapic_idx: usize, local_irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
     let ioapics = IOAPICS.lock();
     if let Some(ref state) = ioapics[ioapic_idx] {
         if !state.initialized {
             return;
         }
-        let mut entry = vector as u64 | mode | ((apic_id as u64) << 56);
+        let mut entry = u64::from(vector) | mode | (u64::from(apic_id) << 56);
         if masked {
             entry |= REDTBL_MASK;
         }
-        ioapic_write_on(state.base_addr, IOREDTBL_BASE + (local_irq as u32) * 2, entry as u32);
+        ioapic_write_on(state.base_addr, IOREDTBL_BASE + u32::from(local_irq) * 2, entry as u32);
         ioapic_write_on(
             state.base_addr,
-            IOREDTBL_BASE + (local_irq as u32) * 2 + 1,
+            IOREDTBL_BASE + u32::from(local_irq) * 2 + 1,
             (entry >> 32) as u32,
         );
     }
 }
 
 /// 按 GSI 屏蔽 IRQ
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn mask_irq_gsi(gsi: u32) {
     if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
         let ioapics = IOAPICS.lock();
         if let Some(ref state) = ioapics[idx] {
-            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let reg = IOREDTBL_BASE + u32::from(local_irq) * 2;
             let val = ioapic_read_on(state.base_addr, reg);
             ioapic_write_on(state.base_addr, reg, val | REDTBL_MASK as u32);
         }
@@ -167,11 +173,13 @@ pub fn mask_irq_gsi(gsi: u32) {
 }
 
 /// 按 GSI 取消屏蔽 IRQ
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn unmask_irq_gsi(gsi: u32) {
     if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
         let ioapics = IOAPICS.lock();
         if let Some(ref state) = ioapics[idx] {
-            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let reg = IOREDTBL_BASE + u32::from(local_irq) * 2;
             let val = ioapic_read_on(state.base_addr, reg);
             ioapic_write_on(state.base_addr, reg, val & !(REDTBL_MASK as u32));
         }
@@ -179,11 +187,13 @@ pub fn unmask_irq_gsi(gsi: u32) {
 }
 
 /// 按 GSI 设置触发模式 (电平/边沿)
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn set_irq_level_gsi(gsi: u32, level_triggered: bool) {
     if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
         let ioapics = IOAPICS.lock();
         if let Some(ref state) = ioapics[idx] {
-            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let reg = IOREDTBL_BASE + u32::from(local_irq) * 2;
             let val = ioapic_read_on(state.base_addr, reg);
             if level_triggered {
                 ioapic_write_on(state.base_addr, reg, val | REDTBL_LEVEL as u32);
@@ -199,9 +209,9 @@ pub fn route_irq_to_cpu_gsi(gsi: u32, apic_id: u8) {
     if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
         let ioapics = IOAPICS.lock();
         if let Some(ref state) = ioapics[idx] {
-            let reg = IOREDTBL_BASE + (local_irq as u32) * 2;
+            let reg = IOREDTBL_BASE + u32::from(local_irq) * 2;
             let val = ioapic_read_on(state.base_addr, reg);
-            let new_val = (val & !(0xFFu32 << 24)) | ((apic_id as u32 & 0x0F) << 24);
+            let new_val = (val & !(0xFFu32 << 24)) | ((u32::from(apic_id) & 0x0F) << 24);
             ioapic_write_on(state.base_addr, reg, new_val);
         }
     }
@@ -213,34 +223,34 @@ pub fn route_irq_to_cpu_gsi(gsi: u32, apic_id: u8) {
 
 /// 向后兼容: 按 IRQ 设置 (假设单 IOAPIC, GSI = IRQ)
 pub fn set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
-    set_irq_gsi(irq as u32, vector, apic_id, masked);
+    set_irq_gsi(u32::from(irq), vector, apic_id, masked);
 }
 
 /// 向后兼容: 按 IRQ 设置投递模式
 pub fn set_irq_with_mode(irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
-    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(irq as u32) {
+    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(u32::from(irq)) {
         set_irq_on(idx, local_irq, vector, apic_id, masked, mode);
     }
 }
 
 /// 向后兼容: 屏蔽 IRQ
 pub fn mask_irq(irq: u8) {
-    mask_irq_gsi(irq as u32);
+    mask_irq_gsi(u32::from(irq));
 }
 
 /// 向后兼容: 取消屏蔽 IRQ
 pub fn unmask_irq(irq: u8) {
-    unmask_irq_gsi(irq as u32);
+    unmask_irq_gsi(u32::from(irq));
 }
 
 /// 向后兼容: 设置触发模式
 pub fn set_irq_level(irq: u8, level_triggered: bool) {
-    set_irq_level_gsi(irq as u32, level_triggered);
+    set_irq_level_gsi(u32::from(irq), level_triggered);
 }
 
 /// 向后兼容: 路由 IRQ 到 CPU
 pub fn route_irq_to_cpu(irq: u8, apic_id: u8) {
-    route_irq_to_cpu_gsi(irq as u32, apic_id);
+    route_irq_to_cpu_gsi(u32::from(irq), apic_id);
 }
 
 // ============================================================================
@@ -270,7 +280,7 @@ pub fn set_id_on(ioapic_idx: usize, id: u8) {
     let ioapics = IOAPICS.lock();
     if let Some(ref state) = ioapics[ioapic_idx] {
         let val = ioapic_read_on(state.base_addr, IOAPIC_ID);
-        let new_val = (val & !(0x0F << 24)) | ((id as u32 & 0x0F) << 24);
+        let new_val = (val & !(0x0F << 24)) | ((u32::from(id) & 0x0F) << 24);
         ioapic_write_on(state.base_addr, IOAPIC_ID, new_val);
     }
 }
@@ -325,7 +335,7 @@ pub fn delivery_nmi() -> u64 {
 pub fn delivery_init() -> u64 {
     DELIVERY_INIT
 }
-/// 返回 ExtINT 投递模式常量 (8259A 兼容)
+/// 返回 `ExtINT` 投递模式常量 (8259A 兼容)
 pub fn delivery_extint() -> u64 {
     DELIVERY_EXTINT
 }

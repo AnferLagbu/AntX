@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 
-use crate::kernel::framework::fs::*;
+use crate::kernel::framework::fs::VFS_MAX_NAME;
 
 pub(crate) const DIRECT_BLOCKS: usize = 12;
 
@@ -69,6 +69,10 @@ impl RamFsDirEntry {
         self.name[len] = 0;
     }
 
+    /// 从字节切片读取目录项.
+    ///
+    /// # Panics
+    /// 当 `offset..offset+4` 或 `offset+8..offset+8+VFS_MAX_NAME` 超出 `data` 长度时发生越界 panic (内部使用 `expect`).
     pub fn read_at(data: &[u8], offset: usize) -> Self {
         let mut entry = Self::new();
         let node_bytes: [u8; 4] = data[offset..offset + 4]

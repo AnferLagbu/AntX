@@ -1,6 +1,6 @@
 //! 文件锁 (flock + POSIX record locks) — framework re-export 层
 //!
-//! 实现已迁移到 services::fs::flock, 本文件仅 re-export 公共 API,
+//! 实现已迁移到 `services::fs::flock`, 本文件仅 re-export 公共 API,
 //! 保持 framework 内现有调用者路径不变。
 //!
 //! ## 迁移记录

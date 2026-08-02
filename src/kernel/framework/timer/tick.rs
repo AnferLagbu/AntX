@@ -62,6 +62,11 @@ static MS_PER_TICK: AtomicU64 = AtomicU64::new(0);
 /// # Returns
 /// * `Ok(u32)` - 实际配置的频率
 /// * `Err(&str)` - 错误描述
+///
+/// # Errors
+/// 当 `frequency_hz` 为 0 时返回 `Err("Timer frequency must be > 0")`;
+/// 在 `x86_64` 上 PIT 初始化失败时返回 `Err` (错误信息来自 `pit_init`, 如
+/// 频率超限或分频值越界).
 pub fn timer_init(frequency_hz: u32) -> Result<u32, &'static str> {
     if frequency_hz == 0 {
         return Err("Timer frequency must be > 0");
@@ -94,9 +99,9 @@ pub fn timer_init(frequency_hz: u32) -> Result<u32, &'static str> {
     // 3. 更新频率和时间转换常量
     TIMER_FREQ_HZ.store(actual_freq, Ordering::Relaxed);
 
-    let ns_per_tick = 1_000_000_000u64 / actual_freq as u64;
-    let us_per_tick = 1_000_000u64 / actual_freq as u64;
-    let ms_per_tick = 1_000u64 / actual_freq as u64;
+    let ns_per_tick = 1_000_000_000u64 / u64::from(actual_freq);
+    let us_per_tick = 1_000_000u64 / u64::from(actual_freq);
+    let ms_per_tick = 1_000u64 / u64::from(actual_freq);
 
     NS_PER_TICK.store(ns_per_tick, Ordering::Relaxed);
     US_PER_TICK.store(us_per_tick, Ordering::Relaxed);
@@ -220,7 +225,7 @@ pub fn reset_ticks() {
 /// * `u64` - 毫秒数
 #[inline]
 pub fn ticks_to_ms(ticks: u64) -> u64 {
-    let freq = get_frequency() as u64;
+    let freq = u64::from(get_frequency());
     if freq == 0 {
         return 0;
     }
@@ -230,7 +235,7 @@ pub fn ticks_to_ms(ticks: u64) -> u64 {
 /// 将 ticks 转换为微秒
 #[inline]
 pub fn ticks_to_us(ticks: u64) -> u64 {
-    let freq = get_frequency() as u64;
+    let freq = u64::from(get_frequency());
     if freq == 0 {
         return 0;
     }
@@ -240,7 +245,7 @@ pub fn ticks_to_us(ticks: u64) -> u64 {
 /// 将 ticks 转换为纳秒
 #[inline]
 pub fn ticks_to_ns(ticks: u64) -> u64 {
-    let freq = get_frequency() as u64;
+    let freq = u64::from(get_frequency());
     if freq == 0 {
         return 0;
     }
@@ -250,7 +255,7 @@ pub fn ticks_to_ns(ticks: u64) -> u64 {
 /// 将毫秒转换为 ticks (向上取整)
 #[inline]
 pub fn ms_to_ticks(ms: u64) -> u64 {
-    let freq = get_frequency() as u64;
+    let freq = u64::from(get_frequency());
     if freq == 0 {
         return ms;
     }
@@ -260,7 +265,7 @@ pub fn ms_to_ticks(ms: u64) -> u64 {
 /// 将微秒转换为 ticks (向上取整)
 #[inline]
 pub fn us_to_ticks(us: u64) -> u64 {
-    let freq = get_frequency() as u64;
+    let freq = u64::from(get_frequency());
     if freq == 0 {
         return us;
     }

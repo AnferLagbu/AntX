@@ -1,12 +1,12 @@
-//! WASI 进程控制: proc_exit, sched_yield
+//! WASI 进程控制: `proc_exit`, `sched_yield`
 
 use crate::kernel::services::wasm::types::{Value, WasmError};
 use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::{WasiContext, wasi_success};
 
-/// WASI proc_exit: 终止当前 WASM 实例
+/// WASI `proc_exit`: 终止当前 WASM 实例
 ///
-/// 设置 exit_code 并返回 Terminated 错误，由解释器主循环捕获。
+/// 设置 `exit_code` 并返回 Terminated 错误，由解释器主循环捕获。
 pub fn wasi_proc_exit(_ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let code = interp.stack.pop_i32()?;
     interp.exit_code = code;
@@ -15,7 +15,7 @@ pub fn wasi_proc_exit(_ctx: &mut WasiContext, interp: &mut Interpreter) -> Resul
     Err(WasmError::Terminated)
 }
 
-/// WASI sched_yield: 让出 CPU
+/// WASI `sched_yield`: 让出 CPU
 ///
 /// 简化实现: 立即返回成功。在单线程解释器中无需真正让出。
 pub fn wasi_sched_yield(_ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {

@@ -49,8 +49,8 @@ impl SlabPolicy for DefaultSlabPolicy {
 
     /// 计算每个 Slab 可容纳的对象数
     ///
-    /// 公式: (slab_size - header_size - bitmap_bytes) / object_size
-    /// 其中 bitmap_bytes = estimated_objects.div_ceil(8)
+    /// 公式: (`slab_size` - `header_size` - `bitmap_bytes`) / `object_size`
+    /// 其中 `bitmap_bytes` = `estimated_objects.div_ceil(8)`
     fn calculate_objects_per_slab(
         &self,
         slab_size: usize,
@@ -94,6 +94,10 @@ impl SlabPolicy for DefaultSlabPolicy {
 /// 注册默认 Slab 策略到 framework
 ///
 /// 由 `services::mm::init()` 调用. 只能注册一次.
+///
+/// # Errors
+///
+/// 当 Slab 策略已被注册时返回 `Err(())`.
 pub fn register_default_slab_policy() -> Result<(), ()> {
     static POLICY: DefaultSlabPolicy = DefaultSlabPolicy;
     crate::kernel::framework::mm::register_slab_policy(&POLICY).map_err(|_| ())

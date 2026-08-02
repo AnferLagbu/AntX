@@ -5,14 +5,14 @@
 //!
 //! ## 功能特性
 //!
-//! - **实时统计**: AtomicU64 无锁计数，高性能读取
+//! - **实时统计**: `AtomicU64` 无锁计数，高性能读取
 //! - **分类统计**: 按异常类型/IRQ/严重性分组
 //! - **JSON 导出**: 标准格式输出，便于测试框架解析
 //! - **历史记录**: 保留最近 N 次异常的详细信息
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::types::*;
+use super::types::{InterruptFrame, IRQ_BASE};
 use crate::kernel::framework::sync::IrqSpinLock;
 
 
@@ -309,6 +309,8 @@ impl DetailedStatistics {
     }
 
     /// 获取最近 N 条历史记录
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn get_recent_events(&self, count: usize) -> Vec<InterruptEvent> {
         let history = self.history.lock();
         let count_u64 = count as u64;

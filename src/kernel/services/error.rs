@@ -110,20 +110,20 @@ impl core::fmt::Display for KernelError {
             Self::CrossDevice => write!(f, "跨设备链接"),
             Self::NotInitialized => write!(f, "未初始化"),
             Self::Overflow => write!(f, "数值溢出"),
-            Self::Other(code) => write!(f, "错误码 {}", code),
+            Self::Other(code) => write!(f, "错误码 {code}"),
         }
     }
 }
 
 // 向后兼容别名 (fs 层旧变体名 → 统一变体名)
 impl KernelError {
-    /// fs 层旧名: NotFound → FileNotFound
+    /// fs 层旧名: `NotFound` → `FileNotFound`
     pub const fn not_found() -> Self { Self::FileNotFound }
-    /// fs 层旧名: IoError → Io
+    /// fs 层旧名: `IoError` → Io
     pub const fn io_error() -> Self { Self::Io }
-    /// fs 层旧名: OutOfMemory → NoMemory
+    /// fs 层旧名: `OutOfMemory` → `NoMemory`
     pub const fn out_of_memory() -> Self { Self::NoMemory }
-    /// fs 层旧名: ReadOnly → ReadOnlyFilesystem
+    /// fs 层旧名: `ReadOnly` → `ReadOnlyFilesystem`
     pub const fn read_only() -> Self { Self::ReadOnlyFilesystem }
 }
 

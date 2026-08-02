@@ -16,7 +16,7 @@
 
 use crate::kernel::framework::syscall::Errno;
 
-/// 用户空间最大地址 (x86_64: 0x7FFF_FFFF_FFFF)
+/// 用户空间最大地址 (`x86_64`: `0x7FFF_FFFF_FFFF`)
 #[cfg(target_arch = "x86_64")]
 const USER_ADDR_MAX: u64 = 0x7FFF_FFFF_FFFF;
 
@@ -26,6 +26,11 @@ const USER_ADDR_MAX: u64 = 0x0000_FFFF_FFFF_FFFF;
 /// brk 系统调用安全代理
 ///
 /// 验证参数后委托 framework 层执行.
+///
+/// # Errors
+///
+/// - `addr` 超过用户空间最大地址 (`USER_ADDR_MAX`) 时返回 [`Errno::ENOMEM`]
+/// - framework 层 `sys_brk` 返回负值 (堆扩展失败或越界) 时返回 [`Errno::ENOMEM`]
 pub fn brk_syscall(addr: u64) -> Result<usize, Errno> {
     // addr == 0 是合法查询, 直接委托
     if addr == 0 {

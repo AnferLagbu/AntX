@@ -1,11 +1,11 @@
 //! Multiboot2 帧缓冲信息解析
 //!
-//! 解析 Multiboot2 FRAMEBUFFER_INFO tag (type=8)，
+//! 解析 Multiboot2 `FRAMEBUFFER_INFO` tag (type=8)，
 //! 提取物理帧缓冲地址、分辨率、像素格式等信息。
 //!
 //! # Safety
-//! FB_INFO 使用 spin::Once 确保启动早期写入一次，之后只读。
-//! FRAMEBUFFER_TAG_TYPE = 8 对应 Multiboot2 spec 3.6.12。
+//! `FB_INFO` 使用 `spin::Once` 确保启动早期写入一次，之后只读。
+//! `FRAMEBUFFER_TAG_TYPE` = 8 对应 Multiboot2 spec 3.6.12。
 
 use crate::kernel::framework::sync::OnceLock;
 pub const MULTIBOOT2_TAG_FRAMEBUFFER: u32 = 8;
@@ -57,26 +57,26 @@ pub fn get_framebuffer_info() -> Option<&'static FramebufferInfo> {
 
 /// 从 Multiboot2 tag 中解析帧缓冲信息
 ///
-/// tag_data 指向 tag 的 payload 起始位置 (tag 头部的 type/size 之后)
-/// tag_size 是整个 tag 的大小 (包含 type/size 头部)
+/// `tag_data` 指向 tag 的 payload 起始位置 (tag 头部的 type/size 之后)
+/// `tag_size` 是整个 tag 的大小 (包含 type/size 头部)
 ///
 /// tag type=8 的 layout (Multiboot2 spec 3.6.12):
 ///   u32  type = 8
 ///   u32  size
-///   u64  framebuffer_addr
-///   u32  framebuffer_pitch
-///   u32  framebuffer_width
-///   u32  framebuffer_height
-///   u8   framebuffer_bpp
-///   u8   framebuffer_type    (0=索引色, 1=RGB, 2=文本)
+///   u64  `framebuffer_addr`
+///   u32  `framebuffer_pitch`
+///   u32  `framebuffer_width`
+///   u32  `framebuffer_height`
+///   u8   `framebuffer_bpp`
+///   u8   `framebuffer_type`    (0=索引色, 1=RGB, 2=文本)
 ///   u16  reserved
 ///   — 若 type==1 (RGB):
-///   u8   red_field_position
-///   u8   red_mask_size
-///   u8   green_field_position
-///   u8   green_mask_size
-///   u8   blue_field_position
-///   u8   blue_mask_size
+///   u8   `red_field_position`
+///   u8   `red_mask_size`
+///   u8   `green_field_position`
+///   u8   `green_mask_size`
+///   u8   `blue_field_position`
+///   u8   `blue_mask_size`
 pub fn parse_framebuffer_tag(tag_data: *const u8, _tag_size: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {

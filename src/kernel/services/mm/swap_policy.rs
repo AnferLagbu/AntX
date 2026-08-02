@@ -81,6 +81,10 @@ impl SwapPolicy for DefaultSwapPolicy {
 /// 注册默认 Swap 策略到 framework
 ///
 /// 由 `services::mm::init()` 调用. 只能注册一次.
+///
+/// # Errors
+///
+/// 当 Swap 策略已被注册时返回 `Err(())`.
 pub fn register_default_swap_policy() -> Result<(), ()> {
     static POLICY: DefaultSwapPolicy = DefaultSwapPolicy;
     crate::kernel::framework::mm::register_swap_policy(&POLICY).map_err(|_| ())

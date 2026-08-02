@@ -3,11 +3,11 @@
 //! 一致性 DMA 内存管理、ioremap MMIO 映射、流式 DMA、散射聚集列表的统一入口。
 //!
 //! ## 调用方契约
-//! - `driver::storage::nvme` —— NVMe 命令队列的 DMA 缓冲区
+//! - `driver::storage::nvme` —— `NVMe` 命令队列的 DMA 缓冲区
 //! - `driver::storage::ahci` —— AHCI PRDT 表的 DMA 映射
 //! - `driver::net::e1000` —— E1000 收发描述符的 DMA 映射
-//! - `driver::virtio::blk` / `driver::virtio::net` —— VirtIO 队列的 DMA 映射
-//! - `fs::hvfs` —— HvFS 页缓存直接 I/O (通过 DMA 绕过 CPU)
+//! - `driver::virtio::blk` / `driver::virtio::net` —— `VirtIO` 队列的 DMA 映射
+//! - `fs::hvfs` —— `HvFS` 页缓存直接 I/O (通过 DMA 绕过 CPU)
 //!
 //! ## 内部接口
 //! - `mod.rs` —— 公开类型: `DmaMapping`, `DmaTransfer`, `DmaScatterList`
@@ -15,13 +15,13 @@
 //!
 //! ## 安全约束
 //! - DmaTransfer.callback 函数指针在 ISR 上下文调用, 不得持有锁或 sleep
-//! - DmaMapping.cpu_addr 和 dma_addr 必须保持一致 (x86: 自动; aarch64: 需 cache flush)
+//! - `DmaMapping.cpu_addr` 和 `dma_addr` 必须保持一致 (x86: 自动; aarch64: 需 cache flush)
 //! - MMIO 映射虚拟地址范围: [0xFFFF900000000000, ...)
 //!
 //! ## 性能特征
-//! - 映射查找: O(1) 哈希 (MAX_MAPPINGS = 256)
+//! - 映射查找: O(1) 哈希 (`MAX_MAPPINGS` = 256)
 //! - 散射聚集: 最多 64 条目
-//! - 统计: lock-free AtomicU64, ISR 安全
+//! - 统计: lock-free `AtomicU64`, ISR 安全
 
 use crate::kernel::framework::mm::PhysAddr;
 
@@ -71,10 +71,10 @@ pub struct DmaScatterEntry {
 
 /// DMA 引擎抽象。
 ///
-/// QueenX 当前只有一个 DmaEngine 实例, trait 化是为了
+/// `QueenX` 当前只有一个 `DmaEngine` 实例, trait 化是为了
 /// 未来架构差异 (x86 自动一致 vs aarch64 需显式 flush) 的策略注入。
 pub trait DmaEngine: Send + Sync {
-    /// 分配一致性 DMA 缓冲区, 返回 (cpu_vaddr, dma_phys)
+    /// 分配一致性 DMA 缓冲区, 返回 (`cpu_vaddr`, `dma_phys`)
     fn alloc_coherent(&self, size: usize) -> Option<(*mut u8, PhysAddr)>;
 
     /// 释放一致性 DMA 缓冲区

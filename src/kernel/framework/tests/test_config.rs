@@ -46,7 +46,7 @@ fn test_capacity_thread_relationship() -> TestResult {
 fn test_memory_page_size_power_of_two() -> TestResult {
     check!(PAGE_SIZE > 0, "PAGE_SIZE > 0");
     check!(
-        (PAGE_SIZE & (PAGE_SIZE - 1)) == 0,
+        PAGE_SIZE.is_power_of_two(),
         "PAGE_SIZE must be power of 2"
     );
     assert_eq_test!(PAGE_SIZE, 1u64 << PAGE_SHIFT, "PAGE_SIZE == 1<<PAGE_SHIFT");
@@ -225,7 +225,7 @@ fn test_procfs_read_sys_config_zero_size() -> TestResult {
 fn format_error(e: ConfigError) -> alloc::string::String {
     use core::fmt::Write;
     let mut s = alloc::string::String::new();
-    let _ = write!(s, "{}", e);
+    let _ = write!(s, "{e}");
     s
 }
 
@@ -282,7 +282,7 @@ fn test_config_error_display_slab_variants() -> TestResult {
     TestResult::Pass
 }
 
-/// Negative test: 两个 re-export 路径得到的 ConfigError 在 `==` 上必须等价。
+/// Negative test: 两个 re-export 路径得到的 `ConfigError` 在 `==` 上必须等价。
 /// 这保证 `proc/types.rs` 等下游模块如果 `pub use ConfigError`, 值不会失真。
 fn test_config_error_copy_equality_across_reexports() -> TestResult {
     let e1 = ConfigError::DriverConfigInvalid("pci");

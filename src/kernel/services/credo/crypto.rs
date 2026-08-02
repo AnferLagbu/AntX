@@ -227,13 +227,13 @@ pub fn ct_eq_password(a: PasswordHash, b: PasswordHash) -> bool {
 // 持久化错误
 // ============================================================================
 
-/// 持久化错误 — TD-20: 收敛到 KernelError, 3 字段存储特有 + 1 共享包装.
+/// 持久化错误 — TD-20: 收敛到 `KernelError`, 3 字段存储特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `BadMagic`: 数据库格式不匹配 (POSIX ENOEXEC=8, 但语义不通用)
 ///   - `UnsupportedVersion`: 数据库版本不兼容 (POSIX EPROTO=71, 罕见)
 ///   - `ChecksumMismatch`: CRC / 校验和不匹配
-///   - `Kernel(KernelError)`: 共享错误 (PathTooLong→NameTooLong / OpenFailed
+///   - `Kernel(KernelError)`: 共享错误 (PathTooLong→NameTooLong / `OpenFailed`
 ///     / IoFailed→Fault / Truncated / Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageError {
@@ -284,6 +284,10 @@ use crate::kernel::framework::syscall::Errno;
 // ============================================================================
 
 /// 保存数据库到磁盘 (`/pwm.db`)
+///
+/// # Errors
+/// 当底层 `save_database` 返回非零错误码 (如 IO 失败、校验和不匹配) 时,
+/// 返回由该错误码转换得到的 `Err(StorageError)`.
 pub fn save_database() -> StorageResult<()> {
     let rc = credo::storage::save_database();
     if rc == 0 {
@@ -294,6 +298,10 @@ pub fn save_database() -> StorageResult<()> {
 }
 
 /// 从磁盘加载数据库
+///
+/// # Errors
+/// 当底层 `load_database` 返回非零错误码 (如文件不存在、校验和不匹配) 时,
+/// 返回由该错误码转换得到的 `Err(StorageError)`.
 pub fn load_database() -> StorageResult<()> {
     let rc = credo::storage::load_database();
     if rc == 0 {
@@ -304,6 +312,10 @@ pub fn load_database() -> StorageResult<()> {
 }
 
 /// 从磁盘删除数据库
+///
+/// # Errors
+/// 当底层 `remove_database` 返回非零错误码 (如删除失败) 时, 返回由该错误码
+/// 转换得到的 `Err(StorageError)`.
 pub fn remove_database() -> StorageResult<()> {
     let rc = credo::storage::remove_database();
     if rc == 0 {

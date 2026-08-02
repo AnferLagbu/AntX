@@ -1,4 +1,4 @@
-use super::types::*;
+use super::types::{CapDomain, CapBits, PwmError, AuditAction};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub struct FirstToken {
@@ -31,6 +31,9 @@ pub fn generate_first_token() {
     FIRST_TOKEN_CREATED.store(pwm_now(), Ordering::Release);
 }
 
+/// 使用首次令牌 (First Token) 向目标 PWM 授予指定域的全部权限, 仅用于系统初始化。
+/// # Errors
+/// 首次令牌已被使用或目标 PWM 不存在时返回 Err。
 pub fn grant_from_first_token(
     target_pwm: u64,
     domain: CapDomain,
@@ -49,7 +52,7 @@ pub fn grant_from_first_token(
         0,
         AuditAction::FirstTokenGrant,
         target_pwm,
-        domain.as_u16() as u64,
+        u64::from(domain.as_u16()),
         caps.as_u64(),
     );
 

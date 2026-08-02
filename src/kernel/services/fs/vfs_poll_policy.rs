@@ -5,25 +5,25 @@
 //!
 //! ## 框架责任分离
 //!
-//! - **framework/fs/vfs_poll_trait.rs**: VfsPollPolicy trait 接口 + 事件常量
+//! - **`framework/fs/vfs_poll_trait.rs`**: `VfsPollPolicy` trait 接口 + 事件常量
 //!   (机制: trait dispatch + 锁保护)
-//! - **services/fs/vfs_poll_policy.rs** (本模块): StandardVfsPollPolicy
-//!   (策略: 4 种 VfsFileType → epoll 事件位映射)
+//! - **`services/fs/vfs_poll_policy.rs`** (本模块): `StandardVfsPollPolicy`
+//!   (策略: 4 种 `VfsFileType` → epoll 事件位映射)
 //!
 //! ## 策略表
 //!
-//! | file_type | events | 含义 |
+//! | `file_type` | events | 含义 |
 //! |-----------|--------|------|
 //! | File      | EPOLLIN \| EPOLLOUT | 内存常驻, 始终可读写 |
 //! | Dir       | EPOLLIN            | 读目录项, 不可写 |
 //! | Dev       | EPOLLHUP           | 设备节点无可读字节流, 需驱动层注册 |
 //! | Symlink   | EPOLLIN \| EPOLLHUP | 读 link target 后挂断 |
-//! | 无效 fd   | EPOLLERR \| EPOLLHUP | fd_table 越界或 unused |
+//! | 无效 fd   | EPOLLERR \| EPOLLHUP | `fd_table` 越界或 unused |
 //!
 //! ## 关联
 //!
 //! - T5-3 (REVAL-6): epoll 策略迁移 (2026-06-22)
-//! - 互补: LEGACY-4 (BlockDevice trait 化) - 类似的机制/策略分离范式
+//! - 互补: LEGACY-4 (`BlockDevice` trait 化) - 类似的机制/策略分离范式
 
 use crate::kernel::framework::fs::vfs_poll_trait::{
     VfsPollPolicy, EPOLLIN, EPOLLOUT, EPOLLHUP, EPOLLERR,
@@ -34,14 +34,14 @@ use crate::kernel::framework::fs::VfsFileType;
 // StandardVfsPollPolicy — 标准 VFS 轮询策略
 // ============================================================================
 
-/// 标准 VFS 轮询策略 — 与原 framework/syscall/epoll.rs::check_fd_ready 行为一致
+/// 标准 VFS 轮询策略 — 与原 `framework/syscall/epoll.rs::check_fd_ready` 行为一致
 ///
 /// 在 `services::fs::init()` 中通过 `register_vfs_poll_policy()` 注册.
 /// 只能注册一次, 重复注册返回 false.
 pub struct StandardVfsPollPolicy;
 
 impl VfsPollPolicy for StandardVfsPollPolicy {
-    /// 4 种 VfsFileType → epoll 事件位映射
+    /// 4 种 `VfsFileType` → epoll 事件位映射
     ///
     /// 与原 epoll.rs 硬编码 match 完全一致:
     /// - File/Empty → 始终可读写 (内存常驻, ramfs 假设)
@@ -70,6 +70,9 @@ impl VfsPollPolicy for StandardVfsPollPolicy {
 /// 注册标准 VFS 轮询策略到 framework
 ///
 /// 由 `services::fs::init()` 调用. 只能注册一次.
+///
+/// # Errors
+/// 当注册失败 (如策略已被注册) 时返回 `Err(())`.
 pub fn register_default_vfs_poll_policy() -> Result<(), ()> {
     static POLICY: StandardVfsPollPolicy = StandardVfsPollPolicy;
     crate::kernel::framework::fs::vfs_poll_trait::register_vfs_poll_policy(&POLICY)

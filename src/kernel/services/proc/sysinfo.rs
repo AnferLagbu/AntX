@@ -19,7 +19,7 @@ use crate::kernel::framework::syscall::Errno;
 /// getrusage(who, rusage) 策略
 pub fn getrusage_syscall(who: i32, rusage_ptr: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
-    crate::kernel::framework::proc::proc_get_rusage(pid, who, rusage_ptr as *mut u8, 144) as i64
+    i64::from(crate::kernel::framework::proc::proc_get_rusage(pid, who, rusage_ptr as *mut u8, 144))
 }
 
 /// sysinfo(info) 策略
@@ -125,15 +125,11 @@ pub fn sethostname_syscall(name_ptr: u64, len: u64) -> i64 {
     0
 }
 
-/// boot_check(check_type) 策略
+/// `boot_check(check_type)` 策略
 pub fn boot_check_syscall(check_type: i32) -> i64 {
     match check_type {
         0 => {
-            if crate::kernel::framework::credo::pwm_any_identity_exists() {
-                1
-            } else {
-                0
-            }
+            i64::from(crate::kernel::framework::credo::pwm_any_identity_exists())
         }
         _ => -1,
     }

@@ -138,14 +138,20 @@ pub enum RevokeResult {
 
 /// 能力矩阵抽象 (services 调用 framework TCB)
 ///
-/// framework::credo::AtomicMatrix 实现此 trait,
+/// `framework::credo::AtomicMatrix` 实现此 trait,
 /// 通过 lock-free 路径提供能力读写。
 pub trait CapabilityMatrix {
     /// 读取某域的能力位
     fn get(&self, domain: CapDomain) -> Option<CapBits>;
     /// 原子设置某域能力
+    ///
+    /// # Errors
+    /// 当设置失败 (如原子操作冲突) 时返回 `Err(())`.
     fn set(&self, domain: CapDomain, bits: CapBits) -> Result<CapBits, ()>;
     /// 比较并交换 (用于 lock-free grant)
+    ///
+    /// # Errors
+    /// 当比较并交换失败 (当前值已与 `current` 不一致) 时, 返回 `Err(实际当前值)`.
     fn compare_exchange(
         &self,
         domain: CapDomain,
@@ -228,7 +234,7 @@ impl CapabilityMatrix for InMemoryMatrix {
 /// 系统保留的最低能力:
 /// - FS: READ | EXEC
 /// - PROC: 派生 (FORK) | 执行 (EXEC)
-/// - USER_MGMT: LIST
+/// - `USER_MGMT`: LIST
 pub const VIABLE_FLOOR: [u64; CAP_DOMAINS] = {
     let mut f = [0u64; CAP_DOMAINS];
     f[CapDomain::FS.0 as usize] = (1 << 0) | (1 << 2);        // READ | EXEC

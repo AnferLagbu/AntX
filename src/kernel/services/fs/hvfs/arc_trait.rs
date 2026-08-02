@@ -13,14 +13,14 @@
 //!
 //! ## TCB 减负
 //!
-//! 原 HvArc 8 个公共方法 (init/lookup/insert/release/mark_dirty/flush_dirty/...) 直接暴露.
+//! 原 `HvArc` 8 个公共方法 (`init/lookup/insert/release/mark_dirty/flush_dirty`/...) 直接暴露.
 //! 提取 trait 后:
-//! - DMU/SPA 调用方依赖 trait object / 泛型, 不再绑死 HvArc
-//! - 单元测试可注入 MockArc, 验证缓存替换策略 (LRU/LFU/ARC) 行为
+//! - DMU/SPA 调用方依赖 trait object / 泛型, 不再绑死 `HvArc`
+//! - 单元测试可注入 `MockArc`, 验证缓存替换策略 (LRU/LFU/ARC) 行为
 //!
 //! ## 与 LEGACY-5.1-5.5/5.7 范式一致
 //!
-//! 注: HvArcKey 包含 vdev_id/offset/birth_txg, 用于唯一标识缓存条目.
+//! 注: `HvArcKey` 包含 `vdev_id/offset/birth_txg`, 用于唯一标识缓存条目.
 
 use super::arc::{HvArc, HvArcBufType, HvArcKey};
 
@@ -30,15 +30,15 @@ use super::arc::{HvArc, HvArcBufType, HvArcKey};
 
 /// ARC 缓存 trait
 ///
-/// HvArc 的核心方法 (init/lookup/insert/release) 抽象为 trait,
+/// `HvArc` 的核心方法 (init/lookup/insert/release) 抽象为 trait,
 /// 让 DMU/SPA 等调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # Safety
 ///
-/// - `init` 应只调用一次 (初始化 hash_table + max_size)
+/// - `init` 应只调用一次 (初始化 `hash_table` + `max_size`)
 /// - `lookup` 返回 true 表示命中, false 表示未命中
 /// - `insert` 在容量满时会按 ARC 策略淘汰
-/// - `release` 减少 ref_count, 0 时可淘汰
+/// - `release` 减少 `ref_count`, 0 时可淘汰
 pub trait ArcCache: Send + Sync {
     /// 初始化缓存
     fn init(&self, max_size: usize);
@@ -86,10 +86,10 @@ pub trait ArcCache: Send + Sync {
 // StandardArc — 默认 ARC 实现 (HvArc 包装)
 // ============================================================================
 
-/// 标准 ARC 实现 — 包装 HvArc, 委托公共方法
+/// 标准 ARC 实现 — 包装 `HvArc`, 委托公共方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockArc 替代本实现.
+/// 单元测试可注入 `MockArc` 替代本实现.
 pub struct StandardArc(pub HvArc);
 
 impl StandardArc {
@@ -98,7 +98,7 @@ impl StandardArc {
         Self(HvArc::new())
     }
 
-    /// 访问内部 HvArc (向后兼容)
+    /// 访问内部 `HvArc` (向后兼容)
     pub fn inner(&self) -> &HvArc {
         &self.0
     }

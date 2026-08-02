@@ -55,7 +55,7 @@ use crate::kernel::framework::sync::{LockClassId, LockClassDesc, LockKind};
 static PI_MUTEX_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<alloc::vec::Vec<usize>> =
     crate::kernel::framework::sync::IrqSpinLock::new(alloc::vec::Vec::new());
 
-/// 进程退出回调: 遍历所有已注册 PI Mutex, 对持有该 PID 的 mutex 执行 force_unlock
+/// 进程退出回调: 遍历所有已注册 PI Mutex, 对持有该 PID 的 mutex 执行 `force_unlock`
 pub fn pi_mutex_process_exit(pid: u32) {
     PI_MUTEX_REGISTRY.lock().iter().for_each(|&raw_usize| {
         if raw_usize != 0 {
@@ -72,7 +72,7 @@ pub fn pi_mutex_process_exit(pid: u32) {
 // 预留常量, 待 PiMutex 等待队列改为预分配后启用。
 // const 等待队列初始容量: usize = 8;
 
-/// PID 0 = 无效/空闲 (与 Process::None 约定)
+/// PID 0 = 无效/空闲 (与 `Process::None` 约定)
 pub const PID_NONE: u32 = 0;
 
 // ============================================================================
@@ -102,7 +102,7 @@ pub unsafe fn set_donation_callback(cb: DonationCallback) {
 ///
 /// # Safety
 ///
-/// 同 [set_donation_callback]
+/// 同 [`set_donation_callback`]
 pub unsafe fn set_revoke_callback(cb: DonationCallback) {
     NOTIFY_REVOKE.store(cb as *mut (), Ordering::Release);
 }
@@ -141,7 +141,7 @@ fn notify_revoke(pid: u32) {
 struct WaiterEntry {
     /// 等待者 PID
     pid: u32,
-    /// 等待者入队时的 base_priority (用于取消时正确撤销捐赠)
+    /// 等待者入队时的 `base_priority` (用于取消时正确撤销捐赠)
     base_priority: u32,
 }
 
@@ -149,7 +149,7 @@ struct WaiterEntry {
 // PiMutex 内部状态
 // ============================================================================
 
-/// PiMutex 内部状态
+/// `PiMutex` 内部状态
 struct PiMutexInner {
     /// 是否被持有
     locked: AtomicBool,
@@ -157,7 +157,7 @@ struct PiMutexInner {
     holder: AtomicU32,
     /// 等待队列 (FIFO 顺序, 同优先级按 FIFO)
     waiters: IrqSpinLock<VecDeque<WaiterEntry>>,
-    /// 当前有效优先级 (= max(holder_prio, waiters_prio))
+    /// 当前有效优先级 (= `max(holder_prio`, `waiters_prio`))
     effective_priority: AtomicU32,
     /// v2.2: 链式捐赠追踪 (holder→donor→donor...)
     chain: UnsafeCell<[u32; 8]>,
@@ -194,7 +194,7 @@ pub enum PiMutexProtocol {
 /// 优先级继承互斥锁
 pub struct PiMutex<T: ?Sized> {
     inner: PiMutexInner,
-    /// 初始持有者的 base_priority (用于解锁后通知撤销)
+    /// 初始持有者的 `base_priority` (用于解锁后通知撤销)
     holder_base_priority: AtomicU32,
     /// v2.4: 互斥锁协议 (PI 或 PCP)
     protocol: PiMutexProtocol,
@@ -239,7 +239,7 @@ impl<T> PiMutex<T> {
         }
     }
 
-    /// 创建命名 PiMutex (用于调试 + lockdep)
+    /// 创建命名 `PiMutex` (用于调试 + lockdep)
     #[cfg(debug_assertions)]
     pub fn named(name: &'static str, data: T) -> Self {
         let class_id = crate::kernel::framework::sync::register_class(LockClassDesc {
@@ -293,7 +293,7 @@ impl<T: ?Sized> PiMutex<T> {
     ///
     /// # 参数
     /// - `my_pid`: 当前线程 PID
-    /// - `my_base_priority`: 当前线程的 base_priority (而非有效优先级)
+    /// - `my_base_priority`: 当前线程的 `base_priority` (而非有效优先级)
     ///
     /// # 行为
     /// 1. 尝试立即获取
@@ -362,12 +362,12 @@ impl<T: ?Sized> PiMutex<T> {
     /// v2.1: 动态更新等待者优先级 (nice/setpriority 变化时由调用方触发)
     ///
     /// 行为:
-    /// 1. 在 waiters 队列中找到 pid 匹配的条目, 替换 base_priority
-    /// 2. 重算 effective_priority (新 max = max(holder_base, all_waiters_base))
-    /// 3. 与 prev_effective 比较, 按情况触发 notify_donation 或 notify_revoke
+    /// 1. 在 waiters 队列中找到 pid 匹配的条目, 替换 `base_priority`
+    /// 2. 重算 `effective_priority` (新 max = `max(holder_base`, `all_waiters_base`))
+    /// 3. 与 `prev_effective` 比较, 按情况触发 `notify_donation` 或 `notify_revoke`
     ///
     /// # 调用方约束
-    /// - 当且仅当一个进程/线程的 base_priority 发生变化时调用
+    /// - 当且仅当一个进程/线程的 `base_priority` 发生变化时调用
     /// - 若进程不是本 mutex 的等待者, 调用是 no-op (不产生任何通知)
     ///
     /// # 返回
@@ -390,13 +390,13 @@ impl<T: ?Sized> PiMutex<T> {
         changed
     }
 
-    /// v2.1: 私有助手 — 统一重算 effective_priority 并按需触发通知
+    /// v2.1: 私有助手 — 统一重算 `effective_priority` 并按需触发通知
     ///
     /// 算法: `new_effective = max(holder_base_priority, max(waiters.base_priority))`
     ///
     /// 通知策略:
-    /// - prev < new_effective: notify_donation(holder, new_effective) — 提升
-    /// - prev > new_effective: notify_revoke(holder)              — 撤销
+    /// - prev < `new_effective`: `notify_donation(holder`, `new_effective`) — 提升
+    /// - prev > `new_effective`: `notify_revoke(holder)`              — 撤销
     /// - 相等: 不通知
     ///
     /// 调用方: `register_waiter_and_donate`, `update_waiter_priority`,
@@ -454,7 +454,7 @@ impl<T: ?Sized> PiMutex<T> {
         }
     }
 
-    /// 释放锁 (由 PiMutexGuard::drop 自动调用)
+    /// 释放锁 (由 `PiMutexGuard::drop` 自动调用)
     ///
     /// `pub(crate)` 以便 tests 模块直接验证状态机
     /// (测试无需完整 lock 循环, 直接 drop 即可触发)
@@ -474,11 +474,11 @@ impl<T: ?Sized> PiMutex<T> {
 
     /// 强制释放 (跳过 holder 检查, 仅供 tests/调试使用)
     ///
-    /// v2.1 修复: 原 unlock_internal 在 no_std 测试环境中 current_pid() 返回 0,
-    /// 与 try_lock 设置的 holder (如 100) 不等, 提前 return, 导致 unlock 路径
+    /// v2.1 修复: 原 `unlock_internal` 在 `no_std` 测试环境中 `current_pid()` 返回 0,
+    /// 与 `try_lock` 设置的 holder (如 100) 不等, 提前 return, 导致 unlock 路径
     /// 不可测. 该方法跳过 holder 检查, 让测试可以直接驱动 unlock 状态机.
     ///
-    /// 生产代码 (PiMutexGuard::drop) 仍走 unlock_internal, 走 RAII 安全路径.
+    /// 生产代码 (`PiMutexGuard::drop`) 仍走 `unlock_internal`, 走 RAII 安全路径.
     pub(crate) fn force_unlock(&self) {
         // Lockdep: 通知锁释放
         #[cfg(debug_assertions)]
@@ -495,7 +495,7 @@ impl<T: ?Sized> PiMutex<T> {
         let _ = my_pid;
     }
 
-    /// 释放锁的实际逻辑 (从 unlock_internal 提取, 避免重复)
+    /// 释放锁的实际逻辑 (从 `unlock_internal` 提取, 避免重复)
     fn do_unlock(&self) {
         let my_pid = self.inner.holder.load(Ordering::Acquire);
 
@@ -511,20 +511,17 @@ impl<T: ?Sized> PiMutex<T> {
                     best_idx = Some(i);
                 }
             }
-            match best_idx {
-                Some(idx) => {
-                    // SAFETY: best_idx 为 Some 时 waiters[best_idx] 必然存在
-                    let entry = waiters.remove(idx).expect("pi_mutex: waiters 索引无效");
-                    (entry.pid, entry.base_priority)
-                }
-                None => {
-                    // 无等待者, 完全释放
-                    self.inner.locked.store(false, Ordering::Release);
-                    self.inner.holder.store(PID_NONE, Ordering::Release);
-                    self.inner.effective_priority.store(0, Ordering::Release);
-                    self.holder_base_priority.store(0, Ordering::Release);
-                    return;
-                }
+            if let Some(idx) = best_idx {
+                // SAFETY: best_idx 为 Some 时 waiters[best_idx] 必然存在
+                let entry = waiters.remove(idx).expect("pi_mutex: waiters 索引无效");
+                (entry.pid, entry.base_priority)
+            } else {
+                // 无等待者, 完全释放
+                self.inner.locked.store(false, Ordering::Release);
+                self.inner.holder.store(PID_NONE, Ordering::Release);
+                self.inner.effective_priority.store(0, Ordering::Release);
+                self.holder_base_priority.store(0, Ordering::Release);
+                return;
             }
         };
 
@@ -588,7 +585,7 @@ impl<T: ?Sized> PiMutex<T> {
         self.inner.holder.load(Ordering::Acquire)
     }
 
-    /// 查询当前 effective_priority (供调度器钩子使用)
+    /// 查询当前 `effective_priority` (供调度器钩子使用)
     pub fn effective_priority(&self) -> u32 {
         self.inner.effective_priority.load(Ordering::Acquire)
     }
@@ -603,20 +600,20 @@ impl<T: ?Sized> PiMutex<T> {
 // PiMutexGuard
 // ============================================================================
 
-impl<'a, T: ?Sized> Drop for PiMutexGuard<'a, T> {
+impl<T: ?Sized> Drop for PiMutexGuard<'_, T> {
     fn drop(&mut self) {
         self.mutex.unlock_internal();
     }
 }
 
-impl<'a, T: ?Sized> core::ops::Deref for PiMutexGuard<'a, T> {
+impl<T: ?Sized> core::ops::Deref for PiMutexGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
     }
 }
 
-impl<'a, T: ?Sized> core::ops::DerefMut for PiMutexGuard<'a, T> {
+impl<T: ?Sized> core::ops::DerefMut for PiMutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }

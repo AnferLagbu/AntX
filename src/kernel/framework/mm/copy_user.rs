@@ -60,7 +60,7 @@ static EXCEPTION_TABLE_START: ExceptionTableEntry = ExceptionTableEntry {
 };
 
 /// 每 CPU 异常上下文存储
-/// 使用静态数组而非 thread_local!, 以兼容裸机环境
+/// 使用静态数组而非 `thread_local`!, 以兼容裸机环境
 static PER_CPU_EXCEPTION_CTX: [AtomicU64; crate::kernel::framework::config::MAX_CPUS] = 
     [const { AtomicU64::new(0) }; crate::kernel::framework::config::MAX_CPUS];
 
@@ -74,7 +74,7 @@ static PER_CPU_EXCEPTION_OCCURRED: [AtomicBool; crate::kernel::framework::config
 /// 获取当前 CPU ID (带边界校验)
 ///
 /// # Panics
-/// Debug 构建下, 若 cpu_id >= MAX_CPUS, 立即 panic, 以尽早发现配置错误
+/// Debug 构建下, 若 `cpu_id` >= `MAX_CPUS`, 立即 panic, 以尽早发现配置错误
 ///
 /// # Safety
 /// Release 构建下, 使用取模运算防止越界访问,
@@ -86,14 +86,11 @@ fn current_cpu_id() -> usize {
     
     #[cfg(debug_assertions)]
     {
-        if cpu >= max_cpus {
-            // 不可恢复: CPU ID 超过 MAX_CPUS 是配置错误, release 模式下取模降级,
-            // debug 模式下必须停机以暴露问题
-            panic!(
-                "CPU ID {} exceeds MAX_CPUS ({}). Increase MAX_CPUS or reduce CPU count!",
-                cpu, max_cpus
-            );
-        }
+        // 不可恢复: CPU ID 超过 MAX_CPUS 是配置错误, release 模式下取模降级,
+        // debug 模式下必须停机以暴露问题
+        assert!(cpu < max_cpus, 
+                        "CPU ID {cpu} exceeds MAX_CPUS ({max_cpus}). Increase MAX_CPUS or reduce CPU count!"
+                    );
         cpu
     }
     
@@ -125,15 +122,15 @@ pub fn mark_exception_occurred() {
 }
 
 /// 对恢复地址进行编码以便存储
-/// 使用偏移编码: stored_value = recovery_addr + 1
-/// 这保证 0 (NO_EXCEPTION_CTX) 永远不会作为有效地址使用
+/// 使用偏移编码: `stored_value` = `recovery_addr` + 1
+/// 这保证 0 (`NO_EXCEPTION_CTX`) 永远不会作为有效地址使用
 #[inline]
 fn encode_recovery_addr(addr: u64) -> u64 {
     addr.wrapping_add(1)
 }
 
 /// 从存储中解码恢复地址
-/// encode 的逆运算: recovery_addr = stored_value - 1
+/// encode 的逆运算: `recovery_addr` = `stored_value` - 1
 #[inline]
 fn decode_recovery_addr(encoded: u64) -> u64 {
     encoded.wrapping_sub(1)
@@ -197,7 +194,7 @@ pub fn is_user_buf(ptr: u64, len: usize) -> bool {
 ///
 /// # 架构相关
 ///
-/// - **x86_64**: `lea` + 标签获取恢复地址.
+/// - **`x86_64`**: `lea` + 标签获取恢复地址.
 /// - **aarch64**: `adr` (PC 相对寻址, 单条指令) 获取恢复地址.
 ///   避免 `movz`/`movk` 配对, 该配对会触发 LLVM 22 代码生成 bug
 ///   (`invalid fixup for movz/movk`) — 当标签距离 mov 较远时.
@@ -263,9 +260,11 @@ unsafe fn teardown_recovery(old_recovery: Option<u64>) -> bool {
 /// # 架构要求
 ///
 /// 本函数依赖以下架构支持:
-/// - 异常表机制 (见 exception_table_entry)
+/// - 异常表机制 (见 `exception_table_entry`)
 /// - 缺页处理程序检查异常表
 /// - 恢复点机制
+/// # Errors
+/// 用户指针非法、目标缓冲区过小或访问用户内存时发生缺页时返回 Err。
 #[inline(never)]
 pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Result<usize, ()> {
     if len == 0 {
@@ -319,9 +318,11 @@ pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Resul
 /// # 架构要求
 ///
 /// 本函数依赖以下架构支持:
-/// - 异常表机制 (见 exception_table_entry)
+/// - 异常表机制 (见 `exception_table_entry`)
 /// - 缺页处理程序检查异常表
 /// - 恢复点机制
+/// # Errors
+/// 用户指针非法、源缓冲区过小或访问用户内存时发生缺页时返回 Err。
 #[inline(never)]
 pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usize, ()> {
     if len == 0 {
@@ -363,6 +364,8 @@ pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usiz
 ///
 /// - `Ok(string)`: 复制出的字符串 (不含 NUL 终止符)
 /// - `Err(())`: 指针非法、未以 NUL 结尾或过长
+/// # Errors
+/// 指针非法、超过最大长度或字符串非 UTF-8 时返回 Err。
 #[inline(never)]
 pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::string::String, ()> {
     if !is_user_ptr(user_str) {
@@ -403,6 +406,8 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
 ///
 /// - `Ok(cleared_len)`: 已清零的字节数
 /// - `Err(())`: 用户指针非法
+/// # Errors
+/// 用户指针非法或访问用户内存时发生缺页时返回 Err。
 #[inline(never)]
 pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
     if len == 0 {
@@ -438,7 +443,9 @@ pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
 /// # 返回
 ///
 /// - `Ok(len)`: 字符串长度 (不含 NUL 终止符)
-/// - `Err(())`: 指针非法或在 max_len 内未找到 NUL 终止符
+/// - `Err(())`: 指针非法或在 `max_len` 内未找到 NUL 终止符
+/// # Errors
+/// 指针非法或在最大长度内未找到 NUL 终止符时返回 Err。
 #[inline(never)]
 pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
     if !is_user_ptr(user_str) {

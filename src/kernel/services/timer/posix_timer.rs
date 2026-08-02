@@ -55,7 +55,7 @@ use crate::kernel::framework::syscall::posix_timer as syscall_ptimer;
 // 系统调用安全包装
 // ============================================================================
 
-/// timer_settime — 启动 / 调整 / 停止定时器
+/// `timer_settime` — 启动 / 调整 / 停止定时器
 ///
 /// `new_value` 为 None 时按 disarm 处理。`old_value` 为 None 时不读取旧值。
 ///
@@ -74,24 +74,24 @@ pub fn timer_settime(
     syscall_ptimer::sys_timer_settime(timer_id as u64, flags as u64, new_value_ptr, old_value_ptr)
 }
 
-/// timer_gettime — 查询定时器剩余时间和间隔
+/// `timer_gettime` — 查询定时器剩余时间和间隔
 ///
 /// `curr_value_ptr` 必须指向 32 字节有效的 itimerspec 缓冲。
 pub fn timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
     syscall_ptimer::sys_timer_gettime(timer_id as u64, curr_value_ptr)
 }
 
-/// timer_delete — 释放定时器
+/// `timer_delete` — 释放定时器
 pub fn timer_delete(timer_id: i32) -> i64 {
     syscall_ptimer::sys_timer_delete(timer_id as u64)
 }
 
-/// timer_getoverrun — 返回上次 read 之后补打的次数
+/// `timer_getoverrun` — 返回上次 read 之后补打的次数
 pub fn timer_getoverrun(timer_id: i32) -> i64 {
     syscall_ptimer::sys_timer_getoverrun(timer_id as u64)
 }
 
-/// clock_getres — 时钟分辨率
+/// `clock_getres` — 时钟分辨率
 ///
 /// `res_ptr` 可为 0 (仅做时钟存在性检查)。
 pub fn clock_getres(clockid: i32, res_ptr: u64) -> i64 {

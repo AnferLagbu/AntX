@@ -35,7 +35,7 @@ impl PmmPolicy for DefaultPmmPolicy {
     /// Buddy 阶数选择: 向上取整到 2^n
     ///
     /// 阶数 = ceil(log2(count)) = floor(log2(count-1)) + 1
-    /// 受 max_order 约束 (当前为 9, 即 2MB).
+    /// 受 `max_order` 约束 (当前为 9, 即 2MB).
     fn count_to_order(&self, count: usize, max_order: u8) -> u8 {
         if count <= 1 {
             return 0;
@@ -50,7 +50,7 @@ impl PmmPolicy for DefaultPmmPolicy {
 
     /// 碎片化评估: 综合空闲比例和分配失败率
     ///
-    /// 评分公式: (1 - free_ratio) × 0.7 + fail_ratio × 0.3
+    /// 评分公式: (1 - `free_ratio`) × 0.7 + `fail_ratio` × 0.3
     /// - 空闲比例低 → 高碎片化 (权重 0.7)
     /// - 分配失败率高 → 高碎片化 (权重 0.3)
     fn fragmentation_score(&self, ctx: PmmPolicyContext) -> f64 {
@@ -87,6 +87,10 @@ impl PmmPolicy for DefaultPmmPolicy {
 /// 注册默认 PMM 策略到 framework
 ///
 /// 由 `services::mm::init()` 调用. 只能注册一次.
+///
+/// # Errors
+///
+/// 当 PMM 策略已被注册时返回 `Err(())`.
 pub fn register_default_pmm_policy() -> Result<(), ()> {
     static POLICY: DefaultPmmPolicy = DefaultPmmPolicy;
     crate::kernel::framework::mm::register_pmm_policy(&POLICY).map_err(|_| ())

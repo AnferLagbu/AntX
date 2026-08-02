@@ -45,7 +45,7 @@ impl<const CAP: usize> RingBuffer<{ CAP }> {
     /// 若 CAP 不是 2 的幂则在 debug 构建中 panic, release 中依赖掩码
     /// 计算的正确性。
     const fn _assert_power_of_two() {
-        assert!(CAP > 0 && (CAP & (CAP - 1)) == 0, "CAP must be power of 2");
+        assert!(CAP > 0 && CAP.is_power_of_two(), "CAP must be power of 2");
     }
 
     pub const fn new() -> Self {
@@ -79,7 +79,7 @@ impl<const CAP: usize> RingBuffer<{ CAP }> {
 
     /// 推入一段字节, 容量不足时覆盖最旧数据
     ///
-    /// 返回实际写入的字节数 (永远 == data.len())。
+    /// 返回实际写入的字节数 (永远 == `data.len()`)。
     pub fn push(&self, src: &[u8]) -> usize {
         let len = src.len();
         if len == 0 {
@@ -109,7 +109,7 @@ impl<const CAP: usize> RingBuffer<{ CAP }> {
         len
     }
 
-    /// 把 src 写入到以 abs_off 起始的环形位置
+    /// 把 src 写入到以 `abs_off` 起始的环形位置
     fn write_into(&self, src: &[u8], abs_off: usize) {
         let cap_mask = CAP - 1;
         let start = abs_off & cap_mask;
@@ -153,7 +153,7 @@ impl<const CAP: usize> RingBuffer<{ CAP }> {
         n
     }
 
-    /// 把 [abs_off, abs_off+n) 读到 dst
+    /// 把 [`abs_off`, `abs_off+n`) 读到 dst
     fn read_into(&self, dst: &mut [u8], abs_off: usize, n: usize) {
         let cap_mask = CAP - 1;
         let start = abs_off & cap_mask;

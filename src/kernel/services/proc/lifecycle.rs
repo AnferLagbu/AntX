@@ -11,9 +11,9 @@
 //! - 通过 framework::proc 公开 API 访问
 //! - 无 unsafe, 无裸指针
 
-/// fork() 策略
+/// `fork()` 策略
 pub fn fork_syscall() -> i64 {
-    crate::kernel::framework::proc::sys_fork() as i64
+    i64::from(crate::kernel::framework::proc::sys_fork())
 }
 
 /// exit(status) 策略
@@ -22,7 +22,7 @@ pub fn exit_syscall(status: i32) -> i64 {
     0
 }
 
-/// sched_yield() 策略
+/// `sched_yield()` 策略
 pub fn sched_yield_syscall() -> i64 {
     crate::kernel::framework::proc::scheduler_yield();
     0

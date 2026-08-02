@@ -27,7 +27,7 @@ pub struct Ext2Inode {
 }
 
 impl Ext2Inode {
-    /// 文件类型 (从 i_mode 提取)
+    /// 文件类型 (从 `i_mode` 提取)
     pub fn file_type(&self) -> u8 {
         match self.i_mode & 0xF000 {
             0x8000 => 0, // 普通文件

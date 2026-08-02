@@ -84,7 +84,7 @@ impl IrqDecision for FallbackIrqDecision {
         if ctx.pending_mask == 0 {
             0
         } else {
-            1u64 << (63 - ctx.pending_mask.leading_zeros())
+            1u64 << ctx.pending_mask.ilog2()
         }
     }
 
@@ -100,9 +100,11 @@ static FALLBACK_DECISION: FallbackIrqDecision = FallbackIrqDecision;
 static IRQ_DECISION: crate::kernel::framework::sync::OnceLock<&'static dyn IrqDecision> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 注册中断处理决策策略 (由 services::driver::init 调用)
+/// 注册中断处理决策策略 (由 `services::driver::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+/// # Errors
+/// 策略已被注册过时返回 Err。
 pub fn register_irq_decision(policy: &'static dyn IrqDecision) -> Result<(), &'static dyn IrqDecision> {
     match IRQ_DECISION.set(policy) {
         Ok(()) => Ok(()),

@@ -13,16 +13,16 @@
 //!
 //! ## TCB 减负
 //!
-//! 原 HvZap 9 个方法 (insert/lookup/remove/...) 直接暴露.
+//! 原 `HvZap` 9 个方法 (insert/lookup/remove/...) 直接暴露.
 //! 提取 trait 后:
-//! - 调用方依赖 trait object / 泛型, 不再绑死 HvZap
-//! - 单元测试可注入 MockZap, 验证 SPA/DMU 逻辑 (触发 zil/snapshot 脱离 vdev)
+//! - 调用方依赖 trait object / 泛型, 不再绑死 `HvZap`
+//! - 单元测试可注入 `MockZap`, 验证 SPA/DMU 逻辑 (触发 zil/snapshot 脱离 vdev)
 //!
 //! ## 与 REVAL-6.1 范式一致
 //!
 //! - 0 unsafe (策略层)
 //! - trait dispatch (无 thunk)
-//! - 编译期类型安全 (实现方必须 impl ZapStore)
+//! - 编译期类型安全 (实现方必须 impl `ZapStore`)
 
 use alloc::vec::Vec;
 use super::zap::{HvZap, HvZapType};
@@ -33,7 +33,7 @@ use super::zap::{HvZap, HvZapType};
 
 /// ZAP 键值存储 trait
 ///
-/// HvZap 的方法 (insert/lookup/remove/...) 抽象为 trait, 让 SPA/DMU 等
+/// `HvZap` 的方法 (insert/lookup/remove/...) 抽象为 trait, 让 SPA/DMU 等
 /// 调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # 实现示例
@@ -90,10 +90,10 @@ pub trait ZapStore: Send + Sync {
 // StandardZap — 默认 ZAP 实现 (HvZap 包装)
 // ============================================================================
 
-/// 标准 ZAP 实现 — 包装 HvZap, 委托所有方法
+/// 标准 ZAP 实现 — 包装 `HvZap`, 委托所有方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockZap 替代本实现.
+/// 单元测试可注入 `MockZap` 替代本实现.
 pub struct StandardZap(pub HvZap);
 
 impl StandardZap {

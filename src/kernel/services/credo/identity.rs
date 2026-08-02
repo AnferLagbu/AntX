@@ -13,7 +13,7 @@
 //! ## 迁移方法
 //!
 //! 内部把 `&[u8]` 切片转 `*const u8` (C 风格), 调用 `kernel::credo::api::pwm_*` 函数;
-//! services 层 0 unsafe — 所有 `unsafe { ... }` 在 framework 层 PwmEntry 内部.
+//! services 层 0 unsafe — 所有 `unsafe { ... }` 在 framework 层 `PwmEntry` 内部.
 //!
 //! 评估日期: 2026-06-04
 
@@ -30,24 +30,24 @@ pub use credo::types::PwmId;
 /// PWM 表项 (从内核透传, 引用类型)
 pub use credo::types::PwmEntry;
 
-/// 能力域 (从 services::credo::policy 复用)
+/// 能力域 (从 `services::credo::policy` 复用)
 pub use super::policy::CapDomain;
 
-/// 能力位 (从 services::credo::policy 复用)
+/// 能力位 (从 `services::credo::policy` 复用)
 pub use super::policy::CapBits;
 
 // ============================================================================
 // 错误类型
 // ============================================================================
 
-/// PWM 操作错误 — TD-20: 收敛到 KernelError, 3 字段 PWM 特有 + 1 共享包装.
+/// PWM 操作错误 — TD-20: 收敛到 `KernelError`, 3 字段 PWM 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `TableFull`: PWM 表已满 (POSIX EAGAIN, 但语义特化)
 ///   - `InvalidPassword`: 密码错误 (POSIX EACCES, 但语义特化)
 ///   - `WeakPassword`: 密码过短 / 不合法
-///   - `Kernel(KernelError)`: 共享错误 (NotFound / AlreadyExists /
-///     PermissionDenied / Other) 全部走单一来源
+///   - `Kernel(KernelError)`: 共享错误 (`NotFound` / `AlreadyExists` /
+///     `PermissionDenied` / Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PwmError {
     /// 表已满
@@ -102,6 +102,10 @@ pub fn init() {
 }
 
 /// 尝试从磁盘恢复 (cold boot)
+///
+/// # Errors
+/// 当底层 `pwm_try_load` 返回非零错误码 (如磁盘无有效数据库、校验失败) 时,
+/// 返回由该错误码转换得到的 `Err(PwmError)`.
 pub fn try_load() -> PwmResult<()> {
     let rc = credo::api::pwm_try_load();
     if rc == 0 {
@@ -121,6 +125,10 @@ pub fn any_identity_exists() -> bool {
 // ============================================================================
 
 /// 创世 (第一次身份创建, 工厂: 第一个管理员)
+///
+/// # Errors
+/// 当 `password` 为空时返回 `Err(PwmError::WeakPassword)`;
+/// 当底层 `pwm_try_genesis` 返回非正数错误码时, 返回由该错误码转换得到的 `Err(PwmError)`.
 pub fn try_genesis(password: &[u8]) -> PwmResult<PwmId> {
     if password.is_empty() {
         return Err(PwmError::WeakPassword);
@@ -134,6 +142,11 @@ pub fn try_genesis(password: &[u8]) -> PwmResult<PwmId> {
 }
 
 /// 创世 + 创建 root 身份
+///
+/// # Errors
+/// 当 `password` 为空时返回 `Err(PwmError::WeakPassword)`;
+/// 当底层 `pwm_create_first_identity` 返回非正数错误码时, 返回由该错误码
+/// 转换得到的 `Err(PwmError)`.
 pub fn create_first_identity(password: &[u8]) -> PwmResult<PwmId> {
     if password.is_empty() {
         return Err(PwmError::WeakPassword);
@@ -147,6 +160,11 @@ pub fn create_first_identity(password: &[u8]) -> PwmResult<PwmId> {
 }
 
 /// 创建新身份 (需要 creator 拥有对应权限)
+///
+/// # Errors
+/// 当 `password` 为空时返回 `Err(PwmError::WeakPassword)`;
+/// 当底层 `pwm_create` 返回非正数错误码 (如无权限、身份数上限) 时, 返回
+/// 由该错误码转换得到的 `Err(PwmError)`.
 pub fn create(password: &[u8], note: &[u8], creator: PwmId) -> PwmResult<PwmId> {
     if password.is_empty() {
         return Err(PwmError::WeakPassword);
@@ -160,6 +178,10 @@ pub fn create(password: &[u8], note: &[u8], creator: PwmId) -> PwmResult<PwmId> 
 }
 
 /// 删除身份
+///
+/// # Errors
+/// 当底层 `pwm_delete` 返回非零错误码 (如身份不存在、权限不足) 时, 返回
+/// 由该错误码转换得到的 `Err(PwmError)`.
 pub fn delete(pwm: PwmId) -> PwmResult<()> {
     let rc = credo::api::pwm_delete(pwm.0);
     if rc == 0 {
@@ -170,6 +192,10 @@ pub fn delete(pwm: PwmId) -> PwmResult<()> {
 }
 
 /// 禁用身份 (保留条目但拒绝登录)
+///
+/// # Errors
+/// 当底层 `pwm_disable` 返回非零错误码 (如身份不存在) 时, 返回由该错误码
+/// 转换得到的 `Err(PwmError)`.
 pub fn disable(pwm: PwmId) -> PwmResult<()> {
     let rc = credo::api::pwm_disable(pwm.0);
     if rc == 0 {
@@ -180,6 +206,10 @@ pub fn disable(pwm: PwmId) -> PwmResult<()> {
 }
 
 /// 启用身份
+///
+/// # Errors
+/// 当底层 `pwm_enable` 返回非零错误码 (如身份不存在) 时, 返回由该错误码
+/// 转换得到的 `Err(PwmError)`.
 pub fn enable(pwm: PwmId) -> PwmResult<()> {
     let rc = credo::api::pwm_enable(pwm.0);
     if rc == 0 {
@@ -202,6 +232,11 @@ pub fn verify_password(pwm: PwmId, password: &[u8]) -> bool {
 }
 
 /// 改密
+///
+/// # Errors
+/// 当 `old` 或 `new` 为空时返回 `Err(PwmError::WeakPassword)`;
+/// 当底层 `pwm_change_password` 返回非零错误码 (如旧密码错误、身份不存在) 时,
+/// 返回由该错误码转换得到的 `Err(PwmError)`.
 pub fn change_password(pwm: PwmId, old: &[u8], new: &[u8]) -> PwmResult<()> {
     if old.is_empty() || new.is_empty() {
         return Err(PwmError::WeakPassword);
@@ -234,12 +269,12 @@ pub fn find(pwm: PwmId) -> Option<&'static PwmEntry> {
 
 /// 检查 PWM 是否有指定能力
 pub fn has_capability(pwm: PwmId, domain: CapDomain, required: CapBits) -> bool {
-    credo::api::pwm_has_capability(pwm.0, domain.0 as u16, required.0)
+    credo::api::pwm_has_capability(pwm.0, u16::from(domain.0), required.0)
 }
 
 /// 获取指定域的能力位
 pub fn get_capability_raw(pwm: PwmId, domain: CapDomain) -> u64 {
-    credo::api::pwm_get_capability_raw(pwm.0, domain.0 as u16)
+    credo::api::pwm_get_capability_raw(pwm.0, u16::from(domain.0))
 }
 
 /// 获取 FS 域能力位
@@ -262,8 +297,12 @@ pub fn get_creator(pwm: PwmId) -> PwmId {
 // ============================================================================
 
 /// 委托能力
+///
+/// # Errors
+/// 当底层 `pwm_grant` 返回非零错误码 (如权限不足、能力域无效) 时, 返回
+/// 由该错误码转换得到的 `Err(PwmError)`.
 pub fn grant(grantor: PwmId, grantee: PwmId, domain: CapDomain, caps: u64) -> PwmResult<()> {
-    let rc = credo::api::pwm_grant(grantor.0, grantee.0, domain.0 as u16, caps);
+    let rc = credo::api::pwm_grant(grantor.0, grantee.0, u16::from(domain.0), caps);
     if rc == 0 {
         Ok(())
     } else {
@@ -272,8 +311,12 @@ pub fn grant(grantor: PwmId, grantee: PwmId, domain: CapDomain, caps: u64) -> Pw
 }
 
 /// 撤销能力
+///
+/// # Errors
+/// 当底层 `pwm_revoke` 返回非零错误码 (如权限不足、能力域无效) 时, 返回
+/// 由该错误码转换得到的 `Err(PwmError)`.
 pub fn revoke(revoker: PwmId, target: PwmId, domain: CapDomain, caps: u64) -> PwmResult<()> {
-    let rc = credo::api::pwm_revoke(revoker.0, target.0, domain.0 as u16, caps);
+    let rc = credo::api::pwm_revoke(revoker.0, target.0, u16::from(domain.0), caps);
     if rc == 0 {
         Ok(())
     } else {
@@ -287,6 +330,10 @@ pub fn check_privilege(operator: PwmId, target: PwmId) -> bool {
 }
 
 /// 转移创建者
+///
+/// # Errors
+/// 当底层 `pwm_transfer_creator` 返回非零错误码 (如权限不足、身份不存在) 时,
+/// 返回由该错误码转换得到的 `Err(PwmError)`.
 pub fn transfer_creator(current: PwmId, target: PwmId, new_creator: PwmId) -> PwmResult<()> {
     let rc = credo::api::pwm_transfer_creator(current.0, target.0, new_creator.0);
     if rc == 0 {
@@ -373,6 +420,10 @@ pub fn try_setuid(target_uid: u32) -> bool {
 // ===========================================================================
 
 /// 清除锁定
+///
+/// # Errors
+/// 当底层 `pwm_clear_lockout` 返回非零错误码 (如身份不存在) 时, 返回由该错误码
+/// 转换得到的 `Err(PwmError)`.
 pub fn clear_lockout(pwm: PwmId) -> PwmResult<()> {
     let rc = credo::api::pwm_clear_lockout(pwm.0);
     if rc == 0 {
@@ -384,10 +435,14 @@ pub fn clear_lockout(pwm: PwmId) -> PwmResult<()> {
 
 /// 记录审计日志
 pub fn audit(pwm: PwmId, action: u32, target: u64, details: u64) {
-    credo::api::pwm_audit_log(pwm.0, action, target, details)
+    credo::api::pwm_audit_log(pwm.0, action, target, details);
 }
 
 /// 持久化到磁盘
+///
+/// # Errors
+/// 当底层 `pwm_save_to_disk` 返回非零错误码 (如 IO 失败) 时, 返回由该错误码
+/// 转换得到的 `Err(PwmError)`.
 pub fn save_to_disk() -> PwmResult<()> {
     let rc = credo::api::pwm_save_to_disk();
     if rc == 0 {
@@ -398,6 +453,10 @@ pub fn save_to_disk() -> PwmResult<()> {
 }
 
 /// 从磁盘加载
+///
+/// # Errors
+/// 当底层 `pwm_load_from_disk` 返回非零错误码 (如文件不存在、校验失败) 时,
+/// 返回由该错误码转换得到的 `Err(PwmError)`.
 pub fn load_from_disk() -> PwmResult<()> {
     let rc = credo::api::pwm_load_from_disk();
     if rc == 0 {

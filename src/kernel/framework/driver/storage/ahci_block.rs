@@ -1,18 +1,18 @@
-//! AHCI 磁盘的 BlockDevice 适配器
+//! AHCI 磁盘的 `BlockDevice` 适配器
 //!
-//! 将 AHCI/SATA 端口封装为标准的 BlockDevice trait 实现，
-//! 使 HvFS 等多磁盘文件系统可以通过统一接口访问 AHCI 磁盘。
+//! 将 AHCI/SATA 端口封装为标准的 `BlockDevice` trait 实现，
+//! 使 `HvFS` 等多磁盘文件系统可以通过统一接口访问 AHCI 磁盘。
 
 use crate::kernel::framework::driver::BlockDevice;
 
 use super::AHCI_CONTROLLERS;
 
-/// AHCI 端口的 BlockDevice 适配器。
+/// AHCI 端口的 `BlockDevice` 适配器。
 ///
-/// 不直接持有端口引用，而是通过 (controller_index, port_index) 在
-/// 全局 AHCI_CONTROLLERS 中查找对应的端口。
+/// 不直接持有端口引用，而是通过 (`controller_index`, `port_index`) 在
+/// 全局 `AHCI_CONTROLLERS` 中查找对应的端口。
 pub struct AhciBlockDevice {
-    /// AHCI 控制器在 AHCI_CONTROLLERS 中的索引
+    /// AHCI 控制器在 `AHCI_CONTROLLERS` 中的索引
     controller_index: usize,
     /// 端口在控制器 ports 数组中的索引
     port_index: usize,
@@ -21,7 +21,7 @@ pub struct AhciBlockDevice {
 }
 
 impl AhciBlockDevice {
-    /// 为指定的 AHCI 端口创建 BlockDevice 适配器。
+    /// 为指定的 AHCI 端口创建 `BlockDevice` 适配器。
     ///
     /// 返回 None 如果指定的端口上没有磁盘。
     pub fn new(controller_index: usize, port_index: usize) -> Option<Self> {

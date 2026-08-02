@@ -60,7 +60,7 @@ impl WasiContext {
     }
 }
 
-/// WASI 函数签名: (WasiContext, Interpreter) -> Result
+/// WASI 函数签名: (`WasiContext`, Interpreter) -> Result
 pub type WasiFunc = fn(&mut WasiContext, &mut Interpreter) -> Result<(), WasmError>;
 
 /// WASI 函数注册表: name → 函数指针

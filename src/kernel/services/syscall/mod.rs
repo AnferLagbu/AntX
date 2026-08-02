@@ -140,7 +140,7 @@ pub type SyscallResult<T> = Result<T, Errno>;
 // 通用 Errno 转换
 // ============================================================================
 
-/// `Errno` 扩展: 提供 `try_from_i32` 反向查询 (Errno 没有 std::convert::From)
+/// `Errno` 扩展: 提供 `try_from_i32` 反向查询 (Errno 没有 `std::convert::From`)
 impl Errno {
     /// 从 i32 错误码构造 `Errno` (POSIX 反向: 整数值 = errno 编号)
     pub fn try_from_i32(code: i32) -> Option<Self> {
@@ -187,6 +187,10 @@ pub fn errno_from_i64(rc: i64) -> Option<Errno> {
 }
 
 /// `i64` 返回码 → `SyscallResult<u64>` (POSIX 约定)
+///
+/// # Errors
+///
+/// 当返回码为负值时返回对应的 `Errno`; 无法识别的 errno 回退为 `EINVAL`.
 pub fn parse_return(rc: i64) -> SyscallResult<u64> {
     if rc < 0 {
         Err(Errno::try_from_i32(-rc as i32).unwrap_or(Errno::EINVAL))
@@ -237,6 +241,10 @@ pub fn dispatch(num: SyscallNumber, args: SyscallArgs) -> i64 {
 }
 
 /// 通过 `UserContext` 分发并解析为 `SyscallResult<u64>`
+///
+/// # Errors
+///
+/// 当底层分发返回负值(即 syscall 失败)时返回对应的 `Errno`.
 pub fn dispatch_from_ctx_typed(ctx: &UserContext) -> SyscallResult<u64> {
     parse_return(dispatch_from_ctx(ctx))
 }

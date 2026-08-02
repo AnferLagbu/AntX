@@ -3,7 +3,7 @@
 //! ## 依赖声明
 //!
 //! framework 内部依赖: syscall, sync, proc, credo, driver
-//! services 依赖: services::fs (安全代理)
+//! services 依赖: `services::fs` (安全代理)
 
 pub mod devfs;
 pub mod hvfs;

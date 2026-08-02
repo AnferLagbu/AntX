@@ -3,7 +3,7 @@
 //!
 //! ## 职责
 //!
-//! 周期 tick 推进, 调用 framework::barrier::manager 的安全 API 收集域健康
+//! 周期 tick 推进, 调用 `framework::barrier::manager` 的安全 API 收集域健康
 //! 状态, 主动隔离降级 (proactive quarantine).
 //!
 //! 与 `framework::barrier::manager::RecoveryManager::tick` 的区别:
@@ -39,7 +39,7 @@ impl DomainHealth {
         }
     }
 
-    /// 转为 FaultSignal (供 Policy 决策)
+    /// 转为 `FaultSignal` (供 Policy 决策)
     pub const fn to_fault_signal(&self, heartbeat_gap: u64, dependents: u32) -> FaultSignal {
         FaultSignal {
             attribution: crate::kernel::services::barrier::attribution::FaultAttribution::Service {

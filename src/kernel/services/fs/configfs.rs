@@ -2,7 +2,7 @@
 //! configfs — 配置文件系统
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::fs::vfs::api。
+//! 所有 unsafe 操作已委托至 `framework::fs::vfs::api`。
 //!
 //! ## 职责
 //!
@@ -87,6 +87,9 @@ impl ConfigNode {
     }
 
     /// 读取节点值
+    ///
+    /// # Errors
+    /// 当 `buf` 长度小于节点值长度时返回 `EINVAL`.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, Errno> {
         let value = self.get_value().as_bytes();
         if buf.len() < value.len() {
@@ -97,6 +100,10 @@ impl ConfigNode {
     }
 
     /// 写入节点值
+    ///
+    /// # Errors
+    /// 当节点不可写时返回 `EPERM`;
+    /// 当 `data` 不是合法 UTF-8 时返回 `EINVAL`.
     pub fn write(&mut self, data: &[u8]) -> Result<(), Errno> {
         if !self.writable {
             return Err(Errno::EPERM);
@@ -148,6 +155,9 @@ impl ConfigDir {
     }
 
     /// 添加节点
+    ///
+    /// # Errors
+    /// 当节点表已满 (节点数量达到容量上限) 时返回 `ENOMEM`.
     pub fn add_node(&mut self, node: ConfigNode) -> Result<(), Errno> {
         if self.node_count as usize >= self.nodes.len() {
             return Err(Errno::ENOMEM);
@@ -178,6 +188,9 @@ impl ConfigDir {
     }
 
     /// 删除节点
+    ///
+    /// # Errors
+    /// 当不存在名为 `name` 的节点时返回 `ENOENT`.
     pub fn delete_node(&mut self, name: &str) -> Result<(), Errno> {
         let mut found = false;
         for i in 0..self.node_count as usize {
@@ -219,6 +232,10 @@ impl ConfigFs {
     }
 
     /// 创建目录
+    ///
+    /// # Errors
+    /// 当目录数量已达上限 (`MAX_DIRS`) 时返回 `ENOMEM`;
+    /// 当已存在同名目录时返回 `EEXIST`.
     pub fn create_dir(&mut self, name: &str) -> Result<(), Errno> {
         if self.dir_count as usize >= MAX_DIRS {
             return Err(Errno::ENOMEM);
@@ -238,6 +255,9 @@ impl ConfigFs {
     }
 
     /// 删除目录
+    ///
+    /// # Errors
+    /// 当不存在名为 `name` 的目录时返回 `ENOENT`.
     pub fn delete_dir(&mut self, name: &str) -> Result<(), Errno> {
         let mut found = false;
         for i in 0..self.dir_count as usize {
@@ -278,6 +298,9 @@ impl ConfigFs {
     }
 
     /// 读取节点
+    ///
+    /// # Errors
+    /// 当目录或节点不存在时返回 `ENOENT`; 当 `buf` 过小时返回 `EINVAL`.
     pub fn read_node(
         &self,
         dir: &str,
@@ -290,6 +313,9 @@ impl ConfigFs {
     }
 
     /// 写入节点
+    ///
+    /// # Errors
+    /// 当目录或节点不存在时返回 `ENOENT`; 当节点不可写或 `data` 非法时返回 `EPERM`/`EINVAL`.
     pub fn write_node(
         &mut self,
         dir: &str,
@@ -321,6 +347,9 @@ pub fn get_config_fs() -> &'static Mutex<ConfigFs> {
 // ============================================================================
 
 /// 挂载 configfs
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 内部创建默认目录时的错误被忽略.
 pub fn mount_configfs() -> Result<(), Errno> {
     let fs = get_config_fs();
     let mut fs = fs.lock();
@@ -332,6 +361,9 @@ pub fn mount_configfs() -> Result<(), Errno> {
 }
 
 /// 卸载 configfs
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 仅清空目录数据, 不返回错误.
 pub fn umount_configfs() -> Result<(), Errno> {
     let mut fs = get_config_fs().lock();
     fs.dir_count = 0;

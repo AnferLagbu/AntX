@@ -12,7 +12,7 @@
 //! ## 依赖声明
 //!
 //! framework 内部依赖: sync, mm, io, chitin, pci, net, timer, tests
-//! services 依赖: services::driver (安全代理)
+//! services 依赖: `services::driver` (安全代理)
 //!
 //! ## 架构设计
 //!
@@ -318,14 +318,14 @@ pub fn list_devices() -> alloc::string::String {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn driver_init() {
-    let _ = init_all();
+    let () = init_all();
 }
 
 /// C 兼容的关闭函数
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn driver_shutdown() {
-    let _ = shutdown_all();
+    let () = shutdown_all();
 }
 
 // ============================================================================

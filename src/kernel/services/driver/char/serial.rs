@@ -286,6 +286,10 @@ impl<T: Default + Copy> Default for RingBuffer<T> {
 
 impl<T: Default + Copy> RingBuffer<T> {
     /// 压入一个元素; 缓冲区满时返回 Err
+    ///
+    /// # Errors
+    ///
+    /// 当环形缓冲区已满 (`count` 达到 `SERIAL_BUFFER_SIZE`) 时返回 `Err(())`, 元素不会被压入。
     pub fn push(&mut self, item: T) -> Result<(), ()> {
         if self.count >= SERIAL_BUFFER_SIZE {
             return Err(());
@@ -354,7 +358,7 @@ impl SerialPort {
     ///
     /// # 返回
     /// - `Some(SerialPort)`: 初始化成功
-    /// - `None`: 端口已被占用 (IoPort 别名检测失败)
+    /// - `None`: 端口已被占用 (`IoPort` 别名检测失败)
     pub fn new(com: ComPort, config: SerialConfig) -> Option<Self> {
         // SAFETY: COM1-COM4 基址是标准 PC 串口映射.
         // IoPort::new 会校验端口范围; 别名检测可避免
@@ -491,7 +495,7 @@ impl SerialPort {
         &self.config
     }
 
-    /// 获取端口基址 (别名: base())
+    /// 获取端口基址 (别名: `base()`)
     pub const fn base_address(&self) -> u16 {
         self.com.base()
     }
@@ -501,8 +505,8 @@ impl SerialPort {
     /// 处理串口中断 (在 IRQ handler 中调用)
     ///
     /// 读取 IIR 判断中断类型:
-    /// - 接收数据可用 → 读入 rx_buffer
-    /// - 发送保持寄存器空 → 从 tx_buffer 取出发送
+    /// - 接收数据可用 → 读入 `rx_buffer`
+    /// - 发送保持寄存器空 → 从 `tx_buffer` 取出发送
     pub fn handle_interrupt(&mut self) {
         let iir = self.port.read_u8(UART_IIR);
 
@@ -553,6 +557,10 @@ impl SerialPort {
     }
 
     /// 将字节压入发送缓冲区 (供中断驱动发送)
+    ///
+    /// # Errors
+    ///
+    /// 当发送缓冲区已满时返回 `Err(())`, 字节不会被压入。
     pub fn enqueue_tx(&mut self, byte: u8) -> Result<(), ()> {
         self.tx_buffer.push(byte)
     }

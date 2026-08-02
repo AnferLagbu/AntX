@@ -31,10 +31,12 @@ use crate::kernel::services::fs::vfs_types::KernelError;
 pub trait FsBackend: Send + Sync {
     /// 挂载文件系统到指定路径
     ///
-    /// services 根据 fs_name 查找对应的 FileSystem 实现,
+    /// services 根据 `fs_name` 查找对应的 `FileSystem` 实现,
     /// 然后调用 framework 的 mount API 完成挂载.
     /// 对于可获取 `&'static dyn FileSystem` 的后端, 调用 `mount_with_fs`;
     /// 对于需要内部同步的后端 (如 Mutex 保护的), 调用 `vfs_mount`.
+    /// # Errors
+    /// 找不到对应的文件系统实现或挂载失败时返回 Err。
     fn mount_fs(&self, fs_name: &str, path: &str) -> Result<(), KernelError>;
 
     /// 是否允许挂载到指定路径
@@ -69,9 +71,11 @@ static FALLBACK_BACKEND: FallbackFsBackend = FallbackFsBackend;
 static FS_BACKEND: crate::kernel::framework::sync::OnceLock<&'static dyn FsBackend> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 注册 VFS 后端决策策略 (由 services::fs::init 调用)
+/// 注册 VFS 后端决策策略 (由 `services::fs::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+/// # Errors
+/// 策略已被注册过时返回 Err。
 pub fn register_fs_backend(policy: &'static dyn FsBackend) -> Result<(), &'static dyn FsBackend> {
     match FS_BACKEND.set(policy) {
         Ok(()) => Ok(()),

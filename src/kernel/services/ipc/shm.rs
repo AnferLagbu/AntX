@@ -2,9 +2,9 @@
 //! 共享内存策略 — T6-1 从 framework/ipc/shm.rs 提取
 //!
 //! 纯策略逻辑: 参数校验、槽位查找、附加/分离管理、引用计数.
-//! 物理页分配/释放通过 framework::mm 机制 API 完成.
+//! 物理页分配/释放通过 `framework::mm` 机制 API 完成.
 
-use crate::kernel::framework::ipc::types::*;
+use crate::kernel::framework::ipc::types::{IpcNamespace, ShmSegment, IpcId, SHM_MAX_SIZE};
 use crate::kernel::framework::mm::PAGE_SIZE;
 
 /// 查找空闲共享内存段槽位
@@ -18,6 +18,10 @@ pub fn shm_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&mut Sh
 }
 
 /// 创建共享内存段 (策略: 参数校验 + 槽位分配 + 物理页分配 + 初始化)
+///
+/// # Errors
+/// 当 `size` 为 0 或超过 `SHM_MAX_SIZE` 时返回 `Err(-1)`;
+/// 当共享内存段表已满时返回 `Err(-2)`; 当物理页分配失败时返回 `Err(-3)`.
 pub fn shm_create_safe(
     namespace: &mut IpcNamespace,
     next_id: &mut IpcId,
@@ -60,6 +64,9 @@ pub fn shm_create_safe(
 }
 
 /// 将共享内存段附加到当前进程地址空间 (策略: 重复附加检查 + 限制检查 + 引用计数)
+///
+/// # Errors
+/// 当共享内存段不存在时返回 `Err(-1)`; 当附加进程数已达上限 (16) 时返回 `Err(-2)`.
 pub fn shm_attach_safe(
     namespace: &mut IpcNamespace,
     id: IpcId,
@@ -91,6 +98,9 @@ pub fn shm_attach_safe(
 }
 
 /// 从当前进程分离共享内存段 (策略: 附加记录查找 + 引用计数递减)
+///
+/// # Errors
+/// 当共享内存段不存在时返回 `Err(-1)`; 当当前进程未附加该段时返回 `Err(-2)`.
 pub fn shm_detach_safe(
     namespace: &mut IpcNamespace,
     id: IpcId,
@@ -116,6 +126,9 @@ pub fn shm_detach_safe(
 }
 
 /// 销毁共享内存段 (策略: 引用计数检查 + 物理页释放 + 结构体清理)
+///
+/// # Errors
+/// 当共享内存段不存在时返回 `Err(-1)`; 当仍有进程附加时返回 `Err(-2)`.
 pub fn shm_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32> {
     let shm = match shm_find_by_id(namespace, id) {
         Some(s) => s,

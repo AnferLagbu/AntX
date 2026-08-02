@@ -46,6 +46,10 @@ impl SysctlValue {
     }
 
     /// 从文本解析 (用于 /proc/sys/* 节点写入)
+    ///
+    /// # Errors
+    /// 当文本无法按 `kind` 对应的类型解析 (如 `Int` 解析为整数失败,
+    /// `Bool` 不是 `1/0/true/false/yes/no/on/off`) 时, 返回 `SysctlError::ParseFailed`.
     pub fn parse(kind: SysctlKind, text: &str) -> Result<SysctlValue, SysctlError> {
         match kind {
             SysctlKind::Int => text.trim().parse::<i64>()
@@ -86,7 +90,7 @@ pub enum SysctlError {
     NotFound,
     /// 文本解析失败
     ParseFailed,
-    /// 类型不匹配 (试图用 IntKind 写入 Bool 值)
+    /// 类型不匹配 (试图用 `IntKind` 写入 Bool 值)
     TypeMismatch,
 }
 
@@ -96,13 +100,13 @@ pub enum SysctlError {
 
 /// 内部 sysctl 条目
 ///
-/// 原子字段保证读路径无锁, IrqSpinLock 用于注册表槽位分配.
+/// 原子字段保证读路径无锁, `IrqSpinLock` 用于注册表槽位分配.
 struct SysctlEntry {
     name: &'static str,
     kind: SysctlKind,
     /// Int 存储
     int_val: AtomicI64,
-    /// UInt 存储
+    /// `UInt` 存储
     uint_val: AtomicU64,
     /// Bool 存储
     bool_val: AtomicBool,
@@ -148,7 +152,7 @@ impl SysctlEntry {
 
 const MAX_SYSCTL_ENTRIES: usize = 32;
 
-/// 全局 sysctl 注册表 (使用 IrqSpinLock 保护槽位分配, 零 unsafe)
+/// 全局 sysctl 注册表 (使用 `IrqSpinLock` 保护槽位分配, 零 unsafe)
 static SYSCTL_TABLE: IrqSpinLock<[Option<SysctlEntry>; MAX_SYSCTL_ENTRIES]> =
     IrqSpinLock::new([const { None }; MAX_SYSCTL_ENTRIES]);
 
@@ -159,6 +163,10 @@ static SYSCTL_TABLE: IrqSpinLock<[Option<SysctlEntry>; MAX_SYSCTL_ENTRIES]> =
 /// 注册一个 sysctl 节点
 ///
 /// 启动期单线程调用一次. 重复注册返回 `Err(Duplicate)`.
+///
+/// # Errors
+/// 当名称已存在时返回 `SysctlError::Duplicate`; 当注册表已满 (无空闲槽位,
+/// 上限 `MAX_SYSCTL_ENTRIES` = 32) 时返回 `SysctlError::TableFull`.
 pub fn sysctl_register(
     name: &'static str,
     kind: SysctlKind,
@@ -203,6 +211,10 @@ pub fn sysctl_read(name: &str) -> Option<SysctlValue> {
 /// 写入 sysctl 值
 ///
 /// 类型必须匹配, 否则返回 `TypeMismatch`.
+///
+/// # Errors
+/// 当名称未注册时返回 `SysctlError::NotFound`; 当 `val` 的类型与该节点类型不匹配时
+/// 返回 `SysctlError::TypeMismatch`.
 pub fn sysctl_write(name: &str, val: SysctlValue) -> Result<(), SysctlError> {
     let guard = SYSCTL_TABLE.lock();
     for slot in guard.iter() {

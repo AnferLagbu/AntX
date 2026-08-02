@@ -153,14 +153,14 @@ pub fn get_ctrl_base(drive: u8) -> u16 {
 /// ATA 延时函数 (读取状态寄存器 4 次)
 fn ata_delay(ctrl: &IoPort) {
     for _ in 0..4 {
-        let _ = ctrl.read_u8(ATA_CTRL_ALT_STATUS as u16);
+        let _ = ctrl.read_u8(u16::from(ATA_CTRL_ALT_STATUS));
     }
 }
 
 /// 读取备用状态寄存器 (不清除中断)
 #[inline]
 fn read_alt_status(ctrl: &IoPort) -> u8 {
-    ctrl.read_u8(ATA_CTRL_ALT_STATUS as u16)
+    ctrl.read_u8(u16::from(ATA_CTRL_ALT_STATUS))
 }
 
 /// 等待 BSY 位清除
@@ -211,7 +211,7 @@ fn wait_drq(io: &IoPort, ctrl: &IoPort) -> Result<()> {
 
 /// 选择驱动器
 fn select_drive(io: &IoPort, ctrl: &IoPort, slave: bool) -> Result<()> {
-    io.write_u8(ATA_DRIVE_HEAD as u16, 0xA0 | ((slave as u8) << 4));
+    io.write_u8(ATA_DRIVE_HEAD as u16, 0xA0 | (u8::from(slave) << 4));
     ata_delay(ctrl);
 
     wait_bsy(io, ctrl)
@@ -294,7 +294,7 @@ impl Driver for AtaController {
         self.primary_present = false;
         self.secondary_present = false;
 
-        for device in self.devices.iter_mut() {
+        for device in &mut self.devices {
             *device = AtaDevice::default();
         }
 
@@ -393,7 +393,7 @@ impl Driver for AtaController {
             "No drives detected"
         } else {
             let _present_count = 0;
-            for dev in self.devices.iter() {
+            for dev in &self.devices {
                 if dev.present {
                     // present_count += 1;  // 可用于统计
                 }
@@ -409,6 +409,8 @@ impl Driver for AtaController {
 
 impl AtaController {
     /// 创建新的 ATA 控制器实例
+    /// # Panics
+    /// 主/次 ATA I/O 或控制端口初始化失败时 panic。
     pub fn new() -> Self {
         // SAFETY: ATA I/O 端口地址由 PC 规范确定 (Primary: 0x1F0/0x3F6, Secondary: 0x170/0x176),
         // 不与其他 IoPort 实例重叠.
@@ -463,6 +465,8 @@ impl AtaController {
     /// # Returns
     /// * `Ok(())` - 读取成功
     /// * `Err(DriverError)` - 错误
+    /// # Errors
+    /// 驱动器不存在、驱动器选择失败或设备忙/未就绪时返回 Err。
     #[cfg(target_arch = "x86_64")]
     pub fn read_sector(&self, drive: u8, lba: u32, buffer: &mut [u8; 512]) -> Result<()> {
         if !self.disk_present(drive) {
@@ -481,7 +485,7 @@ impl AtaController {
         io.write_u8(ATA_CYLINDER_HIGH as u16, ((lba >> 16) & 0xFF) as u8); // LBA 16-23
         io.write_u8(
             ATA_DRIVE_HEAD as u16,
-            0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
+            0xE0 | (u8::from(slave) << 4) | (((lba >> 24) & 0x0F) as u8),
         );
         ata_delay(ctrl);
 
@@ -508,6 +512,8 @@ impl AtaController {
     /// * `drive` - 驱动器编号 (0-3)
     /// * `lba` - 逻辑块地址
     /// * `buffer` - 输入缓冲区 (512 字节)
+    /// # Errors
+    /// 驱动器不存在、驱动器选择失败或设备忙/未就绪时返回 Err。
     #[cfg(target_arch = "x86_64")]
     pub fn write_sector(&self, drive: u8, lba: u32, buffer: &[u8; 512]) -> Result<()> {
         if !self.disk_present(drive) {
@@ -526,7 +532,7 @@ impl AtaController {
         io.write_u8(ATA_CYLINDER_HIGH as u16, ((lba >> 16) & 0xFF) as u8);
         io.write_u8(
             ATA_DRIVE_HEAD as u16,
-            0xE0 | ((slave as u8) << 4) | (((lba >> 24) & 0x0F) as u8),
+            0xE0 | (u8::from(slave) << 4) | (((lba >> 24) & 0x0F) as u8),
         );
         ata_delay(ctrl);
 
@@ -539,7 +545,7 @@ impl AtaController {
 
         // 写入数据
         for i in 0..WORDS_PER_SECTOR {
-            let word = ((buffer[i * 2 + 1] as u16) << 8) | (buffer[i * 2] as u16);
+            let word = (u16::from(buffer[i * 2 + 1]) << 8) | u16::from(buffer[i * 2]);
             io.write_u16(ATA_DATA as u16, word);
         }
 
@@ -553,6 +559,8 @@ impl AtaController {
     }
 
     /// 读取多个扇区
+    /// # Errors
+    /// 缓冲区过小或底层单扇区读取失败时返回 Err。
     #[cfg(target_arch = "x86_64")]
     pub fn read_sectors(
         &self,
@@ -579,6 +587,8 @@ impl AtaController {
     }
 
     /// 写入多个扇区
+    /// # Errors
+    /// 缓冲区过小或底层单扇区写入失败时返回 Err。
     #[cfg(target_arch = "x86_64")]
     pub fn write_sectors(&self, drive: u8, lba: u32, count: u32, buffer: &[u8]) -> Result<usize> {
         let required_size = (count as usize) * 512;
@@ -643,11 +653,7 @@ pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
     let guard = ATA_DEVICE.lock();
     match &*guard {
         Some(controller) => {
-            if controller.disk_present(drive) {
-                1
-            } else {
-                0
-            }
+            i32::from(controller.disk_present(drive))
         }
         None => 0,
     }

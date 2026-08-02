@@ -21,14 +21,14 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::domain::RecoveryDomain;
-use super::types::*;
+use super::types::DIRECT_MAP_SIZE;
 
 static RECOVERY_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 static BOOT_FINGERPRINTS_CHECKED: AtomicBool = AtomicBool::new(false);
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_barrier_maintenance() {
+pub extern "C" fn recovery_barrier_maintenance() {
     let tick = crate::kernel::framework::tick_query::current_tick();
 
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -41,7 +41,7 @@ pub fn recovery_barrier_maintenance() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_domain_register(domain_id: u64) -> i32 {
+pub extern "C" fn recovery_domain_register(domain_id: u64) -> i32 {
     let domain: &'static RecoveryDomain = {
         let bx = alloc::boxed::Box::new(RecoveryDomain::new(domain_id));
         alloc::boxed::Box::leak(bx)
@@ -54,7 +54,7 @@ pub fn recovery_domain_register(domain_id: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_domain_unregister(domain_id: u64) -> i32 {
+pub extern "C" fn recovery_domain_unregister(domain_id: u64) -> i32 {
     let mut mgr = super::RECOVERY_MANAGER.lock();
     let count = mgr.count.load(Ordering::SeqCst) as usize;
     for i in 0..count {
@@ -75,7 +75,7 @@ pub fn recovery_domain_unregister(domain_id: u64) -> i32 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[cfg(feature = "kernel_test")]
 #[unsafe(no_mangle)]
-pub fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
+pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
     let tick = crate::kernel::framework::tick_query::current_tick();
     let mgr = super::RECOVERY_MANAGER.lock();
     let rollbacks = mgr.cascade_rollback(domain_id, tick, crash_fingerprint);
@@ -88,19 +88,19 @@ pub fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_panic_flag_is_set() -> bool {
+pub extern "C" fn recovery_panic_flag_is_set() -> bool {
     super::PANIC_FLAG.load(Ordering::SeqCst)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_panic_flag_clear() {
-    super::PANIC_FLAG.store(false, Ordering::SeqCst)
+pub extern "C" fn recovery_panic_flag_clear() {
+    super::PANIC_FLAG.store(false, Ordering::SeqCst);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_try_recover_from_idt() -> i32 {
+pub extern "C" fn recovery_try_recover_from_idt() -> i32 {
     let tick = crate::kernel::framework::tick_query::current_tick();
 
     if RECOVERY_ATTEMPTED.swap(true, Ordering::SeqCst) {
@@ -124,7 +124,7 @@ pub fn recovery_try_recover_from_idt() -> i32 {
             if b == 0 {
                 break;
             }
-            h = h.wrapping_mul(33).wrapping_add(b as u64);
+            h = h.wrapping_mul(33).wrapping_add(u64::from(b));
         }
         h
     };
@@ -161,24 +161,25 @@ pub fn recovery_try_recover_from_idt() -> i32 {
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+/// 触发一次人为 panic, 用于屏障栈端到端 (E2E) 故障注入测试。
+/// # Panics
+/// 此函数总是触发 panic。
 #[unsafe(no_mangle)]
-pub fn recovery_trigger_panic() -> ! {
+pub extern "C" fn recovery_trigger_panic() -> ! {
     super::PANIC_FLAG.store(true, Ordering::SeqCst);
     panic!("[RECOVERY-TEST] Deliberate panic for barrier-stack E2E test");
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_was_attempted() -> i32 {
-    if RECOVERY_ATTEMPTED.load(Ordering::SeqCst) {
-        1
-    } else {
-        0
-    }
+pub extern "C" fn recovery_was_attempted() -> i32 {
+    i32::from(RECOVERY_ATTEMPTED.load(Ordering::SeqCst))
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+// 注意: 保持 Rust ABI — 参数含 `Option<unsafe fn()>` 等非 FFI-safe 类型
 #[unsafe(no_mangle)]
+#[expect(clippy::no_mangle_with_rust_abi)]
 pub fn recovery_domain_set_cbs(
     domain_id: u64,
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -198,7 +199,7 @@ pub fn recovery_domain_set_cbs(
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) -> i32 {
+pub extern "C" fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         let mut undo = dom.undo.lock();
@@ -211,7 +212,9 @@ pub fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) ->
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_undo_count(domain_id: u64) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn recovery_undo_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         dom.undo.lock().count as i32
@@ -222,7 +225,7 @@ pub fn recovery_undo_count(domain_id: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
+pub extern "C" fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         if dom.add_dependency(dep_id) {
@@ -240,7 +243,9 @@ pub fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_domain_dep_count(domain_id: u64) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn recovery_domain_dep_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         dom.dependency_count() as i32
@@ -251,7 +256,7 @@ pub fn recovery_domain_dep_count(domain_id: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end: u64) -> i32 {
+pub extern "C" fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         if dom.add_addr_range(start, end) {
@@ -266,14 +271,16 @@ pub fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end: u64) -> i
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_rollback_log_count() -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn recovery_rollback_log_count() -> i32 {
     let log = super::manager::ROLLBACK_LOG.lock();
     log.iter().filter(|e| e.is_some()).count() as i32
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_domain_get_state(domain_id: u64) -> i32 {
+pub extern "C" fn recovery_domain_get_state(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         dom.get_state() as i32
@@ -284,7 +291,7 @@ pub fn recovery_domain_get_state(domain_id: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn recovery_domain_get_failures(domain_id: u64) -> i32 {
+pub extern "C" fn recovery_domain_get_failures(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {
         dom.consecutive_failures.load(Ordering::SeqCst) as i32

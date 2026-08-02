@@ -123,6 +123,8 @@ impl FtraceState {
     }
 
     /// 弹出最旧事件
+    /// # Panics
+    /// 事件数据解析时切片长度异常时 panic (正常情况下不会发生)。
     pub fn pop(&self) -> Option<TraceEvent> {
         let mut bytes = [0u8; EVENT_SIZE];
         let n = self.buf.pop_into(&mut bytes);
@@ -159,7 +161,7 @@ impl FtraceState {
 
     /// 注册一个跟踪点 (按 name hash 查重, 计数累加)
     pub fn register_point(&self, name_hash: u32) -> bool {
-        let h = name_hash as u64;
+        let h = u64::from(name_hash);
         for slot in &self.points {
             let v = slot.load(Ordering::Acquire);
             if v == h || v == 0 {
@@ -248,7 +250,7 @@ pub fn record_named(name_hash: u32, a0: u64, a1: u64, a2: u64, a3: u64) {
     }
     let ev = TraceEvent {
         timestamp: rd_timestamp(),
-        name_hash: name_hash as u64,
+        name_hash: u64::from(name_hash),
         arg0: a0,
         arg1: a1,
         arg2: a2,

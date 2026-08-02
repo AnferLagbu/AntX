@@ -6,7 +6,7 @@
 //!
 //! - pid > 0: 等待特定 PID 的子进程
 //! - pid == 0: 等待同进程组任意子进程
-//! - pid == -1: 等待任意子进程 (POSIX wait())
+//! - pid == -1: 等待任意子进程 (POSIX `wait()`)
 //! - pid < -1: 等待进程组 |pid| 内的任意子进程
 //!
 //! ## options
@@ -55,18 +55,15 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
     let non_blocking = options & WNOHANG != 0;
 
     // 查找匹配的子进程
-    let child_pid = match find_waitable_child(current_pid, pid) {
-        Some(p) => p,
-        None => {
-            if non_blocking {
-                return 0; // WNOHANG: 无可等待子进程
-            }
-            return Errno::ECHILD.as_ret(); // 无子进程
+    let child_pid = if let Some(p) = find_waitable_child(current_pid, pid) { p } else {
+        if non_blocking {
+            return 0; // WNOHANG: 无可等待子进程
         }
+        return Errno::ECHILD.as_ret(); // 无子进程
     };
 
     // 检查子进程是否已退出
-    let state = api::process_with(child_pid, |p| p.get_state())
+    let state = api::process_with(child_pid, super::super::proc::process::Process::get_state)
         .unwrap_or(ProcessState::Terminated);
 
     if state == ProcessState::Zombie {
@@ -85,7 +82,7 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
 
         // 释放子进程 PCB
         api::process_remove_and_free(child_pid);
-        return child_pid as i64;
+        return i64::from(child_pid);
     }
 
     // 子进程仍在运行
@@ -95,7 +92,7 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
 
     // 阻塞等待: 循环检查子进程状态, 直到变为 Zombie
     loop {
-        let state = api::process_with(child_pid, |p| p.get_state())
+        let state = api::process_with(child_pid, super::super::proc::process::Process::get_state)
             .unwrap_or(ProcessState::Terminated);
 
         if state == ProcessState::Zombie {
@@ -112,7 +109,7 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
             }
 
             api::process_remove_and_free(child_pid);
-            return child_pid as i64;
+            return i64::from(child_pid);
         }
 
         // 子进程未退出, 阻塞当前进程并调度到子进程
@@ -127,9 +124,9 @@ fn find_waitable_child(parent_pid: u32, target_pid: i32) -> Option<u32> {
     let children = api::process_with(parent_pid, |p| p.children.lock().clone())
         .unwrap_or_default();
 
-    for &child in children.iter() {
+    for &child in &children {
         let child_pid = child.0;
-        let state = api::process_with(child_pid, |p| p.get_state())
+        let state = api::process_with(child_pid, super::super::proc::process::Process::get_state)
             .unwrap_or(ProcessState::Terminated);
 
         // 只匹配未结束的子进程 (或 Zombie 用于收割)

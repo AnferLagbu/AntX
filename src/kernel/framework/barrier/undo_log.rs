@@ -3,7 +3,7 @@ use super::types::{UndoEntry, MAX_UNDO_ENTRIES};
 pub fn fnv1a_32(data: &[u8]) -> u32 {
     let mut h: u32 = 2166136261;
     for &b in data {
-        h ^= b as u32;
+        h ^= u32::from(b);
         h = h.wrapping_mul(16777619);
     }
     h
@@ -130,11 +130,9 @@ impl UndoLog {
                     temp[temp_count] = Some(*entry);
                     temp_count += 1;
                 }
-            } else {
-                if temp_count < MAX_UNDO_ENTRIES {
-                    temp[temp_count] = Some(*entry);
-                    temp_count += 1;
-                }
+            } else if temp_count < MAX_UNDO_ENTRIES {
+                temp[temp_count] = Some(*entry);
+                temp_count += 1;
             }
         }
 
@@ -152,6 +150,8 @@ impl UndoLog {
         self.compact_keeping(4);
     }
 
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn compact_keeping(&mut self, keep_generations: usize) {
         if self.count == 0 {
             return;

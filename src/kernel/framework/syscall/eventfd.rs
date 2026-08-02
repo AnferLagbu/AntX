@@ -26,8 +26,8 @@
 //!
 //! # Safety
 //!
-//! - EventFdTable 由 IrqSpinLock 保护, 中断安全
-//! - 用户指针在 services 层 check_user_buf 校验后才进入 TCB
+//! - `EventFdTable` 由 `IrqSpinLock` 保护, 中断安全
+//! - 用户指针在 services 层 `check_user_buf` 校验后才进入 TCB
 //! - counter 使用 u64, 原子性由锁保证
 
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -43,11 +43,11 @@ use crate::kernel::framework::syscall::Errno;
 pub const EFD_MAX_SLOTS: usize = 16;
 /// TD-02: 基址来源已迁移至 `framework::proc::FdPlan::EVENT_FD` 单一来源, 不再硬编码.
 pub const EFD_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::EVENT_FD.base;
-/// EFD_CLOEXEC (与 Linux 一致)
+/// `EFD_CLOEXEC` (与 Linux 一致)
 pub const EFD_CLOEXEC: i32 = 0o2000000;
-/// EFD_NONBLOCK (与 Linux 一致)
+/// `EFD_NONBLOCK` (与 Linux 一致)
 pub const EFD_NONBLOCK: i32 = 0o4000;
-/// EFD_SEMAPHORE (与 Linux 一致)
+/// `EFD_SEMAPHORE` (与 Linux 一致)
 pub const EFD_SEMAPHORE: i32 = 0o1;
 
 // ============================================================================
@@ -100,7 +100,7 @@ static EFD_COUNT: AtomicU32 = AtomicU32::new(0);
 /// eventfd — 创建 eventfd 实例
 ///
 /// `initval`: 初始计数器值
-/// `flags`: EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE
+/// `flags`: `EFD_CLOEXEC` | `EFD_NONBLOCK` | `EFD_SEMAPHORE`
 /// 返回 fd (≥ 200), 或负 errno
 pub fn sys_eventfd(initval: u64, flags: i32) -> i64 {
     // flags 校验: 只允许已知标志
@@ -133,7 +133,7 @@ pub fn sys_eventfd(initval: u64, flags: i32) -> i64 {
     EFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
     crate::klog_debug!(Sync, "[eventfd] Created fd={} initval={} sem={}", fd, initval, semaphore);
-    fd as i64
+    i64::from(fd)
 }
 
 /// eventfd read — 读取计数器
@@ -188,7 +188,7 @@ pub fn sys_eventfd_read(fd: i32, buf: u64) -> i64 {
 /// eventfd write — 递增计数器
 ///
 /// `fd`: eventfd 文件描述符
-/// `value`: 要增加的值 (必须 > 0, 且 ≤ U64_MAX - 1)
+/// `value`: 要增加的值 (必须 > 0, 且 ≤ `U64_MAX` - 1)
 /// 返回 8 (成功), 或负 errno
 pub fn sys_eventfd_write(fd: i32, value: u64) -> i64 {
     if value == 0 {
@@ -254,7 +254,7 @@ pub fn sys_eventfd_close(fd: i32) -> i64 {
 // epoll 集成
 // ============================================================================
 
-/// 检查 eventfd 是否就绪 (供 epoll check_fd_ready 调用)
+/// 检查 eventfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (可读) / EPOLLOUT (可写) 事件掩码
 pub fn eventfd_poll_events(fd: i32) -> u32 {
@@ -289,7 +289,7 @@ pub fn eventfd_poll_events(fd: i32) -> u32 {
 
 /// fd → 槽位索引
 ///
-/// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 EFD_FD_BASE 字面量 +
+/// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 `EFD_FD_BASE` 字面量 +
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
     match crate::kernel::framework::proc::idx_of(fd) {
@@ -302,7 +302,7 @@ fn fd_to_idx(fd: i32) -> Option<usize> {
 
 /// 检查 fd 是否属于 eventfd 空间
 ///
-/// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 EFD_FD_BASE 字面量 + 算术.
+/// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 `EFD_FD_BASE` 字面量 + 算术.
 pub fn is_eventfd_fd(fd: i32) -> bool {
     matches!(
         crate::kernel::framework::proc::idx_of(fd),

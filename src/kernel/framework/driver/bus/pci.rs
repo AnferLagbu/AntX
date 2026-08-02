@@ -1,6 +1,6 @@
 //! PCI 总线驱动 (PCI Bus Driver)
 //!
-//! 对接真实的 PCI 子系统 (crate::kernel::framework::pci)，
+//! 对接真实的 PCI 子系统 (`crate::kernel::framework::pci`)，
 //! 提供设备枚举、配置空间访问和 C FFI 导出。
 //!
 //! 通过 Chitin 框架注册为 Bus 类型设备。
@@ -37,7 +37,9 @@ impl Driver for PciBusDriver {
 /// 返回发现的设备数量。
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pci_init() -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn pci_init() -> i32 {
     let count = crate::kernel::framework::pci::init() as i32;
 
     crate::kernel::framework::chitin::chitin_register_driver(

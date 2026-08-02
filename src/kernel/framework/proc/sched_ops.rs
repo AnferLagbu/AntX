@@ -13,7 +13,7 @@ use super::process::PROCESS_TABLE;
 use super::scheduler::SCHEDULER;
 use super::scheduler_ex::SCHEDULER_EX;
 use super::thread::THREAD_MANAGER;
-use super::types::*;
+use super::types::{BlockReason, Pid, ProcessPriority, ProcessState};
 
 // ============================================================================
 // 调度器查询与控制
@@ -50,54 +50,50 @@ pub fn scheduler_add_to_run_queue(pid: u32) {
 /// 是否有可运行进程.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_has_runnable() -> i32 {
-    if SCHEDULER.has_any_runnable() {
-        1
-    } else {
-        0
-    }
+pub extern "C" fn proc_has_runnable() -> i32 {
+    i32::from(SCHEDULER.has_any_runnable())
 }
 
 /// 获取当前线程.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn thread_get_current() -> u64 {
+pub extern "C" fn thread_get_current() -> u64 {
     THREAD_MANAGER.get_current_thread().unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_yield_ex() {
+pub extern "C" fn scheduler_yield_ex() {
     SCHEDULER_EX.yield_current();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_yield() {
+pub extern "C" fn scheduler_yield() {
     SCHEDULER.yield_current();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_schedule() -> Pid {
+pub extern "C" fn scheduler_schedule() -> Pid {
     SCHEDULER.schedule().unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_add(pid: Pid) {
+pub extern "C" fn scheduler_add(pid: Pid) {
     SCHEDULER.add(pid);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_tick() {
+pub extern "C" fn scheduler_tick() {
     SCHEDULER_EX.tick();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_init() {
+pub extern "C" fn scheduler_init() {
     super::scheduler::init();
     SCHEDULER_EX.init();
 
@@ -142,11 +138,11 @@ pub fn scheduler_init() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn process_init() {}
+pub extern "C" fn process_init() {}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn thread_init() {
+pub extern "C" fn thread_init() {
     super::thread::init();
 }
 
@@ -156,28 +152,28 @@ pub fn thread_init() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_get_current_pwm() -> u64 {
+pub extern "C" fn scheduler_get_current_pwm() -> u64 {
     SCHEDULER
         .current()
-        .and_then(|pid| PROCESS_TABLE.with_process(pid, |p| p.get_pwm()))
+        .and_then(|pid| PROCESS_TABLE.with_process(pid, super::process::Process::get_pwm))
         .unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_set_quota(pwm: u64, max_runtime: u64, period: u64) {
+pub extern "C" fn scheduler_set_quota(pwm: u64, max_runtime: u64, period: u64) {
     SCHEDULER.set_quota(pwm, max_runtime, period);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_remove_quota(pwm: u64) {
+pub extern "C" fn scheduler_remove_quota(pwm: u64) {
     SCHEDULER.remove_quota(pwm);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
+pub extern "C" fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
     SCHEDULER.set_limit(pwm, max_procs);
 }
 
@@ -187,38 +183,38 @@ pub fn scheduler_set_proc_limit(pwm: u64, max_procs: u32) {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_exit_internal(exit_code: u32) {
+pub extern "C" fn proc_exit_internal(exit_code: u32) {
     SCHEDULER.exit(exit_code);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_get_current_pid_internal() -> Pid {
+pub extern "C" fn proc_get_current_pid_internal() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_yield_internal() {
+pub extern "C" fn proc_yield_internal() {
     SCHEDULER.yield_current();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_block(reason: u32) {
+pub extern "C" fn proc_block(reason: u32) {
     let block_reason = BlockReason::from_u8(reason as u8);
     SCHEDULER.block(block_reason);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_unblock(pid: Pid) {
+pub extern "C" fn proc_unblock(pid: Pid) {
     SCHEDULER.unblock(pid);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
+pub extern "C" fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
     if PROCESS_TABLE
         .with_process(pid, |p| {
             p.set_priority(ProcessPriority::from_u32(priority));
@@ -233,7 +229,7 @@ pub fn proc_set_priority(pid: Pid, priority: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_get_state(pid: Pid) -> u32 {
+pub extern "C" fn proc_get_state(pid: Pid) -> u32 {
     PROCESS_TABLE
         .with_process(pid, |p| p.get_state() as u32)
         .unwrap_or(ProcessState::Terminated as u32)
@@ -241,47 +237,43 @@ pub fn proc_get_state(pid: Pid) -> u32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sched_init_internal() {
+pub extern "C" fn sched_init_internal() {
     SCHEDULER.init();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sched_add_internal(pid: Pid) {
+pub extern "C" fn sched_add_internal(pid: Pid) {
     SCHEDULER.add(pid);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sched_schedule_internal() -> Pid {
+pub extern "C" fn sched_schedule_internal() -> Pid {
     SCHEDULER.schedule().unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sched_should_reschedule() -> i32 {
-    if SCHEDULER.should_reschedule() {
-        1
-    } else {
-        0
-    }
+pub extern "C" fn sched_should_reschedule() -> i32 {
+    i32::from(SCHEDULER.should_reschedule())
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sched_set_current(pid: Pid) {
+pub extern "C" fn sched_set_current(pid: Pid) {
     SCHEDULER.set_current(pid);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sched_get_current() -> Pid {
+pub extern "C" fn sched_get_current() -> Pid {
     SCHEDULER.current().unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_get_exit_code(pid: Pid) -> i32 {
+pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
     PROCESS_TABLE
         .with_process(pid, |p| p.exit_code.load(core::sync::atomic::Ordering::SeqCst) as i32)
         .unwrap_or(-1)
@@ -289,24 +281,20 @@ pub fn proc_get_exit_code(pid: Pid) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn proc_is_initialized() -> i32 {
-    if SCHEDULER.is_initialized() {
-        1
-    } else {
-        0
-    }
+pub extern "C" fn proc_is_initialized() -> i32 {
+    i32::from(SCHEDULER.is_initialized())
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
+pub extern "C" fn scheduler_add_rt_task(pid: Pid, rt_priority: u8, policy: u32) {
     use super::scheduler::SchedPolicy;
-    SCHEDULER.add_rt_task(pid, rt_priority, SchedPolicy::from_u32(policy))
+    SCHEDULER.add_rt_task(pid, rt_priority, SchedPolicy::from_u32(policy));
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32 {
+pub extern "C" fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32 {
     use super::scheduler::SchedPolicy;
     if SCHEDULER.set_sched_policy(pid, SchedPolicy::from_u32(policy), rt_priority) {
         0
@@ -317,6 +305,6 @@ pub fn scheduler_set_sched_policy(pid: Pid, policy: u32, rt_priority: u8) -> i32
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn scheduler_get_rt_count() -> usize {
+pub extern "C" fn scheduler_get_rt_count() -> usize {
     SCHEDULER.get_rt_count()
 }

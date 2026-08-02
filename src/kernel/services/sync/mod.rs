@@ -84,7 +84,7 @@ pub fn disable_interrupts() -> IrqSaveFlags {
 
 /// 恢复中断到指定 flags
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
-    crate::kernel::framework::sync::restore_interrupts(flags)
+    crate::kernel::framework::sync::restore_interrupts(flags);
 }
 
 /// 中断禁用 RAII 守卫 (析构时自动恢复中断)
@@ -144,12 +144,12 @@ pub fn scheduler_yield() {
 // 错误
 // ============================================================================
 
-/// 同步原语错误 — TD-20: 收敛到 KernelError, 2 字段 sync 特有 + 1 共享包装.
+/// 同步原语错误 — TD-20: 收敛到 `KernelError`, 2 字段 sync 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `Deadlock`: 同线程重复 lock (POSIX EDEADLK=35 但语义不通用)
 ///   - `Timeout`: 加锁超时 (POSIX ETIMEDOUT=110)
-///   - `Kernel(KernelError)`: 共享错误 (WouldBlock / Other) 走单一来源
+///   - `Kernel(KernelError)`: 共享错误 (`WouldBlock` / Other) 走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncError {
     /// 死锁 (同线程重复 lock)

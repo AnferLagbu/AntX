@@ -14,9 +14,15 @@
 
 use alloc::vec::Vec;
 
-use super::leb128::*;
-use super::types::*;
+use super::leb128::{read_leb128_u32, read_name, read_leb128_i32, read_leb128_i64};
+use super::types::{WasmModule, WasmError, WASM_MAGIC, WASM_VERSION, SECTION_TYPE, SECTION_IMPORT, SECTION_FUNCTION, SECTION_TABLE, SECTION_MEMORY, SECTION_GLOBAL, SECTION_EXPORT, SECTION_START, SECTION_ELEMENT, SECTION_CODE, SECTION_DATA, FuncType, ValueType, ImportDesc, ImportKind, TableType, MemoryType, GlobalType, Limits, ExportDesc, ExportKind, FunctionBody, DataSegment, ElementSegment};
 
+/// 解析 WASM 二进制格式, 生成模块结构.
+///
+/// # Errors
+///
+/// 当输入过短、魔数或版本号不匹配、段数据截断或结构非法时
+/// 返回对应的 `WasmError`.
 pub fn parse_wasm(bytes: &[u8]) -> Result<WasmModule, WasmError> {
     let mut pos: usize;
 

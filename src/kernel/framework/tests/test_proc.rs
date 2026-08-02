@@ -1,6 +1,6 @@
 use super::assert_eq_test;
 use super::check;
-use crate::kernel::framework::proc::types::*;
+use crate::kernel::framework::proc::types::{ProcessState, ProcessId, ThreadId};
 use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 

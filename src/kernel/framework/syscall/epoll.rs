@@ -1,6 +1,6 @@
 //! epoll — 事件轮询机制 (TCB)
 //!
-//! 实现 Linux epoll API: epoll_create / epoll_ctl / epoll_wait.
+//! 实现 Linux epoll API: `epoll_create` / `epoll_ctl` / `epoll_wait`.
 //!
 //! ## 架构
 //!
@@ -19,24 +19,24 @@
 //!
 //! ## VFS poll 集成
 //!
-//! - check_fd_ready 调用 vfs_is_fd_valid + vfs_fd_type, 推断真实事件:
-//!   * file_type=File/Empty → EPOLLIN | EPOLLOUT (ramfs 内存常驻, 始终可读写)
-//!   * file_type=Dir        → EPOLLIN (读目录项, 写 EPOLLOUT 不报告)
-//!   * file_type=Dev        → EPOLLHUP (设备节点无可读字节流, 需驱动层注册)
-//!   * file_type=Symlink    → EPOLLIN | EPOLLHUP (读 link target 后挂断)
+//! - `check_fd_ready` 调用 `vfs_is_fd_valid` + `vfs_fd_type`, 推断真实事件:
+//!   * `file_type=File/Empty` → EPOLLIN | EPOLLOUT (ramfs 内存常驻, 始终可读写)
+//!   * `file_type=Dir`        → EPOLLIN (读目录项, 写 EPOLLOUT 不报告)
+//!   * `file_type=Dev`        → EPOLLHUP (设备节点无可读字节流, 需驱动层注册)
+//!   * `file_type=Symlink`    → EPOLLIN | EPOLLHUP (读 link target 后挂断)
 //!   * 无效 fd             → EPOLLERR | EPOLLHUP
 //!
 //! ## 与 Linux 的差异
 //!
-//! - interest_list 使用 Vec 而非红黑树 (简化实现, fd 数量有限)
-//! - wait_queue 容量 4 (复用 ipc::types::WaitQueue 简化版)
+//! - `interest_list` 使用 Vec 而非红黑树 (简化实现, fd 数量有限)
+//! - `wait_queue` 容量 4 (复用 `ipc::types::WaitQueue` 简化版)
 //! - 不支持 EPOLLEXCLUSIVE / EPOLLWAKEUP
 //!
 //! # Safety
 //!
 //! - epoll 实例通过全局 ID 分配, 避免指针悬挂
-//! - epoll_pwake 在文件 I/O 路径 (write/close) 调用, 持锁时不可睡眠
-//! - 阻塞在 epoll_wait 中调用 SCHEDULER.yield_to_wait, 无需额外锁保护
+//! - `epoll_pwake` 在文件 I/O 路径 (write/close) 调用, 持锁时不可睡眠
+//! - 阻塞在 `epoll_wait` 中调用 `SCHEDULER.yield_to_wait`, 无需额外锁保护
 
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
@@ -65,7 +65,7 @@ pub const EPOLLET: u32 = 1 << 31;
 /// EPOLLONESHOT: 一次性事件
 pub const EPOLLONESHOT: u32 = 1 << 30;
 
-/// epoll_ctl 操作
+/// `epoll_ctl` 操作
 pub const EPOLL_CTL_ADD: i32 = 1;
 pub const EPOLL_CTL_DEL: i32 = 2;
 pub const EPOLL_CTL_MOD: i32 = 3;
@@ -74,7 +74,7 @@ pub const EPOLL_CTL_MOD: i32 = 3;
 // epoll 数据结构
 // ============================================================================
 
-/// epoll_event — 用户空间事件结构
+/// `epoll_event` — 用户空间事件结构
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct EpollEvent {
@@ -107,7 +107,7 @@ struct EpollInstance {
     interest_list: Vec<EpollItem>,
     /// 就绪列表 (有事件待处理的 fd)
     ready_list: Vec<EpollEvent>,
-    /// 等待队列 (epoll_wait 阻塞时挂起线程, epoll_pwake 唤醒)
+    /// 等待队列 (`epoll_wait` 阻塞时挂起线程, `epoll_pwake` 唤醒)
     wait_queue: WaitQueue,
     /// 实例 ID
     id: u64,
@@ -126,7 +126,7 @@ static NEXT_EPOLL_ID: core::sync::atomic::AtomicU64 = core::sync::atomic::Atomic
 // epoll 系统调用实现
 // ============================================================================
 
-/// epoll_create — 创建 epoll 实例
+/// `epoll_create` — 创建 epoll 实例
 ///
 /// `size` 参数在 Linux 2.6.8+ 中被忽略, 但必须 > 0.
 /// 返回 epoll fd (当前用实例 ID 代替).
@@ -149,11 +149,11 @@ pub fn sys_epoll_create(size: i32) -> i64 {
     id as i64
 }
 
-/// epoll_ctl — 控制 epoll 实例
+/// `epoll_ctl` — 控制 epoll 实例
 ///
-/// - EPOLL_CTL_ADD: 注册 fd
-/// - EPOLL_CTL_MOD: 修改 fd 的事件
-/// - EPOLL_CTL_DEL: 移除 fd
+/// - `EPOLL_CTL_ADD`: 注册 fd
+/// - `EPOLL_CTL_MOD`: 修改 fd 的事件
+/// - `EPOLL_CTL_DEL`: 移除 fd
 pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i64 {
     if epfd <= 0 {
         return Errno::EBADF.as_ret();
@@ -179,10 +179,10 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
             }
 
             // SAFETY: event 指针由 syscall 入口验证
-            let ev = if !event.is_null() {
-                unsafe { core::ptr::read(event) }
-            } else {
+            let ev = if event.is_null() {
                 return Errno::EFAULT.as_ret();
+            } else {
+                unsafe { core::ptr::read(event) }
             };
 
             let ev_events = ev.events;
@@ -206,11 +206,11 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
                 None => return Errno::ENOENT.as_ret(),
             };
 
-            let ev = if !event.is_null() {
+            let ev = if event.is_null() {
+                return Errno::EFAULT.as_ret();
+            } else {
                 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe { core::ptr::read(event) }
-            } else {
-                return Errno::EFAULT.as_ret();
             };
 
             let ev_events = ev.events;
@@ -244,7 +244,7 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
     0
 }
 
-/// epoll_wait — 等待事件
+/// `epoll_wait` — 等待事件
 ///
 /// `maxevents` 必须大于 0.
 /// `timeout`: -1=无限等待, 0=非阻塞, >0=毫秒超时.
@@ -341,23 +341,23 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
 /// 由 VFS I/O 路径 (write/close/fs 变更) 在持锁外调用, 简单遍历所有 epoll 实例
 /// 找到包含该 fd 的实例, 加入就绪列表并唤醒等待者.
 ///
-/// 复杂度 O(N×M), N = epoll 实例数, M = 每个实例的 interest_list 大小.
+/// 复杂度 O(N×M), N = epoll 实例数, M = 每个实例的 `interest_list` 大小.
 /// 单实例 fd 数量受 maxevents 限制, 性能可接受.
 ///
 /// # REVAL-6.2 拆分
 ///
-/// epoll_pwake 本身是**机制** (机制层职责):
+/// `epoll_pwake` 本身是**机制** (机制层职责):
 /// - 遍历所有 epoll 实例
 /// - 找到包含 fd 的实例
-/// - 唤醒 wait_queue 中的等待者
+/// - 唤醒 `wait_queue` 中的等待者
 ///
 /// 策略层职责 (抽到 `enqueue_ready_for_fd`):
 /// - 决策 revents (复用 `check_fd_ready`)
-/// - 决策 dedup (避免 ready_list 重复)
+/// - 决策 dedup (避免 `ready_list` 重复)
 ///
 /// # Safety
 ///
-/// - 必须在持有 fd_table 锁的 VFS 路径外调用 (避免锁顺序倒置)
+/// - 必须在持有 `fd_table` 锁的 VFS 路径外调用 (避免锁顺序倒置)
 /// - 不可在中断上下文睡眠 (本函数不睡眠)
 pub fn epoll_pwake(fd: i32) {
     let mut instances = EPOLL_INSTANCES.lock();
@@ -380,16 +380,16 @@ pub fn epoll_pwake(fd: i32) {
 
 /// 机制: 检查 epoll 实例是否在监控指定 fd
 ///
-/// REVAL-6.2: 从 epoll_pwake 提取, 保持纯函数特性 (0 unsafe, 无副作用).
+/// REVAL-6.2: 从 `epoll_pwake` 提取, 保持纯函数特性 (0 unsafe, 无副作用).
 #[inline]
 fn instance_watches_fd(instance: &EpollInstance, fd: i32) -> bool {
     instance.interest_list.iter().any(|item| item.fd == fd)
 }
 
-/// 策略: 把 fd 的就绪事件加入 epoll 实例的 ready_list
+/// 策略: 把 fd 的就绪事件加入 epoll 实例的 `ready_list`
 ///
-/// REVAL-6.2: 从 epoll_pwake 提取, 封装:
-/// - revents 计算 (走 check_fd_ready → VfsPollPolicy)
+/// REVAL-6.2: 从 `epoll_pwake` 提取, 封装:
+/// - revents 计算 (走 `check_fd_ready` → `VfsPollPolicy`)
 /// - dedup 检查 (避免同一 fd 重复入队, 与 edge-trigger 配合)
 /// - 一次性 (oneshot) 标记
 ///
@@ -426,13 +426,13 @@ fn enqueue_ready_for_fd(instance: &mut EpollInstance, fd: i32) -> bool {
 
 /// 检查 fd 是否就绪 (完整集成 VFS)
 ///
-/// REVAL-6.1: 4 种 VFS file_type → events 位映射改走 `VfsPollPolicy` trait dispatch
-/// (services/fs/vfs_poll_policy.rs 的 `StandardVfsPollPolicy`).
+/// REVAL-6.1: 4 种 VFS `file_type` → events 位映射改走 `VfsPollPolicy` trait dispatch
+/// (`services/fs/vfs_poll_policy.rs` 的 `StandardVfsPollPolicy`).
 /// 未注册策略时使用 `VfsPollPolicyRef::Fallback` 行为, 与原硬编码一致.
 ///
 /// 仍然在 framework 处理 (因为这些是 syscall 层的特殊 fd):
 ///   - eventfd/signalfd/timerfd: 框架内部状态
-///   - VFS fd: 委托给 VfsPollPolicy
+///   - VFS fd: 委托给 `VfsPollPolicy`
 ///
 /// 与 user 事件掩码做 AND 运算, 只报告 user 关心的位.
 fn check_fd_ready(fd: i32, events: u32) -> u32 {

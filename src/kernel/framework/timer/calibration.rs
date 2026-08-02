@@ -57,6 +57,14 @@ static LAST_CALIBRATION_RANGE: AtomicU64 = AtomicU64::new(0);
 /// let tsc_freq_mhz = calibrate_tsc(20).unwrap();
 /// println!("TSC frequency: {} MHz", tsc_freq_mhz);
 /// ```
+///
+/// # Errors
+/// 当 `calibration_ms` 为 0 时返回 `Err("Calibration duration must be > 0")`;
+/// 当 PIT 未初始化时返回 `Err("PIT must be initialized before calibration")`;
+/// 当定时器子系统未初始化时返回 `Err("Timer not initialized")`;
+/// 校准时长过短、计算溢出或测得频率超出合理范围 (100 MHz-10 GHz) 时
+/// 分别返回 `Err("Calibration too short")`, `Err("Calculation overflow")`,
+/// `Err("Calibrated frequency out of reasonable range")`.
 pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     if calibration_ms == 0 {
         return Err("Calibration duration must be > 0");
@@ -67,7 +75,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     }
 
     // 计算需要的 PIT ticks 数
-    let pit_freq = super::tick::get_frequency() as u64;
+    let pit_freq = u64::from(super::tick::get_frequency());
     if pit_freq == 0 {
         return Err("Timer not initialized");
     }
@@ -115,7 +123,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     }
 
     // 计算平均值 (使用中位数以减少异常值影响)
-    measurements.sort();
+    measurements.sort_unstable();
     let median_cycles = measurements[SAMPLE_COUNT / 2];
 
     // 计算 TSC 频率
@@ -150,6 +158,10 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
 ///
 /// # Arguments
 /// * `calibration_ms` - 校准时间 (毫秒), 推荐 5-10ms
+///
+/// # Errors
+/// 错误与 `calibrate_tsc` 相同: 校准时长非法、PIT/定时器未初始化、
+/// 计算溢出或频率超出合理范围时均返回 `Err(&str)`.
 pub fn quick_calibrate(calibration_ms: u64) -> Result<u64, &'static str> {
     calibrate_tsc(calibration_ms)
 }

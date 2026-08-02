@@ -7,7 +7,7 @@
 //! ## 依赖声明
 //!
 //! framework 内部依赖: arch, syscall (仅 lockdep)
-//! services 依赖: services::sync (安全代理)
+//! services 依赖: `services::sync` (安全代理)
 //!
 //! ## 架构定位
 //!

@@ -25,7 +25,7 @@
 //! - 不实现 WRITE(10) / WRITE(6) (只读)
 //!
 //! See also:
-//! - `usb/enumerate.rs` USB-1.6 (找到 MassStorage Interface 后调用本驱动)
+//! - `usb/enumerate.rs` USB-1.6 (找到 `MassStorage` Interface 后调用本驱动)
 //! - `usb/ring.rs` USB-1.5 (Bulk 端点 TRB 提交使用 Command Ring)
 //! - `services/driver/storage/ahci.rs` (ATA/SCSI 命令分发, 类似结构)
 
@@ -75,6 +75,10 @@ pub struct CommandBlockWrapper {
 
 impl CommandBlockWrapper {
     /// 创建新的 CBW.
+    /// # Errors
+    /// SCSI 命令块为空或长度超过最大允许值时返回 Err。
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(tag: u32, data_transfer_length: u32, direction_in: bool, lun: u8, cb: &[u8]) -> Result<Self> {
         if cb.is_empty() || cb.len() > SCSI_CB_MAX_LENGTH {
             return Err(DriverError::InvalidParameter);
@@ -131,6 +135,8 @@ pub mod csw_status {
 
 impl CommandStatusWrapper {
     /// 从 13 字节缓冲反序列化.
+    /// # Errors
+    /// 数据长度不足或 CSW 签名不匹配时返回 Err。
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         if data.len() < CSW_LENGTH {
             return Err(DriverError::InvalidParameter);
@@ -174,7 +180,7 @@ pub mod scsi_op {
 /// SCSI READ(10) 命令 (10 字节).
 ///
 /// 字节布局:
-/// - byte 0: 0x28 (READ_10)
+/// - byte 0: 0x28 (`READ_10`)
 /// - byte 1: bit 4 = DPO, bit 3 = FUA, bit 2 = RDPROTECT, bit 1..=0 = LBA[31..24]
 /// - bytes 2..=5: LBA[23..0] (大端字节序)
 /// - byte 6: Group Number 分组号
@@ -262,7 +268,9 @@ pub struct MassStorageDriver {
 }
 
 impl MassStorageDriver {
-    /// 从 UsbDevice 创建 Mass Storage 驱动实例.
+    /// 从 `UsbDevice` 创建 Mass Storage 驱动实例.
+    /// # Errors
+    /// 设备或接口不属于 Mass Storage 类、接口索引非法或未找到 Bulk 端点时返回 Err。
     pub fn from_usb_device(device: &UsbDevice, interface_idx: usize) -> Result<Self> {
         if device.descriptor.device_class != DeviceClass::MassStorage as u8 {
             return Err(DriverError::InvalidParameter);
@@ -325,6 +333,8 @@ impl MassStorageDriver {
     /// 分配并构造新的 CBW.
     ///
     /// `next_tag` 单调递增, 调用方在收到 CSW 后验证 tag 匹配.
+    /// # Errors
+    /// SCSI 命令块为空或长度非法时返回 Err。
     pub fn build_cbw(
         &mut self,
         data_transfer_length: u32,
@@ -344,42 +354,52 @@ impl MassStorageDriver {
     /// - `lba`: Logical Block Address (起始扇区)
     /// - `blocks`: 读取扇区数
     /// - `lun`: 逻辑单元号 LUN
+    /// # Errors
+    /// 底层 CBW 构造失败时返回 Err。
     pub fn build_read_10_cbw(&mut self, lba: u32, blocks: u16, lun: u8) -> Result<CommandBlockWrapper> {
         let cmd = build_read_10_cmd(lba, blocks);
-        let data_len = (blocks as u32) * 512; // 假设 512 字节/扇区
+        let data_len = u32::from(blocks) * 512; // 假设 512 字节/扇区
         self.build_cbw(data_len, true, lun, &cmd)
     }
 
     /// 构造 INQUIRY CBW.
+    /// # Errors
+    /// 底层 CBW 构造失败时返回 Err。
     pub fn build_inquiry_cbw(
         &mut self,
         allocation_length: u16,
         lun: u8,
     ) -> Result<CommandBlockWrapper> {
         let cmd = build_inquiry_cmd(allocation_length);
-        self.build_cbw(allocation_length as u32, true, lun, &cmd)
+        self.build_cbw(u32::from(allocation_length), true, lun, &cmd)
     }
 
     /// 构造 READ CAPACITY(10) CBW.
+    /// # Errors
+    /// 底层 CBW 构造失败时返回 Err。
     pub fn build_read_capacity_10_cbw(&mut self, lun: u8) -> Result<CommandBlockWrapper> {
         let cmd = build_read_capacity_10_cmd();
         self.build_cbw(8, true, lun, &cmd) // READ CAPACITY(10) 返回 8 字节
     }
 
     /// 构造 TEST UNIT READY CBW.
+    /// # Errors
+    /// 底层 CBW 构造失败时返回 Err。
     pub fn build_test_unit_ready_cbw(&mut self, lun: u8) -> Result<CommandBlockWrapper> {
         let cmd = build_test_unit_ready_cmd();
         self.build_cbw(0, false, lun, &cmd)
     }
 
     /// 构造 REQUEST SENSE CBW.
+    /// # Errors
+    /// 底层 CBW 构造失败时返回 Err。
     pub fn build_request_sense_cbw(
         &mut self,
         allocation_length: u8,
         lun: u8,
     ) -> Result<CommandBlockWrapper> {
         let cmd = build_request_sense_cmd(allocation_length);
-        self.build_cbw(allocation_length as u32, true, lun, &cmd)
+        self.build_cbw(u32::from(allocation_length), true, lun, &cmd)
     }
 }
 

@@ -43,20 +43,17 @@ pub fn slab_init() {
             _ => "kmalloc-2048",
         };
 
-        match KmemCache::create(name, CACHE_SIZES[i]) {
-            Ok(cache) => {
-                caches[i] = Some(cache);
-                success_count += 1;
-            }
-            Err(_) => {
-                klog_error!(
-                    "[SLAB] CRITICAL: Failed to create cache {} (size {}). \
-                     This size class will fall back to heap allocator.",
-                    name,
-                    CACHE_SIZES[i]
-                );
-                caches[i] = None;
-            }
+        if let Ok(cache) = KmemCache::create(name, CACHE_SIZES[i]) {
+            caches[i] = Some(cache);
+            success_count += 1;
+        } else {
+            klog_error!(
+                "[SLAB] CRITICAL: Failed to create cache {} (size {}). \
+                 This size class will fall back to heap allocator.",
+                name,
+                CACHE_SIZES[i]
+            );
+            caches[i] = None;
         }
     }
     drop(caches);
@@ -85,12 +82,9 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
 
     if let Some(idx) = cache_index(size) {
         let mut caches = SLAB_CACHES.lock();
-        match caches[idx] {
-            Some(ref mut cache) => cache.allocate(),
-            None => {
-                drop(caches);
-                super::kmalloc::get_kmalloc().allocate(size)
-            }
+        if let Some(ref mut cache) = caches[idx] { cache.allocate() } else {
+            drop(caches);
+            super::kmalloc::get_kmalloc().allocate(size)
         }
     } else {
         super::kmalloc::get_kmalloc().allocate(size)
@@ -109,12 +103,9 @@ pub fn slab_kfree(ptr: *mut u8, size: usize) {
 
     if let Some(idx) = cache_index(size) {
         let mut caches = SLAB_CACHES.lock();
-        match caches[idx] {
-            Some(ref mut cache) => cache.deallocate(ptr),
-            None => {
-                drop(caches);
-                super::kmalloc::get_kmalloc().deallocate(ptr);
-            }
+        if let Some(ref mut cache) = caches[idx] { cache.deallocate(ptr) } else {
+            drop(caches);
+            super::kmalloc::get_kmalloc().deallocate(ptr);
         }
     } else {
         super::kmalloc::get_kmalloc().deallocate(ptr);

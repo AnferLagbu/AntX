@@ -1,6 +1,6 @@
 //! # Interrupt Descriptor Table (IDT) - Rust 安全重写
 //!
-//! QueenX 操作系统的中断描述符表管理模块。
+//! `QueenX` 操作系统的中断描述符表管理模块。
 //!
 //! ## 架构概览
 //!
@@ -26,7 +26,7 @@
 //! ## 安全性增强 (相比 C 版本)
 //!
 //! - ✅ **内存安全**: Ownership + Borrow Checker 消除缓冲区溢出
-//! - ✅ **并发安全**: AtomicU64 / Mutex 保护全局状态
+//! - ✅ **并发安全**: `AtomicU64` / Mutex 保护全局状态
 //! - ✅ **类型安全**: Trait 系统替代 void* 函数指针
 //! - ✅ **空指针安全**: Option<T> 编译期排除 null deref
 //!
@@ -105,13 +105,13 @@ pub static IDT_MANAGER: () = ();
 // FFI 接口层 (C ↔ Rust 桥接) - Phase 2 完整实现
 // ============================================================================
 
-/// x86_64 中断 wrapper 函数指针类型
+/// `x86_64` 中断 wrapper 函数指针类型
 /// 入口 stub (asm) → wrapper (本函数) → 业务 handler (Rust 普通调用)
-/// 使用 `extern "C"` (x86_64 Linux 上等同 `sysv64`),因为 wrapper 内部需
+/// 使用 `extern "C"` (`x86_64` Linux 上等同 `sysv64`),因为 wrapper 内部需
 /// 正常调用业务 handler,不能用 `x86-interrupt` (后者禁止普通函数调用)
 pub type CExceptionHandler = extern "C" fn(*mut InterruptFrame);
 
-/// x86_64 IRQ wrapper 函数指针类型
+/// `x86_64` IRQ wrapper 函数指针类型
 pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 
 /// 初始化 IDT 子系统 (FFI 导出函数)
@@ -382,6 +382,8 @@ pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 #[unsafe(link_section = ".kpti_trampoline")]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
     if frame.is_null() {
         return;
@@ -403,6 +405,8 @@ pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
 /// * `type_attr` - 类型属性标志
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: u8) {
     let manager = IdtManager::instance();
 

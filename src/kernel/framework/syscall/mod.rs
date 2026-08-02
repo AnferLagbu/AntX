@@ -21,7 +21,7 @@ pub mod wait4;
 /// T-03: 系统调用分发决策 trait
 pub mod dispatch_trait;
 
-/// Syscall 模块 — QueenX 原生系统调用分发
+/// Syscall 模块 — `QueenX` 原生系统调用分发
 ///
 /// 编号空间 (遵循 queenx-naming-standpoint.md):
 ///   0-299   : 保留给未来 linuxulator (与 Linux 1:1 映射)
@@ -129,7 +129,7 @@ pub(crate) mod raw {
 
     // ============= 用户指针校验（safe 包装） =============
 
-    /// 校验单个用户指针是否在合法范围 [1, USER_ADDR_MAX)
+    /// 校验单个用户指针是否在合法范围 [1, `USER_ADDR_MAX`)
     pub fn check_user_ptr(ptr: u64) -> bool {
         super::validate_user_ptr(ptr)
     }
@@ -213,7 +213,7 @@ pub(crate) mod raw {
         true
     }
 
-    /// Safe 包装: 写两个 u64 到 user 指针 (rlim_cur, rlim_max).
+    /// Safe 包装: 写两个 u64 到 user 指针 (`rlim_cur`, `rlim_max`).
     pub fn write_rlimit_to_user(ptr: u64, cur: u64, max: u64) -> bool {
         if ptr == 0 {
             return false;
@@ -259,7 +259,7 @@ pub(crate) mod raw {
 
     // ============= 设备输入抽象 =============
 
-    /// 从键盘读取一个字节（x86_64 专属）。None 表示无数据。
+    /// `从键盘读取一个字节（x86_64` 专属）。None 表示无数据。
     /// # Safety
     /// FFI 调用，需在中断上下文。
     #[cfg(all(target_arch = "x86_64", not(feature = "kernel_test")))]
@@ -304,15 +304,15 @@ pub(crate) mod raw {
     // ============= 物理内存分配 =============
 
     /// 分配 count 个连续物理页。
-    /// 委托到 mm::api::pmm_alloc_pages.
+    /// 委托到 `mm::api::pmm_alloc_pages`.
     pub fn alloc_pages(count: u64) -> *mut u8 {
         crate::kernel::framework::mm::pmm_alloc_pages(count as usize)
     }
 
     /// 释放 count 个连续物理页。
-    /// 委托到 mm::api::pmm_free_pages.
+    /// 委托到 `mm::api::pmm_free_pages`.
     pub fn free_pages(addr: *mut u8, count: u64) {
-        crate::kernel::framework::mm::pmm_free_pages(addr, count as usize)
+        crate::kernel::framework::mm::pmm_free_pages(addr, count as usize);
     }
 
     // ============= 时间 =============
@@ -353,8 +353,8 @@ pub(crate) mod raw {
         unsafe { &_kernel_start as *const u8 }
     }
 
-    /// 内核映像结束物理地址（已减 HHDM_OFFSET）。
-    /// # SAFETY: 链接器符号，hhdm_offset 必须与启动时一致。
+    /// 内核映像结束物理地址（已减 `HHDM_OFFSET`）。
+    /// # SAFETY: `链接器符号，hhdm_offset` 必须与启动时一致。
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
     pub fn kernel_end_phys(hhdm_offset: usize) -> usize {
         unsafe { (&_kernel_end as *const u8 as usize).wrapping_sub(hhdm_offset) }
@@ -362,7 +362,7 @@ pub(crate) mod raw {
 
     // ============= CPU 控制指令集中点 =============
 
-    /// 加载空 IDT 后触发异常，重启 CPU（x86_64）。
+    /// 加载空 IDT 后触发异常，重启 `CPU（x86_64`）。
     /// # SAFETY: 不返回；调用方须确保已关闭其他 CPU。
     #[cfg(target_arch = "x86_64")]
     pub unsafe fn reboot_via_idt() -> ! { unsafe {

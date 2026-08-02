@@ -68,7 +68,7 @@ pub fn get_apic_id(cpu_index: u32) -> u32 {
 }
 
 pub fn send_tlb_invalidate_ipi(target_apic_id: u8) {
-    crate::arch!(send_ipi(target_apic_id as u32, 0xFD));
+    crate::arch!(send_ipi(u32::from(target_apic_id), 0xFD));
 }
 
 pub fn send_broadcast_ipi(vector: u8) {
@@ -82,7 +82,7 @@ pub fn broadcast_tlb_invalidate() {
 }
 
 pub fn send_reschedule_ipi(target_apic_id: u8) {
-    crate::arch!(send_ipi(target_apic_id as u32, 0xFE));
+    crate::arch!(send_ipi(u32::from(target_apic_id), 0xFE));
 }
 
 pub fn broadcast_reschedule() {

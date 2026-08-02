@@ -26,7 +26,7 @@ struct ProcListEntry {
     name: [u8; 48],
 }
 
-/// proc_list(buf, max_entries) 策略
+/// `proc_list(buf`, `max_entries`) 策略
 pub fn proc_list_syscall(buf_ptr: u64, max_entries: u32) -> i64 {
     if buf_ptr == 0 || !crate::kernel::framework::syscall::api::validate_user_ptr(buf_ptr) {
         return Errno::EFAULT.as_ret();
@@ -55,7 +55,7 @@ pub fn proc_list_syscall(buf_ptr: u64, max_entries: u32) -> i64 {
                 },
             };
 
-            let offset = count as u64 * entry_size as u64;
+            let offset = count as u64 * u64::from(entry_size);
             if !crate::kernel::framework::syscall::api::write_struct_to_user(
                 buf_ptr + offset,
                 &entry,
@@ -67,15 +67,15 @@ pub fn proc_list_syscall(buf_ptr: u64, max_entries: u32) -> i64 {
         true
     });
 
-    count as i64
+    i64::from(count)
 }
 
-/// proc_setpri(pid, priority) 策略
+/// `proc_setpri(pid`, priority) 策略
 pub fn proc_setpri_syscall(pid: u32, priority: u32) -> i64 {
-    crate::kernel::framework::proc::proc_set_priority(pid, priority) as i64
+    i64::from(crate::kernel::framework::proc::proc_set_priority(pid, priority))
 }
 
-/// credo_proc_cputime(pid) 策略
+/// `credo_proc_cputime(pid)` 策略
 pub fn credo_proc_cputime_syscall(pid: u32) -> i64 {
     let target_pid = if pid == 0 {
         crate::kernel::framework::proc::process_get_current_pid()

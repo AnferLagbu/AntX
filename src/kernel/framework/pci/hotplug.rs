@@ -1,4 +1,4 @@
-//! PCI / PCIe 热插拔检测与事件源
+//! PCI / `PCIe` 热插拔检测与事件源
 //!
 //! 基于 PCI Express 规范的 Slot Capability / Slot Status 寄存器
 //! 检测设备插入/移除事件，不依赖操作系统特定的 ACPI SHPC。
@@ -42,7 +42,7 @@ const _SLOTSTS_COMMAND_COMPLETED: u16 = 1 << 4;
 const SLOTSTS_PRESENCE_STATE: u16 = 1 << 6;
 const SLOTSTS_DLL_STATE_CHANGED: u16 = 1 << 7;
 
-/// PCIe 端口类型 (Capability Register bits 7:4)
+/// `PCIe` 端口类型 (Capability Register bits 7:4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PciePortType {
     PcieEndpoint = 0,
@@ -71,7 +71,7 @@ impl PciePortType {
     }
 }
 
-/// PCIe 热插拔槽位描述
+/// `PCIe` 热插拔槽位描述
 #[derive(Debug, Clone)]
 pub struct PcieHotplugSlot {
     pub bus: u8,

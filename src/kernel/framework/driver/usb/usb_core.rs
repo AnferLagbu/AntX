@@ -384,18 +384,26 @@ pub trait HostController: Driver {
     fn port_has_device(&self, port: usize) -> bool;
 
     /// 复位端口
+    /// # Errors
+    /// 端口复位操作失败时返回 Err。
     fn reset_port(&mut self, port: usize) -> Result<()>;
 
     /// 获取端口设备速度
     fn get_port_speed(&self, port: usize) -> UsbSpeed;
 
     /// 提交URB
+    /// # Errors
+    /// URB 提交失败时返回 Err。
     fn submit_urb(&mut self, urb: &Urb) -> Result<()>;
 
     /// 取消URB
+    /// # Errors
+    /// 取消操作失败时返回 Err。
     fn cancel_urb(&mut self, urb_id: u32) -> Result<()>;
 
     /// 分配设备地址
+    /// # Errors
+    /// 可用地址耗尽时返回 Err。
     fn allocate_address(&mut self) -> Result<u8>;
 
     /// 释放设备地址
@@ -434,8 +442,10 @@ impl UsbCore {
     }
 
     /// 枚举所有设备
+    /// # Errors
+    /// 某个端口上的设备枚举失败时返回 Err。
     pub fn enumerate_devices(&mut self) -> Result<()> {
-        let controllers: Vec<*mut dyn HostController> = self.controllers.to_vec();
+        let controllers: Vec<*mut dyn HostController> = self.controllers.clone();
         for &controller_ptr in &controllers {
             // SAFETY: `controller_ptr` 由调用方保证为有效指针; 只读访问
             let controller = unsafe { &mut *controller_ptr };

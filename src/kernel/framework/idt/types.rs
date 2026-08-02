@@ -131,6 +131,8 @@ impl InterruptFrame {
     }
 
     /// 获取错误码的各个位域
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn error_code_flags(&self) -> ErrorFlags {
         ErrorFlags::from_bits_truncate(self.err_code as u32)
     }
@@ -246,7 +248,7 @@ impl IdtEntry {
 
     /// 获取完整的 handler 地址
     pub fn handler_address(&self) -> u64 {
-        (self.offset_high as u64) << 32 | (self.offset_mid as u64) << 16 | (self.offset_low as u64)
+        u64::from(self.offset_high) << 32 | u64::from(self.offset_mid) << 16 | u64::from(self.offset_low)
     }
 }
 
@@ -268,6 +270,8 @@ pub struct IdtPtr {
 
 impl IdtPtr {
     /// 创建新的 IDT 指针
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(base: u64) -> Self {
         Self {
             limit: (IDT_ENTRIES * core::mem::size_of::<IdtEntry>() - 1) as u16,
@@ -279,13 +283,13 @@ impl IdtPtr {
 /// IRQ 描述符 (扩展信息)
 #[derive(Debug)]
 pub struct IrqDescriptor {
-    /// 处理函数 (x86_64 上 wrapper 用 C ABI / sysv64,aarch64 上 AAPCS64)
+    /// 处理函数 (`x86_64` 上 wrapper 用 C ABI / sysv64,aarch64 上 AAPCS64)
     pub handler: Option<extern "C" fn(*mut InterruptFrame)>,
     /// 名称 (用于日志和诊断)
     pub name: &'static str,
     /// 详细描述
     pub description: &'static str,
-    /// 标志 (IRQ_FLAG_*)
+    /// 标志 (`IRQ_FLAG`_*)
     pub flags: u32,
     /// 调用统计
     pub call_count: core::sync::atomic::AtomicU64,

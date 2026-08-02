@@ -202,7 +202,7 @@ pub fn sys_mincore(addr: u64, len: u64, vec_ptr: u64) -> i64 {
             // 使用 framework 的 safe copy_to_user 替代 unsafe copy_nonoverlapping
             match copy_to_user(vec_ptr, &stack_buf[..buf_bytes], buf_bytes) {
                 Ok(_) => 0,
-                Err(_) => Errno::EFAULT.as_ret(),
+                Err(()) => Errno::EFAULT.as_ret(),
             }
         }
         Err(e) => e.as_ret(),

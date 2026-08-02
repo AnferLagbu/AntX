@@ -98,6 +98,10 @@ impl ExfatDirEntry {
     }
 
     /// 从指定簇读取目录条目
+    ///
+    /// # Errors
+    /// 当读取 FAT 链失败时返回 `NoSpace` 或底层错误;
+    /// 当底层扇区读取失败时返回 `Io`.
     pub fn from_cluster(
         device_idx: u8,
         super_block: &ExfatSuperBlock,
@@ -115,7 +119,7 @@ impl ExfatDirEntry {
             for i in 0..sectors_per_cluster {
                 let offset = i as usize * super_block.bytes_per_sector() as usize;
                 let result = with_device(device_idx as usize, |dev| {
-                    read_sectors(dev, (sector + i) as u64, 1, &mut cluster_data[offset..offset + super_block.bytes_per_sector() as usize])
+                    read_sectors(dev, u64::from(sector + i), 1, &mut cluster_data[offset..offset + super_block.bytes_per_sector() as usize])
                 });
 
                 if !matches!(result, Some(Ok(()))) {

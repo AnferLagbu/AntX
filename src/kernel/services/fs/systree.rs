@@ -92,6 +92,9 @@ impl SystreeAttr {
     }
 
     /// 读取属性值
+    ///
+    /// # Errors
+    /// 当属性未注册读取回调函数时返回 `EIO`.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, Errno> {
         if let Some(f) = self.read_fn {
             f(buf)
@@ -101,6 +104,9 @@ impl SystreeAttr {
     }
 
     /// 写入属性值
+    ///
+    /// # Errors
+    /// 当属性未注册写入回调函数时返回 `EIO`.
     pub fn write(&self, data: &[u8]) -> Result<(), Errno> {
         if let Some(f) = self.write_fn {
             f(data)
@@ -157,6 +163,9 @@ impl SystreeNode {
     }
 
     /// 添加属性
+    ///
+    /// # Errors
+    /// 当属性表已满 (`MAX_ATTRS`) 时返回 `ENOMEM`.
     pub fn add_attr(&mut self, attr: SystreeAttr) -> Result<(), Errno> {
         if self.attr_count as usize >= MAX_ATTRS {
             return Err(Errno::ENOMEM);
@@ -187,6 +196,9 @@ impl SystreeNode {
     }
 
     /// 删除属性
+    ///
+    /// # Errors
+    /// 当不存在名为 `name` 的属性时返回 `ENOENT`.
     pub fn delete_attr(&mut self, name: &str) -> Result<(), Errno> {
         let mut found = false;
         for i in 0..self.attr_count as usize {
@@ -239,6 +251,9 @@ impl Systree {
     }
 
     /// 创建节点
+    ///
+    /// # Errors
+    /// 当父节点不存在时返回 `ENOENT`; 当节点表已满 (`MAX_NODES`) 时返回 `ENOMEM`.
     pub fn create_node(
         &mut self,
         parent_id: u32,
@@ -264,6 +279,10 @@ impl Systree {
     }
 
     /// 删除节点
+    ///
+    /// # Errors
+    /// 当 `id` 为根节点 (0) 时返回 `EINVAL`; 当节点仍有子节点时返回 `ENOTEMPTY`;
+    /// 当节点不存在时返回 `ENOENT`.
     pub fn delete_node(&mut self, id: u32) -> Result<(), Errno> {
         if id == 0 {
             return Err(Errno::EINVAL);
@@ -326,10 +345,13 @@ impl Systree {
     }
 
     /// 列出子节点
+    ///
+    /// # Errors
+    /// 当前实现不返回错误; 当缓冲区不足时输出会被截断.
     pub fn list_children(&self, parent_id: u64, buf: &mut [u8]) -> Result<usize, Errno> {
         let mut offset = 0;
         for i in 0..self.node_count as usize {
-            if self.nodes[i].parent_id as u64 == parent_id {
+            if u64::from(self.nodes[i].parent_id) == parent_id {
                 let name = self.nodes[i].get_name().as_bytes();
                 if offset + name.len() + 1 > buf.len() {
                     break;
@@ -344,6 +366,9 @@ impl Systree {
     }
 
     /// 读取属性
+    ///
+    /// # Errors
+    /// 当节点或属性不存在时返回 `ENOENT`; 当属性未注册读取回调时返回 `EIO`.
     pub fn read_attr(
         &self,
         node_id: u32,
@@ -356,6 +381,9 @@ impl Systree {
     }
 
     /// 写入属性
+    ///
+    /// # Errors
+    /// 当节点或属性不存在时返回 `ENOENT`; 当属性未注册写入回调时返回 `EIO`.
     pub fn write_attr(
         &mut self,
         node_id: u32,
@@ -423,6 +451,9 @@ pub fn get_systree() -> &'static Mutex<Systree> {
 // ============================================================================
 
 /// 读取整数属性
+///
+/// # Errors
+/// 当 `buf` 长度小于十进制表示长度时返回 `EINVAL`.
 pub fn read_int_attr(value: u64, buf: &mut [u8]) -> Result<usize, Errno> {
     let s = format_u64(value);
     // 找到有效数据的结束位置
@@ -435,6 +466,9 @@ pub fn read_int_attr(value: u64, buf: &mut [u8]) -> Result<usize, Errno> {
 }
 
 /// 写入整数属性
+///
+/// # Errors
+/// 当 `data` 不是合法 UTF-8 或无法解析为 `u64` 时返回 `EINVAL`.
 pub fn write_int_attr(data: &[u8]) -> Result<u64, Errno> {
     let s = core::str::from_utf8(data).map_err(|_| Errno::EINVAL)?;
     let s = s.trim();
@@ -469,6 +503,9 @@ fn format_u64(mut n: u64) -> [u8; 20] {
 // ============================================================================
 
 /// 挂载 systree
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 仅初始化根节点, 不返回错误.
 pub fn mount_systree() -> Result<(), Errno> {
     let tree = get_systree();
     tree.lock().init();
@@ -476,6 +513,9 @@ pub fn mount_systree() -> Result<(), Errno> {
 }
 
 /// 卸载 systree
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 仅清空节点数据, 不返回错误.
 pub fn umount_systree() -> Result<(), Errno> {
     let mut tree = get_systree().lock();
     tree.node_count = 0;
@@ -484,11 +524,17 @@ pub fn umount_systree() -> Result<(), Errno> {
 }
 
 /// 创建节点
+///
+/// # Errors
+/// 错误条件与 [`Systree::create_node`] 相同, 参见其 `# Errors` 段.
 pub fn create_node(parent_id: u32, name: &str) -> Result<u32, Errno> {
     get_systree().lock().create_node(parent_id, name)
 }
 
 /// 删除节点
+///
+/// # Errors
+/// 错误条件与 [`Systree::delete_node`] 相同, 参见其 `# Errors` 段.
 pub fn delete_node(id: u32) -> Result<(), Errno> {
     get_systree().lock().delete_node(id)
 }
@@ -504,16 +550,27 @@ pub fn resolve_path(path: &str) -> Option<SystreeNode> {
 }
 
 /// 读取属性
+///
+/// # Errors
+/// 错误条件与 [`Systree::read_attr`] 相同, 参见其 `# Errors` 段.
 pub fn read_attr(node_id: u32, attr_name: &str, buf: &mut [u8]) -> Result<usize, Errno> {
     get_systree().lock().read_attr(node_id, attr_name, buf)
 }
 
 /// 写入属性
+///
+/// # Errors
+/// 错误条件与 [`Systree::write_attr`] 相同, 参见其 `# Errors` 段.
 pub fn write_attr(node_id: u32, attr_name: &str, data: &[u8]) -> Result<(), Errno> {
     get_systree().lock().write_attr(node_id, attr_name, data)
 }
 
 /// 处理请求
+///
+/// # Errors
+/// 当数据非 UTF-8 或操作数非法时返回 `EINVAL`;
+/// 当查找/读取/写入的对象不存在时返回 `ENOENT`;
+/// 当 `opcode` 不被支持时返回 `ENOSYS`.
 pub fn handle_request(
     opcode: u32,
     node_id: u64,

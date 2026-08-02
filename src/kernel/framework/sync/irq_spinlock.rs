@@ -48,7 +48,7 @@ use crate::kernel::framework::sync::{LockClassId, LockClassDesc, LockKind};
 /// data.with_mut(|g| *g += 1);
 /// ```
 pub struct IrqSpinLock<T> {
-    /// 底层自旋锁 (放在 UnsafeCell 中以便从 &self 调用 raw_lock)
+    /// 底层自旋锁 (放在 `UnsafeCell` 中以便从 &self 调用 `raw_lock`)
     lock: UnsafeCell<SpinLock>,
     /// 被保护的数据
     data: UnsafeCell<T>,
@@ -86,7 +86,7 @@ impl<T> IrqSpinLock<T> {
         }
     }
 
-    /// 创建命名 IrqSpinLock (用于调试 + lockdep)
+    /// 创建命名 `IrqSpinLock` (用于调试 + lockdep)
     #[cfg(debug_assertions)]
     pub fn named(name: &'static str, data: T) -> Self {
         let class_id = crate::kernel::framework::sync::register_class(LockClassDesc {
@@ -135,13 +135,13 @@ impl<T> IrqSpinLock<T> {
     /// 闭包 API: 获取锁, 持有期间屏蔽中断, 执行闭包后自动释放。
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
         let mut guard = self.lock();
-        f(guard.deref_mut())
+        f(&mut *guard)
     }
 
     /// 不可变闭包版本。
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let guard = self.lock();
-        f(guard.deref())
+        f(&*guard)
     }
 
     /// 尝试获取锁, 不阻塞。
@@ -210,20 +210,20 @@ pub struct IrqSpinLockGuard<'a, T> {
     lockdep_class: LockClassId,
 }
 
-impl<'a, T> Deref for IrqSpinLockGuard<'a, T> {
+impl<T> Deref for IrqSpinLockGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
     }
 }
 
-impl<'a, T> DerefMut for IrqSpinLockGuard<'a, T> {
+impl<T> DerefMut for IrqSpinLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
 }
 
-impl<'a, T> Drop for IrqSpinLockGuard<'a, T> {
+impl<T> Drop for IrqSpinLockGuard<'_, T> {
     fn drop(&mut self) {
         // Lockdep: 通知锁释放
         #[cfg(debug_assertions)]

@@ -53,9 +53,9 @@ pub const MIN_HZ: u32 = 100;
 pub enum TicklessMode {
     /// 周期 tick (传统模式)
     Periodic = 0,
-    /// NO_HZ_IDLE: 空闲时停止 tick
+    /// `NO_HZ_IDLE`: 空闲时停止 tick
     NoHzIdle = 1,
-    /// NO_HZ_FULL: 始终无 tick (仅 sched_tick)
+    /// `NO_HZ_FULL`: 始终无 tick (仅 `sched_tick`)
     NoHzFull = 2,
 }
 
@@ -333,7 +333,7 @@ impl TicklessSubsystem {
             if timer_hz == 0 {
                 return;
             }
-            let count = (timer_hz / hz as u64) as u32;
+            let count = (timer_hz / u64::from(hz)) as u32;
             crate::kernel::framework::arch::apic::init_timer(
                 0x20,
                 true, // periodic
@@ -374,18 +374,18 @@ pub fn tickless_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_tickless — Tickless 系统调用
+/// `sys_tickless` — Tickless 系统调用
 ///
 /// `a0`: cmd
-///   0 = set_global_mode(mode: a1)
-///   1 = get_global_mode() → mode
-///   2 = set_cpu_mode(cpu: a1, mode: a2)
-///   3 = get_cpu_stats(cpu: a1) → (enter 位于高 32 位 | exit 位于低 32 位) 或 idle_time
-///   4 = set_hz(cpu: a1, hz: a2)
-///   5 = is_initialized() → bool (是否已初始化)
+///   0 = `set_global_mode(mode`: a1)
+///   1 = `get_global_mode()` → mode
+///   2 = `set_cpu_mode(cpu`: a1, mode: a2)
+///   3 = `get_cpu_stats(cpu`: a1) → (enter 位于高 32 位 | exit 位于低 32 位) 或 `idle_time`
+///   4 = `set_hz(cpu`: a1, hz: a2)
+///   5 = `is_initialized()` → bool (是否已初始化)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_tickless(cmd: u64, a1: u64, a2: u64) -> i64 {
+pub extern "C" fn sys_tickless(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !tickless_is_initialized() && cmd != 5 {
         return -(11i64); // EAGAIN
     }
@@ -424,7 +424,7 @@ pub fn sys_tickless(cmd: u64, a1: u64, a2: u64) -> i64 {
         }
         5 => {
             // is_initialized
-            tickless_is_initialized() as i64
+            i64::from(tickless_is_initialized())
         }
         _ => -(38i64), // ENOSYS
     }

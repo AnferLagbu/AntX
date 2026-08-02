@@ -13,7 +13,7 @@
 //!
 //! ## TCB 减负
 //!
-//! 原 HvZilPersist 3 个核心方法 (serialize_zil_to_block/deserialize_zil_from_block/mark_written)
+//! 原 `HvZilPersist` 3 个核心方法 (`serialize_zil_to_block/deserialize_zil_from_block/mark_written`)
 //! 提取为 trait, 让 SPA/DMU 在不真实磁盘上测试序列化/反序列化/重放逻辑.
 //!
 //! ## 与 LEGACY-5.1-5.5/5.7/5.8/5.10 范式一致
@@ -28,13 +28,13 @@ use super::zil_persist::HvZilPersist;
 
 /// ZIL 持久化 trait
 ///
-/// HvZilPersist 的核心方法 (serialize_zil_to_block/deserialize_zil_from_block/mark_written)
+/// `HvZilPersist` 的核心方法 (`serialize_zil_to_block/deserialize_zil_from_block/mark_written`)
 /// 抽象为 trait, 让 SPA/DMU 等调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # Safety
 ///
 /// - `serialize_zil_to_block` 在 records 为空时返回 None
-/// - `deserialize_zil_from_block` 验证 header + trailer + data_checksum, 不一致时返回空 Vec
+/// - `deserialize_zil_from_block` 验证 header + trailer + `data_checksum`, 不一致时返回空 Vec
 /// - `mark_written` 是幂等的
 pub trait ZilPersist: Send + Sync {
     /// 序列化 ZIL 为磁盘块 (None = 无记录)
@@ -51,10 +51,10 @@ pub trait ZilPersist: Send + Sync {
 // StandardZilPersist — 默认 ZIL 持久化实现
 // ============================================================================
 
-/// 标准 ZIL 持久化实现 — 包装 HvZilPersist, 委托所有方法
+/// 标准 ZIL 持久化实现 — 包装 `HvZilPersist`, 委托所有方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockZilPersist 替代本实现.
+/// 单元测试可注入 `MockZilPersist` 替代本实现.
 pub struct StandardZilPersist(pub HvZilPersist);
 
 impl StandardZilPersist {
@@ -63,7 +63,7 @@ impl StandardZilPersist {
         Self(HvZilPersist::new())
     }
 
-    /// 访问内部 HvZilPersist (向后兼容)
+    /// 访问内部 `HvZilPersist` (向后兼容)
     pub fn inner(&self) -> &HvZilPersist {
         &self.0
     }

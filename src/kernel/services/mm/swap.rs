@@ -2,7 +2,7 @@
 //! Swap — services 层安全代理
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::mm::swap。
+//! 所有 unsafe 操作已委托至 `framework::mm::swap`。
 //!
 //! ## 职责
 //!
@@ -75,16 +75,16 @@ pub fn swap_init() -> bool {
 
 /// 初始化 kswapd: 注册 Kswapd softirq handler
 ///
-/// 必须在 IRQ 子系统初始化后调用 (lib.rs kernel_init 6.5 阶段).
+/// 必须在 IRQ 子系统初始化后调用 (lib.rs `kernel_init` 6.5 阶段).
 pub fn kswapd_init() {
-    fw_swap::kswapd_init()
+    fw_swap::kswapd_init();
 }
 
 /// 唤醒 kswapd: 立即 raise Kswapd softirq
 ///
 /// 由 scheduler.tick 周期调用, 或 pressure 跃迁调用.
 pub fn kswapd_wakeup() {
-    fw_swap::kswapd_wakeup()
+    fw_swap::kswapd_wakeup();
 }
 
 /// 检查 kswapd 是否处于 pending (诊断接口)
@@ -111,7 +111,7 @@ pub fn swap_info() -> SwapInfo {
 /// 记录页面访问 (添加到 LRU active 链表)
 ///
 /// pml4 为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
-/// `locked` 表示该页是否被 mlock 锁定, 由调用方根据 VMA vm_flags.MLOCKED 推导.
+/// `locked` 表示该页是否被 mlock 锁定, 由调用方根据 VMA `vm_flags.MLOCKED` 推导.
 pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
     fw_swap::lru_touch(pml4, virt_addr, phys_addr, dirty, locked);
 }
@@ -119,7 +119,7 @@ pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked:
 /// 标记某虚拟地址对应 LRU 条目为 mlock 锁定
 ///
 /// 返回 true 表示 LRU 中存在该条目 (并已更新), false 表示该页未在 LRU 跟踪
-/// (尚未触达, locked 状态由 VMA vm_flags 承载).
+/// (尚未触达, locked 状态由 VMA `vm_flags` 承载).
 pub fn set_page_locked(virt_addr: u64, locked: bool) -> bool {
     fw_swap::set_page_locked(virt_addr, locked)
 }

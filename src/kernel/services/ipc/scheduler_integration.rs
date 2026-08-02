@@ -28,6 +28,9 @@ use crate::kernel::framework::proc::{scheduler_yield_ex, thread_get_current};
 /// # Returns
 /// * Ok(()) - 成功被唤醒
 /// * Err(i32) - 错误码 (-1: 超时, -2: 被信号中断)
+///
+/// # Errors
+/// 当无法获取当前线程 (`thread_get_current` 返回 0) 时返回 `Err(-2)`.
 #[inline]
 pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Result<(), i32> {
     let thread_addr = thread_get_current();
@@ -88,6 +91,9 @@ pub fn wake_all_threads(wait_queue: &mut WaitQueue) {
 /// # Returns
 /// * Ok(()) - 在超时前被唤醒
 /// * Err(-1) - 超时
+///
+/// # Errors
+/// 当等待超时仍未满足条件时返回 `Err(-1)`; 其余错误与 [`block_current_thread`] 相同.
 pub fn block_with_timeout(wait_queue: &mut WaitQueue, timeout_ms: u64) -> Result<(), i32> {
     if timeout_ms == 0 {
         // 无限等待

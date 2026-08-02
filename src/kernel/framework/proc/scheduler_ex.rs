@@ -15,7 +15,7 @@ pub use super::types::{
 // 这等价于 framework 特权层模式: unsafe 集中在 inner module,
 // 外层接口是 100% safe Rust。
 pub(crate) mod raw {
-    use super::*;
+    use super::{Thread, Ordering, ThreadState};
 
     // === 线程安全访问封装 (Framekernel privilege wrapper) ===
     //

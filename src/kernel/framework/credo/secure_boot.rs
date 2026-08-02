@@ -171,7 +171,7 @@ impl Ed25519PubKey {
         let _msg_hash = sha256_hash(message);
         // 占位: 签名非全零即视为有效
         let mut all_zero = true;
-        for &b in signature.iter() {
+        for &b in signature {
             if b != 0 {
                 all_zero = false;
                 break;
@@ -618,16 +618,18 @@ pub fn tpm_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_secure_boot — 安全启动系统调用
+/// `sys_secure_boot` — 安全启动系统调用
 ///
 /// `a0`: cmd
-///   0 = verify_image(image_ptr: a1, image_len: a2, sig_ptr: a3) → 结果
-///   1 = is_enabled() → bool
-///   2 = is_locked() → bool
-///   3 = stats() → (ok_count 位于高 32 位 | fail_count 位于低 32 位)
+///   0 = `verify_image(image_ptr`: a1, `image_len`: a2, `sig_ptr`: a3) → 结果
+///   1 = `is_enabled()` → bool
+///   2 = `is_locked()` → bool
+///   3 = `stats()` → (`ok_count` 位于高 32 位 | `fail_count` 位于低 32 位)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     match cmd {
         0 => {
             // verify_image
@@ -646,33 +648,35 @@ pub fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
         }
         1 => {
             // is_enabled
-            secure_boot_subsystem().is_enabled() as i64
+            i64::from(secure_boot_subsystem().is_enabled())
         }
         2 => {
             // is_locked
-            secure_boot_subsystem().is_locked() as i64
+            i64::from(secure_boot_subsystem().is_locked())
         }
         3 => {
             // stats
             let (ok, fail) = secure_boot_subsystem().stats();
-            ((ok as i64) << 32) | (fail as i64)
+            (i64::from(ok) << 32) | i64::from(fail)
         }
         _ => -(38i64), // ENOSYS
     }
 }
 
-/// sys_tpm — TPM 系统调用
+/// `sys_tpm` — TPM 系统调用
 ///
 /// `a0`: cmd
 ///   0 = extend(pcr 索引: a1, 数据指针: a2, 数据长度: a3) → bool
-///   1 = read_pcr(pcr 索引: a1) → u64 (哈希前8字节)
+///   1 = `read_pcr(pcr` 索引: a1) → u64 (哈希前8字节)
 ///   2 = seal(数据指针: a1, 数据长度: a2, pcr 掩码: a3) → fd
 ///   3 = unseal(fd: a1) → bool (简化)
 ///   4 = quote(pcr 掩码: a1, nonce 指针: a2, nonce 长度: a3) → 哈希前8字节
-///   5 = is_initialized() → 是否已初始化
+///   5 = `is_initialized()` → 是否已初始化
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_tpm(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn sys_tpm(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !tpm_is_initialized() && cmd != 5 {
         return -(11i64); // EAGAIN
     }
@@ -734,7 +738,7 @@ pub fn sys_tpm(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
         }
         5 => {
             // is_initialized
-            tpm_is_initialized() as i64
+            i64::from(tpm_is_initialized())
         }
         _ => -(38i64), // ENOSYS
     }

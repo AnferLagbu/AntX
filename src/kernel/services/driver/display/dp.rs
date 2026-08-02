@@ -32,27 +32,27 @@ use super::hdmi::{lookup_dmt_timing, VideoMode, VideoTiming};
 // DisplayPort 常量定义
 // ============================================================================
 
-/// DisplayPort DPCD 地址 — VESA DP 规范 §2.4
+/// `DisplayPort` DPCD 地址 — VESA DP 规范 §2.4
 ///
-/// 当前使用: TRAINING_PTN_SET 训练图样设置, LINK_BW_SET 链路带宽设置,
-///           LANE_COUNT_SET 通道数设置, LANE0_1_STATUS / LANE2_3_STATUS
-///           通道状态, LANE_ALIGN_STATUS_UPDATED 对齐状态,
-///           ADJUST_REQ_LANE0/1/2/3 各通道请求调整
+/// 当前使用: `TRAINING_PTN_SET` 训练图样设置, `LINK_BW_SET` 链路带宽设置,
+///           `LANE_COUNT_SET` 通道数设置, `LANE0_1_STATUS` / `LANE2_3_STATUS`
+///           通道状态, `LANE_ALIGN_STATUS_UPDATED` 对齐状态,
+///           `ADJUST_REQ_LANE0/1/2/3` 各通道请求调整
 mod aux_address {
     pub const TRAINING_PTN_SET: u16 = 0x0106;
     pub const LINK_BW_SET: u16 = 0x0100;
     pub const LANE_COUNT_SET: u16 = 0x0101;
     /// LANE0 + LANE1 状态寄存器 (VESA DP 1.4 §2.5.4, DPCD 0x0204):
-    ///   bit 0: LANE0_CR_DONE
-    ///   bit 1: LANE0_CHANNEL_EQ_DONE
-    ///   bit 2: LANE0_SYMBOL_LOCKED
-    ///   bit 4: LANE1_CR_DONE
-    ///   bit 5: LANE1_CHANNEL_EQ_DONE
-    ///   bit 6: LANE1_SYMBOL_LOCKED
+    ///   bit 0: `LANE0_CR_DONE`
+    ///   bit 1: `LANE0_CHANNEL_EQ_DONE`
+    ///   bit 2: `LANE0_SYMBOL_LOCKED`
+    ///   bit 4: `LANE1_CR_DONE`
+    ///   bit 5: `LANE1_CHANNEL_EQ_DONE`
+    ///   bit 6: `LANE1_SYMBOL_LOCKED`
     pub const LANE0_1_STATUS: u16 = 0x0204;
     /// LANE2 + LANE3 状态寄存器 (4-lane 配置时使用)
     pub const LANE2_3_STATUS: u16 = 0x0205;
-    /// 下行端口状态 (含 LANE_ALIGN_STATUS_UPDATED bit 0)
+    /// 下行端口状态 (含 `LANE_ALIGN_STATUS_UPDATED` bit 0)
     pub const LANE_ALIGN_STATUS_UPDATED: u16 = 0x0206;
     /// 接收器请求的 voltage swing / pre-emphasis 调整 (LANE0/1)
     pub const ADJUST_REQ_LANE0_1: u16 = 0x0207;
@@ -71,16 +71,16 @@ mod aux_address {
 /// 与 HDMI 共享 HPD 的厂商应通过 [`DpController::new_with_io`] 显式指定偏移。
 const DP_HPD_REG_OFFSET: u32 = 0x040;
 
-/// 当前实装阶段 (HPD + AUX + 链路训练状态/调整) DP 控制器所需的最小 IoMem 大小.
+/// 当前实装阶段 (HPD + AUX + 链路训练状态/调整) DP 控制器所需的最小 `IoMem` 大小.
 ///
-/// P0-2: 文档化 IoMem 最小大小, 消除隐式约定风险.
+/// P0-2: 文档化 `IoMem` 最小大小, 消除隐式约定风险.
 /// P1-4: 提供 [`assert_iomem_size_at_least`] 编译期检查辅助函数.
 ///
 /// 实际映射需求 (按 VESA DP 1.4 + 典型 Synopsys DWC DP-TX AUX 控制器布局):
 /// - HPD 寄存器: 0x040 (1 字节) → 至少 0x041
 /// - AUX 通道: 0x100..=0x110 (16 字节, 含 CMD/STA/DAT0-3)
-/// - 链路训练状态: 0x200..=0x210 (LANE0_1_STATUS + LANE2_3_STATUS + LANE_ALIGN_STATUS + TRAINING_ADJUST_REQ)
-/// - 链路训练调整请求镜像: 0x210..=0x211 (8-bit ADJUST_REQ_LANE0)
+/// - 链路训练状态: 0x200..=0x210 (`LANE0_1_STATUS` + `LANE2_3_STATUS` + `LANE_ALIGN_STATUS` + `TRAINING_ADJUST_REQ`)
+/// - 链路训练调整请求镜像: 0x210..=0x211 (8-bit `ADJUST_REQ_LANE0`)
 /// - 视频时序寄存器: 0x300..=0x310 (DP 标准 8 个 16-bit 时序寄存器)
 /// - 同步极性: 0x310 (1 字节, bit 0=H, bit 1=V)
 /// - 输出使能: 0x311 (1 字节, bit 0=enabled)
@@ -88,15 +88,17 @@ const DP_HPD_REG_OFFSET: u32 = 0x040;
 /// 当前常量 0x312 已满足 HPD + AUX + 链路训练 + 视频时序 + sync + 输出使能阶段.
 pub const REQUIRED_IOMEM_SIZE: usize = 0x312;
 
-/// 编译期检查 IoMem 大小 (P1-4).
+/// 编译期检查 `IoMem` 大小 (P1-4).
 ///
 /// 当 `size` 是 const 表达式且 `size < REQUIRED_IOMEM_SIZE` 时, 编译期 panic;
 /// 否则零运行时开销. 用法见 hdmi.rs 对应函数.
+///
+/// # Panics
+///
+/// 当 `size < REQUIRED_IOMEM_SIZE` 时编译期 panic, 提示 `IoMem size must be >= DpController::REQUIRED_IOMEM_SIZE`。
 #[inline]
 pub const fn assert_iomem_size_at_least(size: usize) {
-    if size < REQUIRED_IOMEM_SIZE {
-        panic!("IoMem size must be >= DpController::REQUIRED_IOMEM_SIZE");
-    }
+    assert!(size >= REQUIRED_IOMEM_SIZE, "IoMem size must be >= DpController::REQUIRED_IOMEM_SIZE");
 }
 
 /// DP HPD 状态位 (bit 0)
@@ -143,7 +145,7 @@ const AUX_DAT3_REG_OFFSET: u32 = 0x10E;
 
 /// AUX CMD 寄存器 bit 0 = start transaction
 const AUX_CMD_START_BIT: u8 = 0x01;
-/// AUX CMD 寄存器 bit 1-3 = command (AuxCommand enum 字节值)
+/// AUX CMD 寄存器 bit 1-3 = command (`AuxCommand` enum 字节值)
 const AUX_CMD_COMMAND_SHIFT: u8 = 1;
 
 /// AUX STA 寄存器 bit 0 = busy
@@ -155,10 +157,10 @@ const AUX_STA_REPLY_ERR_SHIFT: u8 = 2;
 /// AUX STA 寄存器 bit 2-3 = reply error mask
 const AUX_STA_REPLY_ERR_MASK: u8 = 0x0C;
 
-/// AUX 事务超时 (与 hdmi/ddc.rs DDC_TRANSACTION_TIMEOUT_ITERS 对齐).
+/// AUX 事务超时 (与 hdmi/ddc.rs `DDC_TRANSACTION_TIMEOUT_ITERS` 对齐).
 ///
 /// 完整 AUX 事务典型 < 1 ms (请求→响应 1 Mbps AUX 速率);
-/// 50_000 spin_loops ≈ 1-2 ms, 适配大多数 AUX 控制器.
+/// `50_000` `spin_loops` ≈ 1-2 ms, 适配大多数 AUX 控制器.
 const AUX_TRANSACTION_TIMEOUT_ITERS: usize = 50_000;
 /// AUX 单步延时 (近似 1 µs).
 const AUX_DELAY_ITERS: usize = 50;
@@ -189,29 +191,29 @@ const AUX_DELAY_ITERS: usize = 50;
 //
 // 调用方应通过 [`DpController::new_with_io`] 指定自家偏移 (如未来需要扩展).
 
-/// DP H_TOTAL 寄存器偏移 (16-bit)
+/// DP `H_TOTAL` 寄存器偏移 (16-bit)
 const DP_H_TOTAL_REG_OFFSET: u32 = 0x300;
-/// DP H_ACTIVE 寄存器偏移 (16-bit)
+/// DP `H_ACTIVE` 寄存器偏移 (16-bit)
 const DP_H_ACTIVE_REG_OFFSET: u32 = 0x302;
-/// DP V_TOTAL 寄存器偏移 (16-bit)
+/// DP `V_TOTAL` 寄存器偏移 (16-bit)
 const DP_V_TOTAL_REG_OFFSET: u32 = 0x304;
-/// DP V_ACTIVE 寄存器偏移 (16-bit)
+/// DP `V_ACTIVE` 寄存器偏移 (16-bit)
 const DP_V_ACTIVE_REG_OFFSET: u32 = 0x306;
-/// DP H_SYNC_OFFSET 寄存器偏移 (16-bit)
+/// DP `H_SYNC_OFFSET` 寄存器偏移 (16-bit)
 const DP_H_SYNC_OFFSET_REG_OFFSET: u32 = 0x308;
-/// DP H_SYNC_PW 寄存器偏移 (16-bit)
+/// DP `H_SYNC_PW` 寄存器偏移 (16-bit)
 const DP_H_SYNC_PW_REG_OFFSET: u32 = 0x30A;
-/// DP V_SYNC_OFFSET 寄存器偏移 (16-bit)
+/// DP `V_SYNC_OFFSET` 寄存器偏移 (16-bit)
 const DP_V_SYNC_OFFSET_REG_OFFSET: u32 = 0x30C;
-/// DP V_SYNC_PW 寄存器偏移 (16-bit)
+/// DP `V_SYNC_PW` 寄存器偏移 (16-bit)
 const DP_V_SYNC_PW_REG_OFFSET: u32 = 0x30E;
-/// DP SYNC_POL 寄存器偏移 (8-bit)
+/// DP `SYNC_POL` 寄存器偏移 (8-bit)
 const DP_SYNC_POL_REG_OFFSET: u32 = 0x310;
 /// DP H 同步极性 bit (bit 0, 0=negative, 1=positive)
 const DP_SYNC_POL_H_BIT: u8 = 0x01;
 /// DP V 同步极性 bit (bit 1, 0=negative, 1=positive)
 const DP_SYNC_POL_V_BIT: u8 = 0x02;
-/// DP OUTPUT_ENABLE 寄存器偏移 (8-bit)
+/// DP `OUTPUT_ENABLE` 寄存器偏移 (8-bit)
 const DP_OUTPUT_ENABLE_REG_OFFSET: u32 = 0x311;
 /// DP 输出使能 bit (bit 0, 1=enabled)
 const DP_OUTPUT_ENABLE_BIT: u8 = 0x01;
@@ -233,19 +235,23 @@ impl DpIo {
     ///
     /// # 参数
     /// - `phys`: DP BAR0 物理地址 (来自 PCI 枚举)
-    /// - `len`: MMIO 区域大小 (>= REQUIRED_IOMEM_SIZE)
+    /// - `len`: MMIO 区域大小 (>= `REQUIRED_IOMEM_SIZE`)
+    ///
+    /// # Errors
+    ///
+    /// 当从 PCI BAR 映射物理地址失败时返回 [`KernelError::Io`]。
     pub fn new(phys: PhysAddr, len: usize) -> Result<Self, KernelError> {
         let mmio = IoMem::from_pci_bar(phys, len, "dp-bar0")
             .map_err(|_| KernelError::Io)?;
         Ok(Self { mmio })
     }
 
-    /// 从已有 IoMem 创建 DP MMIO 访问器 (供 framework 构造函数使用).
+    /// 从已有 `IoMem` 创建 DP MMIO 访问器 (供 framework 构造函数使用).
     pub fn from_iomem(mmio: IoMem) -> Self {
         Self { mmio }
     }
 
-    /// 获取底层 IoMem 引用
+    /// 获取底层 `IoMem` 引用
     pub fn mmio(&self) -> &IoMem {
         &self.mmio
     }
@@ -261,7 +267,7 @@ impl DpIo {
     /// 写入 8 位寄存器
     #[inline(always)]
     pub fn write8(&self, reg: u32, val: u8) {
-        self.mmio.write_u8(reg as usize, val)
+        self.mmio.write_u8(reg as usize, val);
     }
 
     /// 读取 16 位寄存器
@@ -273,7 +279,7 @@ impl DpIo {
     /// 写入 16 位寄存器
     #[inline(always)]
     pub fn write16(&self, reg: u32, val: u16) {
-        self.mmio.write_u16(reg as usize, val)
+        self.mmio.write_u16(reg as usize, val);
     }
 
     /// 读取 32 位寄存器
@@ -285,7 +291,7 @@ impl DpIo {
     /// 写入 32 位寄存器
     #[inline(always)]
     pub fn write32(&self, reg: u32, val: u32) {
-        self.mmio.write_u32(reg as usize, val)
+        self.mmio.write_u32(reg as usize, val);
     }
 }
 
@@ -361,7 +367,7 @@ pub enum TrainingState {
 // DPCD 数据结构
 // ============================================================================
 
-/// DisplayPort配置数据 (DPCD)
+/// `DisplayPort配置数据` (DPCD)
 #[derive(Debug, Clone)]
 pub struct Dpcd {
     /// DPCD版本
@@ -405,6 +411,11 @@ pub enum DpError {
 
 impl Dpcd {
     /// 从AUX读取的数据解析DPCD
+    ///
+    /// # Errors
+    ///
+    /// - 数据长度不足 16 字节时返回 [`DpError::BufferTooSmall`]
+    /// - 最大链路速率或通道数编码无效时返回 [`DpError::InvalidParameter`]
     pub fn parse(data: &[u8]) -> Result<Self, DpError> {
         if data.len() < 16 {
             return Err(DpError::BufferTooSmall);
@@ -459,7 +470,7 @@ pub struct AuxTransaction {
 // DisplayPort 控制器
 // ============================================================================
 
-/// DisplayPort 控制器驱动 — services 层安全实现
+/// `DisplayPort` 控制器驱动 — services 层安全实现
 ///
 /// 所有寄存器读写通过 `DpIo` 安全接口, 无 unsafe.
 pub struct DpController {
@@ -488,7 +499,7 @@ pub struct DpController {
 }
 
 impl DpController {
-    /// 创建 DisplayPort 控制器实例 (无硬件 fallback 模式).
+    /// 创建 `DisplayPort` 控制器实例 (无硬件 fallback 模式).
     ///
     /// 此模式 `detect_hot_plug` 直接返回 `true` (假设已连接),
     /// 用于 QEMU/QEMU+bochs-vbe 等无真实 DP 控制器的开发环境.
@@ -507,10 +518,10 @@ impl DpController {
         }
     }
 
-    /// 创建 DisplayPort 控制器实例 (真实硬件模式).
+    /// 创建 `DisplayPort` 控制器实例 (真实硬件模式).
     ///
     /// # 参数
-    /// - `io`: DpIo 安全 MMIO 访问器 (调用方负责构造)
+    /// - `io`: `DpIo` 安全 MMIO 访问器 (调用方负责构造)
     /// - `hpd_reg_offset`: HPD 寄存器偏移
     pub fn new_with_io(io: DpIo, hpd_reg_offset: u32) -> Self {
         debug_assert!(
@@ -531,7 +542,7 @@ impl DpController {
         }
     }
 
-    /// 创建 DisplayPort 控制器实例 (真实硬件, 使用默认 HPD 寄存器偏移).
+    /// 创建 `DisplayPort` 控制器实例 (真实硬件, 使用默认 HPD 寄存器偏移).
     pub fn new_with_default_hpd(io: DpIo) -> Self {
         Self::new_with_io(io, DP_HPD_REG_OFFSET)
     }
@@ -558,6 +569,12 @@ impl DpController {
     ///
     /// 无硬件 fallback: 返回模拟 DPCD 数据 (兼容 QEMU/QEMU+bochs-vbe 开发环境),
     /// 同时更新内部 `dpcd` 缓存 (与原行为一致).
+    ///
+    /// # Errors
+    ///
+    /// - 设备未连接时返回 [`DpError::DeviceNotFound`]
+    /// - `length` 为 0 或大于 16 时返回 [`DpError::InvalidParameter`]
+    /// - 真实硬件路径下 AUX 事务失败 (如超时) 时返回相应 [`DpError`]
     pub fn aux_read(&mut self, address: u16, length: u8) -> Result<Vec<u8>, DpError> {
         if !self.connected {
             return Err(DpError::DeviceNotFound);
@@ -575,7 +592,7 @@ impl DpController {
         }
     }
 
-    /// AUX 真实硬件读事务 (DISPLAY-2.5) — 通过 DpIo 安全代理, 无 unsafe.
+    /// AUX 真实硬件读事务 (DISPLAY-2.5) — 通过 `DpIo` 安全代理, 无 unsafe.
     fn aux_read_via_mmio(
         &self,
         io: &DpIo,
@@ -667,6 +684,12 @@ impl DpController {
     /// AUX 写事务, 轮询 STA 寄存器等待 reply-ready (AUX 写事务同样有 ACK 响应).
     ///
     /// 无硬件 fallback: 静默成功 (兼容 QEMU/QEMU+bochs-vbe 开发环境).
+    ///
+    /// # Errors
+    ///
+    /// - 设备未连接时返回 [`DpError::DeviceNotFound`]
+    /// - `data` 为空或长度大于 16 时返回 [`DpError::InvalidParameter`]
+    /// - 真实硬件路径下 AUX 事务失败 (如超时) 时返回相应 [`DpError`]
     pub fn aux_write(&mut self, address: u16, data: &[u8]) -> Result<(), DpError> {
         if !self.connected {
             return Err(DpError::DeviceNotFound);
@@ -684,7 +707,7 @@ impl DpController {
         }
     }
 
-    /// AUX 真实硬件写事务 (DISPLAY-2.5) — 通过 DpIo 安全代理, 无 unsafe.
+    /// AUX 真实硬件写事务 (DISPLAY-2.5) — 通过 `DpIo` 安全代理, 无 unsafe.
     fn aux_write_via_mmio(
         &self,
         io: &DpIo,
@@ -766,6 +789,16 @@ impl DpController {
     }
 
     /// 读取DPCD
+    ///
+    /// # Errors
+    ///
+    /// - 设备未连接时返回 [`DpError::DeviceNotFound`]
+    /// - AUX 读取失败或 DPCD 解析失败时返回相应 [`DpError`]
+    ///
+    /// # Panics
+    ///
+    /// 正常情况下不会 panic; 仅当内部 `dpcd` 缓存刚写入后又变回 `None` 时才 panic
+    /// (代码逻辑上不可达, 属防御性断言)。
     pub fn read_dpcd(&mut self) -> Result<&Dpcd, DpError> {
         if !self.connected {
             return Err(DpError::DeviceNotFound);
@@ -780,6 +813,12 @@ impl DpController {
     }
 
     /// 链路训练
+    ///
+    /// # Errors
+    ///
+    /// - 设备未连接时返回 [`DpError::DeviceNotFound`]
+    /// - 尚未读取 DPCD (缓存为 `None`) 时返回 [`DpError::NotInitialized`]
+    /// - 任一训练阶段失败时返回相应 [`DpError`]
     pub fn link_train(&mut self) -> Result<(), DpError> {
         if !self.connected {
             return Err(DpError::DeviceNotFound);
@@ -810,12 +849,12 @@ impl DpController {
     /// 链路训练阶段1 (DISPLAY-2.6: TRACK-0350FE 消除).
     ///
     /// DP 链路训练 phase 1 (VESA DP 1.4 §3.5.1.2):
-    /// 1. 设置链路速率 (LINK_BW_SET)
-    /// 2. 设置通道数 (LANE_COUNT_SET)
-    /// 3. 设置训练模式 1 (TRAINING_PTN_SET = 0x21: TPS1 + 启用 scramble + 从 TRAINING_LANE0_SET 读 swing/pre-emphasis)
-    /// 4. 轮询 LANE0_1_STATUS (必要时 LANE2_3_STATUS) 直到所有活动 lane 报告
-    ///    CR_DONE / CHANNEL_EQ_DONE / SYMBOL_LOCKED (= 0b111 per lane)
-    /// 5. 应用接收器请求的 voltage swing / pre-emphasis 调整 (ADJUST_REQ_LANE0_1 / _LANE2_3)
+    /// 1. 设置链路速率 (`LINK_BW_SET`)
+    /// 2. 设置通道数 (`LANE_COUNT_SET`)
+    /// 3. 设置训练模式 1 (`TRAINING_PTN_SET` = 0x21: TPS1 + 启用 scramble + 从 `TRAINING_LANE0_SET` 读 swing/pre-emphasis)
+    /// 4. 轮询 `LANE0_1_STATUS` (必要时 `LANE2_3_STATUS`) 直到所有活动 lane 报告
+    ///    `CR_DONE` / `CHANNEL_EQ_DONE` / `SYMBOL_LOCKED` (= 0b111 per lane)
+    /// 5. 应用接收器请求的 voltage swing / pre-emphasis 调整 (`ADJUST_REQ_LANE0_1` / _`LANE2_3`)
     /// 6. 超时返回 `DpError::Timeout`
     ///
     /// 真实硬件: 通过 AUX 读 DPCD 状态寄存器, 超时 ~10 ms.
@@ -843,8 +882,8 @@ impl DpController {
 
     /// 轮询 LANE 状态寄存器直到训练完成 (DISPLAY-2.6).
     ///
-    /// 读取 LANE0_1_STATUS + LANE2_3_STATUS (4-lane 时), 等待所有活动 lane 报告
-    /// CR_DONE / CHANNEL_EQ_DONE / SYMBOL_LOCKED (= 0b111 per lane).
+    /// 读取 `LANE0_1_STATUS` + `LANE2_3_STATUS` (4-lane 时), 等待所有活动 lane 报告
+    /// `CR_DONE` / `CHANNEL_EQ_DONE` / `SYMBOL_LOCKED` (= 0b111 per lane).
     ///
     /// 超时时间 ~10 ms (与 VESA DP 1.4 推荐训练超时一致).
     fn poll_lane_status_until_trained(
@@ -906,11 +945,11 @@ impl DpController {
     /// 链路训练阶段2 (DISPLAY-2.7: TRACK-3C1169 消除).
     ///
     /// DP 链路训练 phase 2 (VESA DP 1.4 §3.5.1.3):
-    /// 1. 设置训练模式 2 (TRAINING_PTN_SET = 0x22: TPS2)
-    /// 2. 应用 phase 1 中 ADJUST_REQ 请求的 final voltage swing / pre-emphasis 调整
-    /// 3. 轮询 LANE_ALIGN_STATUS_UPDATED bit 0 (DPCD 0x0206) 直到 1
+    /// 1. 设置训练模式 2 (`TRAINING_PTN_SET` = 0x22: TPS2)
+    /// 2. 应用 phase 1 中 `ADJUST_REQ` 请求的 final voltage swing / pre-emphasis 调整
+    /// 3. 轮询 `LANE_ALIGN_STATUS_UPDATED` bit 0 (DPCD 0x0206) 直到 1
     /// 4. 超时返回 `DpError::Timeout`
-    /// 5. 设置 TRAINING_PTN_SET = 0x00 结束训练
+    /// 5. 设置 `TRAINING_PTN_SET` = 0x00 结束训练
     ///
     /// 真实硬件: 通过 AUX 读 DPCD 0x0206 状态寄存器, 超时 ~10 ms.
     /// 无硬件 fallback: 模拟训练立即成功 (兼容 QEMU/QEMU+bochs-vbe 开发环境).
@@ -932,9 +971,9 @@ impl DpController {
         Ok(())
     }
 
-    /// 轮询 LANE_ALIGN_STATUS_UPDATED bit 0 直到所有 lane 对齐完成 (DISPLAY-2.7).
+    /// 轮询 `LANE_ALIGN_STATUS_UPDATED` bit 0 直到所有 lane 对齐完成 (DISPLAY-2.7).
     ///
-    /// 读取 DPCD 0x0206 寄存器, bit 0 = LANE_ALIGN_STATUS_UPDATED.
+    /// 读取 DPCD 0x0206 寄存器, bit 0 = `LANE_ALIGN_STATUS_UPDATED`.
     /// 该位在所有活动 lane 完成 inter-lane deskew 后置 1.
     ///
     /// 超时时间 ~10 ms (与 VESA DP 1.4 推荐训练超时一致).
@@ -985,6 +1024,12 @@ impl DpController {
     ///
     /// 真实硬件: 通过 MMIO 写 8 个 16-bit 时序寄存器 + 2 个 8-bit 控制寄存器.
     /// 无硬件 fallback: 仅缓存模式参数 (兼容 QEMU/QEMU+bochs-vbe 开发环境).
+    ///
+    /// # Errors
+    ///
+    /// - 链路尚未训练完成时返回 [`DpError::NotInitialized`]
+    /// - `mode.width` 或 `mode.height` 为 0 时返回 [`DpError::InvalidParameter`]
+    /// - 真实硬件路径下写入时序寄存器失败时返回相应 [`DpError`]
     pub fn set_video_mode(&mut self, mode: VideoMode) -> Result<(), DpError> {
         if !self.is_link_trained() {
             return Err(DpError::NotInitialized);
@@ -1006,7 +1051,7 @@ impl DpController {
         Ok(())
     }
 
-    /// 派生 DP 视频时序 (复用 hdmi::lookup_dmt_timing + 简化公式 fallback).
+    /// 派生 DP 视频时序 (复用 `hdmi::lookup_dmt_timing` + 简化公式 fallback).
     ///
     /// 注: 此方法**不依赖** `hdmi::derive_video_timing` (它是 `pub`),
     ///     而是用 lookup + 复制一份等价公式, 保持 dp.rs 独立.
@@ -1020,16 +1065,16 @@ impl DpController {
         let h_active = mode.width;
 
         let v_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
-            let v_blank = ((v_active as u32) * 5 / 100).max(1);
-            (v_active as u32 + v_blank) as u16
+            let v_blank = (u32::from(v_active) * 5 / 100).max(1);
+            (u32::from(v_active) + v_blank) as u16
         } else {
             v_active + 50
         };
 
         let h_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
             let h_total_u32 = (mode.pixel_clock_khz * 1000)
-                / ((v_total as u32) * (mode.refresh_rate as u32));
-            h_total_u32.max((h_active as u32) + 1) as u16
+                / (u32::from(v_total) * u32::from(mode.refresh_rate));
+            h_total_u32.max(u32::from(h_active) + 1) as u16
         } else {
             h_active + 200
         };
@@ -1052,7 +1097,7 @@ impl DpController {
         }
     }
 
-    /// 写入 DP 时序 + sync + output enable 寄存器 — 通过 DpIo 安全代理, 无 unsafe.
+    /// 写入 DP 时序 + sync + output enable 寄存器 — 通过 `DpIo` 安全代理, 无 unsafe.
     fn write_dp_timing_registers(
         &self,
         io: &DpIo,
@@ -1090,7 +1135,7 @@ impl DpController {
         self.connected
     }
 
-    /// 关闭 DisplayPort 控制器
+    /// 关闭 `DisplayPort` 控制器
     pub fn shutdown(&mut self) {
         self.connected = false;
         self.dpcd = None;
@@ -1118,7 +1163,7 @@ impl DpController {
         }
     }
 
-    /// 初始化 DisplayPort 控制器 (检测 → 读 DPCD → 链路训练)
+    /// 初始化 `DisplayPort` 控制器 (检测 → 读 DPCD → 链路训练)
     pub fn init(&mut self) {
         self.detect_hot_plug();
 

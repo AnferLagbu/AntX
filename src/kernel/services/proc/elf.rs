@@ -7,7 +7,7 @@
 //! - [x] ELF 头校验 (`validate`)
 //! - [x] ELF 段加载 (`load`) — 由 framework 层 `MmStruct` 状态机驱动
 //! - [x] 段类型 / 段权限 / 段重定位
-//! - [x] brk / stack_top 计算
+//! - [x] brk / `stack_top` 计算
 //! - [x] 强类型 `ElfLoadResult` 透传
 //!
 //! ## 迁移方法
@@ -32,27 +32,27 @@ pub use crate::kernel::framework::proc::Elf64Header;
 /// ELF 64 程序头 (56 字节)
 pub use crate::kernel::framework::proc::Elf64Phdr;
 
-/// ELF 加载结果 (entry / phdr_addr / phdr_count / brk / stack_top)
+/// ELF 加载结果 (entry / `phdr_addr` / `phdr_count` / brk / `stack_top`)
 pub use crate::kernel::framework::proc::ElfLoadResult;
 
 // ============================================================================
 // 错误
 // ============================================================================
 
-/// ELF 加载错误 — TD-19: 收敛到 KernelError, 7 字段 ELF 特有 + 1 共享包装.
+/// ELF 加载错误 — TD-19: 收敛到 `KernelError`, 7 字段 ELF 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `BadMagic` / `NotElf64` / `UnsupportedMachine`: ELF 格式校验失败 (POSIX ENOEXEC=8)
 ///   - `Truncated` / `PhdrOutOfRange` / `TooManyPhdr`: 解析阶段越界/超限
 ///   - `MapFailed`: 用户态 VMA 添加失败
-///   - `Kernel(KernelError)`: 共享错误 (AddressOverflow → InvalidArgument 等) 走单一来源
+///   - `Kernel(KernelError)`: 共享错误 (`AddressOverflow` → `InvalidArgument` 等) 走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElfError {
     /// ELF 魔数错误
     BadMagic,
     /// 不是 64 位 ELF
     NotElf64,
-    /// 不支持的机器类型 (非 x86_64 / aarch64)
+    /// 不支持的机器类型 (非 `x86_64` / aarch64)
     UnsupportedMachine,
     /// ELF 头不完整
     Truncated,
@@ -60,7 +60,7 @@ pub enum ElfError {
     PhdrOutOfRange,
     /// 程序头数量超限 (> 128)
     TooManyPhdr,
-    /// 用户内存映射失败 (MmStruct 添加 VMA 失败)
+    /// 用户内存映射失败 (`MmStruct` 添加 VMA 失败)
     MapFailed,
     /// 共享 `KernelError` 包装
     Kernel(crate::kernel::services::error::KernelError),
@@ -111,6 +111,10 @@ pub type ElfResult<T> = Result<T, ElfError>;
 /// **返回**:
 /// - `Ok(Elf64Header)`: 校验通过
 /// - `Err(ElfError)`: 校验失败
+///
+/// # Errors
+///
+/// 当 ELF 镜像过短或头部字段非法时返回 `ElfError::Truncated`.
 pub fn validate(elf_data: &[u8]) -> ElfResult<Elf64Header> {
     let header = proc_elf::elf_validate(elf_data.as_ptr(), elf_data.len() as u64);
     header.ok_or(ElfError::Truncated).map(|h| Elf64Header {
@@ -137,19 +141,23 @@ pub fn validate(elf_data: &[u8]) -> ElfResult<Elf64Header> {
 
 /// 加载 ELF 镜像到用户内存空间
 ///
-/// 遍历 PT_LOAD 段, 为每个段建立 VMA 并复制数据。
+/// 遍历 `PT_LOAD` 段, 为每个段建立 VMA 并复制数据。
 ///
 /// **参数**:
 /// - `mm`: 目标进程的内存描述符 (由调用方持有可变借用)
 /// - `elf_data`: 完整 ELF 镜像字节切片
 ///
 /// **返回**:
-/// - `Ok(ElfLoadResult)`: 加载成功, 包含 entry / phdr_addr / brk_base / stack_top
+/// - `Ok(ElfLoadResult)`: 加载成功, 包含 entry / `phdr_addr` / `brk_base` / `stack_top`
 /// - `Err(ElfError)`: 加载失败
 ///
 /// **Safety**:
 /// - `mm` 必须指向目标进程的有效 `MmStruct`
 /// - 调用方保证 `mm` 在加载期间不被其他线程访问
+///
+/// # Errors
+///
+/// 当 ELF 加载失败(段越界、内存分配失败等)时返回对应的 `ElfError`.
 pub fn load(mm: &MmStruct, elf_data: &[u8]) -> ElfResult<ElfLoadResult> {
     proc_elf::elf_load(mm, elf_data.as_ptr(), elf_data.len() as u64)
         .map_err(ElfError::from_kernel_str)
@@ -159,19 +167,19 @@ pub fn load(mm: &MmStruct, elf_data: &[u8]) -> ElfResult<ElfLoadResult> {
 // 段类型常量 (透传)
 // ============================================================================
 
-/// PT_LOAD: 可加载段
+/// `PT_LOAD`: 可加载段
 pub const PT_LOAD: u32 = 1;
 
-/// PT_GNU_STACK: GNU 栈属性
+/// `PT_GNU_STACK`: GNU 栈属性
 pub const PT_GNU_STACK: u32 = 0x6474E551;
 
-/// PF_X: 可执行
+/// `PF_X`: 可执行
 pub const PF_X: u32 = 1;
 
-/// PF_W: 可写
+/// `PF_W`: 可写
 pub const PF_W: u32 = 2;
 
-/// PF_R: 可读
+/// `PF_R`: 可读
 pub const PF_R: u32 = 4;
 
 // ============================================================================
@@ -187,13 +195,13 @@ pub fn is_valid(elf_data: &[u8]) -> bool {
 /// 获取入口地址
 #[inline]
 pub fn entry_point(elf_data: &[u8]) -> u64 {
-    validate(elf_data).map(|h| h.e_entry).unwrap_or(0)
+    validate(elf_data).map_or(0, |h| h.e_entry)
 }
 
-/// 获取机器类型 (0x3E = x86_64, 0xB7 = aarch64)
+/// 获取机器类型 (0x3E = `x86_64`, 0xB7 = aarch64)
 #[inline]
 pub fn machine(elf_data: &[u8]) -> u16 {
-    validate(elf_data).map(|h| h.e_machine).unwrap_or(0)
+    validate(elf_data).map_or(0, |h| h.e_machine)
 }
 
 /// 是否为 64 位 ELF
@@ -202,7 +210,7 @@ pub fn is_64bit(elf_data: &[u8]) -> bool {
     elf_data.len() >= 5 && elf_data[4] == 2
 }
 
-/// 是否为可执行文件 (e_type == 2: ET_EXEC)
+/// 是否为可执行文件 (`e_type` == 2: `ET_EXEC`)
 #[inline]
 pub fn is_executable(elf_data: &[u8]) -> bool {
     if elf_data.len() < 16 {

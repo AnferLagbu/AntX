@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-//! 一次性初始化 (Once + OnceCell)
+//! 一次性初始化 (Once + `OnceCell`)
 //!
 //! ## `Once`
 //!

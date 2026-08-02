@@ -134,7 +134,7 @@ pub(crate) mod raw {
     pub fn mmio_write32(base: u64, offset: u32, value: u32) {
         // SAFETY: 见函数契约。
         unsafe {
-            core::ptr::write_volatile((base + offset as u64) as *mut u32, value);
+            core::ptr::write_volatile((base + u64::from(offset)) as *mut u32, value);
         }
     }
 }

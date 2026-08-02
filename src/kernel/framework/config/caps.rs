@@ -2,8 +2,8 @@
 //!
 //! ## T6-9 迁移记录
 //!
-//! 类型定义 (ConfigSummary, KernelCapabilities, detect())
-//! 已于 2026-06-16 迁移到 services::config::caps.
+//! 类型定义 (`ConfigSummary`, `KernelCapabilities`, `detect()`)
+//! 已于 2026-06-16 迁移到 `services::config::caps`.
 //! 本文件仅保留运行时查询函数 + re-export 保持调用方兼容.
 
 use super::capacity::{MAX_CPUS, MAX_IRQS, MAX_PROCESSES, MAX_THREADS};
@@ -29,7 +29,7 @@ pub fn get_config_summary() -> ConfigSummary {
     }
 }
 
-/// 跨架构安全: 在 x86_64 上查 APIC 状态, 其他架构默认 false。
+/// 跨架构安全: 在 `x86_64` 上查 APIC 状态, 其他架构默认 false。
 #[cfg(target_arch = "x86_64")]
 fn apic_initialized() -> bool {
     crate::kernel::framework::arch::apic::is_initialized()

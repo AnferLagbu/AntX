@@ -1,5 +1,5 @@
 use super::check;
-use crate::kernel::framework::fs::vfs::types::*;
+use crate::kernel::framework::fs::vfs::types::{FsType, VfsFileType, VfsSeekWhence, VfsDirEntry};
 use crate::kernel::framework::fs::vfs::vfs::VfsManager;
 use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;

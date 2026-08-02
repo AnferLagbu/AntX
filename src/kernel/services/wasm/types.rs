@@ -440,7 +440,7 @@ pub enum WasmError {
     BadTypeIndex(usize),
     BadFuncIndex(usize),
     InternalError,
-    /// WASI proc_exit 触发的实例终止
+    /// WASI `proc_exit` 触发的实例终止
     Terminated,
 }
 

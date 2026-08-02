@@ -69,7 +69,7 @@
 pub enum FdSubsystem {
     /// smoltcp TCP/UDP socket
     Smoltcp = 0,
-    /// AF_UNIX 域套接字
+    /// `AF_UNIX` 域套接字
     Uds = 1,
     /// eventfd
     EventFd = 2,
@@ -131,28 +131,28 @@ impl FdRange {
 /// 集中 FD 基址规划 — 单一来源 (Single Source of Truth)
 ///
 /// 各子系统的 `*_FD_BASE` 常量在编译期引用本规划, 禁止分散定义.
-/// 验收: 任意两个 FdRange 不重叠; 全部不与 smoltcp [0, 256) 重叠 (除 Smoltcp 自身).
+/// 验收: 任意两个 `FdRange` 不重叠; 全部不与 smoltcp [0, 256) 重叠 (除 Smoltcp 自身).
 pub struct FdPlan;
 
 impl FdPlan {
     /// Smoltcp FD 空间 (TD-06: 容量从 `cfg_smoltcp_cap()` 派生, 当前默认 256.
     /// 用户可手动修改 `cfg_smoltcp_cap` 至 1024 / 4096, 同步 `framework/net/init.rs` 的
-    /// `MAX_SOCKETS` 与 buf 静态表尺寸 (TCP_RX_BUFS / TCP_TX_BUFS / UDP_*_BUFS)).
+    /// `MAX_SOCKETS` 与 buf 静态表尺寸 (`TCP_RX_BUFS` / `TCP_TX_BUFS` / UDP_*_BUFS)).
     pub const SMOLTCP: FdRange = FdRange::new(0, 256);
 
     /// UDS FD 空间 (TD-01: 历史 100 → 1000, 跳出 smoltcp)
     pub const UDS: FdRange = FdRange::new(1000, 16);
 
-    /// EventFd FD 空间 (TD-01: 历史 200 → 1100)
+    /// `EventFd` FD 空间 (TD-01: 历史 200 → 1100)
     pub const EVENT_FD: FdRange = FdRange::new(1100, 16);
 
-    /// SignalFd FD 空间 (TD-01: 历史 220 → 1120)
+    /// `SignalFd` FD 空间 (TD-01: 历史 220 → 1120)
     pub const SIGNAL_FD: FdRange = FdRange::new(1120, 16);
 
     /// Inotify FD 空间 (TD-01: 历史 260 → 1140)
     pub const INOTIFY: FdRange = FdRange::new(1140, 16);
 
-    /// TimerFd FD 空间 (TD-15: 历史 240 → 1160, 跳出 smoltcp [0, 256))
+    /// `TimerFd` FD 空间 (TD-15: 历史 240 → 1160, 跳出 smoltcp [0, 256))
     pub const TIMER_FD: FdRange = FdRange::new(1160, 16);
 
     /// 获取指定子系统的 FD 范围
@@ -277,7 +277,11 @@ pub fn subsystem_of(fd: i32) -> Option<FdSubsystem> {
 // 启动期校验
 // ============================================================================
 
-/// 启动时调用, 校验 FdPlan 不变量. 不满足则 panic (不变量违反是编译/规划错误)
+/// 启动时调用, 校验 `FdPlan` 不变量. 不满足则 panic (不变量违反是编译/规划错误)
+///
+/// # Panics
+///
+/// 当 `FdPlan` 的 FD 范围发生重叠、违反 TD-02 不变量时 panic.
 pub fn verify_plan() {
     assert!(
         FdPlan::ranges_non_overlapping(),

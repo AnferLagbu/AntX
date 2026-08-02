@@ -1,9 +1,9 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
-//! NVMe (Non-Volatile Memory Express) 驱动 — services 层安全代理 (Phase 2.1.3)
+//! `NVMe` (Non-Volatile Memory Express) 驱动 — services 层安全代理 (Phase 2.1.3)
 //!
-//! 封装 NVMe 控制器的 PCIe BAR0 MMIO 操作,
+//! 封装 `NVMe` 控制器的 `PCIe` BAR0 MMIO 操作,
 //! 通过 `framework::IoMem` 提供 100% safe API。
 //!
 //! ## 设计原则
@@ -30,7 +30,7 @@
 //! ```
 //!
 //! 评估日期: 2026-06-04
-//! Phase 2.1.3 任务: NVMe 存储控制器迁移
+//! Phase 2.1.3 任务: `NVMe` 存储控制器迁移
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
@@ -114,9 +114,9 @@ pub const QUEUE_DEPTH: u16 = 64;
 pub const SQ_ENTRY_SIZE: u16 = 64;
 /// CQ 条目大小 (16 字节)
 pub const CQ_ENTRY_SIZE: u16 = 16;
-/// SQ 占用字节 = depth * entry_size
+/// SQ 占用字节 = depth * `entry_size`
 pub const SQ_SIZE_BYTES: u32 = 64 * 64;
-/// CQ 占用字节 = depth * entry_size
+/// CQ 占用字节 = depth * `entry_size`
 pub const CQ_SIZE_BYTES: u32 = 64 * 16;
 
 // ============================================================================
@@ -201,7 +201,7 @@ impl ControllerStatus {
 // NVMe 命令条目 (services 层定义, 避免直接依赖 framework 内部类型)
 // ============================================================================
 
-/// NVMe 提交队列条目 (64 字节, 与 NVMe spec 一致)
+/// `NVMe` 提交队列条目 (64 字节, 与 `NVMe` spec 一致)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeCmdEntry {
@@ -251,7 +251,7 @@ impl NvmeCmdEntry {
             mptr: prp1,
             cdw10: (slba & 0xFFFF_FFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFF_FFFF) as u32,
-            cdw12: (nlb as u32 - 1) & 0xFFFF,
+            cdw12: (u32::from(nlb) - 1) & 0xFFFF,
             ..Self::new()
         }
     }
@@ -265,7 +265,7 @@ impl NvmeCmdEntry {
             mptr: prp1,
             cdw10: (slba & 0xFFFF_FFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFF_FFFF) as u32,
-            cdw12: (nlb as u32 - 1) & 0xFFFF,
+            cdw12: (u32::from(nlb) - 1) & 0xFFFF,
             ..Self::new()
         }
     }
@@ -276,7 +276,7 @@ impl NvmeCmdEntry {
             opcode: OP_ADMIN_IDENTIFY,
             nsid,
             mptr: prp1,
-            cdw10: cns as u32,
+            cdw10: u32::from(cns),
             ..Self::new()
         }
     }
@@ -286,7 +286,7 @@ impl NvmeCmdEntry {
         Self {
             opcode: OP_ADMIN_CREATE_IOCQ,
             mptr: cq_phys,
-            cdw10: ((depth as u32 - 1) << 16) | (qid as u32),
+            cdw10: ((u32::from(depth) - 1) << 16) | u32::from(qid),
             cdw11: 1, // PC=1 (physically contiguous)
             ..Self::new()
         }
@@ -297,14 +297,14 @@ impl NvmeCmdEntry {
         Self {
             opcode: OP_ADMIN_CREATE_IOSQ,
             mptr: sq_phys,
-            cdw10: ((depth as u32 - 1) << 16) | (qid as u32),
-            cdw11: (cqid as u32) << 16 | 1, // CQID | PC
+            cdw10: ((u32::from(depth) - 1) << 16) | u32::from(qid),
+            cdw11: u32::from(cqid) << 16 | 1, // CQID | PC
             ..Self::new()
         }
     }
 }
 
-/// NVMe 完成队列条目 (16 字节)
+/// `NVMe` 完成队列条目 (16 字节)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeCplEntry {
@@ -337,7 +337,7 @@ impl NvmeCplEntry {
 // 队列对管理 (services 层安全逻辑)
 // ============================================================================
 
-/// NVMe 队列对句柄 (services 层)
+/// `NVMe` 队列对句柄 (services 层)
 ///
 /// 封装队列状态 (tail/head/phase) 并通过 framework safe wrapper
 /// 执行命令提交, 0 unsafe。
@@ -465,7 +465,7 @@ impl NvmeQueuePair {
 // Identify 数据结构
 // ============================================================================
 
-/// NVMe Identify Controller 数据 (精简版, 仅必要字段)
+/// `NVMe` Identify Controller 数据 (精简版, 仅必要字段)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeIdentifyController {
@@ -479,7 +479,7 @@ pub struct NvmeIdentifyController {
     pub rsvd2: [u8; 3756],
 }
 
-/// NVMe Identify Namespace 数据 (精简版)
+/// `NVMe` Identify Namespace 数据 (精简版)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeIdentifyNamespace {
@@ -496,7 +496,7 @@ pub struct NvmeIdentifyNamespace {
 // NVMe 控制器 (services 层安全驱动)
 // ============================================================================
 
-/// NVMe 控制器 — services 层安全驱动
+/// `NVMe` 控制器 — services 层安全驱动
 ///
 /// 通过 framework safe wrapper 执行 DMA 和队列操作,
 /// 自身 0 unsafe, 所有 unsafe 由 framework 层封装。
@@ -526,10 +526,10 @@ pub struct NvmeController {
 }
 
 impl NvmeController {
-    /// 创建 NVMe 控制器实例
+    /// 创建 `NVMe` 控制器实例
     ///
     /// # 参数
-    /// - `bar0_phys`: PCIe BAR0 MMIO 物理基地址
+    /// - `bar0_phys`: `PCIe` BAR0 MMIO 物理基地址
     /// - `len`: BAR0 MMIO 区域大小 (典型 0x2000)
     pub fn new(bar0_phys: u64, len: usize) -> Option<Self> {
         let mmio = IoMem::from_pci_bar(PhysAddr::new(bar0_phys), len, "nvme-bar0").ok()?;
@@ -538,10 +538,10 @@ impl NvmeController {
             db_stride: 0,
             admin_sq_phys: 0,
             admin_cq_phys: 0,
-            admin_queue: NvmeQueuePair::new(ADMIN_QID, QUEUE_DEPTH as u32, 0),
+            admin_queue: NvmeQueuePair::new(ADMIN_QID, u32::from(QUEUE_DEPTH), 0),
             io_sq_phys: 0,
             io_cq_phys: 0,
-            io_queue: NvmeQueuePair::new(IO_QID, QUEUE_DEPTH as u32, 0),
+            io_queue: NvmeQueuePair::new(IO_QID, u32::from(QUEUE_DEPTH), 0),
             namespace_count: 0,
             namespace_size_lba: 0,
             lba_format_size: SECTOR_SIZE as u16,
@@ -649,7 +649,7 @@ impl NvmeController {
 
     /// 写 AQA (Admin Queue Attributes)
     pub fn set_aqa(&self, asqs: u16, acqs: u16) {
-        let val = (asqs as u32) | ((acqs as u32) << 16);
+        let val = u32::from(asqs) | (u32::from(acqs) << 16);
         self.write32(NVME_REG_AQA, val);
     }
 
@@ -774,12 +774,9 @@ impl NvmeController {
         }
 
         // 分配 Admin 队列 DMA 内存
-        let (sq_phys, cq_phys) = match crate::kernel::framework::driver::storage::nvme_alloc_admin_queues() {
-            Some(v) => v,
-            None => {
-                slog_warn!(Driver, "Admin 队列 DMA 分配失败");
-                return false;
-            }
+        let (sq_phys, cq_phys) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_admin_queues() { v } else {
+            slog_warn!(Driver, "Admin 队列 DMA 分配失败");
+            return false;
         };
         self.admin_sq_phys = sq_phys;
         self.admin_cq_phys = cq_phys;
@@ -813,12 +810,9 @@ impl NvmeController {
     /// Identify 控制器
     pub fn identify_controller(&mut self) -> bool {
         let buf_size = 4096; // Identify 数据为 4KB
-        let (vaddr, paddr, actual_size) = match crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size) {
-            Some(v) => v,
-            None => {
-                slog_warn!(Driver, "Identify 缓冲区分配失败");
-                return false;
-            }
+        let (vaddr, paddr, actual_size) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size) { v } else {
+            slog_warn!(Driver, "Identify 缓冲区分配失败");
+            return false;
         };
 
         // 清零缓冲区
@@ -852,12 +846,9 @@ impl NvmeController {
     /// Identify 命名空间
     pub fn identify_namespace(&mut self, nsid: u32) -> bool {
         let buf_size = 4096;
-        let (vaddr, paddr, actual_size) = match crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size) {
-            Some(v) => v,
-            None => {
-                slog_warn!(Driver, "Identify NS 缓冲区分配失败");
-                return false;
-            }
+        let (vaddr, paddr, actual_size) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size) { v } else {
+            slog_warn!(Driver, "Identify NS 缓冲区分配失败");
+            return false;
         };
 
         crate::kernel::framework::driver::storage::nvme_zero_dma(vaddr, actual_size);
@@ -898,12 +889,9 @@ impl NvmeController {
     /// 创建 I/O 队列对 (CQ + SQ)
     pub fn create_io_queue(&mut self) -> bool {
         // 分配 I/O 队列 DMA 内存
-        let (sq_phys, cq_phys) = match crate::kernel::framework::driver::storage::nvme_alloc_io_queues() {
-            Some(v) => v,
-            None => {
-                slog_warn!(Driver, "I/O 队列 DMA 分配失败");
-                return false;
-            }
+        let (sq_phys, cq_phys) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_io_queues() { v } else {
+            slog_warn!(Driver, "I/O 队列 DMA 分配失败");
+            return false;
         };
         self.io_sq_phys = sq_phys;
         self.io_cq_phys = cq_phys;
@@ -985,6 +973,13 @@ impl NvmeController {
     // ── 数据读写 ──
 
     /// 读取扇区 (通过 framework DMA)
+    ///
+    /// # Errors
+    ///
+    /// - 控制器尚未初始化时返回 `Err(())`
+    /// - `count` 为 0 时返回 `Err(())`
+    /// - DMA 缓冲区分配失败时返回 `Err(())`
+    /// - IO 命令提交失败 (队列满、超时或控制器报错) 时返回 `Err(())`
     pub fn read(&mut self, nsid: u32, lba: u64, count: u16, buffer: *mut u8) -> Result<(), ()> {
         if !self.initialized {
             return Err(());
@@ -1021,6 +1016,13 @@ impl NvmeController {
     }
 
     /// 写入扇区 (通过 framework DMA)
+    ///
+    /// # Errors
+    ///
+    /// - 控制器尚未初始化时返回 `Err(())`
+    /// - `count` 为 0 时返回 `Err(())`
+    /// - DMA 缓冲区分配失败时返回 `Err(())`
+    /// - IO 命令提交失败 (队列满、超时或控制器报错) 时返回 `Err(())`
     pub fn write(&mut self, nsid: u32, lba: u64, count: u16, buffer: *const u8) -> Result<(), ()> {
         if !self.initialized {
             return Err(());

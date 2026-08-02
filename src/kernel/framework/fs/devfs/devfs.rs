@@ -1,7 +1,7 @@
-//! DevFS — framework re-export 层
+//! `DevFS` — framework re-export 层
 //!
-//! 实现已迁移到 services::fs::devfs, 本文件仅 re-export 公共 API.
-//! framework 内部代码通过本模块引用 DevFS, 保持路径兼容.
+//! 实现已迁移到 `services::fs::devfs`, 本文件仅 re-export 公共 API.
+//! framework 内部代码通过本模块引用 `DevFS`, 保持路径兼容.
 
 pub use crate::kernel::services::fs::devfs::{
     DevKind, DevFile, DevfsData, DevfsDevice,

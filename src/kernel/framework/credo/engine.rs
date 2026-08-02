@@ -1,5 +1,5 @@
 use super::identity;
-use super::types::*;
+use super::types::{CapDomain, CapBits, PwmFlags};
 use core::sync::atomic::Ordering;
 
 pub fn check(pwm: u64, domain: CapDomain, required: CapBits) -> bool {

@@ -4,12 +4,12 @@
 //! ## 职责
 //!
 //! - 0 unsafe,纯类型安全
-//! - 委托 framework/fs/vfs::api 完成
+//! - 委托 `framework/fs/vfs::api` 完成
 //!
 //! ## POSIX 语义
 //!
-//! - [chdir_syscall] 切换当前工作目录
-//! - [getcwd_syscall] 取当前工作目录到用户缓冲
+//! - [`chdir_syscall`] 切换当前工作目录
+//! - [`getcwd_syscall`] 取当前工作目录到用户缓冲
 
 use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::syscall::raw;
@@ -23,6 +23,9 @@ use crate::kernel::framework::syscall::Errno;
 ///
 /// # 参数
 /// - `path_ptr`: 用户空间 NUL 终止 C 字符串地址
+///
+/// # Errors
+/// 当 `path_ptr` 为空或不在用户可访问范围内时返回 `EFAULT`.
 pub fn chdir_syscall(path_ptr: u64) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -45,6 +48,10 @@ pub fn chdir_syscall(path_ptr: u64) -> Result<usize, Errno> {
 /// # 参数
 /// - `buf_ptr`:  用户空间缓冲地址
 /// - `size`:     缓冲长度
+///
+/// # Errors
+/// 当 `buf_ptr` 为空或 `size` 为 0 时返回 `EINVAL`; 当缓冲区越界时返回 `EFAULT`;
+/// 其余错误以对应的 `Errno` 返回.
 pub fn getcwd_syscall(buf_ptr: u64, size: u64) -> Result<usize, Errno> {
     if buf_ptr == 0 || size == 0 {
         return Err(Errno::EINVAL);
@@ -56,7 +63,7 @@ pub fn getcwd_syscall(buf_ptr: u64, size: u64) -> Result<usize, Errno> {
     let buf = buf_ptr as *mut u8;
     let n = fw::vfs_get_cwd(buf, size as u32);
     if n < 0 {
-        Err(Errno::from_ret(n as i64))
+        Err(Errno::from_ret(i64::from(n)))
     } else {
         Ok(n as usize)
     }

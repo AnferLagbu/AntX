@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
-//! ProcFS 核心实现 — services 层 (E6-8 迁移)
+//! `ProcFS` 核心实现 — services 层 (E6-8 迁移)
 //!
 //! 从 framework/fs/procfs/procfs.rs 迁移而来, 0 unsafe, 纯策略.
 //! framework 层转为 re-export 层.
@@ -171,10 +171,10 @@ impl ProcfsData {
                     let mhz = info.tsc_frequency_hz as f64 / 1_000_000.0;
                     let mhz_int = mhz as u64;
                     let mhz_frac = ((mhz - mhz_int as f64) * 100.0) as u64;
-                    write_str(buf, &mut pos, &alloc::format!("{}.{:02}", mhz_int, mhz_frac));
+                    write_str(buf, &mut pos, &alloc::format!("{mhz_int}.{mhz_frac:02}"));
                     write_str(buf, &mut pos, "\ncache size\t: ");
                     let cache_kb = info.cache.l1d_size / 1024;
-                    write_str(buf, &mut pos, &alloc::format!("{} KB", cache_kb));
+                    write_str(buf, &mut pos, &alloc::format!("{cache_kb} KB"));
                     write_str(buf, &mut pos, "\nphysical id\t: 0\nsiblings\t: ");
                     write_str(buf, &mut pos, &alloc::format!("{}", info.topology.logical_threads));
                     write_str(buf, &mut pos, "\ncore id\t\t: 0\ncpu cores\t: ");
@@ -185,7 +185,7 @@ impl ProcfsData {
                     let bogo = mhz * 2.0;
                     let bogo_int = bogo as u64;
                     let bogo_frac = ((bogo - bogo_int as f64) * 100.0) as u64;
-                    write_str(buf, &mut pos, &alloc::format!("{}.{:02}", bogo_int, bogo_frac));
+                    write_str(buf, &mut pos, &alloc::format!("{bogo_int}.{bogo_frac:02}"));
                     write_str(buf, &mut pos, "\nclflush size\t: 64\ncache_alignment\t: 64\n");
                     write_str(buf, &mut pos, "address sizes\t: 46 bits physical, 48 bits virtual\npower management:\n\n");
                 }
@@ -213,25 +213,25 @@ impl ProcfsData {
             let used = total - free;
 
             write_str(buf, &mut pos, "MemTotal:        ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", total));
+            write_str(buf, &mut pos, &alloc::format!("{total} kB"));
             write_str(buf, &mut pos, "\nMemFree:         ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", free));
+            write_str(buf, &mut pos, &alloc::format!("{free} kB"));
             write_str(buf, &mut pos, "\nMemAvailable:    ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", free));
+            write_str(buf, &mut pos, &alloc::format!("{free} kB"));
             write_str(buf, &mut pos, "\nBuffers:         0 kB\nCached:          0 kB\nSwapCached:      0 kB\n");
             write_str(buf, &mut pos, "Active:          ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", used));
+            write_str(buf, &mut pos, &alloc::format!("{used} kB"));
             write_str(buf, &mut pos, "\nInactive:        0 kB\nSwapTotal:       0 kB\nSwapFree:        0 kB\n");
             write_str(buf, &mut pos, "Dirty:           0 kB\nWriteback:       0 kB\nAnonPages:       ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", used));
+            write_str(buf, &mut pos, &alloc::format!("{used} kB"));
             write_str(buf, &mut pos, "\nMapped:          0 kB\nShmem:           0 kB\nKReclaimable:    0 kB\n");
             let slab = slab_get_stats();
             let slab_kb = (slab.total_memory / 1024) as u64;
             let slab_used_kb = (slab.used_memory / 1024) as u64;
             write_str(buf, &mut pos, "Slab:            ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", slab_kb));
+            write_str(buf, &mut pos, &alloc::format!("{slab_kb} kB"));
             write_str(buf, &mut pos, "\nSReclaimable:    ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", slab_used_kb));
+            write_str(buf, &mut pos, &alloc::format!("{slab_used_kb} kB"));
             write_str(buf, &mut pos, "\nSUnreclaim:      ");
             write_str(buf, &mut pos, &alloc::format!("{} kB", slab_kb.saturating_sub(slab_used_kb)));
             write_str(buf, &mut pos, "\n");
@@ -240,7 +240,7 @@ impl ProcfsData {
             let kmalloc = pmm_api::kmalloc_get_stats();
             let kmalloc_kb = (kmalloc.current_usage / 1024) as u64;
             write_str(buf, &mut pos, "Committed_AS:    0 kB\nVmallocTotal:    0 kB\nVmallocUsed:     ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", kmalloc_kb));
+            write_str(buf, &mut pos, &alloc::format!("{kmalloc_kb} kB"));
             write_str(buf, &mut pos, "\n");
             write_str(buf, &mut pos, "Percpu:          0 kB\nHardwareCorrupted: 0 kB\nAnonHugePages:   0 kB\n");
             write_str(buf, &mut pos, "ShmemHugePages:  0 kB\nShmemPmdMapped:  0 kB\nFileHugePages:   0 kB\n");
@@ -265,7 +265,7 @@ impl ProcfsData {
             let uptime_ms = crate::arch!(timestamp());
             let uptime_secs = uptime_ms / 1000;
             let idle_secs = 0u64;
-            let s = alloc::format!("{}.00 {} 1\n", uptime_secs, idle_secs);
+            let s = alloc::format!("{uptime_secs}.00 {idle_secs} 1\n");
             let bytes = s.as_bytes();
             let len = bytes.len().min(buf.len());
             buf[..len].copy_from_slice(&bytes[..len]);
@@ -292,7 +292,7 @@ impl ProcfsData {
             write_str(buf, &mut pos, "processes 0\n");
             write_str(buf, &mut pos, "procs_running 1\n");
             write_str(buf, &mut pos, "procs_blocked 0\n");
-            write_str(buf, &mut pos, &alloc::format!("softirq {} 0 0 0 0 0 0 0 0 0 0\n", ticks));
+            write_str(buf, &mut pos, &alloc::format!("softirq {ticks} 0 0 0 0 0 0 0 0 0 0\n"));
 
             return pos as i32;
         }
@@ -363,17 +363,17 @@ impl ProcfsData {
             let i_count = crate::kernel::services::fs::dcache::icache_count();
 
             write_str(buf, &mut pos, "dcache_lookups: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", d_lookups));
+            write_str(buf, &mut pos, &alloc::format!("{d_lookups}\n"));
             write_str(buf, &mut pos, "dcache_hits: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", d_hits));
+            write_str(buf, &mut pos, &alloc::format!("{d_hits}\n"));
             write_str(buf, &mut pos, "dcache_entries: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", d_count));
+            write_str(buf, &mut pos, &alloc::format!("{d_count}\n"));
             write_str(buf, &mut pos, "icache_lookups: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", i_lookups));
+            write_str(buf, &mut pos, &alloc::format!("{i_lookups}\n"));
             write_str(buf, &mut pos, "icache_hits: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", i_hits));
+            write_str(buf, &mut pos, &alloc::format!("{i_hits}\n"));
             write_str(buf, &mut pos, "icache_entries: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", i_count));
+            write_str(buf, &mut pos, &alloc::format!("{i_count}\n"));
 
             return pos as i32;
         }
@@ -394,13 +394,13 @@ impl ProcfsData {
             let (allocs, frees, reads, writes) = hvfs.get_stats();
 
             write_str(buf, &mut pos, "allocs: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", allocs));
+            write_str(buf, &mut pos, &alloc::format!("{allocs}\n"));
             write_str(buf, &mut pos, "frees: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", frees));
+            write_str(buf, &mut pos, &alloc::format!("{frees}\n"));
             write_str(buf, &mut pos, "reads: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", reads));
+            write_str(buf, &mut pos, &alloc::format!("{reads}\n"));
             write_str(buf, &mut pos, "writes: ");
-            write_str(buf, &mut pos, &alloc::format!("{}\n", writes));
+            write_str(buf, &mut pos, &alloc::format!("{writes}\n"));
 
             return pos as i32;
         }
@@ -466,28 +466,25 @@ impl ProcfsData {
             };
 
             let cpu_info = crate::kernel::framework::cpu::get_cpu_info();
-            match cpu_info {
-                Some(info) => {
-                    write_str(buf, &mut pos, "CPU: ");
-                    write_str(buf, &mut pos, info.brand_name());
-                    write_str(buf, &mut pos, "\nVendor: ");
-                    write_str(buf, &mut pos, info.vendor.name());
-                    write_str(buf, &mut pos, "\nCores: ");
-                    let cores = info.topology.physical_cores;
-                    if cores >= 10 {
-                        buf[pos] = (cores / 10) + b'0';
-                        pos += 1;
-                    }
-                    buf[pos] = (cores % 10) + b'0';
+            if let Some(info) = cpu_info {
+                write_str(buf, &mut pos, "CPU: ");
+                write_str(buf, &mut pos, info.brand_name());
+                write_str(buf, &mut pos, "\nVendor: ");
+                write_str(buf, &mut pos, info.vendor.name());
+                write_str(buf, &mut pos, "\nCores: ");
+                let cores = info.topology.physical_cores;
+                if cores >= 10 {
+                    buf[pos] = (cores / 10) + b'0';
                     pos += 1;
-                    write_str(buf, &mut pos, "\n");
                 }
-                None => {
-                    let info = b"CPU: x86_64 (Unknown)\nVendor: N/A\nCores: 1\n";
-                    let len = info.len().min(buf.len());
-                    buf[..len].copy_from_slice(&info[..len]);
-                    return len as i32;
-                }
+                buf[pos] = (cores % 10) + b'0';
+                pos += 1;
+                write_str(buf, &mut pos, "\n");
+            } else {
+                let info = b"CPU: x86_64 (Unknown)\nVendor: N/A\nCores: 1\n";
+                let len = info.len().min(buf.len());
+                buf[..len].copy_from_slice(&info[..len]);
+                return len as i32;
             }
             return pos as i32;
         }
@@ -608,19 +605,19 @@ impl ProcfsData {
             drop(name_guard);
 
             write_str(buf, &mut pos, "\nState:\tR (running)\n");
-            write_str(buf, &mut pos, &alloc::format!("\nTgid:\t{}\n", pid));
-            write_str(buf, &mut pos, &alloc::format!("Pid:\t{}\n", pid));
-            let ppid = proc.parent.map(|p| p.0).unwrap_or(0);
-            write_str(buf, &mut pos, &alloc::format!("PPid:\t{}\n", ppid));
+            write_str(buf, &mut pos, &alloc::format!("\nTgid:\t{pid}\n"));
+            write_str(buf, &mut pos, &alloc::format!("Pid:\t{pid}\n"));
+            let ppid = proc.parent.map_or(0, |p| p.0);
+            write_str(buf, &mut pos, &alloc::format!("PPid:\t{ppid}\n"));
             write_str(buf, &mut pos, "TracerPid:\t0\n");
             write_str(buf, &mut pos, "Uid:\t0\t0\t0\t0\n");
             write_str(buf, &mut pos, "Gid:\t0\t0\t0\t0\n");
             write_str(buf, &mut pos, "FDSize:\t256\n");
             write_str(buf, &mut pos, "Groups:\t0 \n");
-            write_str(buf, &mut pos, &alloc::format!("NStgid:\t{}\n", pid));
-            write_str(buf, &mut pos, &alloc::format!("NSpid:\t{}\n", pid));
-            write_str(buf, &mut pos, &alloc::format!("NSpgid:\t{}\n", pid));
-            write_str(buf, &mut pos, &alloc::format!("NSsid:\t{}\n", pid));
+            write_str(buf, &mut pos, &alloc::format!("NStgid:\t{pid}\n"));
+            write_str(buf, &mut pos, &alloc::format!("NSpid:\t{pid}\n"));
+            write_str(buf, &mut pos, &alloc::format!("NSpgid:\t{pid}\n"));
+            write_str(buf, &mut pos, &alloc::format!("NSsid:\t{pid}\n"));
             write_str(buf, &mut pos, "VmPeak:\t   1024 kB\nVmSize:\t   1024 kB\nVmRSS:\t     256 kB\nVmSwap:\t       0 kB\n");
             write_str(buf, &mut pos, "Threads:\t1\n");
             write_str(buf, &mut pos, "SigQ:\t0/30670\n");
@@ -682,7 +679,7 @@ impl ProcfsData {
             };
 
             for (local_fd, global_fd) in &fds {
-                write_str(buf, &mut pos, &alloc::format!("{} -> [{}]\n", local_fd, global_fd));
+                write_str(buf, &mut pos, &alloc::format!("{local_fd} -> [{global_fd}]\n"));
             }
 
             pos as i32
@@ -715,7 +712,7 @@ impl ProcfsData {
                 _ => "X",  // Terminated
             };
 
-            let ppid = proc.parent.map(|p| p.0).unwrap_or(0);
+            let ppid = proc.parent.map_or(0, |p| p.0);
             let utime = proc.user_time.load(core::sync::atomic::Ordering::SeqCst);
             let stime = proc.sys_time.load(core::sync::atomic::Ordering::SeqCst);
             // 使用 create_time 作为进程启动时间 (ticks)
@@ -724,8 +721,7 @@ impl ProcfsData {
             let _rss = 0u64;   // 暂时返回 0
 
             let s = alloc::format!(
-                "{} ({}) {} {} {} 0 0 0 0 0 0 {} {} 0 0 0 {} 1 0 0 {} 0 0 0 0 0 0 0 0 0 0\n",
-                pid, name, state, ppid, pid, utime, stime, start, vsize
+                "{pid} ({name}) {state} {ppid} {pid} 0 0 0 0 0 0 {utime} {stime} 0 0 0 {start} 1 0 0 {vsize} 0 0 0 0 0 0 0 0 0 0\n"
             );
 
             let bytes = s.as_bytes();

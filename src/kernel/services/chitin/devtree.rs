@@ -4,11 +4,11 @@
 //! ## 状态 (v2.10, 2026-06-04)
 //!
 //! Phase 2.4 net/chitin 3/4 子系统迁移: 封装 `kernel::chitin::devtree::*`:
-//! - [x] 节点查询 (root_id / find_compatible / find_by_name / get_node / count / children)
-//! - [x] 节点属性 (add_prop / set_state / set_compatible / get_prop)
-//! - [x] 用户态映射 (set_user_mapped / clear_user_mapped / clear_user_mapped_by_pid / get_user_mapped)
-//! - [x] 地址/中断读取 (read_addr / read_irq)
-//! - [x] 设备绑定 (bind_device / walk)
+//! - [x] 节点查询 (`root_id` / `find_compatible` / `find_by_name` / `get_node` / count / children)
+//! - [x] 节点属性 (`add_prop` / `set_state` / `set_compatible` / `get_prop`)
+//! - [x] 用户态映射 (`set_user_mapped` / `clear_user_mapped` / `clear_user_mapped_by_pid` / `get_user_mapped`)
+//! - [x] 地址/中断读取 (`read_addr` / `read_irq`)
+//! - [x] 设备绑定 (`bind_device` / walk)
 //!
 //! ## 迁移方法
 //!
@@ -48,11 +48,11 @@ impl DevTreeNodeId {
 // 设备树错误
 // ============================================================================
 
-/// 设备树错误 — TD-20: 收敛到 KernelError, 1 字段 DT 特有 + 1 共享包装.
+/// 设备树错误 — TD-20: 收敛到 `KernelError`, 1 字段 DT 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `ParentNotFound`: 父节点不存在 (设备树构建期间强一致语义)
-///   - `Kernel(KernelError)`: 共享错误 (NotFound / InvalidArgument / Other)
+///   - `Kernel(KernelError)`: 共享错误 (`NotFound` / `InvalidArgument` / Other)
 ///     全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DevTreeError {
@@ -157,7 +157,7 @@ pub fn properties(id: DevTreeNodeId) -> Option<BTreeMap<&'static str, PropertyVa
 /// 添加属性到节点
 ///
 /// # 注意
-/// PropertyValue 仍需 `&'static str`/`&'static [u32]` 切片约束, 由 framework 侧持有
+/// `PropertyValue` 仍需 `&'static str`/`&'static [u32]` 切片约束, 由 framework 侧持有
 pub fn add_prop(id: DevTreeNodeId, name: &'static str, value: PropertyValue) {
     chitin::devtree::devtree_add_prop(id.0, name, value);
 }
@@ -187,12 +187,12 @@ pub fn set_user_mapped(id: DevTreeNodeId, pid: u32) {
     chitin::devtree::devtree_set_user_mapped(id.0, pid);
 }
 
-/// 清除节点的 user_mapped 标记
+/// 清除节点的 `user_mapped` 标记
 pub fn clear_user_mapped(id: DevTreeNodeId) {
     chitin::devtree::devtree_clear_user_mapped(id.0);
 }
 
-/// 进程退出时调用: 清除该 PID 在所有节点上的 user_mapped 标记
+/// 进程退出时调用: 清除该 PID 在所有节点上的 `user_mapped` 标记
 pub fn clear_user_mapped_by_pid(pid: u32) {
     chitin::devtree::devtree_clear_user_mapped_by_pid(pid);
 }
@@ -216,6 +216,10 @@ pub fn get_user_mapped(id: DevTreeNodeId) -> Option<u32> {
 ///
 /// # 返回
 /// 成功返回 Chitin 设备 ID, 失败返回 `DevTreeError::Kernel(KernelError::FileNotFound)`
+///
+/// # Errors
+/// 当底层 `devtree_bind_device` 返回 `None` (节点不存在或绑定失败) 时, 返回
+/// `DevTreeError::Kernel(KernelError::FileNotFound)`.
 pub fn bind_device(
     id: DevTreeNodeId,
     io_base: Option<u64>,
@@ -255,6 +259,9 @@ pub fn print_tree() {
 ///
 /// # 返回
 /// 成功返回新节点 ID, 失败返回 `DevTreeError::ParentNotFound`
+///
+/// # Errors
+/// 当指定的 `parent_id` 不存在 (无法关联父节点) 时, 返回 `DevTreeError::ParentNotFound`.
 pub fn create_node(
     name: &'static str,
     proto: super::Proto,

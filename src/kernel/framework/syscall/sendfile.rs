@@ -3,17 +3,17 @@
 //! ## 设计
 //!
 //! v1 采用内核缓冲区中转策略 (类似 Linux 2.2 sendfile):
-//! - **sendfile**: 从 in_fd (VFS 文件) 读取数据, 写入 out_fd (VFS 文件/pipe)
+//! - **sendfile**: 从 `in_fd` (VFS 文件) 读取数据, 写入 `out_fd` (VFS 文件/pipe)
 //! - **splice**: 在 pipe fd 与 VFS fd 之间传输数据
 //!
-//! 数据流: in_fd → 内核 bounce buffer → out_fd
+//! 数据流: `in_fd` → 内核 bounce buffer → `out_fd`
 //! 避免 user ↔ kernel 两次拷贝, 但仍有一次内核内拷贝.
 //! 未来 v2 可实现 page-flipping 真零拷贝 (pipe buffer → pcache 页引用).
 //!
 //! ## FD 类型识别
 //!
-//! - VFS fd: fd ∈ [3, VFS_MAX_FDS) 且 fd_table[fd].used
-//! - Pipe fd: 由 ipc_pipe 分配 (pipe_id * 2 / pipe_id * 2 + 1)
+//! - VFS fd: fd ∈ [3, `VFS_MAX_FDS`) 且 `fd_table`[fd].used
+//! - Pipe fd: 由 `ipc_pipe` 分配 (`pipe_id` * 2 / `pipe_id` * 2 + 1)
 //! - Eventfd/Signalfd/Timerfd/Inotify: 各自独立 FD 空间, 不参与 sendfile/splice
 //!
 //! ## 安全约束
@@ -82,7 +82,7 @@ fn is_pipe_fd(fd: i32) -> bool {
 // sendfile 系统调用
 // ============================================================================
 
-/// sys_sendfile — 在两个文件描述符之间传输数据
+/// `sys_sendfile` — 在两个文件描述符之间传输数据
 ///
 /// `out_fd`: 目标 fd (VFS 文件或 pipe 写端)
 /// `in_fd`: 源 fd (必须是 VFS 文件, 支持 offset)
@@ -190,14 +190,14 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset_ptr: u64, count: usize) -> i
 // splice 系统调用
 // ============================================================================
 
-/// sys_splice — 在 pipe 与文件之间传输数据
+/// `sys_splice` — 在 pipe 与文件之间传输数据
 ///
 /// `fd_in`: 输入 fd (pipe 读端 或 VFS 文件)
 /// `off_in`: 输入偏移指针 (pipe 时必须为 NULL)
 /// `fd_out`: 输出 fd (VFS 文件 或 pipe 写端)
 /// `off_out`: 输出偏移指针 (pipe 时必须为 NULL)
 /// `len`: 传输字节数
-/// `flags`: SPLICE_F_* 标志
+/// `flags`: `SPLICE_F`_* 标志
 ///
 /// 至少一端必须是 pipe.
 /// 返回实际传输的字节数, 或负的错误码.

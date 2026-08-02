@@ -1,4 +1,4 @@
-//! 任务状态段 (Task State Segment, TSS) - x86_64 实现
+//! 任务状态段 (Task State Segment, TSS) - `x86_64` 实现
 //!
 //! ## 功能概览
 //!
@@ -96,7 +96,7 @@ pub struct TaskStateSegment {
     /// - 如果小于 TSS 大小, 则从 TSS + 此偏移处开始是 I/O 位图
     ///
     /// I/O 位图用于 Ring 3 进程的 I/O 端口权限检查。
-    /// 通常设置为 TSS_SIZE (禁用 I/O 位图) 以简化实现。
+    /// 通常设置为 `TSS_SIZE` (禁用 I/O 位图) 以简化实现。
     pub iomap_base: u16,
 }
 
@@ -141,7 +141,7 @@ impl TaskStateSegment {
 
     /// 设置内核态栈指针 (RSP0)
     ///
-    /// **必须在 gdt_init() 之后、任何用户进程运行之前调用!**
+    /// **必须在 `gdt_init()` 之后、任何用户进程运行之前调用!**
     ///
     /// # Arguments
     /// * `stack_top` - 内核栈顶地址 (高地址, 因为 x86 栈向下增长)
@@ -189,7 +189,7 @@ impl TaskStateSegment {
     }
 
     /// I-24: 校验关键 IST 条目 (0-3) 已填充非零栈顶.
-    /// 启动顺序: GDT/TSS init → set_ist(0..4) → IDT init.
+    /// 启动顺序: GDT/TSS init → `set_ist(0..4)` → IDT init.
     /// IDT init 调用此函数确保 #DF/NMI/#PF/0x82 中断时 IST 栈可用,
     /// 避免 CPU 切换到未初始化的 0 栈顶触发三重故障.
     #[inline]
@@ -218,6 +218,8 @@ impl TaskStateSegment {
 
     /// 检查是否启用了 I/O 位图
     #[inline]
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn has_iomap(&self) -> bool {
         self.iomap_base < TSS_SIZE as u16
     }

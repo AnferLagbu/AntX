@@ -1,4 +1,4 @@
-//! 内核态 I/O 临时缓冲框架 — IobRegion
+//! 内核态 I/O 临时缓冲框架 — `IobRegion`
 //!
 //! ## 用途
 //!
@@ -15,7 +15,7 @@
 //! ## 内存模型
 //!
 //! 物理页由 `pmm_alloc_pages` 分配, 通过 `phys_to_virt` 映射到内核虚拟地址.
-//! Drop 时 (RAII) 自动 free_pages, 杜绝泄漏.
+//! Drop 时 (RAII) 自动 `free_pages`, 杜绝泄漏.
 //!
 //! ## 不允许简化: 不使用栈缓冲; 任意 size 都走 alloc.
 //!
@@ -55,6 +55,8 @@ impl IobRegion {
         Self::alloc_pages(pages)
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn alloc_pages(pages: u64) -> Option<Self> {
         if pages == 0 || pages > 1024 {
             // 4MB 上限保护, 防止恶意/错误请求耗尽物理页
@@ -73,7 +75,7 @@ impl IobRegion {
         })
     }
 
-    /// 内核虚拟地址 (用于 copy_nonoverlapping 目标/源)
+    /// 内核虚拟地址 (用于 `copy_nonoverlapping` 目标/源)
     #[inline]
     pub fn as_mut_ptr(&self) -> *mut u8 {
         self.vaddr
@@ -93,6 +95,8 @@ impl IobRegion {
 }
 
 impl Drop for IobRegion {
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn drop(&mut self) {
         if !self.vaddr.is_null() {
             // 还原 phys addr: vaddr - hhdm_offset, 但 raw::free_pages 期望 phys.

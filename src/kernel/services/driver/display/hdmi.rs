@@ -19,7 +19,7 @@ pub const HPD_STATUS_REG_OFFSET: usize = 0x038;
 /// HPD 状态 bit (bit 0 = connected)
 pub const HPD_STATUS_BIT: u8 = 0x01;
 
-/// IoMem 最小大小 (覆盖所有默认寄存器)
+/// `IoMem` 最小大小 (覆盖所有默认寄存器)
 pub const REQUIRED_IOMEM_SIZE: usize = 0x07A;
 
 // ============================================================================
@@ -37,7 +37,7 @@ const PCLK_DIV_REG_OFFSET: usize = 0x064;
 const PCLK_LOCK_REG_OFFSET: usize = 0x066;
 /// PLL 锁定 bit
 const PCLK_LOCK_BIT: u8 = 0x01;
-/// PLL 锁定轮询超时 (500_000 iters ≈ 10 ms)
+/// PLL 锁定轮询超时 (`500_000` iters ≈ 10 ms)
 const PLL_LOCK_TIMEOUT_ITERS: usize = 500_000;
 
 // ============================================================================
@@ -103,7 +103,7 @@ impl Default for VideoModeFlags {
     }
 }
 
-/// HDMI 时序参数 (从 VideoMode 派生)
+/// HDMI 时序参数 (从 `VideoMode` 派生)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VideoTiming {
     pub h_active: u16,
@@ -164,13 +164,13 @@ pub struct EdidDetailedTiming {
 impl EdidDetailedTiming {
     /// 获取水平分辨率
     pub fn horizontal_resolution(&self) -> u16 {
-        (self.horizontal_active as u16) | ((self.horizontal_active_high as u16 & 0xF0) << 4)
+        u16::from(self.horizontal_active) | ((u16::from(self.horizontal_active_high) & 0xF0) << 4)
     }
 
     /// 获取垂直分辨率
     pub fn vertical_resolution(&self) -> u16 {
-        (self.vertical_active as u16)
-            | ((self.vertical_active_blanking_high as u16 & 0xF0) << 4)
+        u16::from(self.vertical_active)
+            | ((u16::from(self.vertical_active_blanking_high) & 0xF0) << 4)
     }
 
     /// 获取刷新率 (近似)
@@ -178,16 +178,16 @@ impl EdidDetailedTiming {
         if self.pixel_clock == 0 {
             return 60;
         }
-        let h_total = self.horizontal_resolution() as u32
-            + ((self.horizontal_blanking as u32)
-                | ((self.horizontal_blanking_high as u32 & 0x0F) << 8));
-        let v_total = self.vertical_resolution() as u32
-            + ((self.vertical_blanking as u32)
-                | ((self.vertical_active_blanking_high as u32 & 0x0F) << 8));
+        let h_total = u32::from(self.horizontal_resolution())
+            + (u32::from(self.horizontal_blanking)
+                | ((u32::from(self.horizontal_blanking_high) & 0x0F) << 8));
+        let v_total = u32::from(self.vertical_resolution())
+            + (u32::from(self.vertical_blanking)
+                | ((u32::from(self.vertical_active_blanking_high) & 0x0F) << 8));
         if h_total == 0 || v_total == 0 {
             return 60;
         }
-        let pixel_clock_khz = self.pixel_clock as u32 * 10;
+        let pixel_clock_khz = u32::from(self.pixel_clock) * 10;
         pixel_clock_khz * 1000 / (h_total * v_total)
     }
 }
@@ -217,6 +217,11 @@ pub struct Edid {
 
 impl Edid {
     /// 从原始数据解析 EDID
+    ///
+    /// # Errors
+    ///
+    /// - 数据前 8 字节与 EDID 标准头不匹配时返回 [`EdidError::InvalidHeader`]
+    /// - 校验和不为 0 时返回 [`EdidError::ChecksumMismatch`]
     pub fn parse(data: &[u8; EDID_MAX_LENGTH]) -> Result<Self, EdidError> {
         if data[0..8] != EDID_HEADER {
             return Err(EdidError::InvalidHeader);
@@ -229,7 +234,7 @@ impl Edid {
         }
 
         let mut manufacturer = [0u8; 4];
-        let man_id = ((data[8] as u16) << 8) | (data[9] as u16);
+        let man_id = (u16::from(data[8]) << 8) | u16::from(data[9]);
         manufacturer[0] = b'@' + ((man_id >> 10) & 0x1F) as u8;
         manufacturer[1] = b'@' + ((man_id >> 5) & 0x1F) as u8;
         manufacturer[2] = b'@' + (man_id & 0x1F) as u8;
@@ -240,7 +245,7 @@ impl Edid {
             let offset = 54 + i * 18;
             if data[offset] != 0 || data[offset + 1] != 0 {
                 detailed_timings[i] = Some(EdidDetailedTiming {
-                    pixel_clock: (data[offset] as u16) | ((data[offset + 1] as u16) << 8),
+                    pixel_clock: u16::from(data[offset]) | (u16::from(data[offset + 1]) << 8),
                     horizontal_active: data[offset + 2],
                     horizontal_blanking: data[offset + 3],
                     horizontal_active_high: data[offset + 4],
@@ -262,13 +267,13 @@ impl Edid {
         Ok(Self {
             raw: *data,
             manufacturer,
-            product_code: (data[10] as u16) | ((data[11] as u16) << 8),
-            serial_number: (data[12] as u32)
-                | ((data[13] as u32) << 8)
-                | ((data[14] as u32) << 16)
-                | ((data[15] as u32) << 24),
+            product_code: u16::from(data[10]) | (u16::from(data[11]) << 8),
+            serial_number: u32::from(data[12])
+                | (u32::from(data[13]) << 8)
+                | (u32::from(data[14]) << 16)
+                | (u32::from(data[15]) << 24),
             week: data[16],
-            year: data[17] as u16 + 1990,
+            year: u16::from(data[17]) + 1990,
             version: data[18],
             revision: data[19],
             basic_display: EdidBasicDisplay {
@@ -400,7 +405,7 @@ pub const STANDARD_VIDEO_MODES: &[VideoMode] = &[
 // DMT 精度表
 // ============================================================================
 
-/// DMT lookup table — 覆盖 STANDARD_VIDEO_MODES 全部 10 个常见模式
+/// DMT lookup table — 覆盖 `STANDARD_VIDEO_MODES` 全部 10 个常见模式
 const DMT_TIMINGS: &[(u16, u16, u8, VideoTiming)] = &[
     (
         640, 480, 60,
@@ -484,7 +489,7 @@ pub fn lookup_dmt_timing(mode: &VideoMode) -> Option<VideoTiming> {
     None
 }
 
-/// 从 VideoMode 派生时序参数 (DMT lookup 优先, 公式 fallback)
+/// 从 `VideoMode` 派生时序参数 (DMT lookup 优先, 公式 fallback)
 pub fn derive_video_timing(mode: &VideoMode) -> VideoTiming {
     if let Some(timing) = lookup_dmt_timing(mode) {
         return timing;
@@ -494,16 +499,16 @@ pub fn derive_video_timing(mode: &VideoMode) -> VideoTiming {
     let h_active = mode.width;
 
     let v_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
-        let v_blank = ((v_active as u32) * 5 / 100).max(1);
-        (v_active as u32 + v_blank) as u16
+        let v_blank = (u32::from(v_active) * 5 / 100).max(1);
+        (u32::from(v_active) + v_blank) as u16
     } else {
         v_active + 50
     };
 
     let h_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
         let h_total_u32 = (mode.pixel_clock_khz * 1000)
-            / ((v_total as u32) * (mode.refresh_rate as u32));
-        h_total_u32.max((h_active as u32) + 1) as u16
+            / (u32::from(v_total) * u32::from(mode.refresh_rate));
+        h_total_u32.max(u32::from(h_active) + 1) as u16
     } else {
         h_active + 200
     };
@@ -562,7 +567,7 @@ pub fn compute_pixel_clock_mul_div(target_khz: u32, base_khz: u32) -> (u8, u8) {
 
 /// HDMI 控制器 — services 层安全实现
 ///
-/// 所有寄存器读写通过 IoMem 安全接口, 无 unsafe.
+/// 所有寄存器读写通过 `IoMem` 安全接口, 无 unsafe.
 pub struct HdmiController {
     /// MMIO 区域 (Some = 真实硬件, None = fallback 模式)
     iomem: Option<IoMem>,
@@ -639,6 +644,16 @@ impl HdmiController {
     }
 
     /// 读取 EDID (通过 DDC/I2C 或 mock fallback)
+    ///
+    /// # Errors
+    ///
+    /// - 设备未连接 (HPD 为低) 时返回 [`HdmiError::NotConnected`]
+    /// - EDID 解析失败 (如头无效或校验和不匹配) 时返回 [`HdmiError::EdidParse`]
+    ///
+    /// # Panics
+    ///
+    /// 正常情况下不会 panic; 仅当 EDID 刚解析成功并写入 `edid` 字段后又被清空时,
+    /// 末尾的 `unwrap()` 才会 panic (逻辑上不可达)。
     pub fn read_edid(&mut self) -> Result<&Edid, HdmiError> {
         if !self.connected {
             return Err(HdmiError::NotConnected);
@@ -670,6 +685,11 @@ impl HdmiController {
     }
 
     /// 设置视频模式 (像素时钟 → PLL 锁定 → 时序 → 同步 → TMDS)
+    ///
+    /// # Errors
+    ///
+    /// - 设备未连接 (HPD 为低) 时返回 [`HdmiError::NotConnected`]
+    /// - PLL 在超时时间内未锁定 (真实硬件路径) 时返回 [`HdmiError::PllLockTimeout`]
     pub fn set_video_mode(&mut self, mode: VideoMode) -> Result<(), HdmiError> {
         if !self.connected {
             return Err(HdmiError::NotConnected);
@@ -739,6 +759,11 @@ impl HdmiController {
     }
 
     /// 初始化 HDMI 控制器 (检测 → 读 EDID → 设置首选模式)
+    ///
+    /// # Errors
+    ///
+    /// - 热插拔检测失败 (HPD 为低) 时返回 [`HdmiError::NotConnected`]
+    /// - 设置首选模式时 PLL 锁定超时等失败时返回相应 [`HdmiError`]
     pub fn init(&mut self) -> Result<(), HdmiError> {
         if !self.detect_hot_plug() {
             return Err(HdmiError::NotConnected);
@@ -761,6 +786,10 @@ impl HdmiController {
     }
 
     /// 关闭 HDMI 控制器 (禁用 TMDS 输出)
+    ///
+    /// # Errors
+    ///
+    /// 此函数始终返回 `Ok(())`, 不会返回 `Err`。
     pub fn shutdown(&mut self) -> Result<(), HdmiError> {
         if let Some(iomem) = &self.iomem {
             iomem.write_u8(TMDS_ENABLE_REG_OFFSET, 0x00);

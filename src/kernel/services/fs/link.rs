@@ -5,7 +5,7 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全
-//! - 委托 framework/fs/vfs::api 完成真实现 (ramfs.link / ramfs.symlink / ramfs.readlink)
+//! - 委托 `framework/fs/vfs::api` 完成真实现 (ramfs.link / ramfs.symlink / ramfs.readlink)
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
@@ -17,6 +17,10 @@ use crate::kernel::framework::syscall::Errno;
 // ============================================================================
 
 /// link(oldpath, newpath) — 创建硬链接
+///
+/// # Errors
+/// 当任一路径指针为空或不在用户可访问范围内时返回 `EFAULT`;
+/// 其余错误 (如源不存在、无权限、名称已存在等) 以对应的 `Errno` 返回.
 pub fn link_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> {
     if oldpath_ptr == 0 || newpath_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -34,7 +38,7 @@ pub fn link_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> 
         pwm,
     );
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }
@@ -45,6 +49,10 @@ pub fn link_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> 
 // ============================================================================
 
 /// symlink(target, linkpath) — 创建符号链接
+///
+/// # Errors
+/// 当任一路径指针为空或不在用户可访问范围内时返回 `EFAULT`;
+/// 其余错误 (如目标不存在、无权限、名称已存在等) 以对应的 `Errno` 返回.
 pub fn symlink_syscall(target_ptr: u64, linkpath_ptr: u64) -> Result<usize, Errno> {
     if target_ptr == 0 || linkpath_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -62,7 +70,7 @@ pub fn symlink_syscall(target_ptr: u64, linkpath_ptr: u64) -> Result<usize, Errn
         pwm,
     );
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }
@@ -73,6 +81,10 @@ pub fn symlink_syscall(target_ptr: u64, linkpath_ptr: u64) -> Result<usize, Errn
 // ============================================================================
 
 /// readlink(path, buf, bufsiz) — 读符号链接目标
+///
+/// # Errors
+/// 当路径或缓冲区指针为空/越界时返回 `EFAULT`; 当 `bufsiz` 为 0 时返回 `EINVAL`;
+/// 其余错误 (如路径不是符号链接等) 以对应的 `Errno` 返回.
 pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usize, Errno> {
     if path_ptr == 0 || buf_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -94,7 +106,7 @@ pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usiz
         pwm,
     );
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(r as usize)
     }
@@ -104,7 +116,7 @@ pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usiz
 // 内部辅助
 // ============================================================================
 
-/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())
 }

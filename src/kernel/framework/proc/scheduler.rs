@@ -4,11 +4,11 @@
 //!
 //! Framekernel 采用三类调度器并存的分层架构, **没有冗余**:
 //!
-//! | 策略 | SchedPolicy | 实现 | 适用进程 |
+//! | 策略 | `SchedPolicy` | 实现 | 适用进程 |
 //! |------|-------------|------|----------|
-//! | DL   | `Deadline`  | Earliest-Deadline-First (EDF) + CBS | SCHED_DEADLINE 实时 |
-//! | RT   | `Fifo`/`Rr` | 固定优先级 FIFO + 时间片 RR       | SCHED_FIFO/RR 实时 |
-//! | CFS  | `Normal`    | vruntime 红黑树 (Linux CFS 风格)  | SCHED_NORMAL 普通进程 |
+//! | DL   | `Deadline`  | Earliest-Deadline-First (EDF) + CBS | `SCHED_DEADLINE` 实时 |
+//! | RT   | `Fifo`/`Rr` | 固定优先级 FIFO + 时间片 RR       | `SCHED_FIFO/RR` 实时 |
+//! | CFS  | `Normal`    | vruntime 红黑树 (Linux CFS 风格)  | `SCHED_NORMAL` 普通进程 |
 //!
 //! **MLFQ 已退役**: 历史上 MLFQ 的多级反馈队列 (level 0..3 + 时间片 [10,20,40,80] ms)
 //! 已完全被 CFS 取代 (注释中保留 "preserved from MLFQ" 仅为历史可追溯性).
@@ -30,7 +30,7 @@ use super::cfs::{
     LOAD_BALANCE_THRESHOLD, NICE0_WEIGHT, TARGET_LATENCY_TICKS,
 };
 use super::process::{Process, PROCESS_TABLE};
-use super::types::*;
+use super::types::{Pid, ProcessState, ProcessPriority, ProcessId, ProcessContext, BlockReason};
 
 // === E2: unsafe 集中化 — 裸子模块 ===
 //
@@ -101,7 +101,7 @@ const MAX_LIMITS: usize = 32;
 
 pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// 获取当前全局 tick 计数 (供 tick_query 注册回调使用).
+/// 获取当前全局 tick 计数 (供 `tick_query` 注册回调使用).
 #[inline]
 pub fn get_tick() -> u64 {
     TICK_COUNT.load(Ordering::SeqCst)
@@ -269,7 +269,7 @@ impl Scheduler {
                 alloc::alloc::dealloc(
                     process_ptr as *mut u8,
                     alloc::alloc::Layout::new::<Process>(),
-                )
+                );
             };
             return None;
         }
@@ -310,7 +310,7 @@ impl Scheduler {
         }
     }
 
-    /// 为进程设置 SCHED_DEADLINE 参数.
+    /// 为进程设置 `SCHED_DEADLINE` 参数.
     pub fn set_deadline_params(&self, pid: Pid, params: DeadlineParams) -> bool {
         if !params.is_valid() {
             return false;
@@ -371,30 +371,27 @@ impl Scheduler {
             per_cpu.dl_running.store(false, Ordering::SeqCst);
             return None;
         }
-        match dl_rq.pick_next() {
-            Some((pid, dl_abs)) => {
-                let alive = PROCESS_TABLE
-                    .with_process(pid, |p| {
-                        p.get_state() != ProcessState::Zombie
-                            && p.get_sched_policy() == SchedPolicy::Deadline
-                    })
-                    .unwrap_or(false);
-                if alive {
-                    per_cpu.dl_running.store(true, Ordering::SeqCst);
-                    Some(pid)
-                } else {
-                    // pick_next() 已从树中移除任务, 但
-                    // 保留 nr_running (与 CfsRunQueue 相同).
-                    // reinsert() 把它放回去, 不修改计数器.
-                    dl_rq.reinsert(pid, dl_abs);
-                    per_cpu.dl_running.store(false, Ordering::SeqCst);
-                    None
-                }
-            }
-            None => {
+        if let Some((pid, dl_abs)) = dl_rq.pick_next() {
+            let alive = PROCESS_TABLE
+                .with_process(pid, |p| {
+                    p.get_state() != ProcessState::Zombie
+                        && p.get_sched_policy() == SchedPolicy::Deadline
+                })
+                .unwrap_or(false);
+            if alive {
+                per_cpu.dl_running.store(true, Ordering::SeqCst);
+                Some(pid)
+            } else {
+                // pick_next() 已从树中移除任务, 但
+                // 保留 nr_running (与 CfsRunQueue 相同).
+                // reinsert() 把它放回去, 不修改计数器.
+                dl_rq.reinsert(pid, dl_abs);
                 per_cpu.dl_running.store(false, Ordering::SeqCst);
                 None
             }
+        } else {
+            per_cpu.dl_running.store(false, Ordering::SeqCst);
+            None
         }
     }
 
@@ -447,12 +444,9 @@ impl Scheduler {
             let mut rt_queue = per_cpu.rt_queue.lock();
 
             while !rt_queue.is_empty() {
-                let rt_task = match rt_queue.pop_front() {
-                    Some(task) => task,
-                    None => {
-                        klog_sched_warn!("[SCHEDULER] RT queue race condition detected");
-                        break;
-                    }
+                let rt_task = if let Some(task) = rt_queue.pop_front() { task } else {
+                    klog_sched_warn!("[SCHEDULER] RT queue race condition detected");
+                    break;
                 };
                 let rt_pid = rt_task.pid;
 
@@ -505,14 +499,11 @@ impl Scheduler {
             next_pid = self.pick_cfs_task();
         }
 
-        let next = match next_pid {
-            Some(pid) => pid,
-            None => {
-                if saved_flags & 0x200 != 0 {
-                    crate::arch!(interrupt_enable());
-                }
-                return None;
+        let next = if let Some(pid) = next_pid { pid } else {
+            if saved_flags & 0x200 != 0 {
+                crate::arch!(interrupt_enable());
             }
+            return None;
         };
 
         if next == current_pid {
@@ -549,7 +540,7 @@ impl Scheduler {
 
         super::scheduler_ex::SCHEDULER_EX
             .current
-            .store(next as u64, Ordering::SeqCst);
+            .store(u64::from(next), Ordering::SeqCst);
 
         if let Some(next_ptr_raw) = next_ptr {
             // SAFETY: next_ptr_raw is valid from PROCESS_TABLE.get()
@@ -971,7 +962,7 @@ impl Scheduler {
             } else if is_rt {
                 // RT FIFO watchdog
                 let policy = PROCESS_TABLE
-                    .with_process(current_pid, |proc| proc.get_sched_policy())
+                    .with_process(current_pid, super::process::Process::get_sched_policy)
                     .unwrap_or(SchedPolicy::Normal);
 
                 if policy == SchedPolicy::Fifo {
@@ -1148,7 +1139,7 @@ impl Scheduler {
     ///
     /// 策略: 在 allowed cpuset 中选 load 最低的 CPU.
     /// 单核: 直接返回当前 CPU.
-    /// 找不到 allowed CPU: 返回 hint_cpu (退化路径, 调度器仍可工作).
+    /// 找不到 allowed CPU: 返回 `hint_cpu` (退化路径, 调度器仍可工作).
     pub fn select_cpu_for(&self, pid: Pid, hint_cpu: u32) -> u32 {
         let cpu_count = crate::kernel::framework::smp::get_cpu_count();
         if cpu_count <= 1 {
@@ -1273,7 +1264,7 @@ impl Scheduler {
         }
     }
 
-    /// 为 PWM 设置 CPU 配额. 调用方必须持有 SYSTEM_CAP_QUOTA_ADMIN.
+    /// 为 PWM 设置 CPU 配额. 调用方必须持有 `SYSTEM_CAP_QUOTA_ADMIN`.
     pub fn set_quota(&self, pwm: u64, max_runtime: u64, period: u64) {
         let mut quotas = self.quotas.lock();
         let now = TICK_COUNT.load(Ordering::SeqCst);
@@ -1331,7 +1322,7 @@ impl Scheduler {
         }
     }
 
-    /// 进程退出时递减进程计数 (由 exit() 调用)
+    /// 进程退出时递减进程计数 (由 `exit()` 调用)
     fn dec_limit(&self, pwm: u64) {
         if pwm == 0 {
             return;

@@ -19,7 +19,7 @@
 //         Process 本身已通过 `unsafe impl Send/Sync` 标注 (process.rs 中),
 //         `Mutex<...>` 字段提供内部可变性.
 use super::identity;
-use super::types::*;
+use super::types::{PwmContext, PwmError, PwmFlags, PwmId, DomainId, AuditAction, PwmEntry};
 use crate::kernel::framework::proc::process_get_current_pid;
 use crate::kernel::framework::proc::PROCESS_TABLE;
 use core::sync::atomic::Ordering;
@@ -36,7 +36,7 @@ pub const SESSION_ELEV_STACK_CAP: usize = 8;
 // 内部辅助: 在当前进程上执行 PwmContext 闭包
 // ============================================================================
 
-/// 取出当前 pid 对应 Process 的 PwmContext, 在其上执行 f.
+/// 取出当前 pid 对应 Process 的 `PwmContext`, 在其上执行 f.
 #[inline]
 fn with_current_ctx<F, R>(f: F) -> Option<R>
 where
@@ -52,7 +52,7 @@ where
     })
 }
 
-/// 取出当前 pid 对应 Process 的 PwmContext, 复制返回.
+/// 取出当前 pid 对应 Process 的 `PwmContext`, 复制返回.
 #[inline]
 fn read_current_ctx() -> Option<PwmContext> {
     with_current_ctx(|ctx| *ctx)
@@ -71,6 +71,9 @@ where
 // 登录 / 登出
 // ============================================================================
 
+/// 使用 note 与密码执行登录, 成功后把会话信息写入当前进程的 `PwmContext`。
+/// # Errors
+/// 当前进程不存在、note 对应的 PWM 不存在、身份被禁用、处于锁定期或密码错误时返回 Err。
 pub fn login(note: &str, password: &str) -> Result<u64, PwmError> {
     // 提前取 current pid, 因 PwmId 等类型不是 Send, 不能跨闭包捕获.
     let pid = process_get_current_pid();
@@ -210,6 +213,9 @@ pub fn is_logged_in() -> bool {
     get_current_pwm() != 0
 }
 
+/// 清除指定 PWM 的登录锁定状态 (锁定截止时间与失败计数)。
+/// # Errors
+/// 指定 PWM 不存在时返回 Err。
 pub fn clear_lockout(pwm: u64) -> Result<(), PwmError> {
     let entry = identity::find(pwm).ok_or(PwmError::NotFound)?;
     entry.lockout_until.store(0, Ordering::Release);
@@ -310,8 +316,7 @@ pub fn try_setuid(target_uid: u32) -> bool {
     let target_pwm = target_entry.get_pwm().0;
 
     let current_pwm = read_current_ctx()
-        .map(|c| c.session_pwm.as_u64())
-        .unwrap_or(0);
+        .map_or(0, |c| c.session_pwm.as_u64());
 
     if super::engine::check_privilege(target_pwm, current_pwm)
         || has_elevation_authority(target_pwm)

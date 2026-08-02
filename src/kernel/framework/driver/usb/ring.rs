@@ -3,13 +3,13 @@
 //! 实现 xHCI 规范 §4.9 + §4.10 定义的两种核心环形缓冲区:
 //!
 //! - **Command Ring**: Host → Controller 命令队列
-//!   - Host 生产 TRBs (写入 enqueue_index)
+//!   - Host 生产 TRBs (写入 `enqueue_index`)
 //!   - Controller 消费 TRBs
 //!   - 触发: 写 doorbell slot 0 (Host Controller Doorbell)
 //!
 //! - **Event Ring**: Controller → Host 事件通知
 //!   - Controller 生产 TRBs
-//!   - Host 消费 TRBs (从 dequeue_index 读)
+//!   - Host 消费 TRBs (从 `dequeue_index` 读)
 //!   - 中断上半部唤醒 Event Ring 消费者
 //!
 //! ## Cycle Bit 同步
@@ -74,6 +74,8 @@ impl CommandRing {
     /// # 错误
     ///
     /// - `DriverError::InvalidParameter`: size 不是 2 的幂或为 0.
+    /// # Errors
+    /// size 为 0 或不是 2 的幂时返回 Err。
     pub fn new(size: usize) -> Result<Self> {
         if size == 0 || (size & (size - 1)) != 0 {
             return Err(DriverError::InvalidParameter);
@@ -88,7 +90,7 @@ impl CommandRing {
             size
         ];
         // 初始化所有 TRB 的 cycle bit 为 0
-        for trb in trbs.iter_mut() {
+        for trb in &mut trbs {
             trb.control = 0; // cycle bit = 0 (初始)
         }
         Ok(Self {
@@ -102,6 +104,8 @@ impl CommandRing {
     ///
     /// 注意: 此方法**不**触发 doorbell, 调用方需在批量提交后
     ///       自行调用 `xhci::ring_doorbell(0)`.
+    /// # Errors
+    /// 环已满 (到达 Link TRB 位置) 时返回 Err。
     pub fn push(&mut self, mut trb: Trb) -> Result<()> {
         // 最后一项保留为 Link TRB, 不可被普通 TRB 占用
         if self.enqueue_index >= self.trbs.len() - 1 {
@@ -175,9 +179,9 @@ impl CommandRing {
         self.cycle
     }
 
-    /// 重置 ring (清空所有 TRB, 重置 enqueue_index 和 cycle).
+    /// 重置 ring (清空所有 TRB, 重置 `enqueue_index` 和 cycle).
     pub fn reset(&mut self) {
-        for trb in self.trbs.iter_mut() {
+        for trb in &mut self.trbs {
             trb.parameter = 0;
             trb.status = 0;
             trb.control = 0;
@@ -206,6 +210,8 @@ pub struct EventRing {
 
 impl EventRing {
     /// 创建新的 Event Ring.
+    /// # Errors
+    /// size 为 0 或不是 2 的幂时返回 Err。
     pub fn new(size: usize) -> Result<Self> {
         if size == 0 || (size & (size - 1)) != 0 {
             return Err(DriverError::InvalidParameter);
@@ -255,10 +261,10 @@ impl EventRing {
     pub fn peek(&self) -> Option<Trb> {
         let trb = self.trbs[self.dequeue_index];
         let trb_cycle = (trb.control & TRB_CYCLE_BIT) != 0;
-        if trb_cycle != self.cycle {
-            None
-        } else {
+        if trb_cycle == self.cycle {
             Some(trb)
+        } else {
+            None
         }
     }
 

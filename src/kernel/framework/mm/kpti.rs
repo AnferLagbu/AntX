@@ -1,4 +1,4 @@
-//! KPTI (Kernel Page Table Isolation) — x86_64
+//! KPTI (Kernel Page Table Isolation) — `x86_64`
 //!
 //! 抗 Meltdown 用户/内核页表隔离。
 //!
@@ -14,7 +14,7 @@
 //! # 现状 (本轮 PR)
 //!
 //! - **已完成**:
-//!   - 用户页表初始化 (复制 KERNEL_PML4 256..511 项, 清 USER 位, 标记 trampoline 页保留 USER)
+//!   - 用户页表初始化 (复制 `KERNEL_PML4` 256..511 项, 清 USER 位, 标记 trampoline 页保留 USER)
 //!   - `switch_to_user_pml4` / `switch_to_kernel_pml4` CR3 切换原语
 //!   - 公共 API: `kpti_init`, `kpti_is_active`, `kpti_user_pml4`, `kpti_enter_kernel`,
 //!     `kpti_exit_to_user`
@@ -23,7 +23,7 @@
 //! - **未完成 (本轮范围外, 在 `engineering-progress.md` §五 + roadmap Backlog 登记)**:
 //!   - **汇编 trampoline 集成**: 当前 syscall 入口是 Rust `syscall_dispatch_from_frame`,
 //!     KPTI 切换必须在汇编中做 (CPU 进入内核的第一条指令必须是 `mov cr3, kernel_pml4`,
-//!     否则 CPU 仍按 user_pml4 寻址, 会因缺页 #PF panic)。
+//!     否则 CPU 仍按 `user_pml4` 寻址, 会因缺页 #PF panic)。
 //!     需要新增 `entry_SYSCALL_64` / `swapgs_restore_regs_and_return_to_usermode` 汇编
 //!     trampoline, 把当前 `syscall_dispatch_from_frame` 改造成可被 trampoline 调用。
 //!   - **PCID/INVPCID 优化**: 当前每次切换 CR3 都 TLB 全清, 高频 syscall 性能损失 5-15%。
@@ -102,7 +102,7 @@ pub unsafe fn invpcid_flush_single(pcid: u16, vaddr: u64) {
     // 前提: pcid 有效 (0-4095), vaddr 页对齐.
     // 调用方保证: vaddr 属于调用方地址空间.
     // 硬件契约: INVPCID 指令在支持的 CPU 上原子刷新单条 TLB.
-    unsafe { invpcid(pcid as u64, vaddr, INVPCID_TYPE_SINGLE); }
+    unsafe { invpcid(u64::from(pcid), vaddr, INVPCID_TYPE_SINGLE); }
 }
 
 /// CR3 值中嵌入 PCID: PML4 物理地址 | PCID.
@@ -115,8 +115,7 @@ pub const fn cr3_with_pcid(pml4_phys: u64, pcid: u64) -> u64 {
 #[inline]
 pub fn has_invpcid() -> bool {
     crate::kernel::framework::cpu::get_cpu_info()
-        .map(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::INVPCID))
-        .unwrap_or(false)
+        .is_some_and(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::INVPCID))
 }
 
 /// 检查 PCID 是否已启用 (CR4.PCIDE = 1).
@@ -146,16 +145,16 @@ unsafe extern "C" {
 /// KPTI 是否已初始化 (init 完成后置 true)。
 static KPTI_READY: AtomicBool = AtomicBool::new(false);
 
-/// USER_PML4 物理地址 (在 vmm_init 阶段被初始化)。
+/// `USER_PML4` 物理地址 (在 `vmm_init` 阶段被初始化)。
 ///
-/// 此 PML4 与 KERNEL_PML4 共享 entries 256..511 的内核高半区,
+/// 此 PML4 与 `KERNEL_PML4` 共享 entries 256..511 的内核高半区,
 /// 但**清除了 USER 位**, 仅保留 trampoline + 必要内核数据条目的 USER 位。
 static USER_PML4: AtomicU64 = AtomicU64::new(0);
 
 /// 上一份 PML4 物理地址 (供 `switch_to_kernel_pml4` 切回时使用)。
 ///
 /// 注: 切回时直接用 `KERNEL_PML4` 而非此处保存的旧值, 因为 CPU 上一次在内核态
-/// 使用的就是 KERNEL_PML4, 保留 USER_PML4 即可, 不需要 per-CPU 保存。
+/// 使用的就是 `KERNEL_PML4`, 保留 `USER_PML4` 即可, 不需要 per-CPU 保存。
 static LAST_KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 // ── 公开 API ──────────────────────────────────────────────────────
@@ -166,28 +165,28 @@ pub fn kpti_is_active() -> bool {
     KPTI_READY.load(Ordering::Acquire)
 }
 
-/// 返回 USER_PML4 物理地址 (供 COW fork 等路径构造子进程用户页表)。
+/// 返回 `USER_PML4` 物理地址 (供 COW fork 等路径构造子进程用户页表)。
 #[inline(always)]
 pub fn kpti_user_pml4() -> u64 {
     USER_PML4.load(Ordering::Acquire)
 }
 
-/// 返回 KERNEL_PML4 物理地址 (避免其它模块读 `KERNEL_PML4` 内部符号)。
+/// 返回 `KERNEL_PML4` 物理地址 (避免其它模块读 `KERNEL_PML4` 内部符号)。
 #[inline(always)]
 pub fn kpti_kernel_pml4() -> u64 {
     LAST_KERNEL_PML4.load(Ordering::Acquire)
 }
 
-/// 将 KERNEL_PML4[pml4_idx] 同步到 USER_PML4[pml4_idx].
+/// 将 `KERNEL_PML4`[`pml4_idx`] 同步到 `USER_PML4`[`pml4_idx`].
 ///
 /// 当 VMM 在内核高半区创建新的 PML4 条目 (如帧缓冲 MMIO 映射) 时,
-/// 必须同步到 USER_PML4, 否则 KPTI 模式下 CPU 使用 user CR3 时
+/// 必须同步到 `USER_PML4`, 否则 KPTI 模式下 CPU 使用 user CR3 时
 /// 访问该地址会触发 Page Fault.
 ///
 /// # Safety
 ///
-/// 调用方保证: KERNEL_PML4 已初始化; pml4_idx 在 [256, 512) 范围内;
-/// VMM_LOCK 已持有 (防止并发修改).
+/// 调用方保证: `KERNEL_PML4` 已初始化; `pml4_idx` 在 [256, 512) 范围内;
+/// `VMM_LOCK` 已持有 (防止并发修改).
 pub unsafe fn kpti_sync_pml4_entry(pml4_idx: usize) {
     if !KPTI_READY.load(Ordering::Acquire) {
         return;
@@ -209,7 +208,7 @@ pub unsafe fn kpti_sync_pml4_entry(pml4_idx: usize) {
 
 // ── 切换原语 (entry/exit trampoline 调用) ────────────────────────
 
-/// 进入内核态: CR3 切换 USER_PML4 → KERNEL_PML4。
+/// 进入内核态: CR3 切换 `USER_PML4` → `KERNEL_PML4`。
 ///
 /// **调用方**: 必须在 CPU 刚进入 ring 0 的第一条指令 (syscall/iret 入口汇编 trampoline)。
 /// **当前实现**: 该函数可用作逻辑参考, 但**真正的集成需要在汇编 trampoline 中**,
@@ -234,7 +233,7 @@ pub unsafe fn kpti_enter_kernel() {
     }
 }
 
-/// 返回用户态: CR3 切换 KERNEL_PML4 → USER_PML4。
+/// 返回用户态: CR3 切换 `KERNEL_PML4` → `USER_PML4`。
 ///
 /// **调用方**: 必须在 CPU 即将 iretq/sysret 之前的最后一条指令 (exit trampoline)。
 ///
@@ -259,14 +258,18 @@ pub unsafe fn kpti_exit_to_user() {
 
 // ── 初始化 ────────────────────────────────────────────────────────
 
-/// 初始化 KPTI: 分配 USER_PML4 页, 从 KERNEL_PML4 复制内核高半区,
+/// 初始化 KPTI: 分配 `USER_PML4` 页, 从 `KERNEL_PML4` 复制内核高半区,
 /// 清除 USER 位, 保留 trampoline 区域。
 ///
-/// 必须在 `vmm::Vmm::init` 之后调用 (依赖 KERNEL_PML4 已初始化)。
+/// 必须在 `vmm::Vmm::init` 之后调用 (依赖 `KERNEL_PML4` 已初始化)。
 ///
 /// # Safety
 ///
-/// 调用方保证: KERNEL_PML4 已初始化; PMM 可分配页面; KPTI 全局状态在 boot 阶段被独占写入。
+/// 调用方保证: `KERNEL_PML4` 已初始化; PMM 可分配页面; KPTI 全局状态在 boot 阶段被独占写入。
+/// # Panics
+/// 分配 `USER_PML4` 页失败时 panic。
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe fn kpti_init(kernel_pml4: u64) {
     if KPTI_READY.load(Ordering::Acquire) {
         return;
@@ -274,11 +277,9 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
 
     // 1. 分配 USER_PML4 物理页
     let user_pml4_phys = pmm_alloc_page() as u64;
-    if user_pml4_phys == 0 {
-        // 不可恢复: KPTI 初始化需要 USER_PML4 页, 分配失败意味着内存耗尽,
-        // 内核无法安全进入用户态, 只能停机
-        panic!("[KPTI] failed to allocate USER_PML4 page");
-    }
+    // 不可恢复: KPTI 初始化需要 USER_PML4 页, 分配失败意味着内存耗尽,
+    // 内核无法安全进入用户态, 只能停机
+    assert!(user_pml4_phys != 0, "[KPTI] failed to allocate USER_PML4 page");
     let user_pml4_virt = PhysAddr(user_pml4_phys).to_virt();
 
     // 2. 清零
@@ -415,22 +416,22 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
 
 // ── .text 区域映射 ──────────────────────────────────────────────
 
-/// 在 USER_PML4 中映射整个 .text 区域 (PRESENT only, SMEP-safe).
+/// 在 `USER_PML4` 中映射整个 .text 区域 (PRESENT only, SMEP-safe).
 ///
-/// 映射 _kernel_text_start ~ _kernel_text_end 的所有页面到用户页表,
+/// 映射 _`kernel_text_start` ~ _`kernel_text_end` 的所有页面到用户页表,
 /// 包括高半区 VMA (CPU 实际取指地址) 和低半区 LMA (恒等映射, 备用).
 ///
-/// 原因: 异常处理代码 (isr0-isr31, irq0-irq15, syscall_entry) 位于 .text 区域,
-/// 用户态触发异常/系统调用时 CPU 使用 USER_PML4 寻址, 必须能取指执行这些代码页.
+/// 原因: 异常处理代码 (isr0-isr31, irq0-irq15, `syscall_entry`) 位于 .text 区域,
+/// 用户态触发异常/系统调用时 CPU 使用 `USER_PML4` 寻址, 必须能取指执行这些代码页.
 /// 此前仅映射 trampoline 子范围导致异常处理代码不可执行或未映射 → Triple Fault.
 ///
 /// 权限: PRESENT (Ring 0 可执行, SMEP 兼容). 不设 USER 位:
-/// SMEP 启用时 Ring 0 不能执行 USER 页, 设 USER 会导致 syscall_entry #PF.
+/// SMEP 启用时 Ring 0 不能执行 USER 页, 设 USER 会导致 `syscall_entry` #PF.
 /// 不设 WRITABLE → 只读. 不设 NX → 可执行.
 ///
 /// # Safety
 ///
-/// 调用方保证: `user_pml4` 是有效的 USER_PML4 虚拟地址指针;
+/// 调用方保证: `user_pml4` 是有效的 `USER_PML4` 虚拟地址指针;
 /// `text_start`/`text_end` 是 .text 物理地址范围;
 /// 在 boot 阶段单线程执行, 无并发修改页表.
 pub(super) unsafe fn map_text_region_in_user_pml4(
@@ -488,6 +489,8 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
 ///
 /// 调用方保证: `user_pml4` 有效; `vma` 和 `phys` 对齐;
 /// boot 阶段单线程执行, 无并发修改页表.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 unsafe fn map_text_page(
     user_pml4: *mut u64,
     vma: u64,
@@ -510,9 +513,7 @@ unsafe fn map_text_page(
             pml4e & 0x000FFFFFFFFFF000
         } else {
             let new_page = pmm_alloc_page() as u64;
-            if new_page == 0 {
-                panic!("[KPTI] map_text_page: alloc PDPT failed");
-            }
+            assert!(new_page != 0, "[KPTI] map_text_page: alloc PDPT failed");
             let new_page_virt = PhysAddr(new_page).to_virt();
             // SAFETY: new_page 由 PMM 分配, 属于内核; 清零 4KB
             core::ptr::write_bytes(new_page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
@@ -528,9 +529,7 @@ unsafe fn map_text_page(
             pdpte & 0x000FFFFFFFFFF000
         } else {
             let new_page = pmm_alloc_page() as u64;
-            if new_page == 0 {
-                panic!("[KPTI] map_text_page: alloc PD failed");
-            }
+            assert!(new_page != 0, "[KPTI] map_text_page: alloc PD failed");
             let new_page_virt = PhysAddr(new_page).to_virt();
             // SAFETY: new_page 由 PMM 分配, 属于内核; 清零 4KB
             core::ptr::write_bytes(new_page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
@@ -559,9 +558,7 @@ unsafe fn map_text_page(
                 let pde_flags = pde & 0xFFF & !PS_BIT;     // 保留权限, 清 PS
 
                 let new_pt = pmm_alloc_page() as u64;
-                if new_pt == 0 {
-                    panic!("[KPTI] map_text_page: alloc PT (split) failed");
-                }
+                assert!(new_pt != 0, "[KPTI] map_text_page: alloc PT (split) failed");
                 let new_pt_virt = PhysAddr(new_pt).to_virt();
                 // SAFETY: new_pt 由 PMM 分配; 清零后填充 512 PTE
                 core::ptr::write_bytes(new_pt_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
@@ -586,9 +583,7 @@ unsafe fn map_text_page(
             }
         } else {
             let new_page = pmm_alloc_page() as u64;
-            if new_page == 0 {
-                panic!("[KPTI] map_text_page: alloc PT failed");
-            }
+            assert!(new_page != 0, "[KPTI] map_text_page: alloc PT failed");
             let new_page_virt = PhysAddr(new_page).to_virt();
             // SAFETY: new_page 由 PMM 分配, 属于内核; 清零 4KB
             core::ptr::write_bytes(new_page_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
@@ -606,10 +601,10 @@ unsafe fn map_text_page(
 
 /// KPTI 中断/系统调用入口代码在 CR3 切换前需要访问的数据页面。
 ///
-/// 当 CPU 在用户态触发中断/异常时, isr_common/irq_common/syscall_entry
+/// 当 CPU 在用户态触发中断/异常时, `isr_common/irq_common/syscall_entry`
 /// 在切换到内核页表前需要:
 /// 1. `mov [USER_CR3_SAVE], rax` — 保存用户 CR3 到 .bss 变量
-/// 2. `mov rax, [gs:KERNEL_PML4_OFF]` — 从 SyscallPerCpu 读内核 PML4
+/// 2. `mov rax, [gs:KERNEL_PML4_OFF]` — 从 `SyscallPerCpu` 读内核 PML4
 ///
 /// 这些访问发生在 CR3 切换前 (此时仍为用户页表), 因此这些数据页面
 /// 必须在用户页表中有 PRESENT | WRITABLE 映射, 否则触发 #PF → Triple Fault。
@@ -626,8 +621,8 @@ unsafe fn map_text_page(
 ///
 /// # Safety
 ///
-/// 调用方保证: `user_pml4` 是有效的 USER_PML4 虚拟地址指针;
-/// 在 boot 阶段单线程执行或持 VMM_LOCK, 无并发修改页表.
+/// 调用方保证: `user_pml4` 是有效的 `USER_PML4` 虚拟地址指针;
+/// 在 boot 阶段单线程执行或持 `VMM_LOCK`, 无并发修改页表.
 pub(super) unsafe fn map_kpti_data_pages(user_pml4: *mut u64) {
     // 权限: PRESENT (bit 0) + WRITABLE (bit 1) = 0x3
     //
@@ -698,9 +693,9 @@ pub(super) unsafe fn map_kpti_data_pages(user_pml4: *mut u64) {
 
 // ── 测试辅助 (host-tests) ────────────────────────────────────────
 
-/// KPTI 关闭时 (kpti=false) 的占位 USER_PML4。
+/// KPTI 关闭时 (kpti=false) 的占位 `USER_PML4`。
 ///
-/// KPTI 关闭时, USER_PML4 沿用 KERNEL_PML4 (无隔离), 此函数返回 KERNEL_PML4 物理地址
+/// KPTI 关闭时, `USER_PML4` 沿用 `KERNEL_PML4` (无隔离), 此函数返回 `KERNEL_PML4` 物理地址
 /// 以便 `map_to_user_pml4` 等 API 在两条路径都可用。
 #[inline(always)]
 pub fn kpti_user_pml4_or_kernel(kernel_pml4: u64) -> u64 {

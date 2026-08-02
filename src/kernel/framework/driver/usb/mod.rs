@@ -52,18 +52,22 @@ const PCI_PROGIF_XHCI: u8 = 0x30;
 
 /// 默认 xHCI MMIO 映射大小 (xHCI 规范要求至少 256 字节; 现代控制器通常 64 KiB).
 ///
-/// 真实 BAR size 由 PciBar.size 提供, 但 find_by_class 返回的 PciDevice.bar
+/// 真实 BAR size 由 PciBar.size 提供, 但 `find_by_class` 返回的 PciDevice.bar
 /// 可能 size=0 (某些固件未配置), 此 fallback 用于该情况.
 const XHCI_DEFAULT_MMIO_SIZE: usize = 0x10000; // 64 KiB
 
 /// 发现系统中的所有 xHCI 控制器 (USB-1.2: TRACK-558BA7 消除).
 ///
-/// 扫描 PCI 总线, 过滤 class=0x0C/subclass=0x03/prog_if=0x30 的设备,
-/// 为每个设备分配 IoMem 并实例化 XhciController (未初始化).
+/// 扫描 PCI 总线, 过滤 `class=0x0C/subclass=0x03/prog_if=0x30` 的设备,
+/// 为每个设备分配 `IoMem` 并实例化 `XhciController` (未初始化).
 ///
 /// # 错误
 ///
 /// - 返回 `Ok(Vec<XhciController>)`, 即使找不到控制器 (Vec 为空) 也不算错误.
+/// # Errors
+/// 为控制器分配 MMIO 或创建 `IoMem` 失败时返回 Err。
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn discover_xhci_controllers() -> framework::Result<Vec<XhciController>> {
     use crate::kernel::framework::iomem::IoMem;
     use crate::kernel::framework::mm::PhysAddr;
@@ -109,7 +113,7 @@ pub fn discover_xhci_controllers() -> framework::Result<Vec<XhciController>> {
     Ok(controllers)
 }
 
-/// 判断 PciDevice 是否为 xHCI 控制器.
+/// 判断 `PciDevice` 是否为 xHCI 控制器.
 fn is_xhci_device(dev: &crate::kernel::framework::pci::PciDevice) -> bool {
     dev.class_code == PCI_CLASS_SERIAL_BUS
         && dev.subclass_code == PCI_SUBCLASS_USB
@@ -121,6 +125,8 @@ fn is_xhci_device(dev: &crate::kernel::framework::pci::PciDevice) -> bool {
 // ============================================================================
 
 /// 初始化USB子系统
+/// # Errors
+/// 扫描 xHCI 控制器失败时返回 Err。
 pub fn usb_init() -> framework::Result<()> {
     // USB-1.2: TRACK-558BA7 消除 — 扫描 PCI 总线查找 xHCI 控制器
     let controllers = discover_xhci_controllers()?;
@@ -160,7 +166,7 @@ pub fn usb_init() -> framework::Result<()> {
 ///
 /// # Safety
 ///
-/// 调用方必须保证 `ctrl` 由 `discover_xhci_controllers` 创建 (IoMem 边界已保证).
+/// 调用方必须保证 `ctrl` 由 `discover_xhci_controllers` 创建 (`IoMem` 边界已保证).
 unsafe fn init_xhci_controller(ctrl: &mut XhciController) -> framework::Result<()> {
     ctrl.init_hardware().map_err(|_| super::framework::DriverError::HardwareError)?;
     Ok(())
@@ -169,7 +175,7 @@ unsafe fn init_xhci_controller(ctrl: &mut XhciController) -> framework::Result<(
 /// 枚举已初始化 xHCI 控制器上连接的所有 USB 设备 (USB-1.6).
 ///
 /// 当前为**软件骨架**: 假设每个端口都有 HID Keyboard 设备, 调用 `enumerate::enumerate_new_device`.
-/// 真实硬件应通过 Control Transfer TRB 序列发送 GET_DESCRIPTOR / SET_ADDRESS / SET_CONFIGURATION.
+/// 真实硬件应通过 Control Transfer TRB 序列发送 `GET_DESCRIPTOR` / `SET_ADDRESS` / `SET_CONFIGURATION`.
 ///
 /// # 限制
 ///

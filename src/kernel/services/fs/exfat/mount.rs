@@ -1,10 +1,10 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
-//! exFAT FileSystem trait 实现
+//! exFAT `FileSystem` trait 实现
 
 
 use crate::kernel::framework::fs::KernelError;
-use crate::kernel::services::fs::vfs_types::*;
+use crate::kernel::services::fs::vfs_types::{KernelResult, VfsStat, VfsSeekWhence, FileSystem, VfsDirEntry};
 use super::read::ExfatFs;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 
@@ -84,7 +84,7 @@ impl Inode for ExfatInode {
     }
 }
 
-/// exFAT FileSystem trait 实现
+/// exFAT `FileSystem` trait 实现
 pub struct ExfatFileSystem;
 
 impl FileSystem for ExfatFileSystem {
@@ -190,8 +190,8 @@ impl FileSystem for ExfatFileSystem {
 
         let ext2_entry = &entries[idx];
         entry.node = idx as u32;
-        entry.file_type = if ext2_entry.file_attributes() & 0x10 != 0 { 1 } else { 0 };
-        entry.set_name(&alloc::format!("entry_{}", idx));
+        entry.file_type = u8::from(ext2_entry.file_attributes() & 0x10 != 0);
+        entry.set_name(&alloc::format!("entry_{idx}"));
 
         Ok(true)
     }

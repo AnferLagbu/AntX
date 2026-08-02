@@ -17,6 +17,9 @@ pub struct ExfatFs {
 
 impl ExfatFs {
     /// 打开 exFAT 文件系统
+    ///
+    /// # Errors
+    /// 当引导扇区读取失败时返回 `Io`; 当引导扇区不是合法 exFAT 超级块时返回 `InvalidArgument`.
     pub fn open(device_idx: u8) -> Result<Self, KernelError> {
         // 读取引导扇区 (偏移 0)
         let mut boot_data = [0u8; 512];
@@ -40,6 +43,9 @@ impl ExfatFs {
     }
 
     /// 读取目录条目
+    ///
+    /// # Errors
+    /// 错误条件与 [`ExfatDirEntry::from_cluster`] 相同, 参见其 `# Errors` 段.
     pub fn read_dir_entries(
         &self,
         start_cluster: u32,
@@ -48,6 +54,10 @@ impl ExfatFs {
     }
 
     /// 查找路径
+    ///
+    /// # Errors
+    /// 当中间目录条目读取失败时返回底层 `KernelError`;
+    /// 当路径中某组件不存在时返回 `FileNotFound`.
     pub fn lookup_path(&self, path: &str) -> Result<u32, KernelError> {
         let mut current_cluster = self.super_block.root_dir_first_cluster;
 
@@ -101,7 +111,7 @@ impl ExfatFs {
                             entry.data[offset],
                             entry.data[offset + 1],
                         ]);
-                        if let Some(ch) = char::from_u32(code_unit as u32) {
+                        if let Some(ch) = char::from_u32(u32::from(code_unit)) {
                             name.push(ch);
                         }
                     }
@@ -115,6 +125,9 @@ impl ExfatFs {
     }
 
     /// 读取文件内容
+    ///
+    /// # Errors
+    /// 当读取 FAT 链或底层簇数据失败时返回对应的 `KernelError`.
     pub fn read_file(
         &self,
         start_cluster: u32,
@@ -122,7 +135,7 @@ impl ExfatFs {
         buf: &mut [u8],
     ) -> Result<usize, KernelError> {
         let chain = super::fat::read_fat_chain(self.device_idx, &self.super_block, start_cluster)?;
-        let cluster_size = self.super_block.bytes_per_cluster() as u64;
+        let cluster_size = u64::from(self.super_block.bytes_per_cluster());
         let mut bytes_read = 0;
         let mut pos = offset;
 
@@ -155,6 +168,9 @@ impl ExfatFs {
     }
 
     /// 写入文件内容
+    ///
+    /// # Errors
+    /// 当读取 FAT 链或底层簇数据失败时返回对应的 `KernelError`.
     pub fn write_file(
         &self,
         start_cluster: u32,
@@ -162,7 +178,7 @@ impl ExfatFs {
         buf: &[u8],
     ) -> Result<usize, KernelError> {
         let chain = super::fat::read_fat_chain(self.device_idx, &self.super_block, start_cluster)?;
-        let cluster_size = self.super_block.bytes_per_cluster() as u64;
+        let cluster_size = u64::from(self.super_block.bytes_per_cluster());
         let mut bytes_written = 0;
         let mut pos = offset;
 

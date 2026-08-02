@@ -2,8 +2,8 @@
 //!
 //! ## T1-8 迁移记录
 //!
-//! 策略代码 (RlimitTable, Rlimit, 常量, check_*/get_* 辅助函数)
-//! 已于 2026-06-16 迁移到 services::proc::rlimit.
+//! 策略代码 (`RlimitTable`, Rlimit, 常量, check_*/get_* 辅助函数)
+//! 已于 2026-06-16 迁移到 `services::proc::rlimit`.
 //! 本文件仅保留:
 //! 1. re-export services 层的公共 API (保持调用方兼容)
 //! 2. syscall 入口 (含 unsafe 用户指针操作, 必须留在 framework)
@@ -29,7 +29,7 @@ use crate::kernel::framework::errno::Errno;
 // 系统调用实现 (含 unsafe 用户指针操作, 必须留在 framework)
 // ============================================================================
 
-/// sys_getrlimit — 获取资源限制
+/// `sys_getrlimit` — 获取资源限制
 ///
 /// `resource`: POSIX 资源类型 (0..=16)
 /// `rlim_ptr`: 用户空间指针, 指向 `struct rlimit { rlim_cur: u64, rlim_max: u64 }`
@@ -62,10 +62,14 @@ pub fn sys_getrlimit(resource: i32, rlim_ptr: u64) -> i64 {
     0
 }
 
-/// sys_setrlimit — 设置资源限制
+/// `sys_setrlimit` — 设置资源限制
 ///
 /// `resource`: POSIX 资源类型 (0..=16)
 /// `rlim_ptr`: 用户空间指针, 指向 `struct rlimit { rlim_cur: u64, rlim_max: u64 }`
+///
+/// # Panics
+/// 仅在两处 `expect` 调用 (`bytes[0..8].try_into()` 与 `bytes[8..16].try_into()`) 处
+/// 存在潜在 panic; 由于切片长度恒为 8 字节, 实际上不会触发.
 pub fn sys_setrlimit(resource: i32, rlim_ptr: u64) -> i64 {
     if rlim_ptr == 0 {
         return Errno::EINVAL.as_ret();

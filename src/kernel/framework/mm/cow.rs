@@ -2,7 +2,7 @@
 //!
 //! ## 核心思想
 //!
-//! fork() 时父子进程**共享**物理页，均标记为只读。
+//! `fork()` 时父子进程**共享**物理页，均标记为只读。
 //! 任意一方写入时触发 #PF → COW handler → 复制物理页。
 //!
 //! ## 引用计数
@@ -22,7 +22,7 @@
 use alloc::collections::BTreeMap;
 
 use super::vmm;
-use super::*;
+use super::{PAGE_SIZE, PhysAddr, VirtAddr, PageFlags};
 
 
 use crate::kernel::framework::sync::IrqSpinLock;
@@ -76,7 +76,7 @@ pub fn cow_ref_count(phys: u64) -> u32 {
 /// 相比 deep copy 版本, 该版本不分配新物理页, 也不复制数据
 ///
 /// # SMP Safety
-/// 本函数持有 VMM_LOCK 保护所有页表修改, 确保多核并发安全。
+/// 本函数持有 `VMM_LOCK` 保护所有页表修改, 确保多核并发安全。
 /// 函数返回前刷新全部 TLB 条目使被清除 WRITABLE 位的 PTE 失效。
 pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
     let vmm_inst = vmm::get_vmm();
@@ -86,6 +86,8 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
     result
 }
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
     if parent_pml4 == 0 {
         return None;
@@ -245,8 +247,10 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
 /// COW fault 处理: 为写入分配新页
 ///
 /// # SMP Safety
-/// 所有页表修改通过 VMM 的 map_page_in_table 进行, 该函数内部持有 VMM_LOCK
+/// 所有页表修改通过 VMM 的 `map_page_in_table` 进行, 该函数内部持有 `VMM_LOCK`
 /// 并执行 TLB 刷新, 保证多核并发安全。
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let vmm_inst = vmm::get_vmm();
     let page_aligned = fault_addr & !(PAGE_SIZE - 1);

@@ -4,7 +4,7 @@
 //! - **管道 (Pipe)**: 字节流通信，支持阻塞读写
 //! - **信号 (Signal)**: 异步通知机制
 //! - **共享内存 (SHM)**: 高效大数据传输
-//! - **消息队列 (MsgQ)**: 结构化消息传递
+//! - **消息队列 (`MsgQ`)**: 结构化消息传递
 //! - **信号量 (Semaphore)**: 同步原语
 //!
 //! ## 架构设计
@@ -77,7 +77,7 @@ pub mod async_ipc;
 // 全局状态
 // ============================================================================
 
-use types::*;
+use types::{IpcNamespace, IPC_MAX_PIPES, IPC_MAX_SHM_SEGS, IPC_MAX_MSG_QUEUES, IPC_MAX_SEMAPHORES};
 use crate::kernel::framework::racy_cell::RacyCell;
 
 /// IPC 命名空间 (全局资源容器)
@@ -107,7 +107,7 @@ pub static NEXT_IPC_ID: RacyCell<IpcId> = RacyCell::new(1);
 /// 此函数只能调用一次，且必须在多核启动前完成。
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn ipc_init() {
+pub extern "C" fn ipc_init() {
     // 重置 ID 分配器
     NEXT_IPC_ID.map_mut(|id| *id = 1);
 

@@ -327,7 +327,7 @@ impl Default for E1000Device {
     }
 }
 
-/// E1000Device 辅助方法 (安全驱动访问)
+/// `E1000Device` 辅助方法 (安全驱动访问)
 impl E1000Device {
     /// 获取安全驱动引用 (driver 已初始化时可用)
     fn driver_ref(&self) -> &E1000Driver {
@@ -343,10 +343,10 @@ impl E1000Device {
 /// E1000 EEPROM 读取 (按 feature 切换).
 ///
 /// - 默认 (`e1000-real-hw` 关闭): QEMU 仿真器对 EERD 寄存器的写操作会触发内部
-///   mutex 死锁, 因此 eeprom_read 立即返回 `0xFFFF`, 由 [`read_mac_address`]
+///   mutex 死锁, 因此 `eeprom_read` 立即返回 `0xFFFF`, 由 [`read_mac_address`]
 ///   填入 QEMU 默认 MAC `52:54:00:12:34:56`.
 /// - 启用 `e1000-real-hw` feature: 通过 EERD.START 触发读, 轮询 EERD.DONE
-///   位 (带 100k 次 spin_loop 超时), 返回 (val >> 16) & 0xFFFF.
+///   位 (带 100k 次 `spin_loop` 超时), 返回 (val >> 16) & 0xFFFF.
 ///
 /// QEMU 兼容路径: 跳过 EERD MMIO 访问, 直接返回哨兵值。
 #[cfg(all(not(feature = "kernel_test"), not(feature = "e1000-real-hw")))]
@@ -397,6 +397,8 @@ fn read_mac_address(io: &E1000Io) -> [u8; 6] {
 // ============================================================================
 
 #[cfg(not(feature = "kernel_test"))]
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
     let tx_ring = TxRing::alloc(E1000_TX_RING_SIZE).ok_or_else(|| {
         klog_err!(Net, "e1000: TX ring alloc failed");
@@ -483,10 +485,10 @@ impl Driver for E1000Device {
     }
 
     fn status(&self) -> &'static str {
-        if !self.driver_ref().is_ready() {
-            "Not initialized"
-        } else {
+        if self.driver_ref().is_ready() {
             "Link ready"
+        } else {
+            "Not initialized"
         }
     }
 }
@@ -505,6 +507,9 @@ impl E1000Device {
         self.driver_ref().mac
     }
 
+    /// 通过 PCI 总线探测并初始化 e1000 网卡设备。
+    /// # Errors
+    /// 未找到匹配的网卡设备或初始化失败时返回 Err。
     #[cfg(not(feature = "kernel_test"))]
     pub fn probe(&mut self) -> DriverResult<()> {
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
@@ -562,7 +567,7 @@ impl E1000Device {
                             return Err(DriverError::UnsupportedOperation);
                         }
 
-                        self.mmio_phys = (bar0_lo & 0xFFFFFFF0) as u64;
+                        self.mmio_phys = u64::from(bar0_lo & 0xFFFFFFF0);
 
                         // SAFETY: 中断寄存器 (offset 0x3C)。
                         let irq_reg = unsafe { pci_read_config_dword(bus, dev_idx, func, 0x3C) };
@@ -612,6 +617,9 @@ impl E1000Device {
         Err(DriverError::DeviceNotFound)
     }
 
+    /// 发送一个网络数据包, 返回实际发送的字节数。
+    /// # Errors
+    /// 驱动未初始化或底层发送超时时返回 Err。
     #[cfg(not(feature = "kernel_test"))]
     pub fn send_packet(&mut self, data: &[u8]) -> DriverResult<usize> {
         if !self.is_ready() {
@@ -634,7 +642,7 @@ impl E1000Device {
 
         let processed = self.driver_mut().process_rx();
         if processed > 0 {
-            self.rx_count += processed as u64;
+            self.rx_count += u64::from(processed);
             klog_debug!(
                 Net,
                 "e1000: RX processed {} packets (total={})",
@@ -741,6 +749,8 @@ pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32
 }
 
 #[cfg(not(feature = "kernel_test"))]
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() {
         return -1;
@@ -899,7 +909,7 @@ pub extern "C" fn e1000_dump_regs() {
         }
     }
     #[cfg(not(feature = "e1000-verbose"))]
-    let _ = &();
+    let () = &();
 }
 
 #[cfg(not(feature = "kernel_test"))]
@@ -920,7 +930,7 @@ pub extern "C" fn e1000_dump_stats() {
             );
         }
     }
-    let _ = &();
+    let () = &();
 }
 
 // SAFETY: 单核内核, E1000 操作序列化在 Mutex 后
@@ -950,6 +960,8 @@ static KALLOC_OFF: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicU
 /// # Safety
 ///
 /// `reg` 是 BAR0 区域内的有效 MMIO 寄存器偏移。设备已探测且 MMIO 区域已映射。
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };

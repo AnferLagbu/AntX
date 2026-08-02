@@ -7,7 +7,7 @@
 //!
 //! | 架构   | 机制      | 细节 |
 //! |--------|-----------|------|
-//! | x86_64 | 端口 I/O  | 0xCF8 (地址) / 0xCFC (数据) |
+//! | `x86_64` | 端口 I/O  | 0xCF8 (地址) / 0xCFC (数据) |
 //! | aarch64| ECAM MMIO | 内存映射配置空间, 基址 `ECAM_BASE` |
 //!
 //! ECAM 将每个 (bus, device, function) 映射到 4KB 对齐的 MMIO 窗口:
@@ -176,10 +176,10 @@ fn ecam_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u64 {
 #[cfg(target_arch = "x86_64")]
 fn make_config_addr(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     0x8000_0000u32
-        | ((bus as u32) << 16)
-        | (((device & 0x1F) as u32) << 11)
-        | (((function & 0x07) as u32) << 8)
-        | ((offset & 0xFC) as u32)
+        | (u32::from(bus) << 16)
+        | (u32::from(device & 0x1F) << 11)
+        | (u32::from(function & 0x07) << 8)
+        | u32::from(offset & 0xFC)
 }
 
 pub fn read_config_byte(bus: u8, dev: u8, func: u8, offset: u8) -> u8 {
@@ -248,7 +248,7 @@ pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
             let old = port_io::inl(PCI_CONFIG_DATA);
             let shift = (offset & 3) * 8;
             let mask = !(0xFFu32 << shift);
-            let new = (old & mask) | ((val as u32) << shift);
+            let new = (old & mask) | (u32::from(val) << shift);
             port_io::outl(PCI_CONFIG_ADDR, addr);
             port_io::outl(PCI_CONFIG_DATA, new);
         }
@@ -273,7 +273,7 @@ pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
             let old = port_io::inl(PCI_CONFIG_DATA);
             let shift = (offset & 2) * 8;
             let mask = !(0xFFFFu32 << shift);
-            let new = (old & mask) | ((val as u32) << shift);
+            let new = (old & mask) | (u32::from(val) << shift);
             port_io::outl(PCI_CONFIG_ADDR, addr);
             port_io::outl(PCI_CONFIG_DATA, new);
         }
@@ -310,6 +310,8 @@ pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
 
 // ── BAR parsing ──
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
     let mut bars = [PciBar::empty(); 6];
     let mut count = 0;
@@ -331,8 +333,8 @@ fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
 
         if bar_lo & 1 != 0 {
             // I/O BAR
-            bars[count].base_addr = (bar_lo & !0x03u32) as u64;
-            bars[count].size = (!(size_mask & !0x03u32)).wrapping_add(1) as u64;
+            bars[count].base_addr = u64::from(bar_lo & !0x03u32);
+            bars[count].size = u64::from((!(size_mask & !0x03u32)).wrapping_add(1));
             bars[count].bar_type = BarType::Io;
             count += 1;
         } else {
@@ -344,18 +346,18 @@ fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
                 // 64 位 BAR: 占用两个槽位
                 bars[count].is_64bit = true;
                 let bar_hi = read_config_dword(bus, dev, func, offset + 4);
-                bars[count].base_addr = ((bar_lo & !0x0Fu32) as u64) | ((bar_hi as u64) << 32);
+                bars[count].base_addr = u64::from(bar_lo & !0x0Fu32) | (u64::from(bar_hi) << 32);
                 write_config_dword(bus, dev, func, offset + 4, 0xFFFF_FFFF);
                 let hi_mask = read_config_dword(bus, dev, func, offset + 4);
                 write_config_dword(bus, dev, func, offset + 4, bar_hi);
                 let size =
-                    (!(((size_mask & !0x0Fu32) as u64) | ((hi_mask as u64) << 32))).wrapping_add(1);
+                    (!(u64::from(size_mask & !0x0Fu32) | (u64::from(hi_mask) << 32))).wrapping_add(1);
                 bars[count].size = size;
                 bars[count].bar_type = BarType::Memory64;
                 i += 1; // skip next slot
             } else {
-                bars[count].base_addr = (bar_lo & !0x0Fu32) as u64;
-                bars[count].size = (!(size_mask & !0x0Fu32)).wrapping_add(1) as u64;
+                bars[count].base_addr = u64::from(bar_lo & !0x0Fu32);
+                bars[count].size = u64::from((!(size_mask & !0x0Fu32)).wrapping_add(1));
                 bars[count].bar_type = BarType::Memory32;
             }
             count += 1;
@@ -538,7 +540,7 @@ pub extern "C" fn pci_rust_init() -> i32 {
     unsafe extern "C" {
         fn klog_ffi_info(msg: *const u8);
     }
-    let msg = alloc::format!("PCI: Rust subsystem initialised — {} device(s)", count);
+    let msg = alloc::format!("PCI: Rust subsystem initialised — {count} device(s)");
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         klog_ffi_info(msg.as_ptr());
@@ -548,6 +550,8 @@ pub extern "C" fn pci_rust_init() -> i32 {
 
 /// C FFI: get device count
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn pci_get_device_count() -> i32 {
     device_count() as i32
 }
@@ -570,12 +574,12 @@ pub extern "C" fn pci_read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn pci_write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
-    write_config_word(bus, dev, func, offset, val)
+    write_config_word(bus, dev, func, offset, val);
 }
 
 /// C FFI: write config dword
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn pci_write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
-    write_config_dword(bus, dev, func, offset, val)
+    write_config_dword(bus, dev, func, offset, val);
 }

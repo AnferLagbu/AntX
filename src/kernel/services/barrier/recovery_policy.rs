@@ -3,7 +3,7 @@
 //!
 //! ## 职责
 //!
-//! 接收故障信号 (FaultAttribution + 重试次数 + 心跳丢失), 决策应该走哪条
+//! 接收故障信号 (`FaultAttribution` + 重试次数 + 心跳丢失), 决策应该走哪条
 //! 恢复路径:
 //!
 //! - **Noop**: 一次性瞬时错误, 不需动作
@@ -49,7 +49,7 @@ pub enum RecoveryAction {
 }
 
 impl RecoveryAction {
-    /// 转为 framework::barrier::reset::RecoveryLayer
+    /// 转为 `framework::barrier::reset::RecoveryLayer`
     pub fn to_framework_layer(self) -> Option<u32> {
         // 1 = Layer1 (BBR 栏基), 2 = Layer2 (BSR 栏软), 3 = Layer3 (BHR 栏硬)
         match self {
@@ -124,7 +124,7 @@ impl FaultSignal {
 
 /// 策略决策器
 ///
-/// 无状态 (纯函数式), 通过 `decide()` 给定 FaultSignal 输出 RecoveryAction.
+/// 无状态 (纯函数式), 通过 `decide()` 给定 `FaultSignal` 输出 `RecoveryAction`.
 pub struct RecoveryPolicy;
 
 impl RecoveryPolicy {

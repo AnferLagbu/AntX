@@ -41,7 +41,7 @@ use crate::kernel::framework::syscall::Errno;
 // 常量
 // ============================================================================
 
-/// CLONE_NEW* 标志位 (与 Linux 一致)
+/// `CLONE_NEW`* 标志位 (与 Linux 一致)
 pub const CLONE_NEWNS: u64 = 0x00020000;      // Mount namespace
 pub const CLONE_NEWUTS: u64 = 0x04000000;     // UTS namespace
 pub const CLONE_NEWIPC: u64 = 0x08000000;     // IPC namespace
@@ -50,7 +50,7 @@ pub const CLONE_NEWPID: u64 = 0x20000000;     // PID namespace
 pub const CLONE_NEWNET: u64 = 0x40000000;     // Network namespace
 pub const CLONE_NEWCGROUP: u64 = 0x02000000;  // Cgroup namespace
 
-/// 所有 CLONE_NEW* 掩码
+/// 所有 `CLONE_NEW`* 掩码
 pub const CLONE_NEW_ALL: u64 =
     CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP;
 
@@ -72,7 +72,7 @@ pub enum NsType {
 }
 
 impl NsType {
-    /// 从 CLONE_NEW* 标志位推断 NsType
+    /// 从 `CLONE_NEW`* 标志位推断 `NsType`
     pub fn from_clone_flag(flag: u64) -> Option<Self> {
         match flag {
             CLONE_NEWNS => Some(Self::Mount),
@@ -86,7 +86,7 @@ impl NsType {
         }
     }
 
-    /// 获取对应的 CLONE_NEW* 标志位
+    /// 获取对应的 `CLONE_NEW`* 标志位
     pub fn to_clone_flag(self) -> u64 {
         match self {
             Self::Mount => CLONE_NEWNS,
@@ -143,7 +143,7 @@ impl UtsNamespace {
         Arc::clone(parent)
     }
 
-    /// 创建新的 UTS namespace (CLONE_NEWUTS / unshare)
+    /// 创建新的 UTS namespace (`CLONE_NEWUTS` / unshare)
     pub fn new_from(parent: &Arc<Self>) -> Arc<Self> {
         let new = Self::new();
         {
@@ -325,7 +325,7 @@ pub struct UserNamespace {
     pub parent: Option<Arc<UserNamespace>>,
     /// 该 namespace 的拥有者 User namespace
     pub owner: Option<Arc<UserNamespace>>,
-    /// namespace 内 root 的映射: (inner_start, outer_start, count)
+    /// namespace 内 root 的映射: (`inner_start`, `outer_start`, count)
     pub uid_map: IrqSpinLock<Option<(u32, u32, u32)>>,
     /// namespace 内 root group 的映射
     pub gid_map: IrqSpinLock<Option<(u32, u32, u32)>>,
@@ -526,7 +526,7 @@ impl NamespaceSet {
         }
     }
 
-    /// 根据 clone_flags 创建新 namespace
+    /// 根据 `clone_flags` 创建新 namespace
     pub fn clone_from(parent: &NamespaceSet, flags: u64) -> Self {
         let new_ns_flags = flags & CLONE_NEW_ALL;
 
@@ -585,6 +585,10 @@ impl NamespaceSet {
     }
 
     /// unshare: 对指定 flags 中的 namespace 创建新实例
+    ///
+    /// # Errors
+    ///
+    /// 当 `flags` 不含任何受支持的 namespace 标志时返回 `EINVAL`.
     pub fn unshare(&mut self, flags: u64) -> Result<(), Errno> {
         let new_ns_flags = flags & CLONE_NEW_ALL;
         if new_ns_flags == 0 {
@@ -617,6 +621,10 @@ impl NamespaceSet {
     }
 
     /// setns: 切换到目标 namespace
+    ///
+    /// # Errors
+    ///
+    /// 当注册表中找不到 `target_id` 对应的 namespace 时返回 `EINVAL`.
     pub fn setns_by_type(&mut self, ns_type: NsType, target_id: u64) -> Result<(), Errno> {
         let registry = NS_REGISTRY.lock();
         let entry = match registry.find(target_id) {
@@ -712,7 +720,7 @@ pub fn ns_register(ns_set: &NamespaceSet) {
 // Syscall 接口
 // ============================================================================
 
-/// sys_unshare — 取消共享指定 namespace
+/// `sys_unshare` — 取消共享指定 namespace
 pub fn sys_unshare(flags: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
 
@@ -728,7 +736,7 @@ pub fn sys_unshare(flags: u64) -> i64 {
     }
 }
 
-/// sys_setns — 切换到指定 namespace
+/// `sys_setns` — 切换到指定 namespace
 pub fn sys_setns(ns_type: u64, target_ns_id: u64) -> i64 {
     let ns_t = match NsType::from_clone_flag(1 << (ns_type + 8)) {
         Some(t) => t,

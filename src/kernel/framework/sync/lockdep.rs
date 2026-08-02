@@ -112,7 +112,7 @@ impl LockKind {
 // 锁类 ID
 // ============================================================================
 
-/// 锁类 ID (全局唯一, 由 register_class 分配)
+/// 锁类 ID (全局唯一, 由 `register_class` 分配)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LockClassId(pub u16);
 
@@ -166,7 +166,7 @@ impl Default for LockClassEntry {
 /// 全局锁依赖图
 ///
 /// 邻接矩阵 `adjacency[i][j]` 表示 "持有锁类 i 时获取锁类 j" 的依赖关系。
-/// 值为 0 = 无依赖, DEPENDENCY_VERIFIED = 已验证无环, DEPENDENCY_NEW = 新边待检测。
+/// 值为 0 = 无依赖, `DEPENDENCY_VERIFIED` = 已验证无环, `DEPENDENCY_NEW` = 新边待检测。
 struct LockDepMap {
     /// 锁类注册表
     classes: [LockClassEntry; MAX_LOCK_CLASSES],
@@ -195,7 +195,7 @@ impl LockDepMap {
         }
     }
 
-    /// 注册锁类, 返回 LockClassId
+    /// 注册锁类, 返回 `LockClassId`
     fn register(&mut self, desc: LockClassDesc) -> LockClassId {
         // 查找是否已注册同名锁类
         for i in 0..self.class_count {
@@ -324,7 +324,7 @@ impl LockDepMap {
 // 全局实例
 // ============================================================================
 
-/// 全局锁依赖图 (IrqSpinLock 守护)
+/// 全局锁依赖图 (`IrqSpinLock` 守护)
 static LOCK_DEP_MAP: IrqSpinLock<LockDepMap> = IrqSpinLock::new(LockDepMap::new());
 
 // ============================================================================

@@ -1,14 +1,18 @@
-//! WASI Socket: sock_accept, sock_connect, sock_recv, sock_send
+//! WASI Socket: `sock_accept`, `sock_connect`, `sock_recv`, `sock_send`
 //!
-//! Socket 函数桥接到 services::net 层。WASI fd 通过 WasiFdTable 映射到
-//! 内部 POSIX fd，再调用 services::net 的安全 API。
+//! Socket 函数桥接到 `services::net` 层。WASI fd 通过 `WasiFdTable` 映射到
+//! 内部 POSIX fd，再调用 `services::net` 的安全 API。
 
 use crate::kernel::services::wasm::types::{Value, WasmError};
 use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
 use super::fd_table::{read_iovec_from_memory, write_u32_to_memory, write_i32_to_memory};
 
-/// WASI sock_accept: 接受连接
+/// WASI `sock_accept`: 接受连接
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_sock_accept(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let _flags = interp.stack.pop_i32()? as u32;
@@ -49,7 +53,12 @@ pub fn wasi_sock_accept(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     Ok(())
 }
 
-/// WASI sock_connect: 连接到地址
+/// WASI `sock_connect`: 连接到地址
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、解释器未配置线性内存或压栈结果失败时
+/// 返回对应的 `WasmError`.
 pub fn wasi_sock_connect(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let addr_ptr = interp.stack.pop_i32()? as u32;
@@ -66,7 +75,7 @@ pub fn wasi_sock_connect(ctx: &mut WasiContext, interp: &mut Interpreter) -> Res
     // 从 WASM 线性内存读取 sockaddr_in 结构
     // sockaddr_in: { sin_family: u16, sin_port: u16 (big-endian), sin_addr: [u8; 4] }
     let mem = interp.memory.as_ref().ok_or(WasmError::MemoryOutOfBounds)?;
-    let base = addr_ptr as u64;
+    let base = u64::from(addr_ptr);
 
     let read_u16 = |off: u64| -> u16 {
         let lo = mem.read_u8((base + off) as u32).unwrap_or(0);
@@ -95,7 +104,11 @@ pub fn wasi_sock_connect(ctx: &mut WasiContext, interp: &mut Interpreter) -> Res
     Ok(())
 }
 
-/// WASI sock_recv: 从 socket 接收数据
+/// WASI `sock_recv`: 从 socket 接收数据
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、读取 iovec 失败或压栈结果失败时返回对应的 `WasmError`.
 pub fn wasi_sock_recv(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let iovs_ptr = interp.stack.pop_i32()? as u32;
@@ -119,20 +132,17 @@ pub fn wasi_sock_recv(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
         if iov.len == 0 { continue; }
         // 分配临时缓冲区接收数据
         let mut buf = alloc::vec![0u8; iov.len as usize];
-        match crate::kernel::services::net::socket::recv(entry.inner_fd, &mut buf) {
-            Ok(n) => {
-                // 将数据写回 WASM 线性内存
-                if let Some(ref mut mem) = interp.memory {
-                    for (i, &byte) in buf[..n].iter().enumerate() {
-                        let _ = mem.write_u8(iov.buf + i as u32, byte);
-                    }
+        if let Ok(n) = crate::kernel::services::net::socket::recv(entry.inner_fd, &mut buf) {
+            // 将数据写回 WASM 线性内存
+            if let Some(ref mut mem) = interp.memory {
+                for (i, &byte) in buf[..n].iter().enumerate() {
+                    let _ = mem.write_u8(iov.buf + i as u32, byte);
                 }
-                total += n as u32;
             }
-            Err(_) => {
-                interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
-                return Ok(());
-            }
+            total += n as u32;
+        } else {
+            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+            return Ok(());
         }
     }
 
@@ -142,7 +152,11 @@ pub fn wasi_sock_recv(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     Ok(())
 }
 
-/// WASI sock_send: 向 socket 发送数据
+/// WASI `sock_send`: 向 socket 发送数据
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、读取 iovec 失败或压栈结果失败时返回对应的 `WasmError`.
 pub fn wasi_sock_send(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let iovs_ptr = interp.stack.pop_i32()? as u32;

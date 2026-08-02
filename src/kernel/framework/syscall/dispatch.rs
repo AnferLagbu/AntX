@@ -7,7 +7,10 @@ use crate::kernel::framework::idt::InterruptFrame;
 use core::sync::atomic::Ordering;
 
 use super::raw;
-use super::types::*;
+use super::types::{SYS_read, SYS_write, SYS_mremap, QX_RT_SIGRETURN, QX_FW_LOAD, QX_FW_GET, QX_FW_GET_INFO, QX_FW_DETACH, QX_FTRACE_ENABLE, QX_FTRACE_DISABLE, QX_FTRACE_READ, QX_FTRACE_STAT, QX_KGDB_ENTER, QX_SECCOMP, QX_PRCTL, QX_ROUTE_ADD, QX_ROUTE_DEL, QX_ROUTE_QUERY, QX_NF_ADD_RULE, QX_NF_DEL_RULE, QX_IO_URING_SETUP, QX_IO_URING_ENTER, QX_IO_URING_REGISTER, QX_IO_URING_SUBMIT, QX_UNSHARE, QX_SETNS, QX_CGROUP_CREATE, QX_CGROUP_DESTROY, QX_CGROUP_ATTACH, QX_CGROUP_SET_LIMIT, QX_CGROUP_GET_STAT, QX_BPF, QX_PM, QX_SECURE_BOOT, QX_TPM, QX_CET, QX_TICKLESS, QX_TIMESYNC, QX_KEXEC, QX_UEFI, QX_TCGETPGRP, QX_TCSETPGRP, QX_SOCKET, QX_CONNECT, QX_ACCEPT, QX_SENDTO, QX_RECVFROM, QX_SHUTDOWN, QX_BIND, QX_LISTEN, QX_SENDMSG, QX_RECVMSG, QX_SETSOCKOPT, QX_GETSOCKOPT, QX_GETSOCKNAME, QX_GETPEERNAME, Errno, QX_EXECVE, QX_SETRLIMIT, QX_TGKILL, QX_SENDFILE, QX_SPLICE, SYS_CREDO_HOTPLUG_STATUS, SYS_FB_OPEN, SYS_FB_MMAP, SYS_FB_RELEASE};
+// SYS_CREDO_DISK_INSTALL 仅 x86_64 (非 kernel_test) 或 kernel_test 模式使用, aarch64 生产构建不引用
+#[cfg(any(feature = "kernel_test", target_arch = "x86_64"))]
+use super::types::SYS_CREDO_DISK_INSTALL;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
@@ -481,15 +484,15 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
         return crate::kernel::framework::syscall::timerfd::sys_timerfd_read(fd, buf as u64);
     }
     if crate::kernel::framework::fs::is_inotify_fd(fd) {
-        return crate::kernel::framework::fs::sys_inotify_read(fd as i64, buf, count as usize);
+        return crate::kernel::framework::fs::sys_inotify_read(i64::from(fd), buf, count as usize);
     }
-    crate::kernel::framework::fs::vfs_read(fd as u32, buf, count as u32) as i64
+    i64::from(crate::kernel::framework::fs::vfs_read(fd as u32, buf, count as u32))
 }
 
 /// 从用户空间缓冲区复制数据到内核缓冲区.
 ///
 /// framekernel 架构下内核页表不映射用户页面, 需要通过用户页表
-/// 将用户虚拟地址转译为物理地址, 再通过 KERNEL_BASE 恒等映射访问.
+/// 将用户虚拟地址转译为物理地址, 再通过 `KERNEL_BASE` 恒等映射访问.
 ///
 /// 返回实际复制的字节数; 若任一转译失败则返回已复制字节数 (调用方按需处理).
 fn copy_from_user_buf(
@@ -593,7 +596,7 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
             &kernel_buf[..copied],
         );
         if n < 0 {
-            return n as i64;
+            return i64::from(n);
         }
         written += copied;
     }
@@ -836,7 +839,7 @@ pub(crate) fn sys_sigaltstack(ss: u64, old_ss: u64) -> i64 {
             // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
             unsafe {
                 raw::write_u64(old_ss as *mut u64, cur_addr);
-                raw::write_u64((old_ss + 8) as *mut u64, cur_flags as u64);
+                raw::write_u64((old_ss + 8) as *mut u64, u64::from(cur_flags));
                 raw::write_u64((old_ss + 16) as *mut u64, cur_size);
             }
         }
@@ -878,7 +881,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     if buf.is_null() || buf_size == 0 {
         return Errno::EINVAL.as_ret();
     }
-    if !raw::check_user_buf(buf as u64, buf_size as u64) {
+    if !raw::check_user_buf(buf as u64, u64::from(buf_size)) {
         return Errno::EFAULT.as_ret();
     }
 
@@ -887,7 +890,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
     let mut offset: u32 = 0;
 
     let header: [u8; 16] = [
-        status.enabled as u8,
+        u8::from(status.enabled),
         0,
         0,
         0,
@@ -905,7 +908,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
         0,
     ];
     if offset + 16 > buf_size {
-        return offset as i64;
+        return i64::from(offset);
     }
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -923,8 +926,8 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
             slot.device,
             slot.function,
             slot.slot_number,
-            slot.presence as u8,
-            ((slot.surprise_capable as u8) << 1) | (slot.hotplug_capable as u8),
+            u8::from(slot.presence),
+            (u8::from(slot.surprise_capable) << 1) | u8::from(slot.hotplug_capable),
             0,
             0,
         ];
@@ -946,8 +949,8 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
         }
         let info: [u8; 16] = [
             dev.drive,
-            dev.present as u8,
-            dev.removing as u8,
+            u8::from(dev.present),
+            u8::from(dev.removing),
             0,
             (dev.io_count & 0xFF) as u8,
             ((dev.io_count >> 8) & 0xFF) as u8,
@@ -973,7 +976,7 @@ fn sys_hotplug_status(buf: *mut u8, buf_size: u32) -> i64 {
         offset += dev_size;
     }
 
-    offset as i64
+    i64::from(offset)
 }
 
 // ============================================================================
@@ -1121,8 +1124,8 @@ fn sys_boot_install(disk_id: u32) -> i64 {
     unsafe { core::ptr::copy_nonoverlapping(stage1.as_ptr(), mbr.as_mut_ptr(), 440) };
     let total_sectors = crate::kernel::framework::driver::hdd_total_sectors(disk_id as u8);
     let hvfs_start = BOOT_PART_SECTORS;
-    let hvfs_sectors = if total_sectors > hvfs_start as u64 + 1 {
-        total_sectors - hvfs_start as u64
+    let hvfs_sectors = if total_sectors > u64::from(hvfs_start) + 1 {
+        total_sectors - u64::from(hvfs_start)
     } else {
         0xFFFFFFFFu64
     };
@@ -1171,7 +1174,7 @@ fn sys_boot_install(disk_id: u32) -> i64 {
         }
         if crate::kernel::framework::driver::hdd_write_sector(
             disk_id as u8,
-            (1 + s) as u64,
+            u64::from(1 + s),
             &buf,
         ) < 0
         {

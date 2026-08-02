@@ -22,7 +22,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::idt::IdtManager;
-use super::types::*;
+use super::types::{InterruptFrame, get_exception_name};
 use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
 use crate::klog_err;
 use crate::klog_warn;
@@ -283,7 +283,7 @@ impl ExceptionHandler for PageFaultHandler {
 ///
 /// 行为契约:
 /// - User-mode #UD (非法指令 / 未实现 SIMD 等): 投递 SIGILL (signal 4),
-///   跳过该指令 (UD2 最短 2 字节), 用户态注册的 handler 接管或 SIG_DFL Core+退出.
+///   跳过该指令 (UD2 最短 2 字节), 用户态注册的 handler 接管或 `SIG_DFL` Core+退出.
 /// - Kernel-mode #UD: 视为内核 bug, 立即 panic (含 RIP/vector 信息).
 pub struct InvalidOpcodeHandler;
 
@@ -410,6 +410,8 @@ impl ExceptionHandler for GeneralProtectionFaultHandler {
 }
 
 impl GeneralProtectionFaultHandler {
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn print_detailed_gpf_info(&self, frame: &InterruptFrame) {
         let selector = frame.err_code as u16;
 

@@ -9,6 +9,10 @@ use super::fat::FAT_END;
 use alloc::vec;
 
 /// 分配一个空闲簇
+///
+/// # Errors
+/// 当 FAT 表条目写入失败时返回底层 `KernelError`;
+/// 当扫描完所有簇仍找不到空闲簇时返回 `NoSpace`.
 pub fn alloc_cluster(
     device_idx: u8,
     super_block: &ExfatSuperBlock,
@@ -22,7 +26,7 @@ pub fn alloc_cluster(
 
         let mut sector_data = vec![0u8; bytes_per_sector];
         let result = with_device(device_idx as usize, |dev| {
-            read_sectors(dev, fat_sector as u64, 1, &mut sector_data)
+            read_sectors(dev, u64::from(fat_sector), 1, &mut sector_data)
         });
 
         if !matches!(result, Some(Ok(()))) {
@@ -47,6 +51,9 @@ pub fn alloc_cluster(
 }
 
 /// 释放一个簇链
+///
+/// # Errors
+/// 当读取 FAT 链或写入 FAT 条目失败时返回对应的 `KernelError`.
 pub fn free_cluster_chain(
     device_idx: u8,
     super_block: &ExfatSuperBlock,
@@ -62,6 +69,10 @@ pub fn free_cluster_chain(
 }
 
 /// 写入一个簇的数据
+///
+/// # Errors
+/// 当 `data` 长度超过簇大小时返回 `InvalidArgument`;
+/// 当底层扇区写入失败时返回 `Io`.
 pub fn write_cluster(
     device_idx: u8,
     super_block: &ExfatSuperBlock,
@@ -86,7 +97,7 @@ pub fn write_cluster(
         let result = with_device(device_idx as usize, |dev| {
             crate::kernel::framework::driver::block::write_sectors(
                 dev,
-                (sector + i as u32) as u64,
+                u64::from(sector + i as u32),
                 1,
                 &buf[offset..offset + bytes_per_sector],
             )
@@ -101,6 +112,10 @@ pub fn write_cluster(
 }
 
 /// 读取一个簇的数据
+///
+/// # Errors
+/// 当 `buf` 长度超过簇大小时返回 `InvalidArgument`;
+/// 当底层扇区读取失败时返回 `Io`.
 pub fn read_cluster(
     device_idx: u8,
     super_block: &ExfatSuperBlock,
@@ -121,7 +136,7 @@ pub fn read_cluster(
     for i in 0..sectors_per_cluster {
         let offset = i * bytes_per_sector;
         let result = with_device(device_idx as usize, |dev| {
-            read_sectors(dev, (sector + i as u32) as u64, 1, &mut temp_buf[offset..offset + bytes_per_sector])
+            read_sectors(dev, u64::from(sector + i as u32), 1, &mut temp_buf[offset..offset + bytes_per_sector])
         });
 
         if !matches!(result, Some(Ok(()))) {

@@ -15,18 +15,18 @@ use crate::kernel::framework::syscall::Errno;
 
 /// getpid — 返回当前进程 PID
 pub fn sys_getpid() -> i64 {
-    api::process_get_current_pid() as i64
+    i64::from(api::process_get_current_pid())
 }
 
 /// gettid — 返回当前线程 TID (线程与进程 ID 共享, 等同 getpid)
 pub fn sys_gettid() -> i64 {
-    api::process_get_current_pid() as i64
+    i64::from(api::process_get_current_pid())
 }
 
 /// getppid — 返回父进程 PID
 pub fn sys_getppid() -> i64 {
     let pid = api::process_get_current_pid();
-    api::proc_get_ppid(pid) as i64
+    i64::from(api::proc_get_ppid(pid))
 }
 
 /// getpgid — 返回进程组 ID
@@ -99,7 +99,7 @@ fn copy_str(dst: &mut [u8], src: &[u8]) {
 
 /// gettimeofday 系统调用
 ///
-/// `tv` 指向 struct timeval { tv_sec, tv_usec }.
+/// `tv` 指向 struct timeval { `tv_sec`, `tv_usec` }.
 pub fn sys_gettimeofday(tv: u64) -> i64 {
     if tv == 0 {
         return Errno::EINVAL.as_ret();

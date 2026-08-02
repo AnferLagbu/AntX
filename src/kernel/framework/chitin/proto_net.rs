@@ -2,9 +2,9 @@
 //!
 //! 定义网络设备的统一操作接口:
 //! - send: 发送网络包
-//! - try_receive: 尝试接收 (返回长度, 0=无数据)
-//! - get_mac: 读取 MAC 地址
-//! - handle_irq: 中断处理
+//! - `try_receive`: 尝试接收 (返回长度, 0=无数据)
+//! - `get_mac`: 读取 MAC 地址
+//! - `handle_irq`: 中断处理
 //!
 //! 用于 E1000、virtio-net 等网卡驱动。
 
@@ -25,7 +25,7 @@ pub type NetIrqFn = extern "C" fn(driver_data: *mut u8);
 pub struct NetOps {
     /// 发送网络包, 返回 0 成功 / -1 失败
     pub send: NetSendFn,
-    /// 接收网络包, 返回长度 (0=空), buf_len 最大缓冲区大小
+    /// 接收网络包, 返回长度 (0=空), `buf_len` 最大缓冲区大小
     pub try_receive: NetRecvFn,
     /// 获取 MAC 地址
     pub get_mac: NetGetMacFn,
@@ -38,6 +38,8 @@ impl NetOps {
     ///
     /// # Safety (调用方)
     /// - `driver_data` 必须有效, `data` 在调用期间有效, len 字节。
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn send(
         &self,
         driver_data: *mut u8,
@@ -51,6 +53,8 @@ impl NetOps {
     ///
     /// # Safety (调用方)
     /// - `driver_data` 必须有效, `buf` 至少 `buf.capacity()` 字节。
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn try_receive(
         &self,
         driver_data: *mut u8,

@@ -69,6 +69,10 @@ impl WasiFdTable {
     }
 
     /// 分配一个新的 fd，返回 fd 编号
+    ///
+    /// # Errors
+    ///
+    /// 当 fd 表已满(从 3 起无空槽位)时返回 `WasiErrno::Badf`.
     pub fn alloc(&mut self, entry: WasiFdEntry) -> Result<u32, WasiErrno> {
         for i in 3..self.max_fds {
             if self.entries[i as usize].is_none() {
@@ -80,6 +84,10 @@ impl WasiFdTable {
     }
 
     /// 获取 fd 条目引用
+    ///
+    /// # Errors
+    ///
+    /// 当 fd 无效或尚未分配时返回 `WasiErrno::Badf`.
     pub fn get(&self, fd: u32) -> Result<&WasiFdEntry, WasiErrno> {
         self.entries
             .get(fd as usize)
@@ -88,6 +96,10 @@ impl WasiFdTable {
     }
 
     /// 获取 fd 条目可变引用
+    ///
+    /// # Errors
+    ///
+    /// 当 fd 无效或尚未分配时返回 `WasiErrno::Badf`.
     pub fn get_mut(&mut self, fd: u32) -> Result<&mut WasiFdEntry, WasiErrno> {
         self.entries
             .get_mut(fd as usize)
@@ -96,6 +108,10 @@ impl WasiFdTable {
     }
 
     /// 关闭 fd
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd < 3` 或 fd 无效/未分配时返回 `WasiErrno::Badf`.
     pub fn close(&mut self, fd: u32) -> Result<WasiFdEntry, WasiErrno> {
         if fd < 3 {
             return Err(WasiErrno::Badf);
@@ -107,7 +123,11 @@ impl WasiFdTable {
             .ok_or(WasiErrno::Badf)
     }
 
-    /// 重编号 fd (fd_renumber)
+    /// 重编号 fd (`fd_renumber`)
+    ///
+    /// # Errors
+    ///
+    /// 当 `from`/`to` 超出表范围或 `from` 未分配时返回 `WasiErrno::Badf`.
     pub fn renumber(&mut self, from: u32, to: u32) -> Result<(), WasiErrno> {
         if from >= self.max_fds || to >= self.max_fds {
             return Err(WasiErrno::Badf);
@@ -124,6 +144,12 @@ pub struct WasiIoVec {
     pub len: u32,
 }
 
+/// 从线性内存 `iovs_ptr` 起读取 `iovs_len` 个 iovec 条目.
+///
+/// # Errors
+///
+/// - 解释器未配置线性内存 → `WasiErrno::Inval`
+/// - 读取越界 → `WasiErrno::Fault`
 pub fn read_iovec_from_memory(
     interp: &crate::kernel::services::wasm::interpreter::Interpreter,
     iovs_ptr: u32,
@@ -185,6 +211,11 @@ pub fn write_bytes_to_memory(
 }
 
 /// 从 WASM 线性内存读取字节序列
+///
+/// # Errors
+///
+/// - 解释器未配置线性内存 → `WasiErrno::Inval`
+/// - 读取越界 → `WasiErrno::Fault`
 pub fn read_bytes_from_memory(
     interp: &crate::kernel::services::wasm::interpreter::Interpreter,
     ptr: u32,

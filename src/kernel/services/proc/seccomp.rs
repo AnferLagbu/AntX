@@ -261,7 +261,7 @@ pub fn seccomp_check(syscall_nr: u64, args: &[u64; 6]) -> Option<i64> {
                     let _ = do_signal_send(pid as Pid, 31);
                     Some(-(Errno::EPERM as i64))
                 }
-                SeccompAction::Errno(e) => Some(-(e as i64)),
+                SeccompAction::Errno(e) => Some(-i64::from(e)),
             }
         }
     }
@@ -365,13 +365,20 @@ pub fn sys_prctl_prctl(option: i64, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u6
         }
         PR_GET_NO_NEW_PRIVS => {
             PROCESS_TABLE
-                .with_process(pid, |p| p.seccomp.is_no_new_privs() as i64)
+                .with_process(pid, |p| i64::from(p.seccomp.is_no_new_privs()))
                 .unwrap_or(0)
         }
         _ => -(Errno::ENOSYS as i64),
     }
 }
 
+/// 为指定进程添加 seccomp 过滤规则.
+///
+/// 若进程当前为禁用状态, 会先切换到 Filter 模式.
+///
+/// # Errors
+///
+/// 当 `pid` 对应的进程不存在时返回 `ESRCH`.
 pub fn add_rule(pid: u64, rule: SeccompRule) -> Result<(), Errno> {
     PROCESS_TABLE
         .with_process(pid as u32, |p| {

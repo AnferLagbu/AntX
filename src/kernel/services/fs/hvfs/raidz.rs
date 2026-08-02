@@ -118,7 +118,7 @@ fn gf_mul(a: u8, b: u8) -> u8 {
     if a == 0 || b == 0 {
         return 0;
     }
-    let log_sum = (GF_LOG[a as usize] as u16 + GF_LOG[b as usize] as u16) % 255;
+    let log_sum = (u16::from(GF_LOG[a as usize]) + u16::from(GF_LOG[b as usize])) % 255;
     GF_EXP[log_sum as usize]
 }
 
@@ -240,8 +240,7 @@ impl HvRaidzMap {
         let data_cols = self.data_cols();
         let total_units = parity_data
             .get(self.nparity)
-            .map(|d| d.len() / unit_size)
-            .unwrap_or(0);
+            .map_or(0, |d| d.len() / unit_size);
 
         let nfailed = failed_cols.len();
         let mut mat: Vec<Vec<u8>> = (0..nfailed)
@@ -276,7 +275,7 @@ impl HvRaidzMap {
                         mat[row_idx][nfailed + j] = GF_EXP[(fc * data_cols + d_col) % 255];
                     } else {
                         let fc_d = fc - self.nparity;
-                        mat[row_idx][nfailed + j] = if fc_d == d_col { 1 } else { 0 };
+                        mat[row_idx][nfailed + j] = u8::from(fc_d == d_col);
                     }
                 }
             }
@@ -334,8 +333,7 @@ impl HvRaidzMap {
         }
         let total_units = parity_data
             .get(self.nparity)
-            .map(|d| d.len() / unit_size)
-            .unwrap_or(0);
+            .map_or(0, |d| d.len() / unit_size);
 
         for unit_idx in 0..total_units {
             for byte_idx in 0..unit_size {

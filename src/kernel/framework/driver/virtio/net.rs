@@ -1,13 +1,13 @@
-//! VirtIO 网络设备驱动 (设备 ID 1)
+//! `VirtIO` 网络设备驱动 (设备 ID 1)
 //!
-//! 实现 VirtIO 网络设备规范.
+//! 实现 `VirtIO` 网络设备规范.
 //! 使用 2 个 split virtqueue:
 //!   - 队列 0: 接收 (RX) — 设备写入收到的包
 //!   - 队列 1: 发送 (TX) — 驱动写入要发送的包
 //!
 //! 配置空间 (偏移 0x100):
-//!   - 0x00: mac[6] (MAC 地址, 当 VIRTIO_NET_F_MAC 被设置时)
-//!   - 0x06: status (u16, 当 VIRTIO_NET_F_STATUS 被设置时)
+//!   - 0x00: mac[6] (MAC 地址, 当 `VIRTIO_NET_F_MAC` 被设置时)
+//!   - 0x06: status (u16, 当 `VIRTIO_NET_F_STATUS` 被设置时)
 
 use super::queue::{VirtQueue, VQ_SIZE};
 use super::{VirtioMmioDevice, VIRTIO_ID_NET};
@@ -29,9 +29,9 @@ const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
 // 旧版与 v1 头在 Linux/QEMU 中完全相同:
 // flags(1) + gso_type(1) + hdr_len(2) + gso_size(2) + csum_start(2) + csum_offset(2) + num_buffers(2) = 12  // 字段布局
 
-/// virtio_net_hdr — 每个 TX/RX 包前的头.
-/// 旧版与 VERSION_1 都使用相同的 12 字节布局.
-/// `num_buffers` 仅在协商 VIRTIO_NET_F_MRG_RXBUF 时才有意义.
+/// `virtio_net_hdr` — 每个 TX/RX 包前的头.
+/// 旧版与 `VERSION_1` 都使用相同的 12 字节布局.
+/// `num_buffers` 仅在协商 `VIRTIO_NET_F_MRG_RXBUF` 时才有意义.
 #[repr(C)]
 struct VirtioNetHdr {
     flags: u8,
@@ -43,7 +43,7 @@ struct VirtioNetHdr {
     num_buffers: u16,
 }
 
-/// virtio_net_hdr 大小 (12 字节).
+/// `virtio_net_hdr` 大小 (12 字节).
 const NET_HDR_SIZE: usize = core::mem::size_of::<VirtioNetHdr>();
 
 // ── 配置空间偏移 (相对于 0x100) ──
@@ -71,7 +71,7 @@ pub struct VirtioNet {
     rx_buffers: [*mut u8; VQ_SIZE as usize],
     /// RX 缓冲区物理地址.
     rx_buffers_phys: [u64; VQ_SIZE as usize],
-    /// 头大小: 10 (现代 VERSION_1) 或 12 (旧版).
+    /// 头大小: 10 (现代 `VERSION_1`) 或 12 (旧版).
     pub hdr_size: usize,
     /// 统计.
     pub tx_count: u64,
@@ -89,7 +89,9 @@ unsafe impl Sync for VirtioNet {}
 impl VirtioNet {
     /// 创建并初始化 virtio-net 驱动实例.
     ///
-    /// 调用者必须保证 `device` 的 device_id == VIRTIO_ID_NET.
+    /// 调用者必须保证 `device` 的 `device_id` == `VIRTIO_ID_NET`.
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_NET {
             return None;
@@ -131,7 +133,7 @@ impl VirtioNet {
             let dev_feat_hi = device.read32(super::DEVICE_FEATURES);
             device.write32(super::DEVICE_FEATURES_SEL, 0);
             let dev_feat_lo = device.read32(super::DEVICE_FEATURES);
-            let dev_features = (dev_feat_hi as u64) << 32 | dev_feat_lo as u64;
+            let dev_features = u64::from(dev_feat_hi) << 32 | u64::from(dev_feat_lo);
             klog_info!(Driver, "virtio-net: dev_features={:#018x}", dev_features);
 
             let has_v1 = (dev_features & super::VIRTIO_F_VERSION_1) != 0;
@@ -219,11 +221,9 @@ impl VirtioNet {
                 klog_err!(Driver, "virtio-net: failed to setup RX vq (legacy)");
                 return None;
             }
-        } else {
-            if device.setup_vq(0, &rx_vq).is_err() {
-                klog_err!(Driver, "virtio-net: failed to setup RX vq (modern)");
-                return None;
-            }
+        } else if device.setup_vq(0, &rx_vq).is_err() {
+            klog_err!(Driver, "virtio-net: failed to setup RX vq (modern)");
+            return None;
         }
         klog_info!(Driver, "virtio-net: RX vq ready");
 
@@ -236,11 +236,9 @@ impl VirtioNet {
                 klog_err!(Driver, "virtio-net: failed to setup TX vq (legacy)");
                 return None;
             }
-        } else {
-            if device.setup_vq(1, &tx_vq).is_err() {
-                klog_err!(Driver, "virtio-net: failed to setup TX vq (modern)");
-                return None;
-            }
+        } else if device.setup_vq(1, &tx_vq).is_err() {
+            klog_err!(Driver, "virtio-net: failed to setup TX vq (modern)");
+            return None;
         }
 
         // 设置 DRIVER_OK — 队列配置完成后设备进入 live
@@ -267,6 +265,8 @@ impl VirtioNet {
     }
 
     /// 用空缓冲区填充 RX virtqueue, 供设备写入.
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     fn refill_rx(&mut self) {
         for i in 0..VQ_SIZE as usize {
             if !self.rx_buffers[i].is_null() {
@@ -308,6 +308,8 @@ impl VirtioNet {
     ///
     /// `data` 指向包缓冲区 (物理连续).
     /// `len` 为包长度.
+    /// # Errors
+    /// 包长度为 0 或超过 65535 时返回 Err。
     pub fn send_packet(&mut self, data_phys: u64, len: u32) -> Result<(), ()> {
         if len == 0 || len > 65535 {
             return Err(());
@@ -348,6 +350,8 @@ impl VirtioNet {
 
     /// 轮询 RX 队列处理收到的包.
     /// 返回已处理的包数.
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn poll_rx(&mut self) -> usize {
         let mut processed = 0;
 
@@ -396,6 +400,8 @@ impl VirtioNet {
 
     /// 尝试接收一个包到提供的缓冲区.
     /// 成功返回 Some(len), 无包则返回 None.
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn try_receive(&mut self, buffer: &mut [u8]) -> Option<usize> {
         let result = self.rx_vq.pop_used()?;
         let (desc_idx, len) = result;
@@ -512,6 +518,8 @@ pub fn probe() -> i32 {
 // NetOps 桥接 — 供 ChitinNetDevice 使用
 // ============================================================================
 
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() || len == 0 { return KernelError::InvalidArgument.as_i32(); }
     // SAFETY: driver_data 由 Chitin 注册时设置, data 由 Chitin NetOps 契约保证有效。
@@ -538,6 +546,8 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     }
 }
 
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return KernelError::InvalidArgument.as_i32(); }
     // SAFETY: driver_data 由 Chitin 注册时设置, buf 由 Chitin NetOps 契约保证有效。

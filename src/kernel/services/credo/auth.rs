@@ -24,18 +24,18 @@
 
 use crate::kernel::framework::syscall::Errno;
 
-/// auth_login(password, note) 策略
+/// `auth_login(password`, note) 策略
 pub fn auth_login_syscall(password_ptr: u64, note_ptr: u64) -> i64 {
     crate::kernel::framework::credo::pwm_login(note_ptr as *const u8, password_ptr as *const u8)
 }
 
-/// auth_logout() 策略
+/// `auth_logout()` 策略
 pub fn auth_logout_syscall() -> i64 {
     crate::kernel::framework::credo::pwm_logout();
     0
 }
 
-/// auth_create(password, note, level) 策略
+/// `auth_create(password`, note, level) 策略
 pub fn auth_create_syscall(password_ptr: u64, note_ptr: u64, _level: u8) -> i64 {
     let creator = crate::kernel::framework::credo::pwm_get_current();
     crate::kernel::framework::credo::pwm_create(
@@ -45,33 +45,33 @@ pub fn auth_create_syscall(password_ptr: u64, note_ptr: u64, _level: u8) -> i64 
     )
 }
 
-/// auth_delete(target) 策略
+/// `auth_delete(target)` 策略
 pub fn auth_delete_syscall(target: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_delete(target) as i64
+    i64::from(crate::kernel::framework::credo::pwm_delete(target))
 }
 
-/// auth_info(target) 策略
+/// `auth_info(target)` 策略
 pub fn auth_info_syscall(target: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_get_privilege_level(target) as i64
+    i64::from(crate::kernel::framework::credo::pwm_get_privilege_level(target))
 }
 
-/// auth_changepw(old_pw, new_pw) 策略
+/// `auth_changepw(old_pw`, `new_pw`) 策略
 pub fn auth_changepw_syscall(old_pw_ptr: u64, new_pw_ptr: u64) -> i64 {
     let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::credo::pwm_change_password(
+    i64::from(crate::kernel::framework::credo::pwm_change_password(
         pwm,
         old_pw_ptr as *const u8,
         new_pw_ptr as *const u8,
-    ) as i64
+    ))
 }
 
-/// auth_verify(password) 策略
+/// `auth_verify(password)` 策略
 pub fn auth_verify_syscall(password_ptr: u64) -> i64 {
     let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::credo::pwm_verify_password(pwm, password_ptr as *const u8) as i64
+    i64::from(crate::kernel::framework::credo::pwm_verify_password(pwm, password_ptr as *const u8))
 }
 
-/// auth_create_first(password) 策略
+/// `auth_create_first(password)` 策略
 pub fn auth_create_first_syscall(password_ptr: u64) -> i64 {
     if password_ptr == 0 {
         return Errno::EINVAL.as_ret();
@@ -79,37 +79,33 @@ pub fn auth_create_first_syscall(password_ptr: u64) -> i64 {
     crate::kernel::framework::credo::pwm_create_first_identity(password_ptr as *const u8)
 }
 
-/// auth_grant(grantor, grantee, domain, caps) 策略
+/// `auth_grant(grantor`, grantee, domain, caps) 策略
 pub fn auth_grant_syscall(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_grant(grantor, grantee, domain, caps) as i64
+    i64::from(crate::kernel::framework::credo::pwm_grant(grantor, grantee, domain, caps))
 }
 
-/// auth_revoke(revoker, target, domain, caps) 策略
+/// `auth_revoke(revoker`, target, domain, caps) 策略
 pub fn auth_revoke_syscall(revoker: u64, target: u64, domain: u16, caps: u64) -> i64 {
-    crate::kernel::framework::credo::pwm_revoke(revoker, target, domain, caps) as i64
+    i64::from(crate::kernel::framework::credo::pwm_revoke(revoker, target, domain, caps))
 }
 
-/// auth_check_cap(pwm, domain, required) 策略
+/// `auth_check_cap(pwm`, domain, required) 策略
 pub fn auth_check_cap_syscall(pwm: u64, domain: u16, required: u64) -> i64 {
-    if crate::kernel::framework::credo::pwm_has_capability(pwm, domain, required) {
-        1
-    } else {
-        0
-    }
+    i64::from(crate::kernel::framework::credo::pwm_has_capability(pwm, domain, required))
 }
 
-/// auth_get_caps(pwm, domain) 策略
+/// `auth_get_caps(pwm`, domain) 策略
 pub fn auth_get_caps_syscall(pwm: u64, domain: u16) -> i64 {
     crate::kernel::framework::credo::pwm_get_capability_raw(pwm, domain) as i64
 }
 
-/// pwm_get() 策略
+/// `pwm_get()` 策略
 pub fn pwm_get_syscall() -> i64 {
     crate::kernel::framework::credo::pwm_get_current() as i64
 }
 
-/// pwm_set(pwm) 策略
+/// `pwm_set(pwm)` 策略
 pub fn pwm_set_syscall(pwm: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
-    crate::kernel::framework::proc::proc_set_pwm(pid, pwm) as i64
+    i64::from(crate::kernel::framework::proc::proc_set_pwm(pid, pwm))
 }

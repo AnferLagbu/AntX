@@ -381,9 +381,7 @@ impl Driver for SerialPort {
     }
 
     fn status(&self) -> &'static str {
-        if !self.initialized {
-            "Not initialized"
-        } else {
+        if self.initialized {
             match self.port_num {
                 0 => "COM1 ready @ 0x3F8",
                 1 => "COM2 ready @ 0x2F8",
@@ -391,6 +389,8 @@ impl Driver for SerialPort {
                 3 => "COM4 ready @ 0x2E8",
                 _ => "Unknown port",
             }
+        } else {
+            "Not initialized"
         }
     }
 }
@@ -430,6 +430,8 @@ impl SerialPort {
     ///
     /// # Arguments
     /// * `byte` - 要发送的字节
+    /// # Errors
+    /// 串口未初始化或 I/O 端口资源缺失时返回 Err。
     pub fn send_byte(&mut self, byte: u8) -> DriverResult<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
@@ -524,6 +526,8 @@ static SERIAL_PORTS: IrqSpinLock<[Option<SerialPort>; MAX_COM_PORTS]> =
 /// 初始化指定串口 (C 兼容接口)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn serial_init(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
         SERIAL_PORTS.with_mut(|ports| {
@@ -538,6 +542,8 @@ pub extern "C" fn serial_init(com: u32) {
 /// 发送字符到串口 (C 兼容接口)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn serial_putc(com: u32, ch: i32) {
     if (com as usize) < MAX_COM_PORTS {
         SERIAL_PORTS.with_mut(|ports| {
@@ -575,7 +581,7 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
         SERIAL_PORTS.with_mut(|ports| match &mut ports[com as usize] {
             Some(port) => match port.receive_byte() {
-                Some(ch) => ch as i32,
+                Some(ch) => i32::from(ch),
                 None => -1,
             },
             None => -1,
@@ -592,11 +598,7 @@ pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
         SERIAL_PORTS.with(|ports| match &ports[com as usize] {
             Some(port) => {
-                if port.has_data() {
-                    1
-                } else {
-                    0
-                }
+                i32::from(port.has_data())
             }
             None => 0,
         })
@@ -618,24 +620,26 @@ pub extern "C" fn serial_irq_handler(com: u32) {
     }
 }
 
-/// C 兼容别名: serial_has_data
+/// C 兼容别名: `serial_has_data`
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_has_data(com: i32) -> bool {
     serial_has_char(com as u32) != 0
 }
 
-/// C 兼容别名: serial_write(buf, count 参数交换以匹配旧 C API)
+/// C 兼容别名: `serial_write(buf`, count 参数交换以匹配旧 C API)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 ///
 /// # Safety
 ///
 /// 串口已通过 `serial_init()` 初始化。仅在内核上下文中有效。
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { unsafe {
     let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
     for &b in bytes {
-        serial_putc(com as u32, b as i32);
+        serial_putc(com as u32, i32::from(b));
     }
 }}
 

@@ -1,4 +1,4 @@
-//! WASI 环境/参数: environ_get, environ_sizes_get, args_get, args_sizes_get
+//! WASI 环境/参数: `environ_get`, `environ_sizes_get`, `args_get`, `args_sizes_get`
 
 use alloc::format;
 use crate::kernel::services::wasm::types::{Value, WasmError};
@@ -6,9 +6,9 @@ use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::WasiContext;
 use super::fd_table::write_u32_to_memory;
 
-/// WASI environ_sizes_get: 获取环境变量数量和总缓冲区大小
+/// WASI `environ_sizes_get`: 获取环境变量数量和总缓冲区大小
 ///
-/// 参数: (count_ptr: i32, buf_size_ptr: i32)
+/// 参数: (`count_ptr`: i32, `buf_size_ptr`: i32)
 /// 返回: 0 (成功)
 pub fn wasi_environ_sizes_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let count_ptr = interp.stack.pop_i32()? as u32;
@@ -25,9 +25,9 @@ pub fn wasi_environ_sizes_get(ctx: &mut WasiContext, interp: &mut Interpreter) -
     Ok(())
 }
 
-/// WASI environ_get: 读取环境变量
+/// WASI `environ_get`: 读取环境变量
 ///
-/// 参数: (environ_ptr: i32, buf_ptr: i32)
+/// 参数: (`environ_ptr`: i32, `buf_ptr`: i32)
 /// 返回: 0 (成功)
 pub fn wasi_environ_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let environ_ptr = interp.stack.pop_i32()? as u32;
@@ -38,7 +38,7 @@ pub fn wasi_environ_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
         // 写入指针数组 (每个元素指向 buf 中的位置)
         write_u32_to_memory(interp, environ_ptr + (i as u32) * 4, buf_ptr + offset);
         // 写入 "key=value\0"
-        let entry = format!("{}={}", key, val);
+        let entry = format!("{key}={val}");
         let bytes = entry.as_bytes();
         if let Some(ref mut mem) = interp.memory {
             for (j, &byte) in bytes.iter().enumerate() {
@@ -52,9 +52,9 @@ pub fn wasi_environ_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     Ok(())
 }
 
-/// WASI args_sizes_get: 获取参数数量和总缓冲区大小
+/// WASI `args_sizes_get`: 获取参数数量和总缓冲区大小
 ///
-/// 参数: (count_ptr: i32, buf_size_ptr: i32)
+/// 参数: (`count_ptr`: i32, `buf_size_ptr`: i32)
 /// 返回: 0 (成功)
 pub fn wasi_args_sizes_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let count_ptr = interp.stack.pop_i32()? as u32;
@@ -71,9 +71,9 @@ pub fn wasi_args_sizes_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> R
     Ok(())
 }
 
-/// WASI args_get: 读取命令行参数
+/// WASI `args_get`: 读取命令行参数
 ///
-/// 参数: (argv_ptr: i32, buf_ptr: i32)
+/// 参数: (`argv_ptr`: i32, `buf_ptr`: i32)
 /// 返回: 0 (成功)
 pub fn wasi_args_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let argv_ptr = interp.stack.pop_i32()? as u32;

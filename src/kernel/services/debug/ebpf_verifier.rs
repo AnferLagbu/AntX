@@ -72,7 +72,7 @@ pub struct StandardBpfVerifier;
 /// 全局标准验证器实例 (T4-3: 0 大小, 0 状态, 安全)
 pub static STANDARD_VERIFIER: StandardBpfVerifier = StandardBpfVerifier;
 
-/// eBPF 指令操作码 (与 framework::debug::opcode 保持一致)
+/// eBPF 指令操作码 (与 `framework::debug::opcode` 保持一致)
 mod opcode {
     pub const LD: u8 = 0x00;
     pub const LDX: u8 = 0x01;
@@ -144,7 +144,7 @@ impl BpfVerifier for StandardBpfVerifier {
             if dst >= BPF_REG_NUM || src >= BPF_REG_NUM {
                 return VerifyResult::Err(
                     alloc::format!(
-                        "invalid register at pc={}: dst={} src={}", pc, dst, src
+                        "invalid register at pc={pc}: dst={dst} src={src}"
                     ).into_bytes()
                 );
             }
@@ -158,7 +158,7 @@ impl BpfVerifier for StandardBpfVerifier {
             {
                 if insn.class() == opcode::ST || insn.class() == opcode::STX {
                     return VerifyResult::Err(
-                        alloc::format!("write to R10 (frame pointer) at pc={}", pc).into_bytes()
+                        alloc::format!("write to R10 (frame pointer) at pc={pc}").into_bytes()
                     );
                 }
             }
@@ -170,10 +170,10 @@ impl BpfVerifier for StandardBpfVerifier {
                 let op_low = insn.op & 0xf0;
                 if op_low == opcode::JA {
                     // 无条件跳转
-                    let target = pc as i64 + 1 + insn.off as i64;
+                    let target = pc as i64 + 1 + i64::from(insn.off);
                     if target < 0 || target as usize >= prog.insn_cnt as usize {
                         return VerifyResult::Err(
-                            alloc::format!("jump out of bounds at pc={}: target={}", pc, target).into_bytes()
+                            alloc::format!("jump out of bounds at pc={pc}: target={target}").into_bytes()
                         );
                     }
                     // 规则 4: 回边检测
@@ -181,7 +181,7 @@ impl BpfVerifier for StandardBpfVerifier {
                         path_depth += 1;
                         if path_depth > BPF_MAX_PATH_DEPTH {
                             return VerifyResult::Err(
-                                alloc::format!("too many backward jumps at pc={}", pc).into_bytes()
+                                alloc::format!("too many backward jumps at pc={pc}").into_bytes()
                             );
                         }
                     }
@@ -190,7 +190,7 @@ impl BpfVerifier for StandardBpfVerifier {
                     let helper_id = insn.imm as u32;
                     if !is_valid_helper(helper_id) {
                         return VerifyResult::Err(
-                            alloc::format!("unknown helper {} at pc={}", helper_id, pc).into_bytes()
+                            alloc::format!("unknown helper {helper_id} at pc={pc}").into_bytes()
                         );
                     }
                     // EBPF-3 规则 8: helper 调用前 R1 必须已初始化
@@ -199,7 +199,7 @@ impl BpfVerifier for StandardBpfVerifier {
                     if regs[reg::R1].r#type == RegType::NotInit {
                         return VerifyResult::Err(
                             alloc::format!(
-                                "helper call at pc={} with uninitialized R1", pc
+                                "helper call at pc={pc} with uninitialized R1"
                             ).into_bytes()
                         );
                     }
@@ -218,17 +218,17 @@ impl BpfVerifier for StandardBpfVerifier {
                     regs[reg::R1] = RegState::scalar();
                 } else if op_low != opcode::EXIT {
                     // 条件跳转
-                    let target = pc as i64 + 1 + insn.off as i64;
+                    let target = pc as i64 + 1 + i64::from(insn.off);
                     if target < 0 || target as usize >= prog.insn_cnt as usize {
                         return VerifyResult::Err(
-                            alloc::format!("conditional jump OOB at pc={}: target={}", pc, target).into_bytes()
+                            alloc::format!("conditional jump OOB at pc={pc}: target={target}").into_bytes()
                         );
                     }
                     if target < pc as i64 {
                         path_depth += 1;
                         if path_depth > BPF_MAX_PATH_DEPTH {
                             return VerifyResult::Err(
-                                alloc::format!("too many backward jumps at pc={}", pc).into_bytes()
+                                alloc::format!("too many backward jumps at pc={pc}").into_bytes()
                             );
                         }
                     }
@@ -239,13 +239,13 @@ impl BpfVerifier for StandardBpfVerifier {
                     if insn.op & opcode::X != 0 {
                         if regs[src].r#type == RegType::NotInit {
                             return VerifyResult::Err(
-                                alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
+                                alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
                             );
                         }
                     }
                     if regs[dst].r#type == RegType::NotInit {
                         return VerifyResult::Err(
-                            alloc::format!("use of uninitialized R{} at pc={}", dst, pc).into_bytes()
+                            alloc::format!("use of uninitialized R{dst} at pc={pc}").into_bytes()
                         );
                     }
                 }
@@ -255,7 +255,7 @@ impl BpfVerifier for StandardBpfVerifier {
             if class == opcode::ALU || class == opcode::ALU64 {
                 if regs[dst].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{} at pc={}", dst, pc).into_bytes()
+                        alloc::format!("use of uninitialized R{dst} at pc={pc}").into_bytes()
                     );
                 }
                 let op_low = insn.op & 0xf0;
@@ -264,7 +264,7 @@ impl BpfVerifier for StandardBpfVerifier {
                         // MOV reg: 复制源类型
                         if regs[src].r#type == RegType::NotInit {
                             return VerifyResult::Err(
-                                alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
+                                alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
                             );
                         }
                         regs[dst] = regs[src];
@@ -295,7 +295,7 @@ impl BpfVerifier for StandardBpfVerifier {
             if class == opcode::LDX {
                 if regs[src].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
+                        alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
                     );
                 }
                 // EBPF-4 规则 10: LDX 加载要求 src 必须是已知指针 (StackPtr 或 MapValue)
@@ -320,7 +320,7 @@ impl BpfVerifier for StandardBpfVerifier {
             if class == opcode::ST || class == opcode::STX {
                 if regs[dst].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("store to uninitialized R{} at pc={}", dst, pc).into_bytes()
+                        alloc::format!("store to uninitialized R{dst} at pc={pc}").into_bytes()
                     );
                 }
                 match regs[dst].r#type {
@@ -339,7 +339,7 @@ impl BpfVerifier for StandardBpfVerifier {
                 }
                 if class == opcode::STX && regs[src].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{} at pc={}", src, pc).into_bytes()
+                        alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
                     );
                 }
             }

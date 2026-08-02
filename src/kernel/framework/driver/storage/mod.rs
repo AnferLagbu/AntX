@@ -52,7 +52,11 @@ static NVME_CONTROLLERS: Mutex<Vec<NvmeController>> = Mutex::new(Vec::new());
 /// 初始化存储子系统
 ///
 /// 扫描 PCI 总线发现 AHCI/NVMe 控制器，然后初始化它们。
+/// # Errors
+/// 存储控制器初始化失败时返回 Err。
 #[cfg(target_arch = "x86_64")]
+// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
     let pci_count = crate::kernel::framework::pci::init();
@@ -247,7 +251,7 @@ pub fn storage_init() -> framework::Result<()> {
         for (ci, pi) in ahci_ports {
             if let Some(dev) = AhciBlockDevice::new(ci, pi) {
                 let sectors = dev.blk_total_sectors();
-                let dev_name = alloc::format!("ahci{}-p{}", ci, pi);
+                let dev_name = alloc::format!("ahci{ci}-p{pi}");
                 let name_leaked: &'static str = dev_name.leak();
                 proto_block::register_block_device(name_leaked, dev, None);
                 klog_info!(
@@ -285,7 +289,7 @@ pub fn storage_init() -> framework::Result<()> {
         for (ci, nsid) in nvme_ns {
             if let Some(dev) = NvmeBlockDevice::new(ci, nsid) {
                 let sectors = dev.blk_total_sectors();
-                let dev_name = alloc::format!("nvme{}-ns{}", ci, nsid);
+                let dev_name = alloc::format!("nvme{ci}-ns{nsid}");
                 let name_leaked: &'static str = dev_name.leak();
                 proto_block::register_block_device(name_leaked, dev, None);
                 klog_info!(
@@ -359,12 +363,14 @@ pub fn ahci_port_count() -> usize {
     total
 }
 
-/// 获取 NVMe 控制器数量
+/// 获取 `NVMe` 控制器数量
 pub fn nvme_controller_count() -> usize {
     NVME_CONTROLLERS.lock().len()
 }
 
 /// 关机 — 关闭所有存储控制器
+/// # Errors
+/// 任一存储控制器关闭失败时返回 Err。
 pub fn storage_shutdown() -> framework::Result<()> {
     for ctrl in AHCI_CONTROLLERS.lock().iter_mut() {
         let _ = ctrl.shutdown();
@@ -390,7 +396,7 @@ const NVME_QD: u32 = 64;
 const NVME_SQ_ENTRY: usize = 64;
 /// CQ 条目大小
 const NVME_CQ_ENTRY: usize = 16;
-/// NVMe Doorbell 基址
+/// `NVMe` Doorbell 基址
 const NVME_DB_BASE: usize = 0x1000;
 /// AHCI 命令槽数量
 const AHCI_CMD_SLOTS: usize = 32;
@@ -399,7 +405,7 @@ const AHCI_CMD_HDR_SIZE: usize = 32;
 /// AHCI 命令表大小
 const AHCI_CMD_TBL_SIZE: usize = 256;
 
-/// 分配 NVMe Admin 队列 (SQ + CQ DMA 内存)
+/// 分配 `NVMe` Admin 队列 (SQ + CQ DMA 内存)
 ///
 /// 返回 `(admin_sq_phys, admin_cq_phys)` — 物理地址用于写入 AQA/ASQ/ACQ 寄存器。
 /// 失败返回 None (DMA 分配不足)。
@@ -420,7 +426,7 @@ pub fn nvme_alloc_admin_queues() -> Option<(u64, u64)> {
     Some((sq_phys.0, cq_phys.0))
 }
 
-/// 分配 NVMe I/O 队列 (SQ + CQ DMA 内存)
+/// 分配 `NVMe` I/O 队列 (SQ + CQ DMA 内存)
 ///
 /// 返回 `(io_sq_phys, io_cq_phys)` — 物理地址用于 Create CQ/SQ Admin 命令。
 pub fn nvme_alloc_io_queues() -> Option<(u64, u64)> {
@@ -465,7 +471,7 @@ pub fn nvme_free_dma_buffer(vaddr: u64, size: usize) {
     }
 }
 
-/// 向 NVMe Admin SQ 提交命令并等待完成
+/// 向 `NVMe` Admin SQ 提交命令并等待完成
 ///
 /// `cmd_ptr` — SQ DMA 区域虚拟地址
 /// `cq_ptr` — CQ DMA 区域虚拟地址
@@ -475,9 +481,11 @@ pub fn nvme_free_dma_buffer(vaddr: u64, size: usize) {
 /// `phase` — CQ phase bit, 完成后可能翻转
 /// `depth` — 队列深度
 /// `db_stride` — 门铃步长
-/// `iomem` — NVMe BAR0 IoMem 句柄
+/// `iomem` — `NVMe` BAR0 `IoMem` 句柄
 ///
 /// 返回: `Ok(status_code)` 或 `Err(())` (超时/错误)
+/// # Errors
+/// 命令超时或设备返回非零状态码时返回 Err。
 pub fn nvme_submit_admin_cmd(
     cmd_ptr: u64,
     cq_ptr: u64,
@@ -523,9 +531,8 @@ pub fn nvme_submit_admin_cmd(
                 let sc = (entry.status >> 1) & 0x7FF;
                 if sc == 0 {
                     return Ok(sc);
-                } else {
-                    return Err(());
                 }
+                return Err(());
             }
             timeout -= 1;
             if timeout == 0 {
@@ -536,7 +543,9 @@ pub fn nvme_submit_admin_cmd(
     }
 }
 
-/// 向 NVMe I/O SQ 提交命令并等待完成
+/// 向 `NVMe` I/O SQ 提交命令并等待完成
+/// # Errors
+/// 命令超时或设备返回非零状态码时返回 Err。
 pub fn nvme_submit_io_cmd(
     cmd_ptr: u64,
     cq_ptr: u64,
@@ -580,9 +589,8 @@ pub fn nvme_submit_io_cmd(
                 let sc = (entry.status >> 1) & 0x7FF;
                 if sc == 0 {
                     return Ok(());
-                } else {
-                    return Err(());
                 }
+                return Err(());
             }
             timeout -= 1;
             if timeout == 0 {
@@ -687,6 +695,8 @@ impl AhciCmdListHandle {
 }
 
 /// 分配 AHCI 端口 DMA 资源 (命令列表 + FIS 缓冲区 + 命令表)
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn ahci_alloc_port_dma() -> Option<AhciCmdListHandle> {
     use crate::kernel::framework::dma::get_dma;
     use crate::kernel::framework::mm::PAGE_SIZE;
@@ -755,6 +765,8 @@ pub fn ahci_copy_from_dma(dst: *mut u8, src_vaddr: u64, len: usize) {
 }
 
 /// 填充 AHCI Command Header (slot 0)
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 pub fn ahci_fill_cmd_header(
     cmd_list_virt: u64,
     slot: u32,
@@ -769,7 +781,7 @@ pub fn ahci_fill_cmd_header(
         let hdr = (cmd_list_virt as *mut ahci::AhciCommandHeader).add(slot as usize);
         let flags: u32 = fis_len_dwords
             | (if is_write { 1 << 6 } else { 0 });
-        let dw0_val = flags | (prdt_len as u32);
+        let dw0_val = flags | u32::from(prdt_len);
         let ctba_val = cmd_table_phys as u32;
         let ctbau_val = (cmd_table_phys >> 32) as u32;
         addr_of_mut!((*hdr).dw0).write_volatile(dw0_val);
@@ -794,6 +806,8 @@ pub fn ahci_fill_h2d_fis(cmd_table_virt: u64, fis_src: usize, fis_size: usize) {
 }
 
 /// 填充 AHCI PRDT entry (数据缓冲区物理地址 + 字节数)
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 pub fn ahci_fill_prdt(cmd_table_virt: u64, entry_index: usize, data_phys: u64, byte_count: u32, ioc: bool) {
     // SAFETY: cmd_table_virt 由 DMA 分配保证有效; entry_index < 8
     unsafe {

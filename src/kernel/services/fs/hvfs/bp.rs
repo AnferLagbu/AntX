@@ -159,7 +159,7 @@ impl HvBpProp {
     }
 
     pub fn set_encrypted(&mut self, v: bool) {
-        self.encrypted = if v { 1 } else { 0 };
+        self.encrypted = u8::from(v);
     }
 
     /// E6-6: safe 反序列化
@@ -245,14 +245,14 @@ impl HvBlockPointer {
         self.prop.level > 0 && !self.is_hole()
     }
 
-    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
+    /// E6-6: 使用 `IntoBytes` + Immutable derive 编译期验证无 padding, `as_bytes` 为 safe 方法
     pub const BYTES: usize = core::mem::size_of::<Self>();
 
     pub fn as_bytes(&self) -> &[u8] {
         zerocopy::IntoBytes::as_bytes(self)
     }
 
-    /// E6-6: safe 反序列化, 手动构建替代 unsafe copy_nonoverlapping
+    /// E6-6: safe 反序列化, 手动构建替代 unsafe `copy_nonoverlapping`
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < Self::BYTES {
             return None;

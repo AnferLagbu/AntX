@@ -53,6 +53,8 @@ const CMD_HEADER_SIZE: usize = 32;
 const CMD_LIST_SIZE: usize = CMD_SLOTS * CMD_HEADER_SIZE;
 
 /// FIS接收缓冲区大小 (一页)
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 const FIS_BUFFER_SIZE: usize = PAGE_SIZE as usize;
 
 /// 命令表大小 (CFIS + ACMD + PRDT)
@@ -137,7 +139,7 @@ mod ghc {
     pub const AE: u32 = 1 << 31;
 }
 
-/// AHCI 端口命令寄存器 (PxCMD) — AHCI 规范 §3.3.2
+/// AHCI 端口命令寄存器 (`PxCMD`) — AHCI 规范 §3.3.2
 /// 未实现位: ICC [28:31] (接口通信控制)
 mod pxcmd {
     pub const ST: u32 = 1 << 0;
@@ -371,6 +373,10 @@ impl AhciPort {
     }
 
     /// 分配 DMA 内存并设置寄存器
+    /// # Errors
+    /// DMA 引擎未初始化或 DMA 内存分配失败时返回 Err。
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn setup_dma(&mut self) -> Result<()> {
         let dma_engine = get_dma();
         if !dma_engine.is_initialized() {
@@ -452,6 +458,8 @@ impl AhciPort {
     }
 
     /// 启动端口 (启用 FIS 接收 + 命令处理)
+    /// # Errors
+    /// DMA 设置失败或端口寄存器等待确认超时时返回 Err。
     pub fn enable(&mut self) -> Result<()> {
         // 先分配 DMA
         self.setup_dma()?;
@@ -495,6 +503,8 @@ impl AhciPort {
     }
 
     /// 停止端口
+    /// # Errors
+    /// 端口停止操作失败时返回 Err。
     pub fn disable(&mut self) -> Result<()> {
         if !self.port_initialized {
             return Ok(());
@@ -530,13 +540,18 @@ impl AhciPort {
     ///
     /// # Safety
     /// `buffer` 必须是有效的 DMA-coherent 内存指针
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     unsafe fn submit_dma_command(
         &mut self,
         fis: &H2dFis,
         buffer_phys: PhysAddr,
         byte_count: u32,
         is_write: bool,
-    ) -> Result<()> { unsafe {
+    ) -> Result<()> {
+        // SAFETY: 调用方 (read_dma/write_dma) 保证 self.regs 指向有效 MMIO,
+        // buffer_phys 是 dma_engine 分配的 DMA-coherent 物理地址, byte_count 不超过缓冲区大小
+        unsafe {
         let regs = &mut *self.regs;
         let slot = 0u32; // 使用 slot 0
 
@@ -626,6 +641,10 @@ impl AhciPort {
     }}
 
     /// 读取扇区 (DMA)
+    /// # Errors
+    /// 端口未初始化、设备不存在、参数非法、DMA 缓冲区分配失败或硬件错误时返回 Err。
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn read(&mut self, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {
         if !self.port_initialized || !self.device_present {
             return Err(DriverError::NotInitialized);
@@ -634,7 +653,7 @@ impl AhciPort {
             return Err(DriverError::InvalidParameter);
         }
 
-        let byte_count = (count as u32) * SECTOR_SIZE as u32;
+        let byte_count = u32::from(count) * SECTOR_SIZE as u32;
 
         // 分配 DMA buffer
         let dma_engine = get_dma();
@@ -660,6 +679,10 @@ impl AhciPort {
     }
 
     /// 写入扇区 (DMA)
+    /// # Errors
+    /// 端口未初始化、设备不存在、参数非法、DMA 缓冲区分配失败或硬件错误时返回 Err。
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn write(&mut self, lba: u64, count: u16, buffer: *const u8) -> Result<()> {
         if !self.port_initialized || !self.device_present {
             return Err(DriverError::NotInitialized);
@@ -668,7 +691,7 @@ impl AhciPort {
             return Err(DriverError::InvalidParameter);
         }
 
-        let byte_count = (count as u32) * SECTOR_SIZE as u32;
+        let byte_count = u32::from(count) * SECTOR_SIZE as u32;
 
         // 分配 DMA buffer
         let dma_engine = get_dma();
@@ -735,6 +758,10 @@ impl AhciController {
     }
 
     /// 初始化控制器
+    /// # Errors
+    /// 获取 MMIO 失败、HBA 复位超时或端口初始化失败时返回 Err。
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn init_controller(&mut self) -> Result<()> {
         // 初始化 IoMem
         let iomem = IoMem::from_pci_bar(

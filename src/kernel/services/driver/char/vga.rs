@@ -22,10 +22,10 @@
 //!
 //! ## 迁移状态
 //!
-//! - ✅ 显存读写 (write_char / read_char / clear / scroll)
-//! - ✅ 颜色属性 (Color 枚举 + TextAttribute)
-//! - ✅ 光标位置 (set_cursor / cursor)
-//! - ✅ 光标显隐 (enable_cursor / disable_cursor) — x86_64 only
+//! - ✅ 显存读写 (`write_char` / `read_char` / clear / scroll)
+//! - ✅ 颜色属性 (Color 枚举 + `TextAttribute`)
+//! - ✅ 光标位置 (`set_cursor` / cursor)
+//! - ✅ 光标显隐 (`enable_cursor` / `disable_cursor`) — `x86_64` only
 //!
 //! 评估日期: 2026-06-04
 //! Phase 2.1.5 任务: 字符设备 / 显示设备迁移
@@ -164,7 +164,7 @@ impl VgaCell {
         Self { character: ch, attribute: attr }
     }
 
-    /// 从 TextAttribute 创建
+    /// 从 `TextAttribute` 创建
     pub const fn from_attr(ch: u8, attr: TextAttribute) -> Self {
         Self { character: ch, attribute: attr.as_u8() }
     }
@@ -228,7 +228,7 @@ impl CursorPos {
 /// - volatile 语义: 防止编译器重排 MMIO/PIO
 pub struct VgaConsole {
     buffer: IoMem,
-    /// CRT 控制器端口 (仅 x86_64, aarch64 无 PIO)
+    /// CRT 控制器端口 (仅 `x86_64`, aarch64 无 PIO)
     #[cfg(target_arch = "x86_64")]
     crt: IoPort,
 }
@@ -370,9 +370,9 @@ impl VgaConsole {
     #[cfg(target_arch = "x86_64")]
     pub fn cursor(&self) -> CursorPos {
         self.crt.write_u8(0, VGA_REG_CURSOR_LO);
-        let lo = self.crt.read_u8(1) as u16;
+        let lo = u16::from(self.crt.read_u8(1));
         self.crt.write_u8(0, VGA_REG_CURSOR_HI);
-        let hi = self.crt.read_u8(1) as u16;
+        let hi = u16::from(self.crt.read_u8(1));
         let raw = ((hi << 8) | lo) as usize;
         CursorPos {
             x: raw % SCREEN_WIDTH,

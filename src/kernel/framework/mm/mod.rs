@@ -6,7 +6,7 @@
 //! ## 依赖声明
 //!
 //! framework 内部依赖: sync, syscall, proc, tests
-//! services 依赖: services::mm (安全代理)
+//! services 依赖: `services::mm` (安全代理)
 
 
 use core::ptr::NonNull;
@@ -139,7 +139,7 @@ pub use crate::kernel::framework::config::{
 };
 
 /// 内存布局常量
-/// x86_64: 高半核映射 (0xFFFF_8000_0000_0000)
+/// `x86_64`: 高半核映射 (`0xFFFF_8000_0000_0000`)
 /// aarch64: 直接恒等映射 (PA=VA, 低 2GB)
 #[cfg(target_arch = "x86_64")]
 pub const KERNEL_BASE: u64 = 0xFFFF800000000000u64;
@@ -150,26 +150,26 @@ pub const PHYSICAL_BASE: u64 = 0x0000000000000000u64;
 /// 用户空间低地址保护阈值.
 /// 低于此地址的指针视为空指针/不可解引用区域, 用于 canary 校验、
 /// 地址合法性检查等场景.
-/// x86_64: Linux 习惯 0x1000 (4 KiB), 覆盖 NULL 页 + 少量保留区.
+/// `x86_64`: Linux 习惯 0x1000 (4 KiB), 覆盖 NULL 页 + 少量保留区.
 /// aarch64: 同 0x1000.
 pub const USER_ADDR_FLOOR: u64 = 0x1000;
 
-/// 用户空间低地址上限 (x86_64 兼容阈值).
+/// 用户空间低地址上限 (`x86_64` 兼容阈值).
 /// 低于此地址的 RIP/故障地址视为空指针区域, 用于异常处理中的
 /// 地址分类 (空指针解引用 vs 用户有效地址).
-/// x86_64: 0xFFFF (覆盖 null descriptor + 低 64 KiB 保留区).
-/// aarch64: 0xFFFF (与 x86_64 一致).
+/// `x86_64`: 0xFFFF (覆盖 null descriptor + 低 64 KiB 保留区).
+/// aarch64: 0xFFFF (与 `x86_64` 一致).
 #[cfg(target_arch = "x86_64")]
 pub const USER_ADDR_MIN: u64 = 0xFFFF;
 #[cfg(target_arch = "aarch64")]
 pub const USER_ADDR_MIN: u64 = 0xFFFF;
 
-/// 缓存行大小 (字节). x86_64 与 aarch64 通用值为 64.
+/// 缓存行大小 (字节). `x86_64` 与 aarch64 通用值为 64.
 /// 用于 DMA 缓存刷写对齐、false sharing 避免等场景.
 pub const CACHE_LINE_SIZE: u64 = 64;
 
 /// 内核文本段基址 (符号地址).
-/// x86_64: 高半核最高 2GB 区域 (-2GB 符号地址), 用于内核代码绝对寻址
+/// `x86_64`: 高半核最高 2GB 区域 (-2GB 符号地址), 用于内核代码绝对寻址
 ///   和 RIP/地址分类 (内核文本段 vs 直接映射区).
 /// aarch64: 恒等映射, 内核文本段基址由 bootloader 决定 (典型 0x40080000).
 #[cfg(target_arch = "x86_64")]

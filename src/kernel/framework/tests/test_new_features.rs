@@ -165,15 +165,12 @@ fn test_devtree_create_node() -> TestResult {
         crate::kernel::framework::chitin::ChitinProto::Other,
         None,
     );
-    match node_id {
-        Some(id) => {
-            check!(id > 0, "node id positive");
-            let node = crate::kernel::framework::chitin::devtree_get_node(id);
-            check!(node.is_some(), "can get node");
-        }
-        None => {
-            // DevTree may not be initialized
-        }
+    if let Some(id) = node_id {
+        check!(id > 0, "node id positive");
+        let node = crate::kernel::framework::chitin::devtree_get_node(id);
+        check!(node.is_some(), "can get node");
+    } else {
+        // DevTree may not be initialized
     }
     TestResult::Pass
 }

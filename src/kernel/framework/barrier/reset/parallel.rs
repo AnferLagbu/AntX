@@ -89,10 +89,10 @@ pub fn compute_dependency_layers() -> DependencyLayers {
                         for j in 0..domain_count {
                             if let Some(d) = &manager.domains[j] {
                                 if d.id == dep_id {
-                                    if !visited[j] {
-                                        all_deps_visited = false;
-                                    } else {
+                                    if visited[j] {
                                         max_dep_level = max_dep_level.max(domain_levels[j] + 1);
+                                    } else {
+                                        all_deps_visited = false;
                                     }
                                     break;
                                 }

@@ -1,4 +1,4 @@
-//! HvFS ZIL Persistence Layer (WAL 磁盘持久化)
+//! `HvFS` ZIL Persistence Layer (WAL 磁盘持久化)
 //!
 //! 增强现有内存 ZIL:
 //! 1. 每个记录附带 CRC32 校验和
@@ -34,7 +34,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// P0-I-15 修复: ZIL 持久化层错误类型, 区分磁盘坏块 / CRC 失败 / 长度不足,
-/// 配合 try_deserialize_record 取代 10 处 `try_into().unwrap()` 静默 panic 路径.
+/// 配合 `try_deserialize_record` 取代 10 处 `try_into().unwrap()` 静默 panic 路径.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HvZilPersistError {
     /// 缓冲区长度不足, 不可能通过外部 `assert!(buf.len() >= 256)` 触发
@@ -104,15 +104,11 @@ pub struct ZilBlockTrailer {
 }
 
 const _ASSERT_HEADER_SIZE: () = {
-    if core::mem::size_of::<ZilBlockHeader>() != ZIL_HEADER_SIZE {
-        panic!("ZilBlockHeader size mismatch");
-    }
+    assert!(core::mem::size_of::<ZilBlockHeader>() == ZIL_HEADER_SIZE, "ZilBlockHeader size mismatch");
 };
 
 const _ASSERT_TRAILER_SIZE: () = {
-    if core::mem::size_of::<ZilBlockTrailer>() != ZIL_TRAILER_SIZE {
-        panic!("ZilBlockTrailer size mismatch");
-    }
+    assert!(core::mem::size_of::<ZilBlockTrailer>() == ZIL_TRAILER_SIZE, "ZilBlockTrailer size mismatch");
 };
 
 impl ZilBlockHeader {
@@ -148,7 +144,7 @@ impl ZilBlockHeader {
         copy.header_checksum == self.header_checksum
     }
 
-    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
+    /// E6-6: 使用 `IntoBytes` + Immutable derive 编译期验证无 padding, `as_bytes` 为 safe 方法
     pub fn as_bytes(&self) -> &[u8] {
         zerocopy::IntoBytes::as_bytes(self)
     }
@@ -192,7 +188,7 @@ impl ZilBlockTrailer {
         self.tail_magic == ZIL_TAIL_MAGIC
     }
 
-    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
+    /// E6-6: 使用 `IntoBytes` + Immutable derive 编译期验证无 padding, `as_bytes` 为 safe 方法
     pub fn as_bytes(&self) -> &[u8] {
         zerocopy::IntoBytes::as_bytes(self)
     }
@@ -201,7 +197,7 @@ impl ZilBlockTrailer {
 fn crc32_checksum(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFFFFFF;
     for &byte in data {
-        crc ^= byte as u32;
+        crc ^= u32::from(byte);
         for _ in 0..8 {
             if crc & 1 != 0 {
                 crc = (crc >> 1) ^ 0xEDB88320;

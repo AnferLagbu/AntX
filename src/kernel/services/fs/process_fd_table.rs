@@ -71,6 +71,9 @@ impl ProcessFdTable {
     }
 
     /// 分配指定编号的 FD (dup2 用)
+    ///
+    /// # Errors
+    /// 当 `fd` 超出 FD 表范围时返回 `EBADF`.
     pub fn alloc_fd_at(&self, fd: u32, open_file: Arc<OpenFile>, cloexec: bool) -> Result<u32, Errno> {
         let fd_usize = fd as usize;
         let mut entries = self.entries.lock();
@@ -85,7 +88,7 @@ impl ProcessFdTable {
         Ok(fd)
     }
 
-    /// 获取 FD 的 OpenFile 引用
+    /// 获取 FD 的 `OpenFile` 引用
     pub fn get_fd(&self, fd: u32) -> Option<Arc<OpenFile>> {
         let entries = self.entries.lock();
         let fd_usize = fd as usize;
@@ -101,13 +104,13 @@ impl ProcessFdTable {
         let entries = self.entries.lock();
         let fd_usize = fd as usize;
         if fd_usize < entries.len() {
-            entries[fd_usize].as_ref().map(|e| e.cloexec).unwrap_or(false)
+            entries[fd_usize].as_ref().is_some_and(|e| e.cloexec)
         } else {
             false
         }
     }
 
-    /// 关闭 FD, 返回被关闭的 OpenFile 引用
+    /// 关闭 FD, 返回被关闭的 `OpenFile` 引用
     pub fn close_fd(&self, fd: u32) -> Option<Arc<OpenFile>> {
         let mut entries = self.entries.lock();
         let fd_usize = fd as usize;
@@ -133,6 +136,10 @@ impl ProcessFdTable {
     }
 
     /// 复制 FD 到指定编号 (dup2 语义)
+    ///
+    /// # Errors
+    /// 当 `old_fd` 越界、未打开或 `old_fd == new_fd` 且无效时返回 `EBADF`;
+    /// 当 `new_fd` 超出范围时也返回 `EBADF`.
     pub fn dup2_fd(&self, old_fd: u32, new_fd: u32) -> Result<u32, Errno> {
         if old_fd == new_fd {
             // dup2(fd, fd) 是 no-op, 但检查 fd 是否有效

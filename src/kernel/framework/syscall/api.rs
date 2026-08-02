@@ -1,12 +1,12 @@
 //! 系统调用 API 层
 //!
-//! QueenX 原生 syscall (QX_*) + Linux 兼容 (SYS_*) + Credo 私有 syscall 的统一分发入口,
+//! `QueenX` 原生 syscall (QX_*) + Linux 兼容 (SYS_*) + Credo 私有 syscall 的统一分发入口,
 //! 用户态→内核态的唯一合法路径。
 //!
 //! ## 编号空间
 //! - 0-299   : Linux 兼容编号 (SYS_*), 直接使用 Linux 标准编号
 //! - 400-499 : Credo 私有 syscall
-//! - 500+    : QueenX 原生编号 (QX_*)
+//! - 500+    : `QueenX` 原生编号 (QX_*)
 //!
 //! ## 调用方契约
 //! - `boot::isr.asm` —— 中断/异常入口 (int 0x80 / syscall 指令)
@@ -16,15 +16,15 @@
 //! - `chitin::user_driver` —— 用户态驱动透传
 //!
 //! ## 内部接口
-//! - `types.rs` —— SyscallHandler 函数指针类型, Errno, syscall 编号常量
+//! - `types.rs` —— `SyscallHandler` 函数指针类型, Errno, syscall 编号常量
 //! - `mmap.rs` —— mmap/munmap/mprotect 实现
-//! - `mod.rs` —— syscall_dispatch() 核心分发器 (所有 sys_* 实现)
+//! - `mod.rs` —— `syscall_dispatch()` 核心分发器 (所有 sys_* 实现)
 //!
 //! ## 安全约束
-//! - 所有公开函数均通过 validate_user_ptr / validate_user_buf 检查用户指针
+//! - 所有公开函数均通过 `validate_user_ptr` / `validate_user_buf` 检查用户指针
 //! - 用户指针必须在 [1, 0x7FFFFFFFE000) 范围内
-//! - syscall_dispatch / syscall_dispatch_from_frame 必须在中断上下文调用
-//! - syscall_register 仅在启动阶段单线程调用
+//! - `syscall_dispatch` / `syscall_dispatch_from_frame` 必须在中断上下文调用
+//! - `syscall_register` 仅在启动阶段单线程调用
 //!
 //! ## 性能特征
 //! - 分发路径: O(1) match 分支, 编译器优化为跳转表
@@ -186,12 +186,12 @@ pub fn sys_kill(pid: i32, sig: i32) -> i64 {
     super::sys_kill(pid, sig)
 }
 
-/// rt_sigaction 系统调用实现 (TCB: 操作 sigaction 表)
+/// `rt_sigaction` 系统调用实现 (TCB: 操作 sigaction 表)
 pub fn sys_rt_sigaction(signum: i32, act: u64, oact: u64) -> i64 {
     super::sys_rt_sigaction(signum, act, oact)
 }
 
-/// rt_sigprocmask 系统调用实现 (TCB: 操作信号掩码)
+/// `rt_sigprocmask` 系统调用实现 (TCB: 操作信号掩码)
 pub fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
     super::sys_rt_sigprocmask(how, set, oset)
 }

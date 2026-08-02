@@ -423,9 +423,9 @@ pub struct PmSubsystem {
     pub state: AtomicU32,
     /// 挂起通知器列表
     pub notifiers: IrqSpinLock<Vec<SuspendNotifier>>,
-    /// CpuIdle 驱动
+    /// `CpuIdle` 驱动
     pub cpuidle: CpuIdleDriver,
-    /// CpuFreq 驱动
+    /// `CpuFreq` 驱动
     pub cpufreq: CpuFreqDriver,
     /// 是否已初始化
     pub initialized: AtomicBool,
@@ -462,7 +462,13 @@ impl PmSubsystem {
     /// 挂起系统 (策略部分: 通知 + 状态管理, 不含硬件操作)
     ///
     /// 返回 Ok(()) 表示应执行硬件挂起, Err(i64) 表示失败.
-    /// 恢复后需调用 suspend_resume_notify().
+    /// 恢复后需调用 `suspend_resume_notify()`.
+    ///
+    /// # Errors
+    ///
+    /// - 电源管理子系统尚未初始化时返回 `-11` (EAGAIN)
+    /// - 当前系统状态不是 S0 (工作中) 时返回 `-16` (EBUSY)
+    /// - 任一挂起通知器返回非 0 时返回 `-5` (EIO)
     pub fn suspend_prepare(&self, target: SystemPowerState) -> Result<(), i64> {
         if !self.initialized.load(Ordering::Acquire) {
             return Err(-(11i64)); // EAGAIN
@@ -508,7 +514,7 @@ impl PmSubsystem {
 // 系统调用
 // ============================================================================
 
-/// sys_pm — 电源管理系统调用 (策略分发)
+/// `sys_pm` — 电源管理系统调用 (策略分发)
 ///
 /// `cmd`: 0=挂起, 1=获取状态, 2=设置调速器, 3=获取调速器,
 ///        4=设置最大C态, 5=获取频率, 6=设置频率
@@ -541,7 +547,7 @@ pub fn sys_pm_dispatch(pm: &PmSubsystem, cmd: u64, a1: u64, a2: u64) -> i64 {
             0
         }
         5 => {
-            pm.cpufreq.get_freq(a1 as u32) as i64
+            i64::from(pm.cpufreq.get_freq(a1 as u32))
         }
         6 => {
             if pm.cpufreq.set_freq(a1 as u32, a2 as u32) {

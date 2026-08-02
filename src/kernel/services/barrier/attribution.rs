@@ -22,12 +22,12 @@
 //!
 //! ## 本模块职责
 //!
-//! 1. **故障归属**: panic_rip ∈ services 范围 → 服务域, ∈ TCB 范围 → 不可恢复
+//! 1. **故障归属**: `panic_rip` ∈ services 范围 → 服务域, ∈ TCB 范围 → 不可恢复
 //! 2. **能力降级**: 服务域连续失败 → 自动降级 capability
 //! 3. **审计**: 所有归属决策进入 audit log
 //!
 //! ## @SAFE
-//! 本文件不含 `unsafe`. 地址范围来自 framework::barrier 暴露的安全接口.
+//! 本文件不含 `unsafe`. 地址范围来自 `framework::barrier` 暴露的安全接口.
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -142,7 +142,7 @@ impl FaultAttributor {
     /// 跨层调用判定
     ///
     /// 当 services 函数调用 TCB 函数时, TCB 内部 panic, 需要回溯到
-    /// services 调用栈. 这里使用 caller_id (由 framework::barrier 提供).
+    /// services 调用栈. 这里使用 `caller_id` (由 `framework::barrier` 提供).
     pub fn attribute_cross(caller_id: u64, callee_panic_rip: u64) -> FaultAttribution {
         // 验证 callee 在 TCB 范围
         for r in TCB_RANGES {
@@ -187,7 +187,7 @@ impl DomainFailureRecord {
         let n = self.consecutive_failures.load(Ordering::Acquire);
         // tier 0 → 1: 3 次连续失败
         // tier 1 → 2: 5 次连续失败
-        let new_tier = if n >= 5 { 2 } else if n >= 3 { 1 } else { 0 };
+        let new_tier = if n >= 5 { 2 } else { u32::from(n >= 3) };
         let old = self.current_tier.load(Ordering::Acquire);
         if new_tier > old {
             self.current_tier.store(new_tier, Ordering::Release);

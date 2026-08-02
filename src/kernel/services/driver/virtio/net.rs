@@ -1,21 +1,21 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
-//! VirtIO 网络设备驱动 — services 层 (Phase 2.1.2)
+//! `VirtIO` 网络设备驱动 — services 层 (Phase 2.1.2)
 //!
 //! 通过 `VirtioDevice` (transport.rs) 提供 100% safe 的网卡初始化与配置路径。
-//! VirtQueue 操作通过 framework 层安全 API 完成。
+//! `VirtQueue` 操作通过 framework 层安全 API 完成。
 //!
 //! ## 设计原则
 //!
 //! - **零 unsafe**: 所有 MMIO 读/写通过 `VirtioDevice` 安全代理
-//! - **请求格式**: 定义 VirtioNetHdr / 配置偏移 / 特性位, 供 framework I/O 路径使用
-//! - **初始化序列**: Reset → Ack → Driver → Feature Negotiate → Features_OK → Queue Setup → Driver_OK
+//! - **请求格式**: 定义 `VirtioNetHdr` / 配置偏移 / 特性位, 供 framework I/O 路径使用
+//! - **初始化序列**: Reset → Ack → Driver → Feature Negotiate → `Features_OK` → Queue Setup → `Driver_OK`
 //!
 //! ## 与 framework 的分工
 //!
 //! - **services (本文件)**: 初始化序列, 特性协商, 配置空间读取, 包格式定义
-//! - **framework**: VirtQueue 分配与 DMA 缓冲区管理 (需要 unsafe 指针操作)
+//! - **framework**: `VirtQueue` 分配与 DMA 缓冲区管理 (需要 unsafe 指针操作)
 //!
 //! 评估日期: 2026-06-04
 //! Phase 2.1.2 任务: VirtIO-Net 网卡迁移
@@ -29,7 +29,7 @@ use crate::slog_warn;
 // VirtIO-net 常量
 // ============================================================================
 
-/// VirtIO 网络头大小 (12 字节, 旧版与 v1 相同)
+/// `VirtIO` 网络头大小 (12 字节, 旧版与 v1 相同)
 pub const NET_HDR_SIZE: usize = 12;
 
 /// 默认 RX 缓冲区大小 (字节)
@@ -42,23 +42,23 @@ pub const TX_QUEUE_INDEX: u16 = 1;
 
 // ── Feature bits ──
 
-/// VIRTIO_NET_F_CSUM: 设备处理校验和
+/// `VIRTIO_NET_F_CSUM`: 设备处理校验和
 pub const VIRTIO_NET_F_CSUM: u64 = 1 << 0;
-/// VIRTIO_NET_F_GUEST_CSUM: 驱动提供校验和
+/// `VIRTIO_NET_F_GUEST_CSUM`: 驱动提供校验和
 pub const VIRTIO_NET_F_GUEST_CSUM: u64 = 1 << 1;
-/// VIRTIO_NET_F_MAC: 设备提供 MAC 地址
+/// `VIRTIO_NET_F_MAC`: 设备提供 MAC 地址
 pub const VIRTIO_NET_F_MAC: u64 = 1 << 5;
-/// VIRTIO_NET_F_GSO: 驱动支持 GSO
+/// `VIRTIO_NET_F_GSO`: 驱动支持 GSO
 pub const VIRTIO_NET_F_GSO: u64 = 1 << 6;
-/// VIRTIO_NET_F_GUEST_TSO4: 驱动接收 TSO4
+/// `VIRTIO_NET_F_GUEST_TSO4`: 驱动接收 TSO4
 pub const VIRTIO_NET_F_GUEST_TSO4: u64 = 1 << 7;
-/// VIRTIO_NET_F_GUEST_TSO6: 驱动接收 TSO6
+/// `VIRTIO_NET_F_GUEST_TSO6`: 驱动接收 TSO6
 pub const VIRTIO_NET_F_GUEST_TSO6: u64 = 1 << 8;
-/// VIRTIO_NET_F_MRG_RXBUF: 合并接收缓冲区
+/// `VIRTIO_NET_F_MRG_RXBUF`: 合并接收缓冲区
 pub const VIRTIO_NET_F_MRG_RXBUF: u64 = 1 << 15;
-/// VIRTIO_NET_F_STATUS: 设备提供链路状态
+/// `VIRTIO_NET_F_STATUS`: 设备提供链路状态
 pub const VIRTIO_NET_F_STATUS: u64 = 1 << 16;
-/// VIRTIO_NET_F_CTRL_VQ: 设备支持控制队列
+/// `VIRTIO_NET_F_CTRL_VQ`: 设备支持控制队列
 pub const VIRTIO_NET_F_CTRL_VQ: u64 = 1 << 17;
 
 // ── 配置空间偏移 (相对于 0x100) ──
@@ -77,10 +77,10 @@ pub const NET_STATUS_LINK_UP: u16 = 1;
 // 网络头结构体
 // ============================================================================
 
-/// VirtIO 网络头 (12 字节, 旧版与 v1 相同).
+/// `VirtIO` 网络头 (12 字节, 旧版与 v1 相同).
 ///
 /// 每个 TX/RX 包前的固定头.
-/// `num_buffers` 仅在协商 VIRTIO_NET_F_MRG_RXBUF 时有意义.
+/// `num_buffers` 仅在协商 `VIRTIO_NET_F_MRG_RXBUF` 时有意义.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VirtioNetHdr {
@@ -96,7 +96,7 @@ pub struct VirtioNetHdr {
     pub csum_start: u16,
     /// 校验和偏移
     pub csum_offset: u16,
-    /// 合并缓冲区数 (MRG_RXBUF)
+    /// 合并缓冲区数 (`MRG_RXBUF`)
     pub num_buffers: u16,
 }
 
@@ -116,16 +116,16 @@ impl VirtioNetHdr {
 // 安全驱动逻辑
 // ============================================================================
 
-/// VirtIO 网络设备安全驱动 (services 层, 0 unsafe)。
+/// `VirtIO` 网络设备安全驱动 (services 层, 0 unsafe)。
 ///
-/// 封装 VirtIO 网络设备的初始化序列与配置读取, 通过 `VirtioDevice` 安全代理访问 MMIO。
-/// DMA 缓冲区管理与 VirtQueue 操作保留在 framework 层。
+/// 封装 `VirtIO` 网络设备的初始化序列与配置读取, 通过 `VirtioDevice` 安全代理访问 MMIO。
+/// DMA 缓冲区管理与 `VirtQueue` 操作保留在 framework 层。
 ///
 /// ## 初始化流程
 ///
 /// 1. `VirtioNetDriver::new(device)` — 验证设备 ID, 执行初始化序列
 /// 2. 读取 MAC 地址与链路状态
-/// 3. framework: 分配 RX/TX VirtQueue 并配置
+/// 3. framework: 分配 RX/TX `VirtQueue` 并配置
 /// 4. `set_driver_ok()` — 设备进入 live 状态
 pub struct VirtioNetDriver {
     /// MMIO 设备传输代理
@@ -136,7 +136,7 @@ pub struct VirtioNetDriver {
     link_up: bool,
     /// 设备支持的特性位
     negotiated_features: u64,
-    /// 协商后的头大小: 10 (现代 VERSION_1) 或 12 (旧版)
+    /// 协商后的头大小: 10 (现代 `VERSION_1`) 或 12 (旧版)
     hdr_size: usize,
     /// RX virtqueue (队列 0)
     rx_vq: VirtQueue,
@@ -145,13 +145,13 @@ pub struct VirtioNetDriver {
 }
 
 impl VirtioNetDriver {
-    /// 创建并初始化 VirtIO 网络设备驱动。
+    /// 创建并初始化 `VirtIO` 网络设备驱动。
     ///
-    /// 验证设备 ID 为网络设备, 执行完整初始化序列 (Reset → Ack → Driver → Feature → Features_OK)。
-    /// 返回 `Some(VirtioNetDriver)` 表示设备就绪, 可继续配置 VirtQueue。
+    /// 验证设备 ID 为网络设备, 执行完整初始化序列 (Reset → Ack → Driver → Feature → `Features_OK`)。
+    /// 返回 `Some(VirtioNetDriver)` 表示设备就绪, 可继续配置 `VirtQueue`。
     ///
     /// # 参数
-    /// - `device`: 已探测到的 VirtIO 设备 (device_id 必须为 DEVICE_ID_NET)
+    /// - `device`: 已探测到的 `VirtIO` 设备 (`device_id` 必须为 `DEVICE_ID_NET`)
     pub fn new(device: VirtioDevice) -> Option<Self> {
         if device.device_id() != DEVICE_ID_NET {
             slog_warn!(
@@ -263,7 +263,7 @@ impl VirtioNetDriver {
         })
     }
 
-    /// 设置 DRIVER_OK (设备进入 live 状态).
+    /// 设置 `DRIVER_OK` (设备进入 live 状态).
     ///
     /// 必须在所有 virtqueue 配置完成后调用.
     pub fn set_driver_ok(&self) {
@@ -271,7 +271,7 @@ impl VirtioNetDriver {
         slog_info!(Driver, "virtio-net: DRIVER_OK 已设置");
     }
 
-    /// 获取 MMIO 设备引用 (用于 VirtQueue 配置).
+    /// 获取 MMIO 设备引用 (用于 `VirtQueue` 配置).
     pub fn device(&self) -> &VirtioDevice {
         &self.device
     }
@@ -301,7 +301,7 @@ impl VirtioNetDriver {
         self.hdr_size
     }
 
-    /// 是否为传统模式 (未协商 VERSION_1).
+    /// 是否为传统模式 (未协商 `VERSION_1`).
     pub fn is_legacy(&self) -> bool {
         self.negotiated_features & VIRTIO_F_VERSION_1 == 0
     }
@@ -319,6 +319,9 @@ impl VirtioNetDriver {
     /// # 返回
     /// - `Ok(max_size)`: 队列最大尺寸
     /// - `Err(())`: 配置失败
+    ///
+    /// # Errors
+    /// 当底层 virtio 设备队列配置失败时返回 `Err(())`.
     pub fn setup_queue(
         &self,
         vq_index: u16,
@@ -374,8 +377,12 @@ impl VirtioNetDriver {
 
     /// 发送网络包.
     ///
-    /// `data` 包含完整以太网帧 (不含 VirtIO 头). 框架自动添加头.
+    /// `data` 包含完整以太网帧 (不含 `VirtIO` 头). 框架自动添加头.
     /// 发送完成后 DMA 缓冲区自动释放.
+    ///
+    /// # Errors
+    /// 当 `data` 为空或长度超过 65535 时返回 `Err(())`;
+    /// 当 DMA 缓冲区分配失败或设备未接受描述符时也返回 `Err(())`.
     pub fn send_packet(&mut self, data: &[u8]) -> Result<(), ()> {
         if data.is_empty() || data.len() > 65535 {
             return Err(());
@@ -383,12 +390,9 @@ impl VirtioNetDriver {
 
         // DMA 缓冲区: VirtIO 头 + 帧数据
         let total = self.hdr_size + data.len();
-        let mut dma = match DmaBuffer::new(total) {
-            Some(b) => b,
-            None => {
-                slog_warn!(Driver, "virtio-net: TX DMA 缓冲区分配失败");
-                return Err(());
-            }
+        let mut dma = if let Some(b) = DmaBuffer::new(total) { b } else {
+            slog_warn!(Driver, "virtio-net: TX DMA 缓冲区分配失败");
+            return Err(());
         };
 
         // 清零 VirtIO 网络头 (safe: 通过 DmaBuffer)
@@ -432,7 +436,7 @@ impl VirtioNetDriver {
 
     /// 尝试接收一个网络包.
     ///
-    /// 将包数据 (不含 VirtIO 头) 复制到 `buf`, 返回实际拷贝的字节数.
+    /// 将包数据 (不含 `VirtIO` 头) 复制到 `buf`, 返回实际拷贝的字节数.
     /// 无包可读时返回 0. 内部自动回收并重新填充 RX 描述符.
     pub fn try_receive(&mut self, _buf: &mut [u8]) -> usize {
         let result = match self.rx_vq.pop_used() {

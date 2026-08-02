@@ -71,11 +71,11 @@ impl HvMetaslab {
         for b in start..start + nblocks {
             self.clear_bit(b);
         }
-        let offset = self.start + (start as u64) * HV_MS_BLOCK_SIZE;
+        let offset = self.start + u64::from(start) * HV_MS_BLOCK_SIZE;
         self.allocated
-            .fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+            .fetch_add(u64::from(nblocks) * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.free_space
-            .fetch_sub(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+            .fetch_sub(u64::from(nblocks) * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.update_weight();
         Some(offset)
     }
@@ -90,9 +90,9 @@ impl HvMetaslab {
             }
         }
         self.freed
-            .fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+            .fetch_add(u64::from(nblocks) * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.free_space
-            .fetch_add(nblocks as u64 * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
+            .fetch_add(u64::from(nblocks) * HV_MS_BLOCK_SIZE, Ordering::Relaxed);
         self.update_weight();
     }
 

@@ -1,24 +1,24 @@
 //! clone — 线程创建系统调用 (TCB)
 //!
-//! Linux clone() 是 fork() 的超集, 支持细粒度资源共享:
-//! - CLONE_VM: 共享地址空间 (线程)
-//! - CLONE_FS: 共享文件系统信息
-//! - CLONE_FILES: 共享文件描述符表
-//! - CLONE_SIGHAND: 共享信号处理
-//! - CLONE_THREAD: 同一线程组
-//! - CLONE_PARENT: 共享父进程
+//! Linux `clone()` 是 `fork()` 的超集, 支持细粒度资源共享:
+//! - `CLONE_VM`: 共享地址空间 (线程)
+//! - `CLONE_FS`: 共享文件系统信息
+//! - `CLONE_FILES`: 共享文件描述符表
+//! - `CLONE_SIGHAND`: 共享信号处理
+//! - `CLONE_THREAD`: 同一线程组
+//! - `CLONE_PARENT`: 共享父进程
 //!
 //! ## 实现策略
 //!
 //! 当前简化实现:
-//! - CLONE_VM: 子进程共享父进程的页表 (不 COW)
+//! - `CLONE_VM`: 子进程共享父进程的页表 (不 COW)
 //! - 其他标志: 忽略 (子进程独立拷贝)
-//! - 无 CLONE_VM: 等同于 fork (COW)
+//! - 无 `CLONE_VM`: 等同于 fork (COW)
 //!
 //! # Safety
 //!
 //! - 页表操作需要 VMM 锁
-//! - 进程表操作需要 PROCESS_TABLE 锁
+//! - 进程表操作需要 `PROCESS_TABLE` 锁
 //! - 栈指针必须指向用户空间
 
 use crate::kernel::framework::proc::api;
@@ -49,13 +49,13 @@ pub const CLONE_NEWUSER: u64 = 0x10000000;    // User namespace
 pub const CLONE_NEWPID: u64 = 0x20000000;     // PID namespace
 pub const CLONE_NEWNET: u64 = 0x40000000;     // Network namespace
 pub const CLONE_NEWCGROUP: u64 = 0x02000000;  // Cgroup namespace
-/// 所有 CLONE_NEW* 掩码
+/// 所有 `CLONE_NEW`* 掩码
 pub const CLONE_NEW_ALL: u64 =
     CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP;
 
 /// clone 系统调用实现
 ///
-/// `flags`: 克隆标志 (CLONE_VM | CLONE_FS | ...)
+/// `flags`: 克隆标志 (`CLONE_VM` | `CLONE_FS` | ...)
 /// `child_stack`: 子进程的用户栈地址 (0 = 与父进程相同)
 /// `parent_tidptr`: 父进程 TID 指针
 /// `child_tidptr`: 子进程 TID 指针
@@ -103,7 +103,7 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
             });
         }
 
-        return child_pid as i64;
+        return i64::from(child_pid);
     }
 
     // CLONE_VM: 共享地址空间 (创建线程)
@@ -168,12 +168,9 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
     }
 
     // 复制上下文, 修改 RAX=0 (子进程返回 0)
-    let parent_ctx = match api::process_with(parent_pid, |p| *p.context.lock()) {
-        Some(ctx) => ctx,
-        None => {
-            crate::klog_error!("clone: 父进程 {} 在进程表中未找到", parent_pid);
-            return Errno::ESRCH.as_ret();
-        }
+    let parent_ctx = if let Some(ctx) = api::process_with(parent_pid, |p| *p.context.lock()) { ctx } else {
+        crate::klog_error!("clone: 父进程 {} 在进程表中未找到", parent_pid);
+        return Errno::ESRCH.as_ret();
     };
     {
         let mut child_ctx = child.context.lock();
@@ -211,5 +208,5 @@ pub fn sys_clone(flags: u64, child_stack: u64, parent_tidptr: u64, _child_tidptr
 
     crate::klog_debug!(Process, "[clone] parent={} child={} flags=0x{:X} (CLONE_VM)", parent_pid, child_pid, flags);
 
-    child_pid as i64
+    i64::from(child_pid)
 }

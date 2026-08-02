@@ -10,13 +10,18 @@
 //!
 //! - services 层验证标量参数 (size/op/fd/maxevents)
 //! - 原始指针 (`*const EpollEvent` / `*mut EpollEvent`) 委托给 framework 层
-//!   (指针合法性由 syscall 入口 check_user_ptr 保证)
+//!   (指针合法性由 syscall 入口 `check_user_ptr` 保证)
 
 use crate::kernel::framework::syscall::Errno;
 
-/// epoll_create 安全代理
+/// `epoll_create` 安全代理
 ///
 /// 验证: size > 0
+///
+/// # Errors
+///
+/// - `size <= 0` → `EINVAL`
+/// - 底层 `sys_epoll_create` 返回负值时转换为对应的 `Errno`
 pub fn epoll_create_syscall(size: i32) -> Result<usize, Errno> {
     if size <= 0 {
         return Err(Errno::EINVAL);
@@ -29,9 +34,16 @@ pub fn epoll_create_syscall(size: i32) -> Result<usize, Errno> {
     }
 }
 
-/// epoll_ctl 安全代理
+/// `epoll_ctl` 安全代理
 ///
 /// 验证: op 有效 (ADD/DEL/MOD), fd >= 0
+///
+/// # Errors
+///
+/// - `op` 不是 ADD/DEL/MOD 之一 → `EINVAL`
+/// - `fd < 0` → `EBADF`
+/// - ADD/MOD 操作 `event` 为空指针 → `EFAULT`
+/// - 底层 `sys_epoll_ctl` 返回负值时转换为对应的 `Errno`
 pub fn epoll_ctl_syscall(
     epfd: i64,
     op: i32,
@@ -66,9 +78,15 @@ pub fn epoll_ctl_syscall(
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
 }
 
-/// epoll_wait 安全代理
+/// `epoll_wait` 安全代理
 ///
 /// 验证: maxevents > 0
+///
+/// # Errors
+///
+/// - `maxevents <= 0` → `EINVAL`
+/// - `events` 为空指针 → `EFAULT`
+/// - 底层 `sys_epoll_wait` 返回负值时转换为对应的 `Errno`
 pub fn epoll_wait_syscall(
     epfd: i64,
     events: u64,    // 原始指针, 委托 framework 处理

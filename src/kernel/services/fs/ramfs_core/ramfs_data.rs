@@ -6,9 +6,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::fs::*;
+use crate::kernel::framework::fs::{VfsFileType, VFS_MAX_NAME, VfsStat, VfsSeekWhence};
 use crate::kernel::services::fs::dcache;
-use super::ramfs_node::*;
+use super::ramfs_node::{RamFsNode, RamFsACE, RamFsDirEntry};
 use super::{DIRECT_BLOCKS, INDIRECT_BLOCKS_PER_BLOCK, RAMFS_BLOCK_SIZE, RAMFS_MAX_NODES, RAMFS_MAX_BLOCKS, RAMFS_MAX_ACES, SENSITIVITY_PUBLIC, FS_CAP_READ, FS_CAP_WRITE, FS_CAP_CREATE};
 
 pub struct RamFsData {
@@ -313,7 +313,7 @@ impl RamFsData {
         }
 
         let ino = node.node_id;
-        for ace in self.aces.iter() {
+        for ace in &self.aces {
             if ace.used && ace.node_id == ino {
                 if ace.pwm == 0 || ace.pwm == pwm {
                     if (ace.deny_mask & cap) != 0 {
@@ -529,7 +529,7 @@ impl RamFsData {
         }
 
         let mut bytes_read = 0usize;
-        let node_size = node.size as u64;
+        let node_size = u64::from(node.size);
 
         while bytes_read < buf.len() && *offset < node_size {
             let block_idx = (*offset as usize) / RAMFS_BLOCK_SIZE;
@@ -606,7 +606,7 @@ impl RamFsData {
             bytes_written += bytes_to_write;
             *offset += bytes_to_write as u64;
 
-            if *offset > self.nodes[node_id as usize].size as u64 {
+            if *offset > u64::from(self.nodes[node_id as usize].size) {
                 self.nodes[node_id as usize].size = *offset as u32;
             }
         }
@@ -636,7 +636,7 @@ impl RamFsData {
         }
 
         let mut bytes_read = 0usize;
-        let node_size = node.size as u64;
+        let node_size = u64::from(node.size);
         let mut current_offset = offset;
 
         while bytes_read < buf.len() && current_offset < node_size {
@@ -718,7 +718,7 @@ impl RamFsData {
             bytes_written += bytes_to_write;
             current_offset += bytes_to_write as u64;
 
-            if current_offset > self.nodes[node_id as usize].size as u64 {
+            if current_offset > u64::from(self.nodes[node_id as usize].size) {
                 self.nodes[node_id as usize].size = current_offset as u32;
             }
         }
@@ -731,6 +731,10 @@ impl RamFsData {
     }
 
     /// 获取节点 stat 信息 (供 Inode stat 使用)
+    ///
+    /// # Errors
+    /// 当 `node_id` 超出节点表范围时返回 `InvalidArgument`;
+    /// 当节点未使用 (不存在) 时返回 `FileNotFound`.
     pub fn get_stat(&self, node_id: u32, _pwm: u64) -> crate::kernel::services::fs::vfs_types::KernelResult<VfsStat> {
         use crate::kernel::services::fs::vfs_types::KernelError as KE;
         if node_id as usize >= RAMFS_MAX_NODES {
@@ -773,7 +777,7 @@ impl RamFsData {
         }
         let old_size = {
             let node = &self.nodes[node_id as usize];
-            node.size as u64
+            u64::from(node.size)
         };
 
         if new_size == old_size {
@@ -1241,7 +1245,7 @@ impl RamFsData {
             return None;
         }
 
-        let file_size = node.size as i64;
+        let file_size = i64::from(node.size);
 
         let new_offset = match whence {
             VfsSeekWhence::Set => offset,

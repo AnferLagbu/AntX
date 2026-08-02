@@ -18,12 +18,12 @@ pub use fw::PiMutex;
 // 错误
 // ============================================================================
 
-/// PI Mutex 操作错误 — TD-20: 收敛到 KernelError, 2 字段 PI 特有 + 1 共享包装.
+/// PI Mutex 操作错误 — TD-20: 收敛到 `KernelError`, 2 字段 PI 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `NotOwner`: 当前线程非持有者 (双重释放风险)
 ///   - `Exhausted`: 资源耗尽 (无空闲槽位)
-///   - `Kernel(KernelError)`: 共享错误 (WouldBlock) 走单一来源
+///   - `Kernel(KernelError)`: 共享错误 (`WouldBlock`) 走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PiMutexError {
     /// 当前线程非持有者 (双重释放)
@@ -56,10 +56,14 @@ pub type PiMutexResult<T> = Result<T, PiMutexError>;
 ///
 /// # 参数
 /// - `my_pid`: 当前线程 PID
-/// - `my_base_priority`: 当前线程的 base_priority
+/// - `my_base_priority`: 当前线程的 `base_priority`
 ///
 /// # 返回
 /// RAII 守卫, drop 时自动释放
+///
+/// # Errors
+///
+/// 当前实现中 `lock()` 内部自旋直到获取成功, 不会返回 `Err`.
 pub fn lock<T>(mutex: &PiMutex<T>, my_pid: u32, my_base_priority: u32) -> PiMutexResult<fw::PiMutexGuard<'_, T>> {
     // PI Mutex 的 lock 永不返回 WouldBlock, 内部自旋直到获取
     // 但若要区分错误, 可包装一层
@@ -71,6 +75,10 @@ pub fn lock<T>(mutex: &PiMutex<T>, my_pid: u32, my_base_priority: u32) -> PiMute
 }
 
 /// 尝试获取锁 (非阻塞)
+///
+/// # Errors
+///
+/// 当锁被其他线程持有时返回 `PiMutexError::Kernel(WouldBlock)`.
 pub fn try_lock<T>(mutex: &PiMutex<T>, my_pid: u32, my_base_priority: u32) -> PiMutexResult<fw::PiMutexGuard<'_, T>> {
     if mutex.try_lock(my_pid, my_base_priority) {
         Ok(mutex.lock(my_pid, my_base_priority))

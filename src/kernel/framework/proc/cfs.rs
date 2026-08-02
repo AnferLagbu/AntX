@@ -3,7 +3,7 @@
 //! ## T1-1 迁移记录
 //!
 //! 策略代码 (权重表 + vruntime 计算 + 时间片计算 + CFS/DL 运行队列)
-//! 已于 2026-06-16 迁移到 services::proc::sched_policy.
+//! 已于 2026-06-16 迁移到 `services::proc::sched_policy`.
 //! 本文件仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::proc::sched_policy::{

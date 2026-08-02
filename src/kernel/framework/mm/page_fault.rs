@@ -19,14 +19,14 @@
 //! ## SAFETY
 //!
 //! - 本模块在 #PF 中断上下文中运行。所有操作必须无阻塞。
-//! - PMM 分配的物理页通过 KERNEL_BASE 转为有效虚拟地址后清零，
+//! - PMM 分配的物理页通过 `KERNEL_BASE` 转为有效虚拟地址后清零，
 //!   确保用户态不会看到脏数据（信息泄漏防护）。
-//! - PAGE_FAULT_COUNT 使用 AtomicU64, 无竞争条件。
+//! - `PAGE_FAULT_COUNT` 使用 `AtomicU64`, 无竞争条件。
 
 use super::pmm;
 use super::vma::{MmStruct, Vma, VmaType};
 use super::vmm;
-use super::*;
+use super::{VirtAddr, PAGE_SIZE, PageFlags, PhysAddr};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +65,8 @@ const USER_STACK_TOP: u64 = 0x0000_7FFF_FFFF_F000;
 const USER_STACK_DEFAULT_SIZE: u64 = 0x0080_0000; // 8MB
 const USER_STACK_GUARD_PAGES: u64 = 1; // 1 page guard
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub fn handle_page_fault(mm: &MmStruct, info: PageFaultInfo) -> PfResult {
     let addr = info.fault_addr as usize;
 
@@ -93,6 +95,8 @@ pub fn handle_page_fault(mm: &MmStruct, info: PageFaultInfo) -> PfResult {
 ///
 /// 从汇编层保存的 `USER_CR3_SAVE` 读取用户页表 PML4 物理地址.
 /// 汇编在 KPTI 切换前将硬件 CR3 写入此变量.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
     let user_cr3 = super::read_user_cr3_asm();
     let addr = info.fault_addr as usize;
@@ -149,6 +153,8 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
     PfResult::SignalSegv
 }
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
@@ -183,6 +189,8 @@ fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
     PfResult::Fixed
 }
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user_cr3: u64) -> PfResult {
     let aligned = (info.fault_addr as usize) & !(PAGE_SIZE as usize - 1);
 
@@ -220,6 +228,8 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user
 }
 
 /// 文件映射缺页处理: 从 Page Cache 获取/创建缓存页
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize, user_cr3: u64) -> PfResult {
     let page_index = ((aligned - vma.start) as u64 + vma.offset) / PAGE_SIZE;
 
@@ -324,6 +334,8 @@ fn is_stack_expansion_candidate(addr: usize) -> bool {
     (USER_STACK_TOP - USER_STACK_DEFAULT_SIZE..USER_STACK_TOP).contains(&a)
 }
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
@@ -378,6 +390,8 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult
 
 // ── COW (Copy-on-Write) ──
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn do_cow_copy_with_mm(_mm: &MmStruct, _vma: &Vma, addr: usize, user_cr3: u64) -> PfResult {
     let vmm_inst = vmm::get_vmm();
     let pml4 = user_cr3;

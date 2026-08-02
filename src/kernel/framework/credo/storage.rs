@@ -4,7 +4,7 @@
 //! 支持从 v4 格式迁移.
 
 use super::identity;
-use super::types::*;
+use super::types::{PWM_NOTE_LEN, PWM_HASH_LEN, PwmEntry, MAX_PWM_ENTRIES};
 use core::sync::atomic::Ordering;
 
 const DB_PATH: &str = "/pwm.db";
@@ -41,6 +41,8 @@ fn path_to_bytes(s: &str) -> [u8; 128] {
     buf
 }
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn w32(buf: &mut [u8], p: &mut usize, v: u32) {
     buf[*p] = v as u8;
     buf[*p + 1] = (v >> 8) as u8;
@@ -48,12 +50,16 @@ fn w32(buf: &mut [u8], p: &mut usize, v: u32) {
     buf[*p + 3] = (v >> 24) as u8;
     *p += 4;
 }
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn w64(buf: &mut [u8], p: &mut usize, v: u64) {
     for i in 0..8 {
         buf[*p + i] = (v >> (i * 8)) as u8;
     }
     *p += 8;
 }
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn w16(buf: &mut [u8], p: &mut usize, v: u16) {
     buf[*p] = v as u8;
     buf[*p + 1] = (v >> 8) as u8;
@@ -65,23 +71,23 @@ fn w8(buf: &mut [u8], p: &mut usize, v: u8) {
 }
 
 fn r32(buf: &[u8], p: &mut usize) -> u32 {
-    let v = buf[*p] as u32
-        | (buf[*p + 1] as u32) << 8
-        | (buf[*p + 2] as u32) << 16
-        | (buf[*p + 3] as u32) << 24;
+    let v = u32::from(buf[*p])
+        | u32::from(buf[*p + 1]) << 8
+        | u32::from(buf[*p + 2]) << 16
+        | u32::from(buf[*p + 3]) << 24;
     *p += 4;
     v
 }
 fn r64(buf: &[u8], p: &mut usize) -> u64 {
     let mut v = 0u64;
     for i in 0..8 {
-        v |= (buf[*p + i] as u64) << (i * 8);
+        v |= u64::from(buf[*p + i]) << (i * 8);
     }
     *p += 8;
     v
 }
 fn r16(buf: &[u8], p: &mut usize) -> u16 {
-    let v = buf[*p] as u16 | (buf[*p + 1] as u16) << 8;
+    let v = u16::from(buf[*p]) | u16::from(buf[*p + 1]) << 8;
     *p += 2;
     v
 }
@@ -158,6 +164,8 @@ fn deserialize(
     ))
 }
 
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn save_database() -> i32 {
     let t = identity::get_table();
     if !t.is_modified() {
@@ -210,6 +218,8 @@ pub fn save_database() -> i32 {
     0
 }
 
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn load_database() -> i32 {
     let path = path_to_bytes(DB_PATH);
     let fd = raw::vfs_open(as_cstr(&path), O_RDONLY, 0);
@@ -374,7 +384,7 @@ pub fn remove_database() -> i32 {
 // ============================================================================
 
 pub(crate) mod raw {
-    use super::*;
+    use super::{vfs_open_internal, vfs_close_internal, vfs_write_internal, vfs_read_internal, vfs_unlink_internal};
 
     /// VFS open 包装 (调用方负责 path 指针有效)
     pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {

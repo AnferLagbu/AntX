@@ -5,7 +5,7 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全
-//! - 委托 framework/fs/vfs::api 完成
+//! - 委托 `framework/fs/vfs::api` 完成
 //! - rename 需校验两个路径指针
 //! - time 需校验 buf 长度 (8 字节)
 
@@ -20,6 +20,11 @@ use crate::kernel::framework::syscall::Errno;
 // ============================================================================
 
 /// rename(oldpath, newpath) — 重命名/移动文件
+///
+/// # Errors
+/// 当任一路径指针为空或不在用户可访问范围内时返回 `EFAULT`;
+/// 当 `oldpath` 与 `newpath` 相同时返回 `EINVAL`;
+/// 其余错误 (如源不存在、无权限等) 以对应的 `Errno` 返回.
 pub fn rename_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> {
     if oldpath_ptr == 0 || newpath_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -40,7 +45,7 @@ pub fn rename_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno
         pwm,
     );
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }
@@ -50,17 +55,23 @@ pub fn rename_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno
 // sync / fsync
 // ============================================================================
 
-/// sync() — 将所有挂载文件系统的缓存写回
+/// `sync()` — 将所有挂载文件系统的缓存写回
+///
+/// # Errors
+/// 当底层同步失败时以对应的 `Errno` 返回.
 pub fn sync_syscall() -> Result<usize, Errno> {
     let r = fw::vfs_sync();
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }
 }
 
 /// fsync(fd) — 将指定 fd 的数据写回
+///
+/// # Errors
+/// 当 `fd` 为负数时返回 `EBADF`; 当底层同步失败时以对应的 `Errno` 返回.
 pub fn fsync_syscall(fd: i32) -> Result<usize, Errno> {
     if fd < 0 {
         return Err(Errno::EBADF);
@@ -68,7 +79,7 @@ pub fn fsync_syscall(fd: i32) -> Result<usize, Errno> {
     // Framekernel 简化: vfs_sync() 同步所有 FS, fsync 等同 sync.
     let r = fw::vfs_sync();
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }
@@ -81,6 +92,9 @@ pub fn fsync_syscall(fd: i32) -> Result<usize, Errno> {
 /// time(tloc) — 返回自 Epoch 起的秒数
 ///
 /// Framekernel 简化: 返回 ticks (非真实秒), 用户态需自行换算.
+///
+/// # Errors
+/// 当 `tloc_ptr` 非空但越界或写入用户空间失败时返回 `EFAULT`.
 pub fn time_syscall(tloc_ptr: u64) -> Result<usize, Errno> {
     let ticks = raw::get_ticks();
     if tloc_ptr != 0 {
@@ -99,6 +113,9 @@ pub fn time_syscall(tloc_ptr: u64) -> Result<usize, Errno> {
 // ============================================================================
 
 /// fchown(fd, owner, group) — 按 fd 修改文件所有者
+///
+/// # Errors
+/// 当 `fd` 为负数时返回 `EBADF`; 其余错误 (如无权限等) 以对应的 `Errno` 返回.
 pub fn fchown_syscall(fd: i32, owner: u64, group: u64) -> Result<usize, Errno> {
     if fd < 0 {
         return Err(Errno::EBADF);
@@ -106,7 +123,7 @@ pub fn fchown_syscall(fd: i32, owner: u64, group: u64) -> Result<usize, Errno> {
     let pwm = current_pwm()?;
     let r = fw::vfs_fchown(fd as u32, owner, group, pwm);
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }
@@ -129,7 +146,7 @@ struct Tms {
 impl Tms {
 }
 
-/// itimerval 结构体 (POSIX): {it_interval, it_value} 各为 {tv_sec, tv_usec}
+/// itimerval 结构体 (POSIX): {`it_interval`, `it_value`} 各为 {`tv_sec`, `tv_usec`}
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct Timeval {
@@ -161,9 +178,12 @@ impl Itimerval {
 
 /// times(buf) — 读取当前进程 user/sys 时间与子进程时间.
 ///
-/// 真实实现: 通过 framework/proc/api::proc_get_times 读取已累计的 jiffies,
+/// 真实实现: 通过 `framework/proc/api::proc_get_times` 读取已累计的 jiffies,
 /// 写入用户态 tms 结构体 (16 字节, cutime/cstime 暂为 0 因 Framekernel 暂未实现
 /// 父进程对已退出子进程的 wait 回收统计, 但接口形状完整).
+///
+/// # Errors
+/// 当 `buf_ptr` 非空但越界、底层读取失败或写入用户空间失败时返回 `EFAULT`.
 pub fn times_syscall(buf_ptr: u64) -> Result<usize, Errno> {
     if buf_ptr != 0 && !raw::check_user_buf(buf_ptr, 16) {
         return Err(Errno::EFAULT);
@@ -186,8 +206,12 @@ pub fn times_syscall(buf_ptr: u64) -> Result<usize, Errno> {
 }
 
 /// getitimer(which, value) — 读取间隔定时器.
-/// Framekernel 实现 ITIMER_REAL (which==0); VIRTUAL/PROF (which==1/2) 返 ENOSYS;
+/// Framekernel 实现 `ITIMER_REAL` (which==0); VIRTUAL/PROF (which==1/2) 返 ENOSYS;
 /// 其他 (which==3 保留) 返 EINVAL.
+///
+/// # Errors
+/// 当 `which` 超出 0..=3 范围时返回 `EINVAL`; 当 `value_ptr` 为空或越界时返回 `EFAULT`;
+/// 当 `which` 为 `ITIMER_VIRTUAL`/`ITIMER_PROF` 时返回 `ENOSYS`.
 pub fn getitimer_syscall(which: i32, value_ptr: u64) -> Result<usize, Errno> {
     if !(0..=3).contains(&which) {
         return Err(Errno::EINVAL);
@@ -221,7 +245,11 @@ pub fn getitimer_syscall(which: i32, value_ptr: u64) -> Result<usize, Errno> {
 }
 
 /// setitimer(which, new, old) — 设置间隔定时器.
-/// Framekernel 实现 ITIMER_REAL (which==0); 其他返 EINVAL/ENOSYS.
+/// Framekernel 实现 `ITIMER_REAL` (which==0); 其他返 EINVAL/ENOSYS.
+///
+/// # Errors
+/// 当 `which` 超出 0..=3 范围时返回 `EINVAL`; 当 `which` 非 0 时返回 `ENOSYS`;
+/// 当 `new_ptr` 为空/越界、`old_ptr` 越界、读取/写入用户空间失败或底层设置失败时返回 `EFAULT`.
 pub fn setitimer_syscall(
     which: i32,
     new_ptr: u64,
@@ -272,9 +300,12 @@ pub fn setitimer_syscall(
 
 /// alarm(seconds) — 设置 SIGALRM 触发间隔 (秒), 返回旧剩余时间 (秒).
 ///
-/// 真实实现: 通过 framework/proc/api::proc_alarm 在 Process 维护的
-/// alarm_deadline (jiffies) 上做加/减. 调度器 tick 时由 proc_check_alarm
-/// 检查并通过 do_signal_send(SIGALRM) 投递信号.
+/// 真实实现: 通过 `framework/proc/api::proc_alarm` 在 Process 维护的
+/// `alarm_deadline` (jiffies) 上做加/减. 调度器 tick 时由 `proc_check_alarm`
+/// 检查并通过 `do_signal_send(SIGALRM)` 投递信号.
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 底层 `proc_alarm` 的错误被忽略.
 pub fn alarm_syscall(seconds: u32) -> Result<usize, Errno> {
     let pid = current_pid();
     let prev = proc_fw::proc_alarm(pid, seconds);
@@ -285,7 +316,7 @@ pub fn alarm_syscall(seconds: u32) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())
 }

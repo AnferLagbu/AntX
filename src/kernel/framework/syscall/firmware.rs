@@ -2,7 +2,7 @@
 //!
 //! - `sys_fw_load(node_id, path_ptr, path_len, version)`  // 函数原型
 //!   从用户态路径读取文件, 附着到 ChitinNode.firmware
-//! - `sys_fw_get_info(node_id, info_ptr)` — 拷贝 FirmwareInfo 到用户态
+//! - `sys_fw_get_info(node_id, info_ptr)` — 拷贝 `FirmwareInfo` 到用户态
 //! - `sys_fw_get(node_id, buf_ptr, buf_len, offset)` — 按 offset 拷贝到用户态缓冲
 //! - `sys_fw_detach(node_id)` — 移除固件
 //!
@@ -10,7 +10,7 @@
 //!
 //! - 用户态指针经 `check_user_ptr` / `validate_user_buf` 校验后再拷贝
 //! - 路径最长 4096 字节, 超过返回 -EINVAL
-//! - 读取走 services/fs::open + framework/io::vfs_read
+//! - 读取走 `services/fs::open` + `framework/io::vfs_read`
 
 use crate::kernel::framework::chitin::{
     devtree_attach_firmware, devtree_detach_firmware, devtree_get_firmware,
@@ -60,9 +60,9 @@ unsafe fn write_user_bytes(ptr: u64, data: &[u8]) -> bool {
     true
 }
 
-/// 打开文件并读取全部内容 (上限 MAX_FIRMWARE_SIZE)
+/// 打开文件并读取全部内容 (上限 `MAX_FIRMWARE_SIZE`)
 ///
-/// 使用 framework::fs::api::vfs_open / vfs_read
+/// 使用 `framework::fs::api::vfs_open` / `vfs_read`
 fn read_path_data(path: &[u8]) -> Result<Vec<u8>, i64> {
     // 路径必须为 C 字符串 (NUL 结尾); 检查并补齐 NUL
     let mut path_z: Vec<u8> = path.to_vec();
@@ -82,11 +82,11 @@ fn read_path_data(path: &[u8]) -> Result<Vec<u8>, i64> {
     let mut tmp = alloc::vec![0u8; FW_BUF_SIZE];
     loop {
         if out.len() + tmp.len() > MAX_FIRMWARE_SIZE {
-            return Err(FW_ERR_TOO_LARGE as i64);
+            return Err(i64::from(FW_ERR_TOO_LARGE));
         }
         let n = vfs_read(fd as u32, tmp.as_mut_ptr(), tmp.len() as u32);
         if n < 0 {
-            return Err(FW_ERR_IO as i64);
+            return Err(i64::from(FW_ERR_IO));
         }
         if n == 0 {
             break;
@@ -97,9 +97,9 @@ fn read_path_data(path: &[u8]) -> Result<Vec<u8>, i64> {
     Ok(out)
 }
 
-/// sys_fw_load: 从用户态路径读取并附着固件到 node
+/// `sys_fw_load`: 从用户态路径读取并附着固件到 node
 ///
-/// a0=node_id, a1=path_ptr, a2=path_len, a3=version  // 寄存器约定
+/// `a0=node_id`, `a1=path_ptr`, `a2=path_len`, a3=version  // 寄存器约定
 pub fn sys_fw_load(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     let node_id = a0 as u32;
     let path_len = a2 as usize;
@@ -124,7 +124,7 @@ pub fn sys_fw_load(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     };
 
     if data.len() > MAX_FIRMWARE_SIZE {
-        return FW_ERR_TOO_LARGE as i64;
+        return i64::from(FW_ERR_TOO_LARGE);
     }
 
     // 计算 name hash (使用路径最后一个分量为 "name")
@@ -139,13 +139,13 @@ pub fn sys_fw_load(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if devtree_attach_firmware(node_id, data, name_hash, version) {
         0
     } else {
-        FW_ERR_NOT_FOUND as i64
+        i64::from(FW_ERR_NOT_FOUND)
     }
 }
 
-/// sys_fw_get_info: 将 FirmwareInfo 写入用户态 info 指针
+/// `sys_fw_get_info`: 将 `FirmwareInfo` 写入用户态 info 指针
 ///
-/// a0=node_id, a1=info_ptr
+/// `a0=node_id`, `a1=info_ptr`
 pub fn sys_fw_get_info(a0: u64, a1: u64) -> i64 {
     let node_id = a0 as u32;
     if !raw_sync::check_user_buf(a1, core::mem::size_of::<FirmwareInfo>() as u64) {
@@ -153,7 +153,7 @@ pub fn sys_fw_get_info(a0: u64, a1: u64) -> i64 {
     }
     let blob = match devtree_get_firmware(node_id) {
         Some(b) => b,
-        None => return FW_ERR_NOT_FOUND as i64,
+        None => return i64::from(FW_ERR_NOT_FOUND),
     };
     let info = FirmwareInfo {
         size: blob.size() as u32,
@@ -177,18 +177,18 @@ pub fn sys_fw_get_info(a0: u64, a1: u64) -> i64 {
     }
 }
 
-/// sys_fw_get: 按 offset 拷贝固件到用户态 buf
+/// `sys_fw_get`: 按 offset 拷贝固件到用户态 buf
 ///
-/// a0=node_id, a1=buf_ptr, a2=buf_len, a3=offset  // 寄存器约定
+/// `a0=node_id`, `a1=buf_ptr`, `a2=buf_len`, a3=offset  // 寄存器约定
 ///
-/// 返回值: 实际拷贝字节数; 失败: 负 errno / FW_ERR_*
+/// 返回值: 实际拷贝字节数; 失败: 负 errno / `FW_ERR`_*
 pub fn sys_fw_get(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     let node_id = a0 as u32;
     let buf_len = a2 as usize;
     let offset = a3 as usize;
 
     if buf_len > MAX_FW_GET_SIZE {
-        return FW_ERR_TOO_LARGE as i64;
+        return i64::from(FW_ERR_TOO_LARGE);
     }
     if buf_len == 0 {
         return 0;
@@ -199,7 +199,7 @@ pub fn sys_fw_get(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 
     let blob = match devtree_get_firmware(node_id) {
         Some(b) => b,
-        None => return FW_ERR_NOT_FOUND as i64,
+        None => return i64::from(FW_ERR_NOT_FOUND),
     };
 
     if offset >= blob.size() {
@@ -217,14 +217,14 @@ pub fn sys_fw_get(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     }
 }
 
-/// sys_fw_detach: 移除节点上的固件
+/// `sys_fw_detach`: 移除节点上的固件
 ///
-/// a0=node_id
+/// `a0=node_id`
 pub fn sys_fw_detach(a0: u64) -> i64 {
     let node_id = a0 as u32;
     if devtree_detach_firmware(node_id) {
         0
     } else {
-        FW_ERR_NOT_FOUND as i64
+        i64::from(FW_ERR_NOT_FOUND)
     }
 }

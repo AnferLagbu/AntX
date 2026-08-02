@@ -1,4 +1,4 @@
-//! PageTableChecker — 页表安全检查器 (TCB)
+//! `PageTableChecker` — 页表安全检查器 (TCB)
 //!
 //! 在页表操作前/后核验一致性, 防止:
 //! - 内核地址映射到用户可访问页
@@ -8,11 +8,11 @@
 //! ## 与 Asterinas OSTD 的关系
 //!
 //! 等价于 OSTD 的 soundness 验证机制 (Miri + Verus)。
-//! QueenX 用 Rust 类型系统 + 运行时断言实现等价安全。
+//! `QueenX` 用 Rust 类型系统 + 运行时断言实现等价安全。
 //!
 //! ## SAFETY 不变量
 //!
-//! - 所有检查为 debug_assert! (release 构建零开销)。
+//! - 所有检查为 `debug_assert`! (release 构建零开销)。
 //! - 不修改页表, 纯只读验证。
 //! - 可在每次 map/unmap 后调用 (性能敏感路径用 feature gate)。
 
@@ -31,8 +31,7 @@ pub fn check_user_boundary(vaddr: VirtAddr, flags: PageFlags) {
     if va >= KERNEL_BASE {
         debug_assert!(
             !flags.contains(PageFlags::USER),
-            "PageTableChecker: kernel address 0x{:x} must not have PAGE_USER flag",
-            va
+            "PageTableChecker: kernel address 0x{va:x} must not have PAGE_USER flag"
         );
     }
 }
@@ -63,7 +62,7 @@ pub fn check_wxorx(vaddr: VirtAddr, flags: PageFlags) {
 /// 检查物理地址是否已映射 (惰性检查)。
 ///
 /// 遍历当前激活的页表, 确认 phys 存在且 flags 匹配。
-/// 仅在 debug_assertions 启用时调用以避免性能开销。
+/// 仅在 `debug_assertions` 启用时调用以避免性能开销。
 pub fn verify_mapping(vaddr: VirtAddr, expected_phys: PhysAddr) {
     let vmm = get_vmm();
     if let Some(actual) = vmm.get_physical(vaddr) {
@@ -86,8 +85,7 @@ pub fn verify_kernel_code_protection(kernel_text_start: VirtAddr, kernel_text_en
             // 仅确认映射存在且物理地址非零。
             debug_assert!(
                 phys.as_u64() != 0,
-                "PageTableChecker: kernel code vaddr 0x{:x} has null phys mapping",
-                addr
+                "PageTableChecker: kernel code vaddr 0x{addr:x} has null phys mapping"
             );
         }
         addr += PAGE_SIZE as u64;

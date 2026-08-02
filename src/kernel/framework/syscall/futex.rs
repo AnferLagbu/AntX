@@ -15,7 +15,7 @@
 //!
 //! # Safety
 //!
-//! - `uaddr` 必须是合法的用户空间指针, 在 syscall 入口已通过 check_user_ptr 验证
+//! - `uaddr` 必须是合法的用户空间指针, 在 syscall 入口已通过 `check_user_ptr` 验证
 //! - 原子比较使用 `AtomicU32` 访问用户空间, 需确保页表映射有效
 
 use core::sync::atomic::{AtomicU32, AtomicBool, Ordering};
@@ -29,9 +29,9 @@ use core::cell::UnsafeCell;
 pub const FUTEX_WAIT: i32 = 0;
 /// 唤醒: 唤醒最多 val 个等待者
 pub const FUTEX_WAKE: i32 = 1;
-/// 带超时等待 (暂不支持超时, 语义同 FUTEX_WAIT)
+/// 带超时等待 (暂不支持超时, 语义同 `FUTEX_WAIT`)
 pub const FUTEX_WAIT_BITSET: i32 = 9;
-/// 唤醒指定位集 (暂等同于 FUTEX_WAKE)
+/// 唤醒指定位集 (暂等同于 `FUTEX_WAKE`)
 pub const FUTEX_WAKE_BITSET: i32 = 10;
 /// 迁移等待者: 将最多 val 个等待者从 uaddr 迁移到 uaddr2
 pub const FUTEX_REQUEUE: i32 = 3;
@@ -39,7 +39,7 @@ pub const FUTEX_REQUEUE: i32 = 3;
 /// 私有标志: futex 位于进程内共享内存 (同一地址空间)
 pub const FUTEX_PRIVATE_FLAG: i32 = 128;
 
-/// 提取基础操作码 (去掉 PRIVATE/CLOCK_REALTIME 等标志)
+/// 提取基础操作码 (去掉 `PRIVATE/CLOCK_REALTIME` 等标志)
 fn futex_op(op: i32) -> i32 {
     op & !FUTEX_PRIVATE_FLAG & !0x100 // 去掉 FUTEX_CLOCK_REALTIME
 }
@@ -48,7 +48,7 @@ fn futex_op(op: i32) -> i32 {
 // 简易自旋锁 (Interior Mutability)
 // ============================================================================
 
-/// 基于 AtomicBool 的简易自旋锁, 支持 &self 锁定
+/// 基于 `AtomicBool` 的简易自旋锁, 支持 &self 锁定
 struct SimpleSpinLock {
     locked: AtomicBool,
 }
@@ -136,7 +136,7 @@ impl FutexBucket {
         if self.count >= FUTEX_BUCKET_CAPACITY {
             return false;
         }
-        for slot in self.waiters.iter_mut() {
+        for slot in &mut self.waiters {
             if !slot.is_occupied() {
                 *slot = waiter;
                 self.count += 1;
@@ -148,7 +148,7 @@ impl FutexBucket {
 
     /// 移除指定 PID 的等待者
     fn remove_by_pid(&mut self, pid: u32) {
-        for slot in self.waiters.iter_mut() {
+        for slot in &mut self.waiters {
             if slot.pid == pid {
                 *slot = FutexWaiter::empty();
                 self.count -= 1;
@@ -157,10 +157,10 @@ impl FutexBucket {
         }
     }
 
-    /// 唤醒最多 max_count 个等待在 uaddr 上的线程, 返回实际唤醒数
+    /// 唤醒最多 `max_count` 个等待在 uaddr 上的线程, 返回实际唤醒数
     fn wake(&mut self, uaddr: u64, max_count: u32) -> u32 {
         let mut woken = 0u32;
-        for slot in self.waiters.iter_mut() {
+        for slot in &mut self.waiters {
             if slot.is_occupied() && slot.uaddr == uaddr && !slot.woken {
                 slot.woken = true;
                 crate::kernel::framework::proc::process_unblock(slot.pid);
@@ -171,7 +171,7 @@ impl FutexBucket {
             }
         }
         // 清理已唤醒的槽位
-        for slot in self.waiters.iter_mut() {
+        for slot in &mut self.waiters {
             if slot.woken {
                 self.count -= 1;
                 *slot = FutexWaiter::empty();
@@ -180,12 +180,12 @@ impl FutexBucket {
         woken
     }
 
-    /// 迁移等待者: 唤醒 max_wake 个, 迁移 max_requeue 个到 uaddr2
+    /// 迁移等待者: 唤醒 `max_wake` 个, 迁移 `max_requeue` 个到 uaddr2
     fn requeue(&mut self, uaddr: u64, max_wake: u32, uaddr2: u64, max_requeue: u32) -> (u32, u32) {
         let mut woken = 0u32;
         let mut requeued = 0u32;
 
-        for slot in self.waiters.iter_mut() {
+        for slot in &mut self.waiters {
             if !slot.is_occupied() || slot.uaddr != uaddr || slot.woken {
                 continue;
             }
@@ -203,7 +203,7 @@ impl FutexBucket {
         }
 
         // 清理已唤醒的
-        for slot in self.waiters.iter_mut() {
+        for slot in &mut self.waiters {
             if slot.woken {
                 self.count -= 1;
                 *slot = FutexWaiter::empty();
@@ -269,7 +269,7 @@ pub fn sys_futex(
     }
 }
 
-/// FUTEX_WAIT: 原子比较并阻塞
+/// `FUTEX_WAIT`: 原子比较并阻塞
 fn futex_wait(uaddr: u64, val: i32, _timeout: u64) -> i64 {
     // 1. 原子读取用户空间值
     let uaddr_ptr = uaddr as *const AtomicU32;
@@ -326,7 +326,7 @@ fn futex_wait(uaddr: u64, val: i32, _timeout: u64) -> i64 {
     0
 }
 
-/// FUTEX_WAKE: 唤醒等待者
+/// `FUTEX_WAKE`: 唤醒等待者
 fn futex_wake(uaddr: u64, max_count: u32) -> i64 {
     if max_count == 0 {
         return 0;
@@ -342,10 +342,10 @@ fn futex_wake(uaddr: u64, max_count: u32) -> i64 {
         w
     };
 
-    woken as i64
+    i64::from(woken)
 }
 
-/// FUTEX_REQUEUE: 迁移等待者
+/// `FUTEX_REQUEUE`: 迁移等待者
 fn futex_requeue(uaddr: u64, max_wake: u32, uaddr2: u64, max_requeue: u32) -> i64 {
     let bucket_idx = hash_uaddr(uaddr);
     let (woken, requeued) = {
@@ -357,7 +357,7 @@ fn futex_requeue(uaddr: u64, max_wake: u32, uaddr2: u64, max_requeue: u32) -> i6
         r
     };
 
-    (woken + requeued) as i64
+    i64::from(woken + requeued)
 }
 
 // ============================================================================

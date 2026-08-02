@@ -1,6 +1,6 @@
 //! timerfd — 定时器文件描述符 (TCB)
 //!
-//! 实现 Linux timerfd API: timerfd_create / timerfd_settime / timerfd_gettime.
+//! 实现 Linux timerfd API: `timerfd_create` / `timerfd_settime` / `timerfd_gettime`.
 //!
 //! ## 架构
 //!
@@ -26,9 +26,9 @@
 //!
 //! # Safety
 //!
-//! - TimerFdTable 由 IrqSpinLock 保护
-//! - HrTimer 回调在中断上下文执行, 仅递增 expiry_count 和唤醒 epoll
-//! - HrTimer 对象嵌入 TimerFdSlot, 生命周期与槽位一致
+//! - `TimerFdTable` 由 `IrqSpinLock` 保护
+//! - `HrTimer` 回调在中断上下文执行, 仅递增 `expiry_count` 和唤醒 epoll
+//! - `HrTimer` 对象嵌入 `TimerFdSlot`, 生命周期与槽位一致
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -45,16 +45,16 @@ pub const TFD_MAX_SLOTS: usize = 16;
 /// TD-15: FD 空间基址来源已迁移至 `framework::proc::FdPlan::TIMER_FD` 单一来源 (1160),
 /// 不再硬编码 240 (旧值与 smoltcp [0, 256) 重叠).
 pub const TFD_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::TIMER_FD.base;
-/// TFD_CLOEXEC
+/// `TFD_CLOEXEC`
 pub const TFD_CLOEXEC: i32 = 0o2000000;
-/// TFD_NONBLOCK
+/// `TFD_NONBLOCK`
 pub const TFD_NONBLOCK: i32 = 0o4000;
-/// TFD_TIMER_ABSTIME
+/// `TFD_TIMER_ABSTIME`
 pub const TFD_TIMER_ABSTIME: i32 = 1;
 
-/// CLOCK_MONOTONIC
+/// `CLOCK_MONOTONIC`
 pub const CLOCK_MONOTONIC: i32 = 1;
-/// CLOCK_REALTIME
+/// `CLOCK_REALTIME`
 pub const CLOCK_REALTIME: i32 = 0;
 
 /// itimerspec 结构体 (与 Linux 兼容)
@@ -138,10 +138,10 @@ static TFD_COUNT: AtomicU32 = AtomicU32::new(0);
 // 系统调用实现
 // ============================================================================
 
-/// timerfd_create — 创建 timerfd 实例
+/// `timerfd_create` — 创建 timerfd 实例
 ///
-/// `clockid`: CLOCK_MONOTONIC 或 CLOCK_REALTIME
-/// `flags`: TFD_CLOEXEC | TFD_NONBLOCK
+/// `clockid`: `CLOCK_MONOTONIC` 或 `CLOCK_REALTIME`
+/// `flags`: `TFD_CLOEXEC` | `TFD_NONBLOCK`
 /// 返回 fd (≥ 240), 或负 errno
 pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
     // clockid 校验
@@ -184,13 +184,13 @@ pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
     TFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
     crate::klog_debug!(Sync, "[timerfd] Created fd={} clockid={}", fd, clockid);
-    fd as i64
+    i64::from(fd)
 }
 
-/// timerfd_settime — 设置定时器
+/// `timerfd_settime` — 设置定时器
 ///
 /// `fd`: timerfd 文件描述符
-/// `flags`: 0 或 TFD_TIMER_ABSTIME
+/// `flags`: 0 或 `TFD_TIMER_ABSTIME`
 /// `new_value_ptr`: 指向 itimerspec 的用户空间指针
 /// `old_value_ptr`: 指向旧 itimerspec 的用户空间指针 (可为 null)
 /// 返回 0 或负 errno
@@ -292,7 +292,7 @@ pub fn sys_timerfd_settime(fd: i32, flags: i32, new_value_ptr: u64, old_value_pt
     0
 }
 
-/// timerfd_gettime — 获取定时器状态
+/// `timerfd_gettime` — 获取定时器状态
 ///
 /// `fd`: timerfd 文件描述符
 /// `curr_value_ptr`: 指向 itimerspec 的用户空间指针
@@ -409,7 +409,7 @@ pub fn sys_timerfd_close(fd: i32) -> i64 {
 
 /// timerfd 定时器回调
 ///
-/// 在中断上下文执行: 递增 expiry_count, 唤醒 epoll.
+/// 在中断上下文执行: 递增 `expiry_count`, 唤醒 epoll.
 /// 周期定时器: 手动重新入队.
 fn timerfd_callback(timer: &HrTimer) -> HrTimerRestart {
     // 从 timer 指针反推 slot index
@@ -471,7 +471,7 @@ fn timerfd_callback(timer: &HrTimer) -> HrTimerRestart {
 // epoll 集成
 // ============================================================================
 
-/// 检查 timerfd 是否就绪 (供 epoll check_fd_ready 调用)
+/// 检查 timerfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (有到期事件) 或 0
 pub fn timerfd_poll_events(fd: i32) -> u32 {
@@ -502,7 +502,7 @@ pub fn timerfd_poll_events(fd: i32) -> u32 {
 
 /// fd → 槽位索引
 ///
-/// TD-15: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 TFD_FD_BASE 字面量 +
+/// TD-15: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 `TFD_FD_BASE` 字面量 +
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
     match crate::kernel::framework::proc::idx_of(fd) {
@@ -515,7 +515,7 @@ fn fd_to_idx(fd: i32) -> Option<usize> {
 
 /// 检查 fd 是否属于 timerfd 空间
 ///
-/// TD-15: 改走 `fd_alloc::idx_of`, 不再持有 TFD_FD_BASE 字面量 + 算术.
+/// TD-15: 改走 `fd_alloc::idx_of`, 不再持有 `TFD_FD_BASE` 字面量 + 算术.
 pub fn is_timerfd_fd(fd: i32) -> bool {
     matches!(
         crate::kernel::framework::proc::idx_of(fd),

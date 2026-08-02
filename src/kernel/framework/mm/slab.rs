@@ -5,7 +5,7 @@
 //! 基于**伙伴系统 (Buddy System)** 和**位图管理**的 Slab 分配器。
 //! 用于高效的小对象内存分配, 减少内存碎片。
 //!
-//! QueenX 原生 Slab 分配器 — 减少内存碎片, 加速频繁分配/释放
+//! `QueenX` 原生 Slab 分配器 — 减少内存碎片, 加速频繁分配/释放
 //!
 //! **功能复刻 + Rust 增强**:
 //! ✅ **类型安全**: `Slab<T>` 泛型替代 `void*`
@@ -79,7 +79,7 @@ pub(crate) struct SlabHeader {
     /// 是否已满 (所有对象都已分配)
     is_full: bool,
 
-    /// 双向链表指针 (用于挂在 KmemCache 的链表中)
+    /// 双向链表指针 (用于挂在 `KmemCache` 的链表中)
     prev: *mut SlabHeader,
     next: *mut SlabHeader,
 }
@@ -101,11 +101,11 @@ impl Default for SlabHeader {
 //
 // slab 内部涉及的所有裸指针解引用都封装在这里.
 pub(crate) mod raw {
-    use super::*;
+    use super::SlabHeader;
 
     /// `*mut SlabHeader` 的 safe 包装器.
     ///
-    /// SAFETY 不变式: 指针指向 slab 页内合法的 SlabHeader,
+    /// SAFETY 不变式: 指针指向 slab 页内合法的 `SlabHeader`,
     /// 且 slab 锁 (或全局锁) 已持有.
     #[derive(Clone, Copy)]
     pub struct SlabRef(*mut SlabHeader);
@@ -196,7 +196,7 @@ pub(crate) mod raw {
             unsafe { (*self.0).next = p; }
         }
 
-        /// 在该位置写入默认的 SlabHeader.
+        /// 在该位置写入默认的 `SlabHeader`.
         #[inline(always)]
         pub fn write_default(&self) {
             // SAFETY: 调用方保证指针合法
@@ -238,7 +238,7 @@ pub(crate) mod raw {
 use raw::SlabRef;
 use super::PAGE_SIZE;
 
-/// 缓存描述符 (KmemCache)
+/// 缓存描述符 (`KmemCache`)
 ///
 /// 管理一组相同大小的对象。
 /// 内部维护三个 Slab 链表:
@@ -295,6 +295,10 @@ impl KmemCache {
     /// # Returns
     /// * Ok(KmemCache) - 成功创建
     /// * Err(&str) - 错误描述 (大小无效等)
+    ///
+    /// # Errors
+    /// 当 `object_size` 为 0 或超过最大对象大小上限 (`SLAB_MAX_OBJECT_SIZE`) 时,
+    /// 返回 `Err`, 错误描述为 "Invalid object size (zero or exceeds maximum)".
     pub fn create(name: &'static str, object_size: usize) -> Result<Self, &'static str> {
         // T2-3: 大小规范化委托给 SlabPolicy
         let effective_size = super::slab_trait::current_slab_policy()
@@ -320,8 +324,8 @@ impl KmemCache {
 
     /// 计算每个 Slab 可容纳的对象数
     ///
-    /// T2-3: 策略已提取到 slab_trait::SlabPolicy, 本函数保留为内部快捷路径
-    /// (直接调用 current_slab_policy().calculate_objects_per_slab()).
+    /// T2-3: 策略已提取到 `slab_trait::SlabPolicy`, 本函数保留为内部快捷路径
+    /// (直接调用 `current_slab_policy().calculate_objects_per_slab()`).
     fn calculate_objects_per_slab(object_size: usize) -> u32 {
         super::slab_trait::current_slab_policy().calculate_objects_per_slab(
             SLAB_DEFAULT_SIZE,
@@ -402,6 +406,8 @@ impl KmemCache {
     ///
     /// # Arguments
     /// * `obj` - 要释放的对象指针 (必须是从此缓存分配的)
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn deallocate(&mut self, obj: *mut u8) {
         if obj.is_null() {
             return;
@@ -529,6 +535,8 @@ impl KmemCache {
     // ========================================================================
 
     /// 创建新的 Slab (分配一页物理内存)
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn new_slab(&self) -> Option<*mut SlabHeader> {
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
@@ -584,6 +592,8 @@ impl KmemCache {
     }
 
     /// 销毁单个 Slab (释放物理页)
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn destroy_slab(&self, slab: *mut SlabHeader) {
         if slab.is_null() {
             return;
@@ -599,6 +609,8 @@ impl KmemCache {
         }
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn find_free_bit(&self, slab: *mut SlabHeader) -> Option<u32> {
         // SAFETY: slab 来自 find_free_bit 调用方, 是合法 Slab 头; lock 持有中.
         let sr = unsafe { SlabRef::new_unchecked(slab) };
@@ -702,7 +714,7 @@ impl KmemCache {
     /// ✅ 从双向链表中移除节点 (静态方法, 避免借用冲突)
     ///
     /// # Arguments
-    /// * `head` - 链表头指针的可变引用 (如 &mut self.slabs_partial)
+    /// * `head` - 链表头指针的可变引用 (如 &mut `self.slabs_partial`)
     /// * `slab` - 要移除的节点
     #[inline(always)]
     fn list_remove(head: &mut *mut SlabHeader, slab: *mut SlabHeader) {
@@ -806,7 +818,7 @@ impl CacheStats {
         if self.total_objects == 0 {
             0.0
         } else {
-            (self.active_objects as f64 / self.total_objects as f64) * 100.0
+            (f64::from(self.active_objects) / f64::from(self.total_objects)) * 100.0
         }
     }
 }
@@ -824,7 +836,7 @@ static SLAB_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::At
 
 /// 初始化 Slab 系统 (创建通用缓存池)
 ///
-/// **必须在内核启动早期调用一次**, 在任何 slab_alloc/slab_free 之前。
+/// **必须在内核启动早期调用一次**, 在任何 `slab_alloc/slab_free` 之前。
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn slab_system_init() -> i32 {
@@ -845,8 +857,8 @@ pub extern "C" fn slab_system_init() -> i32 {
 
 /// 根据请求大小查找合适的通用缓存索引
 ///
-/// T2-3: 策略已提取到 slab_trait::SlabPolicy, 本函数保留为内部快捷路径
-/// (直接调用 current_slab_policy().find_cache_index()).
+/// T2-3: 策略已提取到 `slab_trait::SlabPolicy`, 本函数保留为内部快捷路径
+/// (直接调用 `current_slab_policy().find_cache_index()`).
 pub(crate) fn find_general_cache_index(size: usize) -> Option<usize> {
     super::slab_trait::current_slab_policy().find_cache_index(size, &GENERAL_CACHE_SIZES)
 }
@@ -866,6 +878,8 @@ pub struct SlabCacheSnapshot {
 
 /// 遍历所有通用缓存, 返回每个缓存的统计快照.
 /// `out` 由调用方提供, 最大写入 `out.len()` 项. 返回实际写入数.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub(crate) fn get_all_cache_snapshots(out: &mut [SlabCacheSnapshot]) -> usize {
     let mut count = 0usize;
     let caches = GENERAL_CACHES.lock();
@@ -965,7 +979,7 @@ pub extern "C" fn slab_get_system_stats(
     for i in 0..GENERAL_CACHE_SIZES.len() {
         if let Some(ref cache) = caches[i] {
             count += 1;
-            total += cache.slab_count as u64 * SLAB_DEFAULT_SIZE as u64;
+            total += u64::from(cache.slab_count) * SLAB_DEFAULT_SIZE as u64;
             used += cache.active_objects() * cache.object_size as u64;
         }
     }

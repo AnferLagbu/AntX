@@ -33,8 +33,8 @@
 //! ## 注意事项
 //!
 //! - mlock 受 `RLIMIT_MEMLOCK` 限制, 超出返回 ENOMEM
-//! - mlock 锁定的页不会被 swap/reclaim, 但会参与 madvise(MADV_PAGEOUT) 的忽略
-//! - 进程退出时由 framework::proc::vma::MmStruct::release 释放所有锁定
+//! - mlock 锁定的页不会被 swap/reclaim, 但会参与 `madvise(MADV_PAGEOUT)` 的忽略
+//! - 进程退出时由 `framework::proc::vma::MmStruct::release` 释放所有锁定
 
 use crate::kernel::framework::proc::madvise_mlock as fw_ml;
 use crate::kernel::framework::mm::PAGE_SIZE;
@@ -161,15 +161,15 @@ impl core::ops::BitOr for MlockAllFlags {
 // 错误
 // ============================================================================
 
-/// madvise/mlock 操作错误 — TD-19: 收敛到 KernelError, 1 字段 mlock 特有 + 1 共享包装.
+/// madvise/mlock 操作错误 — TD-19: 收敛到 `KernelError`, 1 字段 mlock 特有 + 1 共享包装.
 ///
 /// 字段说明:
-///   - `NotMapped`: 当前进程无 MmStruct (kernel thread 路径), 走 ESRCH
+///   - `NotMapped`: 当前进程无 `MmStruct` (kernel thread 路径), 走 ESRCH
 ///   - `Kernel(KernelError)`: 共享错误 (InvalidArgument/BadAddress/OutOfMemory/
 ///     NoResources/PermissionDenied 等) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MlockError {
-    /// 当前进程无 MmStruct (kernel thread 路径)
+    /// 当前进程无 `MmStruct` (kernel thread 路径)
     NotMapped,
     /// 共享 `KernelError` 包装
     Kernel(crate::kernel::services::error::KernelError),
@@ -208,9 +208,13 @@ pub type MlockResult<T> = Result<T, MlockError>;
 
 /// 内存建议 - 用户态包装
 ///
-/// 返回 0 = 成功, MlockError 表示失败原因
+/// 返回 0 = 成功, `MlockError` 表示失败原因
+///
+/// # Errors
+///
+/// 当底层 `madvise` 返回非零时, 将对应 errno 转换为 `MlockError`.
 pub fn madvise(addr: usize, len: usize, advice: Advice) -> MlockResult<()> {
-    let rc = fw_ml::sys_madvise(addr as u64, len as u64, advice.as_u32() as u64);
+    let rc = fw_ml::sys_madvise(addr as u64, len as u64, u64::from(advice.as_u32()));
     if rc == 0 {
         Ok(())
     } else {
@@ -225,6 +229,10 @@ pub fn madvise(addr: usize, len: usize, advice: Advice) -> MlockResult<()> {
 /// 锁定 [addr, addr+len) 物理页
 ///
 /// 受 `RLIMIT_MEMLOCK` 限制. 锁定页不会被 swap/reclaim.
+///
+/// # Errors
+///
+/// 当超出锁定限额、地址非法或内存不足时, 返回对应的 `MlockError`.
 pub fn mlock(addr: usize, len: usize) -> MlockResult<()> {
     let rc = fw_ml::sys_mlock(addr as u64, len as u64);
     if rc == 0 {
@@ -235,6 +243,10 @@ pub fn mlock(addr: usize, len: usize) -> MlockResult<()> {
 }
 
 /// 解除 [addr, addr+len) 物理页锁定
+///
+/// # Errors
+///
+/// 当底层 `munlock` 返回非零时, 返回对应的 `MlockError`.
 pub fn munlock(addr: usize, len: usize) -> MlockResult<()> {
     let rc = fw_ml::sys_munlock(addr as u64, len as u64);
     if rc == 0 {
@@ -248,9 +260,13 @@ pub fn munlock(addr: usize, len: usize) -> MlockResult<()> {
 // API: mlockall / munlockall
 // ============================================================================
 
-/// 进程级锁定 (MCL_CURRENT 锁现有 / MCL_FUTURE 锁未来)
+/// 进程级锁定 (`MCL_CURRENT` 锁现有 / `MCL_FUTURE` 锁未来)
+///
+/// # Errors
+///
+/// 当底层 `mlockall` 返回非零(如超出限额)时, 返回对应的 `MlockError`.
 pub fn mlockall(flags: MlockAllFlags) -> MlockResult<()> {
-    let rc = fw_ml::sys_mlockall(flags.bits() as u64);
+    let rc = fw_ml::sys_mlockall(u64::from(flags.bits()));
     if rc == 0 {
         Ok(())
     } else {
@@ -259,6 +275,10 @@ pub fn mlockall(flags: MlockAllFlags) -> MlockResult<()> {
 }
 
 /// 解除进程级所有锁定
+///
+/// # Errors
+///
+/// 当底层 `munlockall` 返回非零时, 返回对应的 `MlockError`.
 pub fn munlockall() -> MlockResult<()> {
     let rc = fw_ml::sys_munlockall();
     if rc == 0 {
@@ -274,7 +294,12 @@ pub fn munlockall() -> MlockResult<()> {
 
 /// 查询 [addr, addr+len) 每页驻留性
 ///
-/// `vec` 长度必须 >= len / page_size, 每字节 1=驻留 0=未驻留
+/// `vec` 长度必须 >= len / `page_size`, 每字节 1=驻留 0=未驻留
+///
+/// # Errors
+///
+/// 当 `vec` 长度不足以容纳查询结果时返回 `InvalidArgument`; 底层查询
+/// 返回非零时转换为对应的 `MlockError`.
 pub fn mincore(addr: usize, len: usize, vec: &mut [u8]) -> MlockResult<()> {
     let expected_pages = (len + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
     if vec.len() < expected_pages {

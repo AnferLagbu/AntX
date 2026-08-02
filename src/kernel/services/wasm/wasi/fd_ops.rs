@@ -1,7 +1,7 @@
-//! WASI FD 管理与 I/O: fd_close, fd_seek, fd_tell, fd_sync,
-//! fd_prestat_get, fd_prestat_dir_name, fd_stat_get,
-//! fd_read, fd_write, fd_pread, fd_pwrite, fd_allocate, fd_advise,
-//! fd_renumber, fd_dup, fd_readdir
+//! WASI FD 管理与 I/O: `fd_close`, `fd_seek`, `fd_tell`, `fd_sync`,
+//! `fd_prestat_get`, `fd_prestat_dir_name`, `fd_stat_get`,
+//! `fd_read`, `fd_write`, `fd_pread`, `fd_pwrite`, `fd_allocate`, `fd_advise`,
+//! `fd_renumber`, `fd_dup`, `fd_readdir`
 
 use crate::kernel::services::wasm::types::{Value, WasmError};
 use crate::kernel::services::wasm::interpreter::Interpreter;
@@ -12,7 +12,11 @@ use super::fd_table::{read_iovec_from_memory, write_u32_to_memory};
 // G4: FD 管理
 // ============================================================================
 
-/// WASI fd_close: 关闭文件描述符
+/// WASI `fd_close`: 关闭文件描述符
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_close(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     match ctx.fd_table.close(fd) {
@@ -30,10 +34,14 @@ pub fn wasi_fd_close(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
     Ok(())
 }
 
-/// WASI fd_seek: 移动文件指针
+/// WASI `fd_seek`: 移动文件指针
 ///
 /// WASI whence: 0=SET, 1=CUR, 2=END
 /// VFS whence: 0=SET, 1=CUR, 2=END (相同)
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_seek(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let offset = interp.stack.pop_i64()? as i32;
@@ -64,7 +72,11 @@ pub fn wasi_fd_seek(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
     Ok(())
 }
 
-/// WASI fd_tell: 获取文件指针位置
+/// WASI `fd_tell`: 获取文件指针位置
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、写入线性内存失败或压栈结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_tell(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let offset_ptr = interp.stack.pop_i32()? as u32;
@@ -93,7 +105,11 @@ pub fn wasi_fd_tell(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
     Ok(())
 }
 
-/// WASI fd_sync: 同步文件数据到存储
+/// WASI `fd_sync`: 同步文件数据到存储
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_sync(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
 
@@ -114,7 +130,17 @@ pub fn wasi_fd_sync(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
     Ok(())
 }
 
-/// WASI fd_prestat_get: 获取 preopen fd 信息
+/// WASI `fd_prestat_get`: 获取 preopen fd 信息
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
+///
+/// # Panics
+///
+/// 内部对 `entry.path` 使用 `unwrap`; 若在 `is_none` 检查之后仍出现
+/// 路径被修改为 `None` 的并发情况则会 panic(当前实现中该检查保证
+/// 走到 unwrap 时路径必然存在).
 pub fn wasi_fd_prestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let buf_ptr = interp.stack.pop_i32()? as u32;
@@ -138,7 +164,11 @@ pub fn wasi_fd_prestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> R
     Ok(())
 }
 
-/// WASI fd_prestat_dir_name: 获取 preopen 目录名称
+/// WASI `fd_prestat_dir_name`: 获取 preopen 目录名称
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、写入线性内存失败或压栈结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_prestat_dir_name(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
@@ -152,12 +182,9 @@ pub fn wasi_fd_prestat_dir_name(ctx: &mut WasiContext, interp: &mut Interpreter)
         }
     };
 
-    let path = match &entry.path {
-        Some(p) => p.as_bytes(),
-        None => {
-            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Badf)))?;
-            return Ok(());
-        }
+    let path = if let Some(p) = &entry.path { p.as_bytes() } else {
+        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Badf)))?;
+        return Ok(());
     };
 
     let copy_len = core::cmp::min(path.len() as u32, path_len) as usize;
@@ -166,7 +193,11 @@ pub fn wasi_fd_prestat_dir_name(ctx: &mut WasiContext, interp: &mut Interpreter)
     Ok(())
 }
 
-/// WASI fd_stat_get: 获取 fd 状态信息
+/// WASI `fd_stat_get`: 获取 fd 状态信息
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、写入线性内存失败或压栈结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let buf_ptr = interp.stack.pop_i32()? as u32;
@@ -180,20 +211,17 @@ pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     };
 
     // 调用 VFS fstat 获取文件信息
-    let stat = match crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(
+    let stat = if let Some(s) = crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(
         entry.inner_fd as u32, 0,
-    ) {
-        Some(s) => s,
-        None => {
-            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
-            return Ok(());
-        }
+    ) { s } else {
+        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
+        return Ok(());
     };
 
     // 写入 WASI filestat 结构到线性内存
     // filestat: { dev: u64, ino: u64, filetype: u8, nlink: u64, size: u64, atim: u64, mtim: u64, ctim: u64 }
     if let Some(ref mut mem) = interp.memory {
-        let base = buf_ptr as u64;
+        let base = u64::from(buf_ptr);
 
         // 辅助函数: 写入 u64 到线性内存
         fn write_u64_to(mem: &mut crate::kernel::services::wasm::runtime::LinearMemory, base: u64, off: u64, val: u64) {
@@ -203,11 +231,11 @@ pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
             }
         }
 
-        write_u64_to(mem, base, 0, stat.node_id as u64);    // dev
-        write_u64_to(mem, base, 8, stat.node_id as u64);    // ino
+        write_u64_to(mem, base, 0, u64::from(stat.node_id));    // dev
+        write_u64_to(mem, base, 8, u64::from(stat.node_id));    // ino
         let _ = mem.write_u8((base + 16) as u32, stat.file_type as u8); // filetype
         write_u64_to(mem, base, 17, 1);                      // nlink (默认 1)
-        write_u64_to(mem, base, 25, stat.size as u64);       // size
+        write_u64_to(mem, base, 25, u64::from(stat.size));       // size
         write_u64_to(mem, base, 33, stat.atime);             // atim
         write_u64_to(mem, base, 41, stat.mtime);             // mtim
         write_u64_to(mem, base, 49, stat.ctime);             // ctim
@@ -221,7 +249,12 @@ pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
 // G5: FD I/O
 // ============================================================================
 
-/// WASI fd_read: 从 fd 读取数据到 iovec 数组
+/// WASI `fd_read`: 从 fd 读取数据到 iovec 数组
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、读取 iovec 失败、线性内存访问越界或压栈结果
+/// 失败时返回对应的 `WasmError`.
 pub fn wasi_fd_read(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let iovs_ptr = interp.stack.pop_i32()? as u32;
@@ -267,7 +300,12 @@ pub fn wasi_fd_read(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
     Ok(())
 }
 
-/// WASI fd_write: 将 iovec 数组中的数据写入 fd
+/// WASI `fd_write`: 将 iovec 数组中的数据写入 fd
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、读取 iovec 失败、线性内存访问越界或压栈结果
+/// 失败时返回对应的 `WasmError`.
 pub fn wasi_fd_write(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let iovs_ptr = interp.stack.pop_i32()? as u32;
@@ -313,7 +351,12 @@ pub fn wasi_fd_write(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
     Ok(())
 }
 
-/// WASI fd_pread: 从 fd 指定偏移读取
+/// WASI `fd_pread`: 从 fd 指定偏移读取
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、读取 iovec 失败、线性内存访问越界或压栈结果
+/// 失败时返回对应的 `WasmError`.
 pub fn wasi_fd_pread(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let iovs_ptr = interp.stack.pop_i32()? as u32;
@@ -369,7 +412,12 @@ pub fn wasi_fd_pread(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
     Ok(())
 }
 
-/// WASI fd_pwrite: 向 fd 指定偏移写入
+/// WASI `fd_pwrite`: 向 fd 指定偏移写入
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、读取 iovec 失败、线性内存访问越界或压栈结果
+/// 失败时返回对应的 `WasmError`.
 pub fn wasi_fd_pwrite(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let iovs_ptr = interp.stack.pop_i32()? as u32;
@@ -425,11 +473,15 @@ pub fn wasi_fd_pwrite(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     Ok(())
 }
 
-/// WASI fd_allocate: 预分配文件空间
+/// WASI `fd_allocate`: 预分配文件空间
 ///
 /// WASI 语义: 确保文件至少有 offset+len 字节的空间。
-/// 实现: 使用 vfs_truncate 扩展文件到目标大小 (offset+len)。
+/// 实现: 使用 `vfs_truncate` 扩展文件到目标大小 (offset+len)。
 /// 若文件已足够大则不操作。
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_allocate(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let offset = interp.stack.pop_i64()? as u64;
@@ -451,7 +503,7 @@ pub fn wasi_fd_allocate(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
         entry.inner_fd as u32, 0,
     );
 
-    let current_size = stat.map(|s| s.size as u64).unwrap_or(0);
+    let current_size = stat.map_or(0, |s| u64::from(s.size));
     if current_size < target_size {
         // 文件需要扩展, 使用 truncate
         let trunc_result = crate::kernel::framework::fs::vfs::api::vfs_truncate_internal(
@@ -468,7 +520,11 @@ pub fn wasi_fd_allocate(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     Ok(())
 }
 
-/// WASI fd_advise: 提示文件访问模式
+/// WASI `fd_advise`: 提示文件访问模式
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_advise(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let _offset = interp.stack.pop_i64()?;
@@ -491,7 +547,11 @@ pub fn wasi_fd_advise(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
 // G7: 高级 FD
 // ============================================================================
 
-/// WASI fd_renumber: 重编号 fd
+/// WASI `fd_renumber`: 重编号 fd
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_renumber(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let from = interp.stack.pop_i32()? as u32;
     let to = interp.stack.pop_i32()? as u32;
@@ -507,7 +567,11 @@ pub fn wasi_fd_renumber(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     Ok(())
 }
 
-/// WASI fd_dup: 复制 fd
+/// WASI `fd_dup`: 复制 fd
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或向解释器栈压入结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_dup(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
 
@@ -537,7 +601,11 @@ pub fn wasi_fd_dup(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<()
     Ok(())
 }
 
-/// WASI fd_readdir: 读取目录内容
+/// WASI `fd_readdir`: 读取目录内容
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、写入线性内存失败或压栈结果失败时返回对应的 `WasmError`.
 pub fn wasi_fd_readdir(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let buf_ptr = interp.stack.pop_i32()? as u32;
@@ -573,9 +641,9 @@ pub fn wasi_fd_readdir(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resul
     let copy_len = name_len.min(buf_len as usize - 19) as u16; // 19 = dirent header size
 
     if let Some(ref mut mem) = interp.memory {
-        let base = buf_ptr as u64;
+        let base = u64::from(buf_ptr);
         // 写入 inode
-        let inode_bytes = (dir_entry.node as u64).to_le_bytes();
+        let inode_bytes = u64::from(dir_entry.node).to_le_bytes();
         for i in 0..8u64 {
             let _ = mem.write_u8((base + i) as u32, inode_bytes[i as usize]);
         }
@@ -594,7 +662,7 @@ pub fn wasi_fd_readdir(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resul
         for i in 0..copy_len as usize {
             let _ = mem.write_u8((base + 19 + i as u64) as u32, dir_entry.name[i]);
         }
-        write_u32_to_memory(interp, buf_used_ptr, 19 + copy_len as u32);
+        write_u32_to_memory(interp, buf_used_ptr, 19 + u32::from(copy_len));
     }
 
     interp.stack.push(Value::I32(wasi_success()))?;

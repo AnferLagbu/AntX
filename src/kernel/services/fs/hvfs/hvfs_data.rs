@@ -4,14 +4,14 @@
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::driver::block;
 use crate::kernel::services::fs::hvfs::arc::{HvArcBufType, HvArcKey};
-use crate::kernel::services::fs::hvfs::bp::*;
+use crate::kernel::services::fs::hvfs::bp::{HvCksumType, HvCompType, HvBlockPointer};
 use crate::kernel::services::fs::hvfs::compress;
-use crate::kernel::services::fs::hvfs::dataset::*;
-use crate::kernel::services::fs::hvfs::dmu::*;
-use crate::kernel::services::fs::hvfs::snapshot::*;
-use crate::kernel::services::fs::hvfs::spa::*;
-use crate::kernel::services::fs::hvfs::txg::*;
-use crate::kernel::services::fs::hvfs::zil::*;
+use crate::kernel::services::fs::hvfs::dataset::HvDataset;
+use crate::kernel::services::fs::hvfs::dmu::{HV_DMU_OBJ_ROOT, HvDmuObject, HvObjType};
+use crate::kernel::services::fs::hvfs::snapshot::HvSnapshotManager;
+use crate::kernel::services::fs::hvfs::spa::{HvSpa, HvPoolState, HV_POOL_BLOCK_SIZE};
+use crate::kernel::services::fs::hvfs::txg::HvTxgGroup;
+use crate::kernel::services::fs::hvfs::zil::{HvZil, HvZilRecord};
 use crate::kernel::framework::fs::KernelError;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -71,7 +71,7 @@ pub struct HvfsData {
     pub initialized: AtomicBool,
     pub root_ds_id: AtomicU64,
     pub mode: AtomicU8,
-    /// 已发现的 QueenX/HvFS 磁盘驱动器列表 (drive_id, partition_start_lba)
+    /// 已发现的 QueenX/HvFS 磁盘驱动器列表 (`drive_id`, `partition_start_lba`)
     pub drives_discovered: Mutex<Vec<(u8, u32)>>,
     pub disk_drive: AtomicU8,
     pub partition_start: AtomicU32,
@@ -116,8 +116,8 @@ pub fn get_hvfs() -> &'static HvfsData {
 }
 
 impl HvfsData {
-    /// 扫描所有已注册的块设备，返回检测到的驱动器列表 (drive_id, partition_start_lba)
-    /// 对于已格式化的磁盘读取 QueenX 签名，对于空白磁盘使用默认分区起始偏移
+    /// 扫描所有已注册的块设备，返回检测到的驱动器列表 (`drive_id`, `partition_start_lba`)
+    /// 对于已格式化的磁盘读取 `QueenX` 签名，对于空白磁盘使用默认分区起始偏移
     fn scan_all_drives(&self) -> Vec<(u8, u32)> {
         let mut discovered = Vec::new();
         // 扫描 0..8 号驱动器 (足够覆盖当前硬件)
@@ -186,7 +186,7 @@ impl HvfsData {
                 for (drive_id, part_start) in &discovered[1..] {
                     self.disk_drive.store(*drive_id, Ordering::Release);
                     let mut vdev_cfg = crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
-                        *drive_id as u16,
+                        u16::from(*drive_id),
                         "disk",
                         12,
                     );
@@ -274,7 +274,7 @@ impl HvfsData {
         crate::slog_info!(FS, "[HvFS] FORMAT: Writing fresh HvFS v2 to disk (partition @LBA {})...", part_start);
         self.spa.disk_present.store(true, Ordering::Release);
         let mut vdev_cfg =
-            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(drive_id as u16, "disk", 12);
+            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(u16::from(drive_id), "disk", 12);
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -286,7 +286,7 @@ impl HvfsData {
 
     /// 热插拔: 新磁盘插入后将其添加为 vdev。
     ///
-    /// 自动探测 QueenX 签名以获取 partition_start。如果磁盘未格式化则使用默认值。
+    /// 自动探测 `QueenX` 签名以获取 `partition_start。如果磁盘未格式化则使用默认值`。
     /// 返回 true 表示成功添加。
     pub fn hotplug_add_disk(&self, drive: u8) -> bool {
         if !block::hdd_is_present(drive) {
@@ -314,7 +314,7 @@ impl HvfsData {
         };
 
         let mut vdev_cfg =
-            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(drive as u16, "disk", 12);
+            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(u16::from(drive), "disk", 12);
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -335,7 +335,7 @@ impl HvfsData {
     /// 返回 true 表示找到并标记成功。
     pub fn hotplug_remove_disk(&self, drive: u8) -> bool {
         let mut vdevs = self.spa.vdevs.lock();
-        if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == drive as u16) {
+        if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == u16::from(drive)) {
             vdev.state = crate::kernel::services::fs::hvfs::vdev::HvVdevState::Removed;
             crate::slog_info!(FS, "[HvFS] HOTPLUG: disk removed (drive={})", drive);
             return true;
@@ -354,7 +354,7 @@ impl HvfsData {
         let mut last_ok = lo;
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            if block::hdd_read_sector(drive_id, mid as u64, &mut buf) >= 0 {
+            if block::hdd_read_sector(drive_id, u64::from(mid), &mut buf) >= 0 {
                 last_ok = mid;
                 lo = mid + 1;
             } else {
@@ -362,7 +362,7 @@ impl HvfsData {
             }
         }
         if last_ok > part_start {
-            (last_ok as u64 - part_start as u64) * 512
+            (u64::from(last_ok) - u64::from(part_start)) * 512
         } else {
             crate::kernel::services::fs::hvfs::vdev::HvVdev::probe_disk_size(drive_id)
         }
@@ -377,12 +377,9 @@ impl HvfsData {
             .partition_start
             .store(part_start, Ordering::Release);
         crate::slog_info!(FS, "[HvFS] MOUNT: Reading uberblock from disk (partition @LBA {})...", part_start);
-        let ub = match self.spa.read_uberblock_from_disk() {
-            Some(u) => u,
-            None => {
-                crate::slog_warn!(FS, "[HvFS] MOUNT: No valid uberblock found");
-                return false;
-            }
+        let ub = if let Some(u) = self.spa.read_uberblock_from_disk() { u } else {
+            crate::slog_warn!(FS, "[HvFS] MOUNT: No valid uberblock found");
+            return false;
         };
         crate::slog_info!(FS, "[HvFS] MOUNT: Valid uberblock found (txg={})", ub.txg);
         {
@@ -394,7 +391,7 @@ impl HvfsData {
         self.spa.disk_present.store(true, Ordering::Release);
         self.mode.store(HvfsMode::Disk as u8, Ordering::Release);
         let mut vdev_cfg =
-            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(drive_id as u16, "disk", 12);
+            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(u16::from(drive_id), "disk", 12);
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -412,13 +409,11 @@ impl HvfsData {
         }
         {
             let root_bp = { self.spa.uberblock.lock().root_bp };
-            if !root_bp.is_null() {
-                if self.deserialize_dataset_metadata(&root_bp) {
-                    crate::slog_info!(FS, "[HvFS] MOUNT: Restored dataset from uberblock");
-                } else {
-                    let datasets = self.datasets.lock();
-                    datasets[0].init(0);
-                }
+            if root_bp.is_null() {
+                let datasets = self.datasets.lock();
+                datasets[0].init(0);
+            } else if self.deserialize_dataset_metadata(&root_bp) {
+                crate::slog_info!(FS, "[HvFS] MOUNT: Restored dataset from uberblock");
             } else {
                 let datasets = self.datasets.lock();
                 datasets[0].init(0);
@@ -475,6 +470,11 @@ impl HvfsData {
         pwm_api::pwm_has_capability(pwm, 3, cap)
     }
 
+    /// 打开 hvfs 中的对象并分配文件描述符.
+    ///
+    /// # Errors
+    /// 未初始化时返回 `NotInitialized`; 对象不存在时返回 `FileNotFound`;
+    /// 权限不足时返回 `PermissionDenied`; fd 表满时返回 `NoSpace`.
     pub fn open(&self, path: &str, flags: u32, pwm: u64) -> Result<i32, KernelError> {
         if !self.is_initialized() {
             return Err(KernelError::NotInitialized);
@@ -1155,7 +1155,7 @@ impl HvfsData {
         let mut offset = 0;
         for i in 0..4 {
             if obj.data_hash[i] != 0 {
-                let attr_name = alloc::format!("user.attr{}\0", i);
+                let attr_name = alloc::format!("user.attr{i}\0");
                 let name_bytes = attr_name.as_bytes();
                 if offset + name_bytes.len() <= buf.len() {
                     buf[offset..offset + name_bytes.len()].copy_from_slice(name_bytes);
@@ -1217,7 +1217,7 @@ impl HvfsData {
     fn hash_xattr_name(name: &str) -> usize {
         let mut hash: u64 = 5381;
         for byte in name.bytes() {
-            hash = ((hash << 5).wrapping_add(hash)).wrapping_add(byte as u64);
+            hash = ((hash << 5).wrapping_add(hash)).wrapping_add(u64::from(byte));
         }
         (hash % 4) as usize
     }
@@ -1225,7 +1225,7 @@ impl HvfsData {
     fn hash_xattr_value(value: &[u8]) -> u64 {
         let mut hash: u64 = 5381;
         for byte in value {
-            hash = ((hash << 5).wrapping_add(hash)).wrapping_add(*byte as u64);
+            hash = ((hash << 5).wrapping_add(hash)).wrapping_add(u64::from(*byte));
         }
         hash
     }
@@ -1267,7 +1267,7 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             let ds = &datasets[0];
             let objs = ds.objset.objects.lock();
-            let obj_clones: Vec<HvDmuObject> = objs.iter().filter(|o| o.used).cloned().collect();
+            let obj_clones: Vec<HvDmuObject> = objs.iter().filter(|o| o.used).copied().collect();
             let dir_list = ds.dir_zap.entries();
             let next = ds.objset.next_obj_id.load(Ordering::Acquire);
             (obj_clones, dir_list, next)
@@ -1374,7 +1374,7 @@ impl HvfsData {
                 return None;
             }
             off += 8;
-            buf[off] = if obj.used { 1 } else { 0 };
+            buf[off] = u8::from(obj.used);
             off += 1;
             off += 1;
         }
@@ -1736,7 +1736,7 @@ impl HvfsData {
             let fds = self.fds.lock();
             let idx = fd as usize;
             if idx >= HVFS_MAX_FDS || !fds[idx].used {
-                return KernelError::InvalidArgument.as_i32() as i64;
+                return i64::from(KernelError::InvalidArgument.as_i32());
             }
             (fds[idx].obj_id, fds[idx].offset)
         };
@@ -1744,14 +1744,14 @@ impl HvfsData {
             let datasets = self.datasets.lock();
             match datasets[0].objset.get_obj(obj_id) {
                 Some(o) => o,
-                None => return KernelError::FileNotFound.as_i32() as i64,
+                None => return i64::from(KernelError::FileNotFound.as_i32()),
             }
         };
         let new_offset = match whence {
             0 => offset as u64,
             1 => (cur_offset as i64 + offset) as u64,
             2 => (obj.size as i64 + offset) as u64,
-            _ => return KernelError::InvalidArgument.as_i32() as i64,
+            _ => return i64::from(KernelError::InvalidArgument.as_i32()),
         };
         {
             let mut fds = self.fds.lock();
@@ -1760,7 +1760,7 @@ impl HvfsData {
         new_offset as i64
     }
 
-    /// 获取 HvFS 池统计 (allocs, frees, reads, writes)
+    /// 获取 `HvFS` 池统计 (allocs, frees, reads, writes)
     pub fn get_stats(&self) -> (u64, u64, u64, u64) {
         if !self.is_initialized() {
             return (0, 0, 0, 0);

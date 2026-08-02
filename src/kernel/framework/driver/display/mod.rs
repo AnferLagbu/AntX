@@ -54,13 +54,13 @@ impl Driver for DisplayDriver {
 // 全局帧缓冲实例
 // ============================================================================
 
-/// 全局帧缓冲 — 在 display_init() 中初始化，之后只读访问
+/// 全局帧缓冲 — 在 `display_init()` 中初始化，之后只读访问
 static GLOBAL_FRAMEBUFFER: IrqSpinLock<Option<Framebuffer>> = IrqSpinLock::new(None);
 
-/// 帧缓冲物理地址 — 供 sys_fb_mmap 映射到用户空间
+/// 帧缓冲物理地址 — 供 `sys_fb_mmap` 映射到用户空间
 pub static FB_PHYS_ADDR: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-/// 帧缓冲物理大小 — 供 sys_fb_mmap 校验
+/// 帧缓冲物理大小 — 供 `sys_fb_mmap` 校验
 pub static FB_PHYS_SIZE: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 /// 获取全局帧缓冲的锁守卫
@@ -76,7 +76,7 @@ pub fn get_framebuffer() -> Option<crate::kernel::framework::sync::IrqSpinLockGu
 // 像素格式推断
 // ============================================================================
 
-/// 根据 Multiboot2 FramebufferInfo 中的 bpp 和 RGB 字段位置推断像素格式
+/// 根据 Multiboot2 `FramebufferInfo` 中的 bpp 和 RGB 字段位置推断像素格式
 fn infer_pixel_format(bpp: u8, red_pos: u8, green_pos: u8, blue_pos: u8) -> PixelFormat {
     match bpp {
         32 => {
@@ -140,6 +140,8 @@ struct VgaFbInfo {
 
 /// 通过 Bochs DISPI 端口读取 VGA 帧缓冲分辨率
 #[cfg(target_arch = "x86_64")]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -155,9 +157,9 @@ fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
             return None;
         }
         port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_XRES);
-        let xres = port_inw(VBE_DISPI_PORT_DATA) as u32;
+        let xres = u32::from(port_inw(VBE_DISPI_PORT_DATA));
         port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_YRES);
-        let yres = port_inw(VBE_DISPI_PORT_DATA) as u32;
+        let yres = u32::from(port_inw(VBE_DISPI_PORT_DATA));
         port_outw(VBE_DISPI_PORT_INDEX, VBE_DISPI_INDEX_BPP);
         let bpp = port_inw(VBE_DISPI_PORT_DATA) as u8;
         if xres == 0 || yres == 0 || bpp == 0 {
@@ -172,15 +174,17 @@ fn read_bochs_disp_mode() -> Option<(u32, u32, u8)> {
 /// # Safety
 ///
 /// - `mmio_base` 必须是有效的 VGA BAR0 映射地址
-/// - 偏移计算: VBE_DISPI_MMIO_BASE + reg * 2 (每寄存器 2 字节间距)
+/// - 偏移计算: `VBE_DISPI_MMIO_BASE` + reg * 2 (每寄存器 2 字节间距)
 #[cfg(target_arch = "x86_64")]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 unsafe fn read_bochs_disp_mode_mmio(mmio_base: u64) -> Option<(u32, u32, u8)> {
     // SAFETY: 调用方保证 mmio_base 是有效的 VGA BAR0 映射,
     // 偏移在 BAR0 范围内, volatile 访问对 MMIO 寄存器是必需的.
     unsafe {
         let base = mmio_base + VBE_DISPI_MMIO_BASE;
         let read_reg = |reg: u16| -> u16 {
-            core::ptr::read_volatile((base + reg as u64 * 2) as *const u16)
+            core::ptr::read_volatile((base + u64::from(reg) * 2) as *const u16)
         };
         let id = read_reg(VBE_DISPI_INDEX_ID);
         if id < VBE_DISPI_ID5 {
@@ -190,8 +194,8 @@ unsafe fn read_bochs_disp_mode_mmio(mmio_base: u64) -> Option<(u32, u32, u8)> {
         if enabled == 0 {
             return None;
         }
-        let xres = read_reg(VBE_DISPI_INDEX_XRES) as u32;
-        let yres = read_reg(VBE_DISPI_INDEX_YRES) as u32;
+        let xres = u32::from(read_reg(VBE_DISPI_INDEX_XRES));
+        let yres = u32::from(read_reg(VBE_DISPI_INDEX_YRES));
         let bpp = read_reg(VBE_DISPI_INDEX_BPP) as u8;
         if xres == 0 || yres == 0 || bpp == 0 {
             return None;
@@ -236,7 +240,7 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
             .or_else(read_bochs_disp_mode)
             .unwrap_or((1024, 768, 32));
 
-        let pitch = width * (bpp as u32 / 8);
+        let pitch = width * (u32::from(bpp) / 8);
 
         crate::klog_info!(
             Driver,
@@ -276,6 +280,10 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
 /// 3. 将物理地址映射到内核虚拟地址空间
 /// 4. 推断像素格式
 /// 5. 创建 Framebuffer 实例并自检
+/// # Errors
+/// 未找到可用帧缓冲或创建 Framebuffer 失败时返回 Err。
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn display_init() -> framework::Result<()> {
     crate::klog_boot_info!("[DISPLAY] display_init: probing framebuffer");
 
@@ -305,12 +313,9 @@ pub fn display_init() -> framework::Result<()> {
         None => {
             #[cfg(target_arch = "x86_64")]
             {
-                match probe_vga_fb_via_pci() {
-                    Some(info) => (info.addr, info.width, info.height, info.bpp, info.pitch),
-                    None => {
-                        crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
-                        return Ok(());
-                    }
+                if let Some(info) = probe_vga_fb_via_pci() { (info.addr, info.width, info.height, info.bpp, info.pitch) } else {
+                    crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
+                    return Ok(());
                 }
             }
             #[cfg(not(target_arch = "x86_64"))]
@@ -321,7 +326,7 @@ pub fn display_init() -> framework::Result<()> {
         }
     };
 
-    let fb_size = pitch as u64 * height as u64;
+    let fb_size = u64::from(pitch) * u64::from(height);
 
     FB_PHYS_ADDR.store(fb_addr, core::sync::atomic::Ordering::Release);
     FB_PHYS_SIZE.store(fb_size, core::sync::atomic::Ordering::Release);

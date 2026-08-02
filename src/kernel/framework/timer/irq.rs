@@ -23,8 +23,8 @@
 use crate::kernel::framework::idt::InterruptFrame;
 
 
-/// Timer IRQ0 中断处理程序 (仅 x86_64)
-/// aarch64 定时器中断由 exception.rs 的 irq_handler_el1 处理
+/// Timer IRQ0 中断处理程序 (仅 `x86_64`)
+/// aarch64 定时器中断由 exception.rs 的 `irq_handler_el1` 处理
 #[cfg(target_arch = "x86_64")]
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
@@ -59,7 +59,11 @@ pub extern "C" fn timer_irq0_handler(_frame: *mut InterruptFrame) {
     }
 }
 
-/// 注册 Timer IRQ0 handler 到 IDT 系统 (仅 x86_64)
+/// 注册 Timer IRQ0 handler 到 IDT 系统 (仅 `x86_64`)
+///
+/// # Errors
+/// 当向 `IdtManager` 注册 IRQ0 handler 失败时返回 `Err`, 错误信息由
+/// `IdtManager::register_irq` 提供 (如向量槽位冲突等).
 #[cfg(target_arch = "x86_64")]
 pub fn register_timer_irq() -> Result<(), &'static str> {
     use crate::kernel::framework::idt::IdtManager;

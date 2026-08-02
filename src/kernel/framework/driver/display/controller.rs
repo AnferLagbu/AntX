@@ -21,7 +21,7 @@ pub enum DisplayOutput {
     Vga,
     /// HDMI输出
     Hdmi,
-    /// DisplayPort输出
+    /// `DisplayPort输出`
     DisplayPort,
     /// DVI输出
     Dvi,
@@ -64,8 +64,8 @@ impl DisplayMode {
     /// 计算像素时钟 (kHz)
     pub fn pixel_clock_khz(&self) -> u64 {
         // 简化计算，实际需要考虑消隐时间
-        let total_pixels = self.width as u64 * self.height as u64;
-        total_pixels * self.refresh_rate as u64 / 1000
+        let total_pixels = u64::from(self.width) * u64::from(self.height);
+        total_pixels * u64::from(self.refresh_rate) / 1000
     }
 
     /// 计算带宽 (MB/s)
@@ -147,6 +147,8 @@ pub trait DisplayController: Driver {
     fn output_type(&self) -> DisplayOutput;
 
     /// 检测显示器连接
+    /// # Errors
+    /// 显示器检测失败时返回 Err。
     fn detect(&mut self) -> Result<bool>;
 
     /// 获取显示器信息
@@ -156,6 +158,8 @@ pub trait DisplayController: Driver {
     fn get_supported_modes(&self) -> Vec<DisplayMode>;
 
     /// 设置显示模式
+    /// # Errors
+    /// 指定的显示模式不被支持或设置失败时返回 Err。
     fn set_mode(&mut self, mode: DisplayMode) -> Result<()>;
 
     /// 获取当前显示模式
@@ -165,6 +169,8 @@ pub trait DisplayController: Driver {
     fn get_framebuffer(&mut self) -> Option<&mut Framebuffer>;
 
     /// 刷新显示
+    /// # Errors
+    /// 刷新操作失败时返回 Err。
     fn flush(&mut self) -> Result<()>;
 
     /// 获取显示器索引
@@ -222,6 +228,8 @@ impl DisplayManager {
     }
 
     /// 移除显示器
+    /// # Errors
+    /// 指定的显示器索引超出范围时返回 Err。
     pub fn remove_monitor(&mut self, index: usize) -> Result<()> {
         if index >= self.monitors.len() {
             return Err(DriverError::InvalidParameter);
@@ -262,6 +270,8 @@ impl DisplayManager {
     }
 
     /// 设置活动显示器
+    /// # Errors
+    /// 指定的显示器索引超出范围时返回 Err。
     pub fn set_active_monitor(&mut self, index: usize) -> Result<()> {
         if index >= self.monitors.len() {
             return Err(DriverError::InvalidParameter);
@@ -277,6 +287,8 @@ impl DisplayManager {
     }
 
     /// 设置主显示器
+    /// # Errors
+    /// 指定的显示器索引超出范围时返回 Err。
     pub fn set_primary_monitor(&mut self, index: usize) -> Result<()> {
         if index >= self.monitors.len() {
             return Err(DriverError::InvalidParameter);
@@ -311,6 +323,8 @@ impl DisplayManager {
     }
 
     /// 启用显示器
+    /// # Errors
+    /// 指定的显示器索引超出范围或显示器未连接时返回 Err。
     pub fn enable_monitor(&mut self, index: usize) -> Result<()> {
         let monitor = self
             .monitors
@@ -326,6 +340,8 @@ impl DisplayManager {
     }
 
     /// 禁用显示器
+    /// # Errors
+    /// 指定的显示器索引超出范围时返回 Err。
     pub fn disable_monitor(&mut self, index: usize) -> Result<()> {
         let monitor = self
             .monitors
@@ -337,6 +353,8 @@ impl DisplayManager {
     }
 
     /// 设置显示模式
+    /// # Errors
+    /// 指定的显示器索引超出范围或显示器未连接时返回 Err。
     pub fn set_display_mode(&mut self, index: usize, mode: DisplayMode) -> Result<()> {
         let monitor = self
             .monitors

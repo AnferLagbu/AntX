@@ -2,11 +2,11 @@
 use crate::kernel::framework::driver::block;
 use crate::kernel::framework::fs::KernelError;
 use crate::kernel::services::fs::hvfs::arc::HvArc;
-use crate::kernel::services::fs::hvfs::bp::*;
+use crate::kernel::services::fs::hvfs::bp::{HvBlockPointer, HvCksumType, HvCompType, HV_DVA_MAX};
 use crate::kernel::services::fs::hvfs::checksum::HvChecksum;
 use crate::kernel::services::fs::hvfs::dva::HvDva;
-use crate::kernel::services::fs::hvfs::metaslab::*;
-use crate::kernel::services::fs::hvfs::vdev::*;
+use crate::kernel::services::fs::hvfs::metaslab::HvMetaslab;
+use crate::kernel::services::fs::hvfs::vdev::{HvVdev, HvVdevConfig, HvVdevState};
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
@@ -81,12 +81,12 @@ impl HvUberblock {
         ck.value == saved
     }
 
-    /// E6-6: 使用 IntoBytes + Immutable derive 编译期验证无 padding, as_bytes 为 safe 方法
+    /// E6-6: 使用 `IntoBytes` + Immutable derive 编译期验证无 padding, `as_bytes` 为 safe 方法
     pub fn as_bytes(&self) -> &[u8] {
         zerocopy::IntoBytes::as_bytes(self)
     }
 
-    /// E6-6: safe 反序列化, 逐字段读取替代 unsafe read_unaligned
+    /// E6-6: safe 反序列化, 逐字段读取替代 unsafe `read_unaligned`
     pub fn from_bytes_unaligned(bytes: &[u8]) -> Option<Self> {
         let size = core::mem::size_of::<Self>();
         if bytes.len() < size {
@@ -222,8 +222,7 @@ impl HvSpa {
         self.vdevs
             .lock()
             .first()
-            .map(|v| v.config.vdev_id as u8)
-            .unwrap_or(0)
+            .map_or(0, |v| v.config.vdev_id as u8)
     }
 
 
@@ -233,7 +232,7 @@ impl HvSpa {
         }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
         let drive = self.vdev_0_drive_id();
-        block::hdd_read_sector(drive, phys as u64, buf)
+        block::hdd_read_sector(drive, u64::from(phys), buf)
     }
 
     fn write_sector(&self, sector: u32, buf: &[u8]) -> i32 {
@@ -242,7 +241,7 @@ impl HvSpa {
         }
         let phys = sector + self.partition_start.load(Ordering::Acquire);
         let drive = self.vdev_0_drive_id();
-        block::hdd_write_sector(drive, phys as u64, buf)
+        block::hdd_write_sector(drive, u64::from(phys), buf)
     }
 
     pub fn init(&self, name: &str) {
@@ -282,7 +281,7 @@ impl HvSpa {
             let mut ms_list = self.metaslabs.lock();
             let n_ms = asize.div_ceil(HV_POOL_METASLAB_SIZE) as u32;
             for i in 0..n_ms {
-                let ms_start = (i as u64) * HV_POOL_METASLAB_SIZE + HV_VDEV_LABEL_SIZE;
+                let ms_start = u64::from(i) * HV_POOL_METASLAB_SIZE + HV_VDEV_LABEL_SIZE;
                 let ms_size = if i < n_ms - 1 {
                     HV_POOL_METASLAB_SIZE
                 } else {
@@ -343,7 +342,7 @@ impl HvSpa {
                     if ms.vdev_id == dva.vdev_id {
                         let rel = dva.offset.saturating_sub(ms.start);
                         if rel < ms.size {
-                            ms.free(dva.offset, dva.asize as u64);
+                            ms.free(dva.offset, u64::from(dva.asize));
                             break;
                         }
                     }

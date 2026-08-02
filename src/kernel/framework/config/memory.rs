@@ -3,7 +3,7 @@
 //! ## T6-9 迁移记录
 //!
 //! 纯常量定义 (页大小/栈/堆/ASLR 基址)
-//! 已于 2026-06-16 迁移到 services::config::memory.
+//! 已于 2026-06-16 迁移到 `services::config::memory`.
 //! 本文件仅保留 ASLR 运行时函数 (依赖 TSC) + re-export 保持调用方兼容.
 
 // re-export services 层常量
@@ -15,11 +15,11 @@ pub use crate::kernel::services::config::memory::*;
 
 /// 生成 ASLR 随机偏移 (页对齐).
 ///
-/// 使用 TSC 作为熵源, 取低 `bits` 位作为偏移, 再乘以 PAGE_SIZE.
-/// 偏移范围 = [0, (2^bits - 1) * PAGE_SIZE].
+/// 使用 TSC 作为熵源, 取低 `bits` 位作为偏移, 再乘以 `PAGE_SIZE`.
+/// 偏移范围 = [0, (2^bits - 1) * `PAGE_SIZE`].
 ///
 /// # Arguments
-/// * `bits` - 熵位数 (如 ASLR_STACK_BITS = 8)
+/// * `bits` - 熵位数 (如 `ASLR_STACK_BITS` = 8)
 ///
 /// # Returns
 /// 页对齐的随机偏移 (字节)
@@ -32,7 +32,7 @@ pub fn aslr_random_offset(bits: u64) -> u64 {
 
 /// 生成带 ASLR 随机偏移的栈顶地址.
 ///
-/// 栈顶 = USER_STACK_TOP - aslr_random_offset(ASLR_STACK_BITS)
+/// 栈顶 = `USER_STACK_TOP` - `aslr_random_offset(ASLR_STACK_BITS)`
 #[inline]
 pub fn aslr_stack_top() -> u64 {
     USER_STACK_TOP - aslr_random_offset(ASLR_STACK_BITS)

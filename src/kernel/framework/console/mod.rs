@@ -6,7 +6,7 @@ use gfx_console::GfxConsole;
 static GFX_READY: AtomicBool = AtomicBool::new(false);
 static GFX_CONSOLE_PTR: AtomicPtr<GfxConsole> = AtomicPtr::new(core::ptr::null_mut());
 
-/// 初始化图形控制台 —— 绑定到已分配在静态存储中的 GfxConsole
+/// 初始化图形控制台 —— 绑定到已分配在静态存储中的 `GfxConsole`
 ///
 /// # Safety
 ///
@@ -36,8 +36,8 @@ pub fn gfx_console_write(msg: &[u8]) {
 
 /// Panic 发生时接管图形控制台 — 绘制崩溃横幅并输出消息
 ///
-/// 此函数在 panic handler 中调用，无论 GFX_READY 是否为 true 都尝试接管。
-/// 优先使用已存在的 GfxConsole 实例，如果没有则什么也不做（至少串口已输出）。
+/// 此函数在 panic handler 中调用，无论 `GFX_READY` 是否为 true 都尝试接管。
+/// 优先使用已存在的 `GfxConsole` 实例，如果没有则什么也不做（至少串口已输出）。
 ///
 /// # Safety
 ///

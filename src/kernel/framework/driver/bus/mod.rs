@@ -19,6 +19,9 @@ use super::framework;
 #[cfg(target_arch = "x86_64")]
 use crate::klog_info;
 
+/// 初始化系统总线驱动 (`x86_64` 上执行 PCI 枚举)。
+/// # Errors
+/// PCI 初始化失败 (未枚举到有效设备) 时返回 Err。
 #[cfg(target_arch = "x86_64")]
 pub fn bus_init() -> framework::Result<()> {
     let count = pci::pci_init();

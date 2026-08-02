@@ -2,7 +2,7 @@
 //!
 //! 覆盖 PI Mutex 状态机的关键路径:
 //! - 基本 lock/unlock
-//! - try_lock 失败路径
+//! - `try_lock` 失败路径
 //! - 直接捐赠 (高优等待 → 低优持有者被提升)
 //! - 多等待者取 max 优先级
 //! - 释放时移交最高优先级等待者
@@ -15,8 +15,8 @@ use crate::register_tests_inner;
 
 /// 模拟 A 持锁 + B/C/D 注册为等待者的辅助函数
 ///
-/// A = PID 100, base_prio=1
-/// 返回 (mutex, a_pid, a_prio)
+/// A = PID 100, `base_prio=1`
+/// 返回 (mutex, `a_pid`, `a_prio`)
 fn setup_a_holds() -> (pi::PiMutex<u32>, u32, u32) {
     let m = pi::PiMutex::new(0u32);
     let a_pid = 100u32;

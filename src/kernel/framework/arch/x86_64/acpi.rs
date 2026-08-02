@@ -53,7 +53,7 @@ pub struct ApInfo {
 /// 单个 IOAPIC 控制器的描述信息
 #[derive(Debug, Clone, Copy)]
 pub struct IoApicInfo {
-    /// IOAPIC 硬件 ID (MADT 中的 io_apic_id)
+    /// IOAPIC 硬件 ID (MADT 中的 `io_apic_id`)
     pub id: u8,
     /// MMIO 基址 (从 MADT 解析)
     pub base_addr: u64,
@@ -140,7 +140,7 @@ fn scan_ebda() -> Option<u64> {
         if ebda_seg == 0 {
             return None;
         }
-        let ebda_base = (ebda_seg as u64) << 4;
+        let ebda_base = u64::from(ebda_seg) << 4;
         scan_memory_range(ebda_base, 0x1000)
     }
 }
@@ -206,7 +206,7 @@ fn get_rsdt(rsdp: u64) -> Option<&'static SdtHeader> {
         }
 
         // RSDT (32-bit pointers)
-        let rsdt_addr = *(ptr.add(16) as *const u32) as u64;
+        let rsdt_addr = u64::from(*(ptr.add(16) as *const u32));
         if rsdt_addr != 0 {
             Some(&*(rsdt_addr as *const SdtHeader))
         } else {
@@ -270,26 +270,20 @@ struct MadtIoApic {
 // ============================================================================
 
 pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
-    let rsdp = match find_rsdp(multiboot2_info_ptr) {
-        Some(addr) => addr,
-        None => {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP not found".as_ptr());
-            }
-            return false;
+    let rsdp = if let Some(addr) = find_rsdp(multiboot2_info_ptr) { addr } else {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        unsafe {
+            crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP not found".as_ptr());
         }
+        return false;
     };
 
-    let rsdt_or_xsdt = match get_rsdt(rsdp) {
-        Some(sdt) => sdt,
-        None => {
-            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-            unsafe {
-                crate::kernel::framework::klog::klog_info(c"[ACPI] RSDT/XSDT not found".as_ptr());
-            }
-            return false;
+    let rsdt_or_xsdt = if let Some(sdt) = get_rsdt(rsdp) { sdt } else {
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        unsafe {
+            crate::kernel::framework::klog::klog_info(c"[ACPI] RSDT/XSDT not found".as_ptr());
         }
+        return false;
     };
 
     let rsdp_ptr = rsdp as *const u8;
@@ -312,7 +306,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
             let madt_ptr: u64 = if uses_xsdt {
                 *(entries_ptr.add(i * 8) as *const u64)
             } else {
-                *(entries_ptr.add(i * 4) as *const u32) as u64
+                u64::from(*(entries_ptr.add(i * 4) as *const u32))
             };
 
             if madt_ptr == 0 {
@@ -336,10 +330,12 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     false
 }
 
+// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn parse_madt_entries(madt_ptr: u64) {
     // SAFETY: `madt_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(MadtHeader)); 只读访问
     let madt = unsafe { &*(madt_ptr as *const MadtHeader) };
-    let _lapic_base = madt.local_apic_addr as u64;
+    let _lapic_base = u64::from(madt.local_apic_addr);
 
     let entries_start = madt_ptr as usize + core::mem::size_of::<MadtHeader>();
     let entries_end = madt_ptr as usize + madt.header.length as usize;
@@ -360,8 +356,8 @@ fn parse_madt_entries(madt_ptr: u64) {
                 if idx < MAX_CPUS {
                     let enabled = (lapic.flags & 0x1) != 0;
                     AP_LIST.lock()[idx] = Some(ApInfo {
-                        lapic_id: lapic.apic_id as u32,
-                        apic_id: lapic.acpi_proc_id as u32,
+                        lapic_id: u32::from(lapic.apic_id),
+                        apic_id: u32::from(lapic.acpi_proc_id),
                         enabled,
                     });
                     AP_COUNT.store((idx + 1) as u32, Ordering::Release);
@@ -377,7 +373,7 @@ fn parse_madt_entries(madt_ptr: u64) {
                 if idx < MAX_IOAPICS {
                     let info = IoApicInfo {
                         id: ioapic.io_apic_id,
-                        base_addr: ioapic.io_apic_addr as u64,
+                        base_addr: u64::from(ioapic.io_apic_addr),
                         gsi_base: ioapic.global_sys_int_base,
                         max_irq: 0, // 初始化时填充
                     };
@@ -423,12 +419,12 @@ pub fn has_madt() -> bool {
 
 pub fn get_ioapic_addr() -> u64 {
     let ioapics = IOAPICS.lock();
-    ioapics.iter().flatten().next().map(|i| i.base_addr).unwrap_or(0)
+    ioapics.iter().flatten().next().map_or(0, |i| i.base_addr)
 }
 
 pub fn get_ioapic_gsib() -> u32 {
     let ioapics = IOAPICS.lock();
-    ioapics.iter().flatten().next().map(|i| i.gsi_base).unwrap_or(0)
+    ioapics.iter().flatten().next().map_or(0, |i| i.gsi_base)
 }
 
 /// 获取所有 IOAPIC 信息
@@ -441,12 +437,14 @@ pub fn get_ioapic_count() -> u32 {
     IOAPIC_COUNT.load(Ordering::Acquire)
 }
 
-/// GSI → IOAPIC 路由: 返回 (ioapic_index, local_irq)
+/// GSI → IOAPIC 路由: 返回 (`ioapic_index`, `local_irq`)
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn gsi_to_ioapic(gsi: u32) -> Option<(usize, u8)> {
     let ioapics = IOAPICS.lock();
     for (i, ioapic) in ioapics.iter().enumerate() {
         if let Some(info) = ioapic {
-            if gsi >= info.gsi_base && gsi < info.gsi_base + info.max_irq as u32 {
+            if gsi >= info.gsi_base && gsi < info.gsi_base + u32::from(info.max_irq) {
                 return Some((i, (gsi - info.gsi_base) as u8));
             }
         }
@@ -460,7 +458,7 @@ pub fn get_lapic_base() -> u64 {
     }
     // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
     let madt = unsafe { &*(MADT_BASE.load(Ordering::Acquire) as *const MadtHeader) };
-    madt.local_apic_addr as u64
+    u64::from(madt.local_apic_addr)
 }
 
 #[unsafe(no_mangle)]
@@ -552,8 +550,10 @@ fn parse_fadt(fadt_ptr: u64) {
 
 /// ACPI 关机 (S5 状态)
 ///
-/// 通过 FADT 的 PM1a_CNT 寄存器写入 SLP_TYP + SLP_EN 实现关机.
+/// 通过 FADT 的 `PM1a_CNT` 寄存器写入 `SLP_TYP` + `SLP_EN` 实现关机.
 /// QEMU 和大多数硬件支持此方式.
+// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn acpi_shutdown() -> ! {
     if !FADT_FOUND.load(Ordering::Acquire) {
         crate::klog_warn!(Acpi, "[ACPI] FADT not found, cannot ACPI shutdown");
@@ -584,10 +584,10 @@ pub fn acpi_shutdown() -> ! {
         unsafe {
             if pm1_cnt_len == 2 {
                 // 16-bit I/O 端口 — 使用 outl 写入 32 位 (低 16 位有效)
-                crate::arch!(outl(pm1a_cnt as u16, value as u32));
+                crate::arch!(outl(pm1a_cnt as u16, u32::from(value)));
             } else if pm1_cnt_len == 4 {
                 // 32-bit I/O 端口
-                crate::arch!(outl(pm1a_cnt as u16, value as u32));
+                crate::arch!(outl(pm1a_cnt as u16, u32::from(value)));
             }
         }
     }
@@ -602,6 +602,8 @@ pub fn acpi_shutdown() -> ! {
 }
 
 /// ACPI 重启
+// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn acpi_reboot() -> ! {
     if FADT_FOUND.load(Ordering::Acquire) {
         // SAFETY: `const` 指向 ACPI/BIOS 探测过的物理地址; 只读访问
@@ -736,13 +738,15 @@ pub struct DmarDrhdInfo {
     pub register_base: u64,
     /// 段号
     pub segment_number: u16,
-    /// 是否包含所有 PCI 设备 (INCLUDE_ALL)
+    /// 是否包含所有 PCI 设备 (`INCLUDE_ALL`)
     pub include_all: bool,
 }
 
 static DMAR_DRHD_LIST: IrqSpinLock<Vec<DmarDrhdInfo>> = IrqSpinLock::new(Vec::new());
 static DMAR_HOST_ADDR_WIDTH: IrqSpinLock<u8> = IrqSpinLock::new(0);
 
+// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn parse_dmar(dmar_ptr: u64) {
     // SAFETY: `dmar_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(DmarTable)); 只读访问
     let dmar = unsafe { &*(dmar_ptr as *const DmarTable) };
@@ -802,20 +806,14 @@ pub fn get_dmar_host_addr_width() -> u8 {
 ///
 /// 在内核启动时调用, 替代仅解析 MADT 的 `parse_madt`.
 pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
-    let rsdp = match find_rsdp(multiboot2_info_ptr) {
-        Some(addr) => addr,
-        None => {
-            crate::klog_warn!(Acpi, "[ACPI] RSDP not found");
-            return false;
-        }
+    let rsdp = if let Some(addr) = find_rsdp(multiboot2_info_ptr) { addr } else {
+        crate::klog_warn!(Acpi, "[ACPI] RSDP not found");
+        return false;
     };
 
-    let rsdt_or_xsdt = match get_rsdt(rsdp) {
-        Some(sdt) => sdt,
-        None => {
-            crate::klog_warn!(Acpi, "[ACPI] RSDT/XSDT not found");
-            return false;
-        }
+    let rsdt_or_xsdt = if let Some(sdt) = get_rsdt(rsdp) { sdt } else {
+        crate::klog_warn!(Acpi, "[ACPI] RSDT/XSDT not found");
+        return false;
     };
 
     let rsdp_ptr = rsdp as *const u8;
@@ -839,7 +837,7 @@ pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
             if uses_xsdt {
                 *(entries_ptr.add(i * 8) as *const u64)
             } else {
-                *(entries_ptr.add(i * 4) as *const u32) as u64
+                u64::from(*(entries_ptr.add(i * 4) as *const u32))
             }
         };
 

@@ -1,4 +1,4 @@
-//! UFrame / USegment — 类型安全的用户内存帧抽象
+//! `UFrame` / `USegment` — 类型安全的用户内存帧抽象
 //!
 //! 为用户空间内存访问提供类型层安全保证,
 //! 强化不变式 I4 (内核解引用用户指针前必须验证).
@@ -21,7 +21,7 @@
 //!   —— 所有访问都通过有界复制操作.
 //! - Pod 类型不得包含指向内核内存的指针, 防止内核地址意外泄漏到用户空间.
 
-use super::*;
+use super::PAGE_SIZE;
 use super::copy_user::{copy_from_user, copy_to_user, is_user_ptr, is_user_buf};
 
 // ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ use super::copy_user::{copy_from_user, copy_to_user, is_user_ptr, is_user_buf};
 /// 实现 `Pod` 的类型必须满足:
 ///
 /// 1. 无指针 (裸指针或引用) —— 防止内核地址泄漏
-/// 2. 无内部可变性 (Cell, RefCell, AtomicXxx) —— 防止 TOCTOU
+/// 2. 无内部可变性 (Cell, `RefCell`, `AtomicXxx`) —— 防止 TOCTOU
 /// 3. 无 `Drop` 副作用 —— 值是纯位级语义
 /// 4. `Copy` —— 仅值语义
 ///
@@ -110,9 +110,13 @@ impl UFrame {
 
     /// 从帧内指定偏移读取一个 POD 值.
     ///
-    /// offset + size_of::<T>() 不得超过 PAGE_SIZE.
+    /// offset + `size_of::`<T>() 不得超过 `PAGE_SIZE`.
     /// 页错误或偏移非法时返回 `Err(())`.
+    /// # Errors
+    /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn read_pod<T: Pod>(&self, offset: usize) -> Result<T, ()> {
         let size = core::mem::size_of::<T>();
         if offset.saturating_add(size) > PAGE_SIZE as usize {
@@ -134,9 +138,13 @@ impl UFrame {
 
     /// 将一个 POD 值写入帧内指定偏移.
     ///
-    /// offset + size_of::<T>() 不得超过 PAGE_SIZE.
+    /// offset + `size_of::`<T>() 不得超过 `PAGE_SIZE`.
     /// 页错误或偏移非法时返回 `Err(())`.
+    /// # Errors
+    /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn write_pod<T: Pod>(&self, offset: usize, val: &T) -> Result<(), ()> {
         let size = core::mem::size_of::<T>();
         if offset.saturating_add(size) > PAGE_SIZE as usize {
@@ -153,9 +161,13 @@ impl UFrame {
 
     /// 从帧读取一段字节切片.
     ///
-    /// `offset + buf.len()` 不得超过 PAGE_SIZE.
+    /// `offset + buf.len()` 不得超过 `PAGE_SIZE`.
     /// 返回实际复制的字节数.
+    /// # Errors
+    /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<usize, ()> {
         if offset.saturating_add(buf.len()) > PAGE_SIZE as usize {
             return Err(());
@@ -165,9 +177,13 @@ impl UFrame {
 
     /// 向帧写入一段字节切片.
     ///
-    /// `offset + data.len()` 不得超过 PAGE_SIZE.
+    /// `offset + data.len()` 不得超过 `PAGE_SIZE`.
     /// 返回实际复制的字节数.
+    /// # Errors
+    /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn write_bytes(&self, offset: usize, data: &[u8]) -> Result<usize, ()> {
         if offset.saturating_add(data.len()) > PAGE_SIZE as usize {
             return Err(());
@@ -227,6 +243,8 @@ impl USegment {
     /// 从段内指定偏移读取一个 POD 值.
     ///
     /// 页错误或偏移越界时返回 `Err(())`.
+    /// # Errors
+    /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
     pub fn read_pod<T: Pod>(&self, offset: usize) -> Result<T, ()> {
         let size = core::mem::size_of::<T>();
@@ -249,6 +267,8 @@ impl USegment {
     /// 将一个 POD 值写入段内指定偏移.
     ///
     /// 页错误或偏移越界时返回 `Err(())`.
+    /// # Errors
+    /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
     pub fn write_pod<T: Pod>(&self, offset: usize, val: &T) -> Result<(), ()> {
         let size = core::mem::size_of::<T>();
@@ -267,6 +287,8 @@ impl USegment {
     /// 从段读取字节到内核缓冲区.
     ///
     /// 返回实际复制的字节数.
+    /// # Errors
+    /// 访问用户内存时发生页错误时返回 Err。
     #[inline]
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<usize, ()> {
         let max_len = self.len.saturating_sub(offset);
@@ -280,6 +302,8 @@ impl USegment {
     /// 将内核缓冲区字节写入段.
     ///
     /// 返回实际复制的字节数.
+    /// # Errors
+    /// 访问用户内存时发生页错误时返回 Err。
     #[inline]
     pub fn write_bytes(&self, offset: usize, data: &[u8]) -> Result<usize, ()> {
         let max_len = self.len.saturating_sub(offset);

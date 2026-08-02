@@ -138,6 +138,8 @@ impl SwapArea {
     }
 
     /// 初始化 swap 区: 分配预留内存
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn init(&mut self) -> bool {
         if self.initialized {
             return true;
@@ -189,6 +191,8 @@ impl SwapArea {
     }
 
     /// 释放 slot
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn free_slot(&mut self, slot: u64) {
         let idx = slot as usize;
         if idx < SWAP_MAX_SLOTS && self.bitmap[idx] == SlotState::Used as u8 {
@@ -207,6 +211,8 @@ impl SwapArea {
     /// # Safety
     ///
     /// - `src_virt` 必须指向有效的 4KB 数据源
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn write_slot(&self, slot: u64, src_virt: u64) {
         if !self.initialized {
             return;
@@ -227,6 +233,8 @@ impl SwapArea {
     /// # Safety
     ///
     /// - `dst_virt` 必须指向有效的 4KB 目标页
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn read_slot(&self, slot: u64, dst_virt: u64) {
         if !self.initialized {
             return;
@@ -278,7 +286,7 @@ struct LruEntry {
     /// 是否被占用
     occupied: bool,
     /// 是否被 mlock 锁定 (锁定页不参与 swap/reclaim, 跳过回收候选)
-    /// 设置时机: `set_page_locked()` 或 lru_touch 时由 vma_flags.MLOCKED 推导
+    /// 设置时机: `set_page_locked()` 或 `lru_touch` 时由 `vma_flags.MLOCKED` 推导
     locked: bool,
 }
 
@@ -308,7 +316,7 @@ impl LruList {
     /// 添加页面到 active 链表 (页面被访问时调用)
     ///
     /// pml4 为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
-    /// locked 表示该页是否被 mlock 锁定, 由调用方根据 VMA vm_flags.MLOCKED 推导.
+    /// locked 表示该页是否被 mlock 锁定, 由调用方根据 VMA `vm_flags.MLOCKED` 推导.
     fn add_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
         // 先检查是否已在 inactive 链表中, 若是则提升
         for i in 0..LRU_CAPACITY {
@@ -399,7 +407,7 @@ impl LruList {
 
     /// 从 inactive 链表获取回收候选
     ///
-    /// T2-4: 选择策略委托给 SwapPolicy::select_victim.
+    /// T2-4: 选择策略委托给 `SwapPolicy::select_victim`.
     /// **跳过 locked 页**: mlock 锁定的页保留在链表中, 不被回收.
     fn get_victim(&mut self) -> Option<LruEntry> {
         // 构建候选视图供策略决策
@@ -429,7 +437,7 @@ impl LruList {
     /// 标记某虚拟地址对应的 LRU 条目为 locked (mlock)
     ///
     /// 用于 mlock 系统调用: 锁定 VMA 范围时遍历 VMA 内每个触达页.
-    /// 若该页未在 LRU 跟踪 (未被触达过), 跳过 — locked 状态由 VMA vm_flags 承载.
+    /// 若该页未在 LRU 跟踪 (未被触达过), 跳过 — locked 状态由 VMA `vm_flags` 承载.
     fn set_locked(&mut self, virt_addr: u64, locked: bool) -> bool {
         for i in 0..LRU_CAPACITY {
             if self.active[i].occupied && self.active[i].virt_addr == virt_addr {
@@ -525,20 +533,20 @@ pub fn swap_out(virt_addr: u64, phys_addr: u64, _dirty: bool) -> Option<SwapEntr
 
 /// 换出页面: 完整实现 — 分配 slot + 写入数据 + 替换 PTE 为 swap entry
 ///
-/// 返回 (SwapEntry, old_phys).
+/// 返回 (`SwapEntry`, `old_phys`).
 /// 若 slot 分配失败或 PTE 替换失败, 返回 None.
 ///
 /// ## 完整实现要点
 /// 1. 从 LRU inactive 链表中选 victim
-/// 2. alloc_slot + write_slot (swap_out 内)
-/// 3. vmm.set_pte_value(pml4, virt, swap_entry.to_pte()) — PTE 替换
-/// 4. pmm.free_page(phys) — 释放物理页
+/// 2. `alloc_slot` + `write_slot` (`swap_out` 内)
+/// 3. `vmm.set_pte_value(pml4`, virt, `swap_entry.to_pte()`) — PTE 替换
+/// 4. `pmm.free_page(phys)` — 释放物理页
 ///
 /// # Safety
 ///
-/// - virt_addr 必须属于由 pml4 标识的地址空间
+/// - `virt_addr` 必须属于由 pml4 标识的地址空间
 /// - pml4 必须是有效的页表根 (CR3 值)
-/// - virt_addr 对应的 PTE 当前必须是 present 页
+/// - `virt_addr` 对应的 PTE 当前必须是 present 页
 pub fn swap_out_to_pte(pml4: u64, virt_addr: u64) -> Option<SwapEntry> {
     // 1. 读取当前 PTE 获取物理地址
     let vmm_inst = vmm::get_vmm();
@@ -615,7 +623,7 @@ pub fn pte_to_swap_entry(pte: u64) -> Option<SwapEntry> {
 /// 记录页面访问 (添加到 LRU active 链表)
 ///
 /// pml4 必须为该虚拟地址所属进程的 CR3, 用于 swap-out 时写 PTE 为 swap entry.
-/// `locked` 表示该页是否被 mlock 锁定 (由调用方根据 VMA vm_flags.MLOCKED 推导).
+/// `locked` 表示该页是否被 mlock 锁定 (由调用方根据 VMA `vm_flags.MLOCKED` 推导).
 pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
     let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
@@ -626,13 +634,13 @@ pub fn lru_touch(pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked:
 /// 设置某虚拟地址对应 LRU 条目的 mlock 锁定状态
 ///
 /// 返回 true 表示 LRU 中有该条目 (并已更新), false 表示该页未在 LRU 跟踪
-/// (尚未触达, locked 状态由 VMA vm_flags 承载, 触达时会通过 lru_touch 锁定).
+/// (尚未触达, locked 状态由 VMA `vm_flags` 承载, 触达时会通过 `lru_touch` 锁定).
 ///
 /// # 用法
 ///
 /// - `mlock` 系统调用: 对 VMA 内每页调用 `set_page_locked(virt, true)`
 /// - `munlock` 系统调用: 对 VMA 内每页调用 `set_page_locked(virt, false)`
-/// - 保留的 locked 状态对 get_victim 不可见, 不会被 swap-out
+/// - 保留的 locked 状态对 `get_victim` 不可见, 不会被 swap-out
 pub fn set_page_locked(virt_addr: u64, locked: bool) -> bool {
     let _guard = SWAP.lock.lock();
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
@@ -776,8 +784,8 @@ static KSWAPD_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// kswapd softirq handler — 在 softirq 上下文执行
 ///
-/// 每次唤醒回收 RECLAIM_BATCH 个页面. 软中断上下文不可睡眠,
-/// 但 reclaim_pages 的所有子操作 (swap_out / vmm.set_pte_value / pmm.free_page)
+/// 每次唤醒回收 `RECLAIM_BATCH` 个页面. 软中断上下文不可睡眠,
+/// 但 `reclaim_pages` 的所有子操作 (`swap_out` / `vmm.set_pte_value` / `pmm.free_page`)
 /// 均为非阻塞原子操作, 满足软中断约束.
 fn kswapd_softirq_handler() {
     // 原子清除 pending 标志
@@ -808,7 +816,7 @@ fn kswapd_softirq_handler() {
 
 /// 初始化 kswapd: 注册 Kswapd softirq handler
 ///
-/// 必须在 irq 子系统初始化 (interrupt_late_init) 之后调用.
+/// 必须在 irq 子系统初始化 (`interrupt_late_init`) 之后调用.
 pub fn kswapd_init() {
     irq::open_softirq(SoftirqVec::Kswapd, kswapd_softirq_handler);
     crate::klog_info!(Swap, "[KSWAPD] softirq handler registered");
@@ -817,9 +825,9 @@ pub fn kswapd_init() {
 /// 唤醒 kswapd: 立即 raise Kswapd softirq
 ///
 /// 由 scheduler.tick 周期调用, 或 pressure 跃迁调用.
-/// 重复唤醒是幂等的 (raise_softirq 仅设置 pending bit).
+/// 重复唤醒是幂等的 (`raise_softirq` 仅设置 pending bit).
 ///
-/// T2-4: 触发条件委托给 SwapPolicy::should_wakeup_kswapd.
+/// T2-4: 触发条件委托给 `SwapPolicy::should_wakeup_kswapd`.
 pub fn kswapd_wakeup() {
     // 快速路径: 若已 pending, 不重复触发
     if KSWAPD_PENDING.load(Ordering::Acquire) {

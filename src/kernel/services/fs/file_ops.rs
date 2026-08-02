@@ -56,7 +56,7 @@ pub fn ioctl_syscall(_fd: i32, request: u64, arg: u64) -> i64 {
     }
 }
 
-/// clock_gettime(clk_id, tp) 策略
+/// `clock_gettime(clk_id`, tp) 策略
 pub fn clock_gettime_syscall(clk_id: i32, tp_ptr: u64) -> i64 {
     if tp_ptr == 0 {
         return Errno::EINVAL.as_ret();
@@ -133,7 +133,7 @@ pub fn poll_syscall(fds_ptr: u64, nfds: u32, _timeout: i32) -> i64 {
 
         let _ = crate::kernel::framework::syscall::api::write_struct_to_user(fds_ptr + offset, &pfd);
     }
-    ready as i64
+    i64::from(ready)
 }
 
 /// chown(path, uid, gid) 策略
@@ -146,7 +146,7 @@ pub fn chown_syscall(path_ptr: u64, uid: u32, gid: u32) -> i64 {
     let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
     let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
     let pwm = crate::kernel::framework::credo::pwm_get_current();
-    crate::kernel::framework::fs::vfs_chown_ext(path, owner_pwm, group_pwm, pwm) as i64
+    i64::from(crate::kernel::framework::fs::vfs_chown_ext(path, owner_pwm, group_pwm, pwm))
 }
 
 /// truncate(path, length) 策略

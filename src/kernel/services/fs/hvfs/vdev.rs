@@ -128,7 +128,7 @@ impl HvVdev {
         let mut buf = [0u8; 512];
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
-            if block::hdd_read_sector(drive, mid as u64, &mut buf) >= 0 {
+            if block::hdd_read_sector(drive, u64::from(mid), &mut buf) >= 0 {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -137,7 +137,7 @@ impl HvVdev {
         if lo == 0 {
             return HV_VDEV_ASIZE_DEFAULT;
         }
-        let detected = (lo as u64) * 512;
+        let detected = u64::from(lo) * 512;
         if detected > 0 {
             detected
         } else {
@@ -171,13 +171,13 @@ impl HvVdev {
     }
 
     pub fn read_sectors(&mut self, sector: u64, count: u32, buf: &mut [u8]) -> i32 {
-        let need_bytes = (count as u64) * 512;
+        let need_bytes = u64::from(count) * 512;
         if buf.len() < need_bytes as usize {
             return KernelError::InvalidArgument.as_i32();
         }
         let mut offset = 0usize;
         let mut sec = sector;
-        let part_start = self.config.partition_start as u64;
+        let part_start = u64::from(self.config.partition_start);
         for _ in 0..count {
             if offset + 512 > buf.len() {
                 break;
@@ -198,13 +198,13 @@ impl HvVdev {
     }
 
     pub fn write_sectors(&mut self, sector: u64, count: u32, buf: &[u8]) -> i32 {
-        let need_bytes = (count as u64) * 512;
+        let need_bytes = u64::from(count) * 512;
         if buf.len() < need_bytes as usize {
             return KernelError::InvalidArgument.as_i32();
         }
         let mut offset = 0usize;
         let mut sec = sector;
-        let part_start = self.config.partition_start as u64;
+        let part_start = u64::from(self.config.partition_start);
         for _ in 0..count {
             if offset + 512 > buf.len() {
                 break;

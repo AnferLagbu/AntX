@@ -417,20 +417,22 @@ pub fn kexec_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_kexec — kexec 系统调用
+/// `sys_kexec` — kexec 系统调用
 ///
 /// `a0`: cmd
-///   0 = load_segment(type: a1, dst_addr: a2, size: a3) — 简化: 仅记录段
-///   1 = set_entry_point(entry: a1)
-///   2 = mark_loaded()
-///   3 = execute() — 不会返回
-///   4 = cancel()
-///   5 = get_state() → state
-///   6 = get_segment_count() → count
-///   7 = is_initialized() → 是否已初始化
+///   0 = `load_segment(type`: a1, `dst_addr`: a2, size: a3) — 简化: 仅记录段
+///   1 = `set_entry_point(entry`: a1)
+///   2 = `mark_loaded()`
+///   3 = `execute()` — 不会返回
+///   4 = `cancel()`
+///   5 = `get_state()` → state
+///   6 = `get_segment_count()` → count
+///   7 = `is_initialized()` → 是否已初始化
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !kexec_is_initialized() && cmd != 7 {
         return -(11i64); // EAGAIN
     }
@@ -488,7 +490,7 @@ pub fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
         }
         7 => {
             // is_initialized
-            kexec_is_initialized() as i64
+            i64::from(kexec_is_initialized())
         }
         _ => -(38i64), // ENOSYS
     }

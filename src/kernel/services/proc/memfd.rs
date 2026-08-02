@@ -8,14 +8,19 @@ use crate::kernel::services::fs::anonymous::ANONYMOUS_FS;
 use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
 use crate::kernel::services::fs::vfs_types::OpenFile;
 
-/// MFD_CLOEXEC 标志位
+/// `MFD_CLOEXEC` 标志位
 const MFD_CLOEXEC: u32 = 0x0001;
-/// MFD_ALLOW_SEALING 标志位
+/// `MFD_ALLOW_SEALING` 标志位
 const MFD_ALLOW_SEALING: u32 = 0x0002;
-/// MFD_HUGE_16GB 标志位 (简化: 不支持大页)
+/// `MFD_HUGE_16GB` 标志位 (简化: 不支持大页)
 const MFD_HUGE_MASK: u32 = 0x3F << 26;
 
-/// memfd_create — 创建匿名内存文件
+/// `memfd_create` — 创建匿名内存文件
+///
+/// # Errors
+///
+/// - flags 含非法位或请求大页 → `EINVAL`
+/// - inode 分配或文件表分配失败 → `ENOMEM`
 pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> {
     // 检查 flags 有效性
     let supported_flags = MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_HUGE_MASK;

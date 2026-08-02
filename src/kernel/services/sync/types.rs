@@ -44,7 +44,7 @@ pub enum TryLockResult {
     WouldBlock,
 }
 
-/// 自旋锁内部状态 (与 C 版本 spinlock_t 兼容)
+/// 自旋锁内部状态 (与 C 版本 `spinlock_t` 兼容)
 ///
 /// # Safety
 /// 此结构的布局必须与 C 版本保持一致 (用于 FFI)
@@ -133,13 +133,13 @@ impl SpinLockInner {
     }
 }
 
-/// 睡眠锁 (Mutex) 内部状态 (与 C 版本 mutex_t 兼容)
+/// 睡眠锁 (Mutex) 内部状态 (与 C 版本 `mutex_t` 兼容)
 ///
 /// 基于等待队列和调度器，适用于长时间持有临界区的场景。
 ///
 /// # 特性
 /// - 支持递归锁定 (depth 计数)
-/// - 锁竞争时让出 CPU (scheduler_yield)
+/// - 锁竞争时让出 CPU (`scheduler_yield`)
 /// - 记录持有者 PID 和获取时间
 #[repr(C)]
 pub struct MutexInner {
@@ -177,7 +177,7 @@ impl MutexInner {
     }
 }
 
-/// 读写锁 (RwLock) 内部状态 (与 C 版本 rwlock_t 兼容)
+/// 读写锁 (`RwLock`) 内部状态 (与 C 版本 `rwlock_t` 兼容)
 ///
 /// 实现写者优先策略，防止写者饥饿。
 ///
@@ -220,7 +220,7 @@ impl RwLockInner {
     }
 }
 
-/// 条件变量 (CondVar) 内部状态
+/// 条件变量 (`CondVar`) 内部状态
 ///
 /// 用于线程间通知机制，通常配合 Mutex 使用。
 #[repr(C)]
@@ -275,7 +275,7 @@ impl Default for LockStatistics {
     }
 }
 
-/// 锁守卫 (RAII wrapper for SpinLock)
+/// 锁守卫 (RAII wrapper for `SpinLock`)
 ///
 /// 当 Guard 被 drop 时自动释放锁，
 /// **确保不会忘记解锁**。
@@ -295,7 +295,7 @@ pub struct SpinLockGuard<'a, T> {
     pub _lock: &'a SpinLockInner,
 }
 
-impl<'a, T> core::ops::Deref for SpinLockGuard<'a, T> {
+impl<T> core::ops::Deref for SpinLockGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -303,13 +303,13 @@ impl<'a, T> core::ops::Deref for SpinLockGuard<'a, T> {
     }
 }
 
-impl<'a, T> core::ops::DerefMut for SpinLockGuard<'a, T> {
+impl<T> core::ops::DerefMut for SpinLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }
 }
 
-impl<'a, T> Drop for SpinLockGuard<'a, T> {
+impl<T> Drop for SpinLockGuard<'_, T> {
     fn drop(&mut self) {
         core::sync::atomic::fence(Ordering::SeqCst);
         self._lock.locked.store(0, Ordering::Release);
@@ -325,7 +325,7 @@ pub struct MutexGuard<'a, T> {
     pub _mutex: &'a MutexInner,
 }
 
-impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
+impl<T> core::ops::Deref for MutexGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -333,13 +333,13 @@ impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
     }
 }
 
-impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
+impl<T> core::ops::DerefMut for MutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }
 }
 
-impl<'a, T> Drop for MutexGuard<'a, T> {
+impl<T> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
         self._mutex.inner_spinlock.raw_lock();
 
@@ -354,13 +354,13 @@ impl<'a, T> Drop for MutexGuard<'a, T> {
     }
 }
 
-/// 读锁守卫 (RAII for RwLock read mode)
+/// 读锁守卫 (RAII for `RwLock` read mode)
 pub struct RwLockReadGuard<'a, T> {
     pub data: &'a T,
     pub _rwlock: &'a RwLockInner,
 }
 
-impl<'a, T> core::ops::Deref for RwLockReadGuard<'a, T> {
+impl<T> core::ops::Deref for RwLockReadGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -368,7 +368,7 @@ impl<'a, T> core::ops::Deref for RwLockReadGuard<'a, T> {
     }
 }
 
-impl<'a, T> Drop for RwLockReadGuard<'a, T> {
+impl<T> Drop for RwLockReadGuard<'_, T> {
     fn drop(&mut self) {
         let prev_readers = self._rwlock.readers.fetch_sub(1, Ordering::AcqRel);
 
@@ -377,13 +377,13 @@ impl<'a, T> Drop for RwLockReadGuard<'a, T> {
     }
 }
 
-/// 写锁守卫 (RAII for RwLock write mode)
+/// 写锁守卫 (RAII for `RwLock` write mode)
 pub struct RwLockWriteGuard<'a, T> {
     pub data: &'a mut T,
     pub _rwlock: &'a RwLockInner,
 }
 
-impl<'a, T> core::ops::Deref for RwLockWriteGuard<'a, T> {
+impl<T> core::ops::Deref for RwLockWriteGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -391,13 +391,13 @@ impl<'a, T> core::ops::Deref for RwLockWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T> core::ops::DerefMut for RwLockWriteGuard<'a, T> {
+impl<T> core::ops::DerefMut for RwLockWriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }
 }
 
-impl<'a, T> Drop for RwLockWriteGuard<'a, T> {
+impl<T> Drop for RwLockWriteGuard<'_, T> {
     fn drop(&mut self) {
         core::sync::atomic::fence(Ordering::SeqCst);
         self._rwlock.writer.store(0, Ordering::Release);

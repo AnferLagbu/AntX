@@ -14,7 +14,7 @@
 //!
 //! ## 迁移方法
 //!
-//! QueenX 当前内核信号子系统是 per-process 32 bit 简易实现 (`signal_pending_*`),
+//! `QueenX` 当前内核信号子系统是 per-process 32 bit 简易实现 (`signal_pending_*`),
 //! 不完整的 POSIX 信号语义由 services 层提供类型安全封装 + 标准常量。
 //! 未来完整化信号子系统 (sigaction 表, 共享处理, sigaltstack) 时, 替换 `do_signal`
 //! 内部实现, services 层 API 保持稳定。
@@ -202,7 +202,7 @@ impl Signal {
     /// 转位掩码 (用于 `signal_pending_*`)
     #[inline]
     pub fn to_bit(self) -> u64 {
-        1u64 << (self.0 as u64)
+        1u64 << u64::from(self.0)
     }
 }
 
@@ -278,6 +278,11 @@ pub type SignalResult<T> = Result<T, SignalError>;
 /// 向指定进程发送信号
 ///
 /// **实现**: 设置 `signal_pending` 位, 由内核在返回用户态前检查并分发
+///
+/// # Errors
+///
+/// - 目标进程不存在(`kill(pid, 0)` 检查) → `NoSuchProcess`
+/// - 信号编号 `>= 64` → `InvalidArgument`
 pub fn send(pid: crate::kernel::framework::proc::Pid, sig: Signal) -> SignalResult<()> {
     if sig == Signal::NONE {
         // POSIX: kill(pid, 0) 仅检查进程存在, 不发送
@@ -287,7 +292,7 @@ pub fn send(pid: crate::kernel::framework::proc::Pid, sig: Signal) -> SignalResu
     if sig.0 >= 64 {
         return Err(SignalError::InvalidArgument);
     }
-    crate::kernel::services::proc::table::signal_set(pid, sig.0 as u32)
+    crate::kernel::services::proc::table::signal_set(pid, u32::from(sig.0))
         .map_err(|_| SignalError::NoSuchProcess)
 }
 
@@ -297,6 +302,10 @@ pub fn pending(pid: crate::kernel::framework::proc::Pid) -> Option<u64> {
 }
 
 /// 清除进程的信号位
+///
+/// # Errors
+///
+/// 当目标进程不存在时返回 `NoSuchProcess`.
 pub fn clear(pid: crate::kernel::framework::proc::Pid, mask: u64) -> SignalResult<()> {
     crate::kernel::services::proc::table::signal_clear(pid, mask)
         .map_err(|_| SignalError::NoSuchProcess)
@@ -307,21 +316,37 @@ pub fn clear(pid: crate::kernel::framework::proc::Pid, mask: u64) -> SignalResul
 // ============================================================================
 
 /// 终止进程 (等价 kill(pid, SIGKILL))
+///
+/// # Errors
+///
+/// 当进程不存在或信号非法时返回对应的 `SignalError`(由 `send` 传播).
 pub fn kill(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Kill))
 }
 
 /// 中断进程 (等价 kill(pid, SIGINT))
+///
+/// # Errors
+///
+/// 当进程不存在或信号非法时返回对应的 `SignalError`(由 `send` 传播).
 pub fn interrupt(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Int))
 }
 
 /// 停止进程 (等价 kill(pid, SIGSTOP))
+///
+/// # Errors
+///
+/// 当进程不存在或信号非法时返回对应的 `SignalError`(由 `send` 传播).
 pub fn stop(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Stop))
 }
 
 /// 唤醒已停止的进程 (等价 kill(pid, SIGCONT))
+///
+/// # Errors
+///
+/// 当进程不存在或信号非法时返回对应的 `SignalError`(由 `send` 传播).
 pub fn cont(pid: crate::kernel::framework::proc::Pid) -> SignalResult<()> {
     send(pid, Signal::standard(StandardSignal::Cont))
 }
@@ -406,6 +431,11 @@ mod tests {
 ///
 /// 验证: 信号编号 0..=31, 目标 pid 接受 POSIX 4 种语义 (pid>0 单进程,
 ///        pid=0 同进程组, pid=-1 全部, pid<-1 |pid| 进程组).
+///
+/// # Errors
+///
+/// - 信号编号不在 `0..=31` 范围 → `EINVAL`
+/// - 底层 `sys_kill` 返回负值时转换为对应的 `Errno`
 pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
     use crate::kernel::framework::syscall::Errno;
 
@@ -421,9 +451,14 @@ pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framewor
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
 }
 
-/// rt_sigaction 系统调用安全代理
+/// `rt_sigaction` 系统调用安全代理
 ///
 /// 验证: signum 1..=31 (标准信号) 或 32..=64 (RT信号)
+///
+/// # Errors
+///
+/// - 信号编号不在 `1..=64` 范围或试图操作不可捕获信号(`SIGKILL`/`SIGSTOP`) → `EINVAL`
+/// - 底层 `sys_rt_sigaction` 返回负值时转换为对应的 `Errno`
 pub fn rt_sigaction_syscall(
     signum: i32,
     act: u64,
@@ -443,9 +478,14 @@ pub fn rt_sigaction_syscall(
     if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
 }
 
-/// rt_sigprocmask 系统调用安全代理
+/// `rt_sigprocmask` 系统调用安全代理
 ///
-/// 验证: how 有效 (SIG_BLOCK=0, SIG_UNBLOCK=1, SIG_SETMASK=2)
+/// 验证: how 有效 (`SIG_BLOCK=0`, `SIG_UNBLOCK=1`, `SIG_SETMASK=2`)
+///
+/// # Errors
+///
+/// - `how` 不在 `0..=2` 范围 → `EINVAL`
+/// - 底层 `sys_rt_sigprocmask` 返回负值时转换为对应的 `Errno`
 pub fn rt_sigprocmask_syscall(
     how: i32,
     set: u64,
@@ -468,6 +508,10 @@ pub fn rt_sigprocmask_syscall(
 ///
 /// 注: `ss` 与 `old_ss` 的合法性 (用户缓冲可读/可写) 由 framework 侧
 /// `raw::check_user_buf` 再次校验, services 层不重复检查.
+///
+/// # Errors
+///
+/// 当底层 `sys_sigaltstack` 返回负值(如用户缓冲非法)时转换为对应的 `Errno`.
 pub fn sigaltstack_syscall(
     ss: u64,
     old_ss: u64,
@@ -531,6 +575,10 @@ impl SignalDecision for StandardSignalPolicy {
 ///
 /// 由 `services::proc::init()` 调用. 只能成功一次, 后续调用返回 `Err(())`.
 /// 重复注册不会导致 panic, 仅记录为可观察结果, 启动期已知安全.
+///
+/// # Errors
+///
+/// 当标准信号策略已被注册时返回 `Err(())`.
 pub fn register_standard_signal_policy() -> Result<(), ()> {
     static POLICY: StandardSignalPolicy = StandardSignalPolicy;
     crate::kernel::framework::proc::register_signal_decision(&POLICY).map_err(|_| ())

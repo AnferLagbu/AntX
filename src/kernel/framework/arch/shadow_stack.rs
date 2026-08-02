@@ -47,6 +47,8 @@ use crate::kernel::framework::config::PAGE_SIZE;
 // ============================================================================
 
 /// Shadow Stack 页大小
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub const SHADOW_STACK_PAGE_SIZE: usize = PAGE_SIZE as usize;
 /// Shadow Stack 默认大小 (64KB)
 pub const SHADOW_STACK_DEFAULT_SIZE: usize = 64 * 1024;
@@ -58,15 +60,15 @@ pub const SHADOW_STACK_ALIGN: usize = 8;
 mod x86_msrs {
     /// CR4 第23位 = CET 启用
     pub const CR4_CET_BIT: u64 = 1 << 23;
-    /// IA32_U_CET: 用户态 CET 配置
+    /// `IA32_U_CET`: 用户态 CET 配置
     pub const IA32_U_CET: u32 = 0x6A0;
-    /// IA32_S_CET: 内核态 CET 配置
+    /// `IA32_S_CET`: 内核态 CET 配置
     pub const IA32_S_CET: u32 = 0x6A2;
-    /// IA32_PL3_SSP: 用户态 Shadow Stack 指针
+    /// `IA32_PL3_SSP`: 用户态 Shadow Stack 指针
     pub const IA32_PL3_SSP: u32 = 0x6A4;
-    /// IA32_INTERRUPT_SSP_TABLE: 中断 Shadow Stack 表
+    /// `IA32_INTERRUPT_SSP_TABLE`: 中断 Shadow Stack 表
     pub const IA32_INTERRUPT_SSP_TABLE: u32 = 0x6A8;
-    /// IA32_PL0_SSP: 内核态 Shadow Stack 指针
+    /// `IA32_PL0_SSP`: 内核态 Shadow Stack 指针
     pub const IA32_PL0_SSP: u32 = 0x6A5;
 }
 
@@ -152,7 +154,7 @@ pub struct CetCapabilities {
 pub struct CetSubsystem {
     /// 功能支持
     caps: IrqSpinLock<CetCapabilities>,
-    /// Per-CPU Shadow Stack (CPU ID → ShadowStack 实例)
+    /// Per-CPU Shadow Stack (CPU ID → `ShadowStack` 实例)
     kernel_shadow_stacks: IrqSpinLock<Vec<ShadowStack>>,
     /// 是否已初始化
     initialized: AtomicBool,
@@ -314,6 +316,8 @@ impl CetSubsystem {
     }
 
     /// 为用户线程创建 Shadow Stack
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn create_user_shadow_stack(&self, size: usize) -> Option<ShadowStack> {
         if !self.caps.lock().shadow_stack {
             return None;
@@ -355,12 +359,12 @@ impl CetSubsystem {
 
     /// 配置用户态 CET MSR (在进入用户态前调用)
     ///
-    /// 写入 IA32_U_CET 和 IA32_PL3_SSP MSR, 启用用户态 Shadow Stack.
+    /// 写入 `IA32_U_CET` 和 `IA32_PL3_SSP` MSR, 启用用户态 Shadow Stack.
     ///
     /// # Safety
     ///
     /// 调用方必须确保:
-    /// - CET 已初始化 (caps.shadow_stack_enabled = true)
+    /// - CET 已初始化 (`caps.shadow_stack_enabled` = true)
     /// - ssp 指向有效的 Shadow Stack 内存
     /// - 仅在从内核态切换到用户态前调用
     pub unsafe fn configure_user_cet_msr(&self, ssp: u64) {
@@ -402,13 +406,13 @@ impl CetSubsystem {
 
     /// 配置中断 Shadow Stack 表 (IDT 集成)
     ///
-    /// 写入 IA32_INTERRUPT_SSP_TABLE MSR, 设置中断时使用的 Shadow Stack 表.
+    /// 写入 `IA32_INTERRUPT_SSP_TABLE` MSR, 设置中断时使用的 Shadow Stack 表.
     ///
     /// # Safety
     ///
     /// 调用方必须确保:
     /// - CET 已初始化
-    /// - table_addr 指向有效的 SSP 表内存 (16 字节对齐)
+    /// - `table_addr` 指向有效的 SSP 表内存 (16 字节对齐)
     pub unsafe fn configure_interrupt_ssp_table(&self, table_addr: u64) {
         // aarch64 无 CET, 抑制 unused 警告
         #[cfg(target_arch = "aarch64")]
@@ -534,15 +538,17 @@ pub fn cet_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_cet — CET 系统调用
+/// `sys_cet` — CET 系统调用
 ///
 /// `a0`: cmd
-///   0 = capabilities() → 功能标志
-///   1 = create_user_shadow_stack(size: a1) → SSP
-///   2 = is_initialized() → 返回 bool, 是否已初始化
+///   0 = `capabilities()` → 功能标志
+///   1 = `create_user_shadow_stack(size`: a1) → SSP
+///   2 = `is_initialized()` → 返回 bool, 是否已初始化
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_cet(cmd: u64, a1: u64, _a2: u64) -> i64 {
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn sys_cet(cmd: u64, a1: u64, _a2: u64) -> i64 {
     match cmd {
         0 => {
             // capabilities
@@ -564,7 +570,7 @@ pub fn sys_cet(cmd: u64, a1: u64, _a2: u64) -> i64 {
         }
         2 => {
             // is_initialized
-            cet_is_initialized() as i64
+            i64::from(cet_is_initialized())
         }
         _ => -(38i64), // ENOSYS
     }

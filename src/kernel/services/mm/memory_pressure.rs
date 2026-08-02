@@ -79,7 +79,7 @@ impl MemoryPressure {
 // ============================================================================
 
 static CURRENT_PRESSURE: AtomicU8 = AtomicU8::new(MemoryPressure::Normal as u8);
-/// 上一次压力级别 (由 update_pressure 在 swap 后写入)
+/// 上一次压力级别 (由 `update_pressure` 在 swap 后写入)
 static PREV_PRESSURE: AtomicU8 = AtomicU8::new(MemoryPressure::Normal as u8);
 static FREE_PAGES_THRESHOLD_WARNING: AtomicU64 = AtomicU64::new(256);
 static FREE_PAGES_THRESHOLD_CRITICAL: AtomicU64 = AtomicU64::new(64);
@@ -99,7 +99,7 @@ pub fn current_pressure() -> MemoryPressure {
     MemoryPressure::from_u8(CURRENT_PRESSURE.load(Ordering::SeqCst))
 }
 
-/// 更新压力级别 (传入当前 free_pages / total_pages)
+/// 更新压力级别 (传入当前 `free_pages` / `total_pages`)
 ///
 /// 策略: 4 级状态机, 返回 `(new, prev)` 供调用方决定是否记日志
 /// (services 层不直接 klog, 避免 unsafe 边界问题; framework wrapper 处理日志).
@@ -132,7 +132,7 @@ pub fn update_pressure(free_pages: u64, total_pages: u64) -> MemoryPressure {
     new_pressure
 }
 
-/// 读取上一次压力级别 (供 wrapper 做日志比较, 避免在 services 层使用 klog_ffi).
+/// 读取上一次压力级别 (供 wrapper 做日志比较, 避免在 services 层使用 `klog_ffi`).
 pub fn previous_pressure() -> MemoryPressure {
     MemoryPressure::from_u8(PREV_PRESSURE.load(Ordering::SeqCst))
 }
@@ -202,6 +202,10 @@ impl FrameAllocDecision for PressureAwareAllocPolicy {
 /// 注册压力感知分配策略到 framework
 ///
 /// 由 `services::mm::init()` 调用. 只能注册一次.
+///
+/// # Errors
+///
+/// 当分配策略已被注册时返回 `Err(())`.
 pub fn register_pressure_aware_policy() -> Result<(), ()> {
     static POLICY: PressureAwareAllocPolicy = PressureAwareAllocPolicy;
     crate::kernel::framework::mm::register_alloc_decision(&POLICY).map_err(|_| ())

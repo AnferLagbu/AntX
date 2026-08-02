@@ -20,10 +20,10 @@ pub fn is_pipe_fd(fd: i32) -> bool {
 /// POSIX `pipe(pipefd)` 内核实现。
 ///
 /// # Safety
-/// `pipefd` 必须是可写指针, 含至少 2 个 `i32` 空间 (用于返回 [read_fd, write_fd])。
+/// `pipefd` 必须是可写指针, 含至少 2 个 `i32` 空间 (用于返回 [`read_fd`, `write_fd`])。
 /// 由 `sys_pipe` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-pub unsafe fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
+pub unsafe extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
     if pipefd.is_null() {
         return -1;
     }
@@ -52,7 +52,7 @@ pub unsafe fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
 /// `buf` 必须是有效可写指针, 至少 `count` 字节, 内存必须在调用期间保持有效。
 /// 由 `sys_read` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-pub unsafe fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
+pub unsafe extern "C" fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -73,7 +73,7 @@ pub unsafe fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32 {
 /// `buf` 必须是有效可读指针, 至少 `count` 字节, 内存必须在调用期间保持有效。
 /// 由 `sys_write` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-pub unsafe fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
+pub unsafe extern "C" fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -90,7 +90,7 @@ pub unsafe fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn ipc_pipe_close(fd: i32) -> i32 {
+pub extern "C" fn ipc_pipe_close(fd: i32) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     match crate::kernel::services::ipc::pipe::pipe_close_safe(ns, fd) {
         Ok(()) => 0,

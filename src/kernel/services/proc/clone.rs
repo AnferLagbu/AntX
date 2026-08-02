@@ -3,8 +3,8 @@
 //!
 //! 为 clone 系统调用提供参数验证:
 //! - flags 合法性检查
-//! - child_stack 对齐检查
-//! - CLONE_VM + CLONE_THREAD 必须同时设置 CLONE_SIGHAND
+//! - `child_stack` 对齐检查
+//! - `CLONE_VM` + `CLONE_THREAD` 必须同时设置 `CLONE_SIGHAND`
 //!
 //! ## 安全边界
 //!
@@ -15,7 +15,13 @@ use crate::kernel::framework::syscall::Errno;
 
 /// clone 安全代理
 ///
-/// 验证: flags 合法, CLONE_VM+CLONE_THREAD 需要 CLONE_SIGHAND
+/// 验证: flags 合法, `CLONE_VM+CLONE_THREAD` 需要 `CLONE_SIGHAND`
+///
+/// # Errors
+///
+/// - `CLONE_VM`/`CLONE_THREAD` 未同时设置 `CLONE_SIGHAND`, 或 `child_stack`
+///   非零但未按 16 字节对齐 → `EINVAL`
+/// - 底层 clone 返回负值时转换为对应的 `Errno`
 pub fn clone_syscall(
     flags: u64,
     child_stack: u64,

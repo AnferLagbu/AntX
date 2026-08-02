@@ -83,20 +83,20 @@ impl Color {
 
     /// 转换为RGB565格式
     pub fn to_rgb565(&self) -> u16 {
-        let r = (self.r as u16 >> 3) & 0x1F;
-        let g = (self.g as u16 >> 2) & 0x3F;
-        let b = (self.b as u16 >> 3) & 0x1F;
+        let r = (u16::from(self.r) >> 3) & 0x1F;
+        let g = (u16::from(self.g) >> 2) & 0x3F;
+        let b = (u16::from(self.b) >> 3) & 0x1F;
         (r << 11) | (g << 5) | b
     }
 
     /// 转换为RGB888格式 (返回u32方便使用)
     pub fn to_rgb888(&self) -> u32 {
-        ((self.r as u32) << 16) | ((self.g as u32) << 8) | (self.b as u32)
+        (u32::from(self.r) << 16) | (u32::from(self.g) << 8) | u32::from(self.b)
     }
 
     /// 转换为ARGB8888格式
     pub fn to_argb8888(&self) -> u32 {
-        ((self.a as u32) << 24) | ((self.r as u32) << 16) | ((self.g as u32) << 8) | (self.b as u32)
+        (u32::from(self.a) << 24) | (u32::from(self.r) << 16) | (u32::from(self.g) << 8) | u32::from(self.b)
     }
 
     /// 从RGB565创建颜色
@@ -124,14 +124,16 @@ impl Color {
     }
 
     /// 混合两个颜色 (alpha混合)
+    // 有意窄化: 颜色分量/透明度经规范化计算, 值域 [0,255]
+    #[expect(clippy::cast_possible_truncation)]
     pub fn blend(&self, other: &Color) -> Color {
-        let alpha = self.a as u32;
+        let alpha = u32::from(self.a);
         let inv_alpha = 255 - alpha;
 
         Color {
-            r: ((self.r as u32 * alpha + other.r as u32 * inv_alpha) / 255) as u8,
-            g: ((self.g as u32 * alpha + other.g as u32 * inv_alpha) / 255) as u8,
-            b: ((self.b as u32 * alpha + other.b as u32 * inv_alpha) / 255) as u8,
+            r: ((u32::from(self.r) * alpha + u32::from(other.r) * inv_alpha) / 255) as u8,
+            g: ((u32::from(self.g) * alpha + u32::from(other.g) * inv_alpha) / 255) as u8,
+            b: ((u32::from(self.b) * alpha + u32::from(other.b) * inv_alpha) / 255) as u8,
             a: 255,
         }
     }
@@ -292,7 +294,7 @@ impl Framebuffer {
         self.bpp
     }
 
-    /// 获取帧缓冲 IoMem 句柄（仅 crate 内部）
+    /// 获取帧缓冲 `IoMem` 句柄（仅 crate 内部）
     #[inline]
     pub(crate) fn iomem(&self) -> &IoMem {
         &self.iomem
@@ -332,10 +334,10 @@ impl Framebuffer {
                 self.iomem.write_u8(offset + 2, color.r);
             }
             PixelFormat::Bgra8888 => {
-                let pixel = ((color.b as u32) << 24)
-                    | ((color.g as u32) << 16)
-                    | ((color.r as u32) << 8)
-                    | (color.a as u32);
+                let pixel = (u32::from(color.b) << 24)
+                    | (u32::from(color.g) << 16)
+                    | (u32::from(color.r) << 8)
+                    | u32::from(color.a);
                 self.iomem.write_u32(offset, pixel);
             }
         }
@@ -544,6 +546,8 @@ impl Framebuffer {
     }
 
     /// Wu 反走样直线
+    // 有意窄化: 颜色分量/透明度经规范化计算, 值域 [0,255]
+    #[expect(clippy::cast_possible_truncation)]
     pub fn draw_line_aa(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
         let steep = (y1 - y0).abs() > (x1 - x0).abs();
         let (mut x0, mut y0, mut x1, mut y1) = (x0, y0, x1, y1);
@@ -561,6 +565,8 @@ impl Framebuffer {
         let dy = (y1 - y0) as f32;
         let gradient = if dx == 0.0 { 1.0f32 } else { dy / dx };
 
+        // 有意窄化: 浮点光栅化坐标/透明度取整, 值域有界
+        #[expect(clippy::cast_possible_truncation)]
         fn fpart(x: f32) -> f32 {
             x - (x as i32 as f32)
         }

@@ -5,12 +5,12 @@ use super::types::{ThreadPriority, ThreadState, SCHED_LEVEL_2_QUANTUM};
 
 pub use crate::kernel::framework::config::{MAX_THREADS, MAX_THREADS_PER_PROCESS};
 
-/// ✅ 统一线程结构体 — 合并了 Thread 和 ThreadNode, 消除类型强转 UB
+/// ✅ 统一线程结构体 — 合并了 Thread 和 `ThreadNode`, 消除类型强转 UB
 ///
 /// 字段分为三组:
-/// 1. 调度器链表字段 (next/prev) — 供 SchedulerEx 环形双向链表使用
-/// 2. 调度器记账字段 (priority/time_slice/cpu_time/sleep_until/state_change_count/frozen_since)
-/// 3. 线程资源字段 (entry/kernel_stack/user_stack/cr3/context_ptr/rsp/cs/ss/rflags)
+/// 1. 调度器链表字段 (next/prev) — 供 `SchedulerEx` 环形双向链表使用
+/// 2. 调度器记账字段 (`priority/time_slice/cpu_time/sleep_until/state_change_count/frozen_since`)
+/// 3. 线程资源字段 (`entry/kernel_stack/user_stack/cr3/context_ptr/rsp/cs/ss/rflags`)
 #[repr(C)]
 pub struct Thread {
     // === 调度器链表 (SchedulerEx 环形双向链表) ===
@@ -87,6 +87,10 @@ impl Thread {
     }
 
     /// ✅ 安全的状态设置 (带合法性检查)
+    ///
+    /// # Errors
+    /// 当请求的 `new_state` 不属于状态机允许的合法转换时, 返回
+    /// `Err("Illegal state transition")`, 且不会修改任何状态.
     pub fn set_state_safe(&self, new_state: ThreadState) -> Result<(), &'static str> {
         let current = ThreadState::from_u32(self.state.load(Ordering::Acquire));
 
@@ -181,12 +185,12 @@ impl ThreadTable {
     }
 
     /// 获取线程裸指针 (向后兼容接口)。
-    /// 内部存储为 NonNull, 转为 *mut 供外部调用。
+    /// 内部存储为 `NonNull`, 转为 *mut 供外部调用。
     pub fn get(&self, tid: u32) -> Option<*mut Thread> {
         if (tid as usize) >= MAX_THREADS {
             return None;
         }
-        self.threads.lock()[tid as usize].map(|n| n.as_ptr())
+        self.threads.lock()[tid as usize].map(core::ptr::NonNull::as_ptr)
     }
 
     pub fn remove(&self, tid: u32) {
@@ -248,7 +252,7 @@ impl ThreadManager {
         if !THREAD_TABLE.insert(thread) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
-                alloc::alloc::dealloc(thread as *mut u8, alloc::alloc::Layout::new::<Thread>())
+                alloc::alloc::dealloc(thread as *mut u8, alloc::alloc::Layout::new::<Thread>());
             };
             return None;
         }
@@ -271,7 +275,7 @@ impl ThreadManager {
     }
 
     pub fn set_current(&self, tid: u32) {
-        self.current_thread.store(tid as u64, Ordering::SeqCst);
+        self.current_thread.store(u64::from(tid), Ordering::SeqCst);
     }
 
     pub fn get_thread(&self, tid: u32) -> Option<*mut Thread> {

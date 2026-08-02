@@ -1,12 +1,12 @@
 #![deny(unsafe_code)]
-//! io_uring 异步 I/O 框架 — services 层策略主体
+//! `io_uring` 异步 I/O 框架 — services 层策略主体
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
 //! ## 迁移记录
 //!
 //! 策略代码 (数据结构 + 环形缓冲区 + 实例管理 + syscall 分发)
-//! 于 2026-06-18 从 framework::io::iouring 迁移至此。
+//! 于 2026-06-18 从 `framework::io::iouring` 迁移至此。
 //! framework 层仅保留 re-export 保持调用方兼容。
 
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -21,7 +21,7 @@ use crate::kernel::framework::errno::Errno;
 // 常量
 // ============================================================================
 
-/// 最大 io_uring 实例数
+/// 最大 `io_uring` 实例数
 pub const MAX_URING_INSTANCES: usize = 16;
 
 /// 默认队列深度 (2 的幂)
@@ -31,7 +31,7 @@ pub const DEFAULT_RING_SIZE: u32 = 256;
 // 操作码
 // ============================================================================
 
-/// io_uring 操作码
+/// `io_uring` 操作码
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IoOpCode {
@@ -203,7 +203,7 @@ impl<T: Clone + Default> RingBuffer<T> {
 // io_uring 实例
 // ============================================================================
 
-/// io_uring 实例
+/// `io_uring` 实例
 pub struct IoUring {
     /// 实例 ID
     pub id: u32,
@@ -220,7 +220,7 @@ pub struct IoUring {
 }
 
 impl IoUring {
-    /// 创建新的 io_uring 实例
+    /// 创建新的 `io_uring` 实例
     pub fn new(id: u32, ring_size: u32, owner_pid: u32) -> Self {
         Self {
             id,
@@ -233,6 +233,9 @@ impl IoUring {
     }
 
     /// 提交 SQE
+    ///
+    /// # Errors
+    /// 当 SQ 队列已满时返回 `EBUSY`.
     pub fn submit_sqe(&self, sqe: Sqe) -> Result<(), Errno> {
         let mut sq = self.sq.lock();
         if sq.push(sqe) {
@@ -249,6 +252,9 @@ impl IoUring {
     }
 
     /// 推送 CQE (内核生产)
+    ///
+    /// # Errors
+    /// 当 CQ 队列已满时返回 `EBUSY`.
     pub fn push_cqe(&self, cqe: Cqe) -> Result<(), Errno> {
         let mut cq = self.cq.lock();
         if cq.push(cqe) {
@@ -320,11 +326,14 @@ impl IoUring {
 // 全局 io_uring 管理
 // ============================================================================
 
-/// 全局 io_uring 实例表
+/// 全局 `io_uring` 实例表
 static URING_TABLE: IrqSpinLock<Vec<Option<IoUring>>> = IrqSpinLock::new(Vec::new());
 static NEXT_URING_ID: AtomicU32 = AtomicU32::new(0);
 
-/// 创建 io_uring 实例
+/// 创建 `io_uring` 实例
+///
+/// # Errors
+/// 当实例表已满 (`MAX_URING_INSTANCES`) 时返回 `ENOMEM`.
 pub fn io_uring_setup(entries: u32, owner_pid: u32) -> Result<u32, Errno> {
     let ring_size = if entries == 0 { DEFAULT_RING_SIZE } else { entries.next_power_of_two() };
 
@@ -339,7 +348,10 @@ pub fn io_uring_setup(entries: u32, owner_pid: u32) -> Result<u32, Errno> {
     Ok(id)
 }
 
-/// 销毁 io_uring 实例
+/// 销毁 `io_uring` 实例
+///
+/// # Errors
+/// 当指定 ID 的实例不存在时返回 `EBADF`.
 pub fn io_uring_destroy(id: u32) -> Result<(), Errno> {
     let mut table = URING_TABLE.lock();
     let pos = table.iter().position(|u| u.as_ref().map_or(false, |u| u.id == id));
@@ -353,6 +365,9 @@ pub fn io_uring_destroy(id: u32) -> Result<(), Errno> {
 }
 
 /// 提交 SQE 到指定实例
+///
+/// # Errors
+/// 当指定 ID 的实例不存在时返回 `EBADF`; 当 SQ 队列已满时返回 `EBUSY`.
 pub fn io_uring_submit(id: u32, sqe: Sqe) -> Result<(), Errno> {
     let table = URING_TABLE.lock();
     let uring = table
@@ -365,9 +380,12 @@ pub fn io_uring_submit(id: u32, sqe: Sqe) -> Result<(), Errno> {
     }
 }
 
-/// 进入 io_uring (处理待处理请求 + 可选等待)
+/// 进入 `io_uring` (处理待处理请求 + 可选等待)
 ///
 /// 返回处理的 CQE 数量
+///
+/// # Errors
+/// 当指定 ID 的实例不存在时返回 `EBADF`.
 pub fn io_uring_enter(id: u32, to_submit: u32, _min_complete: u32) -> Result<u32, Errno> {
     let table = URING_TABLE.lock();
     let uring = table
@@ -424,37 +442,37 @@ pub fn io_uring_reap(id: u32) -> Option<Cqe> {
         .iter()
         .find(|u| u.as_ref().map_or(false, |u| u.id == id))
         .and_then(|u| u.as_ref());
-    uring.and_then(|u| u.reap_cqe())
+    uring.and_then(IoUring::reap_cqe)
 }
 
 // ============================================================================
 // Syscall 接口
 // ============================================================================
 
-/// sys_io_uring_setup — 创建 io_uring 实例
+/// `sys_io_uring_setup` — 创建 `io_uring` 实例
 pub fn sys_io_uring_setup(entries: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
     match io_uring_setup(entries as u32, pid as u32) {
-        Ok(id) => id as i64,
+        Ok(id) => i64::from(id),
         Err(e) => -(e as i64),
     }
 }
 
-/// sys_io_uring_enter — 进入 io_uring (提交 + 等待完成)
+/// `sys_io_uring_enter` — 进入 `io_uring` (提交 + 等待完成)
 pub fn sys_io_uring_enter(id: u64, to_submit: u64, min_complete: u64) -> i64 {
     match io_uring_enter(id as u32, to_submit as u32, min_complete as u32) {
-        Ok(n) => n as i64,
+        Ok(n) => i64::from(n),
         Err(e) => -(e as i64),
     }
 }
 
-/// sys_io_uring_register — 注册缓冲区/文件 (当前桩实现)
+/// `sys_io_uring_register` — 注册缓冲区/文件 (当前桩实现)
 pub fn sys_io_uring_register(_id: u64, _opcode: u64, _arg: u64, _nr_args: u64) -> i64 {
     // TODO(TRACK-BECFEF): 实现缓冲区注册 / 文件注册
     -(Errno::ENOSYS as i64)
 }
 
-/// sys_io_uring_submit_sqe — 提交单个 SQE
+/// `sys_io_uring_submit_sqe` — 提交单个 SQE
 pub fn sys_io_uring_submit_sqe(id: u64, opcode: u64, flags: u64, user_data: u64, fd: u64, offset_len: u64) -> i64 {
     let sqe = Sqe {
         opcode: opcode as u8,

@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
-//! 内存文件系统 (RamFS) — services 层安全代理 (Phase 2.2.1)
+//! 内存文件系统 (`RamFS`) — services 层安全代理 (Phase 2.2.1)
 //!
 //! 在 `kernel/fs/ramfs` 基础上提供 100% safe 的公共 API,
 //! 用于用户态 shell/进程的文件系统交互。
@@ -40,7 +40,7 @@ pub use crate::kernel::framework::fs::{
 // 错误类型
 // ============================================================================
 
-/// 文件系统错误 — TD-18: 收敛到 KernelError, 3 字段 FS 特有 + 1 共享包装.
+/// 文件系统错误 — TD-18: 收敛到 `KernelError`, 3 字段 FS 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `NotInitialized`: ramfs 初始化状态机专用 (FS 未挂载), 不在 POSIX 通用集.
@@ -143,7 +143,7 @@ impl FileDescriptor {
 // 安全文件系统实例
 // ============================================================================
 
-/// RamFS 安全代理 (services 层)。
+/// `RamFS` 安全代理 (services 层)。
 ///
 /// 内部用 `IrqSpinLock<RamFsData>` 串行化所有访问,
 /// 提供 100% safe 的公共 API。
@@ -152,7 +152,7 @@ pub struct SafeRamFs {
 }
 
 impl SafeRamFs {
-    /// 创建未挂载的 SafeRamFs
+    /// 创建未挂载的 `SafeRamFs`
     pub fn new() -> Self {
         Self {
             inner: crate::kernel::framework::sync::IrqSpinLock::new(RamFsData::new()),
@@ -160,6 +160,9 @@ impl SafeRamFs {
     }
 
     /// 初始化并挂载到 `mount_point`
+    ///
+    /// # Errors
+    /// 当底层挂载失败时返回对应的 `FsError`.
     pub fn mount(&self, mount_point: &str) -> FsResult<()> {
         let mut fs = self.inner.lock();
         // 内部 init() 是 const, mount 走 i32 接口
@@ -176,6 +179,9 @@ impl SafeRamFs {
     ///
     /// # 返回
     /// 成功: `FileDescriptor`, 可用于后续 read/write/seek/close
+    ///
+    /// # Errors
+    /// 当路径不存在或无法打开时返回 `FileNotFound`.
     pub fn open(&self, path: &str, flags: VfsOpenFlags, pwm: u64) -> FsResult<FileDescriptor> {
         let raw_flags = flags.bits();
         let mut fs = self.inner.lock();
@@ -186,6 +192,9 @@ impl SafeRamFs {
     }
 
     /// 创建并打开文件
+    ///
+    /// # Errors
+    /// 当底层创建/打开失败时返回 `IoError`.
     pub fn create(&self, path: &str, pwm: u64) -> FsResult<FileDescriptor> {
         let flags = VfsOpenFlags::CREAT | VfsOpenFlags::RDWR;
         let mut fs = self.inner.lock();
@@ -203,6 +212,9 @@ impl SafeRamFs {
     ///
     /// # 返回
     /// 成功: 实际读取的字节数
+    ///
+    /// # Errors
+    /// 当底层读取失败 (如节点无效、权限不足等) 时返回对应的 `FsError`.
     pub fn read(&self, fd: &mut FileDescriptor, buf: &mut [u8]) -> FsResult<usize> {
         let mut fs = self.inner.lock();
         let rc = fs.read(fd.node_id, &mut fd.offset, buf, fd.pwm);
@@ -217,6 +229,9 @@ impl SafeRamFs {
     ///
     /// # 返回
     /// 成功: 实际写入的字节数
+    ///
+    /// # Errors
+    /// 当底层写入失败 (如只读、节点无效、权限不足等) 时返回对应的 `FsError`.
     pub fn write(&self, fd: &mut FileDescriptor, buf: &[u8]) -> FsResult<usize> {
         let mut fs = self.inner.lock();
         let rc = fs.write(fd.node_id, &mut fd.offset, buf, fd.pwm);
@@ -228,6 +243,9 @@ impl SafeRamFs {
     }
 
     /// 调整文件大小
+    ///
+    /// # Errors
+    /// 当底层截断失败 (如节点无效、权限不足等) 时返回对应的 `FsError`.
     pub fn truncate(&self, fd: &mut FileDescriptor, new_size: u64) -> FsResult<()> {
         let mut fs = self.inner.lock();
         let rc = fs.truncate(fd.node_id, new_size, fd.pwm);
@@ -239,6 +257,9 @@ impl SafeRamFs {
     /// # 参数
     /// - `offset`: 偏移量 (可为负)
     /// - `whence`: 基准 (Set/Cur/End)
+    ///
+    /// # Errors
+    /// 当 `whence` 非法或计算出的偏移越界时返回 `InvalidArgument`.
     pub fn seek(&self, fd: &mut FileDescriptor, offset: i64, whence: VfsSeekWhence) -> FsResult<u64> {
         let fs = self.inner.lock();
         match fs.seek(fd.node_id, fd.offset, offset, whence) {
@@ -251,6 +272,9 @@ impl SafeRamFs {
     }
 
     /// 查询文件大小
+    ///
+    /// # Errors
+    /// 当文件描述符对应节点不存在时返回 `FileNotFound`.
     pub fn get_file_size(&self, fd: &FileDescriptor) -> FsResult<u32> {
         let fs = self.inner.lock();
         match fs.get_file_size(fd.node_id) {
@@ -260,6 +284,9 @@ impl SafeRamFs {
     }
 
     /// 查询文件元数据
+    ///
+    /// # Errors
+    /// 当文件描述符对应节点不存在时返回 `FileNotFound`.
     pub fn stat(&self, fd: &FileDescriptor) -> FsResult<VfsStat> {
         let fs = self.inner.lock();
         match fs.stat(fd.node_id) {
@@ -269,6 +296,9 @@ impl SafeRamFs {
     }
 
     /// 创建目录
+    ///
+    /// # Errors
+    /// 当底层 mkdir 失败 (如父路径不存在、名称已存在、无权限等) 时返回对应的 `FsError`.
     pub fn mkdir(&self, parent_path: &str, name: &str, pwm: u64) -> FsResult<()> {
         let mut fs = self.inner.lock();
         let rc = fs.mkdir(parent_path, name, pwm);
@@ -276,6 +306,9 @@ impl SafeRamFs {
     }
 
     /// 创建文件 (不打开)
+    ///
+    /// # Errors
+    /// 当底层创建失败 (如父路径不存在、名称已存在等) 时返回 `IoError`.
     pub fn create_file(&self, parent_path: &str, name: &str, pwm: u64) -> FsResult<u32> {
         let mut fs = self.inner.lock();
         match fs.create_file(parent_path, name, pwm) {
@@ -285,6 +318,9 @@ impl SafeRamFs {
     }
 
     /// 删除文件
+    ///
+    /// # Errors
+    /// 当底层 unlink 失败 (如路径不存在、无权限等) 时返回对应的 `FsError`.
     pub fn unlink(&self, path: &str, pwm: u64) -> FsResult<()> {
         let mut fs = self.inner.lock();
         let rc = fs.unlink(path, pwm);
@@ -292,6 +328,9 @@ impl SafeRamFs {
     }
 
     /// 硬链接
+    ///
+    /// # Errors
+    /// 当底层 link 失败 (如节点无效、名称已存在、无权限等) 时返回对应的 `FsError`.
     pub fn link(&self, parent_node: u32, target_node: u32, name: &str, pwm: u64) -> FsResult<()> {
         let mut fs = self.inner.lock();
         let rc = fs.link(parent_node, target_node, name, pwm);
@@ -299,6 +338,9 @@ impl SafeRamFs {
     }
 
     /// 修改权限
+    ///
+    /// # Errors
+    /// 当底层 chmod 失败 (如路径不存在、无权限等) 时返回对应的 `FsError`.
     pub fn chmod(&self, path: &str, mode: u16, pwm: u64) -> FsResult<()> {
         let mut fs = self.inner.lock();
         let rc = fs.chmod(path, mode, pwm);
@@ -306,6 +348,9 @@ impl SafeRamFs {
     }
 
     /// 修改所有者 (uid)
+    ///
+    /// # Errors
+    /// 当底层 chown 失败 (如路径不存在、无权限等) 时返回对应的 `FsError`.
     pub fn chown(&self, path: &str, owner_pwm: u64, pwm: u64) -> FsResult<()> {
         let mut fs = self.inner.lock();
         let rc = fs.chown(path, owner_pwm, pwm);
@@ -313,6 +358,9 @@ impl SafeRamFs {
     }
 
     /// 修改所有者和组
+    ///
+    /// # Errors
+    /// 当底层 `chown_ext` 失败 (如路径不存在、无权限等) 时返回对应的 `FsError`.
     pub fn chown_ext(
         &self,
         path: &str,
@@ -340,6 +388,9 @@ impl SafeRamFs {
     ///
     /// # 返回
     /// 目录项列表
+    ///
+    /// # Errors
+    /// 当路径不存在时返回 `FileNotFound`; 当路径不是目录时返回 `NotADirectory`.
     pub fn readdir(&self, path: &str) -> FsResult<Vec<VfsDirEntry>> {
         let fs = self.inner.lock();
         let node_id = match fs.resolve_path(path) {
@@ -389,7 +440,10 @@ use crate::kernel::services::sync::once::OnceCell;
 
 static GLOBAL_RAMFS: OnceCell<SafeRamFs> = OnceCell::new();
 
-/// 初始化全局 RamFS
+/// 初始化全局 `RamFS`
+///
+/// # Errors
+/// 当底层挂载失败时返回对应的 `FsError` (首次初始化时).
 pub fn init_global(mount_point: &str) -> FsResult<()> {
     // 一旦已初始化, 跳过重复 mount. 闭包内失败传播给 caller (与原 spin::Once 行为一致)
     if GLOBAL_RAMFS.get().is_none() {
@@ -400,10 +454,13 @@ pub fn init_global(mount_point: &str) -> FsResult<()> {
     Ok(())
 }
 
-/// 获取全局 RamFS 引用
+/// 获取全局 `RamFS` 引用
 ///
 /// # Safety (调用方)
 /// 调用前需保证 `init_global` 已执行
+///
+/// # Panics
+/// 当 `init_global()` 尚未被调用、全局实例未初始化时发生 panic (内部使用 `expect`).
 pub fn global() -> &'static SafeRamFs {
     GLOBAL_RAMFS.get().expect("fs::global() called before init_global()")
 }
@@ -412,17 +469,26 @@ pub fn global() -> &'static SafeRamFs {
 // 便利函数
 // ============================================================================
 
-/// 打开全局 RamFS 文件
+/// 打开全局 `RamFS` 文件
+///
+/// # Errors
+/// 错误条件与 [`SafeRamFs::open`] 相同, 参见其 `# Errors` 段.
 pub fn open(path: &str, flags: VfsOpenFlags, pwm: u64) -> FsResult<FileDescriptor> {
     global().open(path, flags, pwm)
 }
 
-/// 创建并打开全局 RamFS 文件
+/// 创建并打开全局 `RamFS` 文件
+///
+/// # Errors
+/// 错误条件与 [`SafeRamFs::create`] 相同, 参见其 `# Errors` 段.
 pub fn create(path: &str, pwm: u64) -> FsResult<FileDescriptor> {
     global().create(path, pwm)
 }
 
-/// 在全局 RamFS 上创建目录
+/// 在全局 `RamFS` 上创建目录
+///
+/// # Errors
+/// 错误条件与 [`SafeRamFs::mkdir`] 相同, 参见其 `# Errors` 段.
 pub fn mkdir(parent: &str, name: &str, pwm: u64) -> FsResult<()> {
     global().mkdir(parent, name, pwm)
 }
@@ -458,6 +524,9 @@ pub fn split_path(path: &str) -> Option<(&str, &str)> {
 }
 
 /// 辅助: 检查路径是否合法 (长度、字符)
+///
+/// # Errors
+/// 当路径为空或包含 NUL 字节时返回 `InvalidArgument`; 当路径超过 `VFS_MAX_PATH` 时返回 `NameTooLong`.
 pub fn validate_path(path: &str) -> FsResult<String> {
     if path.is_empty() {
         return Err(FsError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));

@@ -7,7 +7,7 @@
 //! flock/POSIX record lock 是纯策略代码:
 //! - 0 unsafe, 不操作硬件
 //! - 不涉及 VFS 机制 (fd 表、挂载表、页缓存)
-//! - 仅依赖 IrqSpinLock (framework 同步原语, services 已可用)
+//! - 仅依赖 `IrqSpinLock` (framework 同步原语, services 已可用)
 //!
 //! 按框内核原则"能放 services 的别放 framework", 将实现迁到 services 层,
 //! framework 仅 re-export 类型与函数签名, 保持现有调用者路径不变。
@@ -36,20 +36,20 @@
 //!
 //! ## 设计决策
 //!
-//! - **固定大小数组**: no_std 无堆, 预分配槽位
+//! - **固定大小数组**: `no_std` 无堆, 预分配槽位
 //! - **flock 关联 (pid, fd)**: close(fd) 或进程退出时自动释放
 //! - **POSIX lock 关联 (pid, inode)**: 同一 pid 对同一 inode 的新锁替换旧锁
-//! - **LOCK_NB 非阻塞**: 立即返回 EAGAIN 而非阻塞等待
+//! - **`LOCK_NB` 非阻塞**: 立即返回 EAGAIN 而非阻塞等待
 //! - **与 Linux 的差异**:
-//!   - Linux flock 和 POSIX lock 互不影响; QueenX 同样保持独立
-//!   - Linux POSIX lock 关联到 (pid, file); QueenX 简化为 (pid, inode, range)
-//!   - 不实现 F_SETLKW 阻塞等待 (v1), 返回 EAGAIN
+//!   - Linux flock 和 POSIX lock 互不影响; `QueenX` 同样保持独立
+//!   - Linux POSIX lock 关联到 (pid, file); `QueenX` 简化为 (pid, inode, range)
+//!   - 不实现 `F_SETLKW` 阻塞等待 (v1), 返回 EAGAIN
 //!
 //! ## 安全契约
 //!
 //! - 全局状态由 `IrqSpinLock` 守护
-//! - close(fd) 时必须调用 flock_release_fd 释放该 fd 持有的所有锁
-//! - 进程退出时必须调用 flock_release_pid 释放该进程所有锁
+//! - close(fd) 时必须调用 `flock_release_fd` 释放该 fd 持有的所有锁
+//! - 进程退出时必须调用 `flock_release_pid` 释放该进程所有锁
 
 #![deny(unsafe_code)]
 
@@ -93,7 +93,7 @@ pub const F_SETLKW: i32 = 7;
 pub const F_GETLK: i32 = 5;
 
 // 特殊值
-/// POSIX lock 中 l_len = 0 表示锁到文件末尾
+/// POSIX lock 中 `l_len` = 0 表示锁到文件末尾
 pub const POSIX_LOCK_TO_EOF: u64 = 0;
 
 // ============================================================================
@@ -109,7 +109,7 @@ struct FlockEntry {
     owner_pid: u32,
     /// 持有锁的 fd (同一进程可多次 open 同一文件)
     owner_fd: i32,
-    /// 锁类型: LOCK_SH 或 LOCK_EX
+    /// 锁类型: `LOCK_SH` 或 `LOCK_EX`
     lock_type: i32,
     /// 引用计数 (同一 pid+fd 可重复 lock)
     count: u32,
@@ -145,7 +145,7 @@ struct PosixLockEntry {
     start: u64,
     /// 锁长度 (字节), 0 = 到文件末尾
     len: u64,
-    /// 锁类型: F_RDLCK 或 F_WRLCK
+    /// 锁类型: `F_RDLCK` 或 `F_WRLCK`
     lock_type: i32,
     /// 有效标志
     valid: bool,
@@ -204,7 +204,7 @@ impl FlockTable {
 
     /// 查找指定 inode 上是否存在冲突的排他锁
     fn find_conflict_shared(&self, ino: u32, exclude_pid: u32) -> Option<u32> {
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if entry.valid && entry.ino == ino && entry.owner_pid != exclude_pid && entry.lock_type == LOCK_EX {
                 return Some(entry.owner_pid);
             }
@@ -214,7 +214,7 @@ impl FlockTable {
 
     /// 查找指定 inode 上是否存在冲突的锁 (任何类型, 排除自己)
     fn find_conflict_exclusive(&self, ino: u32, exclude_pid: u32) -> Option<u32> {
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if entry.valid && entry.ino == ino && entry.owner_pid != exclude_pid {
                 return Some(entry.owner_pid);
             }
@@ -291,7 +291,7 @@ impl PosixLockTable {
         len: u64,
         lock_type: i32,
     ) -> Option<(u32, i32)> {
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if !entry.valid || entry.ino != ino || entry.owner_pid == pid {
                 continue;
             }
@@ -344,7 +344,7 @@ pub enum FlockResult {
     Invalid,
     /// 锁表已满
     NoSpace,
-    /// 该 fd 未持有锁 (LOCK_UN 时)
+    /// 该 fd 未持有锁 (`LOCK_UN` 时)
     NotHeld,
 }
 
@@ -458,7 +458,7 @@ fn flock_unlock(fd: i32, pid: u32, ino: u32) -> FlockResult {
 pub fn flock_release_fd(pid: u32, fd: i32) {
     let mut table = FLOCK_TABLE.lock();
     let mut released = 0u32;
-    for entry in table.entries.iter_mut() {
+    for entry in &mut table.entries {
         if entry.valid && entry.owner_pid == pid && entry.owner_fd == fd {
             *entry = FlockEntry::default();
             released += 1;
@@ -471,7 +471,7 @@ pub fn flock_release_fd(pid: u32, fd: i32) {
 pub fn flock_release_pid(pid: u32) {
     let mut table = FLOCK_TABLE.lock();
     let mut released = 0u32;
-    for entry in table.entries.iter_mut() {
+    for entry in &mut table.entries {
         if entry.valid && entry.owner_pid == pid {
             *entry = FlockEntry::default();
             released += 1;
@@ -487,7 +487,7 @@ pub fn flock_release_pid(pid: u32) {
 /// POSIX lock 操作结果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PosixLockResult {
-    /// 非阻塞模式下锁被占用, 或 F_GETLK 发现冲突锁
+    /// 非阻塞模式下锁被占用, 或 `F_GETLK` 发现冲突锁
     WouldBlock,
     /// 无效参数
     Invalid,
@@ -495,7 +495,7 @@ pub enum PosixLockResult {
     NoSpace,
 }
 
-/// POSIX 锁查询结果 (F_GETLK 返回)
+/// POSIX 锁查询结果 (`F_GETLK` 返回)
 #[derive(Debug, Clone, Copy)]
 pub struct PosixLockConflict {
     /// 冲突锁的持有者 PID
@@ -508,7 +508,11 @@ pub struct PosixLockConflict {
     pub len: u64,
 }
 
-/// fcntl F_SETLK / F_GETLK 实现
+/// fcntl `F_SETLK` / `F_GETLK` 实现
+///
+/// # Errors
+/// 当 `ino` 为 0 或 `cmd` 不是 `F_GETLK`/`F_SETLK`/`F_SETLKW` 时返回 `Invalid`;
+/// 其余错误由底层 `posix_getlk`/`posix_setlk` 传播.
 pub fn sys_posix_lock(
     pid: u32,
     ino: u32,
@@ -544,7 +548,7 @@ fn posix_getlk(
     let table = POSIX_LOCK_TABLE.lock();
     match table.find_conflict(ino, pid, start, len, lock_type) {
         Some((conflict_pid, conflict_type)) => {
-            for entry in table.entries.iter() {
+            for entry in &table.entries {
                 if entry.valid && entry.owner_pid == conflict_pid
                     && PosixLockTable::ranges_overlap(start, len, entry.start, entry.len)
                 {
@@ -634,7 +638,7 @@ fn posix_setlk(
 pub fn posix_lock_release_pid(pid: u32) {
     let mut table = POSIX_LOCK_TABLE.lock();
     let mut released = 0u32;
-    for entry in table.entries.iter_mut() {
+    for entry in &mut table.entries {
         if entry.valid && entry.owner_pid == pid {
             *entry = PosixLockEntry::default();
             released += 1;
@@ -647,7 +651,7 @@ pub fn posix_lock_release_pid(pid: u32) {
 pub fn posix_lock_release_inode(ino: u32) {
     let mut table = POSIX_LOCK_TABLE.lock();
     let mut released = 0u32;
-    for entry in table.entries.iter_mut() {
+    for entry in &mut table.entries {
         if entry.valid && entry.ino == ino {
             *entry = PosixLockEntry::default();
             released += 1;

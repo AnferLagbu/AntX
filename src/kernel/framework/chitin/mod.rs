@@ -1,7 +1,7 @@
 //! 几丁质设备驱动框架 (Chitin Driver Framework) — **API 层**
 //!
-//! QueenX 的统一设备驱动模型 — 唯一的注册/发现/初始化/I/O 入口。
-//! 本文件是 QueenX 的 **API 层**。
+//! `QueenX` 的统一设备驱动模型 — 唯一的注册/发现/初始化/I/O 入口。
+//! 本文件是 `QueenX` 的 **API 层**。
 //!
 //! ## 调用方契约
 //! - `driver::framework::Driver` —— 驱动实现者
@@ -24,11 +24,11 @@
 //! - 注册表: `Vec<ChitinDevice>` + spinlock,O(N) 查找(N ≤ 64)
 //! - 协议调用: 静态分发,无 vtable 开销
 //!
-//! - **ChitinProto**: 设备协议分类 (Block/Char/Net/Input/Bus/Other)
-//! - **ChitinOps**: 协议级 I/O 操作表 (函数指针, 零开销)
-//! - **ChitinDevice**: 统一设备描述符 (含 I/O 能力)
-//! - **BlockDevice trait**: 块设备统一接口 (推荐路径)
-//! - **Driver trait**: 驱动运行时行为的接口契约 (init/shutdown/is_ready)
+//! - **`ChitinProto`**: 设备协议分类 (Block/Char/Net/Input/Bus/Other)
+//! - **`ChitinOps`**: 协议级 I/O 操作表 (函数指针, 零开销)
+//! - **`ChitinDevice`**: 统一设备描述符 (含 I/O 能力)
+//! - **`BlockDevice` trait**: 块设备统一接口 (推荐路径)
+//! - **Driver trait**: 驱动运行时行为的接口契约 (`init/shutdown/is_ready`)
 //! - **全局注册表**: `CHITIN_DEVICES` 统一管理所有设备
 //!
 //! ## 架构
@@ -181,7 +181,7 @@ pub struct ChitinDevice {
     /// # Mutability
     ///
     /// `&'static mut` 是因为 `BlockDevice::blk_read/blk_write` 需要 `&mut self`.
-    /// 通过 `&mut ChitinDevice` 借用得到 (CHITIN_DEVICES 锁保护),
+    /// 通过 `&mut ChitinDevice` 借用得到 (`CHITIN_DEVICES` 锁保护),
     /// 不存在数据竞争 (持有锁时此引用唯一).
     pub block_dev: Option<&'static mut dyn BlockDevice>,
 }
@@ -241,19 +241,19 @@ impl ChitinDevice {
 
 static NEXT_DEVICE_ID: AtomicU32 = AtomicU32::new(1);
 
-/// 设备注册回调 — 可由 DevFS 订阅, 自动创建设备节点
+/// 设备注册回调 — 可由 `DevFS` 订阅, 自动创建设备节点
 /// E6-9b: Chitin→DevFS 桥接
 static DEVICE_REGISTER_CALLBACK: Mutex<Option<fn(&ChitinDevice)>> = Mutex::new(None);
 
-/// 设置设备注册回调 (由 DevFS 初始化时调用)
+/// 设置设备注册回调 (由 `DevFS` 初始化时调用)
 pub fn chitin_set_register_callback(cb: fn(&ChitinDevice)) {
     *DEVICE_REGISTER_CALLBACK.lock() = Some(cb);
 }
 
-/// 通知 DevFS 新设备已注册 (E6-9b)
+/// 通知 `DevFS` 新设备已注册 (E6-9b)
 ///
-/// 从 CHITIN_DEVICES 中获取最后注册的设备并调用回调。
-/// 这样避免 ChitinDevice 的 move 问题。
+/// 从 `CHITIN_DEVICES` 中获取最后注册的设备并调用回调。
+/// 这样避免 `ChitinDevice` 的 move 问题。
 fn notify_last_registered() {
     let cb = DEVICE_REGISTER_CALLBACK.lock();
     if let Some(f) = *cb {
@@ -330,18 +330,18 @@ pub fn chitin_register_with_ops(
 /// 注册块设备 (直接传 `&'static mut dyn BlockDevice`)
 ///
 /// 优势:
-/// - 0 unsafe (chitin_blk_read/write 直接 trait dispatch)
-/// - 类型安全 (驱动方必须实现 BlockDevice trait, 编译期检查)
+/// - 0 unsafe (`chitin_blk_read/write` 直接 trait dispatch)
+/// - 类型安全 (驱动方必须实现 `BlockDevice` trait, 编译期检查)
 ///
 /// # 生命周期
 ///
-/// `dev` 必须是 `'static` (即 `Box::leak` 或静态分配), ChitinDevice 持有
+/// `dev` 必须是 `'static` (即 `Box::leak` 或静态分配), `ChitinDevice` 持有
 /// `&'static mut dyn BlockDevice` 引用. 设备移除时 Chitin 负责清理.
 ///
 /// # Mutability 原因
 ///
 /// `BlockDevice::blk_read/blk_write` 需要 `&mut self`, 故用 `&'static mut` 而非 `&'static`.
-/// 通过 CHITIN_DEVICES 锁保护, 不存在数据竞争.
+/// 通过 `CHITIN_DEVICES` 锁保护, 不存在数据竞争.
 pub fn chitin_register_block_dev(
     name: &'static str,
     io_base: Option<u64>,
@@ -404,10 +404,10 @@ pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
         .count()
 }
 
-/// 查找第一个网络设备, 返回其 NetOps + driver_data + MAC 地址
+/// 查找第一个网络设备, 返回其 `NetOps` + `driver_data` + MAC 地址
 ///
-/// 供 smoltcp_impl 使用——协议栈不关心具体驱动类型, 只需要
-/// 四个函数指针 (send/recv/get_mac/irq) 和 driver_data。
+/// 供 `smoltcp_impl` 使用——协议栈不关心具体驱动类型, 只需要
+/// 四个函数指针 (`send/recv/get_mac/irq`) 和 `driver_data`。
 pub fn chitin_find_net_device() -> Option<(
     &'static crate::kernel::framework::chitin::proto_net::NetOps,
     *mut u8,
@@ -469,7 +469,7 @@ pub fn chitin_set_state(id: u32, state: DeviceState) {
 
 /// 通过 Chitin 读取块设备扇区
 ///
-/// `drive` 是设备在 CHITIN_DEVICES 中的索引。
+/// `drive` 是设备在 `CHITIN_DEVICES` 中的索引。
 /// 仅对 `ChitinProto::Block` 且携带 `block_dev` 的设备有效。
 ///
 /// 返回值遵循 POSIX 约定: `0` = 成功, `-errno` = 失败 (与 `framework::fs::KernelError` 对齐)。
@@ -568,7 +568,7 @@ pub fn chitin_blk_name(drive: u8) -> Option<&'static str> {
     Some(devices[idx].name)
 }
 
-/// 获取块设备综合信息 (name, is_present, total_sectors)
+/// 获取块设备综合信息 (name, `is_present`, `total_sectors`)
 pub fn chitin_blk_info(drive: u8) -> (&'static str, bool, u64) {
     let name = chitin_blk_name(drive).unwrap_or("unknown");
     let present = chitin_blk_is_present(drive);
@@ -585,7 +585,7 @@ pub fn chitin_blk_count() -> usize {
 
 /// 通过 Chitin 向第一个就绪字符设备写入字节
 ///
-/// 遍历 CHITIN_DEVICES 查找第一个 proto=Char+Ready 且携带 CharOps 的设备,
+/// 遍历 `CHITIN_DEVICES` 查找第一个 proto=Char+Ready 且携带 `CharOps` 的设备,
 /// 通过其 write 函数指针输出数据。用于内核日志串口输出等。
 pub fn chitin_char_write(data: &[u8]) {
     let devices = CHITIN_DEVICES.lock();

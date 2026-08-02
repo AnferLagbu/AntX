@@ -19,7 +19,7 @@ macro_rules! klog_pmm {
     };
 }
 
-use super::*;
+use super::{PAGE_SIZE, KERNEL_BASE, NonNull, MemoryInfo, PhysAddr, PageSize};
 use crate::kernel::framework::sync::{disable_interrupts, restore_interrupts, IrqSaveFlags};
 use core::cell::{Cell, UnsafeCell};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
@@ -32,11 +32,11 @@ const MAX_EARLY_ALLOCS: usize = 256;
 
 /// 最大 buddy 阶数: 2^9 × 4 KB = 2 MB
 const MAX_BUDDY_ORDER: u8 = 9;
-/// buddy_meta 中的哨兵值: 页面已分配 / 不是空闲链表头
+/// `buddy_meta` 中的哨兵值: 页面已分配 / 不是空闲链表头
 const BUDDY_ALLOCATED: u8 = 0xFF;
 
 /// 物理 RAM 基地址
-/// x86_64: 0 (multiboot 给出的物理内存从 0 开始)
+/// `x86_64`: 0 (multiboot 给出的物理内存从 0 开始)
 /// aarch64: 0x40000000 (QEMU virt 机器 RAM 基址)
 #[cfg(target_arch = "x86_64")]
 const RAM_BASE: u64 = 0;
@@ -60,8 +60,8 @@ fn pfn_to_virt(pfn: u64) -> *mut u8 {
 
 /// 将页数向上取整到 2 的幂 → 对应 buddy 阶数
 ///
-/// T2-2: 策略已提取到 pmm_trait::PmmPolicy, 本函数保留为内部快捷路径
-/// (直接调用 current_pmm_policy().count_to_order()).
+/// T2-2: 策略已提取到 `pmm_trait::PmmPolicy`, 本函数保留为内部快捷路径
+/// (直接调用 `current_pmm_policy().count_to_order()`).
 #[inline]
 fn count_to_order(count: usize) -> u8 {
     super::pmm_trait::current_pmm_policy().count_to_order(count, MAX_BUDDY_ORDER)
@@ -94,7 +94,7 @@ pub(crate) struct FreeNode {
 // 封装在这里.  外层 `PhysicalMemoryManager` 方法只调用
 // safe 包装器, 使 buddy 分配算法本身保持 safe Rust.
 pub(crate) mod raw {
-    use super::*;
+    use super::{FreeNode, NonNull, AtomicU32, Ordering, MAX_BUDDY_ORDER};
 
     // ---- FreeNode safe 包装器 ----
     // SAFETY 不变式: 指针指向物理 RAM 内空闲页中的合法 FreeNode,
@@ -221,7 +221,7 @@ pub(crate) mod raw {
                 // SAFETY: w < bitmap_size guarantees valid access
                 unsafe {
                     let p = self.ptr.as_ptr().add(w) as *const AtomicU32;
-                    free += (!(*p).load(Ordering::Relaxed)).count_ones() as u64;
+                    free += u64::from((!(*p).load(Ordering::Relaxed)).count_ones());
                 }
             }
             free
@@ -236,7 +236,7 @@ pub(crate) mod raw {
 
     impl HeadsRef {
         /// # Safety
-        /// - `ptr` 必须指向合法的 buddy_heads 数组
+        /// - `ptr` 必须指向合法的 `buddy_heads` 数组
         /// - 使用期间必须持有 PMM 锁
         #[inline(always)]
         pub unsafe fn new_unchecked(
@@ -282,8 +282,8 @@ use raw::{FreeNodeRef, MetaRef, BitmapRef, HeadsRef};
 /// 物理内存管理器 — Buddy 分配器
 ///
 /// 2026-07-02: 加 `#[repr(C)]` 防止 LTO 字段重排. 本次会话诊断发现
-/// LTO 在 release 模式错位多个字段 (bitmap_size, buddy_meta, buddy_heads),
-/// 虽有 addr_of! 修复, repr(C) 提供额外防御层.
+/// LTO 在 release 模式错位多个字段 (`bitmap_size`, `buddy_meta`, `buddy_heads`),
+/// 虽有 `addr_of`! 修复, repr(C) 提供额外防御层.
 #[repr(C)]
 pub struct PhysicalMemoryManager {
     // ---- Bitmap (reserved 跟踪 + 统计) ----
@@ -366,6 +366,8 @@ impl PhysicalMemoryManager {
         );
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn init_bitmap(&self, reserved_after_kernel: u64) {
         if self.initialized.load(Ordering::Acquire) {
             return;
@@ -394,12 +396,9 @@ impl PhysicalMemoryManager {
         }
 
         self.bitmap
-            .set(match NonNull::new(bitmap_virt as *mut u32) {
-                Some(ptr) => Some(ptr),
-                None => {
-                    klog_pmm!("[PMM] FATAL: bitmap null (0x{:X})", bitmap_virt);
-                    return;
-                }
+            .set(if let Some(ptr) = NonNull::new(bitmap_virt as *mut u32) { Some(ptr) } else {
+                klog_pmm!("[PMM] FATAL: bitmap null (0x{:X})", bitmap_virt);
+                return;
             });
         self.bitmap_size.set(bitmap_words);
 
@@ -596,6 +595,8 @@ impl PhysicalMemoryManager {
         }
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn free_huge_page(&self, addr: PhysAddr, size_type: PageSize) {
         match size_type {
             PageSize::Size4K => self.free_page(addr),
@@ -727,6 +728,8 @@ impl PhysicalMemoryManager {
     }
 
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
         // SAFETY: bitmap 已 init 时 self.bitmap_size 有效
@@ -744,7 +747,7 @@ impl PhysicalMemoryManager {
         // 截断到 total (bitmap 在 total_pages 之外可能还有剩余位)
         let extra = (self.bitmap_size.get() * 32).saturating_sub(total) as u32;
         if extra > 0 {
-            free.saturating_sub(extra as u64)
+            free.saturating_sub(u64::from(extra))
         } else {
             free
         }
@@ -810,7 +813,9 @@ impl PhysicalMemoryManager {
     }
 
     /// 尝试将 `order` 处释放的 `pfn` 与其上方的 buddy 合并.
-    /// 返回 (merged_pfn, final_order).
+    /// 返回 (`merged_pfn`, `final_order`).
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
@@ -874,12 +879,12 @@ impl PhysicalMemoryManager {
         let n = unsafe { FreeNodeRef::new_unchecked(node) };
         let prev = n.prev();
         let next = n.next();
-        if !prev.is_null() {
+        if prev.is_null() {
+            heads.set_head(order, next);
+        } else {
             // SAFETY: prev is a valid FreeNode in the list
             let p = unsafe { FreeNodeRef::new_unchecked(prev) };
             p.set_next(next);
-        } else {
-            heads.set_head(order, next);
         }
         if !next.is_null() {
             // SAFETY: next is a valid FreeNode in the list
@@ -935,6 +940,8 @@ impl PhysicalMemoryManager {
     }
 
     /// 指定阶数执行核心分配.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn buddy_alloc(&self, order: u8) -> Option<(u64, u8)> {
         if order > MAX_BUDDY_ORDER {
             return None;
@@ -974,13 +981,15 @@ impl PhysicalMemoryManager {
         Some((cur_pfn, order))
     }
 
-    /// 主 do_alloc: 处理早期分配与 buddy 分配.
+    /// 主 `do_alloc`: 处理早期分配与 buddy 分配.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn do_alloc(&self, order: u8) -> Option<PhysAddr> {
         if !self.initialized.load(Ordering::Acquire) {
             return if order == 0 {
                 self.early_alloc_single()
             } else {
-                self.early_alloc_multiple(1u64 << order as u64)
+                self.early_alloc_multiple(1u64 << u64::from(order))
             };
         }
 
@@ -992,7 +1001,7 @@ impl PhysicalMemoryManager {
 
         let (pfn, _) = self.buddy_alloc(order)?;
         let addr = page_to_phys(pfn);
-        let npages = 1u64 << order as u64;
+        let npages = 1u64 << u64::from(order);
         for i in 0..(npages as usize) {
             self.set_bit((pfn as usize) + i);
         }
@@ -1000,7 +1009,9 @@ impl PhysicalMemoryManager {
         Some(PhysAddr(addr))
     }
 
-    /// 主 do_free: 处理 buddy 或 bitmap 释放.
+    /// 主 `do_free`: 处理 buddy 或 bitmap 释放.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn do_free(&self, addr: PhysAddr, order: u8) {
         if !self.initialized.load(Ordering::Acquire) {
             klog_pmm!("[PMM] Warn: free before bitmap init at 0x{:X}", addr.0);
@@ -1022,7 +1033,7 @@ impl PhysicalMemoryManager {
         }
 
         if !self.buddy_ready.load(Ordering::Acquire) {
-            let npages = 1u64 << order as u64;
+            let npages = 1u64 << u64::from(order);
             for i in 0..(npages as usize) {
                 self.clear_bit(pfn as usize + i);
             }
@@ -1031,7 +1042,7 @@ impl PhysicalMemoryManager {
         }
 
         // Clear bitmap
-        let npages = 1u64 << order as u64;
+        let npages = 1u64 << u64::from(order);
         for i in 0..(npages as usize) {
             self.clear_bit(pfn as usize + i);
         }
@@ -1043,6 +1054,8 @@ impl PhysicalMemoryManager {
     }
 
     /// 扫描所有空闲页 (位未置位), 合并为最大阶的 buddy 块.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn buddy_init_free_lists(&self, total_pages: usize) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
@@ -1069,7 +1082,7 @@ impl PhysicalMemoryManager {
             while remaining > 0 {
                 // ≤ remaining 的最大 2 的幂, 对齐到自身大小
                 let max_order = (usize::BITS - 1 - (remaining - 1).leading_zeros())
-                    .min(MAX_BUDDY_ORDER as u32) as u8;
+                    .min(u32::from(MAX_BUDDY_ORDER)) as u8;
                 // 寻找 cur 自然对齐 且 2^order ≤ remaining 的最大阶
                 let mut order = max_order;
                 while order > 0 {
@@ -1091,6 +1104,8 @@ impl PhysicalMemoryManager {
     }
 
     /// 1GB 页直接对齐分配 (超出 buddy 范围).
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn buddy_direct_alloc_aligned(&self, count: usize, alignment: u64) -> Option<PhysAddr> {
         let total = self.info.get().total_pages as usize;
         let align_pages = (alignment / PAGE_SIZE) as usize;
@@ -1117,6 +1132,8 @@ impl PhysicalMemoryManager {
     }
 
     /// 回退 bitmap 扫描 (在 init 完成但 buddy 还未就绪, 或 buddy 关闭时使用).
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn alloc_from_bitmap_fallback(&self, count: usize) -> Option<PhysAddr> {
         let total = self.info.get().total_pages as usize;
         for i in 0..total {
@@ -1204,6 +1221,9 @@ pub fn pmm_init(mem_size: u64, kernel_end: u64) -> &'static PhysicalMemoryManage
     })
 }
 
+/// 初始化物理内存位图。
+/// # Panics
+/// 在 `pmm_init` 之前调用时 panic。
 pub fn pmm_init_bitmap(reserved_after_kernel: u64) {
     let pmm = GLOBAL_PMM
         .get()

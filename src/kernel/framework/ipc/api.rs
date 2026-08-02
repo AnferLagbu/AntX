@@ -35,7 +35,7 @@
 
 /// IPC 资源抽象。
 ///
-/// Pipe / ShmSegment / MsgQueue / Semaphore 均实现此 trait,
+/// Pipe / `ShmSegment` / `MsgQueue` / Semaphore 均实现此 trait,
 /// 使 syscall 层可以用统一模式管理 IPC 文件描述符。
 pub trait IpcResource {
     /// 资源标识符 (0 = 未使用)
@@ -76,5 +76,5 @@ pub const MSG_MAX_SIZE: usize = 1024;
 /// - 必须在内核启动早期调用, 单线程环境下
 /// - 只能调用一次
 pub fn ipc_init() {
-    super::ipc_init()
+    super::ipc_init();
 }

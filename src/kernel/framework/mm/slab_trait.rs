@@ -58,7 +58,7 @@ pub trait SlabPolicy: Send + Sync {
     /// 计算每个 Slab 可容纳的对象数
     ///
     /// `slab_size` 为 Slab 页大小 (通常 4096),
-    /// `header_size` 为 SlabHeader 大小,
+    /// `header_size` 为 `SlabHeader` 大小,
     /// `object_size` 为单个对象大小.
     fn calculate_objects_per_slab(
         &self,
@@ -74,8 +74,8 @@ pub trait SlabPolicy: Send + Sync {
 
     /// 对象大小规范化: 将请求大小调整为实际分配大小
     ///
-    /// 例如: 请求 8 字节 → 规范化为 MIN_OBJECT_SIZE (16 字节).
-    /// 请求超过 MAX_OBJECT_SIZE → 返回 None (回退到堆分配器).
+    /// 例如: 请求 8 字节 → 规范化为 `MIN_OBJECT_SIZE` (16 字节).
+    /// 请求超过 `MAX_OBJECT_SIZE` → 返回 None (回退到堆分配器).
     fn normalize_object_size(&self, requested_size: usize) -> Option<usize>;
 }
 
@@ -99,6 +99,8 @@ impl SlabPolicy for FallbackSlabPolicy {
         None
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn calculate_objects_per_slab(
         &self,
         slab_size: usize,
@@ -136,9 +138,12 @@ static FALLBACK_SLAB_POLICY: FallbackSlabPolicy = FallbackSlabPolicy;
 static SLAB_POLICY: crate::kernel::framework::sync::OnceLock<&'static dyn SlabPolicy> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 注册 Slab 策略 (由 services::mm::init 调用)
+/// 注册 Slab 策略 (由 `services::mm::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+///
+/// # Errors
+/// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
 pub fn register_slab_policy(policy: &'static dyn SlabPolicy) -> Result<(), &'static dyn SlabPolicy> {
     match SLAB_POLICY.set(policy) {
         Ok(()) => Ok(()),

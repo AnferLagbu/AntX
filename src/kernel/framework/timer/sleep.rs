@@ -111,6 +111,10 @@ pub fn busy_wait_ms(ms: u64) {
 /// # Returns
 /// * `Ok(())` - 成功完成
 /// * `Err(&str)` - PIT 未初始化或其他错误
+///
+/// # Errors
+/// 当 PIT 未初始化时返回 `Err("PIT not initialized")`; 当读取 PIT 计数值失败时返回
+/// `Err("Failed to read PIT count")`.
 pub fn pit_busy_wait_us(us: u64) -> Result<(), &'static str> {
     if us == 0 {
         return Ok(());
@@ -138,7 +142,7 @@ pub fn pit_busy_wait_us(us: u64) -> Result<(), &'static str> {
             start_count + (0xFFFFu16 - current_count) + 1
         };
 
-        if elapsed as u64 >= cycles_needed {
+        if u64::from(elapsed) >= cycles_needed {
             break;
         }
 
@@ -169,6 +173,10 @@ pub fn pit_busy_wait_us(us: u64) -> Result<(), &'static str> {
 /// // 睡眠 100 毫秒 (高效，不浪费 CPU)
 /// timer_sleep(100).unwrap();
 /// ```
+///
+/// # Errors
+/// 当前实现的所有代码路径均返回 `Ok(())` (定时器未初始化时回退到忙等待或
+/// yield 循环), 不会返回 `Err`; `Err(-1)` 为预留的"被信号中断"错误码.
 pub fn timer_sleep(ms: u64) -> Result<(), i32> {
     if ms == 0 {
         return Ok(());
@@ -214,7 +222,7 @@ pub fn timer_sleep(ms: u64) -> Result<(), i32> {
 /// 待唤醒的进程 PID (供 hrtimer 回调使用)
 static SLEEP_WAKE_PID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
-/// hrtimer 回调: 唤醒被 timer_sleep 阻塞的进程
+/// hrtimer 回调: 唤醒被 `timer_sleep` 阻塞的进程
 fn sleep_timer_callback(_timer: &crate::kernel::framework::timer::HrTimer) -> crate::kernel::framework::timer::HrTimerRestart {
     let pid = SLEEP_WAKE_PID.load(core::sync::atomic::Ordering::Relaxed);
     if pid != 0 {
@@ -260,6 +268,9 @@ fn timer_sleep_yield(ms: u64) -> Result<(), i32> {
 /// # Returns
 /// * `Ok(())` - 条件满足
 /// * `Err(-1)` - 超时
+///
+/// # Errors
+/// 当在 `timeout_ms` 内条件始终未满足时返回 `Err(-1)` (超时).
 pub fn wait_with_timeout<F>(condition: F, timeout_ms: u64) -> Result<(), i32>
 where
     F: Fn() -> bool,

@@ -1,4 +1,4 @@
-//! QX (QueenX) AMD64 CPU 驱动核心 - Rust 完整实现
+//! QX (`QueenX`) AMD64 CPU 驱动核心 - Rust 完整实现
 //!
 //! ## 功能概览
 //!
@@ -51,7 +51,7 @@ pub use tsc::{read_tsc, read_tsc_serialized, cycles_to_nanoseconds};
 // 常量定义 (编译时常量)
 // ============================================================================
 
-/// 扩展 CPUID leaf 起始值 (x86_64 专用)
+/// 扩展 CPUID leaf 起始值 (`x86_64` 专用)
 #[cfg(target_arch = "x86_64")]
 const CPUID_LEAF_EXT_BASE: u32 = 0x8000_0000;
 
@@ -89,7 +89,7 @@ impl CpuVendor {
     /// 从厂商字符串识别厂商
     ///
     /// # Arguments
-    /// * `vendor_str` - 12字节的厂商ID (如 "GenuineIntel")
+    /// * `vendor_str` - 12字节的厂商ID (如 "`GenuineIntel`")
     pub fn from_vendor_string(vendor_str: &[u8; VENDOR_STRING_LEN]) -> Self {
         match vendor_str {
             b"GenuineIntel" => Self::Intel,
@@ -314,7 +314,7 @@ pub struct CpuSignature {
     pub family: u8,
     /// 处理器类型 (Processor Type, bits 13:12)
     /// - 00: Original OEM
-    /// - 01: OverDrive
+    /// - 01: `OverDrive`
     /// - 10: Dual processor
     /// - 11: Reserved
     pub processor_type: u8,
@@ -328,8 +328,8 @@ impl CpuSignature {
     /// 计算有效的家族号 (处理特殊编码)
     ///
     /// Intel 手册规定:
-    /// - 如果 Family != 0xF, Effective_Family = Family
-    /// - 如果 Family == 0xF, Effective_Family = Extended_Family + Family
+    /// - 如果 Family != 0xF, `Effective_Family` = Family
+    /// - 如果 Family == 0xF, `Effective_Family` = `Extended_Family` + Family
     #[inline]
     pub const fn effective_family(&self) -> u8 {
         if self.family == 0x0F {
@@ -562,7 +562,7 @@ use crate::kernel::framework::sync::once_lock::OnceLock;
 /// 全局 CPU 信息实例 (延迟初始化, 线程安全)
 static CPU_INFO: OnceLock<CpuInfo> = OnceLock::new();
 
-/// 获取全局 CPU 信息引用 (必须先调用 cpu_init())
+/// 获取全局 CPU 信息引用 (必须先调用 `cpu_init()`)
 ///
 /// # Returns
 /// * Some(&CpuInfo) - 成功获取
@@ -728,7 +728,7 @@ pub extern "C" fn cpu_init() -> i32 {
 /// 获取 CPU 信息指针 (FFI兼容)
 ///
 /// # Returns
-/// * 非 NULL - 指向全局 CpuInfo 的指针
+/// * 非 NULL - 指向全局 `CpuInfo` 的指针
 /// * NULL - 未初始化
 /// FFI 导出函数 (C 可调用)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -752,7 +752,7 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
     match get_cpu_info() {
         Some(info) => info
             .features
-            .contains(CpuFeatures::from_bits_truncate(feature_bit as u128)),
+            .contains(CpuFeatures::from_bits_truncate(u128::from(feature_bit))),
         None => false,
     }
 }
@@ -830,7 +830,7 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 pub extern "C" fn cpu_get_apic_id() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
     match get_cpu_info() {
-        Some(info) => info.topology.apic_id as u32,
+        Some(info) => u32::from(info.topology.apic_id),
         None => 0,
     }
 }
@@ -1084,13 +1084,13 @@ fn collect_features(
         // 品牌字符串 (Leaf 80000002~4)
         if max_ext >= 0x8000_0004 {
             let (a, b, c, d) = cpuid::cpuid(0x8000_0002, 0);
-            brand_out[0..16].copy_from_slice(&[a, b, c, d].map(|x| x.to_le_bytes()).concat());
+            brand_out[0..16].copy_from_slice(&[a, b, c, d].map(u32::to_le_bytes).concat());
 
             let (a, b, c, d) = cpuid::cpuid(0x8000_0003, 0);
-            brand_out[16..32].copy_from_slice(&[a, b, c, d].map(|x| x.to_le_bytes()).concat());
+            brand_out[16..32].copy_from_slice(&[a, b, c, d].map(u32::to_le_bytes).concat());
 
             let (a, b, c, d) = cpuid::cpuid(0x8000_0004, 0);
-            brand_out[32..48].copy_from_slice(&[a, b, c, d].map(|x| x.to_le_bytes()).concat());
+            brand_out[32..48].copy_from_slice(&[a, b, c, d].map(u32::to_le_bytes).concat());
 
             brand_out[47] = 0; // null 终止
         } else {
@@ -1141,6 +1141,8 @@ fn collect_features(
 
 /// 检测缓存配置 (Intel: Leaf 4, AMD: Leaf 80000005/6)
 #[cfg(target_arch = "x86_64")]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: CpuVendor) {
     // 设置默认保守值
     *cache_out = CacheInfo {
@@ -1223,6 +1225,8 @@ fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: C
 
 /// 探测多核拓扑 (Intel: Leaf 0xB, AMD: Leaf 80000008)
 #[cfg(target_arch = "x86_64")]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn detect_topology(
     topo_out: &mut TopologyInfo,
     _sig: &CpuSignature,
@@ -1262,16 +1266,14 @@ fn detect_topology(
         }
     }
     // 回退: 假设无超线程
-    else {
-        if !topo_out.hyperthreading_enabled {
-            topo_out.physical_cores = topo_out.logical_threads;
-        } else {
-            // 有超线程但无法确定物理核心数, 假设 2 threads/core
-            topo_out.physical_cores = topo_out.logical_threads / 2;
-            if topo_out.physical_cores == 0 {
-                topo_out.physical_cores = 1;
-            }
+    else if topo_out.hyperthreading_enabled {
+        // 有超线程但无法确定物理核心数, 假设 2 threads/core
+        topo_out.physical_cores = topo_out.logical_threads / 2;
+        if topo_out.physical_cores == 0 {
+            topo_out.physical_cores = 1;
         }
+    } else {
+        topo_out.physical_cores = topo_out.logical_threads;
     }
 
     // 安全边界检查
@@ -1283,19 +1285,19 @@ fn detect_topology(
     }
 }
 
-/// IA32_EFER MSR 地址
+/// `IA32_EFER` MSR 地址
 #[cfg(target_arch = "x86_64")]
 const IA32_EFER: u32 = 0xC0000080;
-/// IA32_EFER.SCE — 启用 SYSCALL/SYSRET 指令
+/// `IA32_EFER.SCE` — 启用 SYSCALL/SYSRET 指令
 #[cfg(target_arch = "x86_64")]
 const EFER_SCE: u64 = 1 << 0;
-/// IA32_STAR — SYSCALL 目标 CS/SS 和 SYSRET 基址
+/// `IA32_STAR` — SYSCALL 目标 CS/SS 和 SYSRET 基址
 #[cfg(target_arch = "x86_64")]
 const IA32_STAR: u32 = 0xC0000081;
-/// IA32_LSTAR — SYSCALL 入口点 (64-bit 模式)
+/// `IA32_LSTAR` — SYSCALL 入口点 (64-bit 模式)
 #[cfg(target_arch = "x86_64")]
 const IA32_LSTAR: u32 = 0xC0000082;
-/// IA32_SFMASK — SYSCALL 期间清零的标志位
+/// `IA32_SFMASK` — SYSCALL 期间清零的标志位
 #[cfg(target_arch = "x86_64")]
 const IA32_SFMASK: u32 = 0xC0000084;
 
@@ -1374,7 +1376,7 @@ fn calibrate_tsc(max_std: u32, vendor: CpuVendor) -> u64 {
         if eax != 0 && ebx != 0 && ecx != 0 {
             // TSC 频率 = (crystal_freq * ebx) / eax
             // crystal_freq 通常需要额外查询, 这里简化处理
-            let estimated = ((ecx as u64) * (ebx as u64)) / (eax as u64);
+            let estimated = (u64::from(ecx) * u64::from(ebx)) / u64::from(eax);
             if estimated > 0 {
                 return estimated * 1_000_000; // MHz → Hz
             }

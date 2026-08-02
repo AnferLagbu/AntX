@@ -45,10 +45,10 @@ pub const PIT_MIN_COUNT: u16 = 0x0001;
 
 /// PIT 8254 控制字 — Intel 8253/8254 规范
 ///
-/// 当前使用: SELECT_CHANNEL_0, LATCH_COUNT, LO_HI, MODE_2_RATE_GENERATOR
+/// 当前使用: `SELECT_CHANNEL_0`, `LATCH_COUNT`, `LO_HI`, `MODE_2_RATE_GENERATOR`
 /// 规范定义的其余模式供参考:
-///   SELECT_CHANNEL_{1,2}、READ_BACK_COMMAND、LOW/HIGH_BYTE_ONLY、
-///   MODE_{0,1,3,4,5}、BCD_MODE
+///   `SELECT_CHANNEL`_{`1,2}、READ_BACK_COMMAND、LOW/HIGH_BYTE_ONLY`、
+///   MODE_{`0,1,3,4,5}、BCD_MODE`
 mod control_word {
     pub const SELECT_CHANNEL_0: u8 = 0x00;
     pub const LATCH_COUNT: u8 = 0x00;
@@ -115,6 +115,11 @@ unsafe fn inb(port: u16) -> u8 {
 /// let actual_freq = pit_init(1000).unwrap();  // 1ms 间隔
 /// assert!((actual_freq - 1000).abs() < 5);     // 允许 ±5 Hz 误差
 /// ```
+///
+/// # Errors
+/// 当 `frequency_hz` 为 0 时返回 `Err("Frequency must be > 0")`;
+/// 当频率超过 PIT 基准频率时返回 `Err("Frequency exceeds PIT maximum")`;
+/// 当计算出的分频值超出合法计数范围时返回 `Err("Divisor out of range")`.
 pub fn pit_init(frequency_hz: u32) -> Result<u32, &'static str> {
     if frequency_hz == 0 {
         return Err("Frequency must be > 0");
@@ -125,7 +130,7 @@ pub fn pit_init(frequency_hz: u32) -> Result<u32, &'static str> {
     }
 
     // 计算分频值
-    let divisor = (PIT_BASE_FREQUENCY / frequency_hz as u64) as u16;
+    let divisor = (PIT_BASE_FREQUENCY / u64::from(frequency_hz)) as u16;
 
     if !(PIT_MIN_COUNT..=PIT_MAX_COUNT).contains(&divisor) {
         return Err("Divisor out of range");
@@ -153,7 +158,7 @@ pub fn pit_init(frequency_hz: u32) -> Result<u32, &'static str> {
     }
 
     // 更新全局状态
-    let actual_freq = (PIT_BASE_FREQUENCY / divisor as u64) as u32;
+    let actual_freq = (PIT_BASE_FREQUENCY / u64::from(divisor)) as u32;
     CURRENT_FREQ_HZ.store(actual_freq, Ordering::Relaxed);
     CURRENT_DIVISOR.store(divisor, Ordering::Relaxed);
     LAST_TICK_COUNT.store(divisor, Ordering::Relaxed);
@@ -184,10 +189,10 @@ pub fn pit_read_count() -> Option<u16> {
         outb(PIT_COMMAND_PORT, latch_cmd);
 
         // 读取低字节
-        let low = inb(PIT_CHANNEL_0_DATA) as u16;
+        let low = u16::from(inb(PIT_CHANNEL_0_DATA));
 
         // 读取高字节
-        let high = inb(PIT_CHANNEL_0_DATA) as u16;
+        let high = u16::from(inb(PIT_CHANNEL_0_DATA));
 
         Some((high << 8) | low)
     }
@@ -219,7 +224,7 @@ pub fn pit_elapsed_since_tick_us() -> Option<u64> {
 
     // 转换为微秒
     // us = cycles * 1_000_000 / PIT_BASE_FREQUENCY
-    let us = (elapsed_cycles as u64 * 1_000_000) / PIT_BASE_FREQUENCY;
+    let us = (u64::from(elapsed_cycles) * 1_000_000) / PIT_BASE_FREQUENCY;
 
     Some(us)
 }

@@ -24,9 +24,9 @@ pub mod tss;
 // X8664 架构类型
 // ============================================================================
 
-/// x86_64 架构标记类型。
+/// `x86_64` 架构标记类型。
 ///
-/// 零大小类型，通过子 trait 提供所有 x86_64 硬件操作。
+/// 零大小类型，通过子 trait 提供所有 `x86_64` 硬件操作。
 pub struct X8664;
 
 // ============================================================================
@@ -66,7 +66,7 @@ impl CoreArch for X8664 {
                 options(nostack, nomem, preserves_flags)
             );
         }
-        ((hi as u64) << 32) | (lo as u64)
+        (u64::from(hi) << 32) | u64::from(lo)
     }
 
     /// CPU 暂停等待中断 (hlt)。
@@ -112,6 +112,8 @@ impl CoreArch for X8664 {
 impl InterruptArch for X8664 {
     /// 禁用中断并返回 RFLAGS (含 IF 位)。
     #[inline(always)]
+    // 有意窄化: 内核寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn interrupt_disable() -> usize {
         let flags: u64;
         // SAFETY: pushfq 压入 RFLAGS, pop 弹出到通用寄存器, 然后 cli 关中断.
@@ -167,6 +169,8 @@ impl InterruptArch for X8664 {
 
     /// 向目标 CPU 发送 IPI (通过 Local APIC)。
     #[inline(always)]
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn send_ipi(target_cpu: u32, vector: u8) {
         use crate::kernel::framework::arch::x86_64::apic;
         apic::send_ipi(target_cpu as u8, vector);
@@ -296,6 +300,8 @@ impl MmuArch for X8664 {
 
     /// 读取页故障地址 (mov rax, cr2)。
     #[inline(always)]
+    // 有意窄化: 内核寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn read_fault_address() -> usize {
         let cr2: u64;
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -309,7 +315,7 @@ impl MmuArch for X8664 {
         cr2 as usize
     }
 
-    /// 进程上下文切换 (process_switch_asm)。
+    /// 进程上下文切换 (`process_switch_asm`)。
     #[inline(always)]
     fn context_switch(from: *mut u8, to: *const u8) {
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
@@ -332,7 +338,7 @@ impl MmuArch for X8664 {
     /// - rdi = entry (用户态 RIP)
     /// - rsi = stack (用户态 RSP)
     /// - rdx = arg (用户态参数，当前未使用)
-    /// - rcx = user_cr3 (用户页表物理地址)
+    /// - rcx = `user_cr3` (用户页表物理地址)
     /// - r8 = kstack (内核栈高半区地址)
     #[inline(never)]
     fn enter_user(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> ! {

@@ -2,19 +2,19 @@
 //!
 //! 实现 USB 设备枚举流程 (USB 2.0 规范 §9.1):
 //!
-//! 1. **GET_DESCRIPTOR (Device)**: 发送 GET_DESCRIPTOR Device Descriptor 请求到地址 0
+//! 1. **`GET_DESCRIPTOR` (Device)**: 发送 `GET_DESCRIPTOR` Device Descriptor 请求到地址 0
 //!    (default address), 解析 18 字节 Device Descriptor (USB 规范 §9.6.1).
-//! 2. **SET_ADDRESS**: 分配新地址 (通过 `XhciController::allocate_address`), 发送
-//!    SET_ADDRESS 请求. 之后设备通信使用新地址.
-//! 3. **GET_DESCRIPTOR (Configuration)**: 读取 Configuration Descriptor + Interface
+//! 2. **`SET_ADDRESS`**: 分配新地址 (通过 `XhciController::allocate_address`), 发送
+//!    `SET_ADDRESS` 请求. 之后设备通信使用新地址.
+//! 3. **`GET_DESCRIPTOR` (Configuration)**: 读取 Configuration Descriptor + Interface
 //!    Descriptor + Endpoint Descriptor (USB 规范 §9.6.3).
-//! 4. **SET_CONFIGURATION**: 选择 Configuration 1 (或其他有效配置).
+//! 4. **`SET_CONFIGURATION`**: 选择 Configuration 1 (或其他有效配置).
 //!
 //! ## 限制
 //!
 //! - 当前为**软件骨架**实装, 不通过真实 xHCI 控制器发送 Setup TRBs.
 //!   Phase E 集成测试需要真实硬件 / QEMU xHCI 模拟器验证.
-//! - 不实现 GET_HID_DESCRIPTOR / GET_REPORT 等类特定请求 (由 USB-1.7 HID 驱动处理).
+//! - 不实现 `GET_HID_DESCRIPTOR` / `GET_REPORT` 等类特定请求 (由 USB-1.7 HID 驱动处理).
 //!
 //! ## TRACK 跟踪
 //!
@@ -31,7 +31,7 @@ use alloc::vec::Vec;
 // USB Setup Packet 构造辅助
 // ============================================================================
 
-/// 构造 GET_DESCRIPTOR 请求.
+/// 构造 `GET_DESCRIPTOR` 请求.
 ///
 /// # 参数
 ///
@@ -42,29 +42,29 @@ fn make_get_descriptor_request(desc_type: u8, desc_index: u8, length: u16) -> Us
     UsbSetupPacket {
         request_type: 0x80, // Device-to-Host, Standard
         request: StandardRequest::GetDescriptor as u8,
-        value: ((desc_type as u16) << 8) | (desc_index as u16),
+        value: (u16::from(desc_type) << 8) | u16::from(desc_index),
         index: 0,
         length,
     }
 }
 
-/// 构造 SET_ADDRESS 请求.
+/// 构造 `SET_ADDRESS` 请求.
 fn make_set_address_request(address: u8) -> UsbSetupPacket {
     UsbSetupPacket {
         request_type: 0x00, // Host-to-Device, Standard, Device
         request: StandardRequest::SetAddress as u8,
-        value: address as u16,
+        value: u16::from(address),
         index: 0,
         length: 0,
     }
 }
 
-/// 构造 SET_CONFIGURATION 请求.
+/// 构造 `SET_CONFIGURATION` 请求.
 fn make_set_configuration_request(config_value: u8) -> UsbSetupPacket {
     UsbSetupPacket {
         request_type: 0x00,
         request: StandardRequest::SetConfiguration as u8,
-        value: config_value as u16,
+        value: u16::from(config_value),
         index: 0,
         length: 0,
     }
@@ -83,6 +83,8 @@ fn make_set_configuration_request(config_value: u8) -> UsbSetupPacket {
 /// # 错误
 ///
 /// - `DriverError::InvalidParameter`: data 长度 < 18 或 bLength 不匹配.
+/// # Errors
+/// data 长度小于 18 或描述符长度/类型字段不匹配时返回 Err。
 pub fn parse_device_descriptor(data: &[u8]) -> Result<DeviceDescriptor> {
     if data.len() < 18 {
         return Err(DriverError::InvalidParameter);
@@ -116,8 +118,10 @@ pub fn parse_device_descriptor(data: &[u8]) -> Result<DeviceDescriptor> {
 
 /// 解析 Configuration Descriptor (9 字节头, USB 规范 §9.6.3).
 ///
-/// 返回 ConfigurationDescriptor + 包含的所有 Interface / Endpoint 描述符.
+/// 返回 `ConfigurationDescriptor` + 包含的所有 Interface / Endpoint 描述符.
 /// 调用方应使用 `total_length` 字段判断 Configuration 块完整长度.
+/// # Errors
+/// data 长度不足或描述符结构非法时返回 Err。
 pub fn parse_configuration_descriptor(
     data: &[u8],
 ) -> Result<(ConfigurationDescriptor, Vec<InterfaceDescriptor>, Vec<EndpointDescriptor>)> {
@@ -271,23 +275,25 @@ fn mock_get_configuration_descriptor_response() -> Vec<u8> {
 ///
 /// - `port`: USB 端口号 (1-based, 与 xHCI port register 索引一致).
 /// - `speed`: 端口速度 (由 xHCI PORTSC 寄存器读取).
-/// - `allocate_address`: 闭包, 用于从 HostController 分配新地址.
+/// - `allocate_address`: 闭包, 用于从 `HostController` 分配新地址.
 ///   真实场景调用 `XhciController::allocate_address`;
 ///   单测可注入 mock 闭包.
 ///
 /// # 流程
 ///
-/// 1. GET_DESCRIPTOR Device → 解析 Device Descriptor
+/// 1. `GET_DESCRIPTOR` Device → 解析 Device Descriptor
 /// 2. 分配地址 (`allocate_address`)
-/// 3. SET_ADDRESS → 切换设备地址
-/// 4. GET_DESCRIPTOR Configuration → 解析 Configuration + Interface + Endpoint
-/// 5. SET_CONFIGURATION(1) → 选择 Configuration 1
+/// 3. `SET_ADDRESS` → 切换设备地址
+/// 4. `GET_DESCRIPTOR` Configuration → 解析 Configuration + Interface + Endpoint
+/// 5. `SET_CONFIGURATION(1)` → 选择 Configuration 1
 /// 6. 返回 `UsbDevice { address, speed, descriptor, interfaces, endpoints, state }`
 ///
 /// # 限制
 ///
 /// - 当前为**软件骨架**: 真实硬件应替换 mock 函数为 Control Transfer (Setup/Data/Status TRB).
 /// - 不处理多 Configuration / 多 Interface 设备的复杂枚举.
+/// # Errors
+/// 描述符解析失败、地址分配失败或分配的地址非法时返回 Err。
 pub fn enumerate_new_device<F>(
     port: usize,
     speed: UsbSpeed,

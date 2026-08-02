@@ -10,7 +10,7 @@
 //! ## SAFETY 不变量
 //!
 //! - `schedule()` 仅在中断/异常返回路径调用。
-//! - `Task` 内部持有 Process 指针, 生命周期由 PROCESS_TABLE 保证。
+//! - `Task` 内部持有 Process 指针, 生命周期由 `PROCESS_TABLE` 保证。
 //! - 状态修改通过 Atomic 操作, 无锁安全。
 
 use core::fmt;
@@ -36,7 +36,7 @@ impl Task {
     /// 从现有 Process 创建 Task。
     ///
     /// # SAFETY
-    /// proc_ptr 必须指向有效的 Process 实例, 且生命周期覆盖 Task。
+    /// `proc_ptr` 必须指向有效的 Process 实例, 且生命周期覆盖 Task。
     pub unsafe fn from_raw(pid: Pid, proc_ptr: *const Process) -> Self {
         Self { proc_ptr, pid }
     }
@@ -51,7 +51,7 @@ impl Task {
         unsafe { (*self.proc_ptr).name.lock().clone() }
     }
 
-    /// 进程状态 (AtomicU32)。
+    /// 进程状态 (`AtomicU32`)。
     pub fn state(&self) -> u32 {
         // SAFETY: `Task` 包装了 `*const Process`, 由 `Task::new`/`from_pid` 等构造路径
         // 保证该指针指向有效的 `Process` 实例, 且通过 `&self` 借用保证存活。
@@ -60,7 +60,7 @@ impl Task {
         unsafe { (*self.proc_ptr).state.load(Ordering::Acquire) }
     }
 
-    /// 优先级 (AtomicU32)。
+    /// 优先级 (`AtomicU32`)。
     pub fn priority(&self) -> u32 {
         // SAFETY: 同 `state` 的契约; 字段是 `AtomicU32`。
         unsafe { (*self.proc_ptr).priority.load(Ordering::Acquire) }
@@ -160,7 +160,7 @@ pub trait Scheduler: Send + Sync {
 // 默认实现: 委托给 proc::scheduler::SCHEDULER 全局单例
 // ============================================================================
 
-/// QueenX 默认调度器 (MLFQ + RT + CFS)。
+/// `QueenX` 默认调度器 (MLFQ + RT + CFS)。
 ///
 /// 委托给 `proc::scheduler::SCHEDULER`。
 pub struct QueenXScheduler;

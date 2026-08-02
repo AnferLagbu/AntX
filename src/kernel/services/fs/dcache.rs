@@ -4,8 +4,8 @@
 //!
 //! 当前 `resolve_path` 每次从根目录逐级线性扫描目录项, O(n) 复杂度.
 //! 对于 `/usr/bin/ls` 这样的路径, 需要 3 次目录扫描, 每次遍历所有目录项.
-//! dcache 将 (parent_ino, name) → inode 的映射缓存起来, 将路径解析从
-//! O(depth × entries_per_dir) 降至 O(depth).
+//! dcache 将 (`parent_ino`, name) → inode 的映射缓存起来, 将路径解析从
+//! O(depth × `entries_per_dir`) 降至 O(depth).
 //!
 //! ## 架构
 //!
@@ -16,16 +16,16 @@
 //!
 //! ## 设计决策
 //!
-//! - **开放寻址哈希表**: 固定大小数组, 无堆分配, 适合 no_std 内核
+//! - **开放寻址哈希表**: 固定大小数组, 无堆分配, 适合 `no_std` 内核
 //! - **Robin Hood 哈希**: 减少探查链长度, 查找方差小
 //! - **负缓存**: 查找失败也记录, 避免重复扫描不存在的路径
-//! - **简单失效**: 文件创建/删除/重命名时按 parent_ino 失效相关条目
-//! - **单核假设**: 当前用 IrqSpinLock 保护, 后续 per-CPU 时可去锁
+//! - **简单失效**: 文件创建/删除/重命名时按 `parent_ino` 失效相关条目
+//! - **单核假设**: 当前用 `IrqSpinLock` 保护, 后续 per-CPU 时可去锁
 //!
 //! ## 与 Linux 的差异
 //!
 //! Linux dcache 是复杂的 LRU + RCU + dentry 父子指针树.
-//! QueenX 当前是单核 + RamFs, 采用扁平哈希表 + 简单失效,
+//! `QueenX` 当前是单核 + `RamFs`, 采用扁平哈希表 + 简单失效,
 //! 功能等价但复杂度低两个数量级. 后续多核时再引入 per-CPU dcache.
 //!
 //! ## 安全契约
@@ -49,7 +49,7 @@ use crate::kernel::services::sync::irq_lock::IrqSpinLock;
 const DCACHE_SIZE: usize = 127;
 /// icache 条目数
 const ICACHE_SIZE: usize = 127;
-/// 名称最大长度 (与 VFS_MAX_NAME 一致)
+/// 名称最大长度 (与 `VFS_MAX_NAME` 一致)
 const DCACHE_NAME_LEN: usize = 64;
 /// 哈希表空槽标记
 const EMPTY_INO: u32 = u32::MAX;
@@ -69,9 +69,9 @@ struct DCacheEntry {
     name: [u8; DCACHE_NAME_LEN],
     /// 名称有效长度
     name_len: u8,
-    /// 子 inode 号 (NEGATIVE_INO = 负缓存)
+    /// 子 inode 号 (`NEGATIVE_INO` = 负缓存)
     ino: u32,
-    /// 文件类型 (VfsFileType as u8)
+    /// 文件类型 (`VfsFileType` as u8)
     file_type: u8,
     /// 有效标志
     valid: bool,
@@ -185,23 +185,23 @@ impl DCache {
         }
     }
 
-    /// FNV-1a 哈希: (parent_ino, name) → u64
+    /// FNV-1a 哈希: (`parent_ino`, name) → u64
     fn hash_key(parent_ino: u32, name: &str) -> u64 {
         let mut h: u64 = 14695981039346656037;
         // 混入 parent_ino
-        for &b in parent_ino.to_le_bytes().iter() {
-            h ^= b as u64;
+        for &b in &parent_ino.to_le_bytes() {
+            h ^= u64::from(b);
             h = h.wrapping_mul(1099511628211);
         }
         // 混入 name
         for &b in name.as_bytes() {
-            h ^= b as u64;
+            h ^= u64::from(b);
             h = h.wrapping_mul(1099511628211);
         }
         h
     }
 
-    /// 查找 (parent_ino, name) → (ino, file_type)
+    /// 查找 (`parent_ino`, name) → (ino, `file_type`)
     ///
     /// 返回:
     /// - `Some((ino, file_type))`: 正缓存命中
@@ -242,9 +242,9 @@ impl DCache {
         None
     }
 
-    /// 插入 (parent_ino, name) → (ino, file_type)
+    /// 插入 (`parent_ino`, name) → (ino, `file_type`)
     ///
-    /// ino = NEGATIVE_INO 表示负缓存
+    /// ino = `NEGATIVE_INO` 表示负缓存
     fn insert(&mut self, parent_ino: u32, name: &str, ino: u32, file_type: u8) {
         if name.is_empty() || name.len() > DCACHE_NAME_LEN {
             return;
@@ -308,7 +308,7 @@ impl DCache {
     ///
     /// 文件创建/删除/重命名时调用, 确保一致性.
     fn invalidate_parent(&mut self, parent_ino: u32) {
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if entry.valid && entry.parent_ino == parent_ino {
                 entry.valid = false;
                 entry.parent_ino = EMPTY_INO;
@@ -322,7 +322,7 @@ impl DCache {
     /// 在内存压力或缓存驱逐时调用.
     fn try_evict_entries(&mut self) -> usize {
         let mut evicted = 0;
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if !entry.valid && entry.parent_ino != EMPTY_INO {
                 entry.parent_ino = EMPTY_INO;
                 evicted += 1;
@@ -333,7 +333,7 @@ impl DCache {
 
     /// 清空所有缓存
     fn flush(&mut self) {
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             *entry = DCacheEntry::default();
         }
         self.count = 0;
@@ -377,8 +377,8 @@ impl ICache {
     /// FNV-1a 哈希: ino → u64
     fn hash_key(ino: u32) -> u64 {
         let mut h: u64 = 14695981039346656037;
-        for &b in ino.to_le_bytes().iter() {
-            h ^= b as u64;
+        for &b in &ino.to_le_bytes() {
+            h ^= u64::from(b);
             h = h.wrapping_mul(1099511628211);
         }
         h
@@ -570,7 +570,7 @@ impl ICache {
     /// 在内存压力或缓存驱逐时调用.
     fn try_evict_entries(&mut self) -> usize {
         let mut evicted = 0;
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if entry.valid && entry.ref_count == 0 {
                 entry.valid = false;
                 entry.ino = EMPTY_INO;
@@ -583,7 +583,7 @@ impl ICache {
 
     /// 清空所有缓存
     fn flush(&mut self) {
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             *entry = ICacheEntry::default();
         }
         self.count = 0;

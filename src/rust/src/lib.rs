@@ -150,7 +150,7 @@ use core::sync::atomic::Ordering;
 fn panic(info: &PanicInfo) -> ! {
     crate::kernel::framework::barrier::PANIC_FLAG.store(true, Ordering::SeqCst);
 
-    let msg = alloc::format!("{}", info);
+    let msg = alloc::format!("{info}");
     let bytes = msg.as_bytes();
     let len = bytes.len().min(127);
     {
@@ -330,9 +330,16 @@ fn write_hex_to_buf(buf: &mut [u8], cursor: &mut usize, value: u64) {
 #[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_error(layout: alloc::alloc::Layout) -> ! {
-    panic!("Allocation error: {:?}", layout);
+    panic!("Allocation error: {layout:?}");
 }
 
+/// 内核启动入口 (引导跳转目标).
+///
+/// 按依赖顺序初始化各子系统: `KLog` → Boot 栈 canary 校验 → 配置校验 →
+/// 架构初始化 → 内存/进程/网络等子系统 → 进入用户态.
+///
+/// # Panics
+/// Boot 栈 canary 校验失败 (栈溢出至栈底) 时立即 panic, 断言内核状态不可信.
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_init() {
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
@@ -344,13 +351,11 @@ pub extern "C" fn kernel_init() {
     // 0.05. Boot 栈 canary 验证 — 检测 trampoline → kernel_init 路径上的栈溢出.
     // canary 在 boot.asm trampoline64_high (x86_64) 或 entry.rs (aarch64) 写入 stack_bottom,
     // 若被覆盖则说明 boot 栈已溢出至栈底, 内核状态不可信, 立即 panic.
-    if !crate::kernel::framework::proc::check_boot_stack_canary() {
-        panic!(
-            "[BOOT] stack canary corrupted! Boot stack overflow detected. \
-             Stack size=256KB, canary at stack_bottom was overwritten \
-             during trampoline→kernel_init transition."
-        );
-    }
+    assert!(crate::kernel::framework::proc::check_boot_stack_canary(), 
+        "[BOOT] stack canary corrupted! Boot stack overflow detected. \
+         Stack size=256KB, canary at stack_bottom was overwritten \
+         during trampoline→kernel_init transition."
+    );
     crate::klog_boot_info!("Boot stack canary verified");
 
     // 0.1. Config validation — 验证系统配置一致性
@@ -473,13 +478,10 @@ pub extern "C" fn kernel_init() {
         // 若 VMM init 内部静默失败 (如页错误导致 OnceLock 状态停留在 IN_PROGRESS),
         // 此处提前 panic 并给出明确诊断信息, 避免后续 get_vmm() 时信息不足.
         let vmm_state = crate::kernel::framework::mm::vmm::vmm_debug_state();
-        if vmm_state != 2 {
-            panic!(
-                "[VMM] initialization verification failed: OnceLock state={} (expected 2=DONE). \
-                 VMM init may have panicked or been interrupted.",
-                vmm_state
-            );
-        }
+        assert!(vmm_state == 2, 
+            "[VMM] initialization verification failed: OnceLock state={vmm_state} (expected 2=DONE). \
+             VMM init may have panicked or been interrupted."
+        );
 
         // 4. kmalloc — 内核堆初始化
         const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
@@ -650,13 +652,11 @@ pub extern "C" fn kernel_init() {
         // 11.5. 进入 Ring 3 前最终 boot 栈 canary 验证.
         // 内核初始化全程 (PMM→VMM→kmalloc→中断→调度→网络→VFS→驱动→syscall)
         // 均在 boot 栈上运行, 此处做最终溢出检测, 确保进入用户态前栈完整性.
-        if !crate::kernel::framework::proc::check_boot_stack_canary() {
-            panic!(
-                "[BOOT] stack canary corrupted before Ring 3 entry! \
-                 Boot stack overflow during kernel init sequence. \
-                 Stack size=128KB."
-            );
-        }
+        assert!(crate::kernel::framework::proc::check_boot_stack_canary(), 
+            "[BOOT] stack canary corrupted before Ring 3 entry! \
+             Boot stack overflow during kernel init sequence. \
+             Stack size=128KB."
+        );
         crate::klog_boot_info!("Boot stack canary verified (pre-Ring3)");
 
         // 12. Launch first user process

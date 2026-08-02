@@ -11,14 +11,14 @@ use super::ramfs_core::RamFsData;
 
 /// 匿名文件系统
 ///
-/// 复用 RamFsData 作为数据存储, 但不依赖路径.
-/// 直接通过 inode_id 访问数据.
+/// 复用 `RamFsData` 作为数据存储, 但不依赖路径.
+/// 直接通过 `inode_id` 访问数据.
 pub struct AnonymousFs {
     inner: IrqSpinLock<RamFsData>,
 }
 
 impl AnonymousFs {
-    /// 创建新的 AnonymousFs
+    /// 创建新的 `AnonymousFs`
     pub const fn new() -> Self {
         Self {
             inner: IrqSpinLock::new(RamFsData::new()),

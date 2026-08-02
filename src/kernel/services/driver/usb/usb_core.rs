@@ -3,7 +3,7 @@
 //!
 //! USB 核心框架 — services 层安全代理 (Phase 2.1.6)
 //!
-//! 重导出 framework USB 核心类型 (Descriptors, URB, HostController Trait, UsbDevice).
+//! 重导出 framework USB 核心类型 (Descriptors, URB, `HostController` Trait, `UsbDevice`).
 //! framework `usb_core.rs` 本身 0 unsafe, 此处作为 services 层统一入口。
 //!
 //! ## 导出类型

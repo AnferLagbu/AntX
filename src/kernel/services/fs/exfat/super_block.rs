@@ -80,12 +80,12 @@ impl ExfatSuperBlock {
         Some(sb)
     }
 
-    /// 每扇区字节数 (1 << bytes_per_sector_shift)
+    /// 每扇区字节数 (1 << `bytes_per_sector_shift`)
     pub fn bytes_per_sector(&self) -> u32 {
         1u32 << self.bytes_per_sector_shift
     }
 
-    /// 每簇扇区数 (1 << sectors_per_cluster_shift)
+    /// 每簇扇区数 (1 << `sectors_per_cluster_shift`)
     pub fn sectors_per_cluster(&self) -> u32 {
         1u32 << self.sectors_per_cluster_shift
     }

@@ -153,7 +153,7 @@ pub enum SignalAction {
 
 /// 等待队列项 (简化版，用于阻塞等待)
 ///
-/// 在完整实现中应使用内核的 wait_queue 机制
+/// 在完整实现中应使用内核的 `wait_queue` 机制
 #[derive(Debug, Clone, Copy)]
 pub struct WaitQueueItem {
     /// 线程 ID
@@ -250,7 +250,7 @@ pub struct Pipe {
     /// 写等待队列
     pub write_wait: WaitQueue,
 
-    /// 标志位 (O_NONBLOCK 等)
+    /// 标志位 (`O_NONBLOCK` 等)
     pub flags: i32,
 }
 

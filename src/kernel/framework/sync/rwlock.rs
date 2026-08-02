@@ -1,4 +1,4 @@
-//! # 读写锁 (RwLock) 实现
+//! # 读写锁 (`RwLock`) 实现
 //!
 //! 写者优先的读写锁，适用于**读多写少**场景。
 //!
@@ -23,11 +23,11 @@
 use core::sync::atomic::Ordering;
 
 use super::spinlock::{disable_interrupts, restore_interrupts};
-use super::types::*;
+use super::types::{RwLockInner, RwLockReadGuard, RwLockWriteGuard, IrqSaveFlags};
 #[cfg(debug_assertions)]
 use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
-/// 读写锁 (RwLock)
+/// 读写锁 (`RwLock`)
 pub struct RwLock<T: ?Sized> {
     /// 内部状态
     inner: RwLockInner,
@@ -44,7 +44,7 @@ unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
 unsafe impl<T: ?Sized + Send> Sync for RwLock<T> {}
 
 impl<T> RwLock<T> {
-    /// 创建新的 RwLock
+    /// 创建新的 `RwLock`
     pub fn new(data: T) -> Self {
         Self {
             inner: RwLockInner::new(),
@@ -54,7 +54,7 @@ impl<T> RwLock<T> {
         }
     }
 
-    /// 创建命名 RwLock (用于调试 + lockdep)
+    /// 创建命名 `RwLock` (用于调试 + lockdep)
     #[cfg(debug_assertions)]
     pub fn named(name: &'static str, data: T) -> Self {
         let class_id = lockdep::register_class(LockClassDesc {

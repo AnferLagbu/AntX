@@ -48,7 +48,7 @@ pub fn sys_dup(oldfd: i32) -> i64 {
     if oldfd < 0 {
         return Errno::EBADF.as_ret();
     }
-    vfs_api::vfs_dup(oldfd as u32) as i64
+    i64::from(vfs_api::vfs_dup(oldfd as u32))
 }
 
 /// dup2 — 复制文件描述符到 newfd
@@ -59,18 +59,18 @@ pub fn sys_dup2(oldfd: i32, newfd: i32) -> i64 {
         return Errno::EBADF.as_ret();
     }
     if oldfd == newfd {
-        return newfd as i64;
+        return i64::from(newfd);
     }
     let result = vfs_api::vfs_dup2(oldfd as u32, newfd as u32);
     if result < 0 {
         return Errno::EBADF.as_ret();
     }
-    result as i64
+    i64::from(result)
 }
 
 /// dup3 — dup2 扩展版, 支持 flags
 ///
-/// flags: O_CLOEXEC 等. 当前简化: 等同 dup2.
+/// flags: `O_CLOEXEC` 等. 当前简化: 等同 dup2.
 pub fn sys_dup3(oldfd: i32, newfd: i32, flags: i32) -> i64 {
     if oldfd < 0 || newfd < 0 {
         return Errno::EBADF.as_ret();
@@ -84,7 +84,7 @@ pub fn sys_dup3(oldfd: i32, newfd: i32, flags: i32) -> i64 {
     if result < 0 {
         return Errno::EBADF.as_ret();
     }
-    result as i64
+    i64::from(result)
 }
 
 // ============================================================================
@@ -108,7 +108,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
         F_GETFL => {
             let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
             if (fd as usize) < 256 && fd_table[fd as usize].used {
-                fd_table[fd as usize].flags as i64
+                i64::from(fd_table[fd as usize].flags)
             } else {
                 Errno::EBADF.as_ret()
             }
@@ -124,11 +124,11 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
 /// fcntl POSIX record lock 处理
 ///
 /// `arg` 指向用户空间的 `flock` 结构体:
-///   l_type:  i16  (F_RDLCK=0, F_WRLCK=1, F_UNLCK=2)  // 锁类型
-///   l_whence: i16 (0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)  // 偏移基准
-///   l_start: i64
-///   l_len:   i64  (0=到文件末尾)
-///   l_pid:   i32  (F_GETLK 返回冲突锁的 PID)
+///   `l_type`:  i16  (`F_RDLCK=0`, `F_WRLCK=1`, `F_UNLCK=2`)  // 锁类型
+///   `l_whence`: i16 (`0=SEEK_SET`, `1=SEEK_CUR`, `2=SEEK_END`)  // 偏移基准
+///   `l_start`: i64
+///   `l_len`:   i64  (0=到文件末尾)
+///   `l_pid`:   i32  (`F_GETLK` 返回冲突锁的 PID)
 fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
     use crate::kernel::framework::fs::{
         sys_posix_lock, PosixLockResult, F_GETLK,
@@ -207,7 +207,7 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
 
     let pid = crate::kernel::framework::proc::process_get_current_pid();
 
-    match sys_posix_lock(pid, ino, cmd, l_type as i32, start, len) {
+    match sys_posix_lock(pid, ino, cmd, i32::from(l_type), start, len) {
         Ok(None) => 0,
         Ok(Some(conflict)) => {
             if cmd == F_GETLK {

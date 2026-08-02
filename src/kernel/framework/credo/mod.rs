@@ -50,11 +50,11 @@ pub use secure_boot::*;
 
 /// Credo 子系统初始化 — 安全启动 + TPM.
 ///
-/// 从 scheduler_init 中分离, 消除 proc→credo 的初始化依赖.
-/// 应在 scheduler_init 之后调用.
+/// 从 `scheduler_init` 中分离, 消除 proc→credo 的初始化依赖.
+/// 应在 `scheduler_init` 之后调用.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn credo_init() {
+pub extern "C" fn credo_init() {
     use secure_boot::{secure_boot_init, tpm_init, Ed25519PubKey};
     // 默认平台密钥 (全零, 开发阶段)
     let default_pk = Ed25519PubKey::new([0u8; 32]);

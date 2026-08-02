@@ -400,6 +400,14 @@ impl CgroupSubsystem {
         id
     }
 
+    /// 删除指定 cgroup.
+    ///
+    /// 要求该 cgroup 不存在存活进程且没有子 cgroup.
+    ///
+    /// # Errors
+    ///
+    /// - `id == 0`(根 cgroup)或组内仍有进程/子组 → `EBUSY`
+    /// - 指定的 cgroup 不存在 → `ENOENT`
     pub fn remove_cgroup(&self, id: u64) -> Result<(), Errno> {
         if id == 0 {
             return Err(Errno::EBUSY);
@@ -434,6 +442,14 @@ impl CgroupSubsystem {
         self.groups.lock().get(&id).map(Arc::clone)
     }
 
+    /// 将进程迁移到目标 cgroup.
+    ///
+    /// 先从原所在组分离, 再附加到目标组.
+    ///
+    /// # Errors
+    ///
+    /// - 目标 cgroup 不存在 → `ENOENT`
+    /// - 目标组附加失败(如容量已满) → `EAGAIN`
     pub fn migrate(&self, pid: Pid, target_id: u64) -> Result<(), Errno> {
         let target = self.find(target_id).ok_or(Errno::ENOENT)?;
 
@@ -496,6 +512,11 @@ pub fn cgroup_init() {
     serial_write_bytes(b"[CGROUP] subsystem initialized (root cgroup id=0)\n");
 }
 
+/// 获取全局 cgroup 子系统实例的引用.
+///
+/// # Panics
+///
+/// 当子系统尚未通过 `cgroup_init()` 初始化时 panic.
 pub fn cgroup_subsystem() -> &'static CgroupSubsystem {
     CGROUP_SUBSYSTEM.get().expect("cgroup subsystem not initialized")
 }
@@ -513,7 +534,7 @@ pub fn sys_cgroup_create(parent_id: u64, _name_ptr: u64, _name_len: u64) -> i64 
         return -(Errno::EINVAL as i64);
     }
 
-    let name = alloc::format!("cg_{}", parent_id);
+    let name = alloc::format!("cg_{parent_id}");
     let id = cgroup_subsystem().create_cgroup(parent_id, &name);
     if id == 0 {
         return -(Errno::EINVAL as i64);

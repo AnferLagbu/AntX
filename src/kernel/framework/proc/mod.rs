@@ -5,7 +5,7 @@
 //! ## 依赖声明
 //!
 //! framework 内部依赖: mm, sync, syscall, config, idt, sched, barrier, tests
-//! services 依赖: services::proc (安全代理)
+//! services 依赖: `services::proc` (安全代理)
 //!
 //! ## 架构
 //!

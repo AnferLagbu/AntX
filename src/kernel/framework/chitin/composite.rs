@@ -69,6 +69,8 @@ impl Clone for CompositeBlockDevice {
 }
 
 impl CompositeBlockDevice {
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(device_type: CompositeType, child_drives: &[u8], stripe_size: u64) -> Option<Self> {
         if child_drives.is_empty() || child_drives.len() > MAX_COMPOSITE_CHILDREN {
             return None;
@@ -124,10 +126,12 @@ impl CompositeBlockDevice {
     }
 
     #[inline]
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     fn map_raid0_sector(&self, logical: u64) -> Option<(u8, u64)> {
         let stripe = logical / self.stripe_sectors;
-        let child_idx = (stripe % self.child_count as u64) as u8;
-        let stripe_row = stripe / self.child_count as u64;
+        let child_idx = (stripe % u64::from(self.child_count)) as u8;
+        let stripe_row = stripe / u64::from(self.child_count);
         let offset = logical % self.stripe_sectors;
         let physical = stripe_row * self.stripe_sectors + offset;
         Some((child_idx, physical))
@@ -135,6 +139,8 @@ impl CompositeBlockDevice {
 }
 
 impl BlockDevice for CompositeBlockDevice {
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {
         let num_sectors = (buf.len() / 512) as u64;
         if num_sectors == 0 {
@@ -185,6 +191,8 @@ impl BlockDevice for CompositeBlockDevice {
         }
     }
 
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32 {
         let num_sectors = (buf.len() / 512) as u64;
         if num_sectors == 0 {
@@ -252,6 +260,8 @@ impl BlockDevice for CompositeBlockDevice {
     }
 }
 
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 pub fn devtree_probe_composites() -> usize {
     let composite_compatibles: &[&str] = &["qx,raid0", "qx,raid1"];
 
@@ -290,16 +300,13 @@ pub fn devtree_probe_composites() -> usize {
         let mut child_drives: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
 
         for &child_id in &children {
-            let child_node = match devtree_get_node(child_id) {
-                Some(n) => n,
-                None => {
-                    klog_warn!(
-                        Driver,
-                        "Chitin: composite child node {} not found, skipping",
-                        child_id
-                    );
-                    continue;
-                }
+            let child_node = if let Some(n) = devtree_get_node(child_id) { n } else {
+                klog_warn!(
+                    Driver,
+                    "Chitin: composite child node {} not found, skipping",
+                    child_id
+                );
+                continue;
             };
 
             if child_node.proto != ChitinProto::Block {
@@ -313,29 +320,23 @@ pub fn devtree_probe_composites() -> usize {
 
             let idx: usize = {
                 if let Some(dev_id) = child_node.device_id {
-                    match chitin_find_by_id(dev_id) {
-                        Some(i) => i,
-                        None => {
-                            klog_warn!(
-                                Driver,
-                                "Chitin: child '{}' device_id={} not in registry",
-                                child_node.name,
-                                dev_id
-                            );
-                            continue;
-                        }
+                    if let Some(i) = chitin_find_by_id(dev_id) { i } else {
+                        klog_warn!(
+                            Driver,
+                            "Chitin: child '{}' device_id={} not in registry",
+                            child_node.name,
+                            dev_id
+                        );
+                        continue;
                     }
                 } else {
-                    match chitin_find_by_name(child_node.name) {
-                        Some(i) => i,
-                        None => {
-                            klog_warn!(
-                                Driver,
-                                "Chitin: child '{}' not found in Chitin registry",
-                                child_node.name
-                            );
-                            continue;
-                        }
+                    if let Some(i) = chitin_find_by_name(child_node.name) { i } else {
+                        klog_warn!(
+                            Driver,
+                            "Chitin: child '{}' not found in Chitin registry",
+                            child_node.name
+                        );
+                        continue;
                     }
                 }
             };
@@ -368,7 +369,7 @@ pub fn devtree_probe_composites() -> usize {
                 None => continue,
             };
             node.get_prop("stripe_size")
-                .and_then(|v| v.as_u64())
+                .and_then(super::devtree::PropertyValue::as_u64)
                 .unwrap_or(65536)
         };
 
@@ -392,17 +393,13 @@ pub fn devtree_probe_composites() -> usize {
         // 这是有界分配 —— 初始化时每个复合设备一份.
         let name_leaked: &'static str = dev_name.leak();
 
-        let composite = match CompositeBlockDevice::new(composite_type, &child_drives, stripe_size)
-        {
-            Some(c) => c,
-            None => {
-                klog_warn!(
-                    Driver,
-                    "Chitin: failed to create composite device '{}'",
-                    name_leaked
-                );
-                continue;
-            }
+        let composite = if let Some(c) = CompositeBlockDevice::new(composite_type, &child_drives, stripe_size) { c } else {
+            klog_warn!(
+                Driver,
+                "Chitin: failed to create composite device '{}'",
+                name_leaked
+            );
+            continue;
         };
 
         let total_mb = composite.total_sectors / 2048;
@@ -425,7 +422,9 @@ pub fn devtree_probe_composites() -> usize {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn composite_probe() -> u32 {
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn composite_probe() -> u32 {
     devtree_probe_composites() as u32
 }
 

@@ -1,10 +1,10 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
-//! VirtIO MMIO Transport — services 层安全代理
+//! `VirtIO` MMIO Transport — services 层安全代理
 //!
-//! 封装 [kernel::driver::virtio::VirtioMmioDevice] 的核心 MMIO 操作,
-//! 通过 `framework::IoMem` 提供类型安全的 VirtIO 设备访问。
+//! 封装 [`kernel::driver::virtio::VirtioMmioDevice`] 的核心 MMIO 操作,
+//! 通过 `framework::IoMem` 提供类型安全的 `VirtIO` 设备访问。
 //!
 //! ## 设计原则
 //!
@@ -26,7 +26,7 @@
 //! - `services/driver/virtio/gpu.rs` (virtio-gpu 显示设备, 未来)
 //!
 //! 评估日期: 2026-06-04
-//! Phase 2.1.2 任务: VirtIO 传输层迁移
+//! Phase 2.1.2 任务: `VirtIO` 传输层迁移
 
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
@@ -36,53 +36,53 @@ use crate::kernel::framework::driver::virtio::{
 
 // ── MMIO 寄存器偏移 (与 VirtIO 1.0 规范一致) ──
 
-/// MagicValue 寄存器, 读取应为 0x74726976 ("virt")
+/// `MagicValue` 寄存器, 读取应为 0x74726976 ("virt")
 pub const MAGIC_VALUE: usize = 0x000;
 /// Version 寄存器: 1=transitional/legacy, 2=modern
 pub const VERSION: usize = 0x004;
-/// DeviceID 寄存器: 1=net, 2=blk, 16=gpu
+/// `DeviceID` 寄存器: 1=net, 2=blk, 16=gpu
 pub const DEVICE_ID: usize = 0x008;
-/// VendorID 寄存器: 0x554d4551 ("QEMU")
+/// `VendorID` 寄存器: 0x554d4551 ("QEMU")
 pub const VENDOR_ID: usize = 0x00c;
-/// DeviceFeatures[sel:0]: 设备特性位 [0..31]
+/// `DeviceFeatures`[sel:0]: 设备特性位 [0..31]
 pub const DEVICE_FEATURES: usize = 0x010;
-/// DeviceFeaturesSel: 写以选择 32 位特性字
+/// `DeviceFeaturesSel`: 写以选择 32 位特性字
 pub const DEVICE_FEATURES_SEL: usize = 0x014;
-/// DriverFeatures[sel:0]: 驱动写特性位
+/// `DriverFeatures`[sel:0]: 驱动写特性位
 pub const DRIVER_FEATURES: usize = 0x020;
-/// DriverFeaturesSel
+/// `DriverFeaturesSel`
 pub const DRIVER_FEATURES_SEL: usize = 0x024;
-/// QueueSel: 写以选择 virtqueue
+/// `QueueSel`: 写以选择 virtqueue
 pub const QUEUE_SEL: usize = 0x030;
-/// QueueNumMax: 选中队列的最大尺寸
+/// `QueueNumMax`: 选中队列的最大尺寸
 pub const QUEUE_NUM_MAX: usize = 0x034;
-/// QueueNum: 设置队列尺寸
+/// `QueueNum`: 设置队列尺寸
 pub const QUEUE_NUM: usize = 0x038;
-/// QueueReady: 标记队列就绪
+/// `QueueReady`: 标记队列就绪
 pub const QUEUE_READY: usize = 0x044;
-/// QueuePFN (legacy): 队列页号
+/// `QueuePFN` (legacy): 队列页号
 pub const QUEUE_PFN: usize = 0x040;
-/// QueueNotify: 通知设备有新描述符
+/// `QueueNotify`: 通知设备有新描述符
 pub const QUEUE_NOTIFY: usize = 0x050;
-/// InterruptStatus: 读中断原因
+/// `InterruptStatus`: 读中断原因
 pub const INTERRUPT_STATUS: usize = 0x060;
-/// InterruptACK: 写以应答中断
+/// `InterruptACK`: 写以应答中断
 pub const INTERRUPT_ACK: usize = 0x064;
 /// Status 寄存器
 pub const STATUS: usize = 0x070;
-/// QueueDescLow: 描述符表 phys [31:0]
+/// `QueueDescLow`: 描述符表 phys [31:0]
 pub const QUEUE_DESC_LOW: usize = 0x080;
-/// QueueDescHigh: 描述符表 phys [63:32]
+/// `QueueDescHigh`: 描述符表 phys [63:32]
 pub const QUEUE_DESC_HIGH: usize = 0x084;
-/// QueueDriverLow: available ring 物理地址 [31:0]
+/// `QueueDriverLow`: available ring 物理地址 [31:0]
 pub const QUEUE_DRIVER_LOW: usize = 0x090;
-/// QueueDriverHigh: available ring 物理地址 [63:32]
+/// `QueueDriverHigh`: available ring 物理地址 [63:32]
 pub const QUEUE_DRIVER_HIGH: usize = 0x094;
-/// QueueDeviceLow: used ring 物理地址 [31:0]
+/// `QueueDeviceLow`: used ring 物理地址 [31:0]
 pub const QUEUE_DEVICE_LOW: usize = 0x0a0;
-/// QueueDeviceHigh: used ring 物理地址 [63:32]
+/// `QueueDeviceHigh`: used ring 物理地址 [63:32]
 pub const QUEUE_DEVICE_HIGH: usize = 0x0a4;
-/// ConfigGeneration: 配置变更计数器
+/// `ConfigGeneration`: 配置变更计数器
 pub const CONFIG_GENERATION: usize = 0x0fc;
 
 // ── 设备状态位 (Status 寄存器) ──
@@ -102,11 +102,11 @@ pub const STATUS_FAILED: u32 = 0x80;
 
 // ── 设备 ID ──
 
-/// VirtIO Net 设备 ID
+/// `VirtIO` Net 设备 ID
 pub const DEVICE_ID_NET: u32 = 1;
-/// VirtIO Block 设备 ID
+/// `VirtIO` Block 设备 ID
 pub const DEVICE_ID_BLOCK: u32 = 2;
-/// VirtIO GPU 设备 ID
+/// `VirtIO` GPU 设备 ID
 pub const DEVICE_ID_GPU: u32 = 16;
 
 // ── MMIO 区域常量 (来自 framework) ──
@@ -116,33 +116,33 @@ pub const VIRTIO_MMIO_DEVICE_SIZE: usize = 0x200;
 
 // ── Magic 常量 ──
 
-/// VirtIO MMIO Magic Value (0x7472_6976 = "virt" 小端序)
+/// `VirtIO` MMIO Magic Value (`0x7472_6976` = "virt" 小端序)
 pub const VIRTIO_MAGIC: u32 = 0x7472_6976;
 
 // ── 特性位 ──
 
-/// VIRTIO_F_VERSION_1 (位 32)
+/// `VIRTIO_F_VERSION_1` (位 32)
 pub const VIRTIO_F_VERSION_1: u64 = 1u64 << 32;
 
 // ============================================================================
 // 设备类型枚举
 // ============================================================================
 
-/// VirtIO 设备类型。
+/// `VirtIO` 设备类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VirtioDeviceKind {
-    /// Net 设备 (device_id=1)
+    /// Net 设备 (`device_id=1`)
     Net,
-    /// Block 设备 (device_id=2)
+    /// Block 设备 (`device_id=2`)
     Block,
-    /// GPU 设备 (device_id=16)
+    /// GPU 设备 (`device_id=16`)
     Gpu,
     /// 未知/未实现的设备类型
     Unknown(u32),
 }
 
 impl VirtioDeviceKind {
-    /// 从 device_id 转换为设备类型
+    /// 从 `device_id` 转换为设备类型
     pub fn from_id(id: u32) -> Self {
         match id {
             DEVICE_ID_NET => Self::Net,
@@ -167,10 +167,10 @@ impl VirtioDeviceKind {
 // 安全设备句柄
 // ============================================================================
 
-/// VirtIO MMIO 设备的安全句柄 (services 层)。
+/// `VirtIO` MMIO 设备的安全句柄 (services 层)。
 ///
 /// 包装 `IoMem` 提供类型安全的 MMIO 访问, 不暴露 `unsafe`。
-/// 生命周期: 与底层 `IoMem` 一致, drop 时 IoMem 注销别名。
+/// 生命周期: 与底层 `IoMem` 一致, drop 时 `IoMem` 注销别名。
 pub struct VirtioDevice {
     iomem: IoMem,
     device_id: u32,
@@ -181,7 +181,7 @@ pub struct VirtioDevice {
 }
 
 impl VirtioDevice {
-    /// 探测指定 MMIO 基地址是否有有效 VirtIO 设备。
+    /// 探测指定 MMIO 基地址是否有有效 `VirtIO` 设备。
     ///
     /// # 参数
     /// - `mmio_base`: virtio-mmio 设备的基地址 (0x200 步长对齐)
@@ -238,7 +238,7 @@ impl VirtioDevice {
         self.vendor_id
     }
 
-    /// VirtIO 版本 (1=legacy, 2=modern)
+    /// `VirtIO` 版本 (1=legacy, 2=modern)
     #[inline(always)]
     pub fn version(&self) -> u32 {
         self.version
@@ -284,8 +284,8 @@ impl VirtioDevice {
 
     /// 读 64 位跨 Low/High 寄存器
     pub fn read64(&self, low_off: usize, high_off: usize) -> u64 {
-        let lo = self.read32(low_off) as u64;
-        let hi = self.read32(high_off) as u64;
+        let lo = u64::from(self.read32(low_off));
+        let hi = u64::from(self.read32(high_off));
         lo | (hi << 32)
     }
 
@@ -326,7 +326,7 @@ impl VirtioDevice {
         self.write32(STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
     }
 
-    /// 进入 FEATURES_OK 状态
+    /// 进入 `FEATURES_OK` 状态
     ///
     /// 返回 true 表示设备接受特性协商
     pub fn features_ok(&self) -> bool {
@@ -337,7 +337,7 @@ impl VirtioDevice {
         self.read32(STATUS) & STATUS_FEATURES_OK != 0
     }
 
-    /// 进入 DRIVER_OK 状态 (设备上线)
+    /// 进入 `DRIVER_OK` 状态 (设备上线)
     pub fn set_driver_ok(&self) {
         self.write32(
             STATUS,
@@ -352,9 +352,9 @@ impl VirtioDevice {
     /// 内部两次 MMIO 读: sel=0 (low) + sel=1 (high)
     pub fn device_features(&self) -> u64 {
         self.write32(DEVICE_FEATURES_SEL, 0);
-        let lo = self.read32(DEVICE_FEATURES) as u64;
+        let lo = u64::from(self.read32(DEVICE_FEATURES));
         self.write32(DEVICE_FEATURES_SEL, 1);
-        let hi = self.read32(DEVICE_FEATURES) as u64;
+        let hi = u64::from(self.read32(DEVICE_FEATURES));
         lo | (hi << 32)
     }
 
@@ -368,9 +368,9 @@ impl VirtioDevice {
 
     // ── Virtqueue 配置 ──
 
-    /// 选择 virtqueue 索引 (后续 QUEUE_NUM_MAX 等作用于该队列)
+    /// 选择 virtqueue 索引 (后续 `QUEUE_NUM_MAX` 等作用于该队列)
     pub fn select_queue(&self, vq_index: u16) {
-        self.write32(QUEUE_SEL, vq_index as u32);
+        self.write32(QUEUE_SEL, u32::from(vq_index));
     }
 
     /// 读选中队列的最大尺寸
@@ -390,7 +390,7 @@ impl VirtioDevice {
 
     /// 通知设备: 选中队列有新描述符
     pub fn notify_queue(&self, vq_index: u16) {
-        self.write32(QUEUE_NOTIFY, vq_index as u32);
+        self.write32(QUEUE_NOTIFY, u32::from(vq_index));
     }
 
     /// 设置选中队列的描述符/avail/used 物理地址 (modern 模式)
@@ -431,7 +431,7 @@ impl VirtioDevice {
         self.read64(0x100 + offset, 0x100 + offset + 4)
     }
 
-    /// 读配置变更计数器 (CONFIG_GENERATION)
+    /// 读配置变更计数器 (`CONFIG_GENERATION`)
     pub fn config_generation(&self) -> u32 {
         self.read32(CONFIG_GENERATION)
     }
@@ -443,15 +443,15 @@ impl VirtioDevice {
 
 /// 扫描 virtio-mmio 区域, 返回发现的设备列表。
 ///
-/// 从 [VIRTIO_MMIO_BASE] 开始, 以 [VIRTIO_MMIO_STRIDE] 为步长,
-/// 最多探测 [VIRTIO_MMIO_MAX_DEVICES] 个 slot.
+/// 从 [`VIRTIO_MMIO_BASE`] 开始, 以 [`VIRTIO_MMIO_STRIDE`] 为步长,
+/// 最多探测 [`VIRTIO_MMIO_MAX_DEVICES`] 个 slot.
 ///
 /// # 返回
-/// 包含 0..N 个已发现的 VirtIO 设备 (Net + Block + Gpu 混合)
+/// 包含 0..N 个已发现的 `VirtIO` 设备 (Net + Block + Gpu 混合)
 pub fn probe_all() -> alloc::vec::Vec<VirtioDevice> {
     let mut devices = alloc::vec::Vec::new();
     for i in 0..VIRTIO_MMIO_MAX_DEVICES {
-        let base = VIRTIO_MMIO_BASE + (i as u64) * VIRTIO_MMIO_STRIDE;
+        let base = VIRTIO_MMIO_BASE + u64::from(i) * VIRTIO_MMIO_STRIDE;
         if let Some(dev) = VirtioDevice::probe(base) {
             devices.push(dev);
         }

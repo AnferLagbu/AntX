@@ -224,10 +224,10 @@ pub fn devtree_clear_user_mapped(node_id: NodeId) {
 }
 
 /// 清除指定 PID 在所有设备节点上的绑定标记
-/// 在进程退出时调用, 防止 user_mapped 残留导致设备节点无法重新绑定
+/// 在进程退出时调用, 防止 `user_mapped` 残留导致设备节点无法重新绑定
 pub fn devtree_clear_user_mapped_by_pid(pid: u32) {
     let mut tree = DEV_TREE.lock();
-    for node in tree.nodes.iter_mut() {
+    for node in &mut tree.nodes {
         if node.user_mapped == Some(pid) {
             node.user_mapped = None;
         }
@@ -273,7 +273,7 @@ pub fn devtree_get_node(node_id: NodeId) -> Option<ChitinNode> {
     tree.nodes.iter().find(|n| n.id == node_id).cloned()
 }
 
-/// 将设备树节点绑定到 ChitinDevice (注册到全局设备表)
+/// 将设备树节点绑定到 `ChitinDevice` (注册到全局设备表)
 pub fn devtree_bind_device(
     node_id: NodeId,
     io_base: Option<u64>,
@@ -318,14 +318,14 @@ where
 pub fn devtree_read_addr(node_id: NodeId) -> Option<u64> {
     let tree = DEV_TREE.lock();
     let node = tree.nodes.iter().find(|n| n.id == node_id)?;
-    node.get_prop("reg").and_then(|v| v.as_u64())
+    node.get_prop("reg").and_then(PropertyValue::as_u64)
 }
 
 /// 从设备树节点读取 "interrupts" 属性
 pub fn devtree_read_irq(node_id: NodeId) -> Option<u32> {
     let tree = DEV_TREE.lock();
     let node = tree.nodes.iter().find(|n| n.id == node_id)?;
-    node.get_prop("interrupts").and_then(|v| v.as_u32())
+    node.get_prop("interrupts").and_then(PropertyValue::as_u32)
 }
 
 pub fn devtree_count() -> usize {
@@ -353,19 +353,19 @@ fn devtree_print_impl() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn devtree_print() {
+pub extern "C" fn devtree_print() {
     devtree_print_impl();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn devtree_init() {
+pub extern "C" fn devtree_init() {
     devtree_init_impl();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn devtree_create_node(
+pub extern "C" fn devtree_create_node(
     name: *const u8,
     proto: u32,
     parent_id: u32,

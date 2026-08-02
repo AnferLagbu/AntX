@@ -45,7 +45,7 @@ impl HvArcKey {
 
     pub fn hash(&self) -> u64 {
         let mut h: u64 = 14695981039346656037;
-        h ^= self.vdev_id as u64;
+        h ^= u64::from(self.vdev_id);
         h = h.wrapping_mul(1099511628211);
         h ^= self.offset;
         h = h.wrapping_mul(1099511628211);
@@ -205,7 +205,7 @@ impl HvArc {
         inner.mfu.clear();
         inner.ghost_mru.clear();
         inner.ghost_mfu.clear();
-        for bucket in inner.hash_table.iter_mut() {
+        for bucket in &mut inner.hash_table {
             bucket.clear();
         }
         inner.p = max / 2;
@@ -281,7 +281,7 @@ impl HvArc {
         None
     }
 
-    /// Framekernel P2.2.2: 安全地获取缓存切片，通过 framework arc_safe::ptr_to_slice 封装 unsafe
+    /// Framekernel P2.2.2: 安全地获取缓存切片，通过 framework `arc_safe::ptr_to_slice` 封装 unsafe
     /// 调用者仍需在访问后调用 release(key) 释放引用计数
     pub fn lookup_slice(&self, key: &HvArcKey, len: usize) -> Option<&[u8]> {
         let ptr = self.lookup(key)?;
@@ -295,16 +295,13 @@ impl HvArc {
         let mut buf = HvArcBuf::new(key, data.len(), buf_type);
         buf.data[..data.len()].copy_from_slice(data);
         buf.state = HvArcState::Mru;
-        let slot_idx = inner.buffers.iter().position(|s| s.is_none());
-        let idx = match slot_idx {
-            Some(i) => {
-                inner.buffers[i] = Some(buf);
-                i
-            }
-            None => {
-                inner.buffers.push(Some(buf));
-                inner.buffers.len() - 1
-            }
+        let slot_idx = inner.buffers.iter().position(core::option::Option::is_none);
+        let idx = if let Some(i) = slot_idx {
+            inner.buffers[i] = Some(buf);
+            i
+        } else {
+            inner.buffers.push(Some(buf));
+            inner.buffers.len() - 1
         };
         let bucket_idx = (key.hash() as usize) % HV_ARC_HASH_BUCKETS;
         inner.hash_table[bucket_idx].push(idx);
@@ -348,8 +345,7 @@ impl HvArc {
             let idx = inner.hash_table[bucket_idx].remove(pos);
             let size = inner.buffers[idx]
                 .as_ref()
-                .map(|b| b.data.len())
-                .unwrap_or(0);
+                .map_or(0, |b| b.data.len());
             self.stats.size.fetch_sub(size as u64, Ordering::Relaxed);
             inner.buffers[idx] = None;
             inner.mru.retain(|&i| i != idx);
@@ -374,20 +370,18 @@ impl HvArc {
                         self.stats.evicts.fetch_add(1, Ordering::Relaxed);
                     }
                 }
-            } else {
-                if let Some(idx) = inner.mfu.pop_front() {
-                    if let Some(buf) = inner.buffers[idx].take() {
-                        let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
-                        inner.hash_table[bucket_idx].retain(|&i| i != idx);
-                        inner.ghost_mfu.push_back(buf.key);
-                        self.stats
-                            .mfu_size
-                            .fetch_sub(buf.size as u64, Ordering::Relaxed);
-                        self.stats
-                            .size
-                            .fetch_sub(buf.size as u64, Ordering::Relaxed);
-                        self.stats.evicts.fetch_add(1, Ordering::Relaxed);
-                    }
+            } else if let Some(idx) = inner.mfu.pop_front() {
+                if let Some(buf) = inner.buffers[idx].take() {
+                    let bucket_idx = (buf.key.hash() as usize) % HV_ARC_HASH_BUCKETS;
+                    inner.hash_table[bucket_idx].retain(|&i| i != idx);
+                    inner.ghost_mfu.push_back(buf.key);
+                    self.stats
+                        .mfu_size
+                        .fetch_sub(buf.size as u64, Ordering::Relaxed);
+                    self.stats
+                        .size
+                        .fetch_sub(buf.size as u64, Ordering::Relaxed);
+                    self.stats.evicts.fetch_add(1, Ordering::Relaxed);
                 }
             }
             if inner.ghost_mru.len() > inner.max_size {
@@ -428,7 +422,7 @@ impl HvArc {
     pub fn flush_dirty(&self) -> usize {
         let inner = self.inner.lock();
         let mut count = 0;
-        for slot in inner.buffers.iter() {
+        for slot in &inner.buffers {
             if let Some(buf) = slot {
                 if buf.dirty {
                     count += 1;

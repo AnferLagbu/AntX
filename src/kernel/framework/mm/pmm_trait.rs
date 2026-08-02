@@ -77,6 +77,8 @@ pub trait PmmPolicy: Send + Sync {
 pub struct FallbackPmmPolicy;
 
 impl PmmPolicy for FallbackPmmPolicy {
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn count_to_order(&self, count: usize, max_order: u8) -> u8 {
         if count <= 1 {
             return 0;
@@ -123,9 +125,11 @@ static FALLBACK_PMM_POLICY: FallbackPmmPolicy = FallbackPmmPolicy;
 static PMM_POLICY: crate::kernel::framework::sync::OnceLock<&'static dyn PmmPolicy> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 注册 PMM 策略 (由 services::mm::init 调用)
+/// 注册 PMM 策略 (由 `services::mm::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+/// # Errors
+/// 策略已被注册过时返回 Err。
 pub fn register_pmm_policy(policy: &'static dyn PmmPolicy) -> Result<(), &'static dyn PmmPolicy> {
     match PMM_POLICY.set(policy) {
         Ok(()) => Ok(()),

@@ -9,17 +9,17 @@
 //! - `raw::MessageRef` 集中所有 `NonNull<Message>` 的 unsafe 操作.
 //! - FFI 函数通过 `UserReadPtr/WritePtr/RefMut` 安全访问用户空间内存.
 
-use super::types::*;
+use super::types::{Message, IpcId, MSG_MAX_SIZE};
 use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::framework::proc::process_get_current_pid;
 
 /// === 消息原始指针特权封装 (Framekernel 模式) ===
 ///
 /// `NonNull<Message>` 是侵入式链表的关键句柄, 所有 unsafe 访问
-/// (Box::from_raw/NonNull::new_unchecked/裸字段读) 都集中在 `MessageRef` 内部,
+/// (`Box::from_raw/NonNull::new_unchecked/裸字段读`) 都集中在 `MessageRef` 内部,
 /// 业务逻辑 (`send`/`receive`/`free`) 通过安全方法操作。
 ///
-/// T6-1: `pub` 可见性 — services/ipc/msgq.rs 策略函数需要通过 MessageRef 安全方法
+/// T6-1: `pub` 可见性 — services/ipc/msgq.rs 策略函数需要通过 `MessageRef` 安全方法
 /// 操作侵入式链表, 不直接接触 unsafe 内部.
 pub mod raw {
     use super::Message;
@@ -35,7 +35,7 @@ pub mod raw {
         ///
         /// # Safety
         ///
-        /// `nn` 必须为 `allocate_message` 返回的有效 NonNull。
+        /// `nn` 必须为 `allocate_message` 返回的有效 `NonNull`。
         pub unsafe fn from_non_null(nn: NonNull<Message>) -> Self {
             Self(nn)
         }
@@ -49,7 +49,7 @@ pub mod raw {
             unsafe { Self::from_non_null(nn) }
         }
 
-        /// 获取底层 NonNull
+        /// 获取底层 `NonNull`
         #[inline(always)]
         pub fn as_non_null(self) -> NonNull<Message> {
             self.0
@@ -83,7 +83,7 @@ pub mod raw {
             unsafe { &mut *self.0.as_ptr() }
         }
 
-        /// 释放消息 (Box::from_raw + drop)
+        /// 释放消息 (`Box::from_raw` + drop)
         pub fn free(self) {
             // SAFETY: self 来自 allocate_message, 由 Box::into_raw 创建。
             let _ = unsafe { Box::from_raw(self.0.as_ptr()) };
@@ -107,7 +107,7 @@ pub mod raw {
 /// FFI: 创建消息队列
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn ipc_msgq_create(perm: i32) -> IpcId {
+pub extern "C" fn ipc_msgq_create(perm: i32) -> IpcId {
     let ns = super::IPC_NAMESPACE.get_mut();
     let next_id = super::NEXT_IPC_ID.get_mut();
     let pid = process_get_current_pid();
@@ -123,7 +123,9 @@ pub fn ipc_msgq_create(perm: i32) -> IpcId {
 /// `data` 必须是有效可读指针, 至少 `size` 字节, 内存必须在调用期间保持有效。
 /// 由 `sys_msgsnd` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub unsafe extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     let pid = process_get_current_pid();
 
@@ -136,7 +138,7 @@ pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -
     };
 
     // 将 `UserReadPtr` 转换为 `Option<&[u8]>` 以适配 safe API
-    let data_slice = slice.as_ref().map(|u| u.as_slice());
+    let data_slice = slice.as_ref().map(super::super::userptr::UserReadPtr::as_slice);
 
     match crate::kernel::services::ipc::msgq::msgq_send_safe(ns, id, type_, data_slice, size as usize, pid) {
         Ok(()) => 0,
@@ -150,7 +152,7 @@ pub unsafe fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -
 /// `data` 必须是有效可写指针, 至少 `size` 字节; `type_out` 用于返回消息类型。
 /// 由 `sys_msgrcv` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-pub unsafe fn ipc_msgq_recv(
+pub unsafe extern "C" fn ipc_msgq_recv(
     id: IpcId,
     type_out: *mut u64,
     data: *mut u8,
@@ -183,9 +185,9 @@ pub unsafe fn ipc_msgq_recv(
     };
 
     // 将 framework 包装器转换为安全 Rust 类型
-    let type_ref = type_opt.as_mut().map(|u| u.as_mut());
-    let data_ref = data_opt.as_mut().map(|u| u.as_mut_slice());
-    let size_ref = size_opt.as_mut().map(|u| u.as_mut());
+    let type_ref = type_opt.as_mut().map(super::super::userptr::UserRefMut::as_mut);
+    let data_ref = data_opt.as_mut().map(super::super::userptr::UserWritePtr::as_mut_slice);
+    let size_ref = size_opt.as_mut().map(super::super::userptr::UserRefMut::as_mut);
 
     match crate::kernel::services::ipc::msgq::msgq_recv_safe(ns, id, type_ref, data_ref, size_ref) {
         Ok(n) => n as i64,
@@ -196,7 +198,7 @@ pub unsafe fn ipc_msgq_recv(
 /// FFI: 销毁消息队列
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn ipc_msgq_destroy(id: IpcId) -> i32 {
+pub extern "C" fn ipc_msgq_destroy(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     match crate::kernel::services::ipc::msgq::msgq_destroy_safe(ns, id) {
         Ok(()) => 0,

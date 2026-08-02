@@ -18,16 +18,16 @@
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use super::*;
+use super::{PageFlags, VirtAddr, PAGE_SIZE};
 
-/// VMA 行为属性标志 (与 PageFlags 区分: PageFlags 是硬件页表属性, VmFlags 是内核策略)
+/// VMA 行为属性标志 (与 `PageFlags` 区分: `PageFlags` 是硬件页表属性, `VmFlags` 是内核策略)
 ///
 /// ## 设计
 ///
 /// - 32 位位掩码, atomic 友好
-/// - 与 Linux `vm_flags` 同源, 但仅实现 QueenX 用到的子集
-/// - mlock 路径 (MADV_*) 与 fork 行为 (MADV_DONTFORK) 由 VmFlags 驱动
-/// - 与 PageFlags 解耦: mlock 不修改页表权限, 仅在内核策略路径被检查
+/// - 与 Linux `vm_flags` 同源, 但仅实现 `QueenX` 用到的子集
+/// - mlock 路径 (MADV_*) 与 fork 行为 (`MADV_DONTFORK`) 由 `VmFlags` 驱动
+/// - 与 `PageFlags` 解耦: mlock 不修改页表权限, 仅在内核策略路径被检查
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(transparent)]
 pub struct VmFlags(pub u32);
@@ -136,18 +136,18 @@ pub struct Vma {
     pub offset: u64,
     /// 文件映射: inode 编号 (0 = 无文件后端)
     pub inode_id: u32,
-    /// 文件映射: 是否为 MAP_SHARED (true) 或 MAP_PRIVATE (false)
+    /// 文件映射: 是否为 `MAP_SHARED` (true) 或 `MAP_PRIVATE` (false)
     pub shared: bool,
-    /// 文件映射: 创建该 VMA 的 pwm (用于 #PF 时 vfs_pread_inode 权限校验).
+    /// 文件映射: 创建该 VMA 的 pwm (用于 #PF 时 `vfs_pread_inode` 权限校验).
     /// 匿名/堆/栈/设备/保护 VMA 始终为 0.
     pub file_pwm: u64,
-    /// 文件映射: 挂载点在 VFS_MANAGER.mounts 中的索引. None = 匿名 VMA
-    /// 或未注册挂载 (退到根). #PF miss 时由 page_fault 读此字段
-    /// 查 VFS_MANAGER.mounts[idx].fs trait object, 调对应 FileSystem 的
-    /// fs_pread_inode 完成 mmap prewarm. 用 usize 而非 &str 避免
+    /// 文件映射: 挂载点在 `VFS_MANAGER.mounts` 中的索引. None = 匿名 VMA
+    /// 或未注册挂载 (退到根). #PF miss 时由 `page_fault` 读此字段
+    /// 查 `VFS_MANAGER.mounts`[idx].fs trait object, 调对应 `FileSystem` 的
+    /// `fs_pread_inode` 完成 mmap prewarm. 用 usize 而非 &str 避免
     /// 'static 借用 / 静态 buffer 泄漏的复杂度.
     pub mount_idx: Option<usize>,
-    /// 内核策略标志 (madvice/mlock/fork 行为). 与 PageFlags 解耦.
+    /// 内核策略标志 (madvice/mlock/fork 行为). 与 `PageFlags` 解耦.
     pub vm_flags: VmFlags,
 }
 
@@ -187,7 +187,7 @@ impl Vma {
     /// `pwm` 为创建该映射的进程凭证, #PF 同步填 pcache 时通过
     /// `vfs_pread_inode(mount_idx, inode, off, dst, pwm)` 校验文件访问权限,
     /// 避免越权读取其它用户文件. `mount_idx` 决定 #PF miss 时调哪个
-    /// FileSystem trait (例如 0 → RamFS, 1 → DevFS).
+    /// `FileSystem` trait (例如 0 → `RamFS`, 1 → `DevFS`).
     pub fn file_backed(
         start: usize,
         end: usize,
@@ -245,10 +245,10 @@ pub struct MmStruct {
     pub brk: AtomicUsize,
     pub start_stack: usize,
     pub mmap_base: usize,
-    /// 已锁定物理字节数 (mlock 累计). 用于 RLIMIT_MEMLOCK 校验.
-    /// 跨 fork 共享 (MmStruct 在 fork 中不复制, 见 sys_fork).
+    /// 已锁定物理字节数 (mlock 累计). 用于 `RLIMIT_MEMLOCK` 校验.
+    /// 跨 fork 共享 (`MmStruct` 在 fork 中不复制, 见 `sys_fork`).
     pub locked_vm: AtomicUsize,
-    /// 进程级 mlockall 标志 (MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT).
+    /// 进程级 mlockall 标志 (`MCL_CURRENT` | `MCL_FUTURE` | `MCL_ONFAULT`).
     pub mlock_all_flags: AtomicU32,
 }
 
@@ -272,6 +272,10 @@ impl MmStruct {
     }
 
     /// 添加 VMA (合并相邻同类 VMA)
+    ///
+    /// # Errors
+    /// 当新 VMA 与已有 VMA 重叠且类型 (`vma_type`) 或标志 (`flags`) 不同 (即不兼容映射) 时,
+    /// 返回 `Err("VMA overlap with incompatible mapping")`.
     pub fn insert_vma(&self, vma: Vma) -> Result<(), &'static str> {
         let mut vmas = self.vmas.lock();
 
@@ -365,6 +369,8 @@ impl MmStruct {
         }
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn unmap_vma_pages(&self, vma: &Vma) {
         // 锁序: 调用者持有 VMA_LOCK, 此处获取 VMM_LOCK
         // 这是唯一合法的嵌套方向 (VMA → VMM).
@@ -405,6 +411,11 @@ impl MmStruct {
     /// 2. 必要时拆分 VMA (前后部分保持原权限)
     /// 3. 修改目标部分的 VMA flags 和页表权限
     /// 4. flush TLB
+    ///
+    /// # Errors
+    /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出, 或范围内没有任何已映射的 VMA 时返回 `ENOMEM`.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn mprotect(&self, start: usize, len: usize, new_flags: PageFlags) -> Result<(), crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
@@ -545,6 +556,13 @@ impl MmStruct {
     /// - `EFAULT`: 旧地址未映射 / 范围不匹配 / 原地扩展失败
     /// - `EINVAL`: 大小参数为 0 或 `flags` 含未实现位
     /// - `ENOMEM`: 无法分配新范围
+    ///
+    /// # Errors
+    /// 当 `old_size` 为 0 或 `flags` 含未实现位 (如 `MREMAP_FIXED`) 时返回 `EINVAL`;
+    /// 当旧地址未映射、范围不匹配或原地扩展失败时返回 `EFAULT`;
+    /// 当无法找到足够的空闲区 (`find_free_range` 失败) 或插入新 VMA 失败时返回 `ENOMEM`.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn mremap(
         &self,
         old_addr: usize,
@@ -636,7 +654,13 @@ impl MmStruct {
 
     /// 设置 brk 终点.
     ///
-    /// brk/start_brk 使用 AtomicUsize 实现无锁线程安全访问.
+    /// `brk/start_brk` 使用 `AtomicUsize` 实现无锁线程安全访问.
+    ///
+    /// # Errors
+    /// 当扩展堆时插入的新 VMA 与已有 VMA 重叠且不兼容时, 返回 `Err`
+    /// (错误信息来自 `insert_vma`).
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn set_brk(&self, new_brk: usize) -> Result<usize, &'static str> {
         let page_aligned = (new_brk + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
 
@@ -662,10 +686,17 @@ impl MmStruct {
     // madvise / mlock / mincore 接口 (P1 #15)
     // ============================================================================
 
-    /// madvise: 对 [start, end) 范围设置 VmFlags hint
+    /// madvise: 对 [start, end) 范围设置 `VmFlags` hint
     ///
     /// 返回成功锁定的字节数 (用于 mlock/mlockall 累计)
     /// 与 errno (MADV_* 实现细节见 Linux man).
+    ///
+    /// # Errors
+    /// 当 `len` 为 0 或 `advice` 为未实现的建议值时返回 `EINVAL`;
+    /// 当 `start + len` 溢出时返回 `ENOMEM`;
+    /// 当 PAGEOUT/DONTNEED 目标区域被 `mlock` 锁定而无法回收时返回 `EAGAIN`.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn madvise_range(&self, start: usize, len: usize, advice: u32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
@@ -832,7 +863,13 @@ impl MmStruct {
 
     /// mlock: 锁定 [start, len) 范围 VMA
     ///
-    /// 返回实际锁定的字节数. 受 RLIMIT_MEMLOCK 约束.
+    /// 返回实际锁定的字节数. 受 `RLIMIT_MEMLOCK` 约束.
+    ///
+    /// # Errors
+    /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出、范围内没有任何重叠 VMA,
+    /// 或累计锁定字节数超过 `RLIMIT_MEMLOCK` 上限时返回 `ENOMEM`.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn mlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
         use crate::kernel::framework::rlimit_query;
@@ -891,6 +928,11 @@ impl MmStruct {
     }
 
     /// munlock: 解锁 [start, len) 范围 VMA
+    ///
+    /// # Errors
+    /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出时返回 `ENOMEM`.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn munlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
@@ -929,8 +971,11 @@ impl MmStruct {
 
     /// mlockall: 进程级 mlock
     ///
-    /// `flags` 取值: MCL_CURRENT=1, MCL_FUTURE=2, MCL_ONFAULT=4.
+    /// `flags` 取值: `MCL_CURRENT=1`, `MCL_FUTURE=2`, `MCL_ONFAULT=4`.
     /// 返回成功设置的标志位.
+    ///
+    /// # Errors
+    /// 当 `flags` 包含未实现的位 (除 `MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT` 之外的位) 时返回 `EINVAL`.
     pub fn mlock_all(&self, flags: u32) -> Result<u32, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
@@ -979,6 +1024,9 @@ impl MmStruct {
     }
 
     /// munlockall: 解除所有 mlock
+    ///
+    /// # Errors
+    /// 当前实现总是返回 `Ok(())`, 不会返回错误.
     pub fn munlock_all(&self) -> Result<(), crate::kernel::framework::syscall::Errno> {
         let mut vmas = self.vmas.lock();
         for v in vmas.iter_mut() {
@@ -996,6 +1044,12 @@ impl MmStruct {
     ///
     /// `out_vec`: 输出缓冲区, 每页 1 字节 (1=驻留, 0=未驻留)
     /// 返回 0 成功, 否则 errno.
+    ///
+    /// # Errors
+    /// 当 `len` 为 0 时返回 `EINVAL`; 当 `out_vec` 容量不足以容纳全部页的驻留状态
+    /// (`out_vec.len() < n_pages`) 时返回 `ENOMEM`.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn mincore_range(
         &self,
         start: usize,
@@ -1027,7 +1081,7 @@ impl MmStruct {
                 Some(p) => (p & 1) != 0,
                 None => false,
             };
-            out_vec[i] = if present { 1 } else { 0 };
+            out_vec[i] = u8::from(present);
             if present {
                 resident += 1;
             }
@@ -1073,6 +1127,8 @@ pub fn mm_struct_new() -> MmStruct {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vma_find(mm_ptr: *const MmStruct, addr: u64) -> u64 {
     if mm_ptr.is_null() {
         return 0;

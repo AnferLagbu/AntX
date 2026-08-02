@@ -13,7 +13,7 @@
 //!
 //! - **唯一所有权**: 任意时刻最多一个 `Frame` 实例持有一个物理地址。
 //! - **释放前清理**: 释放 Frame 前确保无 DMA 缓冲区 / 页表条目引用。
-//! - **对齐**: Frame 地址始终对齐到 PAGE_SIZE 边界。
+//! - **对齐**: Frame 地址始终对齐到 `PAGE_SIZE` 边界。
 //! - `from_raw()` 是唯一 unsafe 构造路径；services 层通过 `FrameAlloc::alloc()` 获取。
 
 use core::fmt;
@@ -63,6 +63,8 @@ impl Frame {
     }
 
     /// 帧大小 (字节)
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn size(&self) -> usize {
         (PAGE_SIZE as usize) << self.order
     }

@@ -18,18 +18,18 @@ pub const MAX_FDS_PER_PROCESS: usize = 64;
 
 /// Per-process FD 表
 ///
-/// `entries[local_fd] = handle_id` (指向全局 OpenFile 表)
+/// `entries[local_fd] = handle_id` (指向全局 `OpenFile` 表)
 /// `u32::MAX` 表示 slot 空闲.
 #[derive(Debug)]
 pub struct FdTable {
-    /// handle_id 映射 (指向 OpenFile)
+    /// `handle_id` 映射 (指向 `OpenFile`)
     entries: IrqSpinLock<[u32; MAX_FDS_PER_PROCESS]>,
     /// CLOEXEC 标志 (per-FD, 不随 dup 共享)
     cloexec: IrqSpinLock<[bool; MAX_FDS_PER_PROCESS]>,
 }
 
 impl FdTable {
-    /// 创建未初始化的 FdTable
+    /// 创建未初始化的 `FdTable`
     pub const fn new() -> Self {
         Self {
             entries: IrqSpinLock::new([u32::MAX; MAX_FDS_PER_PROCESS]),
@@ -63,22 +63,22 @@ impl FdTable {
         None
     }
 
-    /// 通过本地 fd 获取 handle_id.
+    /// 通过本地 fd 获取 `handle_id`.
     pub fn get_handle_id(&self, local_fd: usize) -> Option<u32> {
         let entries = self.entries.lock();
         if local_fd < MAX_FDS_PER_PROCESS {
             let hid = entries[local_fd];
-            if hid != u32::MAX {
-                Some(hid)
-            } else {
+            if hid == u32::MAX {
                 None
+            } else {
+                Some(hid)
             }
         } else {
             None
         }
     }
 
-    /// 关闭本地 fd, 返回被关闭的 handle_id.
+    /// 关闭本地 fd, 返回被关闭的 `handle_id`.
     pub fn close_fd(&self, local_fd: usize) -> Option<u32> {
         if local_fd >= MAX_FDS_PER_PROCESS {
             return None;
@@ -86,12 +86,12 @@ impl FdTable {
         let mut entries = self.entries.lock();
         let mut cloexec = self.cloexec.lock();
         let hid = entries[local_fd];
-        if hid != u32::MAX {
+        if hid == u32::MAX {
+            None
+        } else {
             entries[local_fd] = u32::MAX;
             cloexec[local_fd] = false;
             Some(hid)
-        } else {
-            None
         }
     }
 

@@ -21,7 +21,7 @@
 //! - `UserContext` 实例由 asm stub 创建（架构特定），仅传递指针给 Rust。
 //! - services 层只读/写入 `UserContext`，不直接操作 asm stub。
 
-/// x86_64 用户态寄存器快照
+/// `x86_64` 用户态寄存器快照
 ///
 /// 由 `isr.asm` 的 `int 0x80` / `syscall` stub 在栈上填充。
 #[cfg(target_arch = "x86_64")]

@@ -5,13 +5,13 @@
 //!
 //! ## 迁移记录
 //!
-//! 策略代码于 2026-06-17 从 framework::syscall::mprotect 迁移至此。
+//! 策略代码于 2026-06-17 从 `framework::syscall::mprotect` 迁移至此。
 //! framework 层仅保留 re-export 保持调用方兼容。
 //!
 //! ## 职责
 //!
 //! - mprotect 参数验证 (addr 页对齐, len > 0, prot 合法)
-//! - prot → PageFlags 转换 (策略决策)
+//! - prot → `PageFlags` 转换 (策略决策)
 //! - 委托 framework 层执行页表修改 (机制)
 
 use crate::kernel::framework::mm::{PageFlags, vma_get_current_mm};
@@ -23,7 +23,7 @@ pub const PROT_READ: i32 = 0x1;
 pub const PROT_WRITE: i32 = 0x2;
 pub const PROT_EXEC: i32 = 0x4;
 
-/// 将 POSIX prot 转换为 PageFlags (策略决策)
+/// 将 POSIX prot 转换为 `PageFlags` (策略决策)
 pub fn prot_to_page_flags(prot: i32) -> PageFlags {
     let mut flags = PageFlags::empty();
 
@@ -48,7 +48,12 @@ pub fn prot_to_page_flags(prot: i32) -> PageFlags {
 
 /// mprotect 系统调用策略实现
 ///
-/// 验证参数 + 转换 prot → PageFlags + 委托 framework 执行页表修改.
+/// 验证参数 + 转换 prot → `PageFlags` + 委托 framework 执行页表修改.
+///
+/// # Errors
+///
+/// 当 `addr` 未按页对齐、`len == 0` 或 `prot` 含非法位时返回 `EINVAL`;
+/// 当无法取得当前进程的 mm(内存描述符缺失)时返回 `ENOMEM`.
 pub fn mprotect_syscall(addr: u64, len: u64, prot: i32) -> Result<usize, Errno> {
     // 验证 addr 页对齐
     if addr & 0xFFF != 0 {

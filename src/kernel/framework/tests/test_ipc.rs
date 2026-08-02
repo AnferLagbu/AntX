@@ -1,5 +1,5 @@
 use super::check;
-use crate::kernel::framework::ipc::types::*;
+use crate::kernel::framework::ipc::types::{IpcNamespace, Pipe, IPC_MAX_PIPES, ShmSegment, IPC_MAX_SHM_SEGS, MsgQueue, IPC_MAX_MSG_QUEUES, Semaphore, IPC_MAX_SEMAPHORES, IpcId};
 use crate::kernel::framework::ipc::{sem};
 // T6-1: pipe/shm 策略函数已迁移到 services
 use crate::kernel::services::ipc::{pipe, shm};

@@ -40,6 +40,10 @@ pub fn getppid_syscall() -> usize {
 /// getpgid — 返回进程组 ID
 ///
 /// pid 范围: 0 (当前进程) 或 > 0
+///
+/// # Errors
+///
+/// 当 `pid < 0` 时返回 `EINVAL`; 底层查询失败时返回对应的 `Errno`.
 pub fn getpgid_syscall(pid: i32) -> Result<usize, Errno> {
     if pid < 0 {
         return Err(Errno::EINVAL);
@@ -55,6 +59,10 @@ pub fn getpgid_syscall(pid: i32) -> Result<usize, Errno> {
 /// uname — 系统信息
 ///
 /// `buf` 指向 struct utsname (6 × 65 字节字段)
+///
+/// # Errors
+///
+/// 当 `buf == 0` 时返回 `EFAULT`.
 pub fn uname_syscall(buf: u64) -> Result<usize, Errno> {
     if buf == 0 {
         return Err(Errno::EFAULT);
@@ -69,7 +77,11 @@ pub fn uname_syscall(buf: u64) -> Result<usize, Errno> {
 
 /// gettimeofday — 时钟查询
 ///
-/// `tv` 指向 struct timeval (tv_sec + tv_usec, 16 字节)
+/// `tv` 指向 struct timeval (`tv_sec` + `tv_usec`, 16 字节)
+///
+/// # Errors
+///
+/// 当 `tv == 0` 时返回 `EFAULT`.
 pub fn gettimeofday_syscall(tv: u64) -> Result<usize, Errno> {
     if tv == 0 {
         return Err(Errno::EFAULT);

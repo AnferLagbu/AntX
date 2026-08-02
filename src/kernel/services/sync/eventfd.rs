@@ -11,23 +11,28 @@
 //!
 //! - services 层验证标量参数 (initval/flags/fd/value)
 //! - 原始指针 (`buf`) 委托给 framework 层
-//!   (指针合法性由 syscall 入口 check_user_ptr 保证)
+//!   (指针合法性由 syscall 入口 `check_user_ptr` 保证)
 
 use crate::kernel::framework::syscall::Errno;
 
-/// EFD_SEMAPHORE 标志
+/// `EFD_SEMAPHORE` 标志
 pub const EFD_SEMAPHORE: i32 = crate::kernel::framework::syscall::eventfd::EFD_SEMAPHORE;
-/// EFD_NONBLOCK 标志
+/// `EFD_NONBLOCK` 标志
 pub const EFD_NONBLOCK: i32 = crate::kernel::framework::syscall::eventfd::EFD_NONBLOCK;
-/// EFD_CLOEXEC 标志
+/// `EFD_CLOEXEC` 标志
 pub const EFD_CLOEXEC: i32 = crate::kernel::framework::syscall::eventfd::EFD_CLOEXEC;
 
 /// eventfd FD 空间起始
 pub const EFD_FD_BASE: i32 = crate::kernel::framework::syscall::eventfd::EFD_FD_BASE;
 
-/// eventfd_create 安全代理
+/// `eventfd_create` 安全代理
 ///
 /// 验证: flags 仅包含已知标志位
+///
+/// # Errors
+///
+/// - flags 含未知标志位 → `EINVAL`
+/// - 底层 `sys_eventfd` 返回负值时转换为对应的 `Errno`
 pub fn eventfd_syscall(initval: u64, flags: i32) -> Result<usize, Errno> {
     // flags 校验: 只允许已知标志
     let valid_flags = EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE;
@@ -46,6 +51,12 @@ pub fn eventfd_syscall(initval: u64, flags: i32) -> Result<usize, Errno> {
 /// eventfd read 安全代理
 ///
 /// 验证: fd 在 eventfd 空间内, buf 非零
+///
+/// # Errors
+///
+/// - `fd` 不在 eventfd FD 空间 → `EBADF`
+/// - `buf == 0` → `EFAULT`
+/// - 底层 `sys_eventfd_read` 返回负值时转换为对应的 `Errno`
 pub fn eventfd_read_syscall(fd: i32, buf: u64) -> Result<usize, Errno> {
     if !crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
         return Err(Errno::EBADF);
@@ -65,6 +76,12 @@ pub fn eventfd_read_syscall(fd: i32, buf: u64) -> Result<usize, Errno> {
 /// eventfd write 安全代理
 ///
 /// 验证: fd 在 eventfd 空间内, value > 0
+///
+/// # Errors
+///
+/// - `fd` 不在 eventfd FD 空间 → `EBADF`
+/// - `value == 0` → `EINVAL`
+/// - 底层 `sys_eventfd_write` 返回负值时转换为对应的 `Errno`
 pub fn eventfd_write_syscall(fd: i32, value: u64) -> Result<usize, Errno> {
     if !crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
         return Err(Errno::EBADF);
@@ -84,6 +101,11 @@ pub fn eventfd_write_syscall(fd: i32, value: u64) -> Result<usize, Errno> {
 /// eventfd close 安全代理
 ///
 /// 验证: fd 在 eventfd 空间内
+///
+/// # Errors
+///
+/// - `fd` 不在 eventfd FD 空间 → `EBADF`
+/// - 底层 `sys_eventfd_close` 返回负值时转换为对应的 `Errno`
 pub fn eventfd_close_syscall(fd: i32) -> Result<usize, Errno> {
     if !crate::kernel::framework::syscall::eventfd::is_eventfd_fd(fd) {
         return Err(Errno::EBADF);

@@ -2,7 +2,7 @@ use super::check;
 use crate::kernel::framework::credo::capability;
 use crate::kernel::framework::credo::engine;
 use crate::kernel::framework::credo::sha256;
-use crate::kernel::framework::credo::types::*;
+use crate::kernel::framework::credo::types::{PwmId, CapDomain, CapBits, PwmEntry, PwmFlags, GrantRecord, AuditEntry, AuditAction, AuditResult};
 use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 

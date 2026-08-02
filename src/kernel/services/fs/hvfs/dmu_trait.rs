@@ -13,10 +13,10 @@
 //!
 //! ## TCB 减负
 //!
-//! 原 HvObjSet 8 个方法 (init/alloc_obj/free_obj/get_obj/update_obj/...) 直接暴露.
+//! 原 `HvObjSet` 8 个方法 (`init/alloc_obj/free_obj/get_obj/update_obj`/...) 直接暴露.
 //! 提取 trait 后:
-//! - SPA/ZIL 调用方依赖 trait object / 泛型, 不再绑死 HvObjSet
-//! - 单元测试可注入 MockDmu, 验证 SPA 在不真实 DMU 上的逻辑
+//! - SPA/ZIL 调用方依赖 trait object / 泛型, 不再绑死 `HvObjSet`
+//! - 单元测试可注入 `MockDmu`, 验证 SPA 在不真实 DMU 上的逻辑
 //!
 //! ## 与 LEGACY-5.1/5.2 范式一致
 
@@ -28,15 +28,15 @@ use super::dmu::{HvDmuObject, HvObjSet, HvObjType};
 
 /// DMU 对象管理 trait
 ///
-/// HvObjSet 的方法 (init/alloc_obj/free_obj/get_obj/...) 抽象为 trait,
+/// `HvObjSet` 的方法 (`init/alloc_obj/free_obj/get_obj`/...) 抽象为 trait,
 /// 让 SPA/ZIL 等调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # Safety
 ///
 /// - `init` 应只调用一次 (创建 root + meta zap)
-/// - `alloc_obj` 返回的 obj_id 必须唯一
-/// - `free_obj` 在 link_count=0 时自动标记 used=false
-/// - 所有方法在 alloc/free 路径上需内部同步 (HvObjSet 内部用 Mutex)
+/// - `alloc_obj` 返回的 `obj_id` 必须唯一
+/// - `free_obj` 在 `link_count=0` 时自动标记 used=false
+/// - 所有方法在 alloc/free 路径上需内部同步 (`HvObjSet` 内部用 Mutex)
 pub trait DmuManager: Send + Sync {
     /// 初始化对象集 (创建 root dir + meta zap)
     fn init(&self, owner_pwm: u64);
@@ -45,10 +45,10 @@ pub trait DmuManager: Send + Sync {
     fn is_initialized(&self) -> bool;
 
     /// 分配新对象
-    /// 返回 Some(obj_id) 成功, None 表示类型不支持或资源耗尽
+    /// 返回 `Some(obj_id)` 成功, None 表示类型不支持或资源耗尽
     fn alloc_obj(&self, obj_type: HvObjType, owner_pwm: u64) -> Option<u64>;
 
-    /// 释放对象 (link_count -= 1, 0 时标记未使用)
+    /// 释放对象 (`link_count` -= 1, 0 时标记未使用)
     /// 返回 true 成功, false 表示对象不存在
     fn free_obj(&self, obj_id: u64) -> bool;
 
@@ -68,7 +68,7 @@ pub trait DmuManager: Send + Sync {
     /// 当前活动对象数 (used=true)
     fn obj_count(&self) -> u64;
 
-    /// 下一个可用 obj_id
+    /// 下一个可用 `obj_id`
     fn next_obj_id(&self) -> u64;
 }
 
@@ -76,10 +76,10 @@ pub trait DmuManager: Send + Sync {
 // StandardDmu — 默认 DMU 实现 (HvObjSet 包装)
 // ============================================================================
 
-/// 标准 DMU 实现 — 包装 HvObjSet, 委托所有方法
+/// 标准 DMU 实现 — 包装 `HvObjSet`, 委托所有方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockDmu 替代本实现.
+/// 单元测试可注入 `MockDmu` 替代本实现.
 pub struct StandardDmu(pub HvObjSet);
 
 impl StandardDmu {
@@ -88,7 +88,7 @@ impl StandardDmu {
         Self(HvObjSet::new())
     }
 
-    /// 访问内部 HvObjSet (向后兼容)
+    /// 访问内部 `HvObjSet` (向后兼容)
     pub fn inner(&self) -> &HvObjSet {
         &self.0
     }

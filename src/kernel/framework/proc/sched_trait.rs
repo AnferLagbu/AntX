@@ -70,7 +70,7 @@ impl SchedDecision for FallbackPolicy {
     }
 
     fn time_slice_for(&self, priority: ThreadPriority) -> u32 {
-        use super::types::*;
+        use super::types::{ThreadPriority, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM};
         match priority {
             ThreadPriority::Realtime => SCHED_LEVEL_0_QUANTUM,
             ThreadPriority::High => SCHED_LEVEL_1_QUANTUM,
@@ -90,9 +90,12 @@ static FALLBACK_POLICY: FallbackPolicy = FallbackPolicy;
 /// 全局策略注册表 — services 通过 `register_sched_decision` 注册
 static SCHED_DECISION: OnceLock<&'static dyn SchedDecision> = OnceLock::new();
 
-/// 注册调度决策策略 (由 services::proc::init 调用)
+/// 注册调度决策策略 (由 `services::proc::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+///
+/// # Errors
+/// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
 pub fn register_sched_decision(policy: &'static dyn SchedDecision) -> Result<(), &'static dyn SchedDecision> {
     match SCHED_DECISION.set(policy) {
         Ok(()) => Ok(()),

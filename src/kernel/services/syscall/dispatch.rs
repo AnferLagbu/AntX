@@ -19,7 +19,7 @@
 //!   事件轮询, eventfd/signalfd/timerfd, Credo 私有 syscall, 存储设备, inotify,
 //!   内存建议与锁定, 进程创建/等待, 系统信息, CPU 亲和性, 进程优先级
 //! - 待迁移: read/write, execve, firmware, ftrace/kgdb, seccomp/prctl,
-//!   路由/Netfilter, io_uring, namespace, cgroup, NUMA, eBPF, PM, TPM,
+//!   路由/Netfilter, `io_uring`, namespace, cgroup, NUMA, eBPF, PM, TPM,
 //!   CET, tickless, timesync, kexec, UEFI, 帧缓冲, sendfile/splice 等
 //!
 //! 评估日期: 2026-06-19
@@ -87,7 +87,7 @@ impl SyscallDispatch for ServicesSyscallDispatch {
 
 /// 文件系统相关系统调用
 fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
-    use crate::kernel::services::syscall::types::*;
+    use crate::kernel::services::syscall::types::{SYS_open, SYS_close, SYS_stat, SYS_fstat, SYS_lstat, SYS_creat, SYS_mkdir, SYS_rmdir, SYS_chmod, SYS_fchmod, SYS_umask, SYS_access, SYS_unlink, SYS_rename, SYS_symlink, SYS_readlink, SYS_link, SYS_openat, SYS_newfstatat, SYS_unlinkat, SYS_renameat, SYS_linkat, SYS_symlinkat, SYS_readlinkat, SYS_fchmodat, SYS_faccessat, SYS_fchown, SYS_sync, SYS_fsync, SYS_mount, SYS_umount2, SYS_getcwd, SYS_chdir, SYS_pipe, SYS_pipe2, SYS_dup, SYS_dup2, SYS_dup3, SYS_fcntl, SYS_ioctl, SYS_poll, SYS_select, SYS_chown, SYS_truncate, SYS_ftruncate, SYS_flock, SYS_lseek, SYS_getdents, SYS_inotify_init1, SYS_inotify_add_watch, SYS_inotify_rm_watch, SYS_clock_gettime, SYS_times, SYS_time, SYS_getitimer, SYS_alarm, SYS_setitimer, SYS_copy_file_range, SYS_name_to_handle_at, SYS_open_by_handle_at, QX_SETXATTR, QX_GETXATTR, QX_LISTXATTR, QX_REMOVEXATTR, QX_SNAPSHOT_CREATE, QX_SNAPSHOT_DESTROY, QX_SNAPSHOT_ROLLBACK, QX_SNAPSHOT_CLONE};
     let [a0, a1, a2, a3, a4, a5] = args;
 
     Some(match num {
@@ -173,12 +173,12 @@ fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_name_to_handle_at => {
             crate::kernel::services::fs::file_handle::name_to_handle_at_syscall(
                 a0 as i32, a1, a2 as i32, a3, a4 as u64, a5 as u32,
-            ).unwrap_or_else(|e| e.as_ret())
+            ).unwrap_or_else(super::types::Errno::as_ret)
         },
         SYS_open_by_handle_at => {
             crate::kernel::services::fs::file_handle::open_by_handle_at_syscall(
                 a0 as i32, a1, a2 as i32, a3 as u32,
-            ).unwrap_or_else(|e| e.as_ret())
+            ).unwrap_or_else(super::types::Errno::as_ret)
         },
 
         // 扩展属性
@@ -199,7 +199,7 @@ fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
 
 /// 进程相关系统调用
 fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
-    use crate::kernel::services::syscall::types::*;
+    use crate::kernel::services::syscall::types::{SYS_getpid, SYS_getppid, SYS_getpgid, SYS_gettid, SYS_setsid, SYS_getsid, SYS_setpgid, SYS_rt_sigaction, SYS_rt_sigprocmask, SYS_kill, SYS_nice, SYS_getpriority, SYS_setpriority, SYS_sched_setaffinity, SYS_sched_getaffinity, SYS_fork, SYS_exit, SYS_exit_group, SYS_sched_yield, SYS_getrusage, SYS_sysinfo, SYS_getrlimit, SYS_uname, SYS_gettimeofday, SYS_nanosleep, SYS_clone, SYS_wait4, SYS_memfd_create, SYS_pidfd_open, SYS_pidfd_send_signal, SYS_pidfd_getfd};
     let [a0, a1, a2, a3, a4, _a5] = args;
 
     Some(match num {
@@ -260,7 +260,7 @@ fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
 
 /// 网络相关系统调用
 fn dispatch_net(num: u64, args: [u64; 6]) -> Option<i64> {
-    use crate::kernel::services::syscall::types::*;
+    use crate::kernel::services::syscall::types::{SYS_socket, SYS_connect, SYS_accept, SYS_sendto, SYS_recvfrom, SYS_shutdown, SYS_bind, SYS_listen, SYS_sendmsg, SYS_recvmsg, SYS_setsockopt, SYS_getsockopt};
     let [a0, a1, a2, a3, a4, a5] = args;
 
     Some(match num {
@@ -283,7 +283,7 @@ fn dispatch_net(num: u64, args: [u64; 6]) -> Option<i64> {
 
 /// 内存管理相关系统调用
 fn dispatch_mm(num: u64, args: [u64; 6]) -> Option<i64> {
-    use crate::kernel::services::syscall::types::*;
+    use crate::kernel::services::syscall::types::{SYS_mprotect, SYS_brk, SYS_mmap, SYS_munmap, SYS_madvise, SYS_mlock, SYS_munlock, SYS_mlockall, SYS_munlockall, SYS_mincore, SYS_get_mempolicy, SYS_set_mempolicy, SYS_migrate_pages, SYS_getcpu};
     let [a0, a1, a2, a3, a4, a5] = args;
 
     Some(match num {
@@ -315,7 +315,7 @@ fn dispatch_mm(num: u64, args: [u64; 6]) -> Option<i64> {
 
 /// 同步原语相关系统调用
 fn dispatch_sync(num: u64, args: [u64; 6]) -> Option<i64> {
-    use crate::kernel::services::syscall::types::*;
+    use crate::kernel::services::syscall::types::{SYS_futex, SYS_epoll_create, SYS_epoll_create1, SYS_epoll_ctl, SYS_epoll_wait, SYS_eventfd, SYS_eventfd2, SYS_signalfd, SYS_signalfd4, SYS_timerfd_create, SYS_timerfd_settime, SYS_timerfd_gettime};
     let [a0, a1, a2, a3, a4, _a5] = args;
 
     Some(match num {
@@ -323,8 +323,8 @@ fn dispatch_sync(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_futex => {
             match crate::kernel::services::sync::futex::futex_syscall(a0, a1 as i32, a2 as i32, a3, a4 as u32) {
                 Ok(crate::kernel::services::sync::futex::FutexResult::Woken) => 0,
-                Ok(crate::kernel::services::sync::futex::FutexResult::WokenCount(n)) => n as i64,
-                Ok(crate::kernel::services::sync::futex::FutexResult::Requeued { woken, .. }) => woken as i64,
+                Ok(crate::kernel::services::sync::futex::FutexResult::WokenCount(n)) => i64::from(n),
+                Ok(crate::kernel::services::sync::futex::FutexResult::Requeued { woken, .. }) => i64::from(woken),
                 Ok(crate::kernel::services::sync::futex::FutexResult::Pending) => 0,
                 Err(e) => e.as_ret(),
             }
@@ -355,7 +355,7 @@ fn dispatch_sync(num: u64, args: [u64; 6]) -> Option<i64> {
 
 /// Credo 私有系统调用
 fn dispatch_credo(num: u64, args: [u64; 6]) -> Option<i64> {
-    use crate::kernel::services::syscall::types::*;
+    use crate::kernel::services::syscall::types::{SYS_getuid, SYS_getgid, SYS_setuid, SYS_setgid, SYS_geteuid, SYS_getegid, SYS_seteuid, SYS_setegid, SYS_setreuid, SYS_CREDO_LOGIN, SYS_CREDO_LOGOUT, SYS_CREDO_CREATE_IDENTITY, SYS_CREDO_DELETE_IDENTITY, SYS_CREDO_IDENTITY_INFO, SYS_CREDO_CHANGE_PASSWORD, SYS_CREDO_VERIFY_PASSWORD, SYS_CREDO_CREATE_FIRST, SYS_CREDO_GRANT, SYS_CREDO_REVOKE, SYS_CREDO_CHECK_CAP, SYS_CREDO_GET_CAPS, SYS_CREDO_GET_PWM, SYS_CREDO_SET_PWM, SYS_CREDO_GETHOSTNAME, SYS_CREDO_SETHOSTNAME, SYS_CREDO_BOOT_CHECK, SYS_CREDO_PROC_LIST, SYS_CREDO_PROC_SETPRI, SYS_CREDO_PROC_CPUTIME, SYS_CREDO_PROC_SLEEP, SYS_CREDO_REBOOT, SYS_CREDO_DISK_LIST, SYS_CREDO_DISK_INFO, SYS_CREDO_DISK_FORMAT, SYS_CREDO_DISK_PARTITION, SYS_CREDO_FAT_FORMAT};
     let [a0, a1, a2, a3, _a4, _a5] = args;
 
     Some(match num {
@@ -424,7 +424,7 @@ fn dispatch_credo(num: u64, args: [u64; 6]) -> Option<i64> {
 
 /// 其他系统调用 (POSIX Timer, 熵源等)
 fn dispatch_other(num: u64, args: [u64; 6]) -> Option<i64> {
-    use crate::kernel::services::syscall::types::*;
+    use crate::kernel::services::syscall::types::{SYS_timer_create, SYS_timer_settime, SYS_timer_gettime, SYS_timer_delete, SYS_timer_getoverrun, SYS_clock_getres, SYS_getrandom, QX_GET_CANARY};
     let [a0, a1, a2, a3, _a4, _a5] = args;
 
     Some(match num {
@@ -449,6 +449,10 @@ fn dispatch_other(num: u64, args: [u64; 6]) -> Option<i64> {
 // ============================================================================
 
 /// 注册 services 层分发策略到 framework
+///
+/// # Errors
+///
+/// 当分发策略已被注册时返回 `Err(())`.
 pub fn register_services_dispatch() -> Result<(), ()> {
     static POLICY: ServicesSyscallDispatch = ServicesSyscallDispatch;
     let r = register_syscall_dispatch(&POLICY);

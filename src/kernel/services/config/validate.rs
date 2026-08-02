@@ -13,6 +13,9 @@ use crate::kernel::framework::config::{
 use crate::slog_err;
 
 /// 校验 CPU 配置.
+///
+/// # Errors
+/// 当实际 CPU 数量超过 `MAX_CPUS` 时返回 `Err(ConfigError::CpuCountExceedsMax { actual, max })`.
 pub fn validate_cpu_config() -> Result<(), ConfigError> {
     let cpu_count = crate::kernel::framework::smp::get_cpu_count();
 
@@ -27,6 +30,11 @@ pub fn validate_cpu_config() -> Result<(), ConfigError> {
 }
 
 /// 校验内存布局一致性.
+///
+/// # Errors
+/// 当任一内存布局约束不满足 (页大小非 2 的幂、`SLAB_DEFAULT_SIZE` 非页大小整数倍、
+/// 栈大小小于一页、`USER_STACK_TOP` 与代码基址重叠过近、`KERNEL_STACK_SIZE` 过小等) 时,
+/// 返回 `Err(ConfigError::MemoryLayoutInvalid)`.
 pub fn validate_memory_config() -> Result<(), ConfigError> {
     if PAGE_SIZE == 0 || (PAGE_SIZE & (PAGE_SIZE - 1)) != 0 {
         return Err(ConfigError::MemoryLayoutInvalid);
@@ -55,6 +63,10 @@ pub fn validate_memory_config() -> Result<(), ConfigError> {
 }
 
 /// 校验中断配置.
+///
+/// # Errors
+/// 在 `x86_64` 上, 当 APIC 与 IOAPIC 均未初始化时返回
+/// `Err(ConfigError::IrqControllerUnavailable)`.
 pub fn validate_interrupt_config() -> Result<(), ConfigError> {
     #[cfg(target_arch = "x86_64")]
     {
@@ -74,11 +86,17 @@ pub fn validate_interrupt_config() -> Result<(), ConfigError> {
 }
 
 /// 跨模块一致性校验.
+///
+/// # Errors
+/// 当前实现为空校验, 总是返回 `Ok(())`, 不会返回错误.
 pub fn validate_cross_module_consistency() -> Result<(), ConfigError> {
     Ok(())
 }
 
 /// 验证 PCI 子系统已初始化.
+///
+/// # Errors
+/// 当 PCI 子系统未初始化时返回 `Err(ConfigError::DriverConfigInvalid("pci"))`.
 pub fn validate_pci_subsystem() -> Result<(), ConfigError> {
     if !crate::kernel::framework::pci::is_initialized() {
         return Err(ConfigError::DriverConfigInvalid("pci"));
@@ -87,6 +105,9 @@ pub fn validate_pci_subsystem() -> Result<(), ConfigError> {
 }
 
 /// 验证网络子系统配置一致性.
+///
+/// # Errors
+/// 当前实现为空校验, 总是返回 `Ok(())`, 不会返回错误.
 pub fn validate_network_subsystem() -> Result<(), ConfigError> {
     Ok(())
 }
@@ -115,6 +136,10 @@ pub fn validate_drivers() -> u32 {
 }
 
 /// 校验所有系统配置.
+///
+/// # Panics
+/// 在 `debug_assertions` 构建下, 当 CPU 数量超过 `MAX_CPUS` 时触发 `panic!`,
+/// 错误信息为 "CONFIG: CPU count {actual} exceeds `MAX_CPUS` {max}".
 pub fn validate_system_config() -> u32 {
     let mut errors = 0u32;
 
@@ -128,9 +153,8 @@ pub fn validate_system_config() -> u32 {
                 // 不可恢复: CPU 数量超过 MAX_CPUS 是配置错误, release 模式下仅 log,
                 // debug 模式下必须停机以强制修正容量参数
                 panic!(
-                    "CONFIG: CPU count {} exceeds MAX_CPUS {}. \
-                     Increase MAX_CPUS in kernel/config/capacity.rs",
-                    actual, max
+                    "CONFIG: CPU count {actual} exceeds MAX_CPUS {max}. \
+                     Increase MAX_CPUS in kernel/config/capacity.rs"
                 );
             }
         }

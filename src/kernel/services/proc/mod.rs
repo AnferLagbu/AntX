@@ -90,12 +90,12 @@ use crate::kernel::framework::syscall::Errno;
 // 错误
 // ============================================================================
 
-/// 进程操作错误 — TD-19: 收敛到 KernelError, 1 字段 proc 特有 + 1 共享包装.
+/// 进程操作错误 — TD-19: 收敛到 `KernelError`, 1 字段 proc 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `Exited`: 进程已退出, 走 ESRCH (POSIX 中 ESRCH=3 兼含 "no such process" 语义)
-///   - `Kernel(KernelError)`: 共享错误 (NotFound → NoSuchProcess / PermissionDenied /
-///     NoResources → WouldBlock / InvalidArgument) 全部走单一来源
+///   - `Kernel(KernelError)`: 共享错误 (`NotFound` → `NoSuchProcess` / `PermissionDenied` /
+///     `NoResources` → `WouldBlock` / `InvalidArgument`) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcError {
     /// 进程已退出
@@ -181,17 +181,17 @@ pub fn schedule() {
 // 进程状态查询
 // ============================================================================
 
-/// 从 u8 值构造 ProcessState (安全转换)
+/// 从 u8 值构造 `ProcessState` (安全转换)
 pub fn state_from_u8(v: u8) -> ProcessState {
     ProcessState::from_u8(v)
 }
 
-/// 从 u32 值构造 ProcessState (兼容 AtomicU32 存储)
+/// 从 u32 值构造 `ProcessState` (兼容 `AtomicU32` 存储)
 pub fn state_from_u32(v: u32) -> ProcessState {
     ProcessState::from_u32(v)
 }
 
-/// 从优先级数值构造 ProcessPriority
+/// 从优先级数值构造 `ProcessPriority`
 pub fn priority_from_u32(v: u32) -> ProcessPriority {
     ProcessPriority::from_u32(v)
 }

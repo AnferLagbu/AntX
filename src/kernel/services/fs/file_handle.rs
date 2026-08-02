@@ -31,28 +31,33 @@ pub const FILE_HANDLE_GHEST_ID: i32 = 0x01; // 通用句柄类型
 pub const FILE_HANDLE_SIZE: usize = 144; // 8 + 128 + 8 (对齐)
 
 /// 句柄布局:
-/// [0..4]  inode_id (u32 LE)
-/// [4..8]  mount_idx (u32 LE)
-/// [8]     handle_type (u8)
+/// [0..4]  `inode_id` (u32 LE)
+/// [4..8]  `mount_idx` (u32 LE)
+/// [8]     `handle_type` (u8)
 /// [9..12] reserved
-/// [12..16] handle_bytes (u32 LE)
+/// [12..16] `handle_bytes` (u32 LE)
 const HANDLE_INODE_OFF: usize = 0;
 const HANDLE_MOUNT_OFF: usize = 4;
 const HANDLE_TYPE_OFF: usize = 8;
 const HANDLE_HBYTES_OFF: usize = 12;
 const HANDLE_SERIALIZED_SIZE: usize = 16;
 
-/// name_to_handle_at — 导出文件句柄
+/// `name_to_handle_at` — 导出文件句柄
 ///
 /// 将文件路径导出为可序列化的文件句柄, 用于跨进程传递或持久化.
 ///
 /// # 参数
-/// - `dirfd`: 目录文件描述符 (AT_FDCWD = -100)
+/// - `dirfd`: 目录文件描述符 (`AT_FDCWD` = -100)
 /// - `path`: 文件路径
-/// - `handle_type`: 句柄类型 (仅支持 FILE_HANDLE_GHEST_ID)
+/// - `handle_type`: 句柄类型 (仅支持 `FILE_HANDLE_GHEST_ID`)
 /// - `handle_buf`: 用户空间缓冲区 (输出)
 /// - `mnt_id`: 挂载点 ID (输出)
-/// - `flags`: 标志位 (AT_EMPTY_PATH = 0x1000)
+/// - `flags`: 标志位 (`AT_EMPTY_PATH` = 0x1000)
+///
+/// # Errors
+/// 当 `handle_buf` 为空或写入用户空间失败时返回 `EFAULT`;
+/// 当 `handle_type` 不是 `FILE_HANDLE_GHEST_ID` 时返回 `ENOTSUP`;
+/// 当路径为空、挂载解析失败或文件不存在时返回 `ENOENT`.
 pub fn name_to_handle_at_syscall(
     _dirfd: i32,
     path_ptr: u64,
@@ -94,19 +99,19 @@ pub fn name_to_handle_at_syscall(
 
     // 写入用户空间
     copy_to_user(handle_buf, &handle_data[..HANDLE_SERIALIZED_SIZE], HANDLE_SERIALIZED_SIZE)
-        .map_err(|_| Errno::EFAULT)?;
+        .map_err(|()| Errno::EFAULT)?;
 
     // 写入 mnt_id
     if mnt_id != 0 {
         let mnt_data = (mount_idx as u32).to_le_bytes();
         copy_to_user(mnt_id, &mnt_data, 4)
-            .map_err(|_| Errno::EFAULT)?;
+            .map_err(|()| Errno::EFAULT)?;
     }
 
     Ok(0)
 }
 
-/// open_by_handle_at — 通过句柄打开文件
+/// `open_by_handle_at` — 通过句柄打开文件
 ///
 /// 使用之前导出的文件句柄打开文件.
 ///
@@ -114,7 +119,13 @@ pub fn name_to_handle_at_syscall(
 /// - `mount_fd`: 挂载点文件描述符
 /// - `handle_ptr`: 用户空间句柄缓冲区
 /// - `handle_type`: 句柄类型
-/// - `flags`: 打开标志 (O_RDONLY, O_WRONLY 等)
+/// - `flags`: 打开标志 (`O_RDONLY`, `O_WRONLY` 等)
+///
+/// # Errors
+/// 当 `handle_ptr` 为空或从用户空间读取句柄失败时返回 `EFAULT`;
+/// 当 `handle_type` 非法时返回 `ENOTSUP`;
+/// 当句柄数据无效、挂载索引无效时返回 `EINVAL`;
+/// 当打开文件表已满时返回 `ENOMEM`; 当 fd 分配失败时返回 `EMFILE`.
 pub fn open_by_handle_at_syscall(
     _mount_fd: i32,
     handle_ptr: u64,
@@ -134,7 +145,7 @@ pub fn open_by_handle_at_syscall(
     // 从用户空间读取句柄
     let mut handle_data = [0u8; HANDLE_SERIALIZED_SIZE];
     copy_from_user(&mut handle_data, handle_ptr, HANDLE_SERIALIZED_SIZE)
-        .map_err(|_| Errno::EFAULT)?;
+        .map_err(|()| Errno::EFAULT)?;
 
     // 提取 inode_id 和 mount_idx
     let inode_id = u32::from_le_bytes(
@@ -143,7 +154,7 @@ pub fn open_by_handle_at_syscall(
     let mount_idx = u32::from_le_bytes(
         handle_data[HANDLE_MOUNT_OFF..HANDLE_MOUNT_OFF + 4].try_into().map_err(|_| Errno::EINVAL)?
     );
-    let handle_type_in = handle_data[HANDLE_TYPE_OFF] as i32;
+    let handle_type_in = i32::from(handle_data[HANDLE_TYPE_OFF]);
 
     if handle_type_in != FILE_HANDLE_GHEST_ID {
         return Err(Errno::EINVAL);
@@ -164,22 +175,19 @@ pub fn open_by_handle_at_syscall(
 
     // 尝试通过 fs_resolve_inode 获取原生 Inode
     // 如果 FS 未实现, 回退到 LegacyInode
-    let inode: Arc<dyn Inode> = match fs.fs_resolve_inode(inode_id, mount_idx) {
-        Some(inode) => inode,
-        None => {
-            // 回退: 使用 LegacyInode (stat/chmod 等需要路径的操作将不可用)
-            let rel_path = alloc::string::String::new();
-            Arc::new(crate::kernel::services::fs::inode::LegacyInode::from_fs_result(
-                inode_id,
-                mount_idx,
-                0,
-                &rel_path,
-            ))
-        }
+    let inode: Arc<dyn Inode> = if let Some(inode) = fs.fs_resolve_inode(inode_id, mount_idx) { inode } else {
+        // 回退: 使用 LegacyInode (stat/chmod 等需要路径的操作将不可用)
+        let rel_path = alloc::string::String::new();
+        Arc::new(crate::kernel::services::fs::inode::LegacyInode::from_fs_result(
+            inode_id,
+            mount_idx,
+            0,
+            &rel_path,
+        ))
     };
 
     // 通过 stat 获取 file_type (避免硬编码)
-    let file_type = inode.stat(pwm).map(|s| s.file_type).unwrap_or(0);
+    let file_type = inode.stat(pwm).map_or(0, |s| s.file_type);
     let open_file = OpenFile::new(inode, flags, pwm, file_type);
 
     // 插入全局 OpenFile 表

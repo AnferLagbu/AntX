@@ -5,13 +5,13 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全
-//! - 委托 framework/fs/vfs::api 完成
+//! - 委托 `framework/fs/vfs::api` 完成
 //!
 //! ## POSIX 语义
 //!
-//! - [stat_syscall] 跟随符号链接
-//! - [lstat_syscall] 不跟随符号链接
-//! - [fstat_syscall] 按 FD 查询
+//! - [`stat_syscall`] 跟随符号链接
+//! - [`lstat_syscall`] 不跟随符号链接
+//! - [`fstat_syscall`] 按 FD 查询
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
@@ -25,7 +25,10 @@ const VFS_STAT_SIZE: u64 = core::mem::size_of::<VfsStat>() as u64;
 // stat
 // ============================================================================
 
-/// stat(path, st_buf) — 跟随符号链接查询文件元数据
+/// stat(path, `st_buf`) — 跟随符号链接查询文件元数据
+///
+/// # Errors
+/// 当路径或缓冲区指针为空/越界时返回 `EFAULT`; 当底层 stat 失败时返回 `EIO`.
 pub fn stat_syscall(path_ptr: u64, st_buf_ptr: u64) -> Result<usize, Errno> {
     if path_ptr == 0 || st_buf_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -50,9 +53,12 @@ pub fn stat_syscall(path_ptr: u64, st_buf_ptr: u64) -> Result<usize, Errno> {
 // lstat
 // ============================================================================
 
-/// lstat(path, st_buf) — 不跟随符号链接查询文件元数据
+/// lstat(path, `st_buf`) — 不跟随符号链接查询文件元数据
 ///
-/// Framekernel 简化: vfs_stat 不跟随 symlink, 行为同 lstat。
+/// Framekernel 简化: `vfs_stat` 不跟随 symlink, 行为同 lstat。
+///
+/// # Errors
+/// 错误条件与 [`stat_syscall`] 相同, 参见其 `# Errors` 段.
 pub fn lstat_syscall(path_ptr: u64, st_buf_ptr: u64) -> Result<usize, Errno> {
     stat_syscall(path_ptr, st_buf_ptr)
 }
@@ -61,7 +67,11 @@ pub fn lstat_syscall(path_ptr: u64, st_buf_ptr: u64) -> Result<usize, Errno> {
 // fstat
 // ============================================================================
 
-/// fstat(fd, st_buf) — 按 FD 查询文件元数据
+/// fstat(fd, `st_buf`) — 按 FD 查询文件元数据
+///
+/// # Errors
+/// 当 `fd` 为负数时返回 `EBADF`; 当缓冲区指针为空/越界时返回 `EFAULT`;
+/// 当底层 fstat 失败时返回 `EIO`.
 pub fn fstat_syscall(fd: i32, st_buf_ptr: u64) -> Result<usize, Errno> {
     if fd < 0 {
         return Err(Errno::EBADF);
@@ -84,7 +94,7 @@ pub fn fstat_syscall(fd: i32, st_buf_ptr: u64) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())
 }

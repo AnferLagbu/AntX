@@ -56,7 +56,7 @@ use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 pub enum HrTimerRestart {
     /// 单次触发, 回调后移除
     OneShot,
-    /// 周期触发, 按 interval_ns 重新入队
+    /// 周期触发, 按 `interval_ns` 重新入队
     Periodic,
 }
 
@@ -65,7 +65,7 @@ pub enum HrTimerRestart {
 /// # 约束
 /// - 在中断上下文执行, 不可睡眠
 /// - 不可长时间阻塞 (建议 < 1ms)
-/// - 不可调用 hrtimer_start/cancel (避免死锁)
+/// - 不可调用 `hrtimer_start/cancel` (避免死锁)
 pub type HrTimerCallback = fn(&HrTimer) -> HrTimerRestart;
 
 /// 定时器状态
@@ -86,8 +86,8 @@ pub enum HrTimerState {
 /// 高精度定时器
 ///
 /// 设计为嵌入用户结构体使用 (类似 Linux `struct hrtimer`)。
-/// 用户负责 HrTimer 的内存生命周期: 从 `init()` 到最后一次回调返回 `OneShot` 之间,
-/// HrTimer 必须在有效内存中。
+/// 用户负责 `HrTimer` 的内存生命周期: 从 `init()` 到最后一次回调返回 `OneShot` 之间,
+/// `HrTimer` 必须在有效内存中。
 ///
 /// # 线程安全
 ///
@@ -109,7 +109,7 @@ pub struct HrTimer {
 }
 
 impl HrTimer {
-    /// 创建未初始化的 HrTimer
+    /// 创建未初始化的 `HrTimer`
     ///
     /// 必须调用 `init()` 后才能使用。
     pub const fn uninit() -> Self {
@@ -161,7 +161,7 @@ impl HrTimer {
 
     /// 推进周期定时器到下一个周期
     ///
-    /// 如果当前时间已超过到期时间, 按 interval_ns 向前推进到期时间,
+    /// 如果当前时间已超过到期时间, 按 `interval_ns` 向前推进到期时间,
     /// 直到到期时间 > 当前时间。
     ///
     /// 返回跳过的周期数。
@@ -202,7 +202,7 @@ fn noop_callback(_timer: &HrTimer) -> HrTimerRestart {
 
 /// 队列内条目
 struct TimerEntry {
-    /// 定时器指针 (NonNull 确保非空)
+    /// 定时器指针 (`NonNull` 确保非空)
     timer: core::ptr::NonNull<HrTimer>,
     /// 入队时的序号 (用于取消时快速判断是否过期)
     seq: u64,
@@ -459,8 +459,8 @@ pub fn hrtimer_pending_count() -> usize {
 ///
 /// # 精度
 ///
-/// - x86_64: TSC 频率校准后, 纳秒级精度
-/// - aarch64: CNTPCT_EL0 + CNTFRQ_EL0, 纳秒级精度
+/// - `x86_64`: TSC 频率校准后, 纳秒级精度
+/// - aarch64: `CNTPCT_EL0` + `CNTFRQ_EL0`, 纳秒级精度
 /// - 未校准: 毫秒级 (tick 精度)
 pub fn hrtimer_clock_read() -> u64 {
     // 优先使用校准后的高精度时间
@@ -502,7 +502,7 @@ fn mul_u64_div(a: u64, b: u64, c: u64) -> u64 {
         return 0;
     }
     // 在 64 位平台上, u128 可用且通常有硬件支持
-    ((a as u128) * (b as u128) / (c as u128)) as u64
+    (u128::from(a) * u128::from(b) / u128::from(c)) as u64
 }
 
 // ============================================================================
@@ -531,6 +531,9 @@ fn mul_u64_div(a: u64, b: u64, c: u64) -> u64 {
 /// # Returns
 /// * `Ok(())`  - sleep 成功
 /// * `Err(())` - hrtimer 框架未初始化 (`hrtimer_init()` 未调用)
+///
+/// # Errors
+/// 当 hrtimer 框架尚未初始化 (`HRTIMER_READY == false`) 时返回 `Err(())`.
 pub fn hrtimer_sleep(delay_ns: u64) -> Result<(), ()> {
     if delay_ns == 0 {
         return Ok(());

@@ -1,4 +1,4 @@
-//! QueenX 内核日志系统 (KLog)
+//! `QueenX` 内核日志系统 (`KLog`)
 //!
 //! 自举设计 — 零外部依赖:
 //!   1. 内建 COM1 串口驱动 (直接 port I/O, 无需 driver 子系统)
@@ -63,7 +63,7 @@ impl<'a> CursorWriter<'a> {
     }
 }
 
-impl<'a> core::fmt::Write for CursorWriter<'a> {
+impl core::fmt::Write for CursorWriter<'_> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         let bytes = s.as_bytes();
         let remaining = self.buf.len() - *self.cursor;
@@ -239,7 +239,7 @@ pub trait LogSink: Sync {
             self.putc(b);
         }
     }
-    /// 写入字节流 (默认转 str 走 write_str; sink 可重写以避免 UTF-8 校验).
+    /// 写入字节流 (默认转 str 走 `write_str`; sink 可重写以避免 UTF-8 校验).
     fn write_bytes(&self, b: &[u8]) {
         if let Ok(s) = core::str::from_utf8(b) {
             self.write_str(s);
@@ -287,6 +287,8 @@ static LOG_SINK_COUNT: AtomicU8 = AtomicU8::new(0);
 ///
 /// # Safety
 /// `sink` 必须是 `'static` (其内部任何状态都不可被释放).
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe fn klog_register_sink(sink: &'static dyn LogSink) -> Option<usize> {
     let idx = LOG_SINK_COUNT.load(Ordering::SeqCst) as usize;
     if idx >= MAX_LOG_SINKS {
@@ -335,7 +337,7 @@ pub fn klog_sink_name_at(idx: usize) -> Option<&'static str> {
         return None;
     }
     // SAFETY: idx < n, 满足 klog_sink_at 的契约; 仅取 name() 后立即丢弃 sink 引用.
-    let name = unsafe { klog_sink_at(idx) }.map(|s| s.name());
+    let name = unsafe { klog_sink_at(idx) }.map(LogSink::name);
     name
 }
 
@@ -718,7 +720,7 @@ pub unsafe extern "C" fn klog_write(
     };
 
     let min = MIN_LEVEL.load(Ordering::Relaxed);
-    if (level as i32) < (min as i32) {
+    if i32::from(level) < i32::from(min) {
         return 0;
     }
 

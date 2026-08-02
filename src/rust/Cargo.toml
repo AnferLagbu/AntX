@@ -3,6 +3,11 @@ name = "queenx"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "QueenX 自研操作系统内核 (framekernel 架构, x86_64 + aarch64)"
+repository = "https://gitee.com/AnferLagbu/QueenX"
+readme = "../../README.md"
+keywords = ["kernel", "os", "framekernel", "no_std"]
+categories = ["os", "no-std", "embedded"]
 
 [lib]
 name = "queenx"

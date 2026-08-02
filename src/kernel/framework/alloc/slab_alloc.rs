@@ -1,4 +1,4 @@
-//! SlabAlloc — 内核对象分配器 trait (TCB)
+//! `SlabAlloc` — 内核对象分配器 trait (TCB)
 //!
 //! 策略注入点: services 层通过此 trait 分配/释放
 //! 小对象 (≤ 8KB), 而不直接操作 Slab 缓存。
@@ -9,7 +9,7 @@
 //!
 //! ## SAFETY 不变量
 //!
-//! - 释放的指针必须来自同一分配器的 alloc()。
+//! - 释放的指针必须来自同一分配器的 `alloc()`。
 //! - layout 必须与分配时的 layout 一致。
 //! - 分配器内部用 spinlock 保护, ISR 安全。
 
@@ -18,7 +18,7 @@ use core::ptr::NonNull;
 
 /// Slab / kmalloc 分配器 trait。
 ///
-/// 当前实现在 `mm/kmalloc.rs` (KernelHeap + Slab),
+/// 当前实现在 `mm/kmalloc.rs` (`KernelHeap` + Slab),
 /// 未来可替换为自定义策略。
 pub trait SlabAlloc: Send + Sync {
     /// 分配对齐内存块。
@@ -30,7 +30,7 @@ pub trait SlabAlloc: Send + Sync {
     /// 释放内存块。
     ///
     /// # SAFETY
-    /// `ptr` 必须来自同一 SlabAlloc 实例的 `alloc()`。
+    /// `ptr` 必须来自同一 `SlabAlloc` 实例的 `alloc()`。
     /// `layout` 必须与分配时的 layout 一致。
     unsafe fn free(&self, ptr: NonNull<u8>, layout: Layout);
 }
@@ -39,7 +39,7 @@ pub trait SlabAlloc: Send + Sync {
 // 默认实现: 委托给现有 KernelHeap
 // ============================================================================
 
-/// KernelHeap 实现的 SlabAlloc。
+/// `KernelHeap` 实现的 `SlabAlloc`。
 pub struct KmallocSlabAlloc;
 
 impl SlabAlloc for KmallocSlabAlloc {
@@ -64,7 +64,7 @@ impl SlabAlloc for KmallocSlabAlloc {
     /// # Safety
     ///
     /// 调用方必须保证 `ptr` 来自本分配器的 `allocate` 返回, 且未被双重 free。
-    /// GlobalAlloc 契约要求 ptr.layout 与本分配器路由一致。
+    /// `GlobalAlloc` 契约要求 ptr.layout 与本分配器路由一致。
     unsafe fn free(&self, ptr: NonNull<u8>, _layout: Layout) {
         // SAFETY:
         //   1. `ptr` 是 `NonNull<u8>`, 由 `allocate` 返回, 保证非空

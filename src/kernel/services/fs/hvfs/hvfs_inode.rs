@@ -5,7 +5,7 @@ use crate::kernel::services::fs::inode::Inode;
 use crate::kernel::framework::fs::{KernelError, KernelResult, VfsStat, VfsSeekWhence, VfsFileType};
 use super::hvfs_data::{get_hvfs, HvfsData};
 
-/// HvFS 文件 Inode — 直接持有 fd 编号
+/// `HvFS` 文件 Inode — 直接持有 fd 编号
 pub struct HvfsInode {
     fd: u32,
     mount_idx: u32,

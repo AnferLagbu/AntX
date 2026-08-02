@@ -82,6 +82,8 @@ impl GfxConsole {
     /// 3. 显示崩溃消息
     /// 4. 设置光标到横幅下方
     /// 5. 禁用后续滚动，保留崩溃现场
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn panic_reclaim(&mut self, msg: &str) {
         PANIC_MODE.store(true, Ordering::Release);
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)

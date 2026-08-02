@@ -155,14 +155,17 @@ pub fn count() -> usize {
 // 由于 Chitin 是 I/O 主路径, 这两个函数当前没有调用者; 保留以便上层
 // `with_device` 风格的同步读写场景 (非中断上下文).
 
+/// 从块设备连续读取多个扇区 (每扇区 512 字节)。
+/// # Errors
+/// 缓冲区长度不足以容纳读取数据或底层设备读取失败时返回 Err。
 pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut [u8]) -> KernelResult<()> {
-    let need = (count as u64) * 512;
+    let need = u64::from(count) * 512;
     if (buf.len() as u64) < need {
         return Err(KernelError::InvalidArgument);
     }
     let mut offset = 0usize;
     for i in 0..count {
-        match dev.blk_read(start + i as u64, &mut buf[offset..offset + 512]) {
+        match dev.blk_read(start + u64::from(i), &mut buf[offset..offset + 512]) {
             n if n >= 0 => offset += 512,
             _ => return Err(KernelError::Io),
         }
@@ -170,14 +173,17 @@ pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut
     Ok(())
 }
 
+/// 向块设备连续写入多个扇区 (每扇区 512 字节)。
+/// # Errors
+/// 缓冲区长度不足以提供待写数据或底层设备写入失败时返回 Err。
 pub fn write_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &[u8]) -> KernelResult<()> {
-    let need = (count as u64) * 512;
+    let need = u64::from(count) * 512;
     if (buf.len() as u64) < need {
         return Err(KernelError::InvalidArgument);
     }
     let mut offset = 0usize;
     for i in 0..count {
-        match dev.blk_write(start + i as u64, &buf[offset..offset + 512]) {
+        match dev.blk_write(start + u64::from(i), &buf[offset..offset + 512]) {
             n if n >= 0 => offset += 512,
             _ => return Err(KernelError::Io),
         }

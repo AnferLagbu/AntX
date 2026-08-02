@@ -1,4 +1,4 @@
-use crate::kernel::services::fs::hvfs::bp::*;
+use crate::kernel::services::fs::hvfs::bp::HvBlockPointer;
 use crate::kernel::services::fs::hvfs::spa::HV_POOL_BLOCK_SIZE;
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
@@ -254,7 +254,7 @@ impl HvObjSet {
 
     pub fn get_obj(&self, obj_id: u64) -> Option<HvDmuObject> {
         let objs = self.objects.lock();
-        objs.iter().find(|o| o.obj_id == obj_id && o.used).cloned()
+        objs.iter().find(|o| o.obj_id == obj_id && o.used).copied()
     }
 
     pub fn get_obj_mut(&self, obj_id: u64) -> Option<HvDmuObject> {

@@ -33,9 +33,9 @@ pub mod swap_policy;
 // memory_pressure 公共接口 re-export — T-02 策略-机制分离
 pub use memory_pressure::{PressureAwareAllocPolicy, register_pressure_aware_policy};
 
-/// services::mm 初始化 — 注册策略到 framework
+/// `services::mm` 初始化 — 注册策略到 framework
 ///
-/// 在 framework::mm 初始化完成后调用一次.
+/// 在 `framework::mm` 初始化完成后调用一次.
 pub fn init() {
     // T-02: 注册 services 层分配决策策略
     let _ = memory_pressure::register_pressure_aware_policy();

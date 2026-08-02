@@ -4,14 +4,14 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全 + 参数验证
-//! - credo 鉴权 (走 framework::credo::api::pwm_*)
-//! - 用户指针 + 容量验证 (走 framework::syscall::raw)
-//! - 委托 framework::driver::block 执行块设备实际操作
+//! - credo 鉴权 (走 `framework::credo::api::pwm`_*)
+//! - 用户指针 + 容量验证 (走 `framework::syscall::raw`)
+//! - 委托 `framework::driver::block` 执行块设备实际操作
 //!
 //! ## 与 framework 边界
 //!
 //! framework 暴露的 `block_device_count/list/info/is_present/total_sectors`
-//! 已封装块设备 (ATA / NVMe / AHCI / virtio-blk) 注册表, services 走该公共 API.
+//! 已封装块设备 (ATA / `NVMe` / AHCI / virtio-blk) 注册表, services 走该公共 API.
 //!
 //! ## 不允许简化: 即使 credo 私有, 仍走 services 业务 + 鉴权 + 校验三段式.
 
@@ -38,6 +38,10 @@ const USER_DISK_INFO_SIZE: u64 = 76;
 
 /// 列出已注册块设备 id. `disks` 为用户态 u64 数组, `max_count` 为容量.
 /// 返回写入的设备数 (>= 0), 失败返 Errno.
+///
+/// # Errors
+/// 当 `disks_ptr` 无效或用户缓冲区校验失败时返回 `Errno::EFAULT`;
+/// 当 `max_count` 为 0 或字节数计算溢出时返回 `Errno::EINVAL`.
 pub fn disk_list(disks_ptr: u64, max_count: u32) -> Result<usize, Errno> {
     if disks_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -45,7 +49,7 @@ pub fn disk_list(disks_ptr: u64, max_count: u32) -> Result<usize, Errno> {
     if max_count == 0 {
         return Err(Errno::EINVAL);
     }
-    let bytes = (max_count as u64).checked_mul(8).ok_or(Errno::EINVAL)?;
+    let bytes = u64::from(max_count).checked_mul(8).ok_or(Errno::EINVAL)?;
     if !raw::check_user_buf(disks_ptr, bytes) {
         return Err(Errno::EFAULT);
     }
@@ -59,7 +63,10 @@ pub fn disk_list(disks_ptr: u64, max_count: u32) -> Result<usize, Errno> {
     Ok(limit)
 }
 
-/// 读单块设备信息. `info` 为 UserDiskInfo 用户指针 (76 字节).
+/// 读单块设备信息. `info` 为 `UserDiskInfo` 用户指针 (76 字节).
+///
+/// # Errors
+/// 当 `info_ptr` 无效或用户缓冲区校验失败时返回 `Errno::EFAULT`.
 pub fn disk_info(disk_id: u32, info_ptr: u64) -> Result<(), Errno> {
     if info_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -84,7 +91,7 @@ pub fn disk_info(disk_id: u32, info_ptr: u64) -> Result<(), Errno> {
     model[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
     let info = UserDiskInfo {
         disk_id,
-        present: present as u32,
+        present: u32::from(present),
         total_sectors: sectors,
         sectors,
         model,
@@ -96,6 +103,11 @@ pub fn disk_info(disk_id: u32, info_ptr: u64) -> Result<(), Errno> {
 }
 
 /// 格式化块设备. `fstype` 为用户 C 字符串.
+///
+/// # Errors
+/// 当指针无效时返回 `Errno::EFAULT`; 当当前身份缺少 storage 域写能力时返回
+/// `Errno::EACCES`; 当设备不存在时返回 `Errno::ENOENT`; 当前实现为占位,
+/// 始终返回 `Errno::ENOSYS`.
 pub fn disk_format(disk_id: u32, fstype_ptr: u64) -> Result<(), Errno> {
     if fstype_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -118,8 +130,13 @@ pub fn disk_format(disk_id: u32, fstype_ptr: u64) -> Result<(), Errno> {
 }
 
 /// 块设备分区表写入.
+///
+/// # Errors
+/// 当 `total_sectors` 为 0 或超过 `u32::MAX` 时返回 `Errno::EINVAL`;
+/// 当当前身份缺少 storage 域写能力时返回 `Errno::EACCES`;
+/// 当设备不存在时返回 `Errno::ENOENT`; 当前实现为占位, 始终返回 `Errno::ENOSYS`.
 pub fn disk_partition(disk_id: u32, total_sectors: u64) -> Result<(), Errno> {
-    if total_sectors == 0 || total_sectors > u32::MAX as u64 {
+    if total_sectors == 0 || total_sectors > u64::from(u32::MAX) {
         return Err(Errno::EINVAL);
     }
     let pwm = credo::api::pwm_get_current();
@@ -135,6 +152,10 @@ pub fn disk_partition(disk_id: u32, total_sectors: u64) -> Result<(), Errno> {
 }
 
 /// FAT 格式化.
+///
+/// # Errors
+/// 当当前身份缺少 storage 域写能力时返回 `Errno::EACCES`;
+/// 当设备不存在时返回 `Errno::ENOENT`; 当前实现为占位, 始终返回 `Errno::ENOSYS`.
 pub fn fat_format(disk_id: u32) -> Result<(), Errno> {
     let pwm = credo::api::pwm_get_current();
     if !credo::api::pwm_has_capability(pwm, PWM_DOMAIN_STORAGE, 1) {

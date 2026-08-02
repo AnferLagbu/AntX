@@ -2,9 +2,9 @@
 //!
 //! 实现 USB HID 1.11 规范的最小可用骨架:
 //!
-//! - **HID Descriptor 解析**: GET_DESCRIPTOR(HID) 响应解析
+//! - **HID Descriptor 解析**: `GET_DESCRIPTOR(HID)` 响应解析
 //! - **Boot Protocol 支持**: 键盘/鼠标 boot 报告格式 (USB HID 1.11 §4.2, §4.4)
-//! - **SET_PROTOCOL / GET_PROTOCOL**: 协议切换 (USB HID 1.11 §4.5)
+//! - **`SET_PROTOCOL` / `GET_PROTOCOL`**: 协议切换 (USB HID 1.11 §4.5)
 //! - **Boot Keyboard Report**: 8 字节 (modifiers, reserved, 6 keycodes)
 //! - **Boot Mouse Report**: 3 字节 (buttons, X, Y)
 //!
@@ -17,7 +17,7 @@
 //!
 //! See also:
 //! - `usb/enumerate.rs` USB-1.6 设备枚举 (找到 HID Interface 后调用本驱动初始化)
-//! - `xhci.rs` USB-1.3 URB 提交 (本驱动使用 submit_urb 发送中断 IN 报告)
+//! - `xhci.rs` USB-1.3 URB 提交 (本驱动使用 `submit_urb` 发送中断 IN 报告)
 
 use super::usb_core::{DeviceClass, UsbDevice, UsbSetupPacket};
 use super::framework::{DriverError, Result};
@@ -29,7 +29,7 @@ use alloc::vec::Vec;
 
 /// HID Descriptor (6 字节 + 物理层特定扩展).
 ///
-/// 注: 标准 HID Descriptor 前 6 字节是定长的, 后续字段 (DescriptorLength, CountryCode)
+/// 注: 标准 HID Descriptor 前 6 字节是定长的, 后续字段 (`DescriptorLength`, `CountryCode`)
 ///     属于 Report Descriptor 引用. 当前骨架仅解析前 6 字节.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HidDescriptor {
@@ -53,11 +53,13 @@ pub struct HidDescriptor {
 ///
 /// # 参数
 ///
-/// - `data`: 至少 6 字节的 GET_DESCRIPTOR(HID) 响应数据.
+/// - `data`: 至少 6 字节的 `GET_DESCRIPTOR(HID)` 响应数据.
 ///
 /// # 错误
 ///
-/// - `DriverError::InvalidParameter`: data 长度不足或 descriptor_type 不为 0x21.
+/// - `DriverError::InvalidParameter`: data 长度不足或 `descriptor_type` 不为 0x21.
+/// # Errors
+/// data 长度不足 6 字节或描述符类型不为 0x21 时返回 Err。
 pub fn parse_hid_descriptor(data: &[u8]) -> Result<HidDescriptor> {
     if data.len() < 6 {
         return Err(DriverError::InvalidParameter);
@@ -99,7 +101,7 @@ pub enum HidProtocol {
     Report = 1,
 }
 
-/// SET_PROTOCOL / GET_PROTOCOL Setup Packet 构造.
+/// `SET_PROTOCOL` / `GET_PROTOCOL` Setup Packet 构造.
 fn make_set_protocol_request(protocol: HidProtocol) -> UsbSetupPacket {
     UsbSetupPacket {
         request_type: 0x21, // Host-to-Device, Class, Interface
@@ -133,6 +135,8 @@ pub struct BootKeyboardReport {
 
 impl BootKeyboardReport {
     /// 解析 8 字节 Boot Keyboard Report 数据.
+    /// # Errors
+    /// data 长度不足 8 字节时返回 Err。
     pub fn parse(data: &[u8]) -> Result<Self> {
         if data.len() < 8 {
             return Err(DriverError::InvalidParameter);
@@ -201,6 +205,8 @@ pub struct BootMouseReport {
 
 impl BootMouseReport {
     /// 解析 3 字节 Boot Mouse Report 数据.
+    /// # Errors
+    /// data 长度不足 3 字节时返回 Err。
     pub fn parse(data: &[u8]) -> Result<Self> {
         if data.len() < 3 {
             return Err(DriverError::InvalidParameter);
@@ -288,8 +294,8 @@ impl HidProtocolType {
 
 /// HID 设备驱动实例 (USB-1.7).
 ///
-/// 当前为**软件骨架**: 记录 HID 设备的协议 / 类型信息, 提供 SET_PROTOCOL Setup Packet
-/// 构造. 真实硬件应通过 Control Transfer (request_type=0x21, request=0x0B) 切换协议.
+/// 当前为**软件骨架**: 记录 HID 设备的协议 / 类型信息, 提供 `SET_PROTOCOL` Setup Packet
+/// 构造. 真实硬件应通过 Control Transfer (`request_type=0x21`, request=0x0B) 切换协议.
 pub struct HidDriver {
     /// Interface number
     interface_number: u8,
@@ -306,12 +312,14 @@ pub struct HidDriver {
 }
 
 impl HidDriver {
-    /// 从 UsbDevice 创建 HID 驱动实例.
+    /// 从 `UsbDevice` 创建 HID 驱动实例.
     ///
     /// # 限制
     ///
     /// - 当前骨架假设设备只有一个 Interface 且 class=HID
     /// - 不解析 HID Descriptor 字段 (由调用方提供 endpoint 信息)
+    /// # Errors
+    /// 设备或接口不属于 HID 类、接口索引非法或未找到 Interrupt IN 端点时返回 Err。
     pub fn from_usb_device(device: &UsbDevice, interface_idx: usize) -> Result<Self> {
         if device.descriptor.device_class != DeviceClass::Hid as u8 {
             return Err(DriverError::InvalidParameter);
@@ -344,12 +352,12 @@ impl HidDriver {
         })
     }
 
-    /// 构造 SET_PROTOCOL Boot Protocol 请求 Setup Packet.
+    /// 构造 `SET_PROTOCOL` Boot Protocol 请求 Setup Packet.
     ///
-    /// 真实硬件应通过 Control Transfer (request_type=0x21, request=0x0B) 发送.
+    /// 真实硬件应通过 Control Transfer (`request_type=0x21`, request=0x0B) 发送.
     pub fn set_protocol_setup(&self, protocol: HidProtocol) -> UsbSetupPacket {
         let mut req = make_set_protocol_request(protocol);
-        req.index = self.interface_number as u16;
+        req.index = u16::from(self.interface_number);
         req
     }
 

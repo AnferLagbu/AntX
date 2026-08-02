@@ -5,7 +5,7 @@
 //! ## T5-4 迁移记录
 //!
 //! 原属 framework/syscall/types.rs, 2026-06-16 提取到 services.
-//! 纯数据定义 (syscall 编号 + Errno + SyscallRegs), 0 unsafe.
+//! 纯数据定义 (syscall 编号 + Errno + `SyscallRegs`), 0 unsafe.
 //! framework 仅保留 re-export.
 
 // POSIX errno 命名约定 (EAGAIN/EACCES/...) — 全大写缩写是有意的
@@ -567,17 +567,17 @@ pub const QX_FW_GET_INFO: u64 = 732;
 pub const QX_FW_DETACH: u64 = 733;
 
 // ---------- 740-745: POSIX Timer ----------
-/// 创建 per-process 定时器 (timer_create)
+/// 创建 per-process 定时器 (`timer_create`)
 pub const QX_TIMER_CREATE: u64 = 740;
-/// 启动 / 调整 / 停止定时器 (timer_settime)
+/// 启动 / 调整 / 停止定时器 (`timer_settime`)
 pub const QX_TIMER_SETTIME: u64 = 741;
-/// 查询定时器剩余时间 (timer_gettime)
+/// 查询定时器剩余时间 (`timer_gettime`)
 pub const QX_TIMER_GETTIME: u64 = 742;
-/// 释放定时器 (timer_delete)
+/// 释放定时器 (`timer_delete`)
 pub const QX_TIMER_DELETE: u64 = 743;
-/// 返回补打次数 (timer_getoverrun)
+/// 返回补打次数 (`timer_getoverrun`)
 pub const QX_TIMER_GETOVERRUN: u64 = 744;
-/// 时钟分辨率 (clock_getres)
+/// 时钟分辨率 (`clock_getres`)
 pub const QX_CLOCK_GETRES: u64 = 745;
 
 // ---------- 746-747: 熵源 / Stack Canary (P1 #14) ----------
@@ -607,7 +607,7 @@ pub const QX_FTRACE_ENABLE: u64 = 800;
 pub const QX_FTRACE_DISABLE: u64 = 801;
 /// 从 ftrace ring buffer 读取一条事件到用户缓冲
 pub const QX_FTRACE_READ: u64 = 802;
-/// 查询 ftrace 状态 (event_count / overflow_count)
+/// 查询 ftrace 状态 (`event_count` / `overflow_count`)
 pub const QX_FTRACE_STAT: u64 = 803;
 /// KGDB 主动断点 (用户态调试器触发)
 pub const QX_KGDB_ENTER: u64 = 804;
@@ -616,34 +616,34 @@ pub const QX_KGDB_ENTER: u64 = 804;
 
 /// seccomp — 安装 Seccomp 过滤器
 pub const QX_SECCOMP: u64 = 805;
-/// prctl — 进程控制 (Seccomp/no_new_privs 子集)
+/// prctl — 进程控制 (`Seccomp/no_new_privs` 子集)
 pub const QX_PRCTL: u64 = 806;
 
 // ==================== C5: 路由表 ====================
 
-/// route_add — 添加路由条目
+/// `route_add` — 添加路由条目
 pub const QX_ROUTE_ADD: u64 = 807;
-/// route_del — 删除路由条目
+/// `route_del` — 删除路由条目
 pub const QX_ROUTE_DEL: u64 = 808;
-/// route_query — 查询路由 (最长前缀匹配)
+/// `route_query` — 查询路由 (最长前缀匹配)
 pub const QX_ROUTE_QUERY: u64 = 809;
 
 // ==================== C5: Netfilter ====================
 
-/// nf_add_rule — 添加 Netfilter 规则
+/// `nf_add_rule` — 添加 Netfilter 规则
 pub const QX_NF_ADD_RULE: u64 = 810;
-/// nf_del_rule — 删除 Netfilter 规则
+/// `nf_del_rule` — 删除 Netfilter 规则
 pub const QX_NF_DEL_RULE: u64 = 811;
 
 // ==================== C4: io_uring ====================
 
-/// io_uring_setup — 创建 io_uring 实例
+/// `io_uring_setup` — 创建 `io_uring` 实例
 pub const QX_IO_URING_SETUP: u64 = 812;
-/// io_uring_enter — 提交/等待完成
+/// `io_uring_enter` — 提交/等待完成
 pub const QX_IO_URING_ENTER: u64 = 813;
-/// io_uring_register — 注册缓冲区/文件
+/// `io_uring_register` — 注册缓冲区/文件
 pub const QX_IO_URING_REGISTER: u64 = 814;
-/// io_uring_submit_sqe — 提交单个 SQE (简化版)
+/// `io_uring_submit_sqe` — 提交单个 SQE (简化版)
 pub const QX_IO_URING_SUBMIT: u64 = 815;
 
 // ==================== D1: Namespace ====================
@@ -655,24 +655,24 @@ pub const QX_SETNS: u64 = 821;
 
 // ==================== D2: cgroup ====================
 
-/// cgroup_create — 创建子 cgroup
+/// `cgroup_create` — 创建子 cgroup
 pub const QX_CGROUP_CREATE: u64 = 830;
-/// cgroup_destroy — 删除 cgroup
+/// `cgroup_destroy` — 删除 cgroup
 pub const QX_CGROUP_DESTROY: u64 = 831;
-/// cgroup_attach — 将进程迁移到 cgroup
+/// `cgroup_attach` — 将进程迁移到 cgroup
 pub const QX_CGROUP_ATTACH: u64 = 832;
-/// cgroup_set_limit — 设置 cgroup 资源限制
+/// `cgroup_set_limit` — 设置 cgroup 资源限制
 pub const QX_CGROUP_SET_LIMIT: u64 = 833;
-/// cgroup_get_stat — 获取 cgroup 统计信息
+/// `cgroup_get_stat` — 获取 cgroup 统计信息
 pub const QX_CGROUP_GET_STAT: u64 = 834;
 
 // ==================== D3: NUMA ====================
 
-/// get_mempolicy — 获取 NUMA 内存策略
+/// `get_mempolicy` — 获取 NUMA 内存策略
 pub const QX_GET_MEMPOLICY: u64 = 840;
-/// set_mempolicy — 设置 NUMA 内存策略
+/// `set_mempolicy` — 设置 NUMA 内存策略
 pub const QX_SET_MEMPOLICY: u64 = 841;
-/// migrate_pages — 迁移进程页面到目标节点
+/// `migrate_pages` — 迁移进程页面到目标节点
 pub const QX_MIGRATE_PAGES: u64 = 842;
 /// getcpu — 获取当前 CPU 和 NUMA 节点
 pub const QX_GETCPU: u64 = 843;
@@ -689,7 +689,7 @@ pub const QX_PM: u64 = 860;
 
 // ==================== D6: 安全启动 + TPM ====================
 
-/// secure_boot — 安全启动系统调用
+/// `secure_boot` — 安全启动系统调用
 pub const QX_SECURE_BOOT: u64 = 870;
 
 /// tpm — TPM 系统调用
@@ -733,13 +733,13 @@ pub const QX_REMOVEXATTR: u64 = 893;
 
 // ==================== D13: 快照 (snapshot) ====================
 
-/// snapshot_create — 创建快照
+/// `snapshot_create` — 创建快照
 pub const QX_SNAPSHOT_CREATE: u64 = 895;
-/// snapshot_destroy — 销毁快照
+/// `snapshot_destroy` — 销毁快照
 pub const QX_SNAPSHOT_DESTROY: u64 = 896;
-/// snapshot_rollback — 回滚快照
+/// `snapshot_rollback` — 回滚快照
 pub const QX_SNAPSHOT_ROLLBACK: u64 = 897;
-/// snapshot_clone — 从快照创建克隆
+/// `snapshot_clone` — 从快照创建克隆
 pub const QX_SNAPSHOT_CLONE: u64 = 898;
 
 // ==================== POSIX errno (使用 Linux 风格: 返回值 = -errno) ====================

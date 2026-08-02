@@ -7,10 +7,10 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 /// Trampoline 代码位于 0x8000 物理地址，由 BSP 在启动前拷贝。
 ///
 /// 流程:
-///   1. parse_madt() — 解析 ACPI MADT 获取 AP 列表
-///   2. copy_trampoline() — 拷贝 trampoline 到 0x8000
-///   3. start_ap() — 对每个 AP 发送 INIT-SIPI 序列
-///   4. ap_entry() — AP 进入 64-bit 后调用的 Rust 入口
+///   1. `parse_madt()` — 解析 ACPI MADT 获取 AP 列表
+///   2. `copy_trampoline()` — 拷贝 trampoline 到 0x8000
+///   3. `start_ap()` — 对每个 AP 发送 INIT-SIPI 序列
+///   4. `ap_entry()` — AP 进入 64-bit 后调用的 Rust 入口
 const TRAMPOLINE_BASE: u64 = 0x8000;
 const AP_INFO_OFFSET: u64 = 8;
 const AP_STACK_SIZE: usize = 65536;
@@ -30,7 +30,7 @@ struct ApStartupInfo {
     lapic_id: u32,
     ready: u32,
     cpu_index: u32,
-    /// AP 初始化完成标志: AP 在 gdt_init_ap 完成后置 1
+    /// AP 初始化完成标志: AP 在 `gdt_init_ap` 完成后置 1
     done: u32,
     _pad: u32,
 }
@@ -223,7 +223,7 @@ unsafe fn send_init_ipi(lapic_id: u32, assert: bool) {
 unsafe fn send_sipi(lapic_id: u32, vector: u8) {
     while super::apic::apic_read(0x300) & (1 << 12) != 0 {}
     super::apic::apic_write(0x310, (lapic_id & 0xFF) << 24);
-    super::apic::apic_write(0x300, (6 << 8) | (vector as u32));
+    super::apic::apic_write(0x300, (6 << 8) | u32::from(vector));
     while super::apic::apic_read(0x300) & (1 << 12) != 0 {}
 }
 

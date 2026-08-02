@@ -8,19 +8,19 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock;
 use super::vfs_types::OpenFile;
 
-/// 全局 OpenFile 表上限
+/// 全局 `OpenFile` 表上限
 const MAX_OPEN_FILES: usize = 256;
 
-/// 全局 OpenFile 表
+/// 全局 `OpenFile` 表
 pub struct OpenFileTable {
-    /// OpenFile 存储 (通过 handle_id 索引)
+    /// `OpenFile` 存储 (通过 `handle_id` 索引)
     files: IrqSpinLock<[Option<OpenFile>; MAX_OPEN_FILES]>,
-    /// 下一个可用的 handle_id (从 1 开始, 0 保留为空闲标记)
+    /// 下一个可用的 `handle_id` (从 1 开始, 0 保留为空闲标记)
     next_id: AtomicU32,
 }
 
 impl OpenFileTable {
-    /// 创建未初始化的 OpenFileTable
+    /// 创建未初始化的 `OpenFileTable`
     pub const fn new() -> Self {
         Self {
             files: IrqSpinLock::new([const { None }; MAX_OPEN_FILES]),
@@ -28,7 +28,7 @@ impl OpenFileTable {
         }
     }
 
-    /// 分配一个新的 OpenFile, 返回 handle_id
+    /// 分配一个新的 `OpenFile`, 返回 `handle_id`
     pub fn alloc(&self, file: OpenFile) -> Option<u32> {
         let handle_id = self.next_id.fetch_add(1, Ordering::AcqRel);
         if handle_id as usize >= MAX_OPEN_FILES {
@@ -40,7 +40,7 @@ impl OpenFileTable {
         Some(handle_id)
     }
 
-    /// 获取 OpenFile 的引用 (通过闭包安全访问)
+    /// 获取 `OpenFile` 的引用 (通过闭包安全访问)
     pub fn with_file<F, R>(&self, handle_id: u32, f: F) -> Option<R>
     where
         F: FnOnce(&OpenFile) -> R,
@@ -78,5 +78,5 @@ impl OpenFileTable {
     }
 }
 
-/// 全局 OpenFile 表实例
+/// 全局 `OpenFile` 表实例
 pub static OPEN_FILE_TABLE: OpenFileTable = OpenFileTable::new();

@@ -119,6 +119,9 @@ impl AuditLog {
     }
 
     /// 追加事件
+    ///
+    /// # Errors
+    /// 当追加失败 (如审计缓冲区不可用或校验失败) 时返回 `Err(AuditError)`.
     pub fn append(&mut self, event: AuditEvent) -> Result<u32, AuditError> {
         let idx = self.next_index.fetch_add(1, Ordering::AcqRel);
         let pos = self.write_pos.load(Ordering::Acquire) as usize;
@@ -145,7 +148,7 @@ impl AuditLog {
         Ok(idx)
     }
 
-    /// 按 index 查找 (包括已被覆盖的, 需 index < next_index)
+    /// 按 index 查找 (包括已被覆盖的, 需 index < `next_index`)
     pub fn get(&self, index: u32) -> Option<&HashChainNode> {
         if index >= self.next_index.load(Ordering::Acquire) {
             return None;
@@ -225,7 +228,7 @@ impl AuditLog {
     }
 }
 
-/// 审计错误 — TD-20: 收敛到 KernelError, 1 字段 audit 特有 + 1 共享包装 (预留).
+/// 审计错误 — TD-20: 收敛到 `KernelError`, 1 字段 audit 特有 + 1 共享包装 (预留).
 ///
 /// 字段说明:
 ///   - `Full`: 审计缓冲区已满 (理论上环形不会发生, 但保留)
@@ -259,11 +262,11 @@ fn compute_hash(prev: u64, event: &AuditEvent) -> u64 {
     let mut h = prev ^ OFFSET;
     h = (h ^ (event.tick as u64)).wrapping_mul(PRIME);
     h = (h ^ event.pwm).wrapping_mul(PRIME);
-    h = (h ^ (event.session_id as u64)).wrapping_mul(PRIME);
-    h = (h ^ (event.domain_id as u64)).wrapping_mul(PRIME);
+    h = (h ^ u64::from(event.session_id)).wrapping_mul(PRIME);
+    h = (h ^ u64::from(event.domain_id)).wrapping_mul(PRIME);
     h = (h ^ event.bits).wrapping_mul(PRIME);
     h = (h ^ (event.result as u64)).wrapping_mul(PRIME);
-    h = (h ^ (event.kind.tag() as u64)).wrapping_mul(PRIME);
+    h = (h ^ u64::from(event.kind.tag())).wrapping_mul(PRIME);
     h
 }
 

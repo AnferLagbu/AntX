@@ -1,10 +1,10 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
-//! ext2 FileSystem trait 实现
+//! ext2 `FileSystem` trait 实现
 
 
 use crate::kernel::framework::fs::KernelError;
-use crate::kernel::services::fs::vfs_types::*;
+use crate::kernel::services::fs::vfs_types::{KernelResult, VfsStat, VfsSeekWhence, FileSystem, VfsDirEntry};
 use super::read::Ext2Fs;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 
@@ -49,12 +49,12 @@ impl Inode for Ext2Inode {
         Ok(VfsStat {
             node_id: self.inode_num,
             mode: inode.perm(),
-            uid: inode.i_uid as u32,
-            gid: inode.i_gid as u32,
+            uid: u32::from(inode.i_uid),
+            gid: u32::from(inode.i_gid),
             size: inode.i_size,
-            atime: inode.i_atime as u64,
-            mtime: inode.i_mtime as u64,
-            ctime: inode.i_ctime as u64,
+            atime: u64::from(inode.i_atime),
+            mtime: u64::from(inode.i_mtime),
+            ctime: u64::from(inode.i_ctime),
             owner_pwm: 0,
             group_pwm: 0,
             perm: inode.perm(),
@@ -72,7 +72,7 @@ impl Inode for Ext2Inode {
             let mut fs_guard = EXT2_FS.lock();
             let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
             let inode = fs.read_inode(self.inode_num)?;
-            inode.i_size as u64
+            u64::from(inode.i_size)
         };
         let new_offset = match whence {
             VfsSeekWhence::Set => offset as u64,
@@ -108,7 +108,7 @@ impl Inode for Ext2Inode {
     }
 }
 
-/// ext2 FileSystem trait 实现
+/// ext2 `FileSystem` trait 实现
 pub struct Ext2FileSystem;
 
 impl FileSystem for Ext2FileSystem {
@@ -167,12 +167,12 @@ impl FileSystem for Ext2FileSystem {
         Ok(VfsStat {
             node_id: inode_num,
             mode: inode.perm(),
-            uid: inode.i_uid as u32,
-            gid: inode.i_gid as u32,
+            uid: u32::from(inode.i_uid),
+            gid: u32::from(inode.i_gid),
             size: inode.i_size,
-            atime: inode.i_atime as u64,
-            mtime: inode.i_mtime as u64,
-            ctime: inode.i_ctime as u64,
+            atime: u64::from(inode.i_atime),
+            mtime: u64::from(inode.i_mtime),
+            ctime: u64::from(inode.i_ctime),
             owner_pwm: 0,
             group_pwm: 0,
             perm: inode.perm(),

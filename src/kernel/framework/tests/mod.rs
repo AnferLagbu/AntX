@@ -169,17 +169,17 @@ impl TestRunner {
         Self::serial_print(b"\n========================================\n");
         if f > 0 {
             Self::serial_print(b"  RESULT: ");
-            Self::serial_print_num(p as u64);
+            Self::serial_print_num(u64::from(p));
             Self::serial_print(b" passed, ");
-            Self::serial_print_num(f as u64);
+            Self::serial_print_num(u64::from(f));
             Self::serial_print(b" FAILED, ");
-            Self::serial_print_num(s as u64);
+            Self::serial_print_num(u64::from(s));
             Self::serial_print(b" skipped\n");
         } else {
             Self::serial_print(b"  RESULT: ALL ");
-            Self::serial_print_num(p as u64);
+            Self::serial_print_num(u64::from(p));
             Self::serial_print(b" TESTS PASSED (");
-            Self::serial_print_num(s as u64);
+            Self::serial_print_num(u64::from(s));
             Self::serial_print(b" skipped)\n");
         }
         Self::serial_print(b"========================================\n");

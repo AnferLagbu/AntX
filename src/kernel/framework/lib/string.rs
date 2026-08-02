@@ -114,7 +114,7 @@ pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 { unsafe {
         let c2 = *p2;
 
         if c1 == 0 || c2 == 0 || c1 != c2 {
-            return (c1 as u8 as i32) - (c2 as u8 as i32);
+            return i32::from(c1 as u8) - i32::from(c2 as u8);
         }
 
         p1 = p1.add(1);
@@ -160,7 +160,7 @@ pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 
         let c2 = *p2;
 
         if c1 == 0 || c2 == 0 || c1 != c2 {
-            return (c1 as u8 as i32) - (c2 as u8 as i32);
+            return i32::from(c1 as u8) - i32::from(c2 as u8);
         }
 
         p1 = p1.add(1);
@@ -312,6 +312,8 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 { unsa
 /// # Safety
 ///
 /// `ptr` 是有效指针. 若 `n` 非零, 则从 `ptr` 起至少有 `n` 字节可读.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -349,6 +351,8 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 /// # Safety
 ///
 /// `a` 与 `b` 均为有效指针. 各自至少有 `n` 字节可读.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -683,7 +687,7 @@ pub unsafe extern "C" fn memcmp(
         let b2 = *p2.add(i);
 
         if b1 != b2 {
-            return (b1 as i32) - (b2 as i32);
+            return i32::from(b1) - i32::from(b2);
         }
     }
 

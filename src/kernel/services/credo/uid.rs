@@ -23,22 +23,34 @@ use crate::kernel::framework::syscall::Errno;
 // 读类
 // ============================================================================
 
-/// getuid() — 取真实 UID
+/// `getuid()` — 取真实 UID
+///
+/// # Errors
+/// 当前实现总是返回 `Ok`, 不会返回错误.
 pub fn getuid_syscall() -> Result<usize, Errno> {
     Ok(fw::get_current_uid() as usize)
 }
 
-/// getgid() — 取真实 GID
+/// `getgid()` — 取真实 GID
+///
+/// # Errors
+/// 当前实现总是返回 `Ok`, 不会返回错误.
 pub fn getgid_syscall() -> Result<usize, Errno> {
     Ok(fw::get_current_gid() as usize)
 }
 
-/// geteuid() — 取有效 UID
+/// `geteuid()` — 取有效 UID
+///
+/// # Errors
+/// 当前实现总是返回 `Ok`, 不会返回错误.
 pub fn geteuid_syscall() -> Result<usize, Errno> {
     Ok(fw::get_euid() as usize)
 }
 
-/// getegid() — 取有效 GID
+/// `getegid()` — 取有效 GID
+///
+/// # Errors
+/// 当前实现总是返回 `Ok`, 不会返回错误.
 pub fn getegid_syscall() -> Result<usize, Errno> {
     Ok(fw::get_egid() as usize)
 }
@@ -48,6 +60,9 @@ pub fn getegid_syscall() -> Result<usize, Errno> {
 // ============================================================================
 
 /// setuid(uid) — 设置 UID
+///
+/// # Errors
+/// 当 `uid` 不是当前真实/有效/保存的 UID 且 `try_setuid` 失败时, 返回 `Errno::EPERM`.
 pub fn setuid_syscall(uid: u32) -> Result<usize, Errno> {
     if uid == fw::get_current_uid()
         || uid == fw::get_euid()
@@ -59,6 +74,9 @@ pub fn setuid_syscall(uid: u32) -> Result<usize, Errno> {
 }
 
 /// setgid(gid) — 设置 GID
+///
+/// # Errors
+/// 当 `gid` 不是当前真实/有效/保存的 GID 且 `try_setgid` 失败时, 返回 `Errno::EPERM`.
 pub fn setgid_syscall(gid: u32) -> Result<usize, Errno> {
     if gid == fw::get_current_gid()
         || gid == fw::get_egid()
@@ -70,6 +88,9 @@ pub fn setgid_syscall(gid: u32) -> Result<usize, Errno> {
 }
 
 /// seteuid(euid) — 设置有效 UID
+///
+/// # Errors
+/// 当 `euid` 不是当前真实/有效/保存的 UID 且 `try_seteuid` 失败时, 返回 `Errno::EPERM`.
 pub fn seteuid_syscall(euid: u32) -> Result<usize, Errno> {
     if euid == fw::get_current_uid()
         || euid == fw::get_euid()
@@ -81,6 +102,9 @@ pub fn seteuid_syscall(euid: u32) -> Result<usize, Errno> {
 }
 
 /// setegid(egid) — 设置有效 GID
+///
+/// # Errors
+/// 当 `egid` 不是当前真实/有效/保存的 GID 且 `try_setegid` 失败时, 返回 `Errno::EPERM`.
 pub fn setegid_syscall(egid: u32) -> Result<usize, Errno> {
     if egid == fw::get_current_gid()
         || egid == fw::get_egid()
@@ -94,11 +118,17 @@ pub fn setegid_syscall(egid: u32) -> Result<usize, Errno> {
 /// setreuid(ruid, euid) — 同时设置真实与有效 UID
 ///
 /// POSIX 允许 ruid/euid 之一为 (uid_t)-1 表示不变。
+///
+/// # Errors
+/// 当 `try_setreuid` 失败 (无特权) 时返回 `Errno::EPERM`.
 pub fn setreuid_syscall(ruid: u32, euid: u32) -> Result<usize, Errno> {
     if fw::try_setreuid(ruid, euid) { Ok(0) } else { Err(Errno::EPERM) }
 }
 
 /// setregid(rgid, egid) — 同时设置真实与有效 GID
+///
+/// # Errors
+/// 当 `try_setregid` 失败 (无特权) 时返回 `Errno::EPERM`.
 pub fn setregid_syscall(rgid: u32, egid: u32) -> Result<usize, Errno> {
     if fw::try_setregid(rgid, egid) { Ok(0) } else { Err(Errno::EPERM) }
 }

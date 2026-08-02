@@ -62,24 +62,26 @@ pub struct EfiTime {
 }
 
 impl EfiTime {
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn to_unix_ns(&self) -> u64 {
         // 简化: 转换为秒数
         let days_before_month: [u64; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
-        let y = self.year as u64;
-        let m = self.month as u64;
-        let d = self.day as u64;
+        let y = u64::from(self.year);
+        let m = u64::from(self.month);
+        let d = u64::from(self.day);
         let leap_years = (y - 1) / 4 - (y - 1) / 100 + (y - 1) / 400;
         let is_leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
-        let extra = if is_leap && m > 2 { 1 } else { 0 };
+        let extra = u64::from(is_leap && m > 2);
         let days = y * 365 + leap_years + days_before_month.get(m as usize - 1).unwrap_or(&0) + d + extra;
         // 1970-01-01 基准
         let epoch_days = 1970 * 365 + (1970 - 1) / 4 - (1970 - 1) / 100 + (1970 - 1) / 400 + 1;
         let unix_days = days.saturating_sub(epoch_days);
         let unix_secs = unix_days * 86400
-            + self.hour as u64 * 3600
-            + self.minute as u64 * 60
-            + self.second as u64;
-        unix_secs * 1_000_000_000 + self.nanosecond as u64
+            + u64::from(self.hour) * 3600
+            + u64::from(self.minute) * 60
+            + u64::from(self.second);
+        unix_secs * 1_000_000_000 + u64::from(self.nanosecond)
     }
 }
 
@@ -335,6 +337,8 @@ impl UefiSubsystem {
     }
 
     /// 获取时间
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn get_time(&self) -> EfiTime {
         // 简化: 从内核时钟转换
         let ns = crate::kernel::framework::timer::ticks_to_ns(
@@ -460,21 +464,21 @@ pub fn uefi_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_uefi — UEFI 系统调用
+/// `sys_uefi` — UEFI 系统调用
 ///
 /// `a0`: cmd
-///   0 = get_variable(名称指针, GUID 指针) → (属性, 数据指针)
-///   1 = set_variable(名称指针, GUID 指针, 属性, 数据指针, 数据长度)
-///   2 = delete_variable(名称指针, GUID 指针)
-///   3 = get_time() → ns (纳秒)
-///   4 = set_time(ns: a1)
-///   5 = get_gop_mode() → fb_base  // 帧缓冲基址
-///   6 = list_variables() → count
-///   7 = has_uefi() → bool
-///   8 = is_initialized() → 是否已初始化
+///   0 = `get_variable(名称指针`, GUID 指针) → (属性, 数据指针)
+///   1 = `set_variable(名称指针`, GUID 指针, 属性, 数据指针, 数据长度)
+///   2 = `delete_variable(名称指针`, GUID 指针)
+///   3 = `get_time()` → ns (纳秒)
+///   4 = `set_time(ns`: a1)
+///   5 = `get_gop_mode()` → `fb_base`  // 帧缓冲基址
+///   6 = `list_variables()` → count
+///   7 = `has_uefi()` → bool
+///   8 = `is_initialized()` → 是否已初始化
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_uefi(cmd: u64, a1: u64, a2: u64) -> i64 {
+pub extern "C" fn sys_uefi(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !uefi_is_initialized() && cmd != 8 {
         return -(11i64); // EAGAIN
     }
@@ -519,11 +523,11 @@ pub fn sys_uefi(cmd: u64, a1: u64, a2: u64) -> i64 {
         }
         7 => {
             // has_uefi
-            uefi_subsystem().has_uefi() as i64
+            i64::from(uefi_subsystem().has_uefi())
         }
         8 => {
             // is_initialized
-            uefi_is_initialized() as i64
+            i64::from(uefi_is_initialized())
         }
         _ => -(38i64), // ENOSYS
     }

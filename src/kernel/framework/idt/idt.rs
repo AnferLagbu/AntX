@@ -24,9 +24,11 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::handlers::*;
-use super::statistics::*;
-use super::types::*;
+use super::handlers::{create_handler, RecoveryAction};
+use super::statistics::DetailedStatistics;
+use super::types::{IdtEntry, IDT_ENTRIES, InterruptFrame, IrqDescriptor, InterruptStatistics, GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, IRQ_BASE, IDT_TYPE_TRAP, IDT_DPL_USER, IRQ_FLAG_SHARED};
+#[cfg(target_arch = "x86_64")]
+use super::types::IdtPtr;
 use crate::kernel::framework::sync::IrqSpinLock;
 
 
@@ -144,7 +146,7 @@ pub(crate) struct IdtState {
     /// IDT 条目表
     pub entries: [IdtEntry; IDT_ENTRIES],
     /// 异常处理函数指针表
-    /// x86_64 上 wrapper 函数(asm stub 跳转)用 `extern "C"`,等价于平台 sysv64 ABI
+    /// `x86_64` 上 wrapper 函数(asm stub 跳转)用 `extern "C"`,等价于平台 sysv64 ABI
     pub handlers: [Option<extern "C" fn(*mut InterruptFrame)>; IDT_ENTRIES],
     /// IRQ 描述符扩展信息
     pub irq_descriptors: [IrqDescriptor; 16],
@@ -174,7 +176,7 @@ impl Default for IdtState {
 
 /// 全局 IDT 管理器
 pub struct IdtManager {
-    /// 内部状态 (IrqSpinLock 保护, 中断安全)
+    /// 内部状态 (`IrqSpinLock` 保护, 中断安全)
     ///
     /// 锁内自动屏蔽中断, 防止中断处理程序与线程争用同一锁导致死锁.
     /// 所有中断上下文访问 (`handle_irq`/`handle_exception`) 仅使用本字段.
@@ -217,6 +219,8 @@ impl IdtManager {
     /// # Returns
     /// - `Ok(())`: 初始化成功
     /// - `Err(msg)`: 初始化失败
+    /// # Errors
+    /// IDT 初始化失败 (如关键 IST 未配置) 时返回 Err。
     pub fn init(
         &self,
         isr_table: &[u64; 32],
@@ -332,8 +336,10 @@ impl IdtManager {
 
     /// 编程 MSI 向量 IDT 条目 (向量 0x40-0x7F)
     ///
-    /// MSI 向量范围 0x40-0x7F 对应 irq16-irq79 (MSI_VECTOR_BASE=0x40).
-    /// 这些 IDT 条目使用与传统 IRQ 相同的 irq_common 入口.
+    /// MSI 向量范围 0x40-0x7F 对应 irq16-irq79 (`MSI_VECTOR_BASE=0x40`).
+    /// 这些 IDT 条目使用与传统 IRQ 相同的 `irq_common` 入口.
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn init_msi_idt(&self, msi_table: &[u64; 64]) {
         let mut state = self.state.lock();
         for (i, &handler_addr) in msi_table.iter().enumerate() {
@@ -381,6 +387,8 @@ impl IdtManager {
     }}
 
     /// 注册异常处理函数
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn set_exception_handler(&self, vector: u8, handler: extern "C" fn(*mut InterruptFrame)) {
         if vector < IDT_ENTRIES as u8 {
             let mut state = self.state.lock();
@@ -389,6 +397,8 @@ impl IdtManager {
     }
 
     /// 注册 IRQ 处理函数
+    /// # Errors
+    /// IRQ 编号大于等于 16 时返回 Err。
     pub fn register_irq(
         &self,
         irq: u8,
@@ -425,6 +435,8 @@ impl IdtManager {
     }
 
     /// 注销 IRQ 处理函数
+    /// # Errors
+    /// IRQ 编号大于等于 16 时返回 Err。
     pub fn unregister_irq(
         &self,
         irq: u8,
@@ -507,7 +519,9 @@ impl IdtManager {
         }
     }
 
-    /// 处理异常 (从 exception_handler FFI 调用)
+    /// 处理异常 (从 `exception_handler` FFI 调用)
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn handle_exception(&self, frame: *mut InterruptFrame) {
         if frame.is_null() {
             return;
@@ -518,7 +532,7 @@ impl IdtManager {
             let vector = (*frame).int_no as u8;
 
             let nesting = self.nested_count.fetch_add(1, Ordering::SeqCst);
-            self.current_vector.store(vector as u64, Ordering::SeqCst);
+            self.current_vector.store(u64::from(vector), Ordering::SeqCst);
 
             self.stats.record_exception(vector);
             self.detailed_stats.record_exception(vector, &*frame);

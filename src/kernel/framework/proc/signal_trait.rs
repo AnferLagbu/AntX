@@ -84,6 +84,9 @@ static SIGNAL_DECISION: OnceLock<&'static dyn SignalDecision> = OnceLock::new();
 ///
 /// services 在 `init()` 中调用, 替换默认回退策略.
 /// 仅允许注册一次, 重复注册返回 `Err(旧策略)`.
+///
+/// # Errors
+/// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
 pub fn register_signal_decision(
     policy: &'static dyn SignalDecision,
 ) -> Result<(), &'static dyn SignalDecision> {

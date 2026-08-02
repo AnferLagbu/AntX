@@ -1,18 +1,18 @@
-//! NVMe 磁盘的 BlockDevice 适配器
+//! `NVMe` 磁盘的 `BlockDevice` 适配器
 //!
-//! 将 NVMe 命名空间封装为标准的 BlockDevice trait 实现，
-//! 使 HvFS 等多磁盘文件系统可以通过统一接口访问 NVMe 磁盘。
+//! 将 `NVMe` 命名空间封装为标准的 `BlockDevice` trait 实现，
+//! 使 `HvFS` 等多磁盘文件系统可以通过统一接口访问 `NVMe` 磁盘。
 
 use crate::kernel::framework::driver::BlockDevice;
 
 use super::NVME_CONTROLLERS;
 
-/// NVMe 命名空间的 BlockDevice 适配器。
+/// `NVMe` 命名空间的 `BlockDevice` 适配器。
 ///
-/// 不直接持有控制器引用，而是通过 (controller_index, namespace_id) 在
-/// 全局 NVME_CONTROLLERS 中查找对应的控制器和命名空间。
+/// 不直接持有控制器引用，而是通过 (`controller_index`, `namespace_id`) 在
+/// 全局 `NVME_CONTROLLERS` 中查找对应的控制器和命名空间。
 pub struct NvmeBlockDevice {
-    /// NVMe 控制器在 NVME_CONTROLLERS 中的索引
+    /// `NVMe` 控制器在 `NVME_CONTROLLERS` 中的索引
     controller_index: usize,
     /// 命名空间 ID (1-based)
     namespace_id: u32,
@@ -21,7 +21,7 @@ pub struct NvmeBlockDevice {
 }
 
 impl NvmeBlockDevice {
-    /// 为指定的 NVMe 命名空间创建 BlockDevice 适配器。
+    /// 为指定的 `NVMe` 命名空间创建 `BlockDevice` 适配器。
     ///
     /// 返回 None 如果命名空间大小为 0（非块设备命名空间）。
     pub fn new(controller_index: usize, namespace_id: u32) -> Option<Self> {

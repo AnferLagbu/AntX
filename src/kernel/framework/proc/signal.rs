@@ -1,9 +1,9 @@
 //! POSIX 信号投递 — framework 层核心实现
 //!
 //! 提供信号发送、投递和默认动作执行的完整机制：
-//! - **do_signal_send**: 向目标进程发送信号 (设置 pending 位, 唤醒)
-//! - **do_signal_deliver**: 返回用户态前检查并投递信号
-//! - **signal_default_action**: 执行信号的默认动作 (Term/Core/Stop/Ign)
+//! - **`do_signal_send`**: 向目标进程发送信号 (设置 pending 位, 唤醒)
+//! - **`do_signal_deliver`**: 返回用户态前检查并投递信号
+//! - **`signal_default_action`**: 执行信号的默认动作 (Term/Core/Stop/Ign)
 //!
 //! ## 信号投递流程
 //!
@@ -24,7 +24,7 @@
 //!        └→ sigreturn: 恢复原始栈帧
 //! ```
 //!
-//! ## x86_64 信号栈帧布局
+//! ## `x86_64` 信号栈帧布局
 //!
 //! ```text
 //! 用户栈 (低地址 → 高地址):
@@ -46,9 +46,9 @@
 //!
 //! # Safety
 //!
-//! - do_signal_send: 操作进程原子字段, 线程安全
-//! - do_signal_deliver: 操作当前进程, 单 CPU 执行, 无竞争
-//! - PROCESS_TABLE.get() 返回 *mut Process, 需 unsafe 解引用
+//! - `do_signal_send`: 操作进程原子字段, 线程安全
+//! - `do_signal_deliver`: 操作当前进程, 单 CPU 执行, 无竞争
+//! - `PROCESS_TABLE.get()` 返回 *mut Process, 需 unsafe 解引用
 
 use core::sync::atomic::Ordering;
 
@@ -61,7 +61,7 @@ use super::types::{Pid, ProcessState};
 
 /// 信号栈帧 — 保存在用户栈上, sigreturn 时恢复
 ///
-/// 布局与 InterruptFrame 兼容, 便于直接拷贝寄存器状态.
+/// 布局与 `InterruptFrame` 兼容, 便于直接拷贝寄存器状态.
 /// signum 字段放在最后, handler 通过第一个参数 (rdi) 获取.
 #[repr(C)]
 pub struct SignalFrame {
@@ -99,17 +99,17 @@ pub struct SignalFrame {
 
 /// sigreturn trampoline 代码
 ///
-/// # x86_64 机器码 (7 字节)
-/// `mov eax, 15` (SYS_rt_sigreturn = 15) + `syscall`:
+/// # `x86_64` 机器码 (7 字节)
+/// `mov eax, 15` (`SYS_rt_sigreturn` = 15) + `syscall`:
 ///   B8 0F 00 00 00     mov eax, 15
 ///   0F 05              syscall
 ///
 /// # aarch64 机器码 (8 字节)
-/// `mov x8, #139` (SYS_rt_sigreturn = 139) + `svc #0`:
+/// `mov x8, #139` (`SYS_rt_sigreturn` = 139) + `svc #0`:
 ///   D2 80 11 68        movz x8, #139
 ///   D4 00 00 01        svc #0
 ///
-/// P1-I-40 修复: 之前硬编码 x86_64 字节序, aarch64 上是随机指令
+/// P1-I-40 修复: 之前硬编码 `x86_64` 字节序, aarch64 上是随机指令
 /// (illegal instruction), 致所有 ARM 板信号投递失败. 改为 cfg 分发.
 #[cfg(target_arch = "x86_64")]
 pub const SIGRETURN_TRAMPOLINE: [u8; 7] = [0xB8, 0x0F, 0x00, 0x00, 0x00, 0x0F, 0x05];
@@ -127,14 +127,14 @@ pub const SIGNAL_FRAME_TOTAL_SIZE: usize = core::mem::size_of::<SignalFrame>() +
 // 常量
 // ============================================================================
 
-/// SIG_DFL: 默认动作
+/// `SIG_DFL`: 默认动作
 pub const SIG_DFL: u64 = 0;
-/// SIG_IGN: 忽略
+/// `SIG_IGN`: 忽略
 pub const SIG_IGN: u64 = 1;
 
-/// SS_ONSTACK: 信号替换栈正在使用
+/// `SS_ONSTACK`: 信号替换栈正在使用
 pub const SS_ONSTACK: u32 = 1;
-/// SS_DISABLE: 信号替换栈已禁用
+/// `SS_DISABLE`: 信号替换栈已禁用
 pub const SS_DISABLE: u32 = 2;
 
 /// 信号默认动作类型
@@ -173,12 +173,16 @@ pub fn is_uncatchable(sig: u8) -> bool {
 /// 向目标进程发送信号
 ///
 /// 1. 验证信号编号有效性
-/// 2. 设置目标进程的 pending_signals 位
+/// 2. 设置目标进程的 `pending_signals` 位
 /// 3. 如果目标进程在可中断睡眠状态, 唤醒它
 ///
 /// # Returns
 /// - `Ok(())`: 成功发送
 /// - `Err(i32)`: 错误码 (-1: 无效信号, -2: 进程不存在)
+///
+/// # Errors
+/// 当 `sig` 不在 `1..=31` 范围内时返回 `Err(-1)`; 当目标进程不存在时返回 `Err(-2)`;
+/// 当目标进程处于 `Zombie` 状态 (信号不会被消费) 时返回 `Err(-3)`.
 pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
     // 验证信号编号
     if sig == 0 {
@@ -219,7 +223,7 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
     }
 
     // 设置 pending 位
-    proc.signal_pending_set(sig as u32);
+    proc.signal_pending_set(u32::from(sig));
 
     // 唤醒目标进程 (如果处于可中断睡眠)
     if state == ProcessState::Blocked as u32 {
@@ -229,9 +233,9 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
     Ok(())
 }
 
-/// do_signal_send_extended — kill 4 种 pid 语义 (解决 TRACK-315B7C)
+/// `do_signal_send_extended` — kill 4 种 pid 语义 (解决 TRACK-315B7C)
 ///
-/// POSIX kill() pid 取值:
+/// POSIX `kill()` pid 取值:
 /// - pid > 0:    发往指定 pid 进程
 /// - pid = 0:    发往调用者同进程组所有进程
 /// - pid = -1:   发往系统所有进程 (除 init pid=1)
@@ -242,6 +246,10 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
 /// # Returns
 /// - `Ok(0)`: 至少一个目标收到信号
 /// - `Err(-2)`: 未找到任何目标 (ESRCH)
+///
+/// # Errors
+/// 当 `sig` 不在 `1..=31` 范围内时返回 `Err(-1)`; 当未找到任何匹配的目标进程
+/// (或目标均为 `Zombie`) 时返回 `Err(-2)`/`Err(-3)`.
 pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
     // sig=0 仅检查存在, 不发信号
     if sig == 0 {
@@ -294,8 +302,7 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
             let current_pgid = PROCESS_TABLE
                 .get(current)
                 // SAFETY: PROCESS_TABLE 保证指针有效, 进程在表中期间不会释放; 只读 pgid
-                .map(|p| unsafe { (&*p).pgid.load(Ordering::SeqCst) })
-                .unwrap_or(0);
+                .map_or(0, |p| unsafe { (&*p).pgid.load(Ordering::SeqCst) });
             let target_pgid = if current_pgid == 0 { current } else { current_pgid };
             let mut count = 0usize;
             PROCESS_TABLE.for_each(|proc| {
@@ -344,9 +351,9 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
     }
 }
 
-/// do_signal_send_inner — 单进程信号发送 (不检查 SIG_IGN, 适用于广播).
+/// `do_signal_send_inner` — 单进程信号发送 (不检查 `SIG_IGN`, 适用于广播).
 ///
-/// I-52: 与 do_signal_send 一致, Zombie 状态不投递 (返回 -3).
+/// I-52: 与 `do_signal_send` 一致, Zombie 状态不投递 (返回 -3).
 /// 广播场景: 即使多数目标正常, 遇到 Zombie 也跳过, 不影响其他目标.
 fn do_signal_send_inner(pid: u32, sig: u8) -> Result<(), i32> {
     let proc_ptr = PROCESS_TABLE.get(pid).ok_or(-2)?;
@@ -357,7 +364,7 @@ fn do_signal_send_inner(pid: u32, sig: u8) -> Result<(), i32> {
     if state == ProcessState::Zombie as u32 {
         return Err(-3);
     }
-    proc.signal_pending_set(sig as u32);
+    proc.signal_pending_set(u32::from(sig));
     if state == ProcessState::Blocked as u32 {
         proc.state.store(ProcessState::Ready as u32, Ordering::Release);
     }
@@ -385,7 +392,7 @@ pub fn signal_pick_next(proc: &super::process::Process) -> Option<u8> {
 
 /// 执行信号的默认动作
 ///
-/// 在 do_signal_deliver 中, 当 sigaction 为 SIG_DFL 时调用.
+/// 在 `do_signal_deliver` 中, 当 sigaction 为 `SIG_DFL` 时调用.
 pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
     match signal_default_action(sig) {
         SignalDefaultAction::Ign => {}
@@ -409,7 +416,7 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
                 // SAFETY: `proc_ptr` 由调用方保证为有效指针; 只读访问
                 let proc = unsafe { &*proc_ptr };
-                proc.exit_code.store((sig as u32) << 8 | 0x7f, Ordering::Release);
+                proc.exit_code.store(u32::from(sig) << 8 | 0x7f, Ordering::Release);
                 proc.state.store(ProcessState::Zombie as u32, Ordering::Release);
             }
         }
@@ -417,7 +424,7 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
                 // SAFETY: `proc_ptr` 由调用方保证为有效指针; 只读访问
                 let proc = unsafe { &*proc_ptr };
-                proc.exit_code.store((sig as u32) << 8 | 0x7f, Ordering::Release);
+                proc.exit_code.store(u32::from(sig) << 8 | 0x7f, Ordering::Release);
                 proc.state.store(ProcessState::Zombie as u32, Ordering::Release);
             }
         }
@@ -427,8 +434,8 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
 /// 投递待处理信号 (在返回用户态前调用)
 ///
 /// 遍历当前进程的 pending & ~blocked, 逐个投递:
-/// - SIG_DFL: 执行默认动作
-/// - SIG_IGN: 清除 pending 位, 忽略
+/// - `SIG_DFL`: 执行默认动作
+/// - `SIG_IGN`: 清除 pending 位, 忽略
 /// - handler: 修改用户态栈帧跳转到 handler
 ///
 /// # Arguments
@@ -462,7 +469,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
     while let Some(sig) = signal_pick_next(proc) {
 
         // 清除 pending 位
-        proc.signal_pending_clear(1u64 << sig as u64);
+        proc.signal_pending_clear(1u64 << u64::from(sig));
 
         // 查找 sigaction
         let action = {
@@ -535,7 +542,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
                     rcx: f.rcx, rbx: f.rbx, rax: f.rax,
                     int_no: f.int_no, err_code: f.err_code,
                     rip: f.rip, cs: f.cs, rflags: f.rflags, rsp: f.rsp, ss: f.ss,
-                    signum: sig as u64,
+                    signum: u64::from(sig),
                 };
 
                 // P0-I-38 修复: 信号栈帧写入走异常表保护版 copy_to_user,
@@ -578,7 +585,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
 
                 // 修改 InterruptFrame: 跳转到 handler
                 f.rip = handler_addr;
-                f.rdi = sig as u64;  // 参数1: signum
+                f.rdi = u64::from(sig);  // 参数1: signum
                 f.rsi = 0;           // 参数2: siginfo (简化: NULL)
                 f.rdx = 0;           // 参数3: ucontext (简化: NULL)
                 f.rsp = frame_rsp;
@@ -683,7 +690,7 @@ pub fn set_sigaction(pid: Pid, sig: u8, action: u64) -> Option<u64> {
 
 /// I-48: 显式重置 execve 后进程的信号状态.
 ///
-/// 当前实现为幂等 no-op (新进程已由 user_proc_load_elf 分配, 默认状态已正确).
+/// 当前实现为幂等 no-op (新进程已由 `user_proc_load_elf` 分配, 默认状态已正确).
 /// 函数存在是为 (1) 文档化语义, (2) 未来扩展的稳定 hook.
 pub fn reset_signal_state_on_exec(pid: Pid) {
     let proc_ptr = match PROCESS_TABLE.get(pid) {

@@ -1,4 +1,4 @@
-//! 全局描述符表 (Global Descriptor Table, GDT) - x86_64 实现
+//! 全局描述符表 (Global Descriptor Table, GDT) - `x86_64` 实现
 //!
 //! ## 功能概览
 //!
@@ -246,6 +246,8 @@ impl GdtEntry {
     /// * `tss_addr` - TSS 结构体的 64 位地址
     /// * `tss_size` - TSS 结构体大小 (bytes)
     #[inline]
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub const fn tss_low(tss_addr: u64, tss_size: u16) -> Self {
         let base_low = tss_addr as u32;
 
@@ -317,8 +319,8 @@ const PER_CPU_SYSCALL_STACK_SIZE: usize = 8192;
 /// # Safety: repr(C) 强制
 ///
 /// `#[repr(C)]` 保证字段按声明顺序排列且偏移可预测。
-/// 去掉 repr(C) 时 Rust 编译器可能将大数组 (syscall_stack) 重排到
-/// entries 之前, 导致 kernel_rsp == GDT base, 栈 push 覆盖 GDT
+/// 去掉 repr(C) 时 Rust 编译器可能将大数组 (`syscall_stack`) 重排到
+/// entries 之前, 导致 `kernel_rsp` == GDT base, 栈 push 覆盖 GDT
 /// entries → CPU 取指到 RIP=0x3 → #UD.
 #[repr(C)]
 struct PerCpuGdt {
@@ -444,6 +446,8 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 /// 3. 设置 TSS 描述符 (占用2个槽位)
 /// 4. 加载 GDTR (lgdt 指令)
 /// 5. 加载 TR (ltr 指令, 任务寄存器)
+// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn gdt_init() -> i32 {
     use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 
@@ -554,8 +558,10 @@ pub fn gdt_init() -> i32 {
 
 /// 初始化 AP 的 per-CPU GDT 和独立 TSS
 ///
-/// Trampoline 已通过 lgdt [SINFO_GDT_LIMIT] 加载了 BSP 的 GDT 作为过渡，
+/// Trampoline 已通过 lgdt [`SINFO_GDT_LIMIT`] 加载了 BSP 的 GDT 作为过渡，
 /// 本函数在 AP 进入长模式后调用，为目标 CPU 初始化独立的 GDT + TSS。
+// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn gdt_init_ap(cpu_index: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -606,10 +612,10 @@ pub fn gdt_init_ap(cpu_index: u32) {
     }
 }
 
-/// 获取当前 CPU 的 SyscallPerCpu 结构的线性地址 (VMA)。
+/// 获取当前 CPU 的 `SyscallPerCpu` 结构的线性地址 (VMA)。
 ///
-/// KPTI 入口代码通过 `[gs:KERNEL_PML4_OFF]` 访问 SyscallPerCpu,
-/// swapgs 后 GS_BASE = IA32_GS_BASE = 此函数返回的地址。
+/// KPTI 入口代码通过 `[gs:KERNEL_PML4_OFF]` 访问 `SyscallPerCpu`,
+/// swapgs 后 `GS_BASE` = `IA32_GS_BASE` = 此函数返回的地址。
 /// 需要在用户页表中映射此地址所在的页面, 否则 KPTI 入口会触发 #PF。
 #[inline]
 pub fn get_syscall_per_cpu_base() -> u64 {
@@ -654,7 +660,7 @@ pub fn get_tss_base() -> u64 {
 /// 更新指定 CPU 的 KPTI PML4 字段
 ///
 /// KPTI init 完成后调用, 设置 `kernel_pml4` 和 `user_pml4`.
-/// PCID 启用时, 值为 PML4_PHYS | PCID; 未启用时为纯 PML4 物理地址.
+/// PCID 启用时, 值为 `PML4_PHYS` | PCID; 未启用时为纯 PML4 物理地址.
 /// KPTI 未激活时 `user_pml4 == kernel_pml4`, 汇编中 `mov cr3` 无实际切换效果.
 ///
 /// # Safety
@@ -666,10 +672,10 @@ pub unsafe fn gdt_set_kpti_pml4(cpu_index: u32, kernel_pml4: u64, user_pml4: u64
     gdt.syscall.user_pml4 = user_pml4;
 }
 
-/// 更新当前 CPU 的 per-CPU 用户页表 CR3 值 ([gs:USER_PML4_OFF]).
+/// 更新当前 CPU 的 per-CPU 用户页表 CR3 值 ([`gs:USER_PML4_OFF`]).
 ///
 /// 每个用户进程有独立的用户页表, syscall/中断返回用户态时
-/// 从 [gs:USER_PML4_OFF] 读取 CR3, 因此必须在进入用户态前
+/// 从 [`gs:USER_PML4_OFF`] 读取 CR3, 因此必须在进入用户态前
 /// 将当前进程的用户页表物理地址写入该字段.
 ///
 /// # Safety
@@ -689,7 +695,7 @@ pub unsafe fn gdt_set_user_cr3(user_cr3: u64) {
 /// 执行 LGDT 指令 (Load Global Descriptor Table Register)
 ///
 /// # Arguments
-/// * `gdt_ptr` - 指向 GdtPtr 结构体的引用
+/// * `gdt_ptr` - 指向 `GdtPtr` 结构体的引用
 ///
 /// # Safety
 /// 此函数修改 GDTR 寄存器, 会立即影响内存分段行为。

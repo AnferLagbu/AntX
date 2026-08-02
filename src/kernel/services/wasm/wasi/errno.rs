@@ -1,4 +1,4 @@
-//! WASI errno 映射 (wasi_snapshot_preview1)
+//! WASI errno 映射 (`wasi_snapshot_preview1`)
 
 /// WASI errno 值
 #[repr(i32)]
@@ -45,7 +45,7 @@ impl WasiErrno {
         self as i32
     }
 
-    /// 从 QueenX KernelError 映射到 WASI errno
+    /// 从 `QueenX` `KernelError` 映射到 WASI errno
     pub fn from_kernel_error(err: crate::kernel::services::wasm::types::WasmError) -> Self {
         match err {
             crate::kernel::services::wasm::types::WasmError::MemoryOutOfBounds => WasiErrno::Fault,

@@ -5,11 +5,11 @@
 //!
 //! 给定域的依赖关系 (parent ↔ child), 决定级联恢复方向:
 //!
-//! - **BottomUp** (自底向上): 子域先恢复, 父域后恢复 (默认)
-//! - **TopDown** (自顶向下): 父域先恢复, 子域后恢复 (用于父域配置错误场景)
+//! - **`BottomUp`** (自底向上): 子域先恢复, 父域后恢复 (默认)
+//! - **`TopDown`** (自顶向下): 父域先恢复, 子域后恢复 (用于父域配置错误场景)
 //! - **Isolated** (隔离): 失败域不动, 仅恢复依赖者
 //!
-//! ## 与 framework::barrier::manager::cascade_rollback 区别
+//! ## 与 `framework::barrier::manager::cascade_rollback` 区别
 //!
 //! - framework 层: BFS 拓扑遍历 + undo 回滚 (机制)
 //! - services 层: 业务策略 — 哪些域需要级联, 哪些需要隔离, 哪些不参与
@@ -96,7 +96,7 @@ impl DomainTopology {
         self.nodes.iter().take(self.count).find(|n| n.id == id)
     }
 
-    /// 计算 BottomUp 顺序的恢复队列
+    /// 计算 `BottomUp` 顺序的恢复队列
     pub fn bottom_up_order(&self, root_id: u64) -> CascadeQueue {
         // 简化实现: 返回根 + 全部子节点 (实际应 BFS)
         let mut q = CascadeQueue::new();
@@ -112,7 +112,7 @@ impl DomainTopology {
         q
     }
 
-    /// 计算 TopDown 顺序的恢复队列
+    /// 计算 `TopDown` 顺序的恢复队列
     pub fn top_down_order(&self, root_id: u64) -> CascadeQueue {
         let mut q = CascadeQueue::new();
         if let Some(root) = self.find(root_id) {
@@ -200,7 +200,7 @@ impl CascadePolicy {
 }
 
 impl FaultSignal {
-    /// 从 attribution 提取 domain_id (Service 分支)
+    /// 从 attribution 提取 `domain_id` (Service 分支)
     pub fn domain_id(&self) -> u64 {
         match self.attribution {
             FaultAttribution::Service { domain_id, .. } => domain_id,

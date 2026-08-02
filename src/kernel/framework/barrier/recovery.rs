@@ -1,4 +1,4 @@
-//! RecoveryDomain Trait — 子系统级崩溃恢复接口
+//! `RecoveryDomain` Trait — 子系统级崩溃恢复接口
 //!
 //! 将"域"的概念推广到子系统级: 文件系统、网络栈、驱动各为一个 recovery domain。
 //! 当一个域崩溃时，隔离并重启该域而不影响其他服务。
@@ -94,7 +94,7 @@ pub fn recovery_domain_register(
 ) -> DomainId {
     let mut reg = RECOVERY_REGISTRY.lock();
     let id = if prefer_id != 0 {
-        for r in reg.registered.iter() {
+        for r in &reg.registered {
             if r.id == prefer_id {
                 return prefer_id;
             }
@@ -117,7 +117,7 @@ pub fn recovery_domain_register(
 
 pub fn recovery_subdomain_save_checkpoint(domain_id: DomainId) {
     let reg = RECOVERY_REGISTRY.lock();
-    for r in reg.registered.iter() {
+    for r in &reg.registered {
         if r.id == domain_id {
             raw::invoke_save(r.save_fn);
             return;
@@ -127,7 +127,7 @@ pub fn recovery_subdomain_save_checkpoint(domain_id: DomainId) {
 
 fn has_dependency(sub_id: DomainId, on_id: DomainId) -> bool {
     let reg = RECOVERY_REGISTRY.lock();
-    for r in reg.registered.iter() {
+    for r in &reg.registered {
         if r.id == sub_id {
             return r.deps.contains(&on_id);
         }
@@ -156,9 +156,9 @@ pub fn compute_recovery_order(root_id: DomainId) -> Vec<DomainId> {
             }
             visited[i] = true;
 
-            for r in reg.registered.iter() {
+            for r in &reg.registered {
                 if r.id == id {
-                    for &dep in r.deps.iter() {
+                    for &dep in r.deps {
                         let dep_idx = all_ids.iter().position(|&x| x == dep);
                         if let Some(di) = dep_idx {
                             if !visited[di] {
@@ -191,8 +191,8 @@ pub fn cascade_recover(domain_id: DomainId) -> usize {
     let reg = RECOVERY_REGISTRY.lock();
     let mut recovered = 0usize;
 
-    for &id in order.iter() {
-        for r in reg.registered.iter() {
+    for &id in &order {
+        for r in &reg.registered {
             if r.id == id {
                 crate::klog_info!(
                     Kernel,
@@ -211,7 +211,7 @@ pub fn cascade_recover(domain_id: DomainId) -> usize {
 
 pub fn hard_reset_domain(domain_id: DomainId) {
     let reg = RECOVERY_REGISTRY.lock();
-    for r in reg.registered.iter() {
+    for r in &reg.registered {
         if r.id == domain_id {
             crate::klog_warn!(
                 Kernel,

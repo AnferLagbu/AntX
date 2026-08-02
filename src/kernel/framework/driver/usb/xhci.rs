@@ -1,7 +1,7 @@
 //! xHCI 主机控制器驱动 (xHCI Host Controller Driver)
 //!
 //! 实现USB 3.0 xHCI (eXtensible Host Controller Interface) 规范：
-//! - **USB 3.0支持**: 5 Gbps SuperSpeed
+//! - **USB 3.0支持**: 5 Gbps `SuperSpeed`
 //! - **USB 2.0兼容**: 支持高速、全速、低速设备
 //! - **多端口**: 支持多达256个端口
 //! - **DMA传输**: 高效的内存传输
@@ -110,23 +110,23 @@ pub struct XhciPortRegister {
 /// xHCI USB 命令寄存器 (USBCMD) 位定义 — xHCI 规范 §5.4.1
 ///
 /// 当前使用的位:
-/// - RUN_STOP    (bit 0): 运行/停止
-/// - HC_RESET    (bit 1): 控制器复位
-/// - INTR_ENABLE (bit 2): 中断使能
+/// - `RUN_STOP`    (bit 0): 运行/停止
+/// - `HC_RESET`    (bit 1): 控制器复位
+/// - `INTR_ENABLE` (bit 2): 中断使能
 ///
 /// 规范定义的全部位 (未实现部分供参考):
-/// - HOST_SYSTEM_ERROR_ENABLE (bit 3)
-/// - DRIVER_DEBUG (bit 4)
-/// - LIGHT_HC_RESET (bit 5)
-/// - CONTROLLER_SAVE_STATE (bit 6)
-/// - CONTROLLER_RESTORE_STATE (bit 7)
-/// - ENABLE_U3 (bit 8)
-/// - ENABLE_S0IX (bit 9)
-/// - WRAP_EVENT_CHECKING (bit 10)
-/// - STROBE_DEBUG (bit 11)
-/// - PARK_MODE_{ENABLE,SELECT} (bits 12-14)
-/// - EVENT_RING_SEGMENT_TABLE_SIZE_MODE (bit 15)
-/// - CONFIGURE_ENDPOINT_MAX_EXIT_LATENCY_TOO_LARGE (bit 16)
+/// - `HOST_SYSTEM_ERROR_ENABLE` (bit 3)
+/// - `DRIVER_DEBUG` (bit 4)
+/// - `LIGHT_HC_RESET` (bit 5)
+/// - `CONTROLLER_SAVE_STATE` (bit 6)
+/// - `CONTROLLER_RESTORE_STATE` (bit 7)
+/// - `ENABLE_U3` (bit 8)
+/// - `ENABLE_S0IX` (bit 9)
+/// - `WRAP_EVENT_CHECKING` (bit 10)
+/// - `STROBE_DEBUG` (bit 11)
+/// - `PARK_MODE`_{ENABLE,SELECT} (bits 12-14)
+/// - `EVENT_RING_SEGMENT_TABLE_SIZE_MODE` (bit 15)
+/// - `CONFIGURE_ENDPOINT_MAX_EXIT_LATENCY_TOO_LARGE` (bit 16)
 mod usb_cmd {
     pub const RUN_STOP: u32 = 1 << 0;
     pub const HC_RESET: u32 = 1 << 1;
@@ -136,15 +136,15 @@ mod usb_cmd {
 /// xHCI USB 状态寄存器 (USBSTS) 位定义 — xHCI 规范 §5.4.2
 ///
 /// 当前使用的位:
-/// - HC_HALTED        (bit 0): 控制器已停止
-/// - HC_RESET_COMPLETE (bit 1): 复位完成
+/// - `HC_HALTED`        (bit 0): 控制器已停止
+/// - `HC_RESET_COMPLETE` (bit 1): 复位完成
 ///
 /// 规范定义的全部位 (未实现部分供参考):
-/// - EVENT_RING_NOT_EMPTY (bit 2), INTR_PENDING (bit 3),
-/// - HOST_SYSTEM_ERROR (bit 4), EVENT_COUNTER_OVERFLOW (bit 5),
-/// - PORT_CHANGE_DETECT (bit 6), SAVE_RESTORE_COMPLETE (bit 7),
-/// - RESTORE_ERROR (bit 8), CONTROLLER_NOT_READY (bit 11),
-/// - HOST_CONTROLLER_ERROR (bit 12)
+/// - `EVENT_RING_NOT_EMPTY` (bit 2), `INTR_PENDING` (bit 3),
+/// - `HOST_SYSTEM_ERROR` (bit 4), `EVENT_COUNTER_OVERFLOW` (bit 5),
+/// - `PORT_CHANGE_DETECT` (bit 6), `SAVE_RESTORE_COMPLETE` (bit 7),
+/// - `RESTORE_ERROR` (bit 8), `CONTROLLER_NOT_READY` (bit 11),
+/// - `HOST_CONTROLLER_ERROR` (bit 12)
 mod usb_sts {
     pub const HC_HALTED: u32 = 1 << 0;
     pub const HC_RESET_COMPLETE: u32 = 1 << 1;
@@ -153,18 +153,18 @@ mod usb_sts {
 /// xHCI 端口状态与控制寄存器 (PORTSC) 位定义 — xHCI 规范 §5.4.8
 ///
 /// 当前使用的位:
-/// - CURRENT_CONNECT_STATUS (bit 0): 设备已连接
-/// - PORT_ENABLED           (bit 1): 端口已使能
-/// - PORT_RESET             (bit 4): 端口复位
-/// - PORT_POWER             (bit 9): 端口供电
+/// - `CURRENT_CONNECT_STATUS` (bit 0): 设备已连接
+/// - `PORT_ENABLED`           (bit 1): 端口已使能
+/// - `PORT_RESET`             (bit 4): 端口复位
+/// - `PORT_POWER`             (bit 9): 端口供电
 ///
 /// 规范定义的其余位 (未实现部分供参考):
-/// - PORT_LINK_STATE [5:8], PORT_SPEED [10:13], PORT_INDICATOR [14:15],
-/// - CONNECT_STATUS_CHANGE (bit 16), PORT_ENABLED_DISABLED_CHANGE (bit 17),
-/// - OVER_CURRENT_CHANGE (bit 19), RESET_CHANGE (bit 21),
-/// - WAKE_ON_{CONNECT,DISCONNECT,OVER_CURRENT} (bits 20-22),
-/// - DEVICE_REMOVABLE (bit 23), PORT_LINK_STATE_STROBE (bit 26),
-/// - PORT_TEST [28:31]
+/// - `PORT_LINK_STATE` [5:8], `PORT_SPEED` [10:13], `PORT_INDICATOR` [14:15],
+/// - `CONNECT_STATUS_CHANGE` (bit 16), `PORT_ENABLED_DISABLED_CHANGE` (bit 17),
+/// - `OVER_CURRENT_CHANGE` (bit 19), `RESET_CHANGE` (bit 21),
+/// - `WAKE_ON`_{`CONNECT,DISCONNECT,OVER_CURRENT`} (bits 20-22),
+/// - `DEVICE_REMOVABLE` (bit 23), `PORT_LINK_STATE_STROBE` (bit 26),
+/// - `PORT_TEST` [28:31]
 mod portsc {
     pub const CURRENT_CONNECT_STATUS: u32 = 1 << 0;
     pub const PORT_RESET: u32 = 1 << 4;
@@ -284,11 +284,11 @@ impl Trb {
 // 注意: 端口状态 (PORTSC) 等运行时寄存器由各使用点定义.
 
 // 复位/启动等待超时 (与 dp.rs POLL_TRAINING_ITERS / hdmi/ddc.rs AUX_TIMEOUT_ITERS 对齐)
-/// xHCI 复位等待超时 (单次迭代 ~1-2 µs, 1_000_000 ≈ 1-2 s)
+/// xHCI 复位等待超时 (单次迭代 ~1-2 µs, `1_000_000` ≈ 1-2 s)
 const HC_RESET_TIMEOUT_ITERS: usize = 1_000_000;
 /// xHCI 启动等待超时 (同上, 适配控制器冷启动)
 const HC_START_TIMEOUT_ITERS: usize = 1_000_000;
-/// 单次迭代 spin_loop 次数 (与 DP/HDMI 一致, 提供 ~1-2 µs 延时)
+/// 单次迭代 `spin_loop` 次数 (与 DP/HDMI 一致, 提供 ~1-2 µs 延时)
 const HC_POLL_DELAY_ITERS: usize = 1;
 
 // ============================================================================
@@ -336,7 +336,7 @@ pub struct XhciController {
 }
 
 impl XhciController {
-    /// 创建新的xHCI控制器实例
+    /// `创建新的xHCI控制器实例`
     pub fn new(iomem: IoMem) -> Self {
         Self {
             iomem: Some(iomem),
@@ -376,9 +376,9 @@ impl XhciController {
     /// 初始化控制器 (USB-1.1).
     ///
     /// 完整初始化流程 (xHCI 规范 §4.3):
-    /// 1. 解析能力寄存器, 提取 num_slots / num_ports
-    /// 2. 计算操作寄存器基地址 (cap_length 偏移)
-    /// 3. 计算端口寄存器基地址 (op_base + 0x400)
+    /// 1. 解析能力寄存器, 提取 `num_slots` / `num_ports`
+    /// 2. 计算操作寄存器基地址 (`cap_length` 偏移)
+    /// 3. 计算端口寄存器基地址 (`op_base` + 0x400)
     /// 4. 调用 `reset_controller` 复位 xHCI
     /// 5. 调用 `start_controller` 启动 xHCI
     ///
@@ -394,6 +394,8 @@ impl XhciController {
     ///
     /// - `DriverError::NotInitialized` - iomem 未设置
     /// - `DriverError::Timeout` - 复位或启动超时
+    /// # Errors
+    /// iomem 未设置或控制器复位/启动超时时返回 Err。
     pub fn init_hardware(&mut self) -> Result<()> {
         // SAFETY: 调用方保证 iomem 已映射且控制器独占访问.
         unsafe {
@@ -429,7 +431,7 @@ impl XhciController {
 
     /// 复位控制器 (USB-1.1).
     ///
-    /// 设置 USBCMD 寄存器的 HC_RESET 位, 等待 USBSTS 的 HC_RESET_COMPLETE
+    /// 设置 USBCMD 寄存器的 `HC_RESET` 位, 等待 USBSTS 的 `HC_RESET_COMPLETE`
     /// 位被硬件置 1. 超时 `HC_RESET_TIMEOUT_ITERS` (~1-2 s) 返回 `Timeout`.
     ///
     /// # Safety (USB-1.1)
@@ -437,6 +439,8 @@ impl XhciController {
     /// 调用方必须保证:
     /// - `self.op_regs` 已通过 `init_hardware` 设置
     /// - 独占访问 USBCMD / USBSTS 寄存器
+    /// # Errors
+    /// 复位超时时返回 Err。
     pub fn reset_controller(&mut self) -> Result<()> {
         // SAFETY: 调用方保证 op_regs 有效且独占访问.
         unsafe {
@@ -466,14 +470,16 @@ impl XhciController {
 
     /// 启动控制器 (USB-1.1).
     ///
-    /// 设置 USBCMD 寄存器的 RUN_STOP 和 INTR_ENABLE 位, 等待 USBSTS 的
-    /// HC_HALTED 位被硬件清 0 (即控制器退出 halt 状态). 超时返回 `Timeout`.
+    /// 设置 USBCMD 寄存器的 `RUN_STOP` 和 `INTR_ENABLE` 位, 等待 USBSTS 的
+    /// `HC_HALTED` 位被硬件清 0 (即控制器退出 halt 状态). 超时返回 `Timeout`.
     ///
     /// # Safety (USB-1.1)
     ///
     /// 调用方必须保证:
     /// - `self.op_regs` 已通过 `init_hardware` 设置
     /// - 独占访问 USBCMD / USBSTS 寄存器
+    /// # Errors
+    /// 启动超时时返回 Err。
     pub fn start_controller(&mut self) -> Result<()> {
         // SAFETY: 调用方保证 op_regs 有效且独占访问.
         unsafe {
@@ -530,7 +536,9 @@ impl XhciController {
     ///
     /// 调用方必须确保：
     /// - 控制器已复位且尚未启动
-    /// - op_regs 有效
+    /// - `op_regs` 有效
+    /// # Errors
+    /// DMA 内存分配失败时返回 Err。
     pub fn init_command_ring(&mut self) -> Result<()> {
         use crate::kernel::framework::dma::get_dma;
 
@@ -576,6 +584,8 @@ impl XhciController {
     /// 调用方必须确保：
     /// - Command Ring 已初始化
     /// - 无并发访问 Command Ring
+    /// # Errors
+    /// Command Ring 未初始化时返回 Err。
     pub unsafe fn submit_command(&mut self, trb: Trb) -> Result<u32> {
         if self.cmd_ring_virt.0 == 0 {
             return Err(DriverError::NotInitialized);
@@ -607,8 +617,8 @@ impl XhciController {
         // SAFETY: op_regs 有效
         unsafe {
             let op = &mut *self.op_regs;
-            let new_tail_phys = self.cmd_ring_phys.0 + (self.cmd_ring_tail as u64) * 16;
-            op.cr_ctrl = new_tail_phys | (self.cmd_ring_phase as u64);
+            let new_tail_phys = self.cmd_ring_phys.0 + u64::from(self.cmd_ring_tail) * 16;
+            op.cr_ctrl = new_tail_phys | u64::from(self.cmd_ring_phase);
         }
 
         // Doorbell 寄存器 0 = 触发 Command Ring
@@ -630,6 +640,8 @@ impl XhciController {
     ///
     /// 轮询 Event Ring 等待命令完成。
     /// xHCI 规范 §4.6.1: Command Completion Event
+    /// # Errors
+    /// 命令完成等待超时时返回 Err。
     pub fn wait_command_completion(&mut self) -> Result<()> {
         // TODO: 实现 Event Ring 处理
         // 当前简化实现: 短暂等待后返回
@@ -642,6 +654,8 @@ impl XhciController {
     /// 发送 Stop Endpoint Command
     ///
     /// xHCI 规范 §4.6.6: Stop Endpoint Command
+    /// # Errors
+    /// 控制器未初始化或命令提交/完成等待失败时返回 Err。
     pub fn send_stop_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
@@ -653,7 +667,7 @@ impl XhciController {
         // Bits [7:0] = Slot ID
         let trb = Trb::new(
             0,
-            ((ep_id as u32) << 8) | (slot_id as u32),
+            (u32::from(ep_id) << 8) | u32::from(slot_id),
             (TrbType::StopEndpoint as u32) << 10,
         );
 
@@ -677,6 +691,8 @@ impl XhciController {
     /// 发送 Reset Endpoint Command
     ///
     /// xHCI 规范 §4.6.7: Reset Endpoint Command
+    /// # Errors
+    /// 控制器未初始化或命令提交/完成等待失败时返回 Err。
     pub fn send_reset_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
@@ -688,7 +704,7 @@ impl XhciController {
         // Bits [7:0] = Slot ID
         let trb = Trb::new(
             0,
-            ((ep_id as u32) << 8) | (slot_id as u32),
+            (u32::from(ep_id) << 8) | u32::from(slot_id),
             (TrbType::ResetEndpoint as u32) << 10,
         );
 
@@ -713,6 +729,8 @@ impl XhciController {
     ///
     /// 当 USB 传输发生错误时, 重置指定端点以恢复功能。
     /// xHCI 规范 §4.6.6 + §4.6.7: Stop Endpoint → Reset Endpoint
+    /// # Errors
+    /// 停止或重置端点失败时返回 Err。
     pub fn recover_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         // 1. 停止端点
         self.stop_endpoint(slot_id, ep_id)?;
@@ -725,6 +743,8 @@ impl XhciController {
     ///
     /// 发送 Stop Endpoint Command 停止端点的传输。
     /// xHCI 规范 §4.6.6: Stop Endpoint Command
+    /// # Errors
+    /// 停止端点命令失败时返回 Err。
     pub fn stop_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         self.send_stop_endpoint(slot_id, ep_id)
     }
@@ -733,6 +753,8 @@ impl XhciController {
     ///
     /// 发送 Reset Endpoint Command 重置端点状态。
     /// xHCI 规范 §4.6.7: Reset Endpoint Command
+    /// # Errors
+    /// 重置端点命令失败时返回 Err。
     pub fn reset_endpoint(&mut self, slot_id: u8, ep_id: u8) -> Result<()> {
         self.send_reset_endpoint(slot_id, ep_id)
     }
@@ -851,6 +873,8 @@ impl HostController for XhciController {
         }
     }
 
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     fn submit_urb(&mut self, urb: &Urb) -> Result<()> {
         // USB-1.3: TRACK-688EA7 消除 — URB 提交骨架
         //
@@ -890,7 +914,7 @@ impl HostController for XhciController {
         let _trb = Trb::new(
             urb.buffer as u64,
             (urb.buffer_length as u32) & 0x0001_FFFF, // TRB status: transfer length (low 17 bits)
-            ((urb.endpoint as u32) << 16) | (TrbType::Normal as u32) << 10 | 1, // TRB control: endpoint | type | cycle
+            (u32::from(urb.endpoint) << 16) | (TrbType::Normal as u32) << 10 | 1, // TRB control: endpoint | type | cycle
         );
 
         // 3. 触发 doorbell (DBOFF + slot * 4).
@@ -917,6 +941,8 @@ impl HostController for XhciController {
         Err(DriverError::UnsupportedOperation)
     }
 
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn allocate_address(&mut self) -> Result<u8> {
         // USB-1.4: TRACK-2E0EB0 消除 — 设备地址分配
         //

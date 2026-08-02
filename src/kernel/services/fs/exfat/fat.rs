@@ -12,6 +12,9 @@ pub const FAT_BAD: u32 = 0xFFFFFFF7;
 pub const FAT_END: u32 = 0x0FFFFFFF;
 
 /// 从 FAT 表读取簇链
+///
+/// # Errors
+/// 当前实现不返回错误: 底层读取失败时提前结束链并返回已收集的簇.
 pub fn read_fat_chain(
     device_idx: u8,
     super_block: &ExfatSuperBlock,
@@ -34,7 +37,7 @@ pub fn read_fat_chain(
 
         let mut sector_data = alloc::vec![0u8; bytes_per_sector as usize];
         let result = with_device(device_idx as usize, |dev| {
-            read_sectors(dev, fat_sector as u64, 1, &mut sector_data)
+            read_sectors(dev, u64::from(fat_sector), 1, &mut sector_data)
         });
 
         if !matches!(result, Some(Ok(()))) {
@@ -63,6 +66,9 @@ pub fn read_fat_chain(
 }
 
 /// 写入 FAT 表条目
+///
+/// # Errors
+/// 当底层扇区读取或写入失败时返回 `Io`.
 pub fn write_fat_entry(
     device_idx: u8,
     super_block: &ExfatSuperBlock,
@@ -75,7 +81,7 @@ pub fn write_fat_entry(
 
     let mut sector_data = alloc::vec![0u8; bytes_per_sector as usize];
     let result = with_device(device_idx as usize, |dev| {
-        read_sectors(dev, fat_sector as u64, 1, &mut sector_data)
+        read_sectors(dev, u64::from(fat_sector), 1, &mut sector_data)
     });
 
     if !matches!(result, Some(Ok(()))) {
@@ -89,7 +95,7 @@ pub fn write_fat_entry(
     sector_data[fat_offset as usize + 3] = bytes[3];
 
     let result = with_device(device_idx as usize, |dev| {
-        crate::kernel::framework::driver::block::write_sectors(dev, fat_sector as u64, 1, &sector_data)
+        crate::kernel::framework::driver::block::write_sectors(dev, u64::from(fat_sector), 1, &sector_data)
     });
 
     match result {

@@ -93,6 +93,11 @@ impl SessionTable {
     }
 
     /// 创建新会话
+    ///
+    /// # Errors
+    /// 当同一 PWM 的并发活动会话数达到上限 (8) 时返回
+    /// `Err(SessionError::Kernel(KernelError::WouldBlock))`;
+    /// 当会话表已满 (无空闲槽位) 时返回 `Err(SessionError::TableFull)`.
     pub fn create(
         &mut self,
         pwm: u64,
@@ -152,6 +157,10 @@ impl SessionTable {
     }
 
     /// 标记活跃 (heartbeat)
+    ///
+    /// # Errors
+    /// 当会话不存在时返回 `Err(SessionError::Kernel(KernelError::FileNotFound))`;
+    /// 当会话不处于活跃状态 (如已结束) 时返回 `Err(SessionError::NotActive)`.
     pub fn heartbeat(&mut self, id: SessionId, current_tick: u64) -> Result<(), SessionError> {
         for slot in &mut self.records {
             if let Some(s) = slot {
@@ -168,6 +177,9 @@ impl SessionTable {
     }
 
     /// 结束会话
+    ///
+    /// # Errors
+    /// 当会话不存在时返回 `Err(SessionError::Kernel(KernelError::FileNotFound))`.
     pub fn end(&mut self, id: SessionId, target: SessionState) -> Result<Session, SessionError> {
         for slot in &mut self.records {
             if let Some(s) = slot {
@@ -228,12 +240,12 @@ impl SessionTable {
     }
 }
 
-/// Session 错误 — TD-20: 收敛到 KernelError, 2 字段 session 特有 + 1 共享包装.
+/// Session 错误 — TD-20: 收敛到 `KernelError`, 2 字段 session 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `TableFull`: Session 表已满 (POSIX EAGAIN, 但语义特化)
 ///   - `NotActive`: Session 状态非激活 (POSIX EINVAL, 但语义特化)
-///   - `Kernel(KernelError)`: 共享错误 (NotFound / TooManySessions→WouldBlock / Other) 全部走单一来源
+///   - `Kernel(KernelError)`: 共享错误 (`NotFound` / TooManySessions→WouldBlock / Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionError {
     TableFull,
@@ -290,7 +302,7 @@ impl<'a> SessionManager<'a> {
         }
     }
 
-    /// 登录流程 (services 层抽象, 实际密码验证由 framework::credo::password 提供)
+    /// 登录流程 (services 层抽象, 实际密码验证由 `framework::credo::password` 提供)
     pub fn login(
         &mut self,
         pwm: u64,
@@ -333,7 +345,7 @@ impl<'a> SessionManager<'a> {
     }
 }
 
-/// 内部: 复用 InMemoryMatrix 模式但传入 [CapBits; 16]
+/// 内部: 复用 `InMemoryMatrix` 模式但传入 [`CapBits`; 16]
 struct InMemoryCaps([CapBits; CAP_DOMAINS]);
 
 impl super::policy::CapabilityMatrix for InMemoryCaps {

@@ -34,7 +34,7 @@ impl AtomicBool {
 
     /// 设置新值，返回旧值
     pub fn swap(&self, val: bool, order: Ordering) -> bool {
-        self.0.swap(if val { 1 } else { 0 }, order) != 0
+        self.0.swap(u32::from(val), order) != 0
     }
 
     /// 如果当前值为 expected，则设置为 val
@@ -51,8 +51,8 @@ impl AtomicBool {
     ) -> bool {
         self.0
             .compare_exchange(
-                if expected { 1 } else { 0 },
-                if val { 1 } else { 0 },
+                u32::from(expected),
+                u32::from(val),
                 success,
                 failure,
             )

@@ -1,21 +1,21 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。
 //!
-//! VirtIO 块设备驱动 — services 层 (Phase 2.1.3)
+//! `VirtIO` 块设备驱动 — services 层 (Phase 2.1.3)
 //!
 //! 通过 `VirtioDevice` (transport.rs) 提供 100% safe 的块设备初始化与配置路径。
-//! VirtQueue 操作通过 framework 层安全 API 完成。
+//! `VirtQueue` 操作通过 framework 层安全 API 完成。
 //!
 //! ## 设计原则
 //!
 //! - **零 unsafe**: 所有 MMIO 读/写通过 `VirtioDevice` 安全代理
-//! - **请求格式**: 定义 BlkRequest / 状态码 / 配置偏移, 供 framework I/O 路径使用
-//! - **初始化序列**: Reset → Ack → Driver → Feature Negotiate → Features_OK → Queue Setup → Driver_OK
+//! - **请求格式**: 定义 `BlkRequest` / 状态码 / 配置偏移, 供 framework I/O 路径使用
+//! - **初始化序列**: Reset → Ack → Driver → Feature Negotiate → `Features_OK` → Queue Setup → `Driver_OK`
 //!
 //! ## 与 framework 的分工
 //!
 //! - **services (本文件)**: 初始化序列, 特性协商, 配置空间读取, 请求格式定义
-//! - **framework**: VirtQueue 分配与 DMA 缓冲区管理 (需要 unsafe 指针操作)
+//! - **framework**: `VirtQueue` 分配与 DMA 缓冲区管理 (需要 unsafe 指针操作)
 //!
 //! 评估日期: 2026-06-04
 //! Phase 2.1.3 任务: VirtIO-blk 块设备迁移
@@ -34,17 +34,17 @@ pub const BLK_SECTOR_SIZE: usize = 512;
 
 // ── Feature bits ──
 
-/// VIRTIO_BLK_F_SIZE_MAX: 驱动可指定最大缓冲区大小
+/// `VIRTIO_BLK_F_SIZE_MAX`: 驱动可指定最大缓冲区大小
 pub const VIRTIO_BLK_F_SIZE_MAX: u64 = 1 << 1;
-/// VIRTIO_BLK_F_SEG_MAX: 最大 scatter-gather 段数
+/// `VIRTIO_BLK_F_SEG_MAX`: 最大 scatter-gather 段数
 pub const VIRTIO_BLK_F_SEG_MAX: u64 = 1 << 2;
-/// VIRTIO_BLK_F_GEOMETRY: 几何信息 (cylinders/heads/sectors)
+/// `VIRTIO_BLK_F_GEOMETRY`: 几何信息 (cylinders/heads/sectors)
 pub const VIRTIO_BLK_F_GEOMETRY: u64 = 1 << 4;
-/// VIRTIO_BLK_F_BLK_SIZE: 块大小可配置
+/// `VIRTIO_BLK_F_BLK_SIZE`: 块大小可配置
 pub const VIRTIO_BLK_F_BLK_SIZE: u64 = 1 << 6;
-/// VIRTIO_BLK_F_TOPOLOGY: 拓扑信息 (topology, aligned I/O)
+/// `VIRTIO_BLK_F_TOPOLOGY`: 拓扑信息 (topology, aligned I/O)
 pub const VIRTIO_BLK_F_TOPOLOGY: u64 = 1 << 10;
-/// VIRTIO_BLK_F_CONFIG_WCE: 可配置 write-back 缓存
+/// `VIRTIO_BLK_F_CONFIG_WCE`: 可配置 write-back 缓存
 pub const VIRTIO_BLK_F_CONFIG_WCE: u64 = 1 << 11;
 
 // ── 请求类型 ──
@@ -67,27 +67,27 @@ pub const VIRTIO_BLK_S_UNSUPP: u8 = 2;
 
 // ── 配置空间偏移 (相对于 0x100) ──
 
-/// capacity_lo: 容量低 32 位 (512 字节扇区)
+/// `capacity_lo`: 容量低 32 位 (512 字节扇区)
 pub const BLK_CONFIG_CAPACITY_LO: usize = 0x00;
-/// capacity_hi: 容量高 32 位
+/// `capacity_hi`: 容量高 32 位
 pub const BLK_CONFIG_CAPACITY_HI: usize = 0x04;
-/// size_max: 最大缓冲区大小
+/// `size_max`: 最大缓冲区大小
 pub const BLK_CONFIG_SIZE_MAX: usize = 0x08;
-/// seg_max: 最大段数
+/// `seg_max`: 最大段数
 pub const BLK_CONFIG_SEG_MAX: usize = 0x0C;
-/// geometry_cylinders: 几何 — 偏移 0x10 包含 cylinders(u16) + heads(u8) + sectors(u8)
+/// `geometry_cylinders`: 几何 — 偏移 0x10 包含 cylinders(u16) + heads(u8) + sectors(u8)
 pub const BLK_CONFIG_GEOM_CYL: usize = 0x10;
-/// blk_size: 块大小
+/// `blk_size`: 块大小
 pub const BLK_CONFIG_BLK_SIZE: usize = 0x14;
 
 // ============================================================================
 // 请求结构体
 // ============================================================================
 
-/// VirtIO 块请求头 (小端, 与设备 DMA 格式一致).
+/// `VirtIO` 块请求头 (小端, 与设备 DMA 格式一致).
 ///
 /// 描述符链布局:
-///   desc[0]: BlkRequest (8 字节, 设备读)
+///   desc[0]: `BlkRequest` (8 字节, 设备读)
 ///   desc[1]: 数据缓冲区 (IN 时设备写, OUT 时设备读)
 ///   desc[2]: 状态字节 (1 字节, 设备写)
 #[repr(C)]
@@ -139,16 +139,16 @@ impl BlkRequest {
 // 安全驱动逻辑
 // ============================================================================
 
-/// VirtIO 块设备安全驱动 (services 层, 0 unsafe)。
+/// `VirtIO` 块设备安全驱动 (services 层, 0 unsafe)。
 ///
-/// 封装 VirtIO 块设备的初始化序列与配置读取, 通过 `VirtioDevice` 安全代理访问 MMIO。
-/// DMA 缓冲区管理与 VirtQueue 操作保留在 framework 层。
+/// 封装 `VirtIO` 块设备的初始化序列与配置读取, 通过 `VirtioDevice` 安全代理访问 MMIO。
+/// DMA 缓冲区管理与 `VirtQueue` 操作保留在 framework 层。
 ///
 /// ## 初始化流程
 ///
 /// 1. `VirtioBlkDriver::new(device)` — 验证设备 ID, 执行初始化序列
 /// 2. 读取配置空间获取容量信息
-/// 3. framework: 分配 VirtQueue 并配置
+/// 3. framework: 分配 `VirtQueue` 并配置
 /// 4. `set_driver_ok()` — 设备进入 live 状态
 pub struct VirtioBlkDriver {
     /// MMIO 设备传输代理
@@ -157,18 +157,18 @@ pub struct VirtioBlkDriver {
     capacity_sectors: u64,
     /// 设备支持的特性位
     negotiated_features: u64,
-    /// VirtQueue (单请求队列, 块设备通常仅 vq0)
+    /// `VirtQueue` (单请求队列, 块设备通常仅 vq0)
     vq: VirtQueue,
 }
 
 impl VirtioBlkDriver {
-    /// 创建并初始化 VirtIO 块设备驱动。
+    /// 创建并初始化 `VirtIO` 块设备驱动。
     ///
-    /// 验证设备 ID 为块设备, 执行完整初始化序列 (Reset → Ack → Driver → Feature → Features_OK)。
-    /// 返回 `Some(VirtioBlkDriver)` 表示设备就绪, 可继续配置 VirtQueue。
+    /// 验证设备 ID 为块设备, 执行完整初始化序列 (Reset → Ack → Driver → Feature → `Features_OK`)。
+    /// 返回 `Some(VirtioBlkDriver)` 表示设备就绪, 可继续配置 `VirtQueue`。
     ///
     /// # 参数
-    /// - `device`: 已探测到的 VirtIO 设备 (device_id 必须为 DEVICE_ID_BLOCK)
+    /// - `device`: 已探测到的 `VirtIO` 设备 (`device_id` 必须为 `DEVICE_ID_BLOCK`)
     pub fn new(device: VirtioDevice) -> Option<Self> {
         if device.device_id() != DEVICE_ID_BLOCK {
             slog_warn!(
@@ -229,8 +229,8 @@ impl VirtioBlkDriver {
         let vq = VirtQueue::new(is_legacy)?;
 
         // 读取配置空间: 容量
-        let cap_lo = device.read_config32(BLK_CONFIG_CAPACITY_LO) as u64;
-        let cap_hi = device.read_config32(BLK_CONFIG_CAPACITY_HI) as u64;
+        let cap_lo = u64::from(device.read_config32(BLK_CONFIG_CAPACITY_LO));
+        let cap_hi = u64::from(device.read_config32(BLK_CONFIG_CAPACITY_HI));
         let capacity = cap_lo | (cap_hi << 32);
 
         slog_info!(
@@ -248,7 +248,7 @@ impl VirtioBlkDriver {
         })
     }
 
-    /// 设置 DRIVER_OK (设备进入 live 状态).
+    /// 设置 `DRIVER_OK` (设备进入 live 状态).
     ///
     /// 必须在所有 virtqueue 配置完成后调用.
     pub fn set_driver_ok(&self) {
@@ -256,7 +256,7 @@ impl VirtioBlkDriver {
         slog_info!(Driver, "virtio-blk: DRIVER_OK 已设置");
     }
 
-    /// 获取 MMIO 设备引用 (用于 VirtQueue 配置).
+    /// 获取 MMIO 设备引用 (用于 `VirtQueue` 配置).
     pub fn device(&self) -> &VirtioDevice {
         &self.device
     }
@@ -278,17 +278,17 @@ impl VirtioBlkDriver {
 
     // ── 配置空间读取 (安全, 通过 VirtioDevice) ──
 
-    /// 读取块大小 (仅当 VIRTIO_BLK_F_BLK_SIZE 被协商时有效).
+    /// 读取块大小 (仅当 `VIRTIO_BLK_F_BLK_SIZE` 被协商时有效).
     pub fn block_size(&self) -> u32 {
         self.device.read_config32(BLK_CONFIG_BLK_SIZE)
     }
 
-    /// 读取最大缓冲区大小 (仅当 VIRTIO_BLK_F_SIZE_MAX 被协商时有效).
+    /// 读取最大缓冲区大小 (仅当 `VIRTIO_BLK_F_SIZE_MAX` 被协商时有效).
     pub fn size_max(&self) -> u32 {
         self.device.read_config32(BLK_CONFIG_SIZE_MAX)
     }
 
-    /// 读取最大 scatter-gather 段数 (仅当 VIRTIO_BLK_F_SEG_MAX 被协商时有效).
+    /// 读取最大 scatter-gather 段数 (仅当 `VIRTIO_BLK_F_SEG_MAX` 被协商时有效).
     pub fn seg_max(&self) -> u32 {
         self.device.read_config32(BLK_CONFIG_SEG_MAX)
     }
@@ -296,7 +296,7 @@ impl VirtioBlkDriver {
     /// 读取几何信息 (cylinders, heads, sectors).
     ///
     /// VirtIO-blk 配置空间偏移 0x10: cylinders(u16) + heads(u8) + sectors(u8)
-    /// 通过 read_config32 读取对齐的 32 位, 再拆分.
+    /// 通过 `read_config32` 读取对齐的 32 位, 再拆分.
     pub fn geometry(&self) -> BlkGeometry {
         // 偏移 0x10 包含 cylinders(u16) + heads(u8) + sectors(u8), 共 4 字节
         let raw = self.device.read_config32(BLK_CONFIG_GEOM_CYL);
@@ -334,6 +334,9 @@ impl VirtioBlkDriver {
     /// # 返回
     /// - `Ok(max_size)`: 队列最大尺寸
     /// - `Err(())`: 配置失败
+    ///
+    /// # Errors
+    /// 当底层 virtio 设备队列配置失败时返回 `Err(())`.
     pub fn setup_queue(
         &self,
         vq_index: u16,
@@ -365,7 +368,10 @@ impl VirtioBlkDriver {
     /// 读取单个扇区 (512 字节) 到调用方缓冲区.
     ///
     /// 使用链式描述符: 请求头 → 数据缓冲区 → 状态字节.
-    /// DMA 缓冲区通过 framework DmaBuffer 分配.
+    /// DMA 缓冲区通过 framework `DmaBuffer` 分配.
+    ///
+    /// # Errors
+    /// 当 `buf` 长度小于扇区大小 (`BLK_SECTOR_SIZE`) 或底层 I/O 执行失败时返回 `Err(())`.
     pub fn read_sector(&mut self, lba: u64, buf: &mut [u8]) -> Result<(), ()> {
         if buf.len() < BLK_SECTOR_SIZE {
             return Err(());
@@ -374,6 +380,9 @@ impl VirtioBlkDriver {
     }
 
     /// 从调用方缓冲区写入单个扇区 (512 字节).
+    ///
+    /// # Errors
+    /// 当 `buf` 长度小于扇区大小 (`BLK_SECTOR_SIZE`) 或底层 I/O 执行失败时返回 `Err(())`.
     pub fn write_sector(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
         if buf.len() < BLK_SECTOR_SIZE {
             return Err(());
@@ -389,12 +398,9 @@ impl VirtioBlkDriver {
         let status_size = 1;
         let total_dma = req_size + data_size + status_size;
 
-        let mut dma = match DmaBuffer::new(total_dma) {
-            Some(b) => b,
-            None => {
-                slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
-                return Err(());
-            }
+        let mut dma = if let Some(b) = DmaBuffer::new(total_dma) { b } else {
+            slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
+            return Err(());
         };
         let dma_phys = dma.phys_addr();
 
@@ -420,12 +426,9 @@ impl VirtioBlkDriver {
         let status_size = 1;
         let total_dma = req_size + data_size + status_size;
 
-        let mut dma = match DmaBuffer::new(total_dma) {
-            Some(b) => b,
-            None => {
-                slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
-                return Err(());
-            }
+        let mut dma = if let Some(b) = DmaBuffer::new(total_dma) { b } else {
+            slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
+            return Err(());
         };
         let dma_phys = dma.phys_addr();
 
@@ -444,7 +447,7 @@ impl VirtioBlkDriver {
     /// 提交描述符链并等待设备完成.
     ///
     /// 描述符链: [请求头] → [数据] → [状态字节].
-    /// 返回 Ok(status) 或 Err(status_byte).
+    /// 返回 Ok(status) 或 `Err(status_byte)`.
     fn submit_and_wait(
         &mut self,
         dma_phys: u64,

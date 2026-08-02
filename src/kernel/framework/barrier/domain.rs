@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use super::types::*;
+use super::types::{MAX_DOMAIN_DEPENDENCIES, BarrierSnapshot, MAX_BARRIER_SNAPSHOTS, MAX_ADDR_RANGES, DomainState, DEFAULT_BARRIER_INTERVAL, MAX_CONSECUTIVE_FAILURES, BACKOFF_BASE_TICKS, CAP_FS_WRITE, CAP_NET_SEND, CAP_PROC_CREATE};
 use super::undo_log::UndoLog;
 
 
@@ -221,6 +221,8 @@ impl RecoveryDomain {
         c >= self.cpu_quota_max
     }
 
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn push_barrier_snapshot(&self, tick: u64) {
         let r#gen = self.barrier_generation.load(Ordering::SeqCst);
         let undo_count = self.undo.lock().count;
@@ -247,6 +249,8 @@ impl RecoveryDomain {
         stack[idx].generation
     }
 
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn add_addr_range(&self, start: u64, end: u64) -> bool {
         let count = self.addr_range_count.load(Ordering::SeqCst) as usize;
         if count >= MAX_ADDR_RANGES {

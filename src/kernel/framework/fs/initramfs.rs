@@ -74,7 +74,7 @@ fn parse_hex_field(buf: &[u8]) -> u32 {
             b'A'..=b'F' => b - b'A' + 10,
             _ => break,
         };
-        val = (val << 4) | (digit as u32);
+        val = (val << 4) | u32::from(digit);
     }
     val
 }
@@ -86,7 +86,7 @@ fn align4(n: usize) -> usize {
 
 /// 解析下一个 cpio 条目
 ///
-/// 返回 (entry, next_offset), 其中 next_offset 指向归档中下一个条目的起始位置.
+/// 返回 (entry, `next_offset`), 其中 `next_offset` 指向归档中下一个条目的起始位置.
 /// 如果遇到 TRAILER!!! 或数据不足, 返回 None.
 fn parse_next_entry(data: &[u8], offset: usize) -> Option<(CpioEntry<'_>, usize)> {
     if offset + CPIO_NEWC_HEADER_SIZE > data.len() {
@@ -161,6 +161,10 @@ fn parse_next_entry(data: &[u8], offset: usize) -> Option<(CpioEntry<'_>, usize)
 /// # Safety
 ///
 /// `data` 必须指向有效的、至少 `len` 字节的可读内存区域.
+/// # Errors
+/// 数据指针为空、长度为 0 或 cpio 归档格式非法时返回 Err。
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str> { unsafe {
     if data.is_null() || len == 0 {
         return Err("initramfs: empty or null data");

@@ -1,4 +1,4 @@
-//! DmaStream / DmaCoherent — 安全 DMA 映射 (TCB)
+//! `DmaStream` / `DmaCoherent` — 安全 DMA 映射 (TCB)
 //!
 //! 封装 DMA 缓冲区的分配/映射/释放, 确保:
 //! - 物理地址和虚拟地址的一致性 (x86 自动, aarch64 显式 cache flush)
@@ -15,7 +15,7 @@
 //! - `DmaCoherent` 内存在整个生命周期内对设备和 CPU 都可见。
 //! - DMA 缓冲区持有的 Frame 引用计数防止物理页被重用。
 //! - 大小算术全部使用 `checked_add` 防溢出。
-//! - 同步方向与 DmaDirection 不匹配时返回错误, 防止状态机污染。
+//! - 同步方向与 `DmaDirection` 不匹配时返回错误, 防止状态机污染。
 
 use core::fmt;
 use core::ptr::NonNull;
@@ -42,9 +42,9 @@ pub enum DmaDirection {
 /// DMA 同步状态机
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncState {
-    /// 初始状态, CPU 可访问: ToDevice 表示 CPU 写完, FromDevice 表示 CPU 可读
+    /// 初始状态, CPU 可访问: `ToDevice` 表示 CPU 写完, `FromDevice` 表示 CPU 可读
     CpuReady,
-    /// 已 sync_for_device, 设备可访问
+    /// 已 `sync_for_device`, 设备可访问
     DeviceReady,
     /// 双向 DMA 中间态 (一次传输尚未结束)
     BidirInProgress,
@@ -59,9 +59,9 @@ pub enum DmaError {
     SizeOverflow,
     /// size = 0
     ZeroSize,
-    /// size > DMA_MAX_SIZE (256 MiB)
+    /// size > `DMA_MAX_SIZE` (256 MiB)
     SizeTooLarge,
-    /// 状态机转换非法 (例如 ToDevice 调 sync_for_cpu)
+    /// 状态机转换非法 (例如 `ToDevice` 调 `sync_for_cpu`)
     InvalidStateTransition,
     /// Frame 内部无效 (size == 0 等)
     InvalidFrame,
@@ -74,8 +74,8 @@ pub const DMA_MAX_SIZE: u64 = 256 * 1024 * 1024;
 
 /// 流式 DMA 缓冲区 (非一致性)。
 ///
-/// 映射生命周期: alloc → sync_for_device → DMA → sync_for_cpu → free。
-/// x86_64 上 sync 为空操作 (硬件保证一致性)。
+/// 映射生命周期: alloc → `sync_for_device` → DMA → `sync_for_cpu` → free。
+/// `x86_64` 上 sync 为空操作 (硬件保证一致性)。
 pub struct DmaStream {
     cpu_addr: NonNull<u8>,
     dma_addr: PhysAddr,
@@ -90,8 +90,10 @@ impl DmaStream {
     ///
     /// 验证 Frame 物理地址 + 大小满足:
     /// - 4 KiB 页对齐
-    /// - size > 0 且 <= DMA_MAX_SIZE
+    /// - size > 0 且 <= `DMA_MAX_SIZE`
     /// - paddr + size 不溢出
+    /// # Errors
+    /// Frame 无效、大小为 0、物理地址未按 DMA 对齐、大小超过 `DMA_MAX_SIZE` 或地址溢出时返回 Err。
     pub fn from_frame(frame: Frame, dir: DmaDirection) -> Result<Self, DmaError> {
         let size = frame.size();
         let phys = frame.phys();
@@ -167,8 +169,10 @@ impl DmaStream {
 
     /// CPU→设备: flush CPU cache, 确保设备看到最新数据。
     ///
-    /// x86_64: 空操作 (硬件保证一致性)。
+    /// `x86_64`: 空操作 (硬件保证一致性)。
     /// aarch64: 需要 DC CVAU (Data Cache Clean to Point of Unification)。
+    /// # Errors
+    /// 当前方向不支持该同步或同步状态机不允许此转换时返回 Err。
     pub fn sync_for_device(&mut self) -> Result<(), DmaError> {
         match self.direction {
             DmaDirection::ToDevice | DmaDirection::Bidirectional => {
@@ -205,8 +209,10 @@ impl DmaStream {
 
     /// 设备→CPU: invalidate CPU cache, 确保 CPU 看到设备写入。
     ///
-    /// x86_64: 空操作。
+    /// `x86_64`: 空操作。
     /// aarch64: 需要 DC IVAU (Data Cache Invalidate to Point of Unification)。
+    /// # Errors
+    /// 当前方向不支持该同步或同步状态机不允许此转换时返回 Err。
     pub fn sync_for_cpu(&mut self) -> Result<(), DmaError> {
         match self.direction {
             DmaDirection::FromDevice | DmaDirection::Bidirectional => {

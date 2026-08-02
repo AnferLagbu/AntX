@@ -1,6 +1,6 @@
 //! 虚拟内存管理器 (VMM)
 //!
-//! 使用 4 级页表 (x86_64) 管理虚拟内存映射.
+//! 使用 4 级页表 (`x86_64`) 管理虚拟内存映射.
 //! 提供:
 //! - 虚实地址转换
 //! - 页表创建与管理
@@ -16,9 +16,9 @@
 //!
 //! ### 关键不变式 (所有 `unsafe` 块都依赖):
 //!
-//! 1. **KERNEL_PML4**: 在 `init()` 中写入一次, 之后只读 (Release/Acquire).
-//! 2. **VMM_LOCK**: 所有页表修改与 UserPageTable 变更都串行化.
-//! 3. **PhysAddr → VirtAddr**: `phys_to_virt(pa) = pa + KERNEL_BASE` 是合法内核 VA,
+//! 1. **`KERNEL_PML4`**: 在 `init()` 中写入一次, 之后只读 (Release/Acquire).
+//! 2. **`VMM_LOCK`**: 所有页表修改与 `UserPageTable` 变更都串行化.
+//! 3. **`PhysAddr` → `VirtAddr`**: `phys_to_virt(pa) = pa + KERNEL_BASE` 是合法内核 VA,
 //!    因为内核在 `KERNEL_BASE` 处恒等映射所有物理内存.
 //! 4. **PMM 分配**: 返回的物理地址总是页对齐且合法.
 //! 5. **页表指针**: 任何从 `PhysAddr::to_virt()` 派生的指针都指向 PMM 分配的
@@ -29,17 +29,17 @@
 //!
 //! ## 锁顺序
 //!
-//! **VMM_LOCK 绝不能在持有时再去获取 VMA_LOCK (MmStruct::vmas).**
+//! **`VMM_LOCK` 绝不能在持有时再去获取 `VMA_LOCK` (`MmStruct::vmas`).**
 //! 这避免了 ABBA 死锁:
-//!   线程 A: VMM_LOCK → VMA_LOCK
-//!   线程 B: VMA_LOCK → VMM_LOCK (在 MmStruct::remove_range 中)
+//!   线程 A: `VMM_LOCK` → `VMA_LOCK`
+//!   线程 B: `VMA_LOCK` → `VMM_LOCK` (在 `MmStruct::remove_range` 中)
 //!
 //! 所有调用方遵守该规则:
-//! - `user_driver.rs`: VMM 操作 (map/unmap) → 释放 VMM_LOCK → VMA 操作 (insert/remove)
-//! - `page_fault.rs`: VMA 查找 (find_vma) → 释放 VMA_LOCK → VMM 操作 (map_page)
-//! - `MmStruct::remove_range`: 持有 VMA_LOCK → 获取 VMM_LOCK (反向顺序安全)
+//! - `user_driver.rs`: VMM 操作 (map/unmap) → 释放 `VMM_LOCK` → VMA 操作 (insert/remove)
+//! - `page_fault.rs`: VMA 查找 (`find_vma`) → 释放 `VMA_LOCK` → VMM 操作 (`map_page`)
+//! - `MmStruct::remove_range`: 持有 `VMA_LOCK` → 获取 `VMM_LOCK` (反向顺序安全)
 
-use super::*;
+use super::{VirtAddr, PhysAddr, PageFlags, PageSize, PageTableEntry, PAGE_PRESENT, PAGE_WRITABLE, PAGE_USER, PAGE_NX, KERNEL_BASE, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SIZE, PAGE_SIZE, get_pmm};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
@@ -108,6 +108,11 @@ impl VirtualMemoryManager {
         }
     }
 
+    /// 映射单个 4KB 页到内核页表 (`KERNEL_PML4`), 并累加映射计数.
+    ///
+    /// # Errors
+    /// 当 VMM 未初始化 (`KERNEL_PML4` 为空) 时返回 `Err("VMM not initialized")`;
+    /// 当中间页表 (PDPT/PD/PT) 分配失败时返回 `Err("Failed to allocate PDPT")` 等错误.
     pub fn map_page(
         &self,
         virt: VirtAddr,
@@ -126,6 +131,12 @@ impl VirtualMemoryManager {
         result
     }
 
+    /// 映射大页 (2MB/1GB, 或退回 4KB) 到内核页表, 并累加映射计数.
+    ///
+    /// # Errors
+    /// 当 `virt`/`phys` 未按 `size_type` 对齐时返回 `Err("Address not aligned for huge page")`;
+    /// 其余错误同 `map_page` (VMM 未初始化或中间页表分配失败);
+    /// 2MB/1GB 映射在对应目录条目已被拆分为页表时也会返回 `Err`.
     pub fn map_huge_page(
         &self,
         virt: VirtAddr,
@@ -429,8 +440,8 @@ impl VirtualMemoryManager {
 
     /// 直接写入 PTE 原始值 (用于 swap 替换)
     ///
-    /// 沿 PML4→PDPT→PD→PT 找到最终 PTE, 写入 raw_pte 后 TLB flush.
-    /// 与 map_page_in_table 的区别: 接受任意 raw PTE (含 swap entry, 即将 present=0).
+    /// 沿 PML4→PDPT→PD→PT 找到最终 PTE, 写入 `raw_pte` 后 TLB flush.
+    /// 与 `map_page_in_table` 的区别: 接受任意 raw PTE (含 swap entry, 即将 present=0).
     /// 若任意中间层缺失 (P 位=0), 静默返回 (不创建中间页表, swap-out 不应触发缺中间页).
     pub fn set_pte_value(&self, pml4: u64, virt: VirtAddr, raw_pte: u64) {
         if pml4 == 0 {
@@ -482,6 +493,14 @@ impl VirtualMemoryManager {
         }
     }
 
+    /// 创建新的用户进程页表: 复制内核高半区, 并映射 KPTI 所需的低半区页 (GDT/IDT/TSS 等).
+    ///
+    /// # Panics
+    /// 正常情况下不会 panic; 唯一存在的 unwrap 是
+    /// `u64::from_le_bytes(buf[2..10].try_into().unwrap())`, 由于切片长度恒为 8 字节,
+    /// 该 unwrap 实际不会触发 panic.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn create_user_page_table(&self) -> Option<u64> {
         let pmm = get_pmm();
         let pml4_phys = pmm.alloc_page()?;
@@ -568,7 +587,7 @@ impl VirtualMemoryManager {
         {
             let sgdt = crate::kernel::framework::arch::gdt::get_gdt_ptr();
             let gdt_start = sgdt.base as u64 & !(PAGE_SIZE as u64 - 1);
-            let gdt_end = (sgdt.base as u64 + sgdt.limit as u64 + PAGE_SIZE as u64) & !(PAGE_SIZE as u64 - 1);
+            let gdt_end = (sgdt.base as u64 + u64::from(sgdt.limit) + PAGE_SIZE as u64) & !(PAGE_SIZE as u64 - 1);
 
             // 同时用 sgdt 指令读取实际 GDTR 值进行对比
             let actual_gdt_base: u64;
@@ -604,7 +623,7 @@ impl VirtualMemoryManager {
                 idtr_buf[6], idtr_buf[7], idtr_buf[8], idtr_buf[9],
             ]);
             let idt_start = idt_base & !(PAGE_SIZE as u64 - 1);
-            let idt_end = ((idt_base + idt_limit as u64) & !(PAGE_SIZE as u64 - 1)) + PAGE_SIZE as u64;
+            let idt_end = ((idt_base + u64::from(idt_limit)) & !(PAGE_SIZE as u64 - 1)) + PAGE_SIZE as u64;
             crate::klog_boot_info!(
                 "[VMM] IDT raw: base={:#x} limit={:#x} start={:#x} end={:#x}",
                 idt_base, idt_limit, idt_start, idt_end
@@ -742,14 +761,14 @@ impl VirtualMemoryManager {
     /// 映射内核高半区页到用户页表 (绕过 KPTI 安全门)
     ///
     /// 用于映射 RSP0 等内核结构到用户页表,使其在用户态可访问.
-    /// 该函数绕过 `map_page_in_table` 的 KPTI 安全门 (pml4_idx >= 256),
+    /// 该函数绕过 `map_page_in_table` 的 KPTI 安全门 (`pml4_idx` >= 256),
     /// 因为 RSP0 等内核结构位于高半区,但仍需在用户页表中可见.
     ///
     /// # Safety
     ///
     /// 调用方保证:
     /// - `pml4` 是有效的用户页表物理地址
-    /// - `virt` 是内核高半区虚拟地址 (pml4_idx >= 256)
+    /// - `virt` 是内核高半区虚拟地址 (`pml4_idx` >= 256)
     /// - `phys` 是对应的物理地址
     /// - 仅用于映射内核栈 (RSP0) 等必要内核结构
     pub fn map_kernel_page_in_table(&self, pml4: u64, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) {
@@ -1162,6 +1181,8 @@ impl VirtualMemoryManager {
     }
 
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     unsafe fn get_or_create_table_entry(
         &self,
         entry: *mut PageTableEntry,
@@ -1227,6 +1248,17 @@ impl VirtualMemoryManager {
         }
     }}
 
+    /// 将内核页表中的 2MB 巨页拆分为 4KB 页.
+    ///
+    /// # Errors
+    /// 当 VMM 未初始化时返回 `Err("VMM not initialized")`;
+    /// 当目标地址位于内核高半区 (PML4[256..511], KPTI 共享页表) 时返回
+    /// `Err("Cannot split kernel-half 2MB page (KPTI shared)")`;
+    /// 当 PDPT/PD 不存在或 PD 条目未映射时分别返回 `Err("PDPT not present")`,
+    /// `Err("PD not present")`, `Err("PD entry not present")`;
+    /// 当分配新的页表页失败时返回 `Err("Failed to allocate PT")`.
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn split_2mb_page(&self, virt: u64) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
@@ -1386,6 +1418,8 @@ impl VirtualMemoryManager {
         self.flush_tlb(virt);
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 {
             return None;
@@ -1568,6 +1602,11 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
+    /// 获取 VMM 锁 (关中断 + 自旋), 支持单核可重入.
+    ///
+    /// # Panics
+    /// 在 `debug_assertions` 构建下, 若检测到 `VMM_LOCK` 被递归获取 (死锁), 触发 `assert!`
+    /// panic, 错误信息为 "`VMM_LOCK`: recursive acquisition detected (deadlock)".
     pub fn acquire_lock(&self) -> IrqSaveFlags {
         let flags = disable_interrupts();
         // 单核可重入: 如果锁已被当前线程持有 (中断禁用时无其他线程),
@@ -1583,10 +1622,8 @@ impl VirtualMemoryManager {
         }
         #[cfg(debug_assertions)]
         {
-            if VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed) {
-                // 不可恢复: VMM_LOCK 递归获取意味着死锁, 继续执行只会挂起系统
-                panic!("VMM_LOCK: recursive acquisition detected (deadlock)");
-            }
+            // 不可恢复: VMM_LOCK 递归获取意味着死锁, 继续执行只会挂起系统
+            assert!(!VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed), "VMM_LOCK: recursive acquisition detected (deadlock)");
         }
         flags
     }
@@ -1615,6 +1652,8 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn flush_tlb(&self, addr: u64) {
         crate::arch!(tlb_flush_page(addr as usize));
 
@@ -1655,7 +1694,7 @@ pub fn get_vmm() -> &'static VirtualMemoryManager {
     GLOBAL_VMM.get_or_panic("VMM")
 }
 
-/// 返回 GLOBAL_VMM OnceLock 的内部状态机原始值 (仅用于诊断).
+/// 返回 `GLOBAL_VMM` `OnceLock` 的内部状态机原始值 (仅用于诊断).
 ///
 /// 返回值: 0=未初始化, 1=初始化中, 2=已完成.
 /// 与 `get_vmm()` 不同, 本函数不会 panic, 可在 VMM 初始化前安全调用.

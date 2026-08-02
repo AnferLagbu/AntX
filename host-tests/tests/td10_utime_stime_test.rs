@@ -73,7 +73,12 @@ fn test_syscall_dispatch_wraps_in_kern() {
 fn test_in_kern_toggle_round_trip() {
     // 静态验证: set 1 → get 1, set 0 → get 0 (基于源码)
     let src = read(PROC_API);
-    assert!(src.contains("CURRENT_IN_KERN.store(v as u64, Ordering::SeqCst)"), "set 走 store");
+    // set 走 store (允许 v as u64 或 u64::from(v), 后者符合 §5.2 算术规范)
+    assert!(
+        src.contains("CURRENT_IN_KERN.store(v as u64, Ordering::SeqCst)")
+            || src.contains("CURRENT_IN_KERN.store(u64::from(v), Ordering::SeqCst)"),
+        "set 必须走 CURRENT_IN_KERN.store(_, SeqCst)"
+    );
     assert!(src.contains("CURRENT_IN_KERN.load(Ordering::SeqCst) as u32"), "get 走 load");
 }
 

@@ -3,7 +3,7 @@
 //! 为内核其它模块提供进程/线程/调度的统一入口。
 //!
 //! ## 模块结构
-//! - `proc_ops` — 进程创建/销毁/查询/操作 (CProcess + process_* 函数)
+//! - `proc_ops` — 进程创建/销毁/查询/操作 (`CProcess` + process_* 函数)
 //! - `sched_ops` — 调度器操作 (scheduler_* 函数)
 //! - `raw` — 裸指针/FFI 桥接
 //!
@@ -16,7 +16,7 @@
 //! - `fs::procfs` — `/proc` 文件系统读取进程列表
 //!
 //! ## 安全约束
-//! - `CURRENT_PROCESS_PTR` 用 AtomicU64 无锁读写,但 `C_CURRENT_PROCESS` 是 unsafe static mut
+//! - `CURRENT_PROCESS_PTR` 用 `AtomicU64` 无锁读写,但 `C_CURRENT_PROCESS` 是 unsafe static mut
 //! - `process_get_current()` 懒初始化 init 进程 (pid=1)
 //! - `process_exit()` 必须在内核态调用,退出前切换到内核 CR3
 //! - `PROCESS_TABLE` / `SCHEDULER` 均为全局单例,内部有锁保护
@@ -45,19 +45,19 @@ pub use sched_ops::*;
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn wait_queue_init(_wq: *mut u8) {}
+pub extern "C" fn wait_queue_init(_wq: *mut u8) {}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn wait_queue_add(_wq: *mut u8, _thread: u64) {}
+pub extern "C" fn wait_queue_add(_wq: *mut u8, _thread: u64) {}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn wait_queue_wake_one(_wq: *mut u8) {}
+pub extern "C" fn wait_queue_wake_one(_wq: *mut u8) {}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn wait_queue_wake_all(_wq: *mut u8) {}
+pub extern "C" fn wait_queue_wake_all(_wq: *mut u8) {}
 
 // ============================================================================
 // 会话/用户进程初始化
@@ -65,13 +65,13 @@ pub fn wait_queue_wake_all(_wq: *mut u8) {}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn session_init() {
+pub extern "C" fn session_init() {
     super::session::SESSION_MANAGER.init();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn user_proc_init() {
+pub extern "C" fn user_proc_init() {
     USER_PROC_MANAGER.init();
 }
 
@@ -87,7 +87,7 @@ pub fn init_launch_status() -> u32 {
     INIT_STATUS.load(core::sync::atomic::Ordering::Acquire)
 }
 
-/// 由 launch_first_user_process 内部设置
+/// 由 `launch_first_user_process` 内部设置
 fn set_init_status(s: u32) {
     INIT_STATUS.store(s, core::sync::atomic::Ordering::Release);
 }
@@ -100,7 +100,7 @@ const ELF_MAX_SIZE: usize = 1024 * 1024;
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     if path.is_null() {
         return -1;
     }
@@ -112,7 +112,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
         return -1;
     }
 
-    let file_size = st.size as u64;
+    let file_size = u64::from(st.size);
     if file_size == 0 || file_size > ELF_MAX_SIZE as u64 {
         return -1;
     }
@@ -157,7 +157,7 @@ pub fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn user_proc_load_elf_from_memory(
+pub extern "C" fn user_proc_load_elf_from_memory(
     elf_data: *const u8,
     elf_size: u64,
     pwm: u64,
@@ -172,7 +172,7 @@ pub fn user_proc_load_elf_from_memory(
 /// # Safety
 ///
 /// `name` 是合法的 C 字符串 (以 NUL 结尾). 进程表已初始化.
-pub unsafe fn user_proc_setup_argv(
+pub unsafe extern "C" fn user_proc_setup_argv(
     pid: u32,
     argv: *const *const u8,
     argc: u32,
@@ -199,13 +199,13 @@ pub unsafe fn user_proc_setup_argv(
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
+pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
     crate::klog_boot_info!("[USER] user_proc_enter_by_pid: pid={}", pid);
 
     let (pid_val, pwm_val, state_val) = USER_PROC_MANAGER
         .with_process(pid, |proc| {
             (
-                proc.process().pid.0 as u64,
+                u64::from(proc.process().pid.0),
                 proc.process().pwm.load(Ordering::SeqCst),
                 proc.process().state.load(Ordering::SeqCst),
             )
@@ -248,7 +248,7 @@ pub fn user_proc_enter_by_pid(pid: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn launch_first_user_process() -> ! {
+pub extern "C" fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
     // 1. 挂载 ramfs 为根文件系统
@@ -360,7 +360,7 @@ pub fn launch_first_user_process() -> ! {
         let pid_u32 = pid as u32;
 
         proc_ops::C_CURRENT_PROCESS.map_mut(|p| {
-            p.pid = pid_u32 as u64;
+            p.pid = u64::from(pid_u32);
             p.pwm = 0;
             p.state = 2;
             p.parent_pid = 1;

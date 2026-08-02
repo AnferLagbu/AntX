@@ -53,7 +53,7 @@ pub struct LruPageInfo {
 pub trait SwapPolicy: Send + Sync {
     /// kswapd 每次唤醒回收的批量大小
     ///
-    /// 返回值决定 `reclaim_pages(max_count)` 中 max_count 的默认值.
+    /// 返回值决定 `reclaim_pages(max_count)` 中 `max_count` 的默认值.
     fn reclaim_batch_size(&self, ctx: SwapPolicyContext) -> u32;
 
     /// 是否应该唤醒 kswapd
@@ -135,9 +135,12 @@ static FALLBACK_SWAP_POLICY: FallbackSwapPolicy = FallbackSwapPolicy;
 static SWAP_POLICY: crate::kernel::framework::sync::OnceLock<&'static dyn SwapPolicy> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 注册 Swap 策略 (由 services::mm::init 调用)
+/// 注册 Swap 策略 (由 `services::mm::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+///
+/// # Errors
+/// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
 pub fn register_swap_policy(policy: &'static dyn SwapPolicy) -> Result<(), &'static dyn SwapPolicy> {
     match SWAP_POLICY.set(policy) {
         Ok(()) => Ok(()),

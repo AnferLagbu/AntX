@@ -16,7 +16,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::types::*;
+use super::types::{Value, WasmError, WASM_PAGE_SIZE};
 
 // ============================================================================
 // 值栈
@@ -33,6 +33,11 @@ impl ValueStack {
         }
     }
 
+    /// 压入一个值到值栈顶.
+    ///
+    /// # Errors
+    ///
+    /// 当栈深度达到上限(4096)时返回 `WasmError::StackOverflow`.
     pub fn push(&mut self, v: Value) -> Result<(), WasmError> {
         if self.data.len() >= 4096 {
             return Err(WasmError::StackOverflow);
@@ -41,10 +46,21 @@ impl ValueStack {
         Ok(())
     }
 
+    /// 弹出栈顶值.
+    ///
+    /// # Errors
+    ///
+    /// 当栈为空时返回 `WasmError::StackUnderflow`.
     pub fn pop(&mut self) -> Result<Value, WasmError> {
         self.data.pop().ok_or(WasmError::StackUnderflow)
     }
 
+    /// 弹出栈顶值并解释为 i32.
+    ///
+    /// # Errors
+    ///
+    /// 栈为空时返回 `WasmError::StackUnderflow`; 类型不匹配时返回
+    /// `WasmError::TypeMismatch`.
     pub fn pop_i32(&mut self) -> Result<i32, WasmError> {
         match self.pop()? {
             Value::I32(v) => Ok(v),
@@ -52,6 +68,12 @@ impl ValueStack {
         }
     }
 
+    /// 弹出栈顶值并解释为 i64.
+    ///
+    /// # Errors
+    ///
+    /// 栈为空时返回 `WasmError::StackUnderflow`; 类型不匹配时返回
+    /// `WasmError::TypeMismatch`.
     pub fn pop_i64(&mut self) -> Result<i64, WasmError> {
         match self.pop()? {
             Value::I64(v) => Ok(v),
@@ -114,6 +136,11 @@ pub struct LinearMemory {
 }
 
 impl LinearMemory {
+    /// 创建指定初始页数的线性内存.
+    ///
+    /// # Errors
+    ///
+    /// 本函数当前不返回 `Err`(内存分配失败会以 panic 形式暴露).
     pub fn new(initial_pages: u32, max_pages: Option<u32>) -> Result<Self, WasmError> {
         let size = initial_pages as usize * WASM_PAGE_SIZE as usize;
         Ok(Self {
@@ -122,6 +149,11 @@ impl LinearMemory {
         })
     }
 
+    /// 扩展线性内存指定的页数.
+    ///
+    /// # Errors
+    ///
+    /// 本函数当前不返回 `Err`; 超过上限时返回 `u32::MAX`(WASM 约定)表示失败.
     pub fn grow(&mut self, additional_pages: u32) -> Result<u32, WasmError> {
         let current_pages = (self.data.len() / WASM_PAGE_SIZE as usize) as u32;
         let new_pages = current_pages + additional_pages;
@@ -147,16 +179,31 @@ impl LinearMemory {
         Ok(offset as usize)
     }
 
+    /// 从线性内存读取一个 u8.
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn read_u8(&self, offset: u32) -> Result<u8, WasmError> {
         let addr = self.check_access(offset, 1)?;
         Ok(self.data[addr])
     }
 
+    /// 从线性内存读取一个 u16 (小端序).
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn read_u16(&self, offset: u32) -> Result<u16, WasmError> {
         let addr = self.check_access(offset, 2)?;
         Ok(u16::from_le_bytes([self.data[addr], self.data[addr + 1]]))
     }
 
+    /// 从线性内存读取一个 u32 (小端序).
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn read_u32(&self, offset: u32) -> Result<u32, WasmError> {
         let addr = self.check_access(offset, 4)?;
         Ok(u32::from_le_bytes([
@@ -167,6 +214,11 @@ impl LinearMemory {
         ]))
     }
 
+    /// 从线性内存读取一个 u64 (小端序).
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn read_u64(&self, offset: u32) -> Result<u64, WasmError> {
         let addr = self.check_access(offset, 8)?;
         Ok(u64::from_le_bytes([
@@ -181,12 +233,22 @@ impl LinearMemory {
         ]))
     }
 
+    /// 向线性内存写入一个 u8.
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn write_u8(&mut self, offset: u32, value: u8) -> Result<(), WasmError> {
         let addr = self.check_access(offset, 1)?;
         self.data[addr] = value;
         Ok(())
     }
 
+    /// 向线性内存写入一个 u16 (小端序).
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn write_u16(&mut self, offset: u32, value: u16) -> Result<(), WasmError> {
         let addr = self.check_access(offset, 2)?;
         let bytes = value.to_le_bytes();
@@ -195,6 +257,11 @@ impl LinearMemory {
         Ok(())
     }
 
+    /// 向线性内存写入一个 u32 (小端序).
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn write_u32(&mut self, offset: u32, value: u32) -> Result<(), WasmError> {
         let addr = self.check_access(offset, 4)?;
         let bytes = value.to_le_bytes();
@@ -202,6 +269,11 @@ impl LinearMemory {
         Ok(())
     }
 
+    /// 向线性内存写入一个 u64 (小端序).
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn write_u64(&mut self, offset: u32, value: u64) -> Result<(), WasmError> {
         let addr = self.check_access(offset, 8)?;
         let bytes = value.to_le_bytes();
@@ -213,6 +285,10 @@ impl LinearMemory {
     ///
     /// 返回指向 WASM 线性内存 `[offset, offset+len)` 的可写切片。
     /// 调用方无需 unsafe。
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn get_slice_mut(&mut self, offset: u32, len: u32) -> Result<&mut [u8], WasmError> {
         let addr = self.check_access(offset, len)?;
         Ok(&mut self.data[addr..addr + len as usize])
@@ -222,6 +298,10 @@ impl LinearMemory {
     ///
     /// 返回指向 WASM 线性内存 `[offset, offset+len)` 的只读切片。
     /// 调用方无需 unsafe。
+    ///
+    /// # Errors
+    ///
+    /// 当访问越界时返回 `WasmError::MemoryOutOfBounds`.
     pub fn get_slice(&self, offset: u32, len: u32) -> Result<&[u8], WasmError> {
         let addr = self.check_access(offset, len)?;
         Ok(&self.data[addr..addr + len as usize])

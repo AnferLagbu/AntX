@@ -13,8 +13,8 @@
 //!
 //! ## TCB 减负
 //!
-//! HvSpa 50+ 方法中, 公共抽象层 (init/add_vdev/allocate/free/...) 提取为 trait.
-//! 单元测试可注入 MockSpa 验证上层 DMU/ZIL 在不真实存储上的逻辑.
+//! `HvSpa` 50+ 方法中, 公共抽象层 (`init/add_vdev/allocate/free`/...) 提取为 trait.
+//! 单元测试可注入 `MockSpa` 验证上层 DMU/ZIL 在不真实存储上的逻辑.
 //!
 //! ## 与 LEGACY-5.1/5.2/5.4 范式一致
 
@@ -27,7 +27,7 @@ use super::vdev::HvVdevConfig;
 
 /// SPA 存储池管理 trait
 ///
-/// HvSpa 的核心公共方法 (init/add_vdev/allocate/free/...) 抽象为 trait,
+/// `HvSpa` 的核心公共方法 (`init/add_vdev/allocate/free`/...) 抽象为 trait,
 /// 让 DMU/ZIL/ARC 等调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # Safety
@@ -39,7 +39,7 @@ pub trait SpaManager: Send + Sync {
     /// 初始化存储池
     fn init(&self, name: &str);
 
-    /// 添加 vdev (返回 false 表示超出 max_vdevs)
+    /// 添加 vdev (返回 false 表示超出 `max_vdevs`)
     fn add_vdev(&self, config: HvVdevConfig) -> bool;
 
     /// 当前 vdev 数
@@ -66,7 +66,7 @@ pub trait SpaManager: Send + Sync {
     /// 推进 txg
     fn advance_txg(&self) -> u64;
 
-    /// 统计信息 (alloc, free, read, write, total_txg)
+    /// 统计信息 (alloc, free, read, write, `total_txg`)
     fn get_stats(&self) -> (u64, u64, u64, u64, u64);
 
     /// 读 uberblock
@@ -80,10 +80,10 @@ pub trait SpaManager: Send + Sync {
 // StandardSpa — 默认 SPA 实现 (HvSpa 包装)
 // ============================================================================
 
-/// 标准 SPA 实现 — 包装 HvSpa, 委托所有方法
+/// 标准 SPA 实现 — 包装 `HvSpa`, 委托所有方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockSpa 替代本实现.
+/// 单元测试可注入 `MockSpa` 替代本实现.
 pub struct StandardSpa(pub HvSpa);
 
 impl StandardSpa {
@@ -92,7 +92,7 @@ impl StandardSpa {
         Self(HvSpa::new())
     }
 
-    /// 访问内部 HvSpa (向后兼容)
+    /// 访问内部 `HvSpa` (向后兼容)
     pub fn inner(&self) -> &HvSpa {
         &self.0
     }
@@ -121,7 +121,7 @@ impl SpaManager for StandardSpa {
         self.0.config.lock().guid
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         // SAFETY: 借用, 但 config 由 Mutex 保护; 返回的 &str 仅在 lock 期间有效
         // 这里实际是返回绑定到 self 的, 但 &str 生命周期受限于 self
         // 注: 这是简化实现, 真实场景用 alloc::string::String

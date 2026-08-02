@@ -3,13 +3,13 @@
 //!
 //! ## 职责
 //!
-//! 收集 framework::barrier::manager::ROLLBACK_LOG 与 framework::barrier::reset
+//! 收集 `framework::barrier::manager::ROLLBACK_LOG` 与 `framework::barrier::reset`
 //! 模块的审计日志, 转换为 services 层强类型结构, 供 telemetry/monitoring
 //! 消费 (kernel shell / dmesg / proc 接口).
 //!
 //! ## @SAFE
 //!
-//! 本文件不含 `unsafe`. 通过 framework::barrier::types 的 RollbackEvent
+//! 本文件不含 `unsafe`. 通过 `framework::barrier::types` 的 `RollbackEvent`
 //! 与 TCB 交互.
 
 use crate::kernel::framework::barrier::{
@@ -121,7 +121,7 @@ impl AuditExporter {
         Self { output_buf: [0u8; 4096], output_count: 0 }
     }
 
-    /// 收集 ROLLBACK_LOG → output_buf
+    /// 收集 `ROLLBACK_LOG` → `output_buf`
     ///
     /// 返回: 写入字节数
     pub fn export_rollback_log(&mut self) -> usize {

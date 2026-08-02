@@ -143,7 +143,7 @@ pub const PxTFD_BSY: u32 = 1 << 7;
 // PxSSTS 寄存器位
 // ============================================================================
 
-/// Device Detection (PxSSTS[3:0])
+/// Device Detection (`PxSSTS`[3:0])
 pub const PxSSTS_DET: u32 = 0xF;
 
 // ============================================================================
@@ -205,7 +205,7 @@ pub enum AhciDeviceKind {
 }
 
 impl AhciDeviceKind {
-    /// 从 PxSIG 寄存器解析
+    /// 从 `PxSIG` 寄存器解析
     pub fn from_signature(sig: u32) -> Self {
         match sig {
             SATA_SIG_ATA => Self::Ata,
@@ -220,18 +220,18 @@ impl AhciDeviceKind {
 // 端口状态
 // ============================================================================
 
-/// AHCI 端口 SATA 状态 (PxSSTS) 解析
+/// AHCI 端口 SATA 状态 (`PxSSTS`) 解析
 #[derive(Debug, Clone, Copy)]
 pub struct SataStatus {
-    /// 设备检测 (PxSSTS[3:0])
+    /// 设备检测 (`PxSSTS`[3:0])
     /// 0=未连接, 1=已连接但未建立通信, 3=建立通信, 4=离线
     pub device_detection: u8,
-    /// 接口速度 (PxSSTS[7:4])
+    /// 接口速度 (`PxSSTS`[7:4])
     pub interface_speed: u8,
 }
 
 impl SataStatus {
-    /// 从 PxSSTS 寄存器解析
+    /// 从 `PxSSTS` 寄存器解析
     pub fn from_register(val: u32) -> Self {
         Self {
             device_detection: (val & 0x0F) as u8,
@@ -352,13 +352,13 @@ impl H2dFis {
 pub struct AhciPortDma {
     /// 命令列表 DMA 虚拟地址 (用于填充 Command Header)
     pub cmd_list_virt: u64,
-    /// 命令列表物理地址 (低 32 位, 写 PxCLB)
+    /// 命令列表物理地址 (低 32 位, 写 `PxCLB`)
     pub cmd_list_low: u32,
-    /// 命令列表物理地址 (高 32 位, 写 PxCLBU)
+    /// 命令列表物理地址 (高 32 位, 写 `PxCLBU`)
     pub cmd_list_high: u32,
-    /// FIS 缓冲区物理地址 (低 32 位, 写 PxFB)
+    /// FIS 缓冲区物理地址 (低 32 位, 写 `PxFB`)
     pub fis_low: u32,
-    /// FIS 缓冲区物理地址 (高 32 位, 写 PxFBU)
+    /// FIS 缓冲区物理地址 (高 32 位, 写 `PxFBU`)
     pub fis_high: u32,
     /// 命令表 DMA 虚拟地址 (填充 FIS + PRDT)
     pub cmd_table_virt: u64,
@@ -405,7 +405,7 @@ impl AhciPort {
 
     // ── 端口寄存器读写 (通过 IoMem) ──
 
-    /// 读端口 32 位寄存器 (使用控制器的 IoMem)
+    /// 读端口 32 位寄存器 (使用控制器的 `IoMem`)
     pub fn port_read32(&self, hba: &AhciHba, offset: usize) -> u32 {
         hba.port_read32(self.port_num, offset)
     }
@@ -415,17 +415,17 @@ impl AhciPort {
         hba.port_write32(self.port_num, offset, val);
     }
 
-    /// 读 PxCLB (Command List Base Address, 32-bit)
+    /// 读 `PxCLB` (Command List Base Address, 32-bit)
     pub fn cmd_list_base(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxCLB)
     }
 
-    /// 写 PxCLB
+    /// 写 `PxCLB`
     pub fn set_cmd_list_base(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxCLB, val);
     }
 
-    /// 写 PxCLBU
+    /// 写 `PxCLBU`
     pub fn set_cmd_list_base_upper(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxCLBU, val);
     }
@@ -436,17 +436,17 @@ impl AhciPort {
         self.set_cmd_list_base_upper(hba, ((paddr >> 32) & 0xFFFF_FFFF) as u32);
     }
 
-    /// 读 PxFB (FIS Base Address, 32-bit)
+    /// 读 `PxFB` (FIS Base Address, 32-bit)
     pub fn fis_base(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxFB)
     }
 
-    /// 写 PxFB
+    /// 写 `PxFB`
     pub fn set_fis_base(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxFB, val);
     }
 
-    /// 写 PxFBU
+    /// 写 `PxFBU`
     pub fn set_fis_base_upper(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxFBU, val);
     }
@@ -457,57 +457,57 @@ impl AhciPort {
         self.set_fis_base_upper(hba, ((paddr >> 32) & 0xFFFF_FFFF) as u32);
     }
 
-    /// 读 PxIS (Interrupt Status)
+    /// 读 `PxIS` (Interrupt Status)
     pub fn interrupt_status(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxIS)
     }
 
-    /// 应答端口中断 (PxIS write-1-to-clear)
+    /// 应答端口中断 (`PxIS` write-1-to-clear)
     pub fn ack_interrupt(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxIS, val);
     }
 
-    /// 读 PxIE (Interrupt Enable)
+    /// 读 `PxIE` (Interrupt Enable)
     pub fn interrupt_enable(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxIE)
     }
 
-    /// 写 PxIE
+    /// 写 `PxIE`
     pub fn set_interrupt_enable(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxIE, val);
     }
 
-    /// 读 PxCMD
+    /// 读 `PxCMD`
     pub fn port_cmd(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxCMD)
     }
 
-    /// 写 PxCMD
+    /// 写 `PxCMD`
     pub fn set_port_cmd(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxCMD, val);
     }
 
-    /// 读 PxTFD (Task File Data)
+    /// 读 `PxTFD` (Task File Data)
     pub fn port_tfd(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxTFD)
     }
 
-    /// 读 PxSIG (设备签名)
+    /// 读 `PxSIG` (设备签名)
     pub fn port_signature(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxSIG)
     }
 
-    /// 读 PxSSTS
+    /// 读 `PxSSTS`
     pub fn port_sata_status(&self, hba: &AhciHba) -> SataStatus {
         SataStatus::from_register(self.port_read32(hba, PxSSTS))
     }
 
-    /// 读 PxCI (Command Issue)
+    /// 读 `PxCI` (Command Issue)
     pub fn port_cmd_issue(&self, hba: &AhciHba) -> u32 {
         self.port_read32(hba, PxCI)
     }
 
-    /// 写 PxCI (发布命令)
+    /// 写 `PxCI` (发布命令)
     pub fn set_port_cmd_issue(&self, hba: &AhciHba, val: u32) {
         self.port_write32(hba, PxCI, val);
     }
@@ -529,7 +529,7 @@ impl AhciPort {
 
     // ── 端口操作 ──
 
-    /// 检测设备 (读 PxSSTS + PxSIG)
+    /// 检测设备 (读 `PxSSTS` + `PxSIG`)
     pub fn detect_device(&mut self, hba: &AhciHba) -> bool {
         let ssts = self.port_sata_status(hba);
         if ssts.is_connected() {
@@ -546,12 +546,9 @@ impl AhciPort {
 
     /// 分配 DMA 内存并设置寄存器
     pub fn setup_dma(&mut self, hba: &AhciHba) -> bool {
-        let handle = match crate::kernel::framework::driver::storage::ahci_alloc_port_dma() {
-            Some(h) => h,
-            None => {
-                slog_warn!(Driver, "端口 {} DMA 分配失败", self.port_num);
-                return false;
-            }
+        let handle = if let Some(h) = crate::kernel::framework::driver::storage::ahci_alloc_port_dma() { h } else {
+            slog_warn!(Driver, "端口 {} DMA 分配失败", self.port_num);
+            return false;
         };
 
         // 写入寄存器
@@ -729,6 +726,13 @@ impl AhciPort {
     }
 
     /// 读取扇区 (DMA)
+    ///
+    /// # Errors
+    ///
+    /// - 端口未初始化或设备未就绪时返回 `Err(())`
+    /// - `count` 为 0 或超过单命令最大扇区数时返回 `Err(())`
+    /// - DMA 缓冲区分配失败时返回 `Err(())`
+    /// - 命令提交超时、传输错误 (TFE) 或端口出错时返回 `Err(())`
     pub fn read(&mut self, hba: &AhciHba, lba: u64, count: u16, buffer: *mut u8) -> Result<(), ()> {
         if !self.port_initialized || !self.device_present {
             return Err(());
@@ -737,7 +741,7 @@ impl AhciPort {
             return Err(());
         }
 
-        let byte_count = (count as u32) * SECTOR_SIZE as u32;
+        let byte_count = u32::from(count) * SECTOR_SIZE as u32;
 
         // 分配 DMA 缓冲区
         let (buf_vaddr, buf_paddr, buf_size) = match crate::kernel::framework::driver::storage::ahci_alloc_dma_buffer(byte_count as usize) {
@@ -758,6 +762,13 @@ impl AhciPort {
     }
 
     /// 写入扇区 (DMA)
+    ///
+    /// # Errors
+    ///
+    /// - 端口未初始化或设备未就绪时返回 `Err(())`
+    /// - `count` 为 0 或超过单命令最大扇区数时返回 `Err(())`
+    /// - DMA 缓冲区分配失败时返回 `Err(())`
+    /// - 命令提交超时、传输错误 (TFE) 或端口出错时返回 `Err(())`
     pub fn write(&mut self, hba: &AhciHba, lba: u64, count: u16, buffer: *const u8) -> Result<(), ()> {
         if !self.port_initialized || !self.device_present {
             return Err(());
@@ -766,7 +777,7 @@ impl AhciPort {
             return Err(());
         }
 
-        let byte_count = (count as u32) * SECTOR_SIZE as u32;
+        let byte_count = u32::from(count) * SECTOR_SIZE as u32;
 
         // 分配 DMA 缓冲区
         let (buf_vaddr, buf_paddr, buf_size) = match crate::kernel::framework::driver::storage::ahci_alloc_dma_buffer(byte_count as usize) {
@@ -809,7 +820,7 @@ impl AhciHba {
 
     // ── HBA 全局寄存器 ──
 
-    /// 读 HBA 能力寄存器 (GHC_CAP)
+    /// 读 HBA 能力寄存器 (`GHC_CAP`)
     #[inline]
     pub fn capabilities(&self) -> u32 {
         self.mmio.read_u32(GHC_CAP)
@@ -827,25 +838,25 @@ impl AhciHba {
         self.mmio.write_u32(GHC_GHC, val);
     }
 
-    /// 读中断状态 (GHC_IS)
+    /// 读中断状态 (`GHC_IS`)
     #[inline]
     pub fn interrupt_status(&self) -> u32 {
         self.mmio.read_u32(GHC_IS)
     }
 
-    /// 写中断状态 (GHC_IS) 应答
+    /// 写中断状态 (`GHC_IS`) 应答
     #[inline]
     pub fn ack_interrupt(&self, val: u32) {
         self.mmio.write_u32(GHC_IS, val);
     }
 
-    /// 读已实现端口位图 (GHC_PI)
+    /// 读已实现端口位图 (`GHC_PI`)
     #[inline]
     pub fn ports_implemented(&self) -> u32 {
         self.mmio.read_u32(GHC_PI)
     }
 
-    /// 读 HBA 版本 (GHC_VS)
+    /// 读 HBA 版本 (`GHC_VS`)
     #[inline]
     pub fn version(&self) -> u32 {
         self.mmio.read_u32(GHC_VS)
@@ -979,20 +990,17 @@ impl AhciController {
             let mut port = AhciPort::new(i as u8);
 
             if port.detect_device(&self.hba) {
-                match port.enable(&self.hba) {
-                    true => {
-                        slog_info!(
-                            Driver,
-                            "端口 {} 已启用 (sig={:08X}, kind={:?})",
-                            i,
-                            port.signature,
-                            port.device_kind
-                        );
-                        self.ports.push(port);
-                    }
-                    false => {
-                        slog_warn!(Driver, "端口 {} 启用失败", i);
-                    }
+                if port.enable(&self.hba) {
+                    slog_info!(
+                        Driver,
+                        "端口 {} 已启用 (sig={:08X}, kind={:?})",
+                        i,
+                        port.signature,
+                        port.device_kind
+                    );
+                    self.ports.push(port);
+                } else {
+                    slog_warn!(Driver, "端口 {} 启用失败", i);
                 }
             }
         }

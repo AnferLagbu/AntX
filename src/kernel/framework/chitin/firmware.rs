@@ -21,7 +21,7 @@
 //! ```
 //!
 //! ## 安全
-//! - 内部数据由 DEV_TREE spinlock 保护
+//! - 内部数据由 `DEV_TREE` spinlock 保护
 //! - 路径/缓冲在拷贝时按字节校验, 不假设用户态字符串
 
 use alloc::vec::Vec;
@@ -46,7 +46,7 @@ pub struct FirmwareInfo {
     pub _reserved: u32,
 }
 
-/// 固件 blob (附着在 ChitinNode 上)
+/// 固件 blob (附着在 `ChitinNode` 上)
 #[derive(Debug, Clone)]
 pub struct FirmwareBlob {
     /// 原始字节内容
@@ -73,7 +73,7 @@ impl FirmwareBlob {
 pub fn fnv1a_32(s: &str) -> u32 {
     let mut h: u32 = 0x811c9dc5;
     for b in s.as_bytes() {
-        h ^= *b as u32;
+        h ^= u32::from(*b);
         h = h.wrapping_mul(0x01000193);
     }
     h

@@ -1,4 +1,4 @@
-//! SeqLock — 顺序锁
+//! `SeqLock` — 顺序锁
 //!
 //! 一种针对"读多写少"场景优化的锁原语.
 //! 读者永不阻塞写者; 写者之间相互排斥.
@@ -104,7 +104,7 @@ pub struct SeqLockReadGuard<'a, T> {
     seq1: usize,
 }
 
-impl<'a, T> SeqLockReadGuard<'a, T> {
+impl<T> SeqLockReadGuard<'_, T> {
     pub fn is_valid(&self) -> bool {
         compiler_fence(Ordering::Release);
         let seq2 = self.lock.sequence.load(Ordering::Acquire);
@@ -125,7 +125,7 @@ impl<'a, T> SeqLockReadGuard<'a, T> {
     }
 }
 
-impl<'a, T> core::ops::Deref for SeqLockReadGuard<'a, T> {
+impl<T> core::ops::Deref for SeqLockReadGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         self.get()
@@ -136,7 +136,7 @@ pub struct SeqLockWriteGuard<'a, T> {
     lock: &'a SeqLock<T>,
 }
 
-impl<'a, T> core::ops::Deref for SeqLockWriteGuard<'a, T> {
+impl<T> core::ops::Deref for SeqLockWriteGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: `self` 由调用方保证为有效指针; 只读访问
@@ -144,14 +144,14 @@ impl<'a, T> core::ops::Deref for SeqLockWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T> core::ops::DerefMut for SeqLockWriteGuard<'a, T> {
+impl<T> core::ops::DerefMut for SeqLockWriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: `self` 由调用方保证为有效指针; 只读访问
         unsafe { &mut *self.lock.data.get() }
     }
 }
 
-impl<'a, T> Drop for SeqLockWriteGuard<'a, T> {
+impl<T> Drop for SeqLockWriteGuard<'_, T> {
     fn drop(&mut self) {
         compiler_fence(Ordering::Release);
         self.lock.sequence.fetch_add(1, Ordering::Release);

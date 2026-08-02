@@ -3,7 +3,7 @@
 //! ## T1-4 迁移记录
 //!
 //! 策略代码 (控制器 + cgroup 实例 + 全局管理器 + syscall)
-//! 已于 2026-06-16 迁移到 services::proc::cgroup.
+//! 已于 2026-06-16 迁移到 `services::proc::cgroup`.
 //! 本文件仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::proc::cgroup::{

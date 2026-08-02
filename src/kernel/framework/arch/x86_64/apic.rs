@@ -1,6 +1,6 @@
 //! Local APIC (高级可编程中断控制器) 驱动
 //!
-//! x86_64 Local APIC: 每 CPU 中断控制、定时器与 IPI。
+//! `x86_64` Local APIC: 每 CPU 中断控制、定时器与 IPI。
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -69,9 +69,11 @@ fn rdmsr(msr: u32) -> u64 {
     unsafe {
         core::arch::asm!("rdmsr", out("eax") low, out("edx") high, in("ecx") msr, options(nomem, nostack));
     }
-    ((high as u64) << 32) | (low as u64)
+    (u64::from(high) << 32) | u64::from(low)
 }
 
+// 有意窄化: 内核寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn wrmsr(msr: u32, value: u64) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -82,14 +84,14 @@ fn wrmsr(msr: u32, value: u64) {
 pub fn apic_read(reg: u32) -> u32 {
     let base = APIC_BASE.load(Ordering::Acquire);
     // SAFETY: `const` 由调用方保证为有效指针; 只读访问
-    unsafe { core::ptr::read_volatile((base + reg as u64) as *const u32) }
+    unsafe { core::ptr::read_volatile((base + u64::from(reg)) as *const u32) }
 }
 
 pub fn apic_write(reg: u32, value: u32) {
     let base = APIC_BASE.load(Ordering::Acquire);
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
-        core::ptr::write_volatile((base + reg as u64) as *mut u32, value);
+        core::ptr::write_volatile((base + u64::from(reg)) as *mut u32, value);
     }
 }
 
@@ -146,15 +148,19 @@ pub fn eoi() {
     }
 }
 
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn send_ipi(apic_id: u8, vector: u8) {
     if !is_initialized() {
         return;
     }
-    apic_write(APIC_ICR_HIGH, (apic_id as u32) << 24);
-    apic_write(APIC_ICR_LOW, vector as u32 | ICR_ASSERT as u32);
+    apic_write(APIC_ICR_HIGH, u32::from(apic_id) << 24);
+    apic_write(APIC_ICR_LOW, u32::from(vector) | ICR_ASSERT as u32);
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn broadcast_ipi(vector: u8) {
     if !is_initialized() {
         return;
@@ -162,7 +168,7 @@ pub fn broadcast_ipi(vector: u8) {
     apic_write(APIC_ICR_HIGH, 0);
     apic_write(
         APIC_ICR_LOW,
-        vector as u32 | ICR_ALL_EXCLUDE_SELF as u32 | ICR_ASSERT as u32,
+        u32::from(vector) | ICR_ALL_EXCLUDE_SELF as u32 | ICR_ASSERT as u32,
     );
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
@@ -187,7 +193,7 @@ pub fn init_timer(vector: u8, periodic: bool, divisor: u32) {
     apic_write(APIC_TIMER_DCR, div_val);
 
     let mode = if periodic { LVT_TIMER_PERIODIC } else { 0 };
-    apic_write(APIC_LVT_TIMER, mode | (vector as u32));
+    apic_write(APIC_LVT_TIMER, mode | u32::from(vector));
 }
 
 pub fn set_timer_count(count: u32) {
@@ -224,7 +230,7 @@ pub fn calibrate_timer(_pit_hz: u64, target_ms: u64) -> u64 {
     let remaining = apic_read(APIC_TIMER_CCR);
     let elapsed = 0xFFFFFFFFu32 - remaining;
 
-    let ticks_per_ms = elapsed as u64 / target_ms;
+    let ticks_per_ms = u64::from(elapsed) / target_ms;
     let apic_hz = ticks_per_ms * 16 * 1000;
 
     APIC_TIMER_HZ.store(apic_hz, Ordering::Release);
@@ -344,7 +350,7 @@ pub fn delivery_nmi() -> u32 {
     LVT_DELIVERY_NMI
 }
 
-/// 获取 ExtINT 投递模式常量
+/// 获取 `ExtINT` 投递模式常量
 pub fn delivery_extint() -> u32 {
     LVT_DELIVERY_EXTINT
 }
@@ -399,21 +405,21 @@ pub fn apic_read_irr() -> [u32; 8] {
 pub fn apic_is_in_isr(vector: u8) -> bool {
     let reg = vector / 32;
     let bit = vector % 32;
-    apic_read(APIC_ISR_BASE + reg as u32 * 0x10) & (1 << bit) != 0
+    apic_read(APIC_ISR_BASE + u32::from(reg) * 0x10) & (1 << bit) != 0
 }
 
 /// 查询指定向量是否在 IRR 中 (待处理)
 pub fn apic_is_in_irr(vector: u8) -> bool {
     let reg = vector / 32;
     let bit = vector % 32;
-    apic_read(APIC_IRR_BASE + reg as u32 * 0x10) & (1 << bit) != 0
+    apic_read(APIC_IRR_BASE + u32::from(reg) * 0x10) & (1 << bit) != 0
 }
 
 /// 查询指定向量的触发模式 (true = 电平触发, false = 边沿触发)
 pub fn apic_is_level_triggered(vector: u8) -> bool {
     let reg = vector / 32;
     let bit = vector % 32;
-    apic_read(APIC_TMR_BASE + reg as u32 * 0x10) & (1 << bit) != 0
+    apic_read(APIC_TMR_BASE + u32::from(reg) * 0x10) & (1 << bit) != 0
 }
 
 // ============================================================================
@@ -421,19 +427,23 @@ pub fn apic_is_level_triggered(vector: u8) -> bool {
 // ============================================================================
 
 /// 发送带 level 触发模式的 IPI
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn send_ipi_level(apic_id: u8, vector: u8) {
     if !is_initialized() {
         return;
     }
-    apic_write(APIC_ICR_HIGH, (apic_id as u32) << 24);
+    apic_write(APIC_ICR_HIGH, u32::from(apic_id) << 24);
     apic_write(
         APIC_ICR_LOW,
-        vector as u32 | ICR_ASSERT as u32 | ICR_LEVEL as u32,
+        u32::from(vector) | ICR_ASSERT as u32 | ICR_LEVEL as u32,
     );
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
 /// 发送带 broadcast 模式的 IPI
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn broadcast_ipi_level(vector: u8) {
     if !is_initialized() {
         return;
@@ -441,17 +451,17 @@ pub fn broadcast_ipi_level(vector: u8) {
     apic_write(APIC_ICR_HIGH, 0);
     apic_write(
         APIC_ICR_LOW,
-        vector as u32 | ICR_ALL_EXCLUDE_SELF as u32 | ICR_ASSERT as u32 | ICR_LEVEL as u32,
+        u32::from(vector) | ICR_ALL_EXCLUDE_SELF as u32 | ICR_ASSERT as u32 | ICR_LEVEL as u32,
     );
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
-/// 获取 ICR_LEVEL 常量
+/// 获取 `ICR_LEVEL` 常量
 pub fn icr_level() -> u64 {
     ICR_LEVEL
 }
 
-/// 获取 ICR_BROADCAST 常量
+/// 获取 `ICR_BROADCAST` 常量
 pub fn icr_broadcast() -> u64 {
     ICR_BROADCAST
 }

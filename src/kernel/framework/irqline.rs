@@ -1,4 +1,4 @@
-//! IrqLine — 中断线安全句柄 (TCB)
+//! `IrqLine` — 中断线安全句柄 (TCB)
 //!
 //! 设备驱动通过此句柄注册 ISR, 框架负责 IDT/APIC/GIC 编排。
 //! 隐藏中断向量号、中断控制器等硬件细节。
@@ -9,9 +9,9 @@
 //!
 //! ## SAFETY 不变量
 //!
-//! - 一个 IrqLine 最多注册一个 ISR (可通过重新注册覆盖)。
+//! - 一个 `IrqLine` 最多注册一个 ISR (可通过重新注册覆盖)。
 //! - ISR 在中断上下文中调用: 不可 sleep / 不可持 Mutex / 不可阻塞。
-//! - 中断向量 ≤ 255 (x86_64) 或 ≤ 1023 (aarch64 GIC)。
+//! - 中断向量 ≤ 255 (`x86_64`) 或 ≤ 1023 (aarch64 GIC)。
 
 /// 中断处理函数签名。
 ///
@@ -46,6 +46,8 @@ impl IrqLine {
     ///
     /// # 安全约束
     /// - handler 必须在中断上下文安全 (无 sleep, 无 Mutex, 快速返回)。
+    /// # Errors
+    /// ISR 注册失败时返回 Err。
     pub fn on_interrupt(&mut self, handler: InterruptHandler) -> Result<(), &'static str> {
         // SAFETY: 启动阶段单线程调用, 无竞争。
         unsafe {
@@ -57,6 +59,8 @@ impl IrqLine {
 
     /// 启用该中断线 (unmask)
     #[cfg(target_arch = "x86_64")]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn enable(&self) {
         crate::kernel::framework::arch::ioapic::unmask_irq(self.irq as u8);
     }
@@ -68,6 +72,8 @@ impl IrqLine {
 
     /// 禁用该中断线 (mask)
     #[cfg(target_arch = "x86_64")]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn disable(&self) {
         crate::kernel::framework::arch::ioapic::mask_irq(self.irq as u8);
     }
@@ -87,7 +93,7 @@ impl IrqLine {
 const MAX_ISR_VECTORS: usize = 256;
 
 /// 全局 ISR 函数指针表, 由 idt handlers 分发调用。
-/// 使用 IrqSpinLock 保护, 中断安全 (dispatch_irq 在中断上下文调用).
+/// 使用 `IrqSpinLock` 保护, 中断安全 (`dispatch_irq` 在中断上下文调用).
 static ISR_TABLE: crate::kernel::framework::sync::IrqSpinLock<[Option<InterruptHandler>; MAX_ISR_VECTORS]> =
     crate::kernel::framework::sync::IrqSpinLock::new([None; MAX_ISR_VECTORS]);
 
@@ -95,7 +101,7 @@ static ISR_TABLE: crate::kernel::framework::sync::IrqSpinLock<[Option<InterruptH
 ///
 /// # SAFETY
 ///
-/// 1. 仅在启动单线程阶段 (无并发中断) 调用, 写 ISR_TABLE 安全
+/// 1. 仅在启动单线程阶段 (无并发中断) 调用, 写 `ISR_TABLE` 安全
 /// 2. `vector` 必须小于 `MAX_ISR_VECTORS` (内部会检查)
 /// 3. `handler` 必须是 `'static` 生命周期的合法函数指针, 可被中断上下文调用
 ///    (不持有任何 Rust 锁, 不分配, 不睡眠)

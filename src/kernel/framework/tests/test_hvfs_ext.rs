@@ -2,14 +2,14 @@
 use crate::register_tests_inner;
 
 use super::check;
-use crate::kernel::framework::fs::hvfs::arc::*;
-use crate::kernel::framework::fs::hvfs::bp::*;
+use crate::kernel::framework::fs::hvfs::arc::{HvArc, HvArcKey, HvArcBufType};
+use crate::kernel::framework::fs::hvfs::bp::{HvBlockPointer, HvCompType};
 use crate::kernel::framework::fs::hvfs::compress;
-use crate::kernel::framework::fs::hvfs::dataset::*;
-use crate::kernel::framework::fs::hvfs::dmu::*;
-use crate::kernel::framework::fs::hvfs::snapshot::*;
-use crate::kernel::framework::fs::hvfs::txg::*;
-use crate::kernel::framework::fs::hvfs::zap::*;
+use crate::kernel::framework::fs::hvfs::dataset::HvDataset;
+use crate::kernel::framework::fs::hvfs::dmu::{HvObjSet, HvObjType, HvDmuObject};
+use crate::kernel::framework::fs::hvfs::snapshot::{HvSnapshot, HvSnapshotManager};
+use crate::kernel::framework::fs::hvfs::txg::HvTxg;
+use crate::kernel::framework::fs::hvfs::zap::HvZap;
 use crate::kernel::framework::tests::{runner, TestResult};
 
 fn test_dmu_objset_alloc() -> TestResult {
@@ -68,13 +68,13 @@ fn test_dmu_cow_preserves_old() -> TestResult {
 fn test_zap_large_namespace() -> TestResult {
     let zap = HvZap::with_capacity(64);
     for i in 0..30u64 {
-        let key = alloc::format!("key_{}", i);
+        let key = alloc::format!("key_{i}");
         zap.insert_u64(&key, i * 100);
     }
     check!(zap.len() == 30, "zap should have 30 entries");
 
     for i in 0..30u64 {
-        let key = alloc::format!("key_{}", i);
+        let key = alloc::format!("key_{i}");
         let val = match zap.lookup_u64(&key) {
             Some(v) => v,
             None => return TestResult::Fail("key not found"),

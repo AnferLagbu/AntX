@@ -12,13 +12,13 @@
 
 /// lseek(fd, offset, whence) 策略
 pub fn lseek_syscall(fd: i32, offset: i64, whence: i32) -> i64 {
-    crate::kernel::framework::fs::vfs_seek(fd as u32, offset as i32, whence as u32) as i64
+    i64::from(crate::kernel::framework::fs::vfs_seek(fd as u32, offset as i32, whence as u32))
 }
 
 /// getdents(fd, buf, count) 策略
 pub fn getdents_syscall(fd: i32, buf_ptr: u64, _count: u64) -> i64 {
-    crate::kernel::framework::fs::vfs_readdir(
+    i64::from(crate::kernel::framework::fs::vfs_readdir(
         fd as u32,
         buf_ptr as *mut crate::kernel::framework::fs::VfsDirEntry,
-    ) as i64
+    ))
 }

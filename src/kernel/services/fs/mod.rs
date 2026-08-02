@@ -81,7 +81,7 @@ use crate::kernel::framework::fs::vfs::api as vfs_api;
 
 /// services 层 VFS 后端决策策略
 ///
-/// 维护文件系统注册表, 根据 fs_type 名称选择挂载方式.
+/// 维护文件系统注册表, 根据 `fs_type` 名称选择挂载方式.
 /// 挂载权限: 当前允许所有挂载请求 (未来可扩展为权限检查).
 pub struct ServicesFsBackend;
 
@@ -103,7 +103,7 @@ impl FsBackend for ServicesFsBackend {
     }
 }
 
-/// services::fs 初始化 — 注册策略到 framework
+/// `services::fs` 初始化 — 注册策略到 framework
 pub fn init() {
     static POLICY: ServicesFsBackend = ServicesFsBackend;
     let _ = register_fs_backend(&POLICY);

@@ -1,4 +1,4 @@
-//! HvFS ARC 缓存 safe API 封装
+//! `HvFS` ARC 缓存 safe API 封装
 //!
 //! 提供 `ptr_to_slice` 将裸指针转为切片, 封装 `from_raw_parts` unsafe.
 //! services 层通过此 safe API 访问 ARC 缓存数据, 无需自行写 unsafe.

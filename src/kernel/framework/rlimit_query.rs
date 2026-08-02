@@ -39,7 +39,7 @@ pub fn get_memlock_limit() -> u64 {
     64 * 1024
 }
 
-/// 检查 mlock 锁定字节数是否超 RLIMIT_MEMLOCK.
+/// 检查 mlock 锁定字节数是否超 `RLIMIT_MEMLOCK`.
 ///
 /// 返回 true 表示超额, mlock 应失败.
 pub fn check_memlock_exceeded(current_locked: u64, additional_bytes: u64) -> bool {

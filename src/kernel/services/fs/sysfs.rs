@@ -2,7 +2,7 @@
 //! sysfs — services 层安全代理 (Phase C4)
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::fs::vfs::api。
+//! 所有 unsafe 操作已委托至 `framework::fs::vfs::api`。
 //!
 //! ## 职责
 //!
@@ -12,8 +12,8 @@
 //!
 //! ## 数据源
 //!
-//! sysfs 项值取自各 framework 层 API (cpu_count, mem_total, acpi_status 等).
-//! 不在 sysfs 中持久化数据, 全部为只读 + 按需 read() 时计算.
+//! sysfs 项值取自各 framework 层 API (`cpu_count`, `mem_total`, `acpi_status` 等).
+//! 不在 sysfs 中持久化数据, 全部为只读 + 按需 `read()` 时计算.
 
 use crate::kernel::framework::syscall::Errno;
 
@@ -87,6 +87,9 @@ pub fn has_node(name: &str) -> bool {
 // ============================================================================
 
 /// 把节点值写到 buffer, 返写入字节数
+///
+/// # Errors
+/// 当节点不存在时返回 `ENOENT`; 当缓冲区过小 (装不下格式化结果) 时返回 `EINVAL`.
 pub fn write_node_value(name: &str, buf: &mut [u8]) -> Result<usize, Errno> {
     let val = match name {
         "cpu_count" => SysfsValue::Integer(1), // 简化: BSP=1
@@ -159,6 +162,9 @@ fn format_u64(mut n: u64) -> [u8; 20] {
 // ============================================================================
 
 /// 把 sysfs 挂到 /sys
+///
+/// # Errors
+/// 当节点表为空、无法挂载时返回 `EINVAL`.
 pub fn mount_sysfs() -> Result<(), Errno> {
     // 真实实现: vfs_mount("/sys", "sysfs")
     // 简化: 计数 + 验证节点表
@@ -169,6 +175,9 @@ pub fn mount_sysfs() -> Result<(), Errno> {
 }
 
 /// 卸载 /sys
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`, 不产生错误.
 pub fn umount_sysfs() -> Result<(), Errno> {
     Ok(())
 }

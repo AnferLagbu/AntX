@@ -6,9 +6,9 @@
 //! ## Phase 1 状态
 //! - [x] `tlb_flush_page()` — 刷新单个虚拟地址 TLB
 //! - [x] `tlb_flush_all()` — 刷新全部 TLB
-//! - [x] `read_page_table_base()` — 读取页表基地址 (CR3/TTBR0_EL1)
+//! - [x] `read_page_table_base()` — 读取页表基地址 (`CR3/TTBR0_EL1`)
 //! - [x] `write_page_table_base()` — 写入页表基地址
-//! - [x] `read_fault_address()` — 读取页错误地址 (CR2/FAR_EL1)
+//! - [x] `read_fault_address()` — 读取页错误地址 (`CR2/FAR_EL1`)
 //!
 //! ## 设计原则
 //! - 零开销: 所有调用通过 `arch!()` 宏展开为静态分发
@@ -29,13 +29,13 @@ pub fn tlb_flush_all() {
     <crate::kernel::framework::arch::CurrentArch as Arch>::tlb_flush_all();
 }
 
-/// 读取当前页表基地址 (CR3 / TTBR0_EL1)。
+/// 读取当前页表基地址 (CR3 / `TTBR0_EL1`)。
 #[inline(always)]
 pub fn read_page_table_base() -> u64 {
     <crate::kernel::framework::arch::CurrentArch as Arch>::read_page_table_base()
 }
 
-/// 写入页表基地址 (写 CR3 / TTBR0_EL1)。
+/// 写入页表基地址 (写 CR3 / `TTBR0_EL1`)。
 ///
 /// # Safety
 ///
@@ -45,7 +45,7 @@ pub fn write_page_table_base(paddr: u64) {
     <crate::kernel::framework::arch::CurrentArch as Arch>::write_page_table_base(paddr);
 }
 
-/// 读取触发页错误的地址 (CR2 / FAR_EL1)。
+/// 读取触发页错误的地址 (CR2 / `FAR_EL1`)。
 #[inline(always)]
 pub fn read_fault_address() -> usize {
     <crate::kernel::framework::arch::CurrentArch as Arch>::read_fault_address()

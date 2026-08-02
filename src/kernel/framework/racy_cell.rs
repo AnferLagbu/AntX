@@ -1,4 +1,4 @@
-//! 无锁全局可变状态容器 (RacyCell)
+//! 无锁全局可变状态容器 (`RacyCell`)
 //!
 //! 用于替换 `static mut` 全局变量, 提供安全的 `&self` 读写接口。
 //! 内部使用 [`UnsafeCell`] 并手动实现 `Sync`, 允许跨线程无锁访问。
@@ -35,7 +35,7 @@ pub struct RacyCell<T> {
 unsafe impl<T> Sync for RacyCell<T> {}
 
 impl<T> RacyCell<T> {
-    /// 创建新的 RacyCell
+    /// 创建新的 `RacyCell`
     pub const fn new(val: T) -> Self {
         Self {
             inner: UnsafeCell::new(val),

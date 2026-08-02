@@ -1,4 +1,4 @@
-//! WASI 时钟/随机: clock_time_get, random_get
+//! WASI 时钟/随机: `clock_time_get`, `random_get`
 
 use crate::kernel::services::wasm::types::{Value, WasmError};
 use crate::kernel::services::wasm::interpreter::Interpreter;
@@ -9,9 +9,9 @@ use super::fd_table::write_i64_to_memory;
 const CLOCK_REALTIME: u32 = 0;
 const CLOCK_MONOTONIC: u32 = 1;
 
-/// WASI clock_time_get: 获取时钟时间 (纳秒)
+/// WASI `clock_time_get`: 获取时钟时间 (纳秒)
 ///
-/// 参数: (clock_id: i32, precision: i64, result_ptr: i32)
+/// 参数: (`clock_id`: i32, precision: i64, `result_ptr`: i32)
 /// 返回: 0 (成功) 或 errno
 pub fn wasi_clock_time_get(_ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let clock_id = interp.stack.pop_i32()? as u32;
@@ -35,9 +35,9 @@ pub fn wasi_clock_time_get(_ctx: &mut WasiContext, interp: &mut Interpreter) -> 
     Ok(())
 }
 
-/// WASI random_get: 填充随机字节
+/// WASI `random_get`: 填充随机字节
 ///
-/// 参数: (buf_ptr: i32, buf_len: i32)
+/// 参数: (`buf_ptr`: i32, `buf_len`: i32)
 /// 返回: 0 (成功)
 pub fn wasi_random_get(_ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let buf_ptr = interp.stack.pop_i32()? as u32;

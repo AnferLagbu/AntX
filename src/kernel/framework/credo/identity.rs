@@ -4,7 +4,7 @@ use super::capability::VIABLE_FLOOR;
 use super::csprng;
 use super::grant;
 use super::sha256;
-use super::types::*;
+use super::types::{PWM_SALT_LEN, PwmEntry, MAX_PWM_ENTRIES, PWM_DIGEST_LEN, PwmError, PWM_NOTE_LEN, AuditAction, CapDomain, CapBits, PwmFlags, GrantRecord, PwmId};
 use core::sync::atomic::{
     AtomicBool, AtomicU32, AtomicUsize, Ordering,
 };
@@ -24,7 +24,7 @@ pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 
     const STRETCH_ROUNDS: usize = 32768;
     let mut input = [0u8; 256];
     let mut pos = 0usize;
-    for byte in salt.iter() {
+    for byte in salt {
         input[pos] = *byte;
         pos += 1;
     }
@@ -102,7 +102,7 @@ impl IdentityTable {
 
     pub fn init(&self) {
         self.acquire();
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             entry.pwm.store(0, Ordering::Release);
         }
         self.count.store(0, Ordering::Release);
@@ -127,7 +127,7 @@ impl IdentityTable {
         let hash = sha256::sha256(&input[..pos]);
         let mut pwm: u64 = 0;
         for i in 0..8 {
-            pwm = (pwm << 8) | (hash[i] as u64);
+            pwm = (pwm << 8) | u64::from(hash[i]);
         }
         if pwm == 0 {
             pwm = 1;
@@ -139,7 +139,7 @@ impl IdentityTable {
         if pwm == 0 {
             return None;
         }
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if entry.pwm.load(Ordering::Acquire) == pwm {
                 return Some(entry);
             }
@@ -151,7 +151,7 @@ impl IdentityTable {
         if pwm == 0 {
             return None;
         }
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if entry.pwm.load(Ordering::Acquire) == pwm {
                 return Some(entry);
             }
@@ -160,7 +160,7 @@ impl IdentityTable {
     }
 
     pub fn find_by_note(&self, note: &str) -> Option<&PwmEntry> {
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if !entry.is_valid() {
                 continue;
             }
@@ -192,6 +192,8 @@ impl IdentityTable {
 
     /// T4-1: 全 Atomic 化后, create 改用 &self (替代 &mut self)
     /// 注: 调用方必须保证并发安全 (create 内已有 self.acquire/release 锁)
+    /// # Errors
+    /// 创建者权限级别溢出、PWM 已存在或身份表已满时返回 Err。
     pub fn create(&self, password: &str, note: &str, creator_pwm: u64) -> Result<u64, PwmError> {
         let privilege_level = if creator_pwm == 0 {
             0u8
@@ -225,12 +227,9 @@ impl IdentityTable {
             s
         };
 
-        let slot = match slot {
-            Some(s) => s,
-            None => {
-                self.release();
-                return Err(PwmError::TableFull);
-            }
+        let slot = if let Some(s) = slot { s } else {
+            self.release();
+            return Err(PwmError::TableFull);
         };
 
         // T4-1: 通过 &self.entries[slot] + 原子写入
@@ -292,12 +291,15 @@ impl IdentityTable {
             AuditAction::Create,
             pwm,
             0,
-            privilege_level as u64,
+            u64::from(privilege_level),
         );
 
         Ok(pwm)
     }
 
+    /// 将指定域上的部分能力从授权方授予被授权方。
+    /// # Errors
+    /// 授权方或被授权方不存在、授权方能力不足、授权方权限级别不足、被授权方被禁用或授权记录表已满时返回 Err。
     pub fn grant(
         &self,
         grantor_pwm: u64,
@@ -340,13 +342,16 @@ impl IdentityTable {
             grantor_pwm,
             AuditAction::Grant,
             grantee_pwm,
-            domain.as_u16() as u64,
+            u64::from(domain.as_u16()),
             caps.as_u64(),
         );
 
         Ok(())
     }
 
+    /// 从目标 PWM 撤销指定域上的部分能力。
+    /// # Errors
+    /// 撤销方或目标不存在、撤销方权限级别不足、撤销方既非创建者也非授权者、撤销会破坏能力下限或目标被禁用时返回 Err。
     pub fn revoke(
         &self,
         revoker_pwm: u64,
@@ -393,13 +398,16 @@ impl IdentityTable {
             revoker_pwm,
             AuditAction::Revoke,
             target_pwm,
-            domain.as_u16() as u64,
+            u64::from(domain.as_u16()),
             caps.as_u64(),
         );
 
         Ok(())
     }
 
+    /// 将目标 PWM 的创建者身份转移给新的创建者。
+    /// # Errors
+    /// 当前创建者、目标或新创建者不存在、当前创建者并非目标的创建者或权限级别不足时返回 Err。
     pub fn transfer_creator(
         &self,
         current_creator_pwm: u64,
@@ -442,6 +450,8 @@ impl IdentityTable {
     }
 
     /// T4-1: 全 Atomic 化后, bootstrap 改用 &self (create 已为 &self)
+    /// # Errors
+    /// 创建身份失败或使用首次令牌授权失败时返回 Err。
     pub fn bootstrap(&self, password: &str, note: &str) -> Result<u64, PwmError> {
         bootstrap::generate_first_token();
 
@@ -454,6 +464,9 @@ impl IdentityTable {
         Ok(pwm)
     }
 
+    /// 使用首次令牌恢复一个已有身份的全部权限。
+    /// # Errors
+    /// 指定 note 对应的 PWM 不存在或密码校验失败时返回 Err。
     pub fn recover_with_first(&self, password: &str, note: &str) -> Result<u64, PwmError> {
         let pwm_entry = self.find_by_note(note).ok_or(PwmError::NotFound)?;
         let pwm = pwm_entry.pwm.load(Ordering::Acquire);
@@ -470,9 +483,12 @@ impl IdentityTable {
         Ok(pwm)
     }
 
+    /// 删除指定 PWM 对应的身份条目。
+    /// # Errors
+    /// 指定 PWM 不存在时返回 Err。
     pub fn delete(&self, pwm: u64) -> Result<(), PwmError> {
         self.acquire();
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if entry.pwm.load(Ordering::Acquire) == pwm {
                 entry.pwm.store(0, Ordering::Release);
                 self.count.fetch_sub(1, Ordering::AcqRel);
@@ -485,6 +501,9 @@ impl IdentityTable {
         Err(PwmError::NotFound)
     }
 
+    /// 禁用指定 PWM, 禁止其继续使用能力。
+    /// # Errors
+    /// 指定 PWM 不存在时返回 Err。
     pub fn disable(&self, pwm: u64) -> Result<(), PwmError> {
         let entry = self.find(pwm).ok_or(PwmError::NotFound)?;
         entry.add_flags(PwmFlags::DISABLED);
@@ -492,6 +511,9 @@ impl IdentityTable {
         Ok(())
     }
 
+    /// 重新启用指定 PWM, 恢复其能力使用权限。
+    /// # Errors
+    /// 指定 PWM 不存在时返回 Err。
     pub fn enable(&self, pwm: u64) -> Result<(), PwmError> {
         let entry = self.find(pwm).ok_or(PwmError::NotFound)?;
         entry.remove_flags(PwmFlags::DISABLED);
@@ -499,8 +521,10 @@ impl IdentityTable {
         Ok(())
     }
 
-    /// T4-1: 全 Atomic 化后, change_password 改用 &self + 原子字节写入
-    /// (替代原 &mut self + copy_from_slice, 后者要求 PwmEntry 字段非 Atomic)
+    /// T4-1: 全 Atomic 化后, `change_password` 改用 &self + 原子字节写入
+    /// (替代原 &mut self + `copy_from_slice`, 后者要求 `PwmEntry` 字段非 Atomic)
+    /// # Errors
+    /// 旧密码校验失败或指定 PWM 不存在时返回 Err。
     pub fn change_password(&self, pwm: u64, old: &str, new: &str) -> Result<(), PwmError> {
         if !self.verify_password(pwm, old) {
             return Err(PwmError::PasswordIncorrect);
@@ -523,7 +547,7 @@ impl IdentityTable {
         self.any_identity_exists.load(Ordering::Acquire)
     }
 
-    /// uid → PwmEntry (POSIX chown/kill 等 syscall 用)
+    /// uid → `PwmEntry` (POSIX chown/kill 等 syscall 用)
     pub fn find_by_uid(&self, uid: u32) -> Option<&PwmEntry> {
         if uid == 0xFFFF_FFFF {
             return None;
@@ -542,14 +566,14 @@ impl IdentityTable {
             .find(|e| e.is_valid() && e.get_gid() == gid)
     }
 
-    /// pwm → uid (stat 填充 st_uid 用)
+    /// pwm → uid (stat 填充 `st_uid` 用)
     pub fn uid_of(&self, pwm: u64) -> u32 {
-        self.find(pwm).map_or(0xFFFF_FFFF, |e| e.get_uid())
+        self.find(pwm).map_or(0xFFFF_FFFF, crate::kernel::services::credo::types::PwmEntry::get_uid)
     }
 
-    /// pwm → gid (stat 填充 st_gid 用)
+    /// pwm → gid (stat 填充 `st_gid` 用)
     pub fn gid_of(&self, pwm: u64) -> u32 {
-        self.find(pwm).map_or(0xFFFF_FFFF, |e| e.get_gid())
+        self.find(pwm).map_or(0xFFFF_FFFF, crate::kernel::services::credo::types::PwmEntry::get_gid)
     }
 }
 
@@ -564,7 +588,7 @@ impl IdentityTable {
 static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<IdentityTable> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 获取全局身份表 (T4-1: OnceLock 包装, 自动初始化, 0 unsafe)
+/// 获取全局身份表 (T4-1: `OnceLock` 包装, 自动初始化, 0 unsafe)
 pub fn get_table() -> &'static IdentityTable {
     GLOBAL_TABLE.get_or_init(|slot| { slot.write(IdentityTable::new()); })
 }

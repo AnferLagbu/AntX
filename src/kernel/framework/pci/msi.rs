@@ -1,6 +1,6 @@
 //! MSI/MSI-X — PCI 消息信号中断
 //!
-//! 实现 MSI 和 MSI-X 中断机制, 替代传统 INTx 引脚中断.
+//! 实现 MSI 和 MSI-X 中断机制, 替代传统 `INTx` 引脚中断.
 //!
 //! ## MSI vs MSI-X
 //!
@@ -34,7 +34,7 @@
 //! 0x08    PBA Offset + BAR Indicator (32-bit)
 //! ```
 //!
-//! ## 与 IrqLine 统一
+//! ## 与 `IrqLine` 统一
 //!
 //! MSI 向量注册到 IDT, 复用 IRQ 分发框架.
 //! 驱动通过 `msi_alloc_vector()` 获取向量, 再注册 ISR.
@@ -95,11 +95,13 @@ static MSI_VECTORS: AtomicU32 = AtomicU32::new(0);
 /// 分配一个 MSI 向量
 ///
 /// 返回分配的向量号, 或 None (向量耗尽).
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub fn msi_alloc_vector() -> Option<u8> {
     let mut bitmap = MSI_VECTORS.load(Ordering::Acquire);
     loop {
         // 找到第一个空闲位
-        let bit = (0..MSI_VECTOR_COUNT as u32).find(|&i| bitmap & (1 << i) == 0)?;
+        let bit = (0..u32::from(MSI_VECTOR_COUNT)).find(|&i| bitmap & (1 << i) == 0)?;
         let new_bitmap = bitmap | (1 << bit);
         match MSI_VECTORS.compare_exchange(bitmap, new_bitmap, Ordering::AcqRel, Ordering::Acquire) {
             Ok(_) => {
@@ -116,8 +118,8 @@ pub fn msi_alloc_vector() -> Option<u8> {
 
 /// 释放 MSI 向量
 pub fn msi_free_vector(vector: u8) {
-    let bit = (vector - MSI_VECTOR_BASE) as u32;
-    if bit < MSI_VECTOR_COUNT as u32 {
+    let bit = u32::from(vector - MSI_VECTOR_BASE);
+    if bit < u32::from(MSI_VECTOR_COUNT) {
         MSI_VECTORS.fetch_and(!(1 << bit), Ordering::AcqRel);
         crate::klog_debug!(Driver, "[MSI] Freed vector {}", vector);
     }
@@ -178,6 +180,8 @@ pub struct MsiConfig {
 /// 4. 启用 MSI
 ///
 /// 返回 MSI 配置, 或 None (无 MSI 能力/向量耗尽).
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub fn msi_enable(dev: &pci::PciDevice) -> Option<MsiConfig> {
     let cap_offset = pci_find_capability(dev, PCI_CAP_ID_MSI)?;
 
@@ -199,7 +203,7 @@ pub fn msi_enable(dev: &pci::PciDevice) -> Option<MsiConfig> {
 
     // 配置 Message Data
     // x86_64: [7:0] = Vector, [10:8] = Delivery Mode (000=fixed), [14:13] = 触发模式
-    let msg_data = vector as u32;
+    let msg_data = u32::from(vector);
 
     // 写入 Message Address (低32位)
     pci::write_config_dword(dev.bus, dev.device, dev.function, cap_offset + 0x04, msg_addr);
@@ -314,7 +318,7 @@ pub fn msix_enable(dev: &pci::PciDevice, num_vectors: u16) -> Option<MsixConfig>
     if (table_bar as usize) < dev.bar_count {
         let bar = &dev.bars[table_bar as usize];
         if bar.bar_type == pci::BarType::Memory32 || bar.bar_type == pci::BarType::Memory64 {
-            let table_virt = (bar.base_addr + table_offset as u64) as *mut MsixTableEntry;
+            let table_virt = (bar.base_addr + u64::from(table_offset)) as *mut MsixTableEntry;
 
             // SAFETY: table_virt 指向 MSI-X Table MMIO 区域
             unsafe {
@@ -330,7 +334,7 @@ pub fn msix_enable(dev: &pci::PciDevice, num_vectors: u16) -> Option<MsixConfig>
                     entry.msg_addr_lo = 0;
                     entry.msg_addr_hi = 0;
                 }
-                entry.msg_data = base_vector as u32;
+                entry.msg_data = u32::from(base_vector);
                 entry.vector_ctrl = 0; // Unmask
             }
         }
@@ -378,7 +382,7 @@ pub fn msix_mask_vector(dev: &pci::PciDevice, config: &MsixConfig, index: u16) {
     if (config.table_bar as usize) < dev.bar_count {
         let bar = &dev.bars[config.table_bar as usize];
         if bar.bar_type == pci::BarType::Memory32 || bar.bar_type == pci::BarType::Memory64 {
-            let table_virt = (bar.base_addr + config.table_offset as u64) as *mut MsixTableEntry;
+            let table_virt = (bar.base_addr + u64::from(config.table_offset)) as *mut MsixTableEntry;
             // SAFETY: MMIO 访问
             unsafe {
                 let entry = &mut *table_virt.add(index as usize);
@@ -396,7 +400,7 @@ pub fn msix_unmask_vector(dev: &pci::PciDevice, config: &MsixConfig, index: u16)
     if (config.table_bar as usize) < dev.bar_count {
         let bar = &dev.bars[config.table_bar as usize];
         if bar.bar_type == pci::BarType::Memory32 || bar.bar_type == pci::BarType::Memory64 {
-            let table_virt = (bar.base_addr + config.table_offset as u64) as *mut MsixTableEntry;
+            let table_virt = (bar.base_addr + u64::from(config.table_offset)) as *mut MsixTableEntry;
             // SAFETY: MMIO 访问
             unsafe {
                 let entry = &mut *table_virt.add(index as usize);

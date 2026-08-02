@@ -281,7 +281,7 @@ impl VgaDriver {
     pub fn clear_screen(&mut self) {
         let attr = self.attribute.as_u8();
         let buf = self.buffer_slice_mut();
-        let blank = ((attr as u16) << 8) | b' ' as u16;
+        let blank = (u16::from(attr) << 8) | u16::from(b' ');
         for v in buf.iter_mut() {
             *v = blank;
         }
@@ -325,7 +325,7 @@ impl VgaDriver {
                 }
 
                 let idx = self.cursor_y * SCREEN_WIDTH + self.cursor_x;
-                let val = ((self.attribute.as_u8() as u16) << 8) | ch as u16;
+                let val = (u16::from(self.attribute.as_u8()) << 8) | u16::from(ch);
                 self.buffer_slice_mut()[idx] = val;
 
                 self.cursor_x += 1;
@@ -344,7 +344,7 @@ impl VgaDriver {
     pub fn scroll_up(&mut self) {
         let attr = self.attribute.as_u8();
         let buf = self.buffer_slice_mut();
-        let blank = ((attr as u16) << 8) | b' ' as u16;
+        let blank = (u16::from(attr) << 8) | u16::from(b' ');
 
         // Copy row 1..N to row 0..N-1
         let count = SCREEN_WIDTH * (SCREEN_HEIGHT - 1);
@@ -370,6 +370,8 @@ impl VgaDriver {
 
     /// 更新硬件光标位置
     #[cfg(target_arch = "x86_64")]
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn update_hardware_cursor(&mut self) {
         let pos = (self.cursor_y * SCREEN_WIDTH + self.cursor_x) as u16;
         let Some(port) = self.vga_port.as_ref() else {
@@ -434,6 +436,8 @@ pub extern "C" fn vga_init() {
 /// 向 VGA 输出字符 (C 兼容接口)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vga_putchar(ch: i32) {
     VGA_DRIVER.with_mut(|opt| {
         if let Some(ref mut vga) = *opt {

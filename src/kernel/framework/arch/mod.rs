@@ -3,7 +3,7 @@
 //! ## 架构抽象层 (Architecture Abstraction Layer)
 //!
 //! 采用 **多子 trait + 超 trait** 模式：
-//! - `CoreArch` — 基础核心能力 (halt, cpu_id, timestamp, 内存屏障)
+//! - `CoreArch` — 基础核心能力 (halt, `cpu_id`, timestamp, 内存屏障)
 //! - `InterruptArch` — 中断 + IPI
 //! - `MmuArch` — 内存管理 + 上下文切换 + 用户态
 //! - `SystemArch` — 端口IO + 电源管理
@@ -25,7 +25,7 @@
 //!
 //! 单 `Arch` trait 在双架构下够用，但随着架构增多 (riscv64, loongarch64) 会膨胀。
 //! 拆分子 trait 后：
-//! - 新架构可按优先级分阶段实现 (先 CoreArch 跑起来, 再加 InterruptArch)
+//! - 新架构可按优先级分阶段实现 (先 `CoreArch` 跑起来, 再加 `InterruptArch`)
 //! - 各子 trait 可独立单元测试
 //! - 调用方可按需导入 (如 MMU 代码只需 `use MmuArch`)
 //!
@@ -34,12 +34,12 @@
 //! 所有 trait 方法标记为 `unsafe` 因为它们直接操作硬件:
 //! - MMIO/PMIO 操作 (端口读写)
 //! - 特权指令 (cli/sti, 写 CR3, invlpg)
-//! - 跨地址空间操作 (context_switch)
+//! - 跨地址空间操作 (`context_switch`)
 //!
 //! 调用方必须确保:
 //! - 中断保存/恢复成对调用
 //! - 页表基地址是有效的物理地址
-//! - context_switch 在正确的上下文中调用
+//! - `context_switch` 在正确的上下文中调用
 
 // ============================================================================
 // 模块声明
@@ -101,9 +101,9 @@ pub use shadow_stack::*;
 /// - `halt()` — CPU 暂停直到中断
 /// - `fence()` / `fence_w()` / `fence_r()` — 内存屏障
 pub trait CoreArch {
-    /// 获取当前 CPU ID (APIC ID / MPIDR_EL1)。
+    /// 获取当前 CPU ID (APIC ID / `MPIDR_EL1`)。
     fn cpu_id() -> u32;
-    /// 获取高精度时间戳 (rdtsc / mrs cntpct_el0)。
+    /// 获取高精度时间戳 (rdtsc / mrs `cntpct_el0`)。
     fn timestamp() -> u64;
     /// 暂停 CPU 直到下一次中断 (hlt / wfi)。
     fn halt();
@@ -134,13 +134,13 @@ pub trait InterruptArch {
     fn is_interrupt_enabled() -> bool;
     /// 最小中断初始化 — 仅设置中断向量表/描述符表。
     ///
-    /// x86_64: IDT 初始化 (idt_init)
-    /// aarch64: GICv3 + VBAR_EL1 已由 bootloader 配置, 此处为空操作
+    /// `x86_64`: IDT 初始化 (`idt_init`)
+    /// aarch64: `GICv3` + `VBAR_EL1` 已由 bootloader 配置, 此处为空操作
     fn interrupt_early_init();
     /// 完整中断初始化 — 包括中断控制器、IPI、定时器等。
     ///
-    /// x86_64: GDT + IDT + APIC + SMP AP boot
-    /// aarch64: GICv3 + Exception vectors + timer (已由 entry.rs 完成, 此处为空操作)
+    /// `x86_64`: GDT + IDT + APIC + SMP AP boot
+    /// aarch64: `GICv3` + Exception vectors + timer (已由 entry.rs 完成, 此处为空操作)
     fn interrupt_late_init();
     /// 向目标 CPU 发送核间中断。
     fn send_ipi(target_cpu: u32, vector: u8);
@@ -163,16 +163,16 @@ pub trait MmuArch {
     fn tlb_flush_page(vaddr: usize);
     /// 刷新整个 TLB (写 CR3 / tlbi vmalle1)。
     fn tlb_flush_all();
-    /// 读取当前页表基地址 (mov cr3 / mrs TTBR0_EL1)。
+    /// 读取当前页表基地址 (mov cr3 / mrs `TTBR0_EL1`)。
     fn read_page_table_base() -> u64;
-    /// 写入页表基地址 (mov to cr3 / msr TTBR0_EL1)。
+    /// 写入页表基地址 (mov to cr3 / msr `TTBR0_EL1`)。
     fn write_page_table_base(paddr: u64);
-    /// 读取触发页错误的地址 (mov cr2 / mrs FAR_EL1)。
+    /// 读取触发页错误的地址 (mov cr2 / mrs `FAR_EL1`)。
     fn read_fault_address() -> usize;
     /// 保存当前上下文到 `from`，从 `to` 恢复上下文。
     ///
     /// # Safety
-    /// `from` 和 `to` 必须指向有效的 ProcessContext 内存。
+    /// `from` 和 `to` 必须指向有效的 `ProcessContext` 内存。
     fn context_switch(from: *mut u8, to: *const u8);
     /// 进入用户态执行 (sysret / eret)，此函数不会返回。
     /// `user_cr3` 为用户页表物理地址, 在 iretq 前切换 CR3.
@@ -198,9 +198,9 @@ pub trait SystemArch {
     fn outl(port: u16, value: u32);
     /// 从 I/O 端口读取双字 (in eax, dx)。
     fn inl(port: u16) -> u32;
-    /// 关机 (ACPI / PSCI SYSTEM_OFF)，永不返回。
+    /// 关机 (ACPI / PSCI `SYSTEM_OFF)，永不返回`。
     fn shutdown() -> !;
-    /// 重启 (8042 / PSCI SYSTEM_RESET)，永不返回。
+    /// 重启 (8042 / PSCI `SYSTEM_RESET)，永不返回`。
     fn reboot() -> !;
 }
 
@@ -314,7 +314,7 @@ pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
-/// 当前编译目标的架构类型 — x86_64。
+/// 当前编译目标的架构类型 — `x86_64`。
 pub type CurrentArch = x86_64::X8664;
 
 #[cfg(target_arch = "aarch64")]

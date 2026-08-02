@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-//! HvFS (Hypervisor File System) — 模块入口
+//! `HvFS` (Hypervisor File System) — 模块入口
 //!
 //! 热插拔监听 + 公共类型重导出.
 
@@ -11,7 +11,7 @@ use crate::kernel::framework::driver::hotplug::{HotplugListener, HotplugEvent};
 pub use super::hvfs_data::*;
 pub use super::hvfs_inode::*;
 
-/// HvFS 热插拔监听器 — 将块设备热插拔事件转发到 HvFS
+/// `HvFS` 热插拔监听器 — 将块设备热插拔事件转发到 `HvFS`
 struct HvfsHotplugListener;
 
 impl HotplugListener for HvfsHotplugListener {
@@ -36,7 +36,7 @@ impl HotplugListener for HvfsHotplugListener {
     }
 }
 
-/// 注册 HvFS 热插拔监听器到全局热插拔管理器
+/// 注册 `HvFS` 热插拔监听器到全局热插拔管理器
 pub fn hvfs_hotplug_register() {
     use crate::kernel::framework::driver::hotplug::HOTPLUG_MANAGER;
     HOTPLUG_MANAGER.register_listener(Box::new(HvfsHotplugListener));

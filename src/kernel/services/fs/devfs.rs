@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-//! 设备文件系统 (DevFS) — services 层完整实现
+//! 设备文件系统 (`DevFS`) — services 层完整实现
 //!
 //! 从 framework/fs/devfs/devfs.rs 迁移而来. 0 unsafe, 纯策略.
 //!
@@ -10,7 +10,7 @@
 //! - **完整实现**: 包含设备注册/IO/目录读取, 不再依赖 framework 实现
 //!
 //! 评估日期: 2026-06-10
-//! E6-7: DevFS 策略提取
+//! E6-7: `DevFS` 策略提取
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -136,7 +136,7 @@ impl DevfsDevice {
 // DevfsData
 // ============================================================================
 
-/// DevFS 核心数据
+/// `DevFS` 核心数据
 pub struct DevfsData {
     devices: Mutex<[DevfsDevice; DEVFS_MAX_DEVICES]>,
     device_count: AtomicU32,
@@ -160,6 +160,10 @@ impl DevfsData {
         device.name[len] = 0;
     }
 
+    /// 注册设备到 devfs, 使其可被 `open` 打开.
+    ///
+    /// # Errors
+    /// 当同名设备已注册时返回 `AlreadyExists`; 当设备表已满时返回 `NoSpace`.
     pub fn register_device(&self, name: &str, dev_type: u8) -> KernelResult<()> {
         let mut devices = self.devices.lock();
         for device in devices.iter() {
@@ -187,6 +191,10 @@ impl DevfsData {
         Err(KernelError::NoSpace)
     }
 
+    /// 注销设备, 释放设备表项.
+    ///
+    /// # Errors
+    /// 当不存在名为 `name` 的已注册设备时返回 `FileNotFound`.
     pub fn unregister_device(&self, name: &str) -> KernelResult<()> {
         let mut devices = self.devices.lock();
         for device in devices.iter_mut() {
@@ -228,7 +236,7 @@ impl DevfsData {
                     .unwrap_or(DEVFS_MAX_NAME);
                 let name = core::str::from_utf8(&device.name[..end]).unwrap_or("");
                 if name == dev_name {
-                    return Some((device.dev_type as u32, device.dev_type));
+                    return Some((u32::from(device.dev_type), device.dev_type));
                 }
             }
         }
@@ -242,7 +250,7 @@ impl DevfsData {
                 buf.fill(0);
                 buf.len() as i32
             }
-            Some(DevKind::Console) | Some(DevKind::Tty) => 0,
+            Some(DevKind::Console | DevKind::Tty) => 0,
             Some(DevKind::Credo) => {
                 let pwm = crate::kernel::framework::credo::session::get_current_pwm();
                 let euid = crate::kernel::framework::credo::session::get_euid();
@@ -278,7 +286,7 @@ impl DevfsData {
                     len as i32
                 }
             }
-            Some(DevKind::Block) | Some(DevKind::Char) | Some(DevKind::Net) | Some(DevKind::Input) => {
+            Some(DevKind::Block | DevKind::Char | DevKind::Net | DevKind::Input) => {
                 // E6-9a: 物理设备 I/O 路由待 E6-9b (Chitin 桥接) 实现
                 -1
             }
@@ -288,8 +296,8 @@ impl DevfsData {
 
     pub fn write(&self, dev_type: u8, buf: &[u8]) -> i32 {
         match DevKind::from_u8(dev_type) {
-            Some(DevKind::Null) | Some(DevKind::Zero) => buf.len() as i32,
-            Some(DevKind::Console) | Some(DevKind::Tty) => {
+            Some(DevKind::Null | DevKind::Zero) => buf.len() as i32,
+            Some(DevKind::Console | DevKind::Tty) => {
                 // services 层不能使用 klog_info! (含 unsafe), 改用 safe 串口输出
                 crate::kernel::framework::klog::serial_write_bytes(buf);
                 buf.len() as i32
@@ -308,7 +316,7 @@ impl DevfsData {
                     Err(_) => KernelError::PermissionDenied.as_i32(),
                 }
             }
-            Some(DevKind::Block) | Some(DevKind::Char) | Some(DevKind::Net) | Some(DevKind::Input) => {
+            Some(DevKind::Block | DevKind::Char | DevKind::Net | DevKind::Input) => {
                 // E6-9a: 物理设备 I/O 路由待 E6-9b (Chitin 桥接) 实现
                 -1
             }
@@ -343,23 +351,23 @@ impl DevfsData {
 // 全局实例
 // ============================================================================
 
-/// 全局 DevFS 数据
+/// 全局 `DevFS` 数据
 pub static DEVFS_DATA: DevfsData = DevfsData::new();
 
-/// 初始化全局 DevFS 并注册标准虚拟设备
+/// 初始化全局 `DevFS` 并注册标准虚拟设备
 pub fn init() {
     register_standard();
 }
 
-/// 初始化 DevFS 并订阅 Chitin 设备注册回调 (E6-9b)
+/// 初始化 `DevFS` 并订阅 Chitin 设备注册回调 (E6-9b)
 ///
-/// Chitin 驱动注册新设备时, DevFS 自动创建对应设备节点。
+/// Chitin 驱动注册新设备时, `DevFS` 自动创建对应设备节点。
 pub fn init_with_chitin_bridge() {
     register_standard();
     crate::kernel::framework::chitin::chitin_set_register_callback(on_chitin_device_registered);
 }
 
-/// Chitin 设备注册回调 — 自动创建 DevFS 设备节点 (E6-9b)
+/// Chitin 设备注册回调 — 自动创建 `DevFS` 设备节点 (E6-9b)
 fn on_chitin_device_registered(dev: &crate::kernel::framework::chitin::ChitinDevice) {
     let kind = match dev.proto {
         crate::kernel::framework::chitin::ChitinProto::Block => DevKind::Block,
@@ -378,7 +386,7 @@ fn on_chitin_device_registered(dev: &crate::kernel::framework::chitin::ChitinDev
 // 安全设备文件描述符
 // ============================================================================
 
-/// DevFS 文件描述符
+/// `DevFS` 文件描述符
 #[derive(Debug, Clone, Copy)]
 pub struct DevFile {
     /// 内部节点索引
@@ -406,13 +414,13 @@ impl DevFile {
 // 安全 DevFS 代理
 // ============================================================================
 
-/// DevFS 安全代理 (services 层)。
+/// `DevFS` 安全代理 (services 层)。
 pub struct SafeDevFs {
     inner: &'static DevfsData,
 }
 
 impl SafeDevFs {
-    /// 创建全局 DevFS 代理
+    /// 创建全局 `DevFS` 代理
     pub fn new() -> Self {
         Self {
             inner: &DEVFS_DATA,
@@ -420,16 +428,25 @@ impl SafeDevFs {
     }
 
     /// 注册设备
+    ///
+    /// # Errors
+    /// 当同名设备已存在时返回 `AlreadyExists`; 当设备表已满时返回 `NoSpace`.
     pub fn register(&self, name: &str, kind: DevKind) -> Result<(), KernelError> {
         self.inner.register_device(name, kind as u8)
     }
 
     /// 注销设备
+    ///
+    /// # Errors
+    /// 当设备未注册时返回 `FileNotFound`.
     pub fn unregister(&self, name: &str) -> Result<(), KernelError> {
         self.inner.unregister_device(name)
     }
 
     /// 打开设备
+    ///
+    /// # Errors
+    /// 当设备不存在时返回 `FileNotFound`; 当设备类型无效时返回 `InvalidArgument`.
     pub fn open(&self, path: &str) -> Result<DevFile, KernelError> {
         match self.inner.open(path) {
             Some((index, dev_type)) => {
@@ -442,6 +459,9 @@ impl SafeDevFs {
     }
 
     /// 从设备读
+    ///
+    /// # Errors
+    /// 当底层设备读操作失败时返回 `Io`.
     pub fn read(&self, dev: &DevFile, buf: &mut [u8]) -> Result<usize, KernelError> {
         let rc = self.inner.read(dev.kind as u8, buf);
         if rc < 0 {
@@ -452,6 +472,9 @@ impl SafeDevFs {
     }
 
     /// 向设备写
+    ///
+    /// # Errors
+    /// 当底层设备写操作失败时返回 `Io`.
     pub fn write(&self, dev: &DevFile, buf: &[u8]) -> Result<usize, KernelError> {
         let rc = self.inner.write(dev.kind as u8, buf);
         if rc < 0 {
@@ -490,12 +513,15 @@ impl Default for SafeDevFs {
 use crate::kernel::services::sync::once::OnceCell;
 static GLOBAL_DEVFS: OnceCell<SafeDevFs> = OnceCell::new();
 
-/// 初始化全局 DevFS
+/// 初始化全局 `DevFS`
 pub fn init_global() {
     let _ = GLOBAL_DEVFS.get_or_init(|slot| { slot.write(SafeDevFs::new()); });
 }
 
-/// 获取全局 DevFS 引用
+/// 获取全局 `DevFS` 引用
+///
+/// # Panics
+/// 当 `init_global()` 尚未被调用、全局实例未初始化时发生 panic (内部使用 `expect`).
 pub fn global() -> &'static SafeDevFs {
     GLOBAL_DEVFS
         .get()
@@ -506,12 +532,18 @@ pub fn global() -> &'static SafeDevFs {
 // 便利函数
 // ============================================================================
 
-/// 注册设备到全局 DevFS
+/// 注册设备到全局 `DevFS`
+///
+/// # Errors
+/// 错误条件与 [`SafeDevFs::register`] 相同.
 pub fn register(name: &str, kind: DevKind) -> Result<(), KernelError> {
     global().register(name, kind)
 }
 
-/// 打开全局 DevFS 设备
+/// 打开全局 `DevFS` 设备
+///
+/// # Errors
+/// 错误条件与 [`SafeDevFs::open`] 相同.
 pub fn open(path: &str) -> Result<DevFile, KernelError> {
     global().open(path)
 }
@@ -541,7 +573,7 @@ pub fn register_standard() {
 use alloc::sync::Arc;
 use crate::kernel::services::fs::inode::Inode;
 
-/// 设备文件 Inode — DevFS 的 Inode 实现
+/// 设备文件 Inode — `DevFS` 的 Inode 实现
 pub struct DevFsInode {
     dev_type: u8,
     mount_idx: u32,
@@ -574,7 +606,7 @@ impl Inode for DevFsInode {
 
     fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
         Ok(VfsStat {
-            node_id: self.dev_type as u32,
+            node_id: u32::from(self.dev_type),
             mode: 0o20666,
             file_type: crate::kernel::framework::fs::VfsFileType::Dev.as_u8(),
             perm: 0o666,
@@ -600,7 +632,7 @@ impl Inode for DevFsInode {
     }
 
     fn node_id(&self) -> u32 {
-        self.dev_type as u32
+        u32::from(self.dev_type)
     }
 
     fn mount_idx(&self) -> u32 {

@@ -22,10 +22,10 @@
 //!
 //! # Safety
 //!
-//! - SignalFdTable 由 IrqSpinLock 保护
+//! - `SignalFdTable` 由 `IrqSpinLock` 保护
 //! - 信号消费操作与 signal 投递路径共享进程 pending 位图,
-//!   通过 IrqSpinLock 保证互斥
-//! - signalfd_siginfo 写入用户空间前由 services 层校验指针
+//!   通过 `IrqSpinLock` 保证互斥
+//! - `signalfd_siginfo` 写入用户空间前由 services 层校验指针
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -41,19 +41,19 @@ pub const SFD_MAX_SLOTS: usize = 16;
 /// FD 空间起始
 /// TD-02: 基址来源已迁移至 `framework::proc::FdPlan::SIGNAL_FD` 单一来源, 不再硬编码.
 pub const SFD_FD_BASE: i32 = crate::kernel::framework::proc::FdPlan::SIGNAL_FD.base;
-/// SFD_CLOEXEC
+/// `SFD_CLOEXEC`
 pub const SFD_CLOEXEC: i32 = 0o2000000;
-/// SFD_NONBLOCK
+/// `SFD_NONBLOCK`
 pub const SFD_NONBLOCK: i32 = 0o4000;
 
-/// signalfd_siginfo 大小 (128 字节, 与 Linux 一致)
+/// `signalfd_siginfo` 大小 (128 字节, 与 Linux 一致)
 pub const SIGNALFD_SIGINFO_SIZE: usize = 128;
 
 // ============================================================================
 // signalfd_siginfo 布局 (与 Linux 兼容)
 // ============================================================================
 
-/// signalfd_siginfo — 传递给用户空间的信号信息
+/// `signalfd_siginfo` — 传递给用户空间的信号信息
 ///
 /// 布局与 Linux `struct signalfd_siginfo` 兼容 (128 字节)
 #[repr(C)]
@@ -78,7 +78,7 @@ pub struct SignalFdSigInfo {
 }
 
 impl SignalFdSigInfo {
-    /// 创建零值 signalfd_siginfo
+    /// 创建零值 `signalfd_siginfo`
     pub const fn zeroed() -> Self {
         Self {
             ssi_signo: 0,
@@ -151,9 +151,9 @@ static SFD_COUNT: AtomicU32 = AtomicU32::new(0);
 
 /// signalfd — 创建/修改 signalfd 实例
 ///
-/// `fd`: -1 创建新实例, ≥ SFD_FD_BASE 修改已有实例的掩码
+/// `fd`: -1 创建新实例, ≥ `SFD_FD_BASE` 修改已有实例的掩码
 /// `mask_ptr`: 指向 u128 信号掩码的用户空间指针
-/// `flags`: SFD_CLOEXEC | SFD_NONBLOCK
+/// `flags`: `SFD_CLOEXEC` | `SFD_NONBLOCK`
 /// 返回 fd (≥ 220), 或负 errno
 pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
     // flags 校验
@@ -189,7 +189,7 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
         }
         table.slots[idx].sigmask = sigmask;
         crate::klog_debug!(Sync, "[signalfd] Update fd={} mask=0x{:X}", fd, sigmask);
-        return fd as i64;
+        return i64::from(fd);
     }
 
     if fd != -1 {
@@ -217,13 +217,13 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
     SFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
     crate::klog_debug!(Sync, "[signalfd] Created fd={} pid={}", new_fd, current_pid);
-    new_fd as i64
+    i64::from(new_fd)
 }
 
 /// signalfd read — 读取一个待处理信号
 ///
 /// 检查当前进程 pending & sigmask, 取最低编号信号,
-/// 构造 signalfd_siginfo 写入用户空间, 并消费该信号.
+/// 构造 `signalfd_siginfo` 写入用户空间, 并消费该信号.
 ///
 /// `fd`: signalfd 文件描述符
 /// `buf`: 用户空间缓冲区 (至少 128 字节)
@@ -315,7 +315,7 @@ pub fn sys_signalfd_close(fd: i32) -> i64 {
 // epoll 集成
 // ============================================================================
 
-/// 检查 signalfd 是否就绪 (供 epoll check_fd_ready 调用)
+/// 检查 signalfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (有待处理信号) 或 0
 pub fn signalfd_poll_events(fd: i32) -> u32 {
@@ -349,7 +349,7 @@ pub fn signalfd_poll_events(fd: i32) -> u32 {
 
 /// 获取进程 pending 信号位图
 fn get_process_pending(pid: u32) -> u128 {
-    crate::kernel::framework::proc::process_with(pid, |proc| proc.signal_pending_get() as u128)
+    crate::kernel::framework::proc::process_with(pid, |proc| u128::from(proc.signal_pending_get()))
         .unwrap_or(0)
 }
 
@@ -367,7 +367,7 @@ fn clear_process_pending(pid: u32, signo: u32) {
 
 /// fd → 槽位索引
 ///
-/// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 SFD_FD_BASE 字面量 +
+/// TD-02 V4: 改走 `fd_alloc::idx_of` 集中反查, 本地不再持有 `SFD_FD_BASE` 字面量 +
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
     match crate::kernel::framework::proc::idx_of(fd) {
@@ -380,7 +380,7 @@ fn fd_to_idx(fd: i32) -> Option<usize> {
 
 /// 检查 fd 是否属于 signalfd 空间
 ///
-/// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 SFD_FD_BASE 字面量 + 算术.
+/// TD-02 V4: 改走 `fd_alloc::idx_of`, 不再持有 `SFD_FD_BASE` 字面量 + 算术.
 pub fn is_signalfd_fd(fd: i32) -> bool {
     matches!(
         crate::kernel::framework::proc::idx_of(fd),

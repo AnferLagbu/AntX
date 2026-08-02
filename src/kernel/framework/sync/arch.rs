@@ -21,8 +21,8 @@ use crate::kernel::framework::arch::Arch;
 
 /// CPU 自旋提示 — 告知 CPU 当前在自旋等待锁。
 ///
-/// x86_64: `pause` 指令
-/// AArch64: `yield` 提示指令 (#1)
+/// `x86_64`: `pause` 指令
+/// `AArch64`: `yield` 提示指令 (#1)
 #[inline(always)]
 pub fn spin_hint() {
     // 使用 fence() 作为通用自旋提示: 强内存屏障防止 CPU 投机执行

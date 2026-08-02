@@ -41,12 +41,12 @@ pub use composite::{probe as composite_probe, probe_init as composite_probe_init
 // 错误
 // ============================================================================
 
-/// Chitin 操作错误 — TD-20: 收敛到 KernelError, 1 字段 chitin 特有 + 1 共享包装.
+/// Chitin 操作错误 — TD-20: 收敛到 `KernelError`, 1 字段 chitin 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `WrongType`: 设备类型不匹配 (按类型查询时设备类型不符)
-///   - `Kernel(KernelError)`: 共享错误 (NotFound / AlreadyExists / Io→Fault /
-///     InvalidArgument / NoResources→WouldBlock / NotReady / PermissionDenied /
+///   - `Kernel(KernelError)`: 共享错误 (`NotFound` / `AlreadyExists` / Io→Fault /
+///     `InvalidArgument` / NoResources→WouldBlock / `NotReady` / `PermissionDenied` /
 ///     Other) 全部走单一来源
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChitinError {
@@ -106,7 +106,7 @@ impl DeviceId {
 // 协议类型
 // ============================================================================
 
-/// 设备协议 (与 kernel::chitin::ChitinProto 对齐)
+/// 设备协议 (与 `kernel::chitin::ChitinProto` 对齐)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Proto {
@@ -185,6 +185,10 @@ pub struct DeviceInfo {
 /// 由于内核 `chitin_register` 需要 `&'static str`, services 层无法直接传 `&str`。
 /// 调用方应在启动期 (`&'static` 上下文) 直接调用 `chitin::chitin_register`,
 /// 或使用本函数 (内部泄漏 `Box<str>` 转 `&'static str`, 仅用于一次性注册)。
+///
+/// # Errors
+/// 当设备表已满 (`chitin_register` 返回 `u32::MAX`) 时, 返回
+/// `Err(ChitinError::Kernel(KernelError::WouldBlock))`.
 pub fn register(
     name: &str,
     proto: Proto,
@@ -262,7 +266,7 @@ pub fn count_by_proto(proto: Proto) -> usize {
     chitin::chitin_count_by_proto(p)
 }
 
-/// 查找网络设备 (返回 (NetOps, driver_data, mac))
+/// 查找网络设备 (返回 (`NetOps`, `driver_data`, mac))
 pub fn find_net_device() -> Option<(
     &'static crate::kernel::framework::chitin::proto_net::NetOps,
     *mut u8,
@@ -308,12 +312,20 @@ pub fn shutdown_all() {
 /// - `drive`: 块设备索引
 /// - `sector`: 起始扇区
 /// - `buf`: 接收缓冲区 (至少 512 字节)
+///
+/// # Errors
+/// 当底层 `chitin_blk_read` 返回非零错误码时, 返回由该错误码转换得到的
+/// `Err(ChitinError)`.
 pub fn blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> ChitinResult<()> {
     let rc = chitin::chitin_blk_read(drive, sector, buf);
     if rc == 0 { Ok(()) } else { Err(ChitinError::from_i32(rc)) }
 }
 
 /// 写块设备
+///
+/// # Errors
+/// 当底层 `chitin_blk_write` 返回非零错误码时, 返回由该错误码转换得到的
+/// `Err(ChitinError)`.
 pub fn blk_write(drive: u8, sector: u64, buf: &[u8]) -> ChitinResult<()> {
     let rc = chitin::chitin_blk_write(drive, sector, buf);
     if rc == 0 { Ok(()) } else { Err(ChitinError::from_i32(rc)) }

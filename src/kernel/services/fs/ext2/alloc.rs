@@ -9,6 +9,10 @@ use super::block_group::Ext2BlockGroupDescriptor;
 use super::inode::Ext2Inode;
 
 /// 在指定块组中分配一个空闲块
+///
+/// # Errors
+/// 当底层位图读取/写入失败时返回 `Io`;
+/// 当块组内没有空闲块时返回 `NoSpace`.
 pub fn alloc_block_in_group(
     device_idx: u8,
     super_block: &Ext2SuperBlock,
@@ -18,7 +22,7 @@ pub fn alloc_block_in_group(
     let block_size = super_block.block_size() as usize;
 
     // 读取块位图
-    let bitmap_sector = bgd.bg_block_bitmap as u64 * block_size as u64 / 512;
+    let bitmap_sector = u64::from(bgd.bg_block_bitmap) * block_size as u64 / 512;
     let bitmap_sector_count = (block_size / 512).max(1) as u32;
     let mut bitmap_data = alloc::vec![0u8; block_size];
 
@@ -65,6 +69,9 @@ pub fn alloc_block_in_group(
 }
 
 /// 释放一个块
+///
+/// # Errors
+/// 当底层位图读取/写入失败时返回 `Io`.
 pub fn free_block(
     device_idx: u8,
     super_block: &Ext2SuperBlock,
@@ -75,7 +82,7 @@ pub fn free_block(
     let block_offset = block_num % super_block.s_blocks_per_group;
 
     // 读取块位图
-    let bitmap_sector = bgd.bg_block_bitmap as u64 * block_size as u64 / 512;
+    let bitmap_sector = u64::from(bgd.bg_block_bitmap) * block_size as u64 / 512;
     let bitmap_sector_count = (block_size / 512).max(1) as u32;
     let mut bitmap_data = alloc::vec![0u8; block_size];
 
@@ -103,6 +110,10 @@ pub fn free_block(
 }
 
 /// 写入一个块
+///
+/// # Errors
+/// 当 `data` 长度超过块大小时返回 `InvalidArgument`;
+/// 当底层扇区写入失败时返回 `Io`.
 pub fn write_block(
     device_idx: u8,
     super_block: &Ext2SuperBlock,
@@ -117,7 +128,7 @@ pub fn write_block(
     let mut buf = alloc::vec![0u8; block_size];
     buf[..data.len()].copy_from_slice(data);
 
-    let sector = block_num as u64 * block_size as u64 / 512;
+    let sector = u64::from(block_num) * block_size as u64 / 512;
     let sector_count = (block_size / 512) as u32;
 
     let result = with_device(device_idx as usize, |dev| {
@@ -131,6 +142,10 @@ pub fn write_block(
 }
 
 /// 写入 inode 到磁盘
+///
+/// # Errors
+/// 当 `inode_num` 所属块组超出 `block_groups` 范围时返回 `InvalidArgument`;
+/// 当底层扇区写入失败时返回 `Io`.
 pub fn write_inode(
     device_idx: u8,
     super_block: &Ext2SuperBlock,
@@ -193,6 +208,10 @@ pub fn write_inode(
 }
 
 /// 在指定块组中分配一个空闲 inode
+///
+/// # Errors
+/// 当底层位图读取/写入失败时返回 `Io`;
+/// 当块组内没有空闲 inode 时返回 `NoSpace`.
 pub fn alloc_inode_in_group(
     device_idx: u8,
     super_block: &Ext2SuperBlock,
@@ -202,7 +221,7 @@ pub fn alloc_inode_in_group(
     let block_size = super_block.block_size() as usize;
 
     // 读取 inode 位图
-    let bitmap_sector = bgd.bg_inode_bitmap as u64 * block_size as u64 / 512;
+    let bitmap_sector = u64::from(bgd.bg_inode_bitmap) * block_size as u64 / 512;
     let bitmap_sector_count = (block_size / 512).max(1) as u32;
     let mut bitmap_data = alloc::vec![0u8; block_size];
 
@@ -249,6 +268,9 @@ pub fn alloc_inode_in_group(
 }
 
 /// 释放一个 inode
+///
+/// # Errors
+/// 当底层位图读取/写入失败时返回 `Io`.
 pub fn free_inode(
     device_idx: u8,
     super_block: &Ext2SuperBlock,
@@ -259,7 +281,7 @@ pub fn free_inode(
     let inode_offset = (inode_num - super_block.first_inode()) % super_block.s_inodes_per_group;
 
     // 读取 inode 位图
-    let bitmap_sector = bgd.bg_inode_bitmap as u64 * block_size as u64 / 512;
+    let bitmap_sector = u64::from(bgd.bg_inode_bitmap) * block_size as u64 / 512;
     let bitmap_sector_count = (block_size / 512).max(1) as u32;
     let mut bitmap_data = alloc::vec![0u8; block_size];
 

@@ -6,8 +6,8 @@
 //!
 //! - 以 `(inode_id, page_index)` 为键的全局哈希表
 //! - 每个缓存页存储 4KB 文件数据 + 引用计数
-//! - MAP_SHARED: 写回 Page Cache (脏页标记)
-//! - MAP_PRIVATE: COW, 写入不回写 Page Cache
+//! - `MAP_SHARED`: 写回 Page Cache (脏页标记)
+//! - `MAP_PRIVATE`: COW, 写入不回写 Page Cache
 //!
 //! ## 同步
 //!
@@ -16,7 +16,7 @@
 //!
 //! # Safety
 //!
-//! - 缓存页由 PMM 分配, 通过 KERNEL_BASE 映射访问
+//! - 缓存页由 PMM 分配, 通过 `KERNEL_BASE` 映射访问
 //! - 脏页写回由文件系统负责 (当前阶段仅标记)
 //! - 仅 `pcache_copy_to_user` 保留 unsafe (用户态指针操作)
 
@@ -30,6 +30,8 @@ use crate::kernel::framework::sync::IrqSpinLock;
 /// 将物理页内容清零
 ///
 /// 用于新分配的物理页初始化, 防止信息泄漏.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn zero_phys_page(phys: PhysAddr) {
     let virt = phys.to_virt();
     // SAFETY: phys 由 PMM 分配, to_virt() 返回有效的内核虚拟地址;
@@ -42,6 +44,8 @@ fn zero_phys_page(phys: PhysAddr) {
 /// 将数据复制到物理页
 ///
 /// 复制长度取 `min(src.len(), PAGE_SIZE)`, 不足部分保持原值 (通常为零).
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn copy_to_phys_page(phys: u64, src: &[u8]) {
     let dst_virt = crate::kernel::framework::mm::phys_to_virt(phys);
     let copy_len = core::cmp::min(src.len(), PAGE_SIZE as usize);
@@ -55,6 +59,8 @@ fn copy_to_phys_page(phys: u64, src: &[u8]) {
 /// 从物理页复制数据到目标缓冲区
 ///
 /// 复制长度取 `min(dst.len(), PAGE_SIZE)`.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn copy_from_phys_page(phys: u64, dst: &mut [u8]) {
     let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
     let copy_len = core::cmp::min(dst.len(), PAGE_SIZE as usize);
@@ -73,15 +79,15 @@ fn copy_from_phys_page(phys: u64, dst: &mut [u8]) {
 struct PageCacheEntry {
     /// 对应的 inode 编号
     inode_id: u32,
-    /// 文件内页索引 (byte_offset / PAGE_SIZE)
+    /// 文件内页索引 (`byte_offset` / `PAGE_SIZE`)
     page_index: u64,
     /// 物理页帧 (由 PMM 分配)
     phys: u64,
     /// 引用计数 (多少个 VMA 映射了此页)
     ref_count: u32,
-    /// 是否为脏页 (MAP_SHARED 写入后标记)
+    /// 是否为脏页 (`MAP_SHARED` 写入后标记)
     dirty: bool,
-    /// 是否被占用 (inode_id != 0)
+    /// 是否被占用 (`inode_id` != 0)
     occupied: bool,
 }
 
@@ -131,7 +137,7 @@ impl PageCacheBucket {
 
     /// 查找缓存页, 返回物理地址
     fn lookup(&self, inode_id: u32, page_index: u64) -> Option<u64> {
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if entry.occupied && entry.inode_id == inode_id && entry.page_index == page_index {
                 return Some(entry.phys);
             }
@@ -141,7 +147,7 @@ impl PageCacheBucket {
 
     /// 查找并增加引用计数
     fn lookup_and_ref(&mut self, inode_id: u32, page_index: u64) -> Option<u64> {
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if entry.occupied && entry.inode_id == inode_id && entry.page_index == page_index {
                 entry.ref_count += 1;
                 return Some(entry.phys);
@@ -173,7 +179,7 @@ impl PageCacheBucket {
         // 通过 pcache_fill(inode, page, src) 显式完成 (避免持锁 + 跨层 I/O).
 
         // 插入条目
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if !entry.occupied {
                 entry.inode_id = inode_id;
                 entry.page_index = page_index;
@@ -193,7 +199,7 @@ impl PageCacheBucket {
 
     /// 标记脏页
     fn mark_dirty(&mut self, inode_id: u32, page_index: u64) {
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if entry.occupied && entry.inode_id == inode_id && entry.page_index == page_index {
                 entry.dirty = true;
                 return;
@@ -203,7 +209,7 @@ impl PageCacheBucket {
 
     /// 减少引用计数, 归零时释放
     fn deref(&mut self, inode_id: u32, page_index: u64) {
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if entry.occupied && entry.inode_id == inode_id && entry.page_index == page_index {
                 if entry.ref_count > 0 {
                     entry.ref_count -= 1;
@@ -222,7 +228,7 @@ impl PageCacheBucket {
 
     /// 释放指定 inode 的所有缓存页
     fn invalidate_inode(&mut self, inode_id: u32) {
-        for entry in self.entries.iter_mut() {
+        for entry in &mut self.entries {
             if entry.occupied && entry.inode_id == inode_id {
                 let phys = PhysAddr(entry.phys);
                 pmm::get_pmm().free_page(phys);
@@ -236,7 +242,7 @@ impl PageCacheBucket {
     ///
     /// 若 `src.len() < PAGE_SIZE`, 剩余字节保持原值 (通常为零).
     fn fill(&mut self, inode_id: u32, page_index: u64, src: &[u8]) -> bool {
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             if entry.occupied && entry.inode_id == inode_id && entry.page_index == page_index {
                 copy_to_phys_page(entry.phys, src);
                 return true;
@@ -250,15 +256,17 @@ impl PageCacheBucket {
 // 全局 Page Cache
 // ============================================================================
 
-/// 每桶独立 IrqSpinLock, 持锁期间关中断, 避免与中断上下文死锁.
-/// IrqSpinLock<T> 自动实现 Send+Sync, 无需手写 unsafe impl.
+/// 每桶独立 `IrqSpinLock`, 持锁期间关中断, 避免与中断上下文死锁.
+/// `IrqSpinLock`<T> 自动实现 Send+Sync, 无需手写 unsafe impl.
 static PAGE_CACHE: [IrqSpinLock<PageCacheBucket>; PCACHE_HASH_BUCKETS] = {
     [const { IrqSpinLock::new(PageCacheBucket::new()) }; PCACHE_HASH_BUCKETS]
 };
 
 /// 计算哈希桶索引
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn pcache_hash(inode_id: u32, page_index: u64) -> usize {
-    let h = (inode_id as u64)
+    let h = u64::from(inode_id)
         .wrapping_mul(0x9E3779B97F4A7C15)
         .wrapping_add(page_index.wrapping_mul(0x517CC1B727220A95));
     (h as usize) & (PCACHE_HASH_BUCKETS - 1)
@@ -285,7 +293,7 @@ pub fn pcache_lookup(inode_id: u32, page_index: u64) -> Option<u64> {
     guard.lookup(inode_id, page_index)
 }
 
-/// 标记脏页 (MAP_SHARED 写入后调用)
+/// 标记脏页 (`MAP_SHARED` 写入后调用)
 pub fn pcache_mark_dirty(inode_id: u32, page_index: u64) {
     let idx = pcache_hash(inode_id, page_index);
     let mut guard = PAGE_CACHE[idx].lock();
@@ -313,6 +321,8 @@ pub fn pcache_invalidate_inode(inode_id: u32) {
 ///
 /// - `dest_virt` 必须指向有效的、已映射的用户空间页
 /// - `phys` 必须是 Page Cache 中的有效物理页
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) { unsafe {
     let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
     // SAFETY: 调用方保证 dest_virt 指向有效用户空间页, phys 为有效物理页.
@@ -325,11 +335,11 @@ pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) { unsafe {
 
 /// 填充指定缓存页内容 (解决 TRACK-A7DE25)
 ///
-/// 适用于 pcache_get 返回新页 (miss) 后, 由 vfs 层读取 fs 数据并回填.
-/// 复制长度取 `min(src.len(), PAGE_SIZE)`, 不足部分保持 pcache_get 时的零页状态.
+/// 适用于 `pcache_get` 返回新页 (miss) 后, 由 vfs 层读取 fs 数据并回填.
+/// 复制长度取 `min(src.len(), PAGE_SIZE)`, 不足部分保持 `pcache_get` 时的零页状态.
 ///
 /// 返回 true 表示找到并填充了对应 entry; false 表示 entry 不存在
-/// (调用方应仅在 pcache_get 成功返回后调用).
+/// (调用方应仅在 `pcache_get` 成功返回后调用).
 pub fn pcache_fill(inode_id: u32, page_index: u64, src: &[u8]) -> bool {
     let idx = pcache_hash(inode_id, page_index);
     let mut guard = PAGE_CACHE[idx].lock();

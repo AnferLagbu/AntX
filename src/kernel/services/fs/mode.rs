@@ -4,7 +4,7 @@
 //! ## 职责
 //!
 //! - 0 unsafe,纯类型安全
-//! - 委托 framework/fs/vfs::api 完成
+//! - 委托 `framework/fs/vfs::api` 完成
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
@@ -18,6 +18,9 @@ use crate::kernel::framework::syscall::Errno;
 /// umask(mask) — 设置文件创建掩码,返回旧值
 ///
 /// 简化: 0o777 范围 mask, 0 是合法参数。
+///
+/// # Errors
+/// 当 `mask` 超过 0o777 (超出 9 bit) 时返回 `EINVAL`.
 pub fn umask_syscall(mask: u32) -> Result<usize, Errno> {
     // mask 范围 0..=0o777 (9 bit)
     if mask > 0o777 {
@@ -31,6 +34,10 @@ pub fn umask_syscall(mask: u32) -> Result<usize, Errno> {
 // ============================================================================
 
 /// mkdir(path, mode) — 创建目录
+///
+/// # Errors
+/// 当 `path_ptr` 为空或不在用户可访问范围内时返回 `EFAULT`;
+/// 其余错误 (如路径已存在、无权限等) 以对应的 `Errno` 返回.
 pub fn mkdir_syscall(path_ptr: u64, _mode: i32) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -41,7 +48,7 @@ pub fn mkdir_syscall(path_ptr: u64, _mode: i32) -> Result<usize, Errno> {
     let pwm = current_pwm()?;
     // SAFETY: path_ptr 由 check_user_ptr 验证
     let r = fw::vfs_mkdir(path_ptr as *const u8, pwm);
-    if r < 0 { Err(Errno::from_ret(r as i64)) } else { Ok(r as usize) }
+    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
 }
 
 // ============================================================================
@@ -49,6 +56,10 @@ pub fn mkdir_syscall(path_ptr: u64, _mode: i32) -> Result<usize, Errno> {
 // ============================================================================
 
 /// rmdir(path) — 删除目录
+///
+/// # Errors
+/// 当 `path_ptr` 为空或不在用户可访问范围内时返回 `EFAULT`;
+/// 其余错误 (如目录不存在、非空、无权限等) 以对应的 `Errno` 返回.
 pub fn rmdir_syscall(path_ptr: u64) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -58,7 +69,7 @@ pub fn rmdir_syscall(path_ptr: u64) -> Result<usize, Errno> {
     }
     let pwm = current_pwm()?;
     let r = fw::vfs_rmdir(path_ptr as *const u8, pwm);
-    if r < 0 { Err(Errno::from_ret(r as i64)) } else { Ok(r as usize) }
+    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
 }
 
 // ============================================================================
@@ -66,6 +77,11 @@ pub fn rmdir_syscall(path_ptr: u64) -> Result<usize, Errno> {
 // ============================================================================
 
 /// chmod(path, mode) — 改变文件权限
+///
+/// # Errors
+/// 当 `path_ptr` 为空或不在用户可访问范围内时返回 `EFAULT`;
+/// 当 `mode` 超过 0o7777 (超出权限位范围) 时返回 `EINVAL`;
+/// 其余错误 (如无权限等) 以对应的 `Errno` 返回.
 pub fn chmod_syscall(path_ptr: u64, mode: u32) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -79,7 +95,7 @@ pub fn chmod_syscall(path_ptr: u64, mode: u32) -> Result<usize, Errno> {
     }
     let pwm = current_pwm()?;
     let r = fw::vfs_chmod(path_ptr as *const u8, mode as u16, pwm);
-    if r < 0 { Err(Errno::from_ret(r as i64)) } else { Ok(r as usize) }
+    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
 }
 
 // ============================================================================
@@ -87,6 +103,10 @@ pub fn chmod_syscall(path_ptr: u64, mode: u32) -> Result<usize, Errno> {
 // ============================================================================
 
 /// fchmod(fd, mode) — 按 FD 改变权限
+///
+/// # Errors
+/// 当 `fd` 为负数时返回 `EBADF`; 当 `mode` 超过 0o7777 时返回 `EINVAL`;
+/// 其余错误以对应的 `Errno` 返回.
 pub fn fchmod_syscall(fd: i32, mode: u32) -> Result<usize, Errno> {
     if fd < 0 {
         return Err(Errno::EBADF);
@@ -95,14 +115,14 @@ pub fn fchmod_syscall(fd: i32, mode: u32) -> Result<usize, Errno> {
         return Err(Errno::EINVAL);
     }
     let r = fw::vfs_fchmod(fd as u32, mode as u16);
-    if r < 0 { Err(Errno::from_ret(r as i64)) } else { Ok(r as usize) }
+    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
 }
 
 // ============================================================================
 // 内部辅助
 // ============================================================================
 
-/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())
 }

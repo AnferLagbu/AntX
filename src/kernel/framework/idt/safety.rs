@@ -231,8 +231,8 @@ pub fn is_null_or_invalid(addr: u64) -> bool {
 /// 检查地址是否位于用户地址空间.
 ///
 /// 用户空间范围:
-/// - x86_64: `[USER_ADDR_MIN, KERNEL_BASE)` — 高半区内核映射模型
-/// - aarch64: `[USER_ADDR_MIN, KERNEL_TEXT_BASE)` — 恒等映射模型, 内核从 KERNEL_TEXT_BASE 起加载
+/// - `x86_64`: `[USER_ADDR_MIN, KERNEL_BASE)` — 高半区内核映射模型
+/// - aarch64: `[USER_ADDR_MIN, KERNEL_TEXT_BASE)` — 恒等映射模型, 内核从 `KERNEL_TEXT_BASE` 起加载
 ///
 /// 任何落在此区间外的地址 (null/低地址/内核地址) 均视为非用户地址.
 ///

@@ -49,7 +49,7 @@ pub const USER_KSTACK_SIZE: u64 = 16384;
 /// 用户栈的最大自动扩展大小.
 pub const USER_STACK_MAX_SIZE: u64 = 8 * 1024 * 1024;
 
-/// 用户 ELF 可执行文件的默认加载地址 (非 PIE, ET_EXEC).
+/// 用户 ELF 可执行文件的默认加载地址 (非 PIE, `ET_EXEC`).
 pub const USER_CODE_BASE: u64 = 0x400000;
 
 // ============================================================================
@@ -58,8 +58,8 @@ pub const USER_CODE_BASE: u64 = 0x400000;
 
 /// ASLR 熵位数 — 栈/mmap/堆各区域的随机偏移位数.
 ///
-/// 8 位 = 256 种偏移, 偏移范围 = 256 * PAGE_SIZE = 1 MiB.
-/// Linux x86_64 默认 28 位 (mmap), 此处保守取 8 位以简化实现.
+/// 8 位 = 256 种偏移, 偏移范围 = 256 * `PAGE_SIZE` = 1 MiB.
+/// Linux `x86_64` 默认 28 位 (mmap), 此处保守取 8 位以简化实现.
 pub const ASLR_STACK_BITS: u64 = 8;
 pub const ASLR_MMAP_BITS: u64 = 8;
 pub const ASLR_HEAP_BITS: u64 = 8;
@@ -72,12 +72,12 @@ pub const USER_MMAP_BASE: u64 = 0x7FFFF7000000;
 
 /// 堆区域基址 (ASLR 偏移前).
 ///
-/// 位于代码段上方, 由 brk() 扩展.
+/// 位于代码段上方, 由 `brk()` 扩展.
 pub const USER_HEAP_BASE: u64 = 0x600000;
 
 /// PIE 加载基址 (ASLR 偏移前).
 ///
-/// ET_DYN ELF 在此基址 + 随机偏移处加载.
+/// `ET_DYN` ELF 在此基址 + 随机偏移处加载.
 pub const USER_PIE_BASE: u64 = 0x555555554000;
 
 // ============================================================================

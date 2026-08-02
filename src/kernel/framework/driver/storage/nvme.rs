@@ -1,10 +1,10 @@
 // I-49: 文件级 #![allow(dead_code)] 已移除. 启动路径 (storage::init) 通过
 // nvme_block::NvmeBlockDevice 调用本文件的 NVMe 控制器 API, 不再需要宽泛豁免.
 // 若有局部未使用项 (如保留作未来 API), 改为 #[allow(dead_code)] 单项标注 + 注释.
-//! NVMe 驱动 (NVMe Driver)
+//! `NVMe` 驱动 (`NVMe` Driver)
 //!
-//! 提供NVMe (Non-Volatile Memory Express) SSD支持：
-//! - **PCIe接口**: 高速PCIe总线连接
+//! `提供NVMe` (Non-Volatile Memory Express) SSD支持：
+//! - **`PCIe接口`**: `高速PCIe总线连接`
 //! - **DMA读写**: Admin队列 + I/O队列提交
 //! - **PRP寻址**: 物理区域页寻址
 //! - **命名空间**: 多命名空间支持
@@ -96,7 +96,7 @@ pub struct NvmeControllerRegisters {
     // 门铃寄存器紧随其后
 }
 
-/// NVMe 控制器能力寄存器 (CAP) 位域 — NVMe 规范 §3.1.1
+/// `NVMe` 控制器能力寄存器 (CAP) 位域 — `NVMe` 规范 §3.1.1
 ///
 /// 当前代码直接使用 `(regs.cap >> 32) & 0xF` 读取 DSTRD.
 /// 完整位域定义供参考:
@@ -110,7 +110,7 @@ pub struct NvmeControllerRegisters {
 /// - MPSMAX  [52:55]: 最大内存页大小
 mod cap {}
 
-/// NVMe 控制器配置寄存器 (CC) 位域 — NVMe 规范 §3.1.5
+/// `NVMe` 控制器配置寄存器 (CC) 位域 — `NVMe` 规范 §3.1.5
 ///
 /// 未实现位: SHN [14:15] (关机通知)
 mod cc {
@@ -122,7 +122,7 @@ mod cc {
     pub const IOSQES_SHIFT: u32 = 24;
 }
 
-/// NVMe 控制器状态寄存器 (CSTS) 位域 — NVMe 规范 §3.1.7
+/// `NVMe` 控制器状态寄存器 (CSTS) 位域 — `NVMe` 规范 §3.1.7
 ///
 /// 未实现位: NSSRO (bit 4, NVM 子系统复位完成)
 mod csts {
@@ -157,7 +157,7 @@ pub enum NvmeNvmOpcode {
     Read = 0x02,
 }
 
-/// NVMe 命令 (64字节)
+/// `NVMe` 命令 (64字节)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeCommand {
@@ -210,7 +210,7 @@ impl NvmeCommand {
             prp2: 0,
             cdw10: (slba & 0xFFFFFFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFFFFFF) as u32,
-            cdw12: (nlb as u32 - 1) & 0xFFFF, // NLB = #blocks - 1
+            cdw12: (u32::from(nlb) - 1) & 0xFFFF, // NLB = #blocks - 1
             cdw13: 0,
             cdw14: 0,
             cdw15: 0,
@@ -230,7 +230,7 @@ impl NvmeCommand {
             prp2: 0,
             cdw10: (slba & 0xFFFFFFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFFFFFF) as u32,
-            cdw12: (nlb as u32 - 1) & 0xFFFF,
+            cdw12: (u32::from(nlb) - 1) & 0xFFFF,
             cdw13: 0,
             cdw14: 0,
             cdw15: 0,
@@ -248,7 +248,7 @@ impl NvmeCommand {
             cdw3: 0,
             mptr: prp1,
             prp2: 0,
-            cdw10: cns as u32, // CNS (Controller/Namespace)
+            cdw10: u32::from(cns), // CNS (Controller/Namespace)
             cdw11: 0,
             cdw12: 0,
             cdw13: 0,
@@ -258,6 +258,8 @@ impl NvmeCommand {
     }
 
     /// 创建 Create I/O Completion Queue 命令
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn create_cq(qid: u16, cq_phys: u64) -> Self {
         Self {
             opcode: NvmeAdminOpcode::CreateCq as u8,
@@ -268,7 +270,7 @@ impl NvmeCommand {
             cdw3: 0,
             mptr: cq_phys,
             prp2: 0,
-            cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | (qid as u32),
+            cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | u32::from(qid),
             cdw11: 1, // PC: physically contiguous, IEN: enable
             cdw12: 0,
             cdw13: 0,
@@ -278,6 +280,8 @@ impl NvmeCommand {
     }
 
     /// 创建 Create I/O Submission Queue 命令
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn create_sq(qid: u16, cqid: u16, sq_phys: u64) -> Self {
         Self {
             opcode: NvmeAdminOpcode::CreateSq as u8,
@@ -288,8 +292,8 @@ impl NvmeCommand {
             cdw3: 0,
             mptr: sq_phys,
             prp2: 0,
-            cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | (qid as u32),
-            cdw11: (cqid as u32) << 16 | 1, // CQID | PC
+            cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | u32::from(qid),
+            cdw11: u32::from(cqid) << 16 | 1, // CQID | PC
             cdw12: 0,
             cdw13: 0,
             cdw14: 0,
@@ -298,7 +302,7 @@ impl NvmeCommand {
     }
 }
 
-/// NVMe 完成队列条目 (16字节)
+/// `NVMe` 完成队列条目 (16字节)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeCompletion {
@@ -357,7 +361,7 @@ pub struct NvmeIdentifyNamespace {
 // 重新导出保持 API 兼容性
 pub use super::ahci::AtaCommand;
 
-/// NVMe 队列对 (为驱动保持 struct 名兼容)
+/// `NVMe` 队列对 (为驱动保持 struct 名兼容)
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct NvmeQueuePair {
@@ -390,7 +394,7 @@ impl NvmeQueuePair {
 // NVMe 控制器 (DMA-backed)
 // ============================================================================
 
-/// NVMe 队列 DMA 资源
+/// `NVMe` 队列 DMA 资源
 struct QueueDma {
     virt: VirtAddr,
     phys: PhysAddr,
@@ -399,7 +403,7 @@ struct QueueDma {
     phase: u16, // CQ 阶段标记
 }
 
-/// NVMe 控制器驱动
+/// `NVMe` 控制器驱动
 pub struct NvmeController {
     mmio_phys: u64,            // PCI BAR0 physical address (for external use)
     iomem: Option<IoMem>,      // MMIO region handle (safe access proxy)
@@ -433,6 +437,8 @@ pub struct NvmeController {
 }
 
 impl NvmeController {
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(mmio_base: usize) -> Self {
         Self {
             mmio_phys: mmio_base as u64,
@@ -546,6 +552,8 @@ impl NvmeController {
         Ok(())
     }
 
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     fn free_queues(&mut self) {
         let dma = get_dma();
         if self.admin_sq_dma.virt.0 != 0 {
@@ -580,6 +588,8 @@ impl NvmeController {
 
     /// 提交 Admin 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> { unsafe {
         // 调试断言: 验证队列类型正确
         debug_assert!(!self.admin_sq_dma.is_cq, "admin SQ should not be CQ");
@@ -630,6 +640,10 @@ impl NvmeController {
     }}
 
     /// 初始化控制器
+    /// # Errors
+    /// 队列分配失败、获取 MMIO 失败或控制器初始化命令失败时返回 Err。
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn init_controller(&mut self) -> Result<()> {
         // 分配 Admin 队列
         self.alloc_admin_queues()?;
@@ -704,6 +718,10 @@ impl NvmeController {
     }
 
     /// 识别控制器
+    /// # Errors
+    /// DMA 缓冲区分配失败或识别命令执行失败时返回 Err。
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn identify_controller(&mut self) -> Result<()> {
         let dma = get_dma();
         let (ident_virt, ident_phys) = dma.alloc_coherent(PAGE_SIZE as usize).ok_or(DriverError::Busy)?;
@@ -742,6 +760,10 @@ impl NvmeController {
     }
 
     /// 识别命名空间
+    /// # Errors
+    /// DMA 缓冲区分配失败或识别命令执行失败时返回 Err。
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn identify_namespace(&mut self, nsid: u32) -> Result<()> {
         let dma = get_dma();
         let (ident_virt, ident_phys) = dma.alloc_coherent(PAGE_SIZE as usize).ok_or(DriverError::Busy)?;
@@ -791,6 +813,10 @@ impl NvmeController {
     }
 
     /// 创建 I/O 队列
+    /// # Errors
+    /// 队列分配失败、PRP 页分配失败或创建队列的管理命令失败时返回 Err。
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn create_io_queue(&mut self) -> Result<()> {
         self.alloc_io_queues()?;
 
@@ -828,6 +854,8 @@ impl NvmeController {
 
     /// 提交 I/O 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> { unsafe {
         // 调试断言: 验证队列类型正确
         debug_assert!(!self.io_sq_dma.is_cq, "IO SQ should not be CQ");
@@ -874,16 +902,18 @@ impl NvmeController {
         }
     }}
 
-    /// 构造 NVMe PRP 地址对, 使用 per-controller PRP 列表页
+    /// 构造 `NVMe` PRP 地址对, 使用 per-controller PRP 列表页
     ///
-    /// NVMe 规范要求:
+    /// `NVMe` 规范要求:
     /// - 传输 ≤ 1 页: PRP1 = 数据物理地址, PRP2 = 0
     /// - 传输 = 2 页: PRP1 = 第1页物理地址, PRP2 = 第2页物理地址
     /// - 传输 > 2 页: PRP1 = 第1页物理地址, PRP2 = PRP 列表页物理地址
     ///
-    /// PRP 列表页在 create_io_queue 时预分配，供所有 I/O 命令复用。
-    /// 依赖 dma.alloc_coherent 返回物理连续内存，因此条目地址线性递推即可。
+    /// PRP 列表页在 `create_io_queue` 时预分配，供所有 I/O 命令复用。
+    /// 依赖 `dma.alloc_coherent` 返回物理连续内存，因此条目地址线性递推即可。
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     unsafe fn build_prp(&self, phys_base: u64, byte_count: usize) -> (u64, u64) {
         let bytes = byte_count as u64;
         let num_pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -906,7 +936,7 @@ impl NvmeController {
         }
     }
 
-    /// 填充 NVMe 命令的 PRP1/PRP2 字段 (与 build_prp 配套)
+    /// 填充 `NVMe` 命令的 PRP1/PRP2 字段 (与 `build_prp` 配套)
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) { unsafe {
         let (prp1, prp2) = self.build_prp(phys_base, byte_count);
@@ -914,6 +944,11 @@ impl NvmeController {
         cmd.prp2 = prp2;
     }}
 
+    /// 从 `NVMe` 命名空间读取扇区数据到指定缓冲区。
+    /// # Errors
+    /// 控制器未初始化、参数非法、DMA 缓冲区分配失败或 I/O 命令执行失败时返回 Err。
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn read(&mut self, nsid: u32, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
@@ -949,6 +984,11 @@ impl NvmeController {
         result
     }
 
+    /// 将缓冲区数据写入 `NVMe` 命名空间指定扇区。
+    /// # Errors
+    /// 控制器未初始化、参数非法、DMA 缓冲区分配失败或 I/O 命令执行失败时返回 Err。
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn write(&mut self, nsid: u32, lba: u64, count: u16, buffer: *const u8) -> Result<()> {
         if !self.initialized {
             return Err(DriverError::NotInitialized);
@@ -1106,11 +1146,11 @@ impl NvmeController {
         }
     }
 
-    /// 处理 NVMe 中断
+    /// 处理 `NVMe` 中断
     ///
     /// 读取 I/O 完成队列并处理完成的命令。
     ///
-    /// 当前 NVMe 驱动采用同步实现 (submit_io_command 等待完成)，
+    /// 当前 `NVMe` 驱动采用同步实现 (`submit_io_command` 等待完成)，
     /// 此函数用于以下场景：
     /// 1. 异步 I/O 提交后，中断触发时处理完成事件
     /// 2. 清理残留的完成条目
@@ -1122,6 +1162,10 @@ impl NvmeController {
     /// - 控制器已初始化
     /// - 中断已正确注册
     /// - 无并发访问 I/O 队列
+    /// # Errors
+    /// I/O 完成条目中检测到设备错误时返回 Err。
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn handle_interrupt(&mut self) -> Result<()> {
         if !self.initialized {
             return Ok(());

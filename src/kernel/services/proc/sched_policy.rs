@@ -161,7 +161,7 @@ impl CfsRunQueue {
     }
 
     pub fn pick_next(&mut self) -> Option<(Pid, u64)> {
-        let (&(vruntime, pid), _) = self.tree.first_key_value()?;
+        let (&(vruntime, pid), ()) = self.tree.first_key_value()?;
         self.tree.remove(&(vruntime, pid));
         self.sync_min_vruntime();
         Some((pid, vruntime))
@@ -199,8 +199,7 @@ impl CfsRunQueue {
         let min_vr = self
             .tree
             .first_key_value()
-            .map(|(&(vr, _), _)| vr)
-            .unwrap_or(0);
+            .map_or(0, |(&(vr, _), ())| vr);
 
         let entries: alloc::vec::Vec<(Pid, u64)> =
             self.tree.keys().map(|&(vr, pid)| (pid, vr)).collect();
@@ -222,8 +221,7 @@ impl CfsRunQueue {
         let min_vr = self
             .tree
             .first_key_value()
-            .map(|(&(vr, _), _)| vr)
-            .unwrap_or(0);
+            .map_or(0, |(&(vr, _), ())| vr);
 
         let entries: alloc::vec::Vec<(Pid, u64)> =
             self.tree.keys().map(|&(vr, pid)| (pid, vr)).collect();
@@ -237,13 +235,13 @@ impl CfsRunQueue {
     }
 
     fn sync_min_vruntime(&mut self) {
-        if let Some((&(min_vr, _), _)) = self.tree.first_key_value() {
+        if let Some((&(min_vr, _), ())) = self.tree.first_key_value() {
             self.min_vruntime.store(min_vr, Ordering::Release);
         }
     }
 
     pub fn steal_highest_vruntime(&mut self) -> Option<(Pid, u64)> {
-        let (&(vruntime, pid), _) = self.tree.last_key_value()?;
+        let (&(vruntime, pid), ()) = self.tree.last_key_value()?;
         self.tree.remove(&(vruntime, pid));
         self.sync_min_vruntime();
         Some((pid, vruntime))
@@ -287,7 +285,7 @@ impl DlRunQueue {
     }
 
     pub fn pick_next(&mut self) -> Option<(Pid, u64)> {
-        let (&(dl_abs, pid), _) = self.tree.first_key_value()?;
+        let (&(dl_abs, pid), ()) = self.tree.first_key_value()?;
         self.tree.remove(&(dl_abs, pid));
         Some((pid, dl_abs))
     }
@@ -337,7 +335,7 @@ use crate::kernel::framework::proc::types::ThreadPriority;
 /// 默认调度策略 — services 层安全实现
 ///
 /// 策略决策 (优先级选择、boost 触发、时间片计算) 全部在此.
-/// framework 层的 SchedulerEx 仅保留 RunQueue 操作和上下文切换机制.
+/// framework 层的 `SchedulerEx` 仅保留 `RunQueue` 操作和上下文切换机制.
 ///
 /// ## 设计
 ///
@@ -366,7 +364,7 @@ impl SchedDecision for DefaultPolicy {
     }
 
     fn time_slice_for(&self, priority: ThreadPriority) -> u32 {
-        use crate::kernel::framework::config::*;
+        use crate::kernel::framework::config::{SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM};
         match priority {
             ThreadPriority::Realtime => SCHED_LEVEL_0_QUANTUM,
             ThreadPriority::High => SCHED_LEVEL_1_QUANTUM,
@@ -384,6 +382,10 @@ impl SchedDecision for DefaultPolicy {
 /// 注册调度策略到 framework
 ///
 /// 由 `services::proc::init()` 调用. 只能注册一次.
+///
+/// # Errors
+///
+/// 当调度策略已被注册时返回 `Err(())`.
 pub fn register_default_policy() -> Result<(), ()> {
     static POLICY: DefaultPolicy = DefaultPolicy;
     crate::kernel::framework::proc::register_sched_decision(&POLICY).map_err(|_| ())

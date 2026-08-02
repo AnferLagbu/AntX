@@ -90,7 +90,7 @@ fn write_text(buf: &mut [u8]) -> usize {
     push_str(buf, &mut pos, "max_cpus:        ");
     push_usize(buf, &mut pos, s.max_cpus);
     push_str(buf, &mut pos, "\nactual_cpus:     ");
-    push_u64(buf, &mut pos, s.actual_cpus as u64);
+    push_u64(buf, &mut pos, u64::from(s.actual_cpus));
     push_str(buf, &mut pos, "\nmax_irqs:        ");
     push_usize(buf, &mut pos, s.max_irqs);
     push_str(buf, &mut pos, "\nmax_processes:   ");
@@ -185,7 +185,7 @@ fn write_json(buf: &mut [u8]) -> usize {
     push_str(buf, &mut pos, ",");
     push_field_num(buf, &mut pos, "max_cpus", s.max_cpus as u64);
     push_str(buf, &mut pos, ",");
-    push_field_num(buf, &mut pos, "actual_cpus", s.actual_cpus as u64);
+    push_field_num(buf, &mut pos, "actual_cpus", u64::from(s.actual_cpus));
     push_str(buf, &mut pos, ",");
     push_field_num(buf, &mut pos, "max_irqs", s.max_irqs as u64);
     push_str(buf, &mut pos, ",");

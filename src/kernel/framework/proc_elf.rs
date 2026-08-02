@@ -41,6 +41,11 @@ pub fn elf_validate(data: *const u8, len: u64) -> Option<&'static proc::Elf64Hea
 /// - `mm` 必须指向目标进程的有效 `MmStruct`
 /// - 调用方保证 `mm` 在加载期间不被其他线程访问
 /// - `data` 必须为有效切片, 调用期间不释放
+///
+/// # Errors
+/// 错误与 `framework::proc::elf_load` 相同: 包括 `"Invalid ELF header"`,
+/// `"No program headers"`, `"ELF: vaddr + memsz overflow"`,
+/// `"ELF: p_offset + p_filesz overflow"` 与 `"OOM loading ELF"`.
 pub fn elf_load(
     mm: &MmStruct,
     data: *const u8,

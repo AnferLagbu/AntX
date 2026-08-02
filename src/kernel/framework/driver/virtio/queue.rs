@@ -1,11 +1,11 @@
-//! VirtIO virtqueue 实现 (VirtIO 1.0 split ring).
+//! `VirtIO` virtqueue 实现 (`VirtIO` 1.0 split ring).
 //!
 //! 每个 virtqueue 由三段物理连续的内存区域组成:
 //! - 描述符表 (Descriptor Table): 16 字节描述符数组
 //! - 可用环 (Available Ring): 驱动→设备的通知环
 //! - 已用环 (Used Ring): 设备→驱动的完成环
 //!
-//! 内存布局遵循 VirtIO 1.0 规范第 2.6 节 "Split Virtqueues".
+//! 内存布局遵循 `VirtIO` 1.0 规范第 2.6 节 "Split Virtqueues".
 
 use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
 
@@ -70,7 +70,7 @@ pub struct VirtQueue {
     pub last_used_idx: u16,  // 最近见到的 used ring 索引
     pub next_avail_idx: u16, // 驱动下次使用的 avail ring 索引
     // --- 所有权追踪 (用于 DMA 安全性) ---
-    /// 已分配页的物理地址 (用于 x86_64 上 phys↔virt 转换).
+    /// 已分配页的物理地址 (用于 `x86_64` 上 phys↔virt 转换).
     pub desc_phys: u64,
     pub avail_phys: u64,
     pub used_phys: u64,
@@ -87,8 +87,10 @@ impl VirtQueue {
     /// 分配并初始化一个 split virtqueue.
     ///
     /// 当 `legacy` 为 true 时, used ring 对齐到 4096 字节边界
-    /// (QEMU 旧版 VirtIO 传输所要求 — VIRTIO_PCI_VRING_ALIGN).
+    /// (QEMU 旧版 `VirtIO` 传输所要求 — `VIRTIO_PCI_VRING_ALIGN`).
     /// 此时需要 2 个页而不是 1 个.
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(legacy: bool) -> Option<Self> {
         let desc_size = VQ_SIZE as usize * core::mem::size_of::<VqDesc>();
         let avail_size = core::mem::size_of::<VqAvail>() + 2 /* event index padding */;
@@ -201,7 +203,7 @@ impl VirtQueue {
         idx
     }
 
-    /// 提交后通知设备 (调用方必须设置 avail->idx 并写 QueueNotify).
+    /// 提交后通知设备 (调用方必须设置 avail->idx 并写 `QueueNotify`).
     pub fn commit_and_kick(&mut self) {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -213,6 +215,8 @@ impl VirtQueue {
     }
 
     /// 检查是否有已用描述符可用, 有则返回.
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn pop_used(&mut self) -> Option<(u16, u32)> {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -256,7 +260,7 @@ impl VirtQueue {
 // DMA 缓冲区 (safe API, 供 services 层调用)
 // ============================================================================
 
-/// DMA 缓冲区: 物理连续的内核页, 供 VirtIO 设备 DMA 访问.
+/// DMA 缓冲区: 物理连续的内核页, 供 `VirtIO` 设备 DMA 访问.
 ///
 /// 提供 safe 的字节级读写方法, 使 services 层无需 unsafe 即可
 /// 构造请求头和读写数据.
@@ -279,6 +283,8 @@ impl DmaBuffer {
     ///
     /// 返回 `Some(DmaBuffer)` 表示分配成功, `None` 表示内存不足.
     /// 缓冲区内容初始化为零.
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(size: usize) -> Option<Self> {
         let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
@@ -304,7 +310,7 @@ impl DmaBuffer {
         })
     }
 
-    /// 物理地址 (用于 VirtQueue 描述符)
+    /// 物理地址 (用于 `VirtQueue` 描述符)
     #[inline]
     pub fn phys_addr(&self) -> u64 {
         self.phys
@@ -320,6 +326,8 @@ impl DmaBuffer {
     ///
     /// # Panic
     /// `offset >= size` 时 panic.
+    /// # Panics
+    /// offset 超出缓冲区范围时 panic。
     pub fn read_byte(&self, offset: usize) -> u8 {
         assert!(offset < self.size, "DmaBuffer::read_byte: offset out of bounds");
         // SAFETY: virt 指向有效内核页, offset < size 已检查
@@ -327,6 +335,8 @@ impl DmaBuffer {
     }
 
     /// 向缓冲区 `offset` 处写入一个字节.
+    /// # Panics
+    /// offset 超出缓冲区范围时 panic。
     pub fn write_byte(&mut self, offset: usize, val: u8) {
         assert!(offset < self.size, "DmaBuffer::write_byte: offset out of bounds");
         // SAFETY: virt 指向有效内核页, offset < size 已检查, &mut self 保证独占
@@ -337,14 +347,16 @@ impl DmaBuffer {
 
     /// 从缓冲区 `offset` 处读取一个 u32 (小端).
     pub fn read_u32(&self, offset: usize) -> u32 {
-        let b0 = self.read_byte(offset) as u32;
-        let b1 = self.read_byte(offset + 1) as u32;
-        let b2 = self.read_byte(offset + 2) as u32;
-        let b3 = self.read_byte(offset + 3) as u32;
+        let b0 = u32::from(self.read_byte(offset));
+        let b1 = u32::from(self.read_byte(offset + 1));
+        let b2 = u32::from(self.read_byte(offset + 2));
+        let b3 = u32::from(self.read_byte(offset + 3));
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
     /// 向缓冲区 `offset` 处写入一个 u32 (小端).
+    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn write_u32(&mut self, offset: usize, val: u32) {
         self.write_byte(offset, val as u8);
         self.write_byte(offset + 1, (val >> 8) as u8);
@@ -354,18 +366,22 @@ impl DmaBuffer {
 
     /// 从缓冲区 `offset` 处读取一个 u64 (小端).
     pub fn read_u64(&self, offset: usize) -> u64 {
-        let lo = self.read_u32(offset) as u64;
-        let hi = self.read_u32(offset + 4) as u64;
+        let lo = u64::from(self.read_u32(offset));
+        let hi = u64::from(self.read_u32(offset + 4));
         lo | (hi << 32)
     }
 
     /// 向缓冲区 `offset` 处写入一个 u64 (小端).
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn write_u64(&mut self, offset: usize, val: u64) {
         self.write_u32(offset, val as u32);
         self.write_u32(offset + 4, (val >> 32) as u32);
     }
 
     /// 从 `src` 拷贝 `len` 字节到缓冲区 `offset` 处.
+    /// # Panics
+    /// 目标范围超出缓冲区大小时 panic。
     pub fn write_slice(&mut self, offset: usize, src: &[u8]) {
         let len = src.len();
         assert!(
@@ -379,6 +395,8 @@ impl DmaBuffer {
     }
 
     /// 从缓冲区 `offset` 处拷贝 `len` 字节到 `dst`.
+    /// # Panics
+    /// 目标范围超出缓冲区大小时 panic。
     pub fn read_slice(&self, offset: usize, dst: &mut [u8]) {
         let len = dst.len();
         assert!(

@@ -1,4 +1,4 @@
-//! Unix Domain Socket (AF_UNIX) 子系统测试 — Phase C.3
+//! Unix Domain Socket (`AF_UNIX`) 子系统测试 — Phase C.3
 //!
 //! 覆盖 UDS 状态机的关键路径:
 //! - 流式套接字: 绑定 → 监听 → 连接 → 接收 → 收发 → 关闭

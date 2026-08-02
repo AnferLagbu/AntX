@@ -15,12 +15,12 @@ use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::services::fs::vfs_types::{KernelError, FileSystem, FsType};
-use crate::kernel::services::fs::vfs_types::*;
+use crate::kernel::services::fs::vfs_types::{VFS_MAX_PATH, VFS_MAX_MOUNTS, VFS_MAX_FDS};
 
 pub struct VfsMount {
     pub path: [u8; VFS_MAX_PATH],
     fs_type: FsType,
-    /// E6-4: trait object 分发 (优先于 fs_type match)
+    /// E6-4: trait object 分发 (优先于 `fs_type` match)
     fs: Option<&'static dyn FileSystem>,
     pub used: bool,
 }
@@ -74,7 +74,7 @@ impl VfsMount {
         self.fs_type.as_str()
     }
 
-    /// E6-4: 获取 trait object (优先于 fs_type match)
+    /// E6-4: 获取 trait object (优先于 `fs_type` match)
     pub fn get_fs(&self) -> Option<&'static dyn FileSystem> {
         self.fs
     }
@@ -94,8 +94,8 @@ pub struct VfsFile {
     pub used: bool,
     pub file_type: u8,
     pub path: [u8; VFS_MAX_PATH],
-    /// OpenFile handle_id (POSIX 打开文件描述)
-    /// u32::MAX 表示未使用 OpenFile
+    /// `OpenFile` `handle_id` (POSIX 打开文件描述)
+    /// `u32::MAX` 表示未使用 `OpenFile`
     pub handle_id: u32,
 }
 
@@ -151,7 +151,7 @@ pub struct ResolvedMount {
     pub mount_idx: usize,
     pub rel_path: &'static str,
     pub fs_type: FsType,
-    /// E6-4: trait object (优先于 fs_type)
+    /// E6-4: trait object (优先于 `fs_type`)
     pub fs: Option<&'static dyn FileSystem>,
 }
 
@@ -320,7 +320,7 @@ impl VfsManager {
         Some((mount_idx, fs_type))
     }
 
-    /// E6-4: 解析挂载点, 同时返回 trait object (优先于 fs_type)
+    /// E6-4: 解析挂载点, 同时返回 trait object (优先于 `fs_type`)
     pub fn resolve_mount_fs(&self, path: &str) -> Option<(usize, FsType, Option<&'static dyn FileSystem>)> {
         let mount_idx = self.find_mount(path)?;
         let (fs_type, fs) = {
@@ -380,7 +380,7 @@ impl VfsManager {
         }
     }
 
-    /// 设置 fd 的 OpenFile handle_id (POSIX 打开文件描述)
+    /// 设置 fd 的 `OpenFile` `handle_id` (POSIX 打开文件描述)
     pub fn set_fd_handle(&self, idx: usize, handle_id: u32) {
         let mut fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS {
@@ -388,15 +388,15 @@ impl VfsManager {
         }
     }
 
-    /// 获取 fd 的 OpenFile handle_id
+    /// 获取 fd 的 `OpenFile` `handle_id`
     pub fn get_fd_handle(&self, idx: usize) -> Option<u32> {
         let fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS && fd_table[idx].used {
             let hid = fd_table[idx].handle_id;
-            if hid != u32::MAX {
-                Some(hid)
-            } else {
+            if hid == u32::MAX {
                 None
+            } else {
+                Some(hid)
             }
         } else {
             None
@@ -439,6 +439,10 @@ impl VfsManager {
         }
     }
 
+    /// 挂载文件系统到指定路径.
+    ///
+    /// # Errors
+    /// 当该路径已挂载时返回 `AlreadyExists`; 当挂载表已满时返回 `NoSpace`.
     pub fn mount(&self, path: &str, fs_name: &str) -> Result<(), KernelError> {
         let mut mounts = self.mounts.lock();
 
@@ -461,7 +465,10 @@ impl VfsManager {
         Err(KernelError::NoSpace)
     }
 
-    /// E6-4: 带 trait object 的挂载 (优先于 fs_name match)
+    /// E6-4: 带 trait object 的挂载 (优先于 `fs_name` match)
+    ///
+    /// # Errors
+    /// 当该路径已挂载时返回 `AlreadyExists`; 当挂载表已满时返回 `NoSpace`.
     pub fn mount_with_fs(&self, path: &str, fs_name: &str, fs: &'static dyn FileSystem) -> Result<(), KernelError> {
         let mut mounts = self.mounts.lock();
 
@@ -485,6 +492,10 @@ impl VfsManager {
         Err(KernelError::NoSpace)
     }
 
+    /// 卸载指定路径的挂载.
+    ///
+    /// # Errors
+    /// 当该路径未挂载时返回 `FileNotFound`.
     pub fn unmount(&self, path: &str) -> Result<(), KernelError> {
         let mut mounts = self.mounts.lock();
 

@@ -1,7 +1,7 @@
 //! POSIX Timer — 每进程 per-process 定时器 (TCB)
 //!
-//! 实现 POSIX.1-2008 timer_create / timer_settime / timer_gettime /
-//! timer_delete / timer_getoverrun / clock_getres 语义。
+//! 实现 POSIX.1-2008 `timer_create` / `timer_settime` / `timer_gettime` /
+//! `timer_delete` / `timer_getoverrun` / `clock_getres` 语义。
 //!
 //! ## 架构
 //!
@@ -24,21 +24,21 @@
 //!
 //! ## 通知模型
 //!
-//! 支持两种通知方式 (v1 简化, 不支持 SIGEV_THREAD):
+//! 支持两种通知方式 (v1 简化, 不支持 `SIGEV_THREAD)`:
 //!
-//! - **SIGEV_SIGNAL**: 到期时向 owner_pid 发送 sigev_signo 信号, siginfo 携带
+//! - **`SIGEV_SIGNAL`**: 到期时向 `owner_pid` 发送 `sigev_signo` 信号, siginfo 携带
 //!   `sigev_value`. 这是用户态最常用的形式。
-//! - **SIGEV_NONE**: 到期时仅递增 `expiry_count`, 用户态通过 `timer_gettime`
+//! - **`SIGEV_NONE`**: 到期时仅递增 `expiry_count`, 用户态通过 `timer_gettime`
 //!   轮询剩余时间。
 //!
 //! ## 进程退出
 //!
-//! 进程退出 (process_exit / do_exit) 时遍历 manager, 释放属于该 pid 的所有
+//! 进程退出 (`process_exit` / `do_exit`) 时遍历 manager, 释放属于该 pid 的所有
 //! timer, 避免悬挂的 hrtimer 回调访问已释放的 process。
 //!
 //! ## 与 timerfd 的区别
 //!
-//! - **timerfd** 是文件描述符, 通过 read() 拉取到期次数, 适合 epoll 集成
+//! - **timerfd** 是文件描述符, 通过 `read()` 拉取到期次数, 适合 epoll 集成
 //! - **POSIX Timer** 是 `timer_t` 句柄, 通过信号/轮询, 适合传统 POSIX 程序
 //!
 //! ## 编号
@@ -64,7 +64,7 @@ pub const MAX_POSIX_TIMERS: usize = 32;
 /// 通知方式
 ///
 /// - `SIGEV_NONE = 1`: 不通知, 仅 `timer_gettime` 可见
-/// - `SIGEV_SIGNAL = 2`: 发送 sigev_signo 信号
+/// - `SIGEV_SIGNAL = 2`: 发送 `sigev_signo` 信号
 pub const SIGEV_NONE: i32 = 1;
 pub const SIGEV_SIGNAL: i32 = 2;
 
@@ -72,7 +72,7 @@ pub const SIGEV_SIGNAL: i32 = 2;
 pub const CLOCK_REALTIME: i32 = 0;
 pub const CLOCK_MONOTONIC: i32 = 1;
 
-/// timer_settime flags
+/// `timer_settime` flags
 pub const TFD_TIMER_ABSTIME: i32 = 1;
 
 // ============================================================================
@@ -97,13 +97,13 @@ pub const TFD_TIMER_ABSTIME: i32 = 1;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Sigevent {
-    /// 透传值, 通过 siginfo.si_value 回到用户态
+    /// 透传值, 通过 `siginfo.si_value` 回到用户态
     pub sigev_value: i64,
     /// 触发时发送的信号
     pub sigev_signo: i32,
-    /// 通知方式 (SIGEV_NONE / SIGEV_SIGNAL)
+    /// 通知方式 (`SIGEV_NONE` / `SIGEV_SIGNAL`)
     pub sigev_notify: i32,
-    /// 忽略 (通知函数指针, 我们不支持 SIGEV_THREAD)
+    /// 忽略 (通知函数指针, 我们不支持 `SIGEV_THREAD`)
     pub sigev_notify_function: u64,
     /// 忽略
     pub sigev_notify_attributes: u64,
@@ -179,7 +179,7 @@ struct PosixTimerSlot {
     clockid: i32,
     /// 通知方式
     sigev_notify: i32,
-    /// 触发时发送的信号 (SIGEV_SIGNAL 时)
+    /// 触发时发送的信号 (`SIGEV_SIGNAL` 时)
     sigev_signo: i32,
     /// 透传值
     sigev_value: i64,
@@ -195,7 +195,7 @@ struct PosixTimerSlot {
     armed: AtomicBool,
     /// 是否已使用
     used: bool,
-    /// timer_create flags (0 = 正常)
+    /// `timer_create` flags (0 = 正常)
     flags: i32,
 }
 
@@ -232,7 +232,7 @@ impl TimerManager {
     }
 }
 
-/// 全局 TimerManager
+/// 全局 `TimerManager`
 static TIMER_MANAGER: Mutex<TimerManager> = Mutex::new(TimerManager::new());
 
 /// 已分配的 timer 数量
@@ -242,7 +242,7 @@ static TIMER_COUNT: AtomicU32 = AtomicU32::new(0);
 // 内部辅助
 // ============================================================================
 
-/// 查找槽位 (timer_id → idx)
+/// 查找槽位 (`timer_id` → idx)
 fn id_to_idx(timer_id: i32) -> Option<usize> {
     if timer_id <= 0 {
         return None;
@@ -257,8 +257,8 @@ fn id_to_idx(timer_id: i32) -> Option<usize> {
 /// POSIX Timer 回调
 ///
 /// 在中断上下文执行:
-/// 1. 周期定时器: forward 推进 expiry_ns, 重新入队
-/// 2. 单次定时器: 标记 disarmed, 发送信号 (SIGEV_SIGNAL)
+/// 1. 周期定时器: forward 推进 `expiry_ns`, 重新入队
+/// 2. 单次定时器: 标记 disarmed, 发送信号 (`SIGEV_SIGNAL`)
 fn posix_timer_callback(timer: &HrTimer) -> HrTimerRestart {
     // SAFETY: hrtimer 框架保证 timer 嵌入在 PosixTimerSlot 中, 槽位在 ARMED
     // 状态, 生命周期内有效. 全局 spinlock 在回调执行时可能未持, 我们只读
@@ -299,9 +299,9 @@ fn posix_timer_callback(timer: &HrTimer) -> HrTimerRestart {
 
 /// 创建 POSIX Timer
 ///
-/// `clockid`: CLOCK_REALTIME / CLOCK_MONOTONIC  // 标准时钟 ID
-/// `sigev_ptr`: 用户态 sigevent 指针 (可为 null → SIGEV_NONE)
-/// `timer_id_ptr`: 输出 timer_id
+/// `clockid`: `CLOCK_REALTIME` / `CLOCK_MONOTONIC`  // 标准时钟 ID
+/// `sigev_ptr`: 用户态 sigevent 指针 (可为 null → `SIGEV_NONE`)
+/// `timer_id_ptr`: 输出 `timer_id`
 ///
 /// 返回 0 = 成功, 负数 = errno
 pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 {
@@ -369,10 +369,10 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
     Errno::EAGAIN.as_ret()
 }
 
-/// timer_settime — 启动 / 重置 timer
+/// `timer_settime` — 启动 / 重置 timer
 ///
 /// `timer_id`: 创建时返回的 ID
-/// `flags`: 0 = 相对时间, TFD_TIMER_ABSTIME = 绝对时间
+/// `flags`: 0 = 相对时间, `TFD_TIMER_ABSTIME` = 绝对时间
 /// `new_value_ptr`: 新 itimerspec (可为 null → disarm)
 /// `old_value_ptr`: 输出旧 itimerspec (可为 null)
 pub fn sys_timer_settime(
@@ -476,7 +476,7 @@ pub fn sys_timer_settime(
     0
 }
 
-/// timer_gettime — 获取 timer 状态 (剩余时间 + interval)
+/// `timer_gettime` — 获取 timer 状态 (剩余时间 + interval)
 pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
     use crate::kernel::framework::userptr;
     use crate::kernel::framework::errno::Errno;
@@ -515,7 +515,7 @@ pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
     0
 }
 
-/// timer_delete — 释放 timer
+/// `timer_delete` — 释放 timer
 pub fn sys_timer_delete(timer_id: i32) -> i64 {
     use crate::kernel::framework::errno::Errno;
 
@@ -546,7 +546,7 @@ pub fn sys_timer_delete(timer_id: i32) -> i64 {
     0
 }
 
-/// timer_getoverrun — 返回上次 read 之后补打的次数
+/// `timer_getoverrun` — 返回上次 read 之后补打的次数
 ///
 /// POSIX 语义: overrun = (实际到期次数) - 1 (正常情况下一次)。
 /// 当前实现: 总是返回 0 (我们没有维护 read 标记, 单次信号模式够用)。
@@ -565,12 +565,12 @@ pub fn sys_timer_getoverrun(timer_id: i32) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    slot.overrun as i64
+    i64::from(slot.overrun)
 }
 
-/// clock_getres — 时钟分辨率
+/// `clock_getres` — 时钟分辨率
 ///
-/// QueenX 内置两种时钟: CLOCK_REALTIME (TICK 精度) / CLOCK_MONOTONIC (TICK 精度)
+/// `QueenX` 内置两种时钟: `CLOCK_REALTIME` (TICK 精度) / `CLOCK_MONOTONIC` (TICK 精度)
 /// 分辨率 = 1 tick = 1ms (hrtimer 配置, 暂以 1ms 作为标称分辨率)。
 pub fn sys_clock_getres(clockid: i32, res_ptr: u64) -> i64 {
     use crate::kernel::framework::userptr;
@@ -604,7 +604,7 @@ pub fn sys_clock_getres(clockid: i32, res_ptr: u64) -> i64 {
 pub fn posix_timer_release_pid(pid: Pid) {
     let mut mgr = TIMER_MANAGER.lock();
     let mut released = 0u32;
-    for slot in mgr.slots.iter_mut() {
+    for slot in &mut mgr.slots {
         if slot.used && slot.owner_pid == pid {
             if slot.armed.load(Ordering::Acquire) {
                 hrtimer_cancel(&slot.timer);

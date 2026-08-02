@@ -18,7 +18,7 @@ use crate::kernel::framework::syscall::Errno;
 
 const PRIO_PROCESS: i32 = 0;
 
-/// nice 值 → ProcessPriority 映射
+/// nice 值 → `ProcessPriority` 映射
 pub fn nice_to_priority(nice: i32) -> ProcessPriority {
     let clamped = nice.clamp(-20, 19);
     if clamped < -10 {
@@ -34,7 +34,7 @@ pub fn nice_to_priority(nice: i32) -> ProcessPriority {
     }
 }
 
-/// ProcessPriority → nice 值映射
+/// `ProcessPriority` → nice 值映射
 pub fn priority_to_nice(p: ProcessPriority) -> i32 {
     match p {
         ProcessPriority::RealTime => -20,
@@ -51,7 +51,7 @@ pub fn nice_syscall(inc: i32) -> i64 {
     let current_nice = getpriority_syscall(PRIO_PROCESS, pid) as i32;
     if current_nice < 0 && current_nice != -38 {
         // getpriority 失败 (非 ENOSYS)
-        return current_nice as i64;
+        return i64::from(current_nice);
     }
     let current_nice = if current_nice == -38 { 0 } else { current_nice };
     let new_nice = (current_nice + inc).clamp(-20, 19);
@@ -59,7 +59,7 @@ pub fn nice_syscall(inc: i32) -> i64 {
     if set_ret < 0 {
         return set_ret;
     }
-    new_nice as i64
+    i64::from(new_nice)
 }
 
 /// getpriority(which, who) 系统调用策略
@@ -72,11 +72,11 @@ pub fn getpriority_syscall(which: i32, who: u32) -> i64 {
     } else {
         who
     };
-    let pri = match crate::kernel::framework::proc::process_with(pid, |p| p.get_priority()) {
+    let pri = match crate::kernel::framework::proc::process_with(pid, crate::kernel::framework::proc::process::Process::get_priority) {
         Some(p) => p,
         None => return Errno::ESRCH.as_ret(),
     };
-    priority_to_nice(pri) as i64
+    i64::from(priority_to_nice(pri))
 }
 
 /// setpriority(which, who, prio) 系统调用策略
@@ -92,7 +92,7 @@ pub fn setpriority_syscall(which: i32, who: u32, prio: i32) -> i64 {
     };
     let new_pri = nice_to_priority(clamped);
     match crate::kernel::framework::proc::process_with_mut(pid, |p| p.set_priority(new_pri)) {
-        Some(_) => 0,
+        Some(()) => 0,
         None => Errno::ESRCH.as_ret(),
     }
 }

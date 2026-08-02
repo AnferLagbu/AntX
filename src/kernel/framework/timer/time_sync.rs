@@ -76,8 +76,8 @@ impl NtpTimestamp {
 
     /// 转换为 Unix 时间 (ns)
     pub fn to_unix_ns(&self) -> u64 {
-        let sec = self.sec.wrapping_sub(NTP_EPOCH_OFFSET as u32) as u64;
-        let ns = (self.frac as u64 * 1_000_000_000) >> 32;
+        let sec = u64::from(self.sec.wrapping_sub(NTP_EPOCH_OFFSET as u32));
+        let ns = (u64::from(self.frac) * 1_000_000_000) >> 32;
         sec * 1_000_000_000 + ns
     }
 }
@@ -174,7 +174,7 @@ impl NtpResult {
         let t3_ns = t3.to_unix_ns() as i64;
         let t4_ns = t4.to_unix_ns() as i64;
 
-        let offset = ((t2_ns - t1_ns) + (t3_ns - t4_ns)) / 2;
+        let offset = i64::midpoint(t2_ns - t1_ns, t3_ns - t4_ns);
         let delay = (t4_ns - t1_ns) - (t3_ns - t2_ns);
 
         Self {
@@ -407,7 +407,7 @@ impl TimeSyncSubsystem {
 
     /// 设置 PTP 域号
     pub fn set_ptp_domain(&self, domain: u8) {
-        self.ptp_domain.store(domain as u32, Ordering::Release);
+        self.ptp_domain.store(u32::from(domain), Ordering::Release);
     }
 
     /// 获取同步状态
@@ -458,22 +458,22 @@ pub fn timesync_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_timesync — 时间同步系统调用
+/// `sys_timesync` — 时间同步系统调用
 ///
 /// `a0`: cmd
-///   0 = adj_freq(ppb: a1 as i64)
-///   1 = adj_time(偏移纳秒数: a1 as i64)
-///   2 = set_time(时间纳秒数: a1)
-///   3 = set_ntp_server(addr: a1 as u32)
-///   4 = get_ntp_server() → addr
-///   5 = get_sync_status() → (synced 位于位 48, count 位于位 16, freq_adj 低 16 位)
-///   6 = get_adjusted_time() → ns
-///   7 = set_ptp_domain(domain: a1 as u8)
-///   8 = apply_ntp_result(offset_ns: a1, delay_ns: a2) — 简化接口
-///   9 = is_initialized() → bool (是否已初始化)
+///   0 = `adj_freq(ppb`: a1 as i64)
+///   1 = `adj_time(偏移纳秒数`: a1 as i64)
+///   2 = `set_time(时间纳秒数`: a1)
+///   3 = `set_ntp_server(addr`: a1 as u32)
+///   4 = `get_ntp_server()` → addr
+///   5 = `get_sync_status()` → (synced 位于位 48, count 位于位 16, `freq_adj` 低 16 位)
+///   6 = `get_adjusted_time()` → ns
+///   7 = `set_ptp_domain(domain`: a1 as u8)
+///   8 = `apply_ntp_result(offset_ns`: a1, `delay_ns`: a2) — 简化接口
+///   9 = `is_initialized()` → bool (是否已初始化)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
+pub extern "C" fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !timesync_is_initialized() && cmd != 9 {
         return -(11i64); // EAGAIN
     }
@@ -500,7 +500,7 @@ pub fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
         }
         4 => {
             // get_ntp_server
-            timesync_subsystem().get_ntp_server() as i64
+            i64::from(timesync_subsystem().get_ntp_server())
         }
         5 => {
             // get_sync_status
@@ -508,7 +508,7 @@ pub fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
             let _ = offset_ns;
             let _ = freq_ppb;
             // 高16位: synced, 中32位: count, 低16位: 保留
-            ((synced as i64) << 48) | (count as i64 & 0xFFFFFFFFFFFF)
+            (i64::from(synced) << 48) | (count as i64 & 0xFFFFFFFFFFFF)
         }
         6 => {
             // get_adjusted_time
@@ -532,7 +532,7 @@ pub fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
         }
         9 => {
             // is_initialized
-            timesync_is_initialized() as i64
+            i64::from(timesync_is_initialized())
         }
         _ => -(38i64), // ENOSYS
     }

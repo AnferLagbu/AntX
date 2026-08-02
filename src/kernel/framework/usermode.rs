@@ -1,6 +1,6 @@
-//! UserMode — 进入 Ring 3 / EL0 的安全句柄 (TCB)
+//! `UserMode` — 进入 Ring 3 / EL0 的安全句柄 (TCB)
 //!
-//! 封装 `sysret` (x86_64) / `eret` (aarch64) 指令，
+//! 封装 `sysret` (`x86_64`) / `eret` (aarch64) 指令，
 //! 确保回内核后栈/状态正确。
 //!
 //! ## 与 Asterinas OSTD `UserMode` 的关系
@@ -20,15 +20,15 @@ use super::userctx::UserContext;
 /// 进入用户模式执行直到下一次陷入（syscall / interrupt / exception）。
 ///
 /// 委托到 `Arch::enter_user` 触发硬件上下文切换:
-/// - x86_64: cli + 装载 ds/es/fs/gs + swapgs + iretq
-/// - aarch64: msr sp_el0/elr_el1/spsr_el1 + eret (EL0 用户态)
+/// - `x86_64`: cli + 装载 ds/es/fs/gs + swapgs + iretq
+/// - aarch64: msr `sp_el0/elr_el1/spsr_el1` + eret (EL0 用户态)
 ///
 /// # SAFETY
 /// - 必须在进程的内核栈上调用（非中断栈）。
 /// - 调用前必须调用 `vmspace.activate()` 切换到正确的页表。
-/// - `ctx.rip` (x86_64) / `ctx.elr_el1` (aarch64) 必须指向合法用户态代码。
+/// - `ctx.rip` (`x86_64`) / `ctx.elr_el1` (aarch64) 必须指向合法用户态代码。
 /// - `ctx.rsp` / `ctx.sp_el0` 必须指向合法用户态栈。
-/// - `ctx.rdi` (x86_64) / `ctx.x0` (aarch64) 是用户态入口的第一个参数。
+/// - `ctx.rdi` (`x86_64`) / `ctx.x0` (aarch64) 是用户态入口的第一个参数。
 /// - 此函数 `noreturn`: 仅在用户态下次陷入时返回 (经由 syscall/interrupt/exception 入口),
 ///   不会以函数返回值方式返回。
 // SAFETY: 见上方文档约定. 此函数 noreturn, 必须满足: 内核栈调用 + 页表已切 +

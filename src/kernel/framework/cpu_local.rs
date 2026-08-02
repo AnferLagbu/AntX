@@ -1,4 +1,4 @@
-//! CpuLocal — Per-CPU 变量安全抽象 (TCB)
+//! `CpuLocal` — Per-CPU 变量安全抽象 (TCB)
 //!
 //! 提供类型安全的 per-CPU 数据访问，内部通过
 //! `arch!(cpu_id())` 索引静态槽位数组。
@@ -9,8 +9,8 @@
 //!
 //! ## SAFETY 不变量
 //!
-//! - 运行时 CPU 数 ≤ MAX_CPUS。
-//! - `cpu_id()` 返回值为 [0, MAX_CPUS) 范围内的有效索引。
+//! - 运行时 CPU 数 ≤ `MAX_CPUS`。
+//! - `cpu_id()` 返回值为 [0, `MAX_CPUS`) 范围内的有效索引。
 //! - per-CPU 数据仅在所属 CPU 上访问。
 
 use core::cell::UnsafeCell;
@@ -43,7 +43,7 @@ impl<T> CpuLocal<T> {
     /// 如果当前 CPU 的槽位已被初始化。
     pub fn init_this_cpu(&self, val: T) {
         let cpu = crate::arch!(cpu_id()) as usize;
-        assert!(cpu < MAX_CPUS, "CPU id {} exceeds MAX_CPUS", cpu);
+        assert!(cpu < MAX_CPUS, "CPU id {cpu} exceeds MAX_CPUS");
         // SAFETY:
         //   1. `cpu < MAX_CPUS` 已由上一行 assert 保证, 索引安全
         //   2. `init_this_cpu` 仅在启动单线程阶段调用, 无跨 CPU 竞争
@@ -52,7 +52,7 @@ impl<T> CpuLocal<T> {
         //   4. `slot.is_none()` 检查 + `*slot = Some(val)` 写入构成初始化序列
         unsafe {
             let slot = &mut *self.slots[cpu].get();
-            assert!(slot.is_none(), "CpuLocal slot {} already initialized", cpu);
+            assert!(slot.is_none(), "CpuLocal slot {cpu} already initialized");
             *slot = Some(val);
         }
     }
@@ -89,6 +89,8 @@ impl<T> CpuLocal<T> {
     }
 
     /// 释放当前 CPU 的槽位，返回数据。
+    /// # Panics
+    /// CPU 编号超出最大 CPU 数时 panic。
     pub fn take(&self) -> Option<T> {
         let cpu = crate::arch!(cpu_id()) as usize;
         assert!(cpu < MAX_CPUS);

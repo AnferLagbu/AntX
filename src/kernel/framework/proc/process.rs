@@ -7,7 +7,7 @@ use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE, USER_ADDR_FLOOR};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use super::scheduler::SchedPolicy;
 use super::rlimit::RlimitTable;
-use super::types::*;
+use super::types::{ProcessId, ProcessContext, Pid, ProcessState, ProcessPriority, BlockReason, KERNEL_STACK_SIZE, ProcessFlags, MAX_PROCESSES};
 
 // ============================================================================
 // 进程级 FD 分配策略 (P1-I-01 提取)
@@ -51,9 +51,9 @@ pub fn check_boot_stack_canary() -> bool {
     }
 }
 
-/// 写入 boot 栈 canary 到 stack_bottom.
+/// 写入 boot 栈 canary 到 `stack_bottom`.
 ///
-/// 供 aarch64 入口在 clear_bss 之后调用 (x86_64 由 boot.asm trampoline 写入).
+/// 供 aarch64 入口在 `clear_bss` 之后调用 (`x86_64` 由 boot.asm trampoline 写入).
 /// 必须在 BSS 清零之后调用, 否则 canary 会被清零覆盖.
 pub fn write_boot_stack_canary() {
     // SAFETY: stack_bottom 是 boot.asm/start.S 中定义的静态符号,
@@ -112,21 +112,21 @@ pub struct Process {
     pub exit_code: AtomicU32,
     pub cpu_time: AtomicU64,
 
-    /// POSIX times() 报告的用户态 CPU 时间 (ticks)
+    /// POSIX `times()` 报告的用户态 CPU 时间 (ticks)
     pub user_time: AtomicU64,
-    /// POSIX times() 报告的内核态 CPU 时间 (ticks)
+    /// POSIX `times()` 报告的内核态 CPU 时间 (ticks)
     pub sys_time: AtomicU64,
     /// 进程启动时刻 (jiffies)
     pub start_jiffies: AtomicU64,
     /// 进程累积运行 tick 计数 (由调度器每 tick 增加)
     pub tick_count: AtomicU64,
 
-    /// POSIX alarm() 剩余秒数对应的到期时刻 (jiffies, 0 = 无 alarm)
+    /// POSIX `alarm()` 剩余秒数对应的到期时刻 (jiffies, 0 = 无 alarm)
     pub alarm_deadline: AtomicU64,
     /// alarm 触发时的 jiffies 快照 (用于 read 旧值)
     pub alarm_prev_remaining: AtomicU64,
 
-    /// POSIX setitimer(ITIMER_REAL): 到期时刻 (jiffies, 0 = 未启用)
+    /// POSIX `setitimer(ITIMER_REAL)`: 到期时刻 (jiffies, 0 = 未启用)
     pub itimer_real_deadline: AtomicU64,
     /// 上次触发到当前的间隔 (interval)
     pub itimer_real_interval: AtomicU64,
@@ -156,13 +156,13 @@ pub struct Process {
     pub fd_table: FdTable,
 
     /// CPU 亲和性掩码 (C2 完整实现):
-    ///   bit i (i < MAX_CPUS) 置位 = 允许在 CPU i 上运行
+    ///   bit i (i < `MAX_CPUS`) 置位 = 允许在 CPU i 上运行
     ///   默认值 `u64::MAX` (前 64 个 CPU 都允许), 兼容单核
-    ///   通过 sys_sched_setaffinity 修改
-    ///   调度器 select_cpu 与跨 CPU 迁移时检查
+    ///   通过 `sys_sched_setaffinity` 修改
+    ///   调度器 `select_cpu` 与跨 CPU 迁移时检查
     pub cpuset_allowed: AtomicU64,
 
-    /// 阻塞睡眠到期时间 (ticks), 用于 proc_sleep_ms
+    /// 阻塞睡眠到期时间 (ticks), 用于 `proc_sleep_ms`
     pub sleep_until: AtomicU64,
 
     pub ref_count: AtomicU32,
@@ -175,7 +175,7 @@ pub struct Process {
     pub blocked_mask: AtomicU64,
 
     /// 信号处理动作表 (索引 0..=30 对应 SIGHUP..SIGSYS)
-    /// 每项: 0 = SIG_DFL, 1 = SIG_IGN, 其他 = 用户态 handler 地址
+    /// 每项: 0 = `SIG_DFL`, 1 = `SIG_IGN`, 其他 = 用户态 handler 地址
     pub sigaction_table: Mutex<[u64; 31]>,
 
     /// 信号替换栈 (sigaltstack), 0 = 未设置
@@ -196,34 +196,34 @@ pub struct Process {
 
     /// Per-process Seccomp 状态 (C7)
     ///
-    /// 包含模式 (Disabled/Strict/Filter) + 过滤器链 + no_new_privs 位.
+    /// 包含模式 (Disabled/Strict/Filter) + 过滤器链 + `no_new_privs` 位.
     /// fork 继承全部过滤器; execve 保留.
     pub seccomp: crate::kernel::framework::proc::SeccompState,
 
     /// Per-process Namespace 集合 (D1)
     ///
     /// 包含 UTS/IPC/PID/Mount/User/Net/Cgroup 七种 namespace.
-    /// fork 默认共享 (Arc::clone), CLONE_NEW* 创建新实例.
-    /// 通过 sys_unshare / sys_setns 运行时切换.
+    /// fork 默认共享 (`Arc::clone`), `CLONE_NEW`* 创建新实例.
+    /// 通过 `sys_unshare` / `sys_setns` 运行时切换.
     pub namespaces: Mutex<crate::kernel::framework::proc::NamespaceSet>,
 
     /// Per-process cgroup ID (D2)
     ///
     /// 进程所属 cgroup 的 ID, 默认 0 (根 cgroup).
-    /// fork 继承父进程的 cgroup; 可通过 sys_cgroup_attach 迁移.
+    /// fork 继承父进程的 cgroup; 可通过 `sys_cgroup_attach` 迁移.
     pub cgroup_id: AtomicU64,
 
     /// Per-process NUMA 内存策略 (D3)
     ///
     /// 控制进程的内存分配节点选择策略.
-    /// fork 继承父进程策略; 可通过 sys_set_mempolicy 修改.
+    /// fork 继承父进程策略; 可通过 `sys_set_mempolicy` 修改.
     pub numa_policy: Mutex<crate::kernel::framework::mm::numa::NumaMempolicy>,
 
     /// Per-process 凭证会话上下文 (P2-I-30)
     ///
-    /// 替代 `credo::session` 中 `static GLOBAL_SESSION` 的全局 UnsafeCell 单例.
-    /// 每个进程拥有独立的 `PwmContext` (uid/gid/euid/egid/saved_euid/saved_egid/
-    /// domain/elevation_granted_pwm). 在 SMP 下, 不同 CPU 上不同进程的会话
+    /// 替代 `credo::session` 中 `static GLOBAL_SESSION` 的全局 `UnsafeCell` 单例.
+    /// 每个进程拥有独立的 `PwmContext` (`uid/gid/euid/egid/saved_euid/saved_egid`/
+    /// `domain/elevation_granted_pwm`). 在 SMP 下, 不同 CPU 上不同进程的会话
     /// 上下文天然隔离, 杜绝身份/权限串台.
     /// 进程退出时该字段随 Process 一起释放, 自动回收.
     pub session: Mutex<crate::kernel::framework::credo::types::PwmContext>,
@@ -237,9 +237,9 @@ pub struct Process {
     /// Per-process SUID 提权栈深度 (P2-I-30)
     pub session_elev_depth: AtomicIsize,
 
-    /// Per-process TLS 基址 (x86_64: MSR_FS_BASE, aarch64: tpidr_el0)
+    /// Per-process TLS 基址 (`x86_64`: `MSR_FS_BASE`, aarch64: `tpidr_el0`)
     ///
-    /// clone(CLONE_SETTLS) 设置, 上下文切换时恢复到对应系统寄存器.
+    /// `clone(CLONE_SETTLS)` 设置, 上下文切换时恢复到对应系统寄存器.
     /// 0 表示未设置.
     pub tls_base: AtomicU64,
 }
@@ -387,6 +387,10 @@ impl Process {
     /// # Returns
     /// * `Ok(())` - 状态转换成功
     /// * `Err(&str)` - 非法状态转换
+    ///
+    /// # Errors
+    /// 当请求的 `new_state` 不属于状态机允许的合法转换时, 返回
+    /// `Err("Illegal process state transition")`, 且不会修改任何状态.
     pub fn set_state_safe(&self, new_state: ProcessState) -> Result<(), &'static str> {
         let current = self.get_state();
 
@@ -460,7 +464,7 @@ impl Process {
     }
 
     pub fn set_rt_priority(&self, priority: u8) {
-        self.rt_priority.store(priority as u32, Ordering::SeqCst);
+        self.rt_priority.store(u32::from(priority), Ordering::SeqCst);
     }
 
     pub fn get_pwm(&self) -> u64 {
@@ -597,7 +601,7 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
-        table[pid as usize].map(|nn| nn.as_ptr())
+        table[pid as usize].map(core::ptr::NonNull::as_ptr)
     }
 
     pub fn with_process<F, R>(&self, pid: Pid, f: F) -> Option<R>
@@ -642,13 +646,13 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
-        table[pid as usize].take().map(|nn| nn.as_ptr())
+        table[pid as usize].take().map(core::ptr::NonNull::as_ptr)
     }
 
     /// 移除进程并释放 Box<Process> 内存
-    /// 如果其他线程持有引用 (ref_count > 1), 则仅设置 pending_free 标志,
-    /// 由最后的 dec_ref_and_maybe_free 调用完成实际释放。
-    /// 全程持有 table lock 以防止与 dec_ref_and_maybe_free 竞争。
+    /// 如果其他线程持有引用 (`ref_count` > 1), 则仅设置 `pending_free` 标志,
+    /// 由最后的 `dec_ref_and_maybe_free` 调用完成实际释放。
+    /// 全程持有 table lock 以防止与 `dec_ref_and_maybe_free` 竞争。
     pub fn remove_and_free(&self, pid: Pid) {
         crate::kernel::framework::process_cleanup::notify_process_exit(pid);
         let mut table = self.processes.lock();

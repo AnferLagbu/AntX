@@ -5,12 +5,12 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全
-//! - 委托 framework/fs/vfs::api 完成
+//! - 委托 `framework/fs/vfs::api` 完成
 //!
 //! ## POSIX 语义
 //!
-//! - [access_syscall] 检查可访问性 (R_OK/W_OK/X_OK/F_OK)
-//! - [unlink_syscall] 解除链接 (删除文件)
+//! - [`access_syscall`] 检查可访问性 (`R_OK/W_OK/X_OK/F_OK`)
+//! - [`unlink_syscall`] 解除链接 (删除文件)
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
@@ -21,13 +21,13 @@ use crate::kernel::framework::syscall::Errno;
 // 权限位
 // ============================================================================
 
-/// F_OK - 文件存在性检查
+/// `F_OK` - 文件存在性检查
 pub const F_OK: i32 = 0;
-/// R_OK - 可读
+/// `R_OK` - 可读
 pub const R_OK: i32 = 4;
-/// W_OK - 可写
+/// `W_OK` - 可写
 pub const W_OK: i32 = 2;
-/// X_OK - 可执行
+/// `X_OK` - 可执行
 pub const X_OK: i32 = 1;
 
 // ============================================================================
@@ -36,8 +36,13 @@ pub const X_OK: i32 = 1;
 
 /// access(path, mode) — 检查当前用户对路径的访问权
 ///
-/// mode 是 R_OK/W_OK/X_OK 的位或, F_OK 表示存在性检查.
+/// mode 是 `R_OK/W_OK/X_OK` 的位或, `F_OK` 表示存在性检查.
 /// Framekernel 简化: PWM 即身份, 不深入 rwx 位, 仅检查存在性.
+///
+/// # Errors
+/// 当 `path_ptr` 为空指针或不在用户可访问范围内时返回 `EFAULT`;
+/// 当 `mode` 超出合法范围 (`0..=0o7`) 时返回 `EINVAL`;
+/// 当路径不存在或无访问权限时返回 `EACCES`.
 pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -61,7 +66,10 @@ pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
 
 /// faccessat(dirfd, path, mode, flags) — 相对目录 fd 的 access.
 ///
-/// Framekernel 简化: 不支持 AT_EACCESS/AT_SYMLINK_NOFOLLOW, 行为同 access.
+/// Framekernel 简化: 不支持 `AT_EACCESS/AT_SYMLINK_NOFOLLOW`, 行为同 access.
+///
+/// # Errors
+/// 错误条件与 [`access_syscall`] 相同, 参见其 `# Errors` 段.
 pub fn faccessat_syscall(_dirfd: i32, path_ptr: u64, mode: i32, _flags: i32) -> Result<usize, Errno> {
     access_syscall(path_ptr, mode)
 }
@@ -73,6 +81,10 @@ pub fn faccessat_syscall(_dirfd: i32, path_ptr: u64, mode: i32, _flags: i32) -> 
 /// unlink(path) — 删除一个名称到 inode 的链接
 ///
 /// 若为最后链接且无进程打开该文件, 则删除文件.
+///
+/// # Errors
+/// 当 `path_ptr` 为空指针或不在用户可访问范围内时返回 `EFAULT`;
+/// 其余错误 (如路径不存在、无权限、目录非空等) 以对应的 `Errno` 返回.
 pub fn unlink_syscall(path_ptr: u64) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -83,7 +95,7 @@ pub fn unlink_syscall(path_ptr: u64) -> Result<usize, Errno> {
     let pwm = current_pwm()?;
     let r = fw::vfs_unlink(path_ptr as *const u8, pwm);
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }
@@ -93,7 +105,7 @@ pub fn unlink_syscall(path_ptr: u64) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 TEST_PWM 路径已弃用)。
+/// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())
 }

@@ -3,13 +3,13 @@
 //! ACPI 电源管理 — services 层安全代理
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::arch::acpi。
+//! 所有 unsafe 操作已委托至 `framework::arch::acpi`。
 //!
 //! ## 职责
 //!
 //! - 查询 ACPI 解析状态 (RSDP / MADT / FADT / HPET / DMAR)
-//! - 提供类型安全的 HpetInfo / ApInfo 包装
-//! - 暴露安全 shutdown / reboot API (不直接操作 PM1a_CNT)
+//! - 提供类型安全的 `HpetInfo` / `ApInfo` 包装
+//! - 暴露安全 shutdown / reboot API (不直接操作 `PM1a_CNT`)
 //!
 //! ## 注意
 //!
@@ -175,7 +175,7 @@ pub fn msi_free_vector(vector: u8) {
 ///
 /// # Safety
 ///
-/// 写 PM1a_CNT S5 位后将不可恢复地停止系统.
+/// 写 `PM1a_CNT` S5 位后将不可恢复地停止系统.
 pub fn acpi_shutdown() -> ! {
     crate::kernel::framework::arch::acpi::acpi_shutdown()
 }

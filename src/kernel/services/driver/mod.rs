@@ -61,7 +61,7 @@ use crate::kernel::framework::idt::irq_trait::{IrqDecision, IrqContext, SoftirqC
 /// 驱动层中断处理决策策略
 ///
 /// - 共享 IRQ: 按注册顺序选择 handler (先注册先服务)
-/// - Softirq: 按固定优先级 (High > Timer > NetRx > NetTx > Block > Tasklet > Sched > Kswapd)
+/// - Softirq: 按固定优先级 (High > Timer > `NetRx` > `NetTx` > Block > Tasklet > Sched > Kswapd)
 /// - ksoftirqd: 超过 10 次循环后唤醒
 pub struct DriverIrqDecision;
 
@@ -76,7 +76,7 @@ impl IrqDecision for DriverIrqDecision {
         if ctx.pending_mask == 0 {
             0
         } else {
-            1u64 << (63 - ctx.pending_mask.leading_zeros())
+            1u64 << ctx.pending_mask.ilog2()
         }
     }
 
@@ -85,7 +85,7 @@ impl IrqDecision for DriverIrqDecision {
     }
 }
 
-/// services::driver 初始化 — 注册策略到 framework
+/// `services::driver` 初始化 — 注册策略到 framework
 pub fn init() {
     // T-04: 注册驱动层中断处理决策策略
     static POLICY: DriverIrqDecision = DriverIrqDecision;

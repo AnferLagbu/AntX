@@ -6,12 +6,12 @@
 //!
 //! 原属 framework/proc/session.rs, 2026-06-16 提取到 services.
 //! 纯策略代码 (会话管理 + 进程组 + 控制终端规则), 0 unsafe.
-//! 日志使用 framework::klog::serial_write_bytes (safe API).
-//! 进程表访问使用 framework 的安全 API (PROCESS_TABLE, process_get_current_pid).
+//! 日志使用 `framework::klog::serial_write_bytes` (safe API).
+//! 进程表访问使用 framework 的安全 API (`PROCESS_TABLE`, `process_get_current_pid`).
 //!
 //! ## POSIX 语义
 //!
-//! - **会话 (session)**: 一组进程组的集合, 由 setsid() 创建, SID = 创建者 PID
+//! - **会话 (session)**: 一组进程组的集合, 由 `setsid()` 创建, SID = 创建者 PID
 //! - **进程组 (process group)**: 一组进程的集合, 用于信号广播
 //! - **控制终端 (controlling terminal)**: 每个会话最多一个, 前台进程组接收终端信号
 
@@ -119,7 +119,7 @@ impl SessionManager {
         None
     }
 
-    /// 创建新会话, 返回 session_id
+    /// 创建新会话, 返回 `session_id`
     pub fn create(&self, pwm: u64) -> Option<u64> {
         let idx = self.alloc_session()?;
         let sid = self.next_session_id.fetch_add(1, Ordering::SeqCst);
@@ -145,10 +145,10 @@ impl SessionManager {
         Some(sid)
     }
 
-    /// 创建会话, SID = leader_pid (setsid 语义)
+    /// 创建会话, SID = `leader_pid` (setsid 语义)
     pub fn create_with_sid(&self, leader_pid: u32, pwm: u64) -> Option<u64> {
         let idx = self.alloc_session()?;
-        let sid = leader_pid as u64;
+        let sid = u64::from(leader_pid);
 
         let mut table = self.session_table.lock();
         let session = &mut table[idx];
@@ -215,11 +215,10 @@ impl SessionManager {
     /// 获取会话的控制终端
     pub fn get_controlling_terminal(&self, session_id: u64) -> u64 {
         self.find_session(session_id)
-            .map(|idx| {
+            .map_or(0, |idx| {
                 let table = self.session_table.lock();
                 table[idx].terminal.load(Ordering::SeqCst)
             })
-            .unwrap_or(0)
     }
 
     /// 释放会话的控制终端
@@ -244,11 +243,10 @@ impl SessionManager {
     /// 获取前台进程组
     pub fn get_foreground_pgid(&self, session_id: u64) -> u32 {
         self.find_session(session_id)
-            .map(|idx| {
+            .map_or(0, |idx| {
                 let table = self.session_table.lock();
                 table[idx].foreground_pgid.load(Ordering::SeqCst)
             })
-            .unwrap_or(0)
     }
 }
 
@@ -312,7 +310,7 @@ pub fn proc_getsid(pid: i32) -> i64 {
         .with_process(target_pid, |p| {
             let sid = p.session_id.load(Ordering::SeqCst);
             if sid == 0 {
-                p.pid.0 as i64
+                i64::from(p.pid.0)
             } else {
                 sid as i64
             }
@@ -346,7 +344,7 @@ pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
         }
 
         let is_self = p.pid.0 == current_pid;
-        let is_child = p.parent.map(|ppid| ppid.0 == current_pid).unwrap_or(false);
+        let is_child = p.parent.is_some_and(|ppid| ppid.0 == current_pid);
         if !is_self && !is_child {
             return -1;
         }
@@ -397,9 +395,9 @@ pub fn proc_getpgid(pid: i32) -> i64 {
         .with_process(target_pid, |proc| {
             let pgid = proc.pgid.load(Ordering::SeqCst);
             if pgid == 0 {
-                proc.pid.0 as i64
+                i64::from(proc.pid.0)
             } else {
-                pgid as i64
+                i64::from(pgid)
             }
         })
         .unwrap_or(-3)
@@ -434,7 +432,7 @@ pub fn sys_tiocsctty(fd: i32) -> i64 {
         return -1;
     }
 
-    if sid != pid as u64 {
+    if sid != u64::from(pid) {
         return -1;
     }
 
@@ -519,7 +517,7 @@ pub fn sys_tcsetpgrp(_fd: i32, pgid: i32) -> i64 {
 
 /// tcgetpgrp — 获取前台进程组
 pub fn sys_tcgetpgrp(_fd: i32) -> i64 {
-    get_foreground_pgid() as i64
+    i64::from(get_foreground_pgid())
 }
 
 /// 向前台进程组发送信号
@@ -537,7 +535,7 @@ pub fn session_leader_exit(pid: u32) {
         .with_process(pid, |p| p.session_id.load(Ordering::SeqCst))
         .unwrap_or(0);
 
-    if sid == 0 || sid != pid as u64 {
+    if sid == 0 || sid != u64::from(pid) {
         return;
     }
 

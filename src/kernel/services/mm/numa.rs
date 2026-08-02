@@ -346,7 +346,7 @@ pub fn numa_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_get_mempolicy — 获取当前 NUMA 内存策略
+/// `sys_get_mempolicy` — 获取当前 NUMA 内存策略
 pub fn sys_get_mempolicy(_mode_ptr: u64, _nodemask_ptr: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
     let result = crate::kernel::framework::proc::PROCESS_TABLE
@@ -366,7 +366,7 @@ pub fn sys_get_mempolicy(_mode_ptr: u64, _nodemask_ptr: u64) -> i64 {
     }
 }
 
-/// sys_set_mempolicy — 设置 NUMA 内存策略
+/// `sys_set_mempolicy` — 设置 NUMA 内存策略
 pub fn sys_set_mempolicy(mode: u64, nodemask: u64) -> i64 {
     let policy_mode = NumaPolicy::from_u8(mode as u8);
 
@@ -390,12 +390,12 @@ pub fn sys_set_mempolicy(mode: u64, nodemask: u64) -> i64 {
     }
 }
 
-/// sys_migrate_pages — 将进程页面迁移到目标节点
+/// `sys_migrate_pages` — 将进程页面迁移到目标节点
 pub fn sys_migrate_pages(_target_nodemask: u64) -> i64 {
     0
 }
 
-/// sys_getcpu — 获取当前 CPU 和 NUMA 节点
+/// `sys_getcpu` — 获取当前 CPU 和 NUMA 节点
 pub fn sys_getcpu() -> i64 {
     let cpu = crate::kernel::framework::cpu::arch::cpu_id();
     let node = if numa_is_initialized() {
@@ -403,5 +403,5 @@ pub fn sys_getcpu() -> i64 {
     } else {
         0
     };
-    cpu as i64 | ((node as i64) << 32)
+    i64::from(cpu) | (i64::from(node) << 32)
 }

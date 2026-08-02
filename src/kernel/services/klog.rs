@@ -73,7 +73,7 @@ pub fn count() -> usize {
 ///
 /// 名称所有权属于 sink 实现, 调用方持有 `&'static str`, 不可变.
 ///
-/// 本函数是**安全**包装: 内部走 framework::klog::klog_sink_name_at, 上层无 unsafe.
+/// 本函数是**安全**包装: 内部走 `framework::klog::klog_sink_name_at`, 上层无 unsafe.
 pub fn name_at(idx: usize) -> Option<&'static str> {
     framework_klog::klog_sink_name_at(idx)
 }
@@ -108,7 +108,7 @@ pub fn list_names(buf: &mut [&'static str; framework_klog::MAX_LOG_SINKS]) -> us
 /// 1: net
 /// ```
 ///
-/// 写指针不越界, 写入字节数 = min(内容长度, buf.len()).
+/// 写指针不越界, 写入字节数 = min(内容长度, `buf.len()`).
 pub fn render_text(buf: &mut [u8]) -> usize {
     let mut pos = 0usize;
     let mut names = [core::str::from_utf8(b"")

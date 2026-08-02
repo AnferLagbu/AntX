@@ -1,9 +1,9 @@
-//! Per-CPU RunQueue — SMP 调度基础
+//! Per-CPU `RunQueue` — SMP 调度基础
 //!
 //! 在现有全局 MLFQ 之上添加 per-CPU 状态追踪：
 //! - 每个 CPU 跟踪自己的 `current` PID
 //! - per-CPU `need_reschedule` 标志
-//! - 跨 CPU 重新调度 IPI (通过 SOftirq::Sched)
+//! - 跨 CPU 重新调度 IPI (通过 `SOftirq::Sched`)
 //!
 //! ## 架构
 //!
@@ -115,7 +115,7 @@ pub fn resched_cpu(target_cpu: u32) {
 }
 
 /// IPI 重新调度入口 (由 IPI handler 调用，在目标 CPU 上执行)
-/// 通过 softirq 延迟执行 schedule()
+/// 通过 softirq 延迟执行 `schedule()`
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn resched_ipi_handler() {

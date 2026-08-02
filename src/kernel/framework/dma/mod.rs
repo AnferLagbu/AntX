@@ -179,8 +179,7 @@ fn virt_to_phys(virt: *const u8) -> u64 {
     }
     get_vmm()
         .get_physical(VirtAddr(virt as u64))
-        .map(|p| p.0)
-        .unwrap_or(0)
+        .map_or(0, |p| p.0)
 }
 
 /// MMIO virtual address allocator

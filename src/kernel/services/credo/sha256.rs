@@ -39,10 +39,10 @@ fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
 
     // 准备消息调度
     for i in 0..16 {
-        w[i] = ((block[i * 4] as u32) << 24)
-            | ((block[i * 4 + 1] as u32) << 16)
-            | ((block[i * 4 + 2] as u32) << 8)
-            | (block[i * 4 + 3] as u32);
+        w[i] = (u32::from(block[i * 4]) << 24)
+            | (u32::from(block[i * 4 + 1]) << 16)
+            | (u32::from(block[i * 4 + 2]) << 8)
+            | u32::from(block[i * 4 + 3]);
     }
 
     for i in 16..64 {

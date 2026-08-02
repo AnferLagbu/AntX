@@ -1,11 +1,11 @@
 //! 调度器子系统 — services 层安全代理
 //!
-//! C2 CPU 亲和性 (sched_setaffinity / sched_getaffinity) 透传.
+//! C2 CPU 亲和性 (`sched_setaffinity` / `sched_getaffinity`) 透传.
 //!
 //! ## 设计
 //!
 //! services 层仅做参数封装与结果翻译, 所有 unsafe / 硬件操作由 framework 层处理.
-//! 业务逻辑 (cpuset 读写, 调度器 hook) 在 framework::proc::scheduler 中实现.
+//! 业务逻辑 (cpuset 读写, 调度器 hook) 在 `framework::proc::scheduler` 中实现.
 
 #![deny(unsafe_code)]
 

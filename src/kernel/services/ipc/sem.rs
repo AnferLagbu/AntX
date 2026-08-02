@@ -11,7 +11,7 @@
 //! 提供进程间同步原语
 //! 功能等价于 POSIX semaphores
 
-use super::types::*;
+use super::types::{IpcNamespace, Semaphore, IpcId};
 use crate::kernel::framework::proc::process_get_current_pid;
 
 /// 查找空闲信号量槽位
@@ -36,6 +36,9 @@ fn sem_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&mut Semaph
 /// # Returns
 /// * Ok(IpcId) - 成功，返回信号量 ID
 /// * Err(i32) - 失败 (-1: 无可用槽位)
+///
+/// # Errors
+/// 当信号量表已满、无空闲槽位时返回 `Err(-1)`.
 pub fn sem_create_safe(
     namespace: &mut IpcNamespace,
     next_id: &mut IpcId,
@@ -75,6 +78,9 @@ pub fn sem_create_safe(
 /// # Returns
 /// * Ok(()) - 成功获取
 /// * Err(i32) - 错误码 (-1: 无效 ID)
+///
+/// # Errors
+/// 当信号量 ID 无效、不存在时返回 `Err(-1)`.
 pub fn sem_wait_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32> {
     let sem = match sem_find_by_id(namespace, id) {
         Some(s) => s,
@@ -106,6 +112,9 @@ pub fn sem_wait_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32>
 /// # Returns
 /// * Ok(()) - 成功
 /// * Err(i32) - 错误码 (-1: 无效 ID)
+///
+/// # Errors
+/// 当信号量 ID 无效、不存在时返回 `Err(-1)`.
 pub fn sem_post_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32> {
     let sem = match sem_find_by_id(namespace, id) {
         Some(s) => s,
@@ -134,6 +143,9 @@ pub fn sem_post_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32>
 /// # Returns
 /// * Ok(()) - 成功
 /// * Err(i32) - 错误码 (-1: 无效 ID)
+///
+/// # Errors
+/// 当信号量 ID 无效、不存在时返回 `Err(-1)`.
 pub fn sem_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32> {
     let sem = match sem_find_by_id(namespace, id) {
         Some(s) => s,

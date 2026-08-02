@@ -12,28 +12,33 @@
 //!
 //! - services 层验证标量参数 (clockid/flags/fd)
 //! - 原始指针 (`new_value_ptr` / `old_value_ptr` / `curr_value_ptr` / `buf`)
-//!   委托给 framework 层 (指针合法性由 syscall 入口 check_user_ptr 保证)
+//!   委托给 framework 层 (指针合法性由 syscall 入口 `check_user_ptr` 保证)
 
 use crate::kernel::framework::syscall::Errno;
 
-/// TFD_CLOEXEC 标志
+/// `TFD_CLOEXEC` 标志
 pub const TFD_CLOEXEC: i32 = crate::kernel::framework::syscall::timerfd::TFD_CLOEXEC;
-/// TFD_NONBLOCK 标志
+/// `TFD_NONBLOCK` 标志
 pub const TFD_NONBLOCK: i32 = crate::kernel::framework::syscall::timerfd::TFD_NONBLOCK;
-/// TFD_TIMER_ABSTIME 标志
+/// `TFD_TIMER_ABSTIME` 标志
 pub const TFD_TIMER_ABSTIME: i32 = crate::kernel::framework::syscall::timerfd::TFD_TIMER_ABSTIME;
 
-/// CLOCK_MONOTONIC
+/// `CLOCK_MONOTONIC`
 pub const CLOCK_MONOTONIC: i32 = crate::kernel::framework::syscall::timerfd::CLOCK_MONOTONIC;
-/// CLOCK_REALTIME
+/// `CLOCK_REALTIME`
 pub const CLOCK_REALTIME: i32 = crate::kernel::framework::syscall::timerfd::CLOCK_REALTIME;
 
 /// timerfd FD 空间起始
 pub const TFD_FD_BASE: i32 = crate::kernel::framework::syscall::timerfd::TFD_FD_BASE;
 
-/// timerfd_create 安全代理
+/// `timerfd_create` 安全代理
 ///
 /// 验证: clockid 有效 (MONOTONIC/REALTIME), flags 仅包含已知标志位
+///
+/// # Errors
+///
+/// - `clockid` 非法或 flags 含未知标志位 → `EINVAL`
+/// - 底层 `sys_timerfd_create` 返回负值时转换为对应的 `Errno`
 pub fn timerfd_create_syscall(clockid: i32, flags: i32) -> Result<usize, Errno> {
     // clockid 校验
     if clockid != CLOCK_MONOTONIC && clockid != CLOCK_REALTIME {
@@ -54,9 +59,16 @@ pub fn timerfd_create_syscall(clockid: i32, flags: i32) -> Result<usize, Errno> 
     }
 }
 
-/// timerfd_settime 安全代理
+/// `timerfd_settime` 安全代理
 ///
-/// 验证: fd 在 timerfd 空间内, flags 仅包含 TFD_TIMER_ABSTIME, 指针非零
+/// 验证: fd 在 timerfd 空间内, flags 仅包含 `TFD_TIMER_ABSTIME`, 指针非零
+///
+/// # Errors
+///
+/// - `fd` 不在 timerfd FD 空间 → `EBADF`
+/// - flags 含 `TFD_TIMER_ABSTIME` 之外的位 → `EINVAL`
+/// - `new_value_ptr == 0` → `EFAULT`
+/// - 底层 `sys_timerfd_settime` 返回负值时转换为对应的 `Errno`
 pub fn timerfd_settime_syscall(
     fd: i32,
     flags: i32,
@@ -87,9 +99,15 @@ pub fn timerfd_settime_syscall(
     }
 }
 
-/// timerfd_gettime 安全代理
+/// `timerfd_gettime` 安全代理
 ///
 /// 验证: fd 在 timerfd 空间内, 指针非零
+///
+/// # Errors
+///
+/// - `fd` 不在 timerfd FD 空间 → `EBADF`
+/// - `curr_value_ptr == 0` → `EFAULT`
+/// - 底层 `sys_timerfd_gettime` 返回负值时转换为对应的 `Errno`
 pub fn timerfd_gettime_syscall(fd: i32, curr_value_ptr: u64) -> Result<usize, Errno> {
     if !crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
         return Err(Errno::EBADF);
@@ -109,6 +127,12 @@ pub fn timerfd_gettime_syscall(fd: i32, curr_value_ptr: u64) -> Result<usize, Er
 /// timerfd read 安全代理
 ///
 /// 验证: fd 在 timerfd 空间内, buf 非零
+///
+/// # Errors
+///
+/// - `fd` 不在 timerfd FD 空间 → `EBADF`
+/// - `buf == 0` → `EFAULT`
+/// - 底层 `sys_timerfd_read` 返回负值时转换为对应的 `Errno`
 pub fn timerfd_read_syscall(fd: i32, buf: u64) -> Result<usize, Errno> {
     if !crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
         return Err(Errno::EBADF);
@@ -128,6 +152,11 @@ pub fn timerfd_read_syscall(fd: i32, buf: u64) -> Result<usize, Errno> {
 /// timerfd close 安全代理
 ///
 /// 验证: fd 在 timerfd 空间内
+///
+/// # Errors
+///
+/// - `fd` 不在 timerfd FD 空间 → `EBADF`
+/// - 底层 `sys_timerfd_close` 返回负值时转换为对应的 `Errno`
 pub fn timerfd_close_syscall(fd: i32) -> Result<usize, Errno> {
     if !crate::kernel::framework::syscall::timerfd::is_timerfd_fd(fd) {
         return Err(Errno::EBADF);

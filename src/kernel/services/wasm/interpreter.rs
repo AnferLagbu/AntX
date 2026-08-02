@@ -24,10 +24,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
 
-use super::leb128::*;
+use super::leb128::{read_leb128_i32, read_leb128_i64, read_leb128_u32};
 use super::module::parse_wasm;
-use super::runtime::*;
-use super::types::*;
+use super::runtime::{ValueStack, LinearMemory, CallFrame, InterpreterConfig};
+use super::types::{WasmModule, WasmError, Value, ImportKind, ExportKind, FuncType, FunctionBody, Opcode};
 
 // ============================================================================
 // 解释器
@@ -64,12 +64,12 @@ impl Interpreter {
             .count();
 
         let mut globals = Vec::with_capacity(import_global_count + module.globals.len());
-        for imp in module.imports.iter() {
+        for imp in &module.imports {
             if let ImportKind::Global(gt) = &imp.desc {
                 globals.push(Value::default_for(gt.content_type));
             }
         }
-        for (gt, _) in module.globals.iter() {
+        for (gt, _) in &module.globals {
             globals.push(Value::default_for(gt.content_type));
         }
 
@@ -96,7 +96,7 @@ impl Interpreter {
 
         let mut tables: Vec<Vec<u32>> =
             Vec::with_capacity(import_table_count + module.tables.len());
-        for imp in module.imports.iter() {
+        for imp in &module.imports {
             if let ImportKind::Table(ref tt) = imp.desc {
                 tables.push(vec![0u32; tt.limits.min as usize]);
             }
@@ -231,10 +231,10 @@ impl Interpreter {
     /// 根据 `name` 查找已注册的 named host function，将其移动到正确的 index 位置。
     ///
     /// 调用顺序: 先通过 `register_named_host_function` 注册所有 WASI 函数，
-    /// 再调用本方法完成 import section 到 host_functions 的映射。
+    /// 再调用本方法完成 import section 到 `host_functions` 的映射。
     pub fn auto_register_wasi(&mut self) {
         let mut func_idx = 0u32;
-        for import in self.module.imports.iter() {
+        for import in &self.module.imports {
             if let ImportKind::Function(_) = import.desc {
                 let module_name = core::str::from_utf8(&import.module).unwrap_or("");
                 let func_name = core::str::from_utf8(&import.name).unwrap_or("");
@@ -303,11 +303,23 @@ impl Interpreter {
             .ok_or(WasmError::BadFuncIndex(func_idx as usize))
     }
 
+    /// 按导出名称调用 WASM 函数.
+    ///
+    /// # Errors
+    ///
+    /// 当导出名称不存在时返回 `WasmError::BadExport`; 其余错误由
+    /// `call_func` 传播(如参数不匹配、栈操作失败等).
     pub fn call(&mut self, name: &str, args: &[Value]) -> Result<Option<Value>, WasmError> {
         let func_idx = self.find_export(name).ok_or(WasmError::BadExport)?;
         self.call_func(func_idx, args)
     }
 
+    /// 按函数索引调用 WASM 函数.
+    ///
+    /// # Errors
+    ///
+    /// 当函数索引非法、类型不匹配、栈溢出/下溢或宿主函数执行失败时
+    /// 返回对应的 `WasmError`.
     pub fn call_func(&mut self, func_idx: u32, args: &[Value]) -> Result<Option<Value>, WasmError> {
         if func_idx < self.import_func_count {
             let func_type = self.get_func_type(func_idx)?.clone();
@@ -332,9 +344,8 @@ impl Interpreter {
                 return Ok(None);
             } else if result_count == 1 {
                 return Ok(Some(self.stack.pop()?));
-            } else {
-                return Ok(None);
             }
+            return Ok(None);
         }
 
         let func_type = self.get_func_type(func_idx)?.clone();
@@ -501,7 +512,7 @@ impl Interpreter {
                 Ok(Opcode::I32Store16) => self.execute_memory_store_n(2)?,
                 Ok(Opcode::MemorySize) => {
                     self.advance_pc(1)?;
-                    let pages = self.memory.as_ref().map(|m| m.pages()).unwrap_or(0);
+                    let pages = self.memory.as_ref().map_or(0, super::runtime::LinearMemory::pages);
                     self.stack.push(Value::I32(pages as i32))?;
                 }
                 Ok(Opcode::MemoryGrow) => {
@@ -518,29 +529,29 @@ impl Interpreter {
                 Ok(Opcode::I32Const) => self.execute_i32_const()?,
                 Ok(Opcode::I64Const) => self.execute_i64_const()?,
 
-                Ok(Opcode::I32Eqz) => self.execute_i32_unop(|a| (a == 0) as i32)?,
-                Ok(Opcode::I32Eq) => self.execute_i32_binop(|a, b| (a == b) as i32)?,
-                Ok(Opcode::I32Ne) => self.execute_i32_binop(|a, b| (a != b) as i32)?,
-                Ok(Opcode::I32LtS) => self.execute_i32_binop(|a, b| (a < b) as i32)?,
+                Ok(Opcode::I32Eqz) => self.execute_i32_unop(|a| i32::from(a == 0))?,
+                Ok(Opcode::I32Eq) => self.execute_i32_binop(|a, b| i32::from(a == b))?,
+                Ok(Opcode::I32Ne) => self.execute_i32_binop(|a, b| i32::from(a != b))?,
+                Ok(Opcode::I32LtS) => self.execute_i32_binop(|a, b| i32::from(a < b))?,
                 Ok(Opcode::I32LtU) => {
-                    self.execute_i32_binop(|a, b| ((a as u32) < (b as u32)) as i32)?
+                    self.execute_i32_binop(|a, b| i32::from((a as u32) < (b as u32)))?;
                 }
-                Ok(Opcode::I32GtS) => self.execute_i32_binop(|a, b| (a > b) as i32)?,
+                Ok(Opcode::I32GtS) => self.execute_i32_binop(|a, b| i32::from(a > b))?,
                 Ok(Opcode::I32GtU) => {
-                    self.execute_i32_binop(|a, b| ((a as u32) > (b as u32)) as i32)?
+                    self.execute_i32_binop(|a, b| i32::from((a as u32) > (b as u32)))?;
                 }
-                Ok(Opcode::I32LeS) => self.execute_i32_binop(|a, b| (a <= b) as i32)?,
+                Ok(Opcode::I32LeS) => self.execute_i32_binop(|a, b| i32::from(a <= b))?,
                 Ok(Opcode::I32LeU) => {
-                    self.execute_i32_binop(|a, b| ((a as u32) <= (b as u32)) as i32)?
+                    self.execute_i32_binop(|a, b| i32::from((a as u32) <= (b as u32)))?;
                 }
-                Ok(Opcode::I32GeS) => self.execute_i32_binop(|a, b| (a >= b) as i32)?,
+                Ok(Opcode::I32GeS) => self.execute_i32_binop(|a, b| i32::from(a >= b))?,
                 Ok(Opcode::I32GeU) => {
-                    self.execute_i32_binop(|a, b| ((a as u32) >= (b as u32)) as i32)?
+                    self.execute_i32_binop(|a, b| i32::from((a as u32) >= (b as u32)))?;
                 }
 
-                Ok(Opcode::I32Add) => self.execute_i32_binop(|a, b| a.wrapping_add(b))?,
-                Ok(Opcode::I32Sub) => self.execute_i32_binop(|a, b| a.wrapping_sub(b))?,
-                Ok(Opcode::I32Mul) => self.execute_i32_binop(|a, b| a.wrapping_mul(b))?,
+                Ok(Opcode::I32Add) => self.execute_i32_binop(i32::wrapping_add)?,
+                Ok(Opcode::I32Sub) => self.execute_i32_binop(i32::wrapping_sub)?,
+                Ok(Opcode::I32Mul) => self.execute_i32_binop(i32::wrapping_mul)?,
                 Ok(Opcode::I32DivS) => self.execute_i32_div_s()?,
                 Ok(Opcode::I32DivU) => self.execute_i32_div_u()?,
                 Ok(Opcode::I32RemS) => self.execute_i32_rem_s()?,
@@ -551,12 +562,12 @@ impl Interpreter {
                 Ok(Opcode::I32Shl) => self.execute_i32_binop(|a, b| a.wrapping_shl(b as u32))?,
                 Ok(Opcode::I32ShrS) => self.execute_i32_binop(|a, b| a.wrapping_shr(b as u32))?,
                 Ok(Opcode::I32ShrU) => {
-                    self.execute_i32_binop(|a, b| (a as u32).wrapping_shr(b as u32) as i32)?
+                    self.execute_i32_binop(|a, b| (a as u32).wrapping_shr(b as u32) as i32)?;
                 }
 
-                Ok(Opcode::I64Add) => self.execute_i64_binop(|a, b| a.wrapping_add(b))?,
-                Ok(Opcode::I64Sub) => self.execute_i64_binop(|a, b| a.wrapping_sub(b))?,
-                Ok(Opcode::I64Mul) => self.execute_i64_binop(|a, b| a.wrapping_mul(b))?,
+                Ok(Opcode::I64Add) => self.execute_i64_binop(i64::wrapping_add)?,
+                Ok(Opcode::I64Sub) => self.execute_i64_binop(i64::wrapping_sub)?,
+                Ok(Opcode::I64Mul) => self.execute_i64_binop(i64::wrapping_mul)?,
                 Ok(Opcode::I64DivS) => self.execute_i64_div_s()?,
                 Ok(Opcode::I64And) => self.execute_i64_binop(|a, b| a & b)?,
                 Ok(Opcode::I64Or) => self.execute_i64_binop(|a, b| a | b)?,
@@ -1069,17 +1080,17 @@ impl Interpreter {
             1 => {
                 let val = mem.read_u8(addr)?;
                 if signed {
-                    self.stack.push(Value::I32(val as i8 as i32))?;
+                    self.stack.push(Value::I32(i32::from(val as i8)))?;
                 } else {
-                    self.stack.push(Value::I32(val as i32))?;
+                    self.stack.push(Value::I32(i32::from(val)))?;
                 }
             }
             2 => {
                 let val = mem.read_u16(addr)?;
                 if signed {
-                    self.stack.push(Value::I32(val as i16 as i32))?;
+                    self.stack.push(Value::I32(i32::from(val as i16)))?;
                 } else {
-                    self.stack.push(Value::I32(val as i32))?;
+                    self.stack.push(Value::I32(i32::from(val)))?;
                 }
             }
             _ => return Err(WasmError::InternalError),
@@ -1159,6 +1170,12 @@ impl Interpreter {
 // 公开接口
 // ============================================================================
 
+/// 解析并实例化一段 WASM 字节码.
+///
+/// # Errors
+///
+/// 当字节码格式非法(魔数/版本错误、段截断、结构不合法等)时
+/// 返回对应的 `WasmError`.
 pub fn instantiate(bytes: &[u8], config: InterpreterConfig) -> Result<Interpreter, WasmError> {
     let module = parse_wasm(bytes)?;
     Ok(Interpreter::new(module, config))

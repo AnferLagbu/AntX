@@ -29,7 +29,7 @@ pub struct ThreadId(pub Tid);
 /// - Ready:      除 CPU 外所有资源就绪, 在 MLFQ 队列中等待
 /// - Running:    正在 CPU 上执行指令
 /// - Blocked:    等待事件 (I/O/子进程/信号/睡眠)
-/// - Zombie:     已调用 exit(), PCB 保留供父进程 wait()
+/// - Zombie:     已调用 `exit()`, PCB 保留供父进程 `wait()`
 /// - Terminated: PCB 已被回收, PID 可重用
 /// - Frozen:     被挂起 (SIGSTOP/cgroup freezer/调试断点)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +44,7 @@ pub enum ProcessState {
 }
 
 impl ProcessState {
-    /// 安全的从 u8 值转换为 ProcessState
+    /// 安全的从 u8 值转换为 `ProcessState`
     pub fn from_u8(value: u8) -> Self {
         match value {
             0 => ProcessState::Created,
@@ -58,7 +58,7 @@ impl ProcessState {
         }
     }
 
-    /// 从 u32 值转换 (兼容 AtomicU32 存储)
+    /// 从 u32 值转换 (兼容 `AtomicU32` 存储)
     pub fn from_u32(value: u32) -> Self {
         Self::from_u8(value as u8)
     }
@@ -177,13 +177,13 @@ pub struct ProcessContext {
     pub fs: u64,
     pub gs: u64,
     pub ss: u64,
-    /// 填充字段，确保 fpu_state 16 字节对齐
+    /// 填充字段，确保 `fpu_state` 16 字节对齐
     /// fxsave/fxrstor 要求内存地址 16 字节对齐
     pub _fpu_pad: u64,
     /// FPU/SSE 状态预留区域 (512 bytes for V0-V31)
     ///
     /// Phase 1: 预留空间，不实际保存/恢复
-    /// Phase 2: x86_64 使用 xsave/xrstor 保存 x87 + XMM
+    /// Phase 2: `x86_64` 使用 xsave/xrstor 保存 x87 + XMM
     /// Phase 3: aarch64 使用 stp/ldp 保存 V0-V31 + FPCR + FPSR
     /// Phase 4: 实现 lazy FPU 切换 (CR0.TS 位优化)
     pub fpu_state: [u64; 64],

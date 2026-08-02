@@ -4,15 +4,15 @@
 //! 所有公开函数都使用 `#[no_mangle]` 以保证符号名稳定,方便跨模块直接调用。
 //!
 //! ## 调用方契约
-//! - `proc::api` —— 进程创建/销毁时的页表操作 (vmm_map_page / vmm_unmap_page)
-//! - `crate::kernel::framework::proc::elf` —— ELF 加载时的 COW 页表克隆 (vmm_clone_user_page_table_cow)
-//! - `fs::ramfs` / `fs::hvfs` —— 文件系统页缓存分配 (pmm_alloc_page / pmm_free_page)
+//! - `proc::api` —— 进程创建/销毁时的页表操作 (`vmm_map_page` / `vmm_unmap_page`)
+//! - `crate::kernel::framework::proc::elf` —— ELF 加载时的 COW 页表克隆 (`vmm_clone_user_page_table_cow`)
+//! - `fs::ramfs` / `fs::hvfs` —— 文件系统页缓存分配 (`pmm_alloc_page` / `pmm_free_page`)
 //! - `ipc::shm` —— 共享内存段的物理页映射
 //! - `driver::*` —— 各驱动的 DMA 缓冲区分配
 //! - `credo::storage` —— 持久化数据写入时的内存申请
 //!
 //! ## 安全约束
-//! - 所有指针参数在函数入口处做 is_null 检查
+//! - 所有指针参数在函数入口处做 `is_null` 检查
 //! - `pmm_alloc_*` 返回 null 时调用方必须处理 OOM
 //! - `vmm_map_page` 不检查地址冲突,调用方负责确保不重复映射
 //! - 物理页分配器 (PM) 由 spinlock 保护,可在中断上下文调用
@@ -28,7 +28,7 @@
 //! - 提供纯 Rust 抽象,无 C ABI 依赖
 //! - 异常路径:空指针 / 越界 / 内存不足一律返回 0 / -1 / null,调用方按需检查
 
-use super::*;
+use super::{get_pmm, PhysAddr, PageSize, VirtAddr, PageFlags, get_vmm, get_kmalloc, get_kmalloc_mut};
 use core::sync::atomic::AtomicU64;
 
 
@@ -49,7 +49,7 @@ pub struct KmallocStats {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_init(mem_size: u64, kernel_end: u64) {
+pub extern "C" fn pmm_init(mem_size: u64, kernel_end: u64) {
     super::pmm::pmm_init(mem_size, kernel_end);
 }
 
@@ -57,7 +57,7 @@ pub fn pmm_init(mem_size: u64, kernel_end: u64) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_init_bitmap(reserved_after_kernel: u64) {
+pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
     super::pmm::pmm_init_bitmap(reserved_after_kernel);
 }
 
@@ -65,7 +65,7 @@ pub fn pmm_init_bitmap(reserved_after_kernel: u64) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_alloc_page() -> *mut u8 {
+pub extern "C" fn pmm_alloc_page() -> *mut u8 {
     let result = match get_pmm().alloc_page() {
         Some(addr) => addr.0 as *mut u8,
         None => core::ptr::null_mut(),
@@ -77,7 +77,7 @@ pub fn pmm_alloc_page() -> *mut u8 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_free_page(addr: *mut u8) {
+pub extern "C" fn pmm_free_page(addr: *mut u8) {
     if !addr.is_null() {
         get_pmm().free_page(PhysAddr(addr as u64));
     }
@@ -87,7 +87,7 @@ pub fn pmm_free_page(addr: *mut u8) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_get_free_pages() -> u64 {
+pub extern "C" fn pmm_get_free_pages() -> u64 {
     get_pmm().get_free_pages()
 }
 
@@ -95,7 +95,7 @@ pub fn pmm_get_free_pages() -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_get_total_pages() -> u64 {
+pub extern "C" fn pmm_get_total_pages() -> u64 {
     get_pmm().get_total_pages()
 }
 
@@ -103,7 +103,7 @@ pub fn pmm_get_total_pages() -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_get_used_pages() -> u64 {
+pub extern "C" fn pmm_get_used_pages() -> u64 {
     get_pmm().get_used_pages()
 }
 
@@ -111,7 +111,7 @@ pub fn pmm_get_used_pages() -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_alloc_pages(count: usize) -> *mut u8 {
+pub extern "C" fn pmm_alloc_pages(count: usize) -> *mut u8 {
     match get_pmm().alloc_pages(count) {
         Some(addr) => addr.0 as *mut u8,
         None => core::ptr::null_mut(),
@@ -122,7 +122,7 @@ pub fn pmm_alloc_pages(count: usize) -> *mut u8 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_free_pages(addr: *mut u8, count: usize) {
+pub extern "C" fn pmm_free_pages(addr: *mut u8, count: usize) {
     if !addr.is_null() && count > 0 {
         get_pmm().free_pages(PhysAddr(addr as u64), count);
     }
@@ -161,7 +161,7 @@ pub fn pmm_alloc_huge_page_phys(size_type: super::PageSize) -> Option<super::Phy
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_dump_stats() {
+pub extern "C" fn pmm_dump_stats() {
     get_pmm().dump_stats();
 }
 
@@ -235,7 +235,7 @@ pub fn slab_get_cache_infos(out: &mut [SlabCacheInfo]) -> usize {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_alloc_huge_page(size_type: PageSize) -> *mut u8 {
+pub extern "C" fn pmm_alloc_huge_page(size_type: PageSize) -> *mut u8 {
     match get_pmm().alloc_huge_page(size_type) {
         Some(addr) => addr.0 as *mut u8,
         None => core::ptr::null_mut(),
@@ -246,7 +246,7 @@ pub fn pmm_alloc_huge_page(size_type: PageSize) -> *mut u8 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_free_huge_page(addr: *mut u8, size_type: PageSize) {
+pub extern "C" fn pmm_free_huge_page(addr: *mut u8, size_type: PageSize) {
     if !addr.is_null() {
         get_pmm().free_huge_page(PhysAddr(addr as u64), size_type);
     }
@@ -256,16 +256,12 @@ pub fn pmm_free_huge_page(addr: *mut u8, size_type: PageSize) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn pmm_is_aligned_for_huge(addr: *const u8, size_type: PageSize) -> i32 {
+pub extern "C" fn pmm_is_aligned_for_huge(addr: *const u8, size_type: PageSize) -> i32 {
     if addr.is_null() {
         return 0;
     }
 
-    if get_pmm().is_aligned_for_huge(PhysAddr(addr as u64), size_type) {
-        1
-    } else {
-        0
-    }
+    i32::from(get_pmm().is_aligned_for_huge(PhysAddr(addr as u64), size_type))
 }
 
 // ============================================================
@@ -276,7 +272,7 @@ pub fn pmm_is_aligned_for_huge(addr: *const u8, size_type: PageSize) -> i32 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_init() {
+pub extern "C" fn vmm_init() {
     super::vmm::vmm_init();
 }
 
@@ -284,7 +280,7 @@ pub fn vmm_init() {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_map_page(virt: u64, phys: u64, flags: u64) -> i32 {
+pub extern "C" fn vmm_map_page(virt: u64, phys: u64, flags: u64) -> i32 {
     let virt_addr = VirtAddr(virt);
     let phys_addr = PhysAddr(phys);
     let page_flags = PageFlags::from_bits_truncate(flags);
@@ -299,7 +295,7 @@ pub fn vmm_map_page(virt: u64, phys: u64, flags: u64) -> i32 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_map_huge_page(virt: u64, phys: u64, flags: u64, size_type: PageSize) -> i32 {
+pub extern "C" fn vmm_map_huge_page(virt: u64, phys: u64, flags: u64, size_type: PageSize) -> i32 {
     let virt_addr = VirtAddr(virt);
     let phys_addr = PhysAddr(phys);
     let page_flags = PageFlags::from_bits_truncate(flags);
@@ -314,7 +310,7 @@ pub fn vmm_map_huge_page(virt: u64, phys: u64, flags: u64, size_type: PageSize) 
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_unmap_page(virt: u64) {
+pub extern "C" fn vmm_unmap_page(virt: u64) {
     get_vmm().unmap_page(VirtAddr(virt));
 }
 
@@ -322,7 +318,7 @@ pub fn vmm_unmap_page(virt: u64) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_split_2mb_page(virt: u64) -> i32 {
+pub extern "C" fn vmm_split_2mb_page(virt: u64) -> i32 {
     match get_vmm().split_2mb_page(virt) {
         Ok(()) => 0,
         Err(_) => -1,
@@ -333,7 +329,7 @@ pub fn vmm_split_2mb_page(virt: u64) -> i32 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_ensure_pml4_user(virt: u64) {
+pub extern "C" fn vmm_ensure_pml4_user(virt: u64) {
     get_vmm().ensure_pml4_user(virt);
 }
 
@@ -341,7 +337,7 @@ pub fn vmm_ensure_pml4_user(virt: u64) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_ensure_path_user(virt: u64) {
+pub extern "C" fn vmm_ensure_path_user(virt: u64) {
     get_vmm().ensure_path_user(virt);
 }
 
@@ -349,7 +345,7 @@ pub fn vmm_ensure_path_user(virt: u64) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_get_physical(virt: u64) -> u64 {
+pub extern "C" fn vmm_get_physical(virt: u64) -> u64 {
     match get_vmm().get_physical(VirtAddr(virt)) {
         Some(phys) => phys.as_u64(),
         None => 0,
@@ -360,7 +356,7 @@ pub fn vmm_get_physical(virt: u64) -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_get_physical_in_table(pml4: u64, virt: u64) -> u64 {
+pub extern "C" fn vmm_get_physical_in_table(pml4: u64, virt: u64) -> u64 {
     match get_vmm().get_physical_in_pml4(pml4, VirtAddr(virt)) {
         Some(phys) => phys.as_u64(),
         None => 0,
@@ -371,7 +367,7 @@ pub fn vmm_get_physical_in_table(pml4: u64, virt: u64) -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_switch_page_table(cr3: u64) {
+pub extern "C" fn vmm_switch_page_table(cr3: u64) {
     get_vmm().switch_page_table(cr3);
 }
 
@@ -379,7 +375,7 @@ pub fn vmm_switch_page_table(cr3: u64) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_create_user_page_table() -> u64 {
+pub extern "C" fn vmm_create_user_page_table() -> u64 {
     match get_vmm().create_user_page_table() {
         Some(pml4) => pml4,
         None => 0,
@@ -390,7 +386,7 @@ pub fn vmm_create_user_page_table() -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_map_page_in_table(pml4: u64, virt: u64, phys: u64, flags: u64) {
+pub extern "C" fn vmm_map_page_in_table(pml4: u64, virt: u64, phys: u64, flags: u64) {
     let virt_addr = VirtAddr(virt);
     let phys_addr = PhysAddr(phys);
     let page_flags = PageFlags::from_bits_truncate(flags);
@@ -402,7 +398,7 @@ pub fn vmm_map_page_in_table(pml4: u64, virt: u64, phys: u64, flags: u64) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_clone_user_page_table(parent_pml4: u64) -> u64 {
+pub extern "C" fn vmm_clone_user_page_table(parent_pml4: u64) -> u64 {
     get_vmm().clone_user_page_table(parent_pml4).unwrap_or(0)
 }
 
@@ -411,7 +407,7 @@ pub fn vmm_clone_user_page_table(parent_pml4: u64) -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64 {
+pub extern "C" fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64 {
     super::cow::clone_user_page_table_cow(parent_pml4).unwrap_or(0)
 }
 
@@ -419,13 +415,13 @@ pub fn vmm_clone_user_page_table_cow(parent_pml4: u64) -> u64 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vmm_destroy_page_table(pml4: u64) {
+pub extern "C" fn vmm_destroy_page_table(pml4: u64) {
     get_vmm().destroy_page_table(pml4);
 }
 
 /// 获取内核 PML4 地址 (访问全局变量)
 ///
-/// 注: 这是对全局 KERNEL_PML4 变量的访问器
+/// 注: 这是对全局 `KERNEL_PML4` 变量的访问器
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
@@ -438,18 +434,18 @@ pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn k_malloc(size: usize) -> *mut u8 {
+pub extern "C" fn k_malloc(size: usize) -> *mut u8 {
     match get_kmalloc().allocate(size) {
         Some(ptr) => ptr as *mut u8,
         None => core::ptr::null_mut(),
     }
 }
 
-/// 释放 k_malloc 分配的内存
+/// 释放 `k_malloc` 分配的内存
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn k_free(ptr: *mut u8) {
+pub extern "C" fn k_free(ptr: *mut u8) {
     if !ptr.is_null() {
         get_kmalloc().deallocate(ptr as *mut u8);
     }
@@ -459,7 +455,7 @@ pub fn k_free(ptr: *mut u8) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn k_realloc(ptr: *mut u8, size: usize) -> *mut u8 {
+pub extern "C" fn k_realloc(ptr: *mut u8, size: usize) -> *mut u8 {
     match get_kmalloc().reallocate(ptr as *mut u8, size) {
         Some(new_ptr) => new_ptr as *mut u8,
         None => core::ptr::null_mut(),
@@ -470,7 +466,7 @@ pub fn k_realloc(ptr: *mut u8, size: usize) -> *mut u8 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn kmalloc_init(start: u64, initial_size: u64) {
+pub extern "C" fn kmalloc_init(start: u64, initial_size: u64) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         get_kmalloc_mut().init(VirtAddr(start), initial_size);
@@ -480,11 +476,11 @@ pub fn kmalloc_init(start: u64, initial_size: u64) {
 /// 打印 kmalloc 统计
 ///
 #[unsafe(no_mangle)]
-pub fn kmalloc_dump_stats() {
+pub extern "C" fn kmalloc_dump_stats() {
     get_kmalloc().dump_stats();
 }
 
-/// 获取内核堆统计 (使用已有的 KmallocStats 结构)
+/// 获取内核堆统计 (使用已有的 `KmallocStats` 结构)
 pub fn kmalloc_get_stats() -> super::kmalloc::HeapStats {
     get_kmalloc().get_stats()
 }
@@ -493,12 +489,8 @@ pub fn kmalloc_get_stats() -> super::kmalloc::HeapStats {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn kmalloc_validate() -> i32 {
-    if get_kmalloc().validate() {
-        1
-    } else {
-        0
-    }
+pub extern "C" fn kmalloc_validate() -> i32 {
+    i32::from(get_kmalloc().validate())
 }
 
 // ============================================================
@@ -506,33 +498,37 @@ pub fn kmalloc_validate() -> i32 {
 // 与原始 C API 函数名一致
 // ============================================================
 
-/// k_malloc 的别名 — 与原始 C API 一致: void* kmalloc(uint64_t size)
+/// `k_malloc` 的别名 — 与原始 C API 一致: void* `kmalloc(uint64_t` size)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn kmalloc(size: u64) -> *mut u8 {
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn kmalloc(size: u64) -> *mut u8 {
     k_malloc(size as usize)
 }
 
-/// k_free 的别名 — 与原始 C API 一致: void kfree(void* ptr)
+/// `k_free` 的别名 — 与原始 C API 一致: void kfree(void* ptr)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn kfree(ptr: *mut u8) {
-    k_free(ptr)
+pub extern "C" fn kfree(ptr: *mut u8) {
+    k_free(ptr);
 }
 
-/// k_realloc 的别名 — 与原始 C API 一致: void* krealloc(void* ptr, uint64_t size)
+/// `k_realloc` 的别名 — 与原始 C API 一致: void* krealloc(void* ptr, `uint64_t` size)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn krealloc(ptr: *mut u8, size: u64) -> *mut u8 {
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn krealloc(ptr: *mut u8, size: u64) -> *mut u8 {
     k_realloc(ptr, size as usize)
 }
 
-/// 获取内核堆统计 — 与原始 C API 一致: void kmalloc_stats(struct kmalloc_stats* stats)
+/// 获取内核堆统计 — 与原始 C API 一致: void `kmalloc_stats(struct` `kmalloc_stats`* stats)
 ///
 /// 注: 此为简化版本, 暂不填充结构
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn kmalloc_stats(stats: *mut u8) {
+pub extern "C" fn kmalloc_stats(stats: *mut u8) {
     if stats.is_null() {
         return;
     }
@@ -549,10 +545,10 @@ pub fn kmalloc_stats(stats: *mut u8) {
     }
 }
 
-/// 转储内核堆信息 — 与原始 C API 一致: void kmalloc_dump(void)
+/// 转储内核堆信息 — 与原始 C API 一致: void `kmalloc_dump(void)`
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn kmalloc_dump() {
+pub extern "C" fn kmalloc_dump() {
     get_kmalloc().dump_stats();
 }
 
@@ -574,7 +570,7 @@ pub use super::vma::{MmStruct, Vma, VmaType};
 ///
 /// 通过公共 api 层访问, 避免直接引用 `mm::vma::set_current_mm`.
 pub fn vma_set_current_mm(mm: *const super::vma::MmStruct) {
-    super::vma::set_current_mm(mm)
+    super::vma::set_current_mm(mm);
 }
 
 // copy_user re-export — 避免跨子系统直接引用 mm::copy_user 内部

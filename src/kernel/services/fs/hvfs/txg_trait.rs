@@ -13,10 +13,10 @@
 //!
 //! ## TCB 减负
 //!
-//! 原 HvTxgGroup 12 个方法 (init/transition/add_dirty_to_open/...) 直接暴露.
+//! 原 `HvTxgGroup` 12 个方法 (`init/transition/add_dirty_to_open`/...) 直接暴露.
 //! 提取 trait 后:
-//! - DMU/SPA 依赖 trait object / 泛型, 不再绑死 HvTxgGroup
-//! - 单元测试可注入 MockTxg, 验证 DMU 在不真实存储上的事务逻辑
+//! - DMU/SPA 依赖 trait object / 泛型, 不再绑死 `HvTxgGroup`
+//! - 单元测试可注入 `MockTxg`, 验证 DMU 在不真实存储上的事务逻辑
 //!
 //! ## 与 LEGACY-5.1 (ZAP) 范式一致
 
@@ -29,7 +29,7 @@ use super::bp::HvBlockPointer;
 
 /// TXG 事务组管理 trait
 ///
-/// HvTxgGroup 的方法 (init/transition/add_dirty_to_open/...) 抽象为 trait,
+/// `HvTxgGroup` 的方法 (`init/transition/add_dirty_to_open`/...) 抽象为 trait,
 /// 让 DMU/SPA 等调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # Safety
@@ -38,7 +38,7 @@ use super::bp::HvBlockPointer;
 /// - `transition` 必须是原子的 (状态切换期间无并发可见性)
 /// - `add_*_to_open` 可并发调用, 实现方需内部同步
 pub trait TxgManager: Send + Sync {
-    /// 初始化事务组 (start_txg 为起始 txg_id)
+    /// 初始化事务组 (`start_txg` 为起始 `txg_id`)
     fn init(&mut self, start_txg: u64);
 
     /// 推进事务组 (open → quiescing → syncing → committed)
@@ -80,10 +80,10 @@ pub trait TxgManager: Send + Sync {
 // StandardTxg — 默认 TXG 实现 (HvTxgGroup 包装)
 // ============================================================================
 
-/// 标准 TXG 实现 — 包装 HvTxgGroup, 委托所有方法
+/// 标准 TXG 实现 — 包装 `HvTxgGroup`, 委托所有方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockTxg 替代本实现.
+/// 单元测试可注入 `MockTxg` 替代本实现.
 pub struct StandardTxg(pub HvTxgGroup);
 
 impl StandardTxg {
@@ -92,7 +92,7 @@ impl StandardTxg {
         Self(HvTxgGroup::new())
     }
 
-    /// 访问内部 HvTxgGroup (向后兼容)
+    /// 访问内部 `HvTxgGroup` (向后兼容)
     pub fn inner(&self) -> &HvTxgGroup {
         &self.0
     }

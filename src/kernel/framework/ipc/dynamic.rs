@@ -20,11 +20,11 @@
 use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::mm::PAGE_SIZE;
-use super::types::*;
+use super::types::{Message, Pipe, ShmSegment, MsgQueue, Semaphore, IpcId, SHM_MAX_SIZE, WaitQueue};
 
 /// === Message 原始指针特权封装 (Framekernel 模式) ===
 ///
-/// 与 `msgq.rs` 中的 `MessageRef` 同样思路: 把侵入式链表的 NonNull
+/// 与 `msgq.rs` 中的 `MessageRef` 同样思路: 把侵入式链表的 `NonNull`
 /// 操作 (`Box::from_raw` / `*msg_nn.as_ptr()`) 集中到 `raw` 子模块,
 /// 业务代码 (destroy 释放) 走安全接口。
 pub(crate) mod raw {
@@ -38,7 +38,7 @@ pub(crate) mod raw {
 
     impl MessageRef {
         /// # Safety (内部)
-        /// nn 必须是 `Box::into_raw` 产生的有效 NonNull。
+        /// nn 必须是 `Box::into_raw` 产生的有效 `NonNull`。
         pub(crate) unsafe fn from_non_null(nn: NonNull<Message>) -> Self {
             Self(nn)
         }
@@ -100,6 +100,9 @@ impl DynIpcNamespace {
         id
     }
 
+    /// 销毁指定管道。
+    /// # Errors
+    /// 管道 ID 不存在时返回 Err。
     pub fn pipe_destroy(&self, id: IpcId) -> Result<(), i32> {
         let mut pipes = self.pipes.lock();
         let pos = pipes.iter().position(|p| p.id == id).ok_or(-1)?;
@@ -117,6 +120,11 @@ impl DynIpcNamespace {
 
     // ─── Shared Memory ─────────────────────────────────────
 
+    /// 创建共享内存段并返回其 IPC ID。
+    /// # Errors
+    /// 大小为 0 或超过最大限制时返回 Err, 物理页分配失败时返回 Err。
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn shm_create(&self, owner_pid: u32, size: u64) -> Result<IpcId, i32> {
         if size == 0 || size > SHM_MAX_SIZE {
             return Err(-1);
@@ -144,6 +152,11 @@ impl DynIpcNamespace {
         Ok(id)
     }
 
+    /// 销毁指定共享内存段并释放其物理页。
+    /// # Errors
+    /// 共享内存段 ID 不存在时返回 Err。
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn shm_destroy(&self, id: IpcId) -> Result<(), i32> {
         let mut segs = self.shm_segs.lock();
         let pos = segs.iter().position(|s| s.id == id).ok_or(-1)?;
@@ -159,6 +172,9 @@ impl DynIpcNamespace {
 
     // ─── Message Queue ─────────────────────────────────────
 
+    /// 创建消息队列并返回其 IPC ID。
+    /// # Errors
+    /// 队列创建失败时返回 Err。
     pub fn msgq_create(&self, owner_pid: u32, max_msgs: u32, max_size: u32) -> Result<IpcId, i32> {
         let id = self.allocate_id();
         let mq = MsgQueue {
@@ -178,6 +194,9 @@ impl DynIpcNamespace {
         Ok(id)
     }
 
+    /// 销毁指定消息队列并释放其全部待处理消息。
+    /// # Errors
+    /// 消息队列 ID 不存在时返回 Err。
     pub fn msgq_destroy(&self, id: IpcId) -> Result<(), i32> {
         let mut queues = self.msg_queues.lock();
         let pos = queues.iter().position(|q| q.id == id).ok_or(-1)?;
@@ -208,6 +227,9 @@ impl DynIpcNamespace {
 
     // ─── Semaphore ─────────────────────────────────────────
 
+    /// 创建信号量并返回其 IPC ID。
+    /// # Errors
+    /// 信号量创建失败时返回 Err。
     pub fn sem_create(&self, owner_pid: u32, count: u32, max_count: u32) -> Result<IpcId, i32> {
         let id = self.allocate_id();
         let sem = Semaphore {
@@ -223,6 +245,9 @@ impl DynIpcNamespace {
         Ok(id)
     }
 
+    /// 销毁指定信号量。
+    /// # Errors
+    /// 信号量 ID 不存在时返回 Err。
     pub fn sem_destroy(&self, id: IpcId) -> Result<(), i32> {
         let mut sems = self.semaphores.lock();
         let pos = sems.iter().position(|s| s.id == id).ok_or(-1)?;
@@ -241,7 +266,7 @@ impl DynIpcNamespace {
 
 /// 动态 IPC 命名空间全局实例
 ///
-/// 使用 RacyCell 提供安全访问，替代 `static mut`。
+/// 使用 `RacyCell` 提供安全访问，替代 `static mut`。
 /// 在内核启动单线程阶段通过 `dyn_ipc_init()` 初始化，
 /// 之后只读访问，无需额外同步。
 static DYN_IPC: RacyCell<Option<DynIpcNamespace>> = RacyCell::new(None);
@@ -259,19 +284,19 @@ pub fn get_dyn_ipc() -> &'static DynIpcNamespace {
 }
 
 #[unsafe(no_mangle)]
-pub fn dyn_ipc_init() {
+pub extern "C" fn dyn_ipc_init() {
     dyn_ipc_init_impl();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn dyn_ipc_pipe_create(read_pid: u32, write_pid: u32) -> u32 {
+pub extern "C" fn dyn_ipc_pipe_create(read_pid: u32, write_pid: u32) -> u32 {
     get_dyn_ipc().pipe_create(read_pid, write_pid)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn dyn_ipc_pipe_destroy(id: u32) -> i32 {
+pub extern "C" fn dyn_ipc_pipe_destroy(id: u32) -> i32 {
     match get_dyn_ipc().pipe_destroy(id) {
         Ok(()) => 0,
         Err(e) => e,
@@ -280,7 +305,7 @@ pub fn dyn_ipc_pipe_destroy(id: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn dyn_ipc_msgq_create(owner_pid: u32, max_msgs: u32, max_size: u32) -> u32 {
+pub extern "C" fn dyn_ipc_msgq_create(owner_pid: u32, max_msgs: u32, max_size: u32) -> u32 {
     match get_dyn_ipc().msgq_create(owner_pid, max_msgs, max_size) {
         Ok(id) => id,
         Err(_) => 0,
@@ -289,7 +314,7 @@ pub fn dyn_ipc_msgq_create(owner_pid: u32, max_msgs: u32, max_size: u32) -> u32 
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn dyn_ipc_shm_create(owner_pid: u32, size: u64) -> u32 {
+pub extern "C" fn dyn_ipc_shm_create(owner_pid: u32, size: u64) -> u32 {
     match get_dyn_ipc().shm_create(owner_pid, size) {
         Ok(id) => id,
         Err(_) => 0,
@@ -298,7 +323,7 @@ pub fn dyn_ipc_shm_create(owner_pid: u32, size: u64) -> u32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn dyn_ipc_sem_create(owner_pid: u32, count: u32, max_count: u32) -> u32 {
+pub extern "C" fn dyn_ipc_sem_create(owner_pid: u32, count: u32, max_count: u32) -> u32 {
     match get_dyn_ipc().sem_create(owner_pid, count, max_count) {
         Ok(id) => id,
         Err(_) => 0,

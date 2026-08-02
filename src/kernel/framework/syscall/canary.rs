@@ -1,19 +1,19 @@
 //! Stack Canary / 熵源 系统调用 (P1 #14)
 //!
-//! 提供两个 QueenX 原生 syscall:
+//! 提供两个 `QueenX` 原生 syscall:
 //! - [`sys_getrandom`]: 从内核熵源填充用户 buffer (Linux getrandom 语义)
 //! - [`sys_get_canary`]: 返回当前进程 8 字节 stack canary
 //!
 //! ## Linux 兼容
 //!
-//! - `getrandom` 对应 Linux 318 (x86_64) / 278 (aarch64). 完整 flags 暂不实现
-//!   (GRND_RANDOM / GRND_NONBLOCK), 仅支持最常用语义 (buf, buflen, 0).
-//! - `get_canary` 是 QueenX 扩展, 无 Linux 对应, 编号 747 仅 QX 原生空间.
+//! - `getrandom` 对应 Linux 318 (`x86_64`) / 278 (aarch64). 完整 flags 暂不实现
+//!   (`GRND_RANDOM` / `GRND_NONBLOCK`), 仅支持最常用语义 (buf, buflen, 0).
+//! - `get_canary` 是 `QueenX` 扩展, 无 Linux 对应, 编号 747 仅 QX 原生空间.
 //!
 //! ## 安全性
 //!
 //! - 用户指针必须合法 (`check_user_buf`)
-//! - `getrandom` 写用户 buffer, copy_to_user 异常路径被覆盖
+//! - `getrandom` 写用户 buffer, `copy_to_user` 异常路径被覆盖
 //! - `get_canary` 不写内存, 单纯返回 8 字节, 无内存风险
 
 use crate::kernel::framework::proc;
@@ -39,7 +39,7 @@ pub fn sys_getrandom(arg0: u64, arg1: u64, _arg2: u64) -> i64 {
 ///
 /// ## 设计
 ///
-/// syscall_dispatch 签名固定 i64, 不能直接返回 8-byte u64 (高位 1 截断).
+/// `syscall_dispatch` 签名固定 i64, 不能直接返回 8-byte u64 (高位 1 截断).
 /// 改用 buffer 输出: 用户态传入 8 字节 buffer, 内核写 canary 进去.
 /// 返回 0 (成功) 或 -1 (失败, 例如用户指针非法).
 ///

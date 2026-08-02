@@ -91,9 +91,11 @@ static FALLBACK_POLICY: FallbackAllocPolicy = FallbackAllocPolicy;
 static ALLOC_DECISION: crate::kernel::framework::sync::OnceLock<&'static dyn FrameAllocDecision> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 注册分配决策策略 (由 services::mm::init 调用)
+/// 注册分配决策策略 (由 `services::mm::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+/// # Errors
+/// 策略已被注册过时返回 Err。
 pub fn register_alloc_decision(policy: &'static dyn FrameAllocDecision) -> Result<(), &'static dyn FrameAllocDecision> {
     match ALLOC_DECISION.set(policy) {
         Ok(()) => Ok(()),

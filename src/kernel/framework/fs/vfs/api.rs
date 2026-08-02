@@ -17,8 +17,8 @@
 //!
 //! ## 性能特征
 //! - 静态分发,无 vtable 开销
-//! - 字符串路径解析纯栈上,无堆分配 (除路径 split 时 alloc::string)
-use super::types::*;
+//! - 字符串路径解析纯栈上,无堆分配 (除路径 split 时 `alloc::string`)
+use super::types::{KernelResult, FsType, IntoI32, KernelError, FileSystem, VfsOpenFlags, VFS_MAX_FDS, VfsStat, VfsDirEntry, VFS_MAX_MOUNTS, VfsSeekWhence};
 use super::vfs::VFS_MANAGER;
 use crate::kernel::framework::fs::hvfs::hvfs::get_hvfs;
 use crate::kernel::framework::fs::ramfs::ramfs::{RAMFS_DATA, RamFsData};
@@ -34,6 +34,8 @@ use crate::kernel::framework::fd_notify;
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)
 const PCACHE_FAST_MAX_BYTES: usize = 64 * 1024;
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径下限 (1 页 = 4KB)
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 const PCACHE_FAST_MIN_BYTES: usize = PAGE_SIZE as usize;
 
 // ============================================================================
@@ -45,7 +47,13 @@ const PCACHE_FAST_MIN_BYTES: usize = PAGE_SIZE as usize;
 // 预留接口边界,impl 见 fs::ramfs/ramfs::RamFs 等。
 pub trait Vfs: Send + Sync {
     fn name(&self) -> &'static str;
+    /// 挂载文件系统到指定路径。
+    /// # Errors
+    /// 挂载失败时返回 Err。
     fn mount(&self, path: &str) -> KernelResult<()>;
+    /// 卸载文件系统。
+    /// # Errors
+    /// 卸载失败时返回 Err。
     fn unmount(&self) -> KernelResult<()>;
 }
 
@@ -79,13 +87,13 @@ fn split_parent_name(rel_path: &str) -> (&str, &str) {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_init_internal() {
+pub extern "C" fn vfs_init_internal() {
     super::vfs::init();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
+pub extern "C" fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     let path = ptr_to_str(path);
     let fs_name = ptr_to_str(fs_name);
     let fs_type = FsType::from_name(fs_name);
@@ -160,14 +168,16 @@ pub fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_unmount_internal(path: *const u8) -> i32 {
+pub extern "C" fn vfs_unmount_internal(path: *const u8) -> i32 {
     let path = ptr_to_str(path);
     VFS_MANAGER.unmount(path).as_i32()
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
 
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -181,7 +191,7 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
         match fs.fs_open(rel_path, flags, pwm) {
             Ok(inode) => {
                 // Plan B: fs_open 直接返回 Inode trait object
-                let file_type = inode.stat(pwm).map(|s| s.file_type).unwrap_or(0);
+                let file_type = inode.stat(pwm).map_or(0, |s| s.file_type);
                 let open_file = OpenFile::new(
                     inode,
                     flags,
@@ -197,12 +207,9 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
 
                 // 在进程 fd 表中分配 fd (TODO: 使用 per-process fd 表)
                 // 当前简化: 使用全局 fd 索引
-                let fd_idx = match VFS_MANAGER.alloc_fd() {
-                    Some(i) => i,
-                    None => {
-                        OPEN_FILE_TABLE.close(handle_id);
-                        return -1;
-                    }
+                let fd_idx = if let Some(i) = VFS_MANAGER.alloc_fd() { i } else {
+                    OPEN_FILE_TABLE.close(handle_id);
+                    return -1;
                 };
 
                 // 存储 handle_id 到 fd 表
@@ -215,7 +222,7 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
                 let (parent_path, name) = split_parent_name(rel_path);
                 match fs.fs_create(parent_path, name, pwm) {
                     Ok(inode) => {
-                        let file_type = inode.stat(pwm).map(|s| s.file_type).unwrap_or(0);
+                        let file_type = inode.stat(pwm).map_or(0, |s| s.file_type);
                         let inode_id = inode.node_id();
                         let open_file = OpenFile::new(
                             inode,
@@ -229,12 +236,9 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
                             None => return -1,
                         };
 
-                        let fd_idx = match VFS_MANAGER.alloc_fd() {
-                            Some(i) => i,
-                            None => {
-                                OPEN_FILE_TABLE.close(handle_id);
-                                return -1;
-                            }
+                        let fd_idx = if let Some(i) = VFS_MANAGER.alloc_fd() { i } else {
+                            OPEN_FILE_TABLE.close(handle_id);
+                            return -1;
                         };
 
                         VFS_MANAGER.set_fd_handle(fd_idx, handle_id);
@@ -261,7 +265,10 @@ pub fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+// 注意: 保持 Rust ABI — vfs_close_internal 为内核内部调用 (fd 表原子回收),
+//        TD-03 契约测试按 Rust ABI 签名匹配该函数体.
 #[unsafe(no_mangle)]
+#[expect(clippy::no_mangle_with_rust_abi)]
 pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     let fd_idx_us = fd_idx as usize;
     if fd_idx_us >= VFS_MAX_FDS {
@@ -271,9 +278,7 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     // 避免双核同时 close 同一 fd 导致 pcache/inotify 二次触发.
     let snapshot = {
         let mut fd_table = VFS_MANAGER.fd_table.lock();
-        if !fd_table[fd_idx_us].used {
-            None // 已关闭或未使用, 直接返回 0
-        } else {
+        if fd_table[fd_idx_us].used {
             let snap = (
                 fd_table[fd_idx_us].node_id,
                 fd_table[fd_idx_us].flags,
@@ -286,6 +291,8 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
             fd_table[fd_idx_us].offset = 0;
             fd_table[fd_idx_us].handle_id = u32::MAX;
             Some(snap)
+        } else {
+            None // 已关闭或未使用, 直接返回 0
         }
     };
     let (node_id, flags, handle_id) = match snapshot {
@@ -316,7 +323,9 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -339,13 +348,13 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
         // B2: pcache 快路径 (仅 node_id 已知时, 通过兼容方法获取)
         let node_id = open_file.inode_id();
         // 检查是否是 4KB 对齐读取 (pcache 快路径)
-        let is_aligned_4k = (count as u64) >= PCACHE_FAST_MIN_BYTES as u64
-            && (count as u64) <= PCACHE_FAST_MAX_BYTES as u64
-            && (count as u64).is_multiple_of(PAGE_SIZE)
+        let is_aligned_4k = u64::from(count) >= PCACHE_FAST_MIN_BYTES as u64
+            && u64::from(count) <= PCACHE_FAST_MAX_BYTES as u64
+            && u64::from(count).is_multiple_of(PAGE_SIZE)
             && offset.is_multiple_of(PAGE_SIZE);
 
         if is_aligned_4k {
-            let npages = (count as u64 / PAGE_SIZE) as usize;
+            let npages = (u64::from(count) / PAGE_SIZE) as usize;
             let first_pi = offset / PAGE_SIZE;
 
             let mut all_hit = true;
@@ -391,7 +400,7 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     result.unwrap_or(-1)
 }
 
-/// 按 inode_id 直接读取文件数据 (B2: mmap prewarm 用)
+/// 按 `inode_id` 直接读取文件数据 (B2: mmap prewarm 用)
 ///
 /// 区别于 `vfs_read_internal`: 不依赖 fd, 而是按 inode 寻址.
 /// 用于 mmap 创建 VMA 时, 同步预热 Page Cache (prewarm 全部页).
@@ -399,13 +408,17 @@ pub fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
 /// 参数:
 /// - `node_id`: ramfs 内部 inode 编号
 /// - `file_offset`: 文件内字节偏移 (调用方保证页对齐)
-/// - `dst`: 目标缓冲区 (长度由调用方提供, 通常为 PAGE_SIZE)
+/// - `dst`: 目标缓冲区 (长度由调用方提供, 通常为 `PAGE_SIZE`)
 /// - `pwm`: 权限字; 由 `pwm_has_capability` / `check_privilege` 在内部做权限校验,
 ///   0 表示无会话,framework 层 ramfs.read 应当返回 EACCES 而非降级为管理员。
 ///
 /// 返回: 实际读取字节数, 负数表示错误.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+// 注意: 保持 Rust ABI — 参数含 `Option<usize>` / `&mut [u8]` 等非 FFI-safe 类型
 #[unsafe(no_mangle)]
+#[expect(clippy::no_mangle_with_rust_abi)]
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
     let mut user_buf = unsafe { UserWritePtr::new(dst.as_mut_ptr(), dst.len()) };
@@ -437,7 +450,7 @@ pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64,
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -488,7 +501,7 @@ pub fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
+pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     let fd_idx = fd as usize;
     if fd_idx >= VFS_MAX_FDS {
         return -1;
@@ -517,7 +530,9 @@ pub fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
     }
@@ -535,7 +550,7 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
         // O_APPEND: 写入前自动 seek 到文件末尾 (POSIX 原子 append)
         let offset = if (open_file.get_flags() & crate::kernel::services::fs::vfs_types::VfsOpenFlags::APPEND.bits()) != 0 {
             match open_file.inode().stat(open_file.pwm) {
-                Ok(stat) => stat.size as u64,
+                Ok(stat) => u64::from(stat.size),
                 Err(_) => open_file.get_offset(),
             }
         } else {
@@ -562,7 +577,7 @@ pub fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
 
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -594,7 +609,7 @@ pub fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -616,7 +631,7 @@ pub fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
+pub extern "C" fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let _pwm = pwm;
     if st.is_null() {
@@ -660,7 +675,7 @@ pub fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
+pub extern "C" fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     if entry.is_null() {
         return -1;
     }
@@ -698,14 +713,16 @@ pub fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_set_cwd_internal(path: *const u8) {
+pub extern "C" fn vfs_set_cwd_internal(path: *const u8) {
     let path = ptr_to_str(path);
     VFS_MANAGER.set_cwd(path);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
         return -1;
     }
@@ -730,13 +747,13 @@ pub fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_barrier_capture() {
+pub extern "C" fn vfs_barrier_capture() {
     VFS_MANAGER.capture_snapshot();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_barrier_restore() -> i32 {
+pub extern "C" fn vfs_barrier_restore() -> i32 {
     VFS_MANAGER.restore_from_snapshot();
     1
 }
@@ -747,20 +764,20 @@ pub fn vfs_barrier_restore() -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_init() {
+pub extern "C" fn vfs_init() {
     vfs_init_internal();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
+pub extern "C" fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
     vfs_mount_internal(path, fs_name)
 }
 
 /// T-05: safe 挂载接口 — services 层策略调用
 ///
 /// 接受 Rust 字符串切片, 返回 i32 错误码 (0=成功, 负数=errno).
-/// SAFETY: 内部将 &str 转为 null 终止的 C 字符串后调用 vfs_mount_internal.
+/// SAFETY: 内部将 &str 转为 null 终止的 C 字符串后调用 `vfs_mount_internal`.
 pub fn vfs_mount_safe(path: &str, fs_name: &str) -> i32 {
     // 构造 null 终止的 C 字符串
     let mut path_buf = alloc::vec::Vec::with_capacity(path.len() + 1);
@@ -786,89 +803,93 @@ where
     f(buf.as_ptr())
 }
 
-/// Safe 包装: vfs_open (接受 &str 路径)
+/// Safe 包装: `vfs_open` (接受 &str 路径)
 pub fn vfs_open_safe(path: &str, flags: u32, pwm: u64) -> i32 {
     with_cstr(path, |ptr| vfs_open_internal(ptr, flags, pwm))
 }
 
-/// Safe 包装: vfs_mkdir (接受 &str 路径)
+/// Safe 包装: `vfs_mkdir` (接受 &str 路径)
 pub fn vfs_mkdir_safe(path: &str, pwm: u64) -> i32 {
     with_cstr(path, |ptr| vfs_mkdir_internal(ptr, pwm))
 }
 
-/// Safe 包装: vfs_unlink (接受 &str 路径)
+/// Safe 包装: `vfs_unlink` (接受 &str 路径)
 pub fn vfs_unlink_safe(path: &str, pwm: u64) -> i32 {
     with_cstr(path, |ptr| vfs_unlink_internal(ptr, pwm))
 }
 
-/// Safe 包装: vfs_rmdir (接受 &str 路径)
+/// Safe 包装: `vfs_rmdir` (接受 &str 路径)
 pub fn vfs_rmdir_safe(path: &str, pwm: u64) -> i32 {
     with_cstr(path, |ptr| vfs_rmdir_internal(ptr, pwm))
 }
 
-/// Safe 包装: vfs_symlink (接受 &str 路径)
+/// Safe 包装: `vfs_symlink` (接受 &str 路径)
 pub fn vfs_symlink_safe(target: &str, linkpath: &str, pwm: u64) -> i32 {
     with_cstr(target, |t| {
         with_cstr(linkpath, |l| vfs_symlink(t, l, pwm))
     })
 }
 
-/// Safe 包装: vfs_link (接受 &str 路径)
+/// Safe 包装: `vfs_link` (接受 &str 路径)
 pub fn vfs_link_safe(oldpath: &str, newpath: &str, pwm: u64) -> i32 {
     with_cstr(oldpath, |o| {
         with_cstr(newpath, |n| vfs_link(o, n, pwm))
     })
 }
 
-/// Safe 包装: vfs_rename (接受 &str 路径)
+/// Safe 包装: `vfs_rename` (接受 &str 路径)
 pub fn vfs_rename_safe(old: &str, new: &str, pwm: u64) -> i32 {
     with_cstr(old, |o| {
         with_cstr(new, |n| vfs_rename(o, n, pwm))
     })
 }
 
-/// Safe 包装: vfs_readlink (接受 &str 路径)
+/// Safe 包装: `vfs_readlink` (接受 &str 路径)
 pub fn vfs_readlink_safe(path: &str, buf: &mut [u8], pwm: u64) -> i32 {
     with_cstr(path, |ptr| {
         vfs_readlink(ptr, buf.as_mut_ptr(), buf.len() as u64, pwm)
     })
 }
 
-/// Safe 包装: vfs_utimensat (接受 &str 路径)
+/// Safe 包装: `vfs_utimensat` (接受 &str 路径)
 pub fn vfs_utimensat_safe(path: &str, atime: u64, mtime: u64, pwm: u64) -> i32 {
     with_cstr(path, |ptr| vfs_utimensat(ptr, atime, mtime, pwm))
 }
 
-/// Safe 包装: vfs_read (接受可变切片)
+/// Safe 包装: `vfs_read` (接受可变切片)
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 pub fn vfs_read_safe(fd: u32, buf: &mut [u8]) -> i32 {
     // SAFETY: buf 是调用方拥有的有效可写缓冲区
     vfs_read(fd, buf.as_mut_ptr(), buf.len() as u32)
 }
 
-/// Safe 包装: vfs_write (接受不可变切片)
+/// Safe 包装: `vfs_write` (接受不可变切片)
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
 pub fn vfs_write_safe(fd: u32, buf: &[u8]) -> i32 {
     // SAFETY: buf 是调用方拥有的有效只读缓冲区
     vfs_write(fd, buf.as_ptr(), buf.len() as u32)
 }
 
-/// Safe 包装: vfs_close
+/// Safe 包装: `vfs_close`
 pub fn vfs_close_safe(fd: u32) -> i32 {
     vfs_close(fd)
 }
 
-/// Safe 包装: vfs_seek
+/// Safe 包装: `vfs_seek`
 pub fn vfs_seek_safe(fd: u32, offset: i32, whence: u32) -> i32 {
     vfs_seek(fd, offset, whence)
 }
 
-/// Safe 包装: vfs_readdir
+/// Safe 包装: `vfs_readdir`
 pub fn vfs_readdir_safe(fd: u32, entry: &mut crate::kernel::services::fs::vfs_types::VfsDirEntry) -> i32 {
     // SAFETY: entry 是调用方拥有的有效可写结构体
     vfs_readdir(fd, entry as *mut _)
 }
 
 #[unsafe(no_mangle)]
-pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
+pub extern "C" fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
     if path.is_null() {
         return -22; // -EINVAL
     }
@@ -881,44 +902,44 @@ pub fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_umount(path: *const u8, flags: i32) -> i32 {
+pub extern "C" fn vfs_umount(path: *const u8, flags: i32) -> i32 {
     vfs_umount_internal(path, flags)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {
+pub extern "C" fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {
     vfs_open_internal(path, flags, pwm)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_close(fd: u32) -> i32 {
+pub extern "C" fn vfs_close(fd: u32) -> i32 {
     vfs_close_internal(fd)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
+pub extern "C" fn vfs_read(fd: u32, buf: *mut u8, count: u32) -> i32 {
     vfs_read_internal(fd, buf, count)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
+pub extern "C" fn vfs_write(fd: u32, buf: *const u8, count: u32) -> i32 {
     vfs_write_internal(fd, buf, count)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
+pub extern "C" fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     vfs_stat_internal(path, st, pwm)
 }
 
-/// Safe 包装: services 层用, 返回 VfsStat 而非 raw pointer.
+/// Safe 包装: services 层用, 返回 `VfsStat` 而非 raw pointer.
 ///
-/// 内部复用 vfs_stat_internal, 在 stack 上接收结果, 然后转为 Option 返回.
-/// 服务层拿到 Option<VfsStat> 后可安全地用 write_struct_to_user 写回 user.
+/// 内部复用 `vfs_stat_internal`, 在 stack 上接收结果, 然后转为 Option 返回.
+/// 服务层拿到 Option<VfsStat> 后可安全地用 `write_struct_to_user` 写回 user.
 pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
     if path.is_null() {
         return None;
@@ -934,13 +955,13 @@ pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
     vfs_mkdir_internal(path, pwm)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
+pub extern "C" fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -962,13 +983,13 @@ pub fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_chown(path: *const u8, owner_pwm: u64, pwm: u64) -> i32 {
+pub extern "C" fn vfs_chown(path: *const u8, owner_pwm: u64, pwm: u64) -> i32 {
     vfs_chown_ext(path, owner_pwm, 0, pwm)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_chown_ext(
+pub extern "C" fn vfs_chown_ext(
     path: *const u8,
     owner_pwm: u64,
     group_pwm: u64,
@@ -996,12 +1017,12 @@ pub fn vfs_chown_ext(
 /// 设置文件时间戳 (utimensat)
 ///
 /// - `path`: 文件路径
-/// - `atime`: 访问时间 (纳秒), u64::MAX 表示不修改
-/// - `mtime`: 修改时间 (纳秒), u64::MAX 表示不修改
+/// - `atime`: 访问时间 (纳秒), `u64::MAX` 表示不修改
+/// - `mtime`: 修改时间 (纳秒), `u64::MAX` 表示不修改
 /// - `pwm`: 权限凭证
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u64) -> i32 {
+pub extern "C" fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -1025,7 +1046,7 @@ pub fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
+pub extern "C" fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
     // Plan B: 通过 OpenFile 的 Inode trait 执行
     let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
         Some(hid) => hid,
@@ -1048,7 +1069,7 @@ pub fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
+pub extern "C" fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     // Plan B: 通过 OpenFile 的 Inode trait 执行
     let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
         Some(hid) => hid,
@@ -1067,7 +1088,7 @@ pub fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
     vfs_unlink_internal(path, pwm)
 }
 
@@ -1075,7 +1096,7 @@ pub fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
 /// E6-5: 通过 trait object 分发
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(oldpath);
     let new_path = ptr_to_str(newpath);
     if old_path.is_empty() || new_path.is_empty() {
@@ -1101,7 +1122,7 @@ pub fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
 /// E6-5: 通过 trait object 分发
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
     let tgt = ptr_to_str(target);
     let link_path = ptr_to_str(linkpath);
     if tgt.is_empty() || link_path.is_empty() || tgt.len() >= 128 {
@@ -1127,7 +1148,9 @@ pub fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
 /// E6-5: 通过 trait object 分发
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
     let _ = pwm;
     let p = ptr_to_str(path);
     if p.is_empty() {
@@ -1155,7 +1178,7 @@ pub fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(old);
     let new_path = ptr_to_str(new);
 
@@ -1190,18 +1213,21 @@ pub fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_rmdir(path: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_rmdir(path: *const u8, pwm: u64) -> i32 {
     vfs_rmdir_internal(path, pwm)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
+pub extern "C" fn vfs_readdir(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     vfs_readdir_internal(fd, entry)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+// 注意: 保持 Rust ABI — vfs_sync 为内核内部调用 (fs_sync trait 分发),
+//        P3-I-18 契约测试按 Rust ABI 签名匹配该函数.
 #[unsafe(no_mangle)]
+#[expect(clippy::no_mangle_with_rust_abi)]
 pub fn vfs_sync() -> i32 {
     // P3-I-18: 遍历所有挂载点, 通过 FileSystem trait 的 fs_sync 分发.
     // 替换原 hvfs_sync_internal() 单 FS 写死的实现.
@@ -1236,19 +1262,21 @@ pub fn vfs_sync() -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_get_cwd(buf: *mut u8, size: u32) -> i32 {
+pub extern "C" fn vfs_get_cwd(buf: *mut u8, size: u32) -> i32 {
     vfs_get_cwd_internal(buf, size)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_set_cwd(path: *const u8) {
+pub extern "C" fn vfs_set_cwd(path: *const u8) {
     vfs_set_cwd_internal(path);
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let whence = match VfsSeekWhence::from_u32(whence) {
         Some(w) => w,
         None => return KernelError::InvalidArgument.as_i32(),
@@ -1262,7 +1290,7 @@ pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 
     let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
         let current_offset = open_file.get_offset();
-        match open_file.inode().seek(offset as i64, whence, current_offset) {
+        match open_file.inode().seek(i64::from(offset), whence, current_offset) {
             Ok(new_offset) => {
                 open_file.set_offset(new_offset);
                 new_offset as i32
@@ -1276,13 +1304,13 @@ pub fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_fd_table() -> *const u8 {
+pub extern "C" fn vfs_fd_table() -> *const u8 {
     VFS_MANAGER.fd_table.lock().as_ptr() as *const u8
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
+pub extern "C" fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
     let fs_type_str = ptr_to_str(fs_type);
     let _path = ptr_to_str(path);
 
@@ -1301,9 +1329,8 @@ pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
         hvfs.format_drive(drive_id, part_start);
         if hvfs.is_disk_mode() {
             return 0;
-        } else {
-            return -1;
         }
+        return -1;
     } else if fs_type_str == "ramfs" || fs_type_str == "RamFS" {
         // RamFS 无需格式化, 始终为内存文件系统
         return 0;
@@ -1318,7 +1345,7 @@ pub fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
+pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
     if st.is_null() {
         return -1;
     }
@@ -1358,7 +1385,7 @@ pub fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
     result
 }
 
-/// Safe 包装: services 层用, 返回 VfsStat 而非 raw pointer.
+/// Safe 包装: services 层用, 返回 `VfsStat` 而非 raw pointer.
 pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
     let mut st = VfsStat::default();
     let r = vfs_fstat(fd, &mut st as *mut VfsStat, pwm);
@@ -1373,12 +1400,12 @@ pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
 // fd handle_id 操作 (POSIX 打开文件描述)
 // ============================================================================
 
-/// 设置 fd 的 OpenFile handle_id
+/// 设置 fd 的 `OpenFile` `handle_id`
 pub fn vfs_set_fd_handle(fd_idx: usize, handle_id: u32) {
     VFS_MANAGER.set_fd_handle(fd_idx, handle_id);
 }
 
-/// 获取 fd 的 OpenFile handle_id
+/// 获取 fd 的 `OpenFile` `handle_id`
 pub fn vfs_get_fd_handle(fd_idx: usize) -> Option<u32> {
     VFS_MANAGER.get_fd_handle(fd_idx)
 }
@@ -1389,7 +1416,9 @@ pub fn vfs_get_fd_handle(fd_idx: usize) -> Option<u32> {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_dup(oldfd: u32) -> i32 {
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_dup(oldfd: u32) -> i32 {
     let old_usize = oldfd as usize;
     if old_usize >= 256 {
         return -9;
@@ -1419,7 +1448,9 @@ pub fn vfs_dup(oldfd: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
+// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
     let old_usize = oldfd as usize;
     let new_usize = newfd as usize;
     if old_usize >= 256 || new_usize >= 256 {
@@ -1463,7 +1494,7 @@ pub fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
 /// 设置扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_setxattr_internal(path: *const u8, name: *const u8, value: *const u8, size: u32, pwm: u64) -> i32 {
+pub extern "C" fn vfs_setxattr_internal(path: *const u8, name: *const u8, value: *const u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let name = ptr_to_str(name);
     let value = if !value.is_null() && size > 0 {
@@ -1492,7 +1523,9 @@ pub fn vfs_setxattr_internal(path: *const u8, name: *const u8, value: *const u8,
 /// 获取扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, size: u32, pwm: u64) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let name = ptr_to_str(name);
 
@@ -1522,7 +1555,9 @@ pub fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, s
 /// 列出扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u64) -> i32 {
+// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
 
     if list.is_null() || size == 0 {
@@ -1551,7 +1586,7 @@ pub fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u6
 /// 删除扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm: u64) -> i32 {
+pub extern "C" fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let name = ptr_to_str(name);
 

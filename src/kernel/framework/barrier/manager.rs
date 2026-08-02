@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::domain::RecoveryDomain;
-use super::types::*;
+use super::types::{RollbackEvent, MAX_ROLLBACK_LOG, MAX_RECOVERY_DOMAINS, DIRECT_MAP_SIZE, DomainState};
 
 
 use crate::kernel::framework::sync::IrqSpinLock;
@@ -76,6 +76,8 @@ impl RecoveryManager {
         }
     }
 
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn register(&mut self, domain: &'static RecoveryDomain) -> Option<u64> {
         let idx = self.count.load(Ordering::SeqCst) as usize;
         if idx >= MAX_RECOVERY_DOMAINS {
@@ -153,6 +155,8 @@ impl RecoveryManager {
         }
     }
 
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn find(&self, id: u64) -> Option<&'static RecoveryDomain> {
         let idx = id as usize;
         if idx < DIRECT_MAP_SIZE {
@@ -209,6 +213,8 @@ impl RecoveryManager {
         None
     }
 
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn rollback_domain(
         &self,
         dom: &RecoveryDomain,

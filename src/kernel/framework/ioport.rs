@@ -1,11 +1,11 @@
-//! IoPort — x86 PIO 安全封装 (TCB)
+//! `IoPort` — x86 PIO 安全封装 (TCB)
 //!
-//! 封装 x86_64 in/out 指令, 提供端口范围校验。
+//! 封装 `x86_64` in/out 指令, 提供端口范围校验。
 //! aarch64 上无 PIO 语义, 编译为空壳。使用时需 feature gate。
 //!
 //! ## 适用场景
 //!
-//! ✅ x86_64 Legacy 设备 (PCI 配置空间, ATA, VGA, 串口)
+//! ✅ `x86_64` Legacy 设备 (PCI 配置空间, ATA, VGA, 串口)
 //! ❌ aarch64 (使用 MMIO 代替)
 //!
 //! ## SAFETY 不变量
@@ -21,7 +21,7 @@ use core::arch::asm;
 /// 封装一个有效的 I/O 端口范围, 提供类型安全的读写。
 pub struct IoPort {
     base: u16,
-    /// 端口长度, 用于 check_offset 越界校验. 仅 x86_64 PIO 路径使用.
+    /// 端口长度, 用于 `check_offset` 越界校验. 仅 `x86_64` PIO 路径使用.
     #[cfg(target_arch = "x86_64")]
     len: u16,
     name: &'static str,
@@ -33,6 +33,8 @@ impl IoPort {
     /// # SAFETY
     /// - `base..base+len` 必须是有效的 I/O 端口范围。
     /// - 不与任何其他 `IoPort` 实例重叠 (由调用方通过 PCI BAR 信息保证)。
+    /// # Errors
+    /// 端口范围长度为 0 或端口范围溢出时返回 Err。
     pub unsafe fn new(base: u16, len: u16, name: &'static str) -> Result<Self, &'static str> {
         if len == 0 {
             return Err("IoPort: zero-length port range");
@@ -50,8 +52,10 @@ impl IoPort {
 
     /// 安全 PIO 构造 (已知 base/len 合法)
     ///
-    /// 调用方契约: `base..base+len` 必须是有效 PIO 范围, 不与其他 IoPort 重叠。
+    /// 调用方契约: `base..base+len` 必须是有效 PIO 范围, 不与其他 `IoPort` 重叠。
     /// 委托 unsafe `IoPort::new`, SAFETY 由调用方保证。
+    /// # Errors
+    /// 端口范围长度为 0 或端口范围溢出时返回 Err。
     pub fn new_safe(base: u16, len: u16, name: &'static str) -> Result<Self, &'static str> {
         // SAFETY: 契约由调用方保证, 同 IoPort::new
         unsafe { Self::new(base, len, name) }
@@ -69,7 +73,7 @@ impl IoPort {
         self.name
     }
 
-    /// 检查偏移量是否在端口范围内 (仅 x86_64 使用)
+    /// 检查偏移量是否在端口范围内 (仅 `x86_64` 使用)
     #[cfg(target_arch = "x86_64")]
     fn check_offset(&self, offset: u16, size: u16) -> Result<u16, &'static str> {
         if offset.saturating_add(size) > self.len {
@@ -79,6 +83,8 @@ impl IoPort {
     }
 
     /// 读取 u8
+    /// # Panics
+    /// 端口偏移越界时 panic。
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn read_u8(&self, offset: u16) -> u8 {
@@ -105,6 +111,8 @@ impl IoPort {
     }
 
     /// 读取 u16
+    /// # Panics
+    /// 端口偏移越界时 panic。
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn read_u16(&self, offset: u16) -> u16 {
@@ -127,6 +135,8 @@ impl IoPort {
     }
 
     /// 读取 u32
+    /// # Panics
+    /// 端口偏移越界时 panic。
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn read_u32(&self, offset: u16) -> u32 {
@@ -149,6 +159,8 @@ impl IoPort {
     }
 
     /// 写入 u8
+    /// # Panics
+    /// 端口偏移越界时 panic。
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn write_u8(&self, offset: u16, val: u8) {
@@ -172,6 +184,8 @@ impl IoPort {
     }
 
     /// 写入 u16
+    /// # Panics
+    /// 端口偏移越界时 panic。
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn write_u16(&self, offset: u16, val: u16) {
@@ -192,6 +206,8 @@ impl IoPort {
     }
 
     /// 写入 u32
+    /// # Panics
+    /// 端口偏移越界时 panic。
     #[cfg(target_arch = "x86_64")]
     #[inline]
     pub fn write_u32(&self, offset: u16, val: u32) {

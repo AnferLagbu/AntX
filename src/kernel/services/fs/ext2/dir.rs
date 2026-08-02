@@ -51,6 +51,6 @@ impl Ext2DirEntry {
 
     /// 目录项实际大小 (对齐到 4 字节)
     pub fn actual_size(&self) -> u16 {
-        (self.name_len as u16 + 8 + 3) & !3
+        (u16::from(self.name_len) + 8 + 3) & !3
     }
 }

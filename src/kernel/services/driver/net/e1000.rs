@@ -80,7 +80,7 @@ const E1000_RDBAL: u32 = 0x2800;
 const E1000_RDBAH: u32 = 0x2804;
 const E1000_RDLEN: u32 = 0x2808;
 const E1000_RDH: u32 = 0x2810;
-/// RX tail 寄存器偏移 (framework 层 dump_regs 使用)
+/// RX tail 寄存器偏移 (framework 层 `dump_regs` 使用)
 pub const E1000_RDT: u32 = 0x2818;
 
 // 中断控制
@@ -189,6 +189,10 @@ impl E1000Io {
     /// # 参数
     /// - `phys`: E1000 BAR0 物理地址 (来自 PCI 枚举)
     /// - `len`: MMIO 区域大小 (通常 128KB)
+    ///
+    /// # Errors
+    ///
+    /// 当从 PCI BAR 映射物理地址失败时返回 [`KernelError::Io`]。
     pub fn new(phys: PhysAddr, len: usize) -> Result<Self, KernelError> {
         let mmio = IoMem::from_pci_bar(phys, len, "e1000-bar0")
             .map_err(|_| KernelError::Io)?;
@@ -206,7 +210,7 @@ impl E1000Io {
     /// 写入 32 位寄存器
     #[inline(always)]
     pub fn write32(&self, reg: u32, val: u32) {
-        self.mmio.write_u32(reg as usize, val)
+        self.mmio.write_u32(reg as usize, val);
     }
 
     // ── EEPROM 读取 ──
@@ -215,7 +219,7 @@ impl E1000Io {
     ///
     /// 轮询 EERD.DONE 位, 带超时保护。
     pub fn eeprom_read(&self, addr: u8) -> u16 {
-        self.write32(E1000_EERD, ((addr as u32) << 2) | E1000_EERD_START);
+        self.write32(E1000_EERD, (u32::from(addr) << 2) | E1000_EERD_START);
         let mut timeout: u32 = 0;
         while timeout < E1000_TIMEOUT {
             let val = self.read32(E1000_EERD);
@@ -368,11 +372,11 @@ impl E1000Io {
 
     /// 写入 MAC 地址到 RAL0/RAH0 寄存器
     pub fn set_mac(&self, mac: &[u8; 6]) {
-        let ral = (mac[0] as u32)
-            | ((mac[1] as u32) << 8)
-            | ((mac[2] as u32) << 16)
-            | ((mac[3] as u32) << 24);
-        let rah = (mac[4] as u32) | ((mac[5] as u32) << 8) | E1000_RAH_AV;
+        let ral = u32::from(mac[0])
+            | (u32::from(mac[1]) << 8)
+            | (u32::from(mac[2]) << 16)
+            | (u32::from(mac[3]) << 24);
+        let rah = u32::from(mac[4]) | (u32::from(mac[5]) << 8) | E1000_RAH_AV;
         self.write32(E1000_RAL0, ral);
         self.write32(E1000_RAH0, rah);
     }
@@ -424,7 +428,7 @@ impl E1000Driver {
         }
     }
 
-    /// 获取底层 MMIO 访问器引用 (供 framework 层直接寄存器访问, 如 dump_regs)。
+    /// 获取底层 MMIO 访问器引用 (供 framework 层直接寄存器访问, 如 `dump_regs`)。
     pub fn io(&self) -> &E1000Io {
         &self.io
     }
@@ -433,6 +437,10 @@ impl E1000Driver {
     ///
     /// 执行 E1000 软复位, 清除中断, 配置链路/速率/双工, 并等待链路 UP。
     /// 应在 DMA 环分配前调用。
+    ///
+    /// # Errors
+    ///
+    /// 当软复位在 `E1000_TIMEOUT` 次轮询内未完成 (CTRL.RST 未清零) 时返回 [`KernelError::Io`]。
     pub fn reset_and_detect_link(&mut self) -> Result<(), KernelError> {
         // 1. 软复位: 写 CTRL.RST, 轮询直到清零
         self.io.write32(E1000_CTRL, E1000_CTRL_RST);
@@ -472,11 +480,11 @@ impl E1000Driver {
             core::hint::spin_loop();
         }
 
-        if !link_ready {
-            slog_warn!(Net, "e1000: link not ready, continuing anyway");
-        } else {
+        if link_ready {
             let (speed, _duplex) = self.io.link_status();
             slog_info!(Net, "e1000: NIC Link is Up {} Mbps Full Duplex", speed);
+        } else {
+            slog_warn!(Net, "e1000: link not ready, continuing anyway");
         }
 
         Ok(())
@@ -534,7 +542,7 @@ impl E1000Driver {
         self.initialized
     }
 
-    /// 标记驱动为已初始化 (kernel_test 模式使用)。
+    /// 标记驱动为已初始化 (`kernel_test` 模式使用)。
     pub fn mark_initialized(&mut self) {
         self.initialized = true;
     }
@@ -650,7 +658,12 @@ impl E1000Driver {
 
     /// 发送一个数据包
     ///
-    /// 通过 TxRing 安全包装设置 DMA 描述符, 写入 TDT 寄存器通知硬件。
+    /// 通过 `TxRing` 安全包装设置 DMA 描述符, 写入 TDT 寄存器通知硬件。
+    ///
+    /// # Errors
+    ///
+    /// - TX/RX 描述符环尚未安装时返回 [`KernelError::NotInitialized`]
+    /// - 发送描述符在 `E1000_TIMEOUT` 次轮询内未完成 (硬件忙) 时返回 [`KernelError::Io`]
     pub fn send_packet(&mut self, data: &[u8]) -> Result<usize, KernelError> {
         let tx_ring = self.tx_ring.as_mut().ok_or(KernelError::NotInitialized)?;
 
@@ -677,7 +690,7 @@ impl E1000Driver {
 
     /// 接收一个数据包
     ///
-    /// 通过 RxRing 安全包装检查描述符状态, 复制数据到调用方缓冲区。
+    /// 通过 `RxRing` 安全包装检查描述符状态, 复制数据到调用方缓冲区。
     /// 跳过错误描述符, 继续查找有效数据包。
     pub fn receive_packet(&mut self, buf: &mut [u8]) -> Option<usize> {
         let rx_ring = self.rx_ring.as_mut()?;
@@ -750,9 +763,7 @@ impl E1000Driver {
 
             let len = rx_ring.packet_length(tail);
 
-            if !rx_ring.has_errors(tail) {
-                processed += 1;
-            } else {
+            if rx_ring.has_errors(tail) {
                 slog_warn!(
                     Net,
                     "e1000: RX desc[{}] errors=0x{:x} len={}",
@@ -760,6 +771,8 @@ impl E1000Driver {
                     rx_ring.errors(tail),
                     len
                 );
+            } else {
+                processed += 1;
             }
 
             rx_ring.clear_status(tail);

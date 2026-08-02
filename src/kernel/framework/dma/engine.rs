@@ -4,7 +4,7 @@
 //! 以及 MMIO (ioremap) 映射.
 //! 采用 `PhysAddr`/`VirtAddr` 类型安全与无锁原子变量.
 
-use super::*;
+use super::{DmaMapping, DmaStats, PAGE_SIZE, get_vmm, KERNEL_BASE, ptr, DmaDirection, DmaCachePolicy, alloc_mmio_virt, DmaScatterList, DMA_MAX_SCATTER_ENTRIES, DmaScatterEntry, DmaPoolStats, CACHE_LINE_SIZE};
 use crate::kernel::framework::mm::{pmm_alloc_pages_phys, pmm_free_pages_phys};
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
@@ -43,6 +43,8 @@ impl DmaEngine {
         self.initialized.store(true, Ordering::Release);
     }
 
+    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn shutdown(&self) {
         if !self.initialized.load(Ordering::Acquire) {
             return;
@@ -79,6 +81,8 @@ impl DmaEngine {
 
     /// 分配物理上连续的 DMA 一致性内存.
     /// 返回 `(cpu_virt_addr, dma_phys_addr)`.
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn alloc_coherent(&self, size: usize) -> Option<(VirtAddr, PhysAddr)> {
         if size == 0 || !self.initialized.load(Ordering::Acquire) {
             return None;
@@ -86,12 +90,9 @@ impl DmaEngine {
 
         let pages = (size as u64).div_ceil(PAGE_SIZE);
 
-        let phys = match pmm_alloc_pages_phys(pages as usize) {
-            Some(p) => p,
-            None => {
-                self.stats.coherence_fails.fetch_add(1, Ordering::Relaxed);
-                return None;
-            }
+        let phys = if let Some(p) = pmm_alloc_pages_phys(pages as usize) { p } else {
+            self.stats.coherence_fails.fetch_add(1, Ordering::Relaxed);
+            return None;
         };
 
         // 将物理地址转换为内核虚拟地址 (direct-map 区)
@@ -129,6 +130,8 @@ impl DmaEngine {
     }
 
     /// 释放 DMA 一致性内存
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn free_coherent(&self, cpu_addr: VirtAddr, size: usize) {
         if size == 0 || cpu_addr.0 == 0 || !self.initialized.load(Ordering::Acquire) {
             return;
@@ -326,6 +329,8 @@ impl DmaEngine {
         sglist.total_length = 0;
     }
 
+    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
     pub fn sg_add_entry(&self, sglist: &mut DmaScatterList, addr: VirtAddr, length: usize) -> i32 {
         if addr.0 == 0 || length == 0 {
             return -1;
@@ -338,7 +343,7 @@ impl DmaEngine {
         let phys = get_vmm().get_physical(addr);
 
         sglist.entries[idx] = DmaScatterEntry {
-            phys_addr: phys.map(|p| p.0).unwrap_or(0),
+            phys_addr: phys.map_or(0, |p| p.0),
             length,
             page_addr: addr.0 as usize,
         };
@@ -382,8 +387,7 @@ impl DmaEngine {
                 let start = addr.0 & !(cache_line - 1);
                 let end = addr.0 + size as u64;
                 let has_clflushopt = crate::kernel::framework::cpu::get_cpu_info()
-                    .map(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::CLFLUSHOPT))
-                    .unwrap_or(false);
+                    .is_some_and(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::CLFLUSHOPT));
                 let mut line = start;
                 while line < end {
                     if has_clflushopt {
@@ -442,7 +446,7 @@ impl DmaEngine {
     /// 在 DMA 读之前失效 CPU 缓存.
     /// 确保 CPU 能看到设备的写入.
     ///
-    /// x86_64: 缓存一致, 仅需栅栏 (addr/size 无须使用).
+    /// `x86_64`: 缓存一致, 仅需栅栏 (addr/size 无须使用).
     /// aarch64: 按虚拟地址逐行失效 (DC IVAC).
     #[cfg_attr(target_arch = "x86_64", allow(unused_variables))]
     #[inline(always)]
@@ -506,7 +510,7 @@ static GLOBAL_DMA: Mutex<DmaEngine> = Mutex::new(DmaEngine::new());
 
 /// 获取全局 DMA Engine 的锁守卫
 ///
-/// 返回 `IrqSpinLockGuard`，持有期间可安全调用 DmaEngine 的所有方法。
+/// 返回 `IrqSpinLockGuard`，持有期间可安全调用 `DmaEngine` 的所有方法。
 /// 由于 `DmaEngine` 内部已有 Mutex 保护，此处锁守卫仅消除 static mut 的 aliasing UB。
 pub fn get_dma() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, DmaEngine> {
     GLOBAL_DMA.lock()

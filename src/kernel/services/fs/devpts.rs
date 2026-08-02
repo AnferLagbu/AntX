@@ -83,6 +83,9 @@ impl PtyTable {
     }
 
     /// 分配 PTY
+    ///
+    /// # Errors
+    /// 当所有 PTY 设备均已分配时返回 `ENOMEM`.
     pub fn alloc(&mut self) -> Result<u32, Errno> {
         for i in 0..MAX_PTY_DEVICES {
             if self.devices[i].state == PtyState::Free {
@@ -90,7 +93,7 @@ impl PtyTable {
                 // 设置名称: "pts/N"
                 let prefix = b"pts/";
                 let mut j = 0;
-                for &b in prefix.iter() {
+                for &b in prefix {
                     if j < MAX_NAME_LEN {
                         self.devices[i].name[j] = b;
                         j += 1;
@@ -127,6 +130,9 @@ impl PtyTable {
     }
 
     /// 释放 PTY
+    ///
+    /// # Errors
+    /// 当 `id` 超出范围或对应设备本为未分配状态时返回 `EINVAL`.
     pub fn free(&mut self, id: u32) -> Result<(), Errno> {
         if (id as usize) >= MAX_PTY_DEVICES {
             return Err(Errno::EINVAL);
@@ -180,11 +186,17 @@ pub fn get_pty_table() -> &'static Mutex<PtyTable> {
 // ============================================================================
 
 /// 分配 PTY
+///
+/// # Errors
+/// 当所有 PTY 设备均已分配时返回 `ENOMEM`, 与 [`PtyTable::alloc`] 一致.
 pub fn alloc_pty() -> Result<u32, Errno> {
     get_pty_table().lock().alloc()
 }
 
 /// 释放 PTY
+///
+/// # Errors
+/// 当 `id` 无效或设备未分配时返回 `EINVAL`, 与 [`PtyTable::free`] 一致.
 pub fn free_pty(id: u32) -> Result<(), Errno> {
     get_pty_table().lock().free(id)
 }
@@ -205,6 +217,9 @@ pub fn pty_count() -> u32 {
 }
 
 /// 挂载 devpts
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 仅初始化 PTY 表, 不返回错误.
 pub fn mount_devpts() -> Result<(), Errno> {
     // 初始化 PTY 表
     let mut table = get_pty_table().lock();
@@ -216,6 +231,9 @@ pub fn mount_devpts() -> Result<(), Errno> {
 }
 
 /// 卸载 devpts
+///
+/// # Errors
+/// 错误条件与 [`mount_devpts`] 相同; 当前实现恒返回 `Ok(())`.
 pub fn umount_devpts() -> Result<(), Errno> {
     mount_devpts()
 }

@@ -3,7 +3,7 @@
 //! ## T1-6 迁移记录
 //!
 //! 策略代码 (会话管理 + 进程组 + 控制终端规则)
-//! 已于 2026-06-16 迁移到 services::proc::session.
+//! 已于 2026-06-16 迁移到 `services::proc::session`.
 //! 本文件仅 re-export 保持调用方兼容.
 
 // Re-export services 层的策略主体 — 保持调用方路径兼容

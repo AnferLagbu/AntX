@@ -1,6 +1,6 @@
-//! WASI 路径操作: path_open, path_create_directory, path_remove_directory,
-//! path_unlink_file, path_relative_path, path_symlink, path_readlink,
-//! path_filestat_get, path_filestat_set_times, path_link
+//! WASI 路径操作: `path_open`, `path_create_directory`, `path_remove_directory`,
+//! `path_unlink_file`, `path_relative_path`, `path_symlink`, `path_readlink`,
+//! `path_filestat_get`, `path_filestat_set_times`, `path_link`
 //!
 //! 本模块使用 framework 层的 safe wrapper (vfs_*_safe) 调用 VFS，
 //! 无需 unsafe 块。
@@ -22,8 +22,8 @@ fn read_path(interp: &Interpreter, ptr: u32, len: u32) -> Result<String, WasiErr
 
 /// 解析路径: 将 dirfd + relative path 组合为绝对路径
 ///
-/// WASI 语义: dirfd 是 preopen fd (通过 fd_prestat_get 获取), relative path
-/// 相对于 dirfd 的 preopen 路径。AT_FDCWD (0xffffff9c) 表示使用当前工作目录。
+/// WASI 语义: dirfd 是 preopen fd (通过 `fd_prestat_get` 获取), relative path
+/// 相对于 dirfd 的 preopen `路径。AT_FDCWD` (0xffffff9c) 表示使用当前工作目录。
 fn resolve_path(ctx: &WasiContext, dirfd: u32, path: &str) -> Result<String, WasiErrno> {
     if dirfd == 0xffffff9c {
         return Ok(String::from(path));
@@ -35,16 +35,16 @@ fn resolve_path(ctx: &WasiContext, dirfd: u32, path: &str) -> Result<String, Was
             if path.starts_with('/') {
                 Ok(String::from(path))
             } else if base_path.ends_with('/') {
-                Ok(alloc::format!("{}{}", base_path, path))
+                Ok(alloc::format!("{base_path}{path}"))
             } else {
-                Ok(alloc::format!("{}/{}", base_path, path))
+                Ok(alloc::format!("{base_path}/{path}"))
             }
         }
         None => Ok(String::from(path)),
     }
 }
 
-/// WASI o_flags → VFS flags 映射
+/// WASI `o_flags` → VFS flags 映射
 fn wasi_o_flags_to_vfs(o_flags: u32) -> u32 {
     let mut flags = o_flags & 0x03; // O_RDONLY/WRONLY/RDWR
     if o_flags & 0x100 != 0 { flags |= 0x100; } // O_CREAT
@@ -54,7 +54,12 @@ fn wasi_o_flags_to_vfs(o_flags: u32) -> u32 {
     flags
 }
 
-/// WASI path_open: 打开路径上的文件/目录
+/// WASI `path_open`: 打开路径上的文件/目录
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、路径读取/解析失败或写入线性内存失败时
+/// 返回对应的 `WasmError`.
 pub fn wasi_path_open(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let _dirflags = interp.stack.pop_i32()? as u32;
@@ -97,7 +102,11 @@ pub fn wasi_path_open(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     Ok(())
 }
 
-/// WASI path_create_directory: 创建目录
+/// WASI `path_create_directory`: 创建目录
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
 pub fn wasi_path_create_directory(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
@@ -116,7 +125,11 @@ pub fn wasi_path_create_directory(ctx: &mut WasiContext, interp: &mut Interprete
     Ok(())
 }
 
-/// WASI path_remove_directory: 删除目录
+/// WASI `path_remove_directory`: 删除目录
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
 pub fn wasi_path_remove_directory(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
@@ -135,7 +148,11 @@ pub fn wasi_path_remove_directory(ctx: &mut WasiContext, interp: &mut Interprete
     Ok(())
 }
 
-/// WASI path_unlink_file: 删除文件
+/// WASI `path_unlink_file`: 删除文件
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
 pub fn wasi_path_unlink_file(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
@@ -154,7 +171,11 @@ pub fn wasi_path_unlink_file(ctx: &mut WasiContext, interp: &mut Interpreter) ->
     Ok(())
 }
 
-/// WASI path_symlink: 创建符号链接
+/// WASI `path_symlink`: 创建符号链接
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
 pub fn wasi_path_symlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let old_path_ptr = interp.stack.pop_i32()? as u32;
     let old_path_len = interp.stack.pop_i32()? as u32;
@@ -177,7 +198,12 @@ pub fn wasi_path_symlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Res
     Ok(())
 }
 
-/// WASI path_readlink: 读取符号链接目标
+/// WASI `path_readlink`: 读取符号链接目标
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、路径读取/解析失败或写入线性内存失败时
+/// 返回对应的 `WasmError`.
 pub fn wasi_path_readlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
@@ -208,7 +234,11 @@ pub fn wasi_path_readlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Re
     Ok(())
 }
 
-/// WASI path_rename: 重命名文件/目录
+/// WASI `path_rename`: 重命名文件/目录
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
 pub fn wasi_path_rename(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let old_dirfd = interp.stack.pop_i32()? as u32;
     let old_path_ptr = interp.stack.pop_i32()? as u32;
@@ -232,7 +262,12 @@ pub fn wasi_path_rename(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     Ok(())
 }
 
-/// WASI path_filestat_get: 获取文件/目录状态
+/// WASI `path_filestat_get`: 获取文件/目录状态
+///
+/// # Errors
+///
+/// 当栈弹出参数失败、路径读取/解析失败或写入线性内存失败时
+/// 返回对应的 `WasmError`.
 pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let _flags = interp.stack.pop_i32()? as u32;
@@ -246,17 +281,14 @@ pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -
     let stat = crate::kernel::framework::fs::vfs::api::with_cstr(&abs_path, |ptr| {
         crate::kernel::framework::fs::vfs::api::vfs_stat_safe(ptr, 0)
     });
-    let stat = match stat {
-        Some(s) => s,
-        None => {
-            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Noent)))?;
-            return Ok(());
-        }
+    let stat = if let Some(s) = stat { s } else {
+        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Noent)))?;
+        return Ok(());
     };
 
     // 写入 WASI filestat 结构
     if let Some(ref mut mem) = interp.memory {
-        let base = buf_ptr as u64;
+        let base = u64::from(buf_ptr);
         let write_u64 = |mem: &mut crate::kernel::services::wasm::runtime::LinearMemory, off: u64, val: u64| {
             let bytes = val.to_le_bytes();
             for i in 0..8u64 {
@@ -264,11 +296,11 @@ pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -
             }
         };
 
-        write_u64(mem, 0, stat.node_id as u64);
-        write_u64(mem, 8, stat.node_id as u64);
+        write_u64(mem, 0, u64::from(stat.node_id));
+        write_u64(mem, 8, u64::from(stat.node_id));
         let _ = mem.write_u8((base + 16) as u32, stat.file_type as u8);
         write_u64(mem, 17, 1);
-        write_u64(mem, 25, stat.size as u64);
+        write_u64(mem, 25, u64::from(stat.size));
         write_u64(mem, 33, stat.atime);
         write_u64(mem, 41, stat.mtime);
         write_u64(mem, 49, stat.ctime);
@@ -278,7 +310,11 @@ pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -
     Ok(())
 }
 
-/// WASI path_filestat_set_times: 设置文件/目录时间戳
+/// WASI `path_filestat_set_times`: 设置文件/目录时间戳
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
 pub fn wasi_path_filestat_set_times(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let _flags = interp.stack.pop_i32()? as u32;
@@ -300,7 +336,11 @@ pub fn wasi_path_filestat_set_times(ctx: &mut WasiContext, interp: &mut Interpre
     Ok(())
 }
 
-/// WASI path_link: 创建硬链接
+/// WASI `path_link`: 创建硬链接
+///
+/// # Errors
+///
+/// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
 pub fn wasi_path_link(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
     let old_dirfd = interp.stack.pop_i32()? as u32;
     let _old_flags = interp.stack.pop_i32()? as u32;

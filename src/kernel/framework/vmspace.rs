@@ -1,4 +1,4 @@
-//! VmSpace — 用户地址空间安全句柄 (TCB)
+//! `VmSpace` — 用户地址空间安全句柄 (TCB)
 //!
 //! 封装用户态页表操作 (map / unmap / protect / activate)，
 //! 确保 services 层无法直接操作内核页表或越界访问。
@@ -61,7 +61,7 @@ impl VmSpace {
         self.is_kernel
     }
 
-    /// 标记为内核地址空间（保留用于内核 VmSpace）
+    /// 标记为内核地址空间（保留用于内核 `VmSpace`）
     #[inline(always)]
     pub fn set_kernel(&mut self) {
         self.is_kernel = true;
@@ -69,8 +69,12 @@ impl VmSpace {
 
     /// 安全映射: 将 Frame 映射到用户虚拟地址。
     ///
-    /// 自动检查 vaddr 是否在用户区 [0, USER_ADDR_MAX) 内。
+    /// 自动检查 vaddr 是否在用户区 [0, `USER_ADDR_MAX`) 内。
     /// 调用方负责保证 vaddr 未被占用。
+    ///
+    /// # Errors
+    /// 当 `vaddr` 超出用户地址空间范围 ([0, `USER_ADDR_MAX`)) 时返回
+    /// `Err("vaddr outside user address space")`.
     pub fn map(&self, vaddr: VirtAddr, frame: &Frame, flags: PageFlags) -> Result<(), &'static str> {
         let va = vaddr.as_u64();
         if va & !USER_VADDR_MASK != 0 {
@@ -87,6 +91,11 @@ impl VmSpace {
     }
 
     /// 映射大页 (2MB / 1GB)
+    ///
+    /// # Errors
+    /// 当 `vaddr` 超出用户地址空间范围时返回 `Err("vaddr outside user address space")`;
+    /// 当底层 `map_huge_page` 失败 (如地址未按大页对齐、中间页表分配失败) 时
+    /// 返回其 `Err`.
     pub fn map_huge(
         &self,
         vaddr: VirtAddr,
@@ -105,6 +114,10 @@ impl VmSpace {
     }
 
     /// 解除映射
+    ///
+    /// # Errors
+    /// 当 `vaddr` 超出用户地址空间范围 ([0, `USER_ADDR_MAX`)) 时返回
+    /// `Err("vaddr outside user address space")`.
     pub fn unmap(&self, vaddr: VirtAddr) -> Result<(), &'static str> {
         let va = vaddr.as_u64();
         if va & !USER_VADDR_MASK != 0 {
@@ -119,6 +132,10 @@ impl VmSpace {
     }
 
     /// 修改页保护属性（通过先 unmap 再 map 实现）
+    ///
+    /// # Errors
+    /// 当 `vaddr` 超出用户地址空间范围 ([0, `USER_ADDR_MAX`)) 时返回
+    /// `Err("vaddr outside user address space")`.
     pub fn protect(
         &self,
         vaddr: VirtAddr,

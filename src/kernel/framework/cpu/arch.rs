@@ -14,13 +14,13 @@
 
 use crate::kernel::framework::arch::Arch;
 
-/// 获取当前 CPU ID (APIC ID / MPIDR_EL1)。
+/// 获取当前 CPU ID (APIC ID / `MPIDR_EL1`)。
 #[inline(always)]
 pub fn cpu_id() -> u32 {
     <crate::kernel::framework::arch::CurrentArch as Arch>::cpu_id()
 }
 
-/// 获取高精度时间戳 (rdtsc / CNTVCT_EL0)。
+/// 获取高精度时间戳 (rdtsc / `CNTVCT_EL0`)。
 #[inline(always)]
 pub fn timestamp() -> u64 {
     <crate::kernel::framework::arch::CurrentArch as Arch>::timestamp()
@@ -46,8 +46,8 @@ pub fn broadcast_ipi(vector: u8) {
 
 /// 设置当前 CPU 的内核栈指针。
 ///
-/// x86_64: 写入 TSS 的 RSP0 字段 (ring 0 栈)。
-/// aarch64: 无操作 — SP_EL1 由上下文切换直接管理。
+/// `x86_64`: 写入 TSS 的 RSP0 字段 (ring 0 栈)。
+/// aarch64: 无操作 — `SP_EL1` 由上下文切换直接管理。
 #[inline(always)]
 pub fn set_kernel_stack(_stack: u64) {
     #[cfg(target_arch = "x86_64")]

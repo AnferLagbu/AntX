@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-//! Tickless (NO_HZ) 安全代理 — services 层 (0 unsafe)
+//! Tickless (`NO_HZ`) 安全代理 — services 层 (0 unsafe)
 //!
 //! 封装 `framework::timer::tickless` 的安全 API.
 

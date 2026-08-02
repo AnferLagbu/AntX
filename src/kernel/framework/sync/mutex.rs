@@ -11,9 +11,9 @@
 //! 这意味着持锁期间仍会消耗 CPU 周期进行自旋，不是完全的阻塞等待。
 //! 未来可改进为基于等待队列的真正睡眠锁，避免 CPU 空转。
 //!
-//! ## 与 SpinLock 的区别
+//! ## 与 `SpinLock` 的区别
 //!
-//! | 特性 | SpinLock | Mutex |
+//! | 特性 | `SpinLock` | Mutex |
 //! |------|----------|--------|
 //! | 等待方式 | 纯忙等待 | 自旋 + yield |
 //! | 适用场景 | 极短临界区 | 中等长度临界区 |
@@ -28,13 +28,13 @@
 
 use core::sync::atomic::Ordering;
 
-use super::types::*;
+use super::types::{MutexInner, MutexGuard};
 #[cfg(debug_assertions)]
 use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
 
 /// 睡眠锁 (Mutex)
 ///
-/// 当锁被持有时，后续的 lock() 调用会让出 CPU，
+/// 当锁被持有时，后续的 `lock()` 调用会让出 CPU，
 /// 允许调度器选择其他就绪进程运行。
 pub struct Mutex<T: ?Sized> {
     /// 内部状态
@@ -158,13 +158,13 @@ impl<T> Mutex<T> {
     fn raw_trylock(&self) -> bool {
         self.inner.inner_spinlock.raw_lock();
 
-        if !self.is_locked_internal() {
+        if self.is_locked_internal() {
+            self.inner.inner_spinlock.raw_unlock();
+            false
+        } else {
             self.acquire_lock_internal();
             self.inner.inner_spinlock.raw_unlock();
             true
-        } else {
-            self.inner.inner_spinlock.raw_unlock();
-            false
         }
     }
 
@@ -298,7 +298,7 @@ impl CondVar {
         }
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
-            timer_sleep_busy(timeout_ms as u64);
+            timer_sleep_busy(u64::from(timeout_ms));
         }
 
         mutex.lock();

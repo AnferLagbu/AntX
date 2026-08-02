@@ -31,7 +31,7 @@ pub use vga::{Color, TextAttribute, VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WI
 // 初始化函数
 // ============================================================================
 
-/// 初始化字符设备子系统 (x86_64: VGA + 串口)
+/// 初始化字符设备子系统 (`x86_64`: VGA + 串口)
 #[cfg(target_arch = "x86_64")]
 pub fn char_init() {
     vga::vga_init();

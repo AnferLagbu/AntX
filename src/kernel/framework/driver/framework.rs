@@ -25,7 +25,7 @@
 // IO 端口操作安全封装
 // ============================================================================
 
-/// 向指定端口写入字节 (架构无关: x86_64 → out, AArch64 → MMIO)
+/// 向指定端口写入字节 (架构无关: `x86_64` → out, `AArch64` → MMIO)
 #[inline(always)]
 ///
 /// # Safety
@@ -35,7 +35,7 @@ pub unsafe fn outb(port: u16, value: u8) {
     crate::arch!(outb(port, value));
 }
 
-/// 从指定端口读入字节 (架构无关: x86_64 → in, AArch64 → MMIO)
+/// 从指定端口读入字节 (架构无关: `x86_64` → in, `AArch64` → MMIO)
 #[inline(always)]
 ///
 /// # Safety
@@ -45,7 +45,7 @@ pub unsafe fn inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
 
-/// 向指定端口写入字 (x86_64 特有, 无 Arch trait 等价方法)
+/// 向指定端口写入字 (`x86_64` 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
 ///
@@ -61,7 +61,7 @@ pub unsafe fn outw(port: u16, value: u16) { unsafe {
     );
 }}
 
-/// 从指定端口读入字 (x86_64 特有, 无 Arch trait 等价方法)
+/// 从指定端口读入字 (`x86_64` 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
 ///
@@ -79,7 +79,7 @@ pub unsafe fn inw(port: u16) -> u16 { unsafe {
     value
 }}
 
-/// 向指定端口写入双字 (架构无关: x86_64 → out, AArch64 → MMIO)
+/// 向指定端口写入双字 (架构无关: `x86_64` → out, `AArch64` → MMIO)
 #[inline(always)]
 ///
 /// # Safety
@@ -89,7 +89,7 @@ pub unsafe fn outl(port: u16, value: u32) {
     crate::arch!(outl(port, value));
 }
 
-/// 从指定端口读入双字 (架构无关: x86_64 → in, AArch64 → MMIO)
+/// 从指定端口读入双字 (架构无关: `x86_64` → in, `AArch64` → MMIO)
 #[inline(always)]
 ///
 /// # Safety
@@ -251,9 +251,13 @@ pub trait Driver {
     /// # Returns
     /// - `Ok(())` - 初始化成功
     /// - `Err(DriverError)` - 初始化失败
+    /// # Errors
+    /// 硬件初始化失败或驱动初始化不完整时返回 Err。
     fn init(&mut self) -> Result<()>;
 
     /// 关闭驱动并释放资源
+    /// # Errors
+    /// 关闭操作失败时返回 Err。
     fn shutdown(&mut self) -> Result<()>;
 
     /// 检查设备是否就绪
@@ -263,6 +267,8 @@ pub trait Driver {
     }
 
     /// 重置设备
+    /// # Errors
+    /// 设备不支持重置操作时返回 Err。
     #[inline]
     fn reset(&mut self) -> Result<()> {
         Err(DriverError::UnsupportedOperation)

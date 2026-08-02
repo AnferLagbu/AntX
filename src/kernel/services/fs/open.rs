@@ -5,13 +5,13 @@
 //! ## 职责
 //!
 //! - 0 unsafe, 纯类型安全
-//! - 委托 framework/fs/vfs::api 完成
+//! - 委托 `framework/fs/vfs::api` 完成
 //!
 //! ## POSIX 语义
 //!
-//! - [open_syscall] 打开一个文件, 返回 fd
-//! - [close_syscall] 关闭一个 fd
-//! - [creat_syscall] 等价于 open(path, O_WRONLY|O_CREAT|O_TRUNC, mode)
+//! - [`open_syscall`] 打开一个文件, 返回 fd
+//! - [`close_syscall`] 关闭一个 fd
+//! - [`creat_syscall`] 等价于 open(path, `O_WRONLY|O_CREAT|O_TRUNC`, mode)
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
@@ -28,7 +28,7 @@ pub const O_RDONLY: i32 = 0o0;
 pub const O_WRONLY: i32 = 0o1;
 /// 读写打开
 pub const O_RDWR: i32 = 0o2;
-/// 若不存在则创建 (必须与 O_WRONLY 或 O_RDWR 之一同用)
+/// 若不存在则创建 (必须与 `O_WRONLY` 或 `O_RDWR` 之一同用)
 pub const O_CREAT: i32 = 0o100;
 /// 若已存在且是常规文件且以写方式打开, 则长度截断为 0
 pub const O_TRUNC: i32 = 0o1000;
@@ -88,6 +88,10 @@ fn validate_flags(flags: i32) -> Result<(), Errno> {
 /// open(path, flags, mode) — 打开一个文件
 ///
 /// 返回新文件描述符 (>= 0), 失败返回负 errno.
+///
+/// # Errors
+/// 当 `path_ptr` 为空或越界时返回 `EFAULT`; 当 `flags` 非法或 `O_CREAT` 下 `mode` 越界时返回 `EINVAL`;
+/// 其余错误 (如文件不存在、无权限、fd 已满等) 以对应的 `Errno` 返回.
 pub fn open_syscall(path_ptr: u64, flags: i32, mode: i32) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -106,7 +110,7 @@ pub fn open_syscall(path_ptr: u64, flags: i32, mode: i32) -> Result<usize, Errno
     let pwm = current_pwm()?;
     let r = fw::vfs_open(path_ptr as *const u8, flags as u32, pwm);
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(r as usize)
     }
@@ -116,7 +120,10 @@ pub fn open_syscall(path_ptr: u64, flags: i32, mode: i32) -> Result<usize, Errno
 // creat
 // ============================================================================
 
-/// creat(path, mode) — 等价于 open(path, O_WRONLY|O_CREAT|O_TRUNC, mode)
+/// creat(path, mode) — 等价于 open(path, `O_WRONLY|O_CREAT|O_TRUNC`, mode)
+///
+/// # Errors
+/// 错误条件与 [`open_syscall`] 相同, 参见其 `# Errors` 段.
 pub fn creat_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
     const CREAT_FLAGS: i32 = O_WRONLY | O_CREAT | O_TRUNC;
     open_syscall(path_ptr, CREAT_FLAGS, mode)
@@ -127,13 +134,16 @@ pub fn creat_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
 // ============================================================================
 
 /// close(fd) — 关闭文件描述符
+///
+/// # Errors
+/// 当 `fd` 为负数时返回 `EBADF`; 其余错误 (如 fd 无效等) 以对应的 `Errno` 返回.
 pub fn close_syscall(fd: i32) -> Result<usize, Errno> {
     if fd < 0 {
         return Err(Errno::EBADF);
     }
     let r = fw::vfs_close(fd as u32);
     if r < 0 {
-        Err(Errno::from_ret(r as i64))
+        Err(Errno::from_ret(i64::from(r)))
     } else {
         Ok(0)
     }

@@ -14,7 +14,7 @@
 //!
 //! ## 限制
 //!
-//! - RLIMIT_CORE: core 文件大小上限 (0 = 禁止)
+//! - `RLIMIT_CORE`: core 文件大小上限 (0 = 禁止)
 //! - 仅转储可读 VMA (跳过只执行/不可读)
 //! - 最大转储 64 个内存段
 //!
@@ -114,7 +114,7 @@ struct Elf64Phdr {
     p_align: u64,
 }
 
-/// siginfo_t 简化 (仅用于 core dump note)
+/// `siginfo_t` 简化 (仅用于 core dump note)
 #[repr(C)]
 struct CoreSiginfo {
     si_signo: i32,
@@ -184,8 +184,8 @@ const NOTE_NAME: &[u8] = b"CORE\0"; // 5 bytes + null
 
 /// 计算对齐后的 note 大小
 fn note_size(namesz: u32, descsz: u32) -> u64 {
-    let name_aligned = (namesz as u64 + 3) & !3;
-    let desc_aligned = (descsz as u64 + 3) & !3;
+    let name_aligned = (u64::from(namesz) + 3) & !3;
+    let desc_aligned = (u64::from(descsz) + 3) & !3;
     12 + name_aligned + desc_aligned // 12 = sizeof(Elf64Note)
 }
 
@@ -193,7 +193,7 @@ fn note_size(namesz: u32, descsz: u32) -> u64 {
 // Core Dump 写入器
 // ============================================================================
 
-/// 内存段信息 (用于构建 PT_LOAD)
+/// 内存段信息 (用于构建 `PT_LOAD`)
 struct CoreSegment {
     start: u64,
     end: u64,
@@ -203,7 +203,7 @@ struct CoreSegment {
 
 /// 生成 core dump
 ///
-/// 调用时机: 进程收到 Core 类信号, 在 do_signal_default_action 中调用。
+/// 调用时机: 进程收到 Core 类信号, 在 `do_signal_default_action` 中调用。
 ///
 /// # 参数
 /// - `pid`: 目标进程 PID
@@ -212,12 +212,12 @@ struct CoreSegment {
 ///
 /// # 返回
 /// - `true`: core dump 成功写入
-/// - `false`: core dump 失败 (RLIMIT_CORE=0, 磁盘满等)
+/// - `false`: core dump 失败 (`RLIMIT_CORE=0`, 磁盘满等)
 pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     // 1. 检查 RLIMIT_CORE
     let core_limit = process_with(pid, |p| {
             let table = p.rlimit_table.lock();
-            table.get(RLIMIT_CORE).map(|r| r.cur).unwrap_or(0)
+            table.get(RLIMIT_CORE).map_or(0, |r| r.cur)
         })
         .unwrap_or(0);
 
@@ -244,7 +244,7 @@ pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     let phnum = 1 + segments.len() as u16; // PT_NOTE + PT_LOADs
     let ehdr_size = core::mem::size_of::<Elf64Ehdr>() as u64;
     let phdr_size = core::mem::size_of::<Elf64Phdr>() as u64;
-    let phdr_total = phdr_size * phnum as u64;
+    let phdr_total = phdr_size * u64::from(phnum);
     let note_offset = ehdr_size + phdr_total;
 
     // 5. 计算总大小并检查 RLIMIT_CORE
@@ -322,7 +322,7 @@ pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     log("coredump: written ");
     log_num(offset);
     log(" bytes for pid=");
-    log_num(pid as u64);
+    log_num(u64::from(pid));
     log("\n");
 
     true
@@ -377,7 +377,7 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
             let flags = vma.flags;
             let pf_r: u32 = if flags.contains(PageFlags::PRESENT) { PF_R } else { 0u32 };
             let pf_w: u32 = if flags.contains(PageFlags::WRITABLE) { PF_W } else { 0u32 };
-            let pf_x: u32 = if !flags.contains(PageFlags::NX) { PF_X } else { 0u32 };
+            let pf_x: u32 = if flags.contains(PageFlags::NX) { 0u32 } else { PF_X };
 
             // 跳过不可读段
             if pf_r == 0 {
@@ -426,7 +426,7 @@ fn build_ehdr(phnum: u16, _phoff: u64) -> Elf64Ehdr {
     }
 }
 
-/// 构建 PT_NOTE program header
+/// 构建 `PT_NOTE` program header
 fn build_note_phdr(offset: u64, size: u64) -> Elf64Phdr {
     Elf64Phdr {
         p_type: PT_NOTE,
@@ -440,7 +440,7 @@ fn build_note_phdr(offset: u64, size: u64) -> Elf64Phdr {
     }
 }
 
-/// 构建 PT_LOAD program header
+/// 构建 `PT_LOAD` program header
 fn build_load_phdr(seg: &CoreSegment, offset: u64) -> Elf64Phdr {
     Elf64Phdr {
         p_type: PT_LOAD,
@@ -454,7 +454,7 @@ fn build_load_phdr(seg: &CoreSegment, offset: u64) -> Elf64Phdr {
     }
 }
 
-/// 写入 NT_PRSTATUS note
+/// 写入 `NT_PRSTATUS` note
 fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut u64) {
     let prstatus_size = core::mem::size_of::<PrStatus>() as u32;
 
@@ -478,13 +478,13 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
     // 构建 PrStatus
     // SAFETY: PrStatus 是 POD 结构体, zeroed 后逐字段填充, 所有未设置字段已由 zeroed 初始化为零
     let mut prstatus: PrStatus = unsafe { core::mem::zeroed() };
-    prstatus.siginfo.si_signo = sig as i32;
-    prstatus.pr_cursig = sig as u16;
+    prstatus.siginfo.si_signo = i32::from(sig);
+    prstatus.pr_cursig = u16::from(sig);
     prstatus.pr_pid = pid as i32;
 
     // 填充进程信息
     process_with(pid, |p| {
-        prstatus.pr_ppid = p.parent.map(|pp| pp.0 as i32).unwrap_or(0);
+        prstatus.pr_ppid = p.parent.map_or(0, |pp| pp.0 as i32);
         prstatus.pr_pgrp = p.pgid.load(Ordering::SeqCst) as i32;
         prstatus.pr_sid = p.session_id.load(Ordering::SeqCst) as i32;
         prstatus.pr_sigpend = p.signal_pending_get();
@@ -496,7 +496,7 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
     fill_regs_from_frame(&mut prstatus, frame_addr);
 
     // 写入 PrStatus (对齐到 4 字节)
-    let desc_aligned = (prstatus_size as u64 + 3) & !3;
+    let desc_aligned = (u64::from(prstatus_size) + 3) & !3;
     // SAFETY: PrStatus 是 POD 结构体, 可以按字节写入
     unsafe {
         crate::kernel::framework::fs::vfs_write(
@@ -508,7 +508,7 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
     *offset += desc_aligned;
 }
 
-/// 写入 NT_SIGINFO note
+/// 写入 `NT_SIGINFO` note
 fn write_note_siginfo(fd: u32, sig: u8, offset: &mut u64) {
     let siginfo_size = core::mem::size_of::<CoreSiginfo>() as u32;
 
@@ -528,12 +528,12 @@ fn write_note_siginfo(fd: u32, sig: u8, offset: &mut u64) {
     *offset += name_aligned;
 
     let si = CoreSiginfo {
-        si_signo: sig as i32,
+        si_signo: i32::from(sig),
         si_code: 0,
         si_errno: 0,
     };
 
-    let desc_aligned = (siginfo_size as u64 + 3) & !3;
+    let desc_aligned = (u64::from(siginfo_size) + 3) & !3;
     // SAFETY: CoreSiginfo 是 POD 结构体
     unsafe {
         crate::kernel::framework::fs::vfs_write(
@@ -687,7 +687,7 @@ fn write_segment_data(
 ///
 /// 返回实际拷贝的字节数 (0 表示页不存在)
 ///
-/// P0-I-36 修复: 改用 framework/mm/copy_user 的异常表安全 copy_from_user.
+/// P0-I-36 修复: 改用 `framework/mm/copy_user` 的异常表安全 `copy_from_user`.
 fn copy_from_user_safe(src: *const u8, len: usize, dst: &mut [u8]) -> usize {
     if src.is_null() || len == 0 || len > dst.len() {
         return 0;
@@ -727,7 +727,7 @@ pub fn coredump_allowed() -> bool {
     }
     process_with(pid, |p| {
             let table = p.rlimit_table.lock();
-            table.get(RLIMIT_CORE).map(|r| r.cur > 0).unwrap_or(false)
+            table.get(RLIMIT_CORE).is_some_and(|r| r.cur > 0)
         })
         .unwrap_or(false)
 }
@@ -740,7 +740,7 @@ pub fn coredump_limit() -> u64 {
     }
     process_with(pid, |p| {
             let table = p.rlimit_table.lock();
-            table.get(RLIMIT_CORE).map(|r| r.cur).unwrap_or(0)
+            table.get(RLIMIT_CORE).map_or(0, |r| r.cur)
         })
         .unwrap_or(0)
 }

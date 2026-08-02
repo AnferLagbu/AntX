@@ -1,6 +1,6 @@
 //! dcache + icache — framework re-export 层
 //!
-//! 实现已迁移到 services::fs::dcache, 本文件仅 re-export 公共 API.
+//! 实现已迁移到 `services::fs::dcache`, 本文件仅 re-export 公共 API.
 //! framework 内部代码 (如 ramfs) 通过本模块引用 dcache, 保持路径兼容.
 
 pub use crate::kernel::services::fs::dcache::{

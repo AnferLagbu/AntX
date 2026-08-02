@@ -137,8 +137,8 @@ pub unsafe fn rcu_assign_pointer<T>(slot: *mut *const T, new_val: *const T) { un
 /// 阻塞直到所有 CPU 上已有 RCU 读者退出
 ///
 /// 宽限期流程:
-/// 1. 标记所有在线 CPU 的 gp_state = GP_WAIT
-/// 2. 等待每个 CPU 报告 GP_DONE (通过 rcu_note_quiescent_state)
+/// 1. 标记所有在线 CPU 的 `gp_state` = `GP_WAIT`
+/// 2. 等待每个 CPU 报告 `GP_DONE` (通过 `rcu_note_quiescent_state`)
 /// 3. 处理回调
 fn synchronize_rcu_impl() {
     let start_gp = RCU_GP_COUNTER.load(Ordering::Relaxed);
@@ -229,15 +229,15 @@ pub unsafe fn call_rcu(head: *mut RcuHead, func: unsafe fn(*mut RcuHead)) {
 
     // SAFETY: Interrupts disabled — callback list manipulation is atomic
     let tail = unsafe { *data.callback_tail.get() };
-    if !tail.is_null() {
-        // SAFETY: tail != null → dereference safe; writing next ptr
-        unsafe {
-            (*tail).next = head;
-        }
-    } else {
+    if tail.is_null() {
         // SAFETY: Callbacks list empty — write to head via UnsafeCell
         unsafe {
             *data.callbacks.get() = head;
+        }
+    } else {
+        // SAFETY: tail != null → dereference safe; writing next ptr
+        unsafe {
+            (*tail).next = head;
         }
     }
     // SAFETY: data.callback_tail is an UnsafeCell, interrupts disabled
@@ -366,19 +366,19 @@ pub fn rcu_callback_count() -> u32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn rcu_read_lock() {
+pub extern "C" fn rcu_read_lock() {
     rcu_read_lock_impl();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn rcu_read_unlock() {
+pub extern "C" fn rcu_read_unlock() {
     rcu_read_unlock_impl();
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn synchronize_rcu() {
+pub extern "C" fn synchronize_rcu() {
     synchronize_rcu_impl();
 }
 

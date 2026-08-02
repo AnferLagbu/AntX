@@ -17,9 +17,9 @@ use crate::kernel::framework::chitin::BlockDevice;
 ///
 /// `dev: impl BlockDevice + 'static` 会被 `Box::leak` 为静态内存, 由 Chitin 全权管理.
 /// 这意味着注册的块设备**永不释放** (适用 OS 生命周期). 如需动态卸载, 请
-/// 显式管理并使用 chitin_unregister + drop.
+/// 显式管理并使用 `chitin_unregister` + drop.
 ///
-/// 返回设备在 CHITIN_DEVICES 中的索引 (用作 drive_id)。
+/// 返回设备在 `CHITIN_DEVICES` 中的索引 (用作 `drive_id`)。
 pub fn register_block_device(
     name: &'static str,
     dev: impl BlockDevice + 'static,

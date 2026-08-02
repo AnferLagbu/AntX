@@ -47,7 +47,7 @@ const EDID_ADDR_READ: u8 = 0xA1;
 /// DDC I2C 时序延时 (spin loop 次数, 适配 ~100 kHz 标准模式)
 const DDC_DELAY_ITERS: usize = 50;
 
-/// DDC I2C 事务总超时 (50_000 次 spin_loop ≈ 1-2 ms)
+/// DDC I2C 事务总超时 (`50_000` 次 `spin_loop` ≈ 1-2 ms)
 const TRANSACTION_TIMEOUT_ITERS: usize = 50_000;
 
 /// DDC 读取错误
@@ -196,6 +196,11 @@ fn i2c_read_byte(
 /// ```text
 /// START -> [0xA0] -> [offset] -> REPEATED_START -> [0xA1] -> [128 字节] -> STOP
 /// ```
+///
+/// # Errors
+///
+/// - 从机无响应 (NACK) 时返回 [`DdcError::Nack`]
+/// - I2C 事务超时 (总线挂起或从机无响应) 时返回 [`DdcError::Timeout`]
 pub fn read_edid_block(
     iomem: &IoMem,
     ctrl_reg: usize,

@@ -2,7 +2,7 @@
 //! execve — services 层安全代理
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::syscall。
+//! 所有 unsafe 操作已委托至 `framework::syscall`。
 //!
 //! ## 职责
 //!
@@ -14,7 +14,7 @@
 //!
 //! execve 的核心逻辑 (用户指针验证、SUID 处理、进程替换)
 //! 必须在 framework TCB 中执行, 因为涉及:
-//! - 原始指针操作 (read_volatile 用户空间)
+//! - 原始指针操作 (`read_volatile` 用户空间)
 //! - 进程地址空间替换 (页表切换)
 //! - Credo PWM 权限提升 (SUID)
 //!

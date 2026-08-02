@@ -66,7 +66,7 @@ pub fn get_random_bytes(buf: u64, len: usize) -> usize {
     }
     match mm::copy_to_user(buf, &random_bytes[..len], len) {
         Ok(n) => n,
-        Err(_) => 0,
+        Err(()) => 0,
     }
 }
 
@@ -84,13 +84,13 @@ pub fn write_canary_to_user(buf: u64, len: usize) -> i64 {
     let bytes = canary.to_le_bytes();
     match mm::copy_to_user(buf, &bytes, 8) {
         Ok(_) => 0,
-        Err(_) => -1,
+        Err(()) => -1,
     }
 }
 
 /// 读取当前进程 per-process canary.
 ///
-/// 从 `Process::stack_canary` (AtomicU64) 读取; 若进程不存在则
+/// 从 `Process::stack_canary` (`AtomicU64`) 读取; 若进程不存在则
 /// 回退到 `generate_canary()`.
 #[inline(never)]
 pub fn process_get_current_canary() -> u64 {

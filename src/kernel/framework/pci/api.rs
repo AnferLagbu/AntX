@@ -6,22 +6,22 @@
 //! - `driver::bus::pci` —— 设备初始化阶段的配置空间读写
 //! - `chitin::devtree` —— 设备树生成时枚举 PCI 设备
 //! - `driver::net::e1000` —— E1000 网卡 probe
-//! - `driver::storage::nvme` —— NVMe SSD 初始化
+//! - `driver::storage::nvme` —— `NVMe` SSD 初始化
 //! - `driver::storage::ahci` —— AHCI SATA 控制器初始化
 //! - `driver::usb::xhci` —— XHCI USB 控制器初始化
 //!
 //! ## 内部接口
-//! - `mod.rs` —— read/write_config_byte/word/dword, pci_scan_all_buses, probe_device 等接口
-//! - `hotplug.rs` —— PCIe 热插拔支持
+//! - `mod.rs` —— `read/write_config_byte/word/dword`, `pci_scan_all_buses`, `probe_device` 等接口
+//! - `hotplug.rs` —— `PCIe` 热插拔支持
 //!
 //! ## 安全约束
 //! - config 访问包含 unsafe (Port I/O / volatile MMIO)
-//! - pci_scan_all_buses() 必须在启动早期单线程调用
-//! - DEVICE_LIST 由 spin::Mutex 保护, 线程安全
-//! - BAR 地址不可跨设备共享 (由 chitin IoMem 别名检测保证)
+//! - `pci_scan_all_buses()` 必须在启动早期单线程调用
+//! - `DEVICE_LIST` 由 `spin::Mutex` 保护, 线程安全
+//! - BAR 地址不可跨设备共享 (由 chitin `IoMem` 别名检测保证)
 //!
 //! ## 性能特征
-//! - 配置空间访问: x86_64 Port I/O O(1), aarch64 ECAM MMIO O(1)
+//! - 配置空间访问: `x86_64` Port I/O O(1), aarch64 ECAM MMIO O(1)
 //! - 总线扫描: O(bus × dev × func), 实际 < 1000 次
 //! - 设备查找: Mutex + Vec O(N) (N ≤ 256)
 
@@ -59,15 +59,15 @@ pub fn read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
 }
 
 pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
-    super::write_config_byte(bus, dev, func, offset, val)
+    super::write_config_byte(bus, dev, func, offset, val);
 }
 
 pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
-    super::write_config_word(bus, dev, func, offset, val)
+    super::write_config_word(bus, dev, func, offset, val);
 }
 
 pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
-    super::write_config_dword(bus, dev, func, offset, val)
+    super::write_config_dword(bus, dev, func, offset, val);
 }
 
 // ============================================================================
@@ -77,7 +77,7 @@ pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
 /// PCI 总线扫描器。
 ///
 /// 整个系统只有一个实例 (PCI 是单根总线)。trait 化是为了
-/// 在 kernel_test 模式下注入 mock 设备。
+/// 在 `kernel_test` 模式下注入 mock 设备。
 pub trait PciScanner: Send + Sync {
     /// 枚举所有已发现的 PCI 设备
     fn devices(&self) -> &[PciDevice];

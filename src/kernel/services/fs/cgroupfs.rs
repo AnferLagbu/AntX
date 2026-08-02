@@ -2,7 +2,7 @@
 //! cgroupfs — 控制组文件系统
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::fs::vfs::api。
+//! 所有 unsafe 操作已委托至 `framework::fs::vfs::api`。
 //!
 //! ## 职责
 //!
@@ -171,6 +171,9 @@ impl CgroupGroup {
     }
 
     /// 添加节点
+    ///
+    /// # Errors
+    /// 当节点表已满 (`node_count` 达到容量上限) 时返回 `ENOMEM`.
     pub fn add_node(&mut self, node: CgroupNode) -> Result<(), Errno> {
         if self.node_count as usize >= self.nodes.len() {
             return Err(Errno::ENOMEM);
@@ -191,6 +194,9 @@ impl CgroupGroup {
     }
 
     /// 更新节点值
+    ///
+    /// # Errors
+    /// 当不存在名为 `name` 的节点时返回 `ENOENT`.
     pub fn update_node(&mut self, name: &str, value: &str) -> Result<(), Errno> {
         for i in 0..self.node_count as usize {
             if self.nodes[i].get_name() == name {
@@ -223,6 +229,10 @@ impl CgroupFs {
     }
 
     /// 创建组
+    ///
+    /// # Errors
+    /// 当组数量已达上限 (`MAX_GROUPS`) 时返回 `ENOMEM`;
+    /// 当已存在同名组时返回 `EEXIST`.
     pub fn create_group(
         &mut self,
         name: &str,
@@ -260,6 +270,9 @@ impl CgroupFs {
     }
 
     /// 删除组
+    ///
+    /// # Errors
+    /// 当不存在名为 `name` 的组时返回 `ENOENT`.
     pub fn delete_group(&mut self, name: &str) -> Result<(), Errno> {
         let mut found = false;
         for i in 0..self.group_count as usize {
@@ -291,6 +304,10 @@ impl CgroupFs {
     }
 
     /// 读取节点值
+    ///
+    /// # Errors
+    /// 当组为空或不存在指定组/节点时返回 `ENOENT`;
+    /// 当 `buf` 长度小于节点值长度时返回 `EINVAL`.
     pub fn read_node(
         &self,
         group: &str,
@@ -314,6 +331,10 @@ impl CgroupFs {
     }
 
     /// 写入节点值
+    ///
+    /// # Errors
+    /// 当组为空或不存在指定组/节点时返回 `ENOENT`;
+    /// 当 `data` 不是合法 UTF-8 时返回 `EINVAL`.
     pub fn write_node(
         &mut self,
         group: &str,
@@ -353,6 +374,9 @@ pub fn get_cgroup_fs() -> &'static Mutex<CgroupFs> {
 // ============================================================================
 
 /// 挂载 cgroupfs
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 内部创建默认组时的错误被忽略.
 pub fn mount_cgroupfs() -> Result<(), Errno> {
     let fs = get_cgroup_fs();
     let mut fs = fs.lock();
@@ -365,6 +389,9 @@ pub fn mount_cgroupfs() -> Result<(), Errno> {
 }
 
 /// 卸载 cgroupfs
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 仅清空组数据, 不返回错误.
 pub fn umount_cgroupfs() -> Result<(), Errno> {
     // 重置为新实例
     // 注意: OnceLock 无法重置, 这里只是清空数据

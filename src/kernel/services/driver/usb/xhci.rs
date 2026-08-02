@@ -317,7 +317,7 @@ impl PortStatus {
 /// 内部封装 `IoMem` 指向 xHCI MMIO 区域, 暴露 Capability/Operational/Port 寄存器的安全访问。
 pub struct XhciController {
     mmio: IoMem,
-    /// Capability 长度 (OpBase = CAPLENGTH 字节)
+    /// Capability 长度 (`OpBase` = CAPLENGTH 字节)
     cap_length: u8,
     /// Doorbell 偏移
     db_off: u32,
@@ -339,7 +339,7 @@ impl XhciController {
     /// 创建 xHCI 控制器实例。
     ///
     /// # 参数
-    /// - `mmio_phys`: PCIe BAR0 MMIO 物理基地址
+    /// - `mmio_phys`: `PCIe` BAR0 MMIO 物理基地址
     /// - `len`: MMIO 区域大小 (典型 0x1000 包含 Operational + 端口)
     ///
     /// # 返回
@@ -489,7 +489,7 @@ impl XhciController {
 
     // ── USBCMD / USBSTS 操作 ──
 
-    /// 软复位 (USBCMD.HC_RESET)
+    /// 软复位 (`USBCMD.HC_RESET`)
     pub fn reset(&self) {
         let val = self.usb_cmd();
         self.set_usb_cmd(val | USBCMD_HC_RESET);
@@ -503,7 +503,7 @@ impl XhciController {
         self.ack_usb_sts(USBSTS_HC_RESET_COMPLETE);
     }
 
-    /// 启动控制器 (USBCMD.RUN_STOP)
+    /// 启动控制器 (`USBCMD.RUN_STOP`)
     pub fn start(&self) {
         let val = self.usb_cmd();
         self.set_usb_cmd(val | USBCMD_RUN_STOP);
@@ -521,7 +521,7 @@ impl XhciController {
         }
     }
 
-    /// 启用全局中断 (USBCMD.INTR_ENABLE)
+    /// 启用全局中断 (`USBCMD.INTR_ENABLE`)
     pub fn enable_interrupts(&self) {
         let val = self.usb_cmd();
         self.set_usb_cmd(val | USBCMD_INTR_ENABLE);
@@ -611,7 +611,7 @@ impl XhciController {
     ///
     /// 执行 xHCI 规范 §4.3 初始化序列:
     /// 1. 读取 Capability 参数 (已在 new 中完成)
-    /// 2. 软复位控制器 (USBCMD.HC_RESET)
+    /// 2. 软复位控制器 (`USBCMD.HC_RESET`)
     /// 3. 等待复位完成 (USBSTS.HCRST = 1)
     /// 4. 启动控制器 (USBCMD.RS = 1)
     /// 5. 启用全局中断
@@ -619,6 +619,9 @@ impl XhciController {
     /// # 返回
     /// - `Ok(())`: 初始化成功
     /// - `Err`: 超时或控制器无响应
+    ///
+    /// # Errors
+    /// 当控制器软复位、启动或中断使能过程中超时/无响应时返回 `Err`.
     pub fn init_hardware(&mut self) -> Result<(), KernelError> {
         // 1. 软复位
         self.reset();
@@ -697,7 +700,7 @@ impl XhciController {
     /// - `ring_phys`: Command Ring 物理基地址
     /// - `run`: 是否启动 Command Ring (CRCR.RCS)
     pub fn set_command_ring(&self, ring_phys: u64, run: bool) {
-        let val = ring_phys | if run { 1 } else { 0 };
+        let val = ring_phys | u64::from(run);
         self.set_crcr(val);
     }
 
@@ -805,7 +808,7 @@ impl TransferRing {
 
     /// 获取当前 enqueue 偏移 (字节), 用于更新 Endpoint Context.
     pub fn enqueue_offset(&self) -> u64 {
-        (self.enqueue_index as u64) * 16 // 每个 TRB 16 字节
+        u64::from(self.enqueue_index) * 16 // 每个 TRB 16 字节
     }
 
     /// 获取当前 cycle bit.
@@ -844,7 +847,7 @@ impl TransferRing {
         if self.enqueue_index >= self.depth - 1 {
             let link_control = (TrbType::Link as u32) << 10
                 | 1 << 1 // Toggle Cycle
-                | if self.cycle { 1 } else { 0 };
+                | u32::from(self.cycle);
             let link_trb = Trb::new(self.paddr, 0, link_control);
             let link_ptr: *const u8 = &link_trb as *const Trb as *const u8;
             crate::kernel::framework::driver::storage::xhci_write_trb(
@@ -948,7 +951,7 @@ impl TransferRing {
             }
 
             remaining -= chunk;
-            offset += chunk as u64;
+            offset += u64::from(chunk);
         }
 
         true

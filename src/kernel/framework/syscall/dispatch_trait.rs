@@ -29,7 +29,7 @@
 pub trait SyscallDispatch: Send + Sync {
     /// 分发系统调用
     ///
-    /// `num` 为翻译后的 QueenX 原生编号 (QX_*).
+    /// `num` 为翻译后的 `QueenX` 原生编号 (QX_*).
     /// `args` 为 6 个系统调用参数.
     /// 返回值: 正数为成功返回值, 负数为 -errno.
     fn dispatch(&self, num: u64, args: [u64; 6]) -> i64;
@@ -57,9 +57,12 @@ static FALLBACK_DISPATCH: FallbackSyscallDispatch = FallbackSyscallDispatch;
 static SYSCALL_DISPATCH: crate::kernel::framework::sync::OnceLock<&'static dyn SyscallDispatch> =
     crate::kernel::framework::sync::OnceLock::new();
 
-/// 注册系统调用分发策略 (由 services::syscall::init 调用)
+/// 注册系统调用分发策略 (由 `services::syscall::init` 调用)
 ///
 /// 只能注册一次; 重复注册返回 `Err`.
+///
+/// # Errors
+/// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
 pub fn register_syscall_dispatch(policy: &'static dyn SyscallDispatch) -> Result<(), &'static dyn SyscallDispatch> {
     match SYSCALL_DISPATCH.set(policy) {
         Ok(()) => Ok(()),

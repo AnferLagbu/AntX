@@ -5,7 +5,7 @@
 /// 读取 64 位 MSR 寄存器
 ///
 /// # Arguments
-/// * `msr` - MSR 地址 (如 0xC0000080 for IA32_EFER)
+/// * `msr` - MSR 地址 (如 0xC0000080 for `IA32_EFER`)
 ///
 /// # Returns
 /// MSR 的 64 位值
@@ -24,7 +24,7 @@ pub unsafe fn read_msr(msr: u32) -> u64 { unsafe {
         options(nomem, nostack, preserves_flags),
     );
 
-    ((high as u64) << 32) | (low as u64)
+    (u64::from(high) << 32) | u64::from(low)
 }}
 
 /// 写入 64 位 MSR 寄存器
@@ -36,6 +36,8 @@ pub unsafe fn read_msr(msr: u32) -> u64 { unsafe {
 /// # Safety
 /// 必须在 Ring 0 调用, 且 MSR 必须存在且可写。
 #[inline(always)]
+// 有意窄化: 内核寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe fn write_msr(msr: u32, value: u64) { unsafe {
     let low = value as u32;
     let high = (value >> 32) as u32;
@@ -57,6 +59,8 @@ pub unsafe fn write_msr(msr: u32, value: u64) { unsafe {
 ///
 /// `msr` 是合法的 MSR 索引. 非法索引将触发 #GP 异常.
 /// `low` 和 `high` 是合法可写指针.
+// 有意窄化: 内核寄存器宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -> i32 { unsafe {
     if low.is_null() || high.is_null() {
         return -1;
@@ -77,7 +81,7 @@ pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -
 ///
 /// `msr` 是合法的 MSR 索引. 非法索引将触发 #GP 异常.
 pub unsafe extern "C" fn cpu_write_msr(msr: u32, low: u32, high: u32) -> i32 { unsafe {
-    write_msr(msr, ((high as u64) << 32) | (low as u64));
+    write_msr(msr, (u64::from(high) << 32) | u64::from(low));
     0
 }}
 

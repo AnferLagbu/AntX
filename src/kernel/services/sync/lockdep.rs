@@ -63,17 +63,17 @@ pub fn acquire(class_id: LockClassId, irq_context: bool) -> bool {
 ///
 /// 在锁释放前调用。从持有栈中移除。
 pub fn release(class_id: LockClassId) {
-    crate::kernel::framework::sync::release(class_id)
+    crate::kernel::framework::sync::release(class_id);
 }
 
 /// 标记进入中断上下文
 pub fn irq_enter() {
-    crate::kernel::framework::sync::irq_enter()
+    crate::kernel::framework::sync::irq_enter();
 }
 
 /// 标记退出中断上下文
 pub fn irq_exit() {
-    crate::kernel::framework::sync::irq_exit()
+    crate::kernel::framework::sync::irq_exit();
 }
 
 /// 当前是否在中断上下文
@@ -103,5 +103,5 @@ pub fn deadlock_detected() -> bool {
 
 /// 打印当前锁依赖状态 (调试用)
 pub fn dump_state() {
-    crate::kernel::framework::sync::dump_state()
+    crate::kernel::framework::sync::dump_state();
 }

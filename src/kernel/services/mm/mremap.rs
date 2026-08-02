@@ -2,11 +2,11 @@
 //! mremap — services 层安全代理
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::mm::MmStruct::mremap。
+//! 所有 unsafe 操作已委托至 `framework::mm::MmStruct::mremap`。
 //!
 //! ## 职责
 //!
-//! - 参数验证 (old_addr / old_size / new_size / flags 合法性)
+//! - 参数验证 (`old_addr` / `old_size` / `new_size` / flags 合法性)
 //! - 类型转换 (usize ↔ u64)
 //! - 委托 framework 层执行 VMA 描述符搬迁
 //!
@@ -21,6 +21,11 @@ use crate::kernel::framework::syscall::Errno;
 /// mremap 系统调用安全代理
 ///
 /// 成功返回新映射的虚拟地址; 失败返回 `Errno`。
+///
+/// # Errors
+///
+/// 当 `old_addr == 0`、`old_size == 0`、`new_size == 0`、`old_addr` 未按页对齐
+/// 或 flags 含非法位时返回 `EINVAL`; 当映射尺寸超过 1 GiB 上限时返回 `ENOMEM`.
 pub fn mremap_syscall(
     mm: &MmStruct,
     old_addr: u64,

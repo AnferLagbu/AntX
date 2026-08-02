@@ -29,7 +29,7 @@
 //! ## 安全
 //!
 //! - 用户态指针经 `check_user_buf` 校验
-//! - timer_id 用 `slot_index + 1` (1-based), 0 保留为无效
+//! - `timer_id` 用 `slot_index + 1` (1-based), 0 保留为无效
 //! - 进程退出时由 `posix_timer_release_pid` 释放全部 timer
 
 use crate::kernel::framework::proc as ptimer;
@@ -85,7 +85,7 @@ pub fn sys_timer_getoverrun(a0: u64) -> i64 {
 
 /// `sys_clock_getres(clockid, res_ptr) -> 0/-errno`  // POSIX 函数签名
 ///
-/// res_ptr 可为 NULL (仅做时钟存在性检查)。
+/// `res_ptr` 可为 NULL (仅做时钟存在性检查)。
 pub fn sys_clock_getres(a0: u64, a1: u64) -> i64 {
     ptimer::sys_clock_getres(a0 as i32, a1)
 }

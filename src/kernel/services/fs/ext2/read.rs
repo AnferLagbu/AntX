@@ -19,12 +19,16 @@ pub struct Ext2Fs {
     pub block_groups: Vec<Ext2BlockGroupDescriptor>,
     /// 块设备索引
     pub device_idx: u8,
-    /// inode 缓存 (inode_num -> inode)
+    /// inode 缓存 (`inode_num` -> inode)
     inode_cache: Vec<(u32, Ext2Inode)>,
 }
 
 impl Ext2Fs {
     /// 打开 ext2 文件系统
+    ///
+    /// # Errors
+    /// 当超级块或块组描述符表读取失败时返回 `Io`;
+    /// 当引导数据不是合法 ext2 超级块时返回 `InvalidArgument`.
     pub fn open(device_idx: u8) -> Result<Self, KernelError> {
         // 读取超级块 (偏移 1024 字节)
         let mut sb_data = [0u8; 1024];
@@ -45,7 +49,7 @@ impl Ext2Fs {
             .ok_or(KernelError::InvalidArgument)?;
 
         // 读取块组描述符表
-        let bgd_block = super_block.bgd_block() as u64;
+        let bgd_block = u64::from(super_block.bgd_block());
         let block_size = super_block.block_size() as usize;
         let bgd_sector = (bgd_block * block_size as u64) / 512;
         let bgd_sector_count = (block_size / 512).max(1) as u32;
@@ -72,6 +76,10 @@ impl Ext2Fs {
     }
 
     /// 读取 inode
+    ///
+    /// # Errors
+    /// 当 inode 所属块组越界或 inode 数据解析失败时返回 `InvalidArgument`;
+    /// 当底层扇区读取失败时返回 `Io`.
     pub fn read_inode(&mut self, inode_num: u32) -> Result<Ext2Inode, KernelError> {
         // 检查缓存
         for (num, inode) in &self.inode_cache {
@@ -118,11 +126,14 @@ impl Ext2Fs {
     }
 
     /// 读取数据块
+    ///
+    /// # Errors
+    /// 当底层扇区读取失败时返回 `Io`.
     pub fn read_block(&self, block_num: u32) -> Result<Vec<u8>, KernelError> {
         let block_size = self.super_block.block_size() as usize;
         let mut data = alloc::vec![0u8; block_size];
 
-        let sector = block_num as u64 * block_size as u64 / 512;
+        let sector = u64::from(block_num) * block_size as u64 / 512;
         let sector_count = (block_size / 512) as u32;
 
         let result = with_device(self.device_idx as usize, |dev| {
@@ -136,6 +147,10 @@ impl Ext2Fs {
     }
 
     /// 读取目录内容
+    ///
+    /// # Errors
+    /// 当 inode 不是目录时返回 `NotADirectory`;
+    /// 当 inode 或底层数据块读取失败时返回对应的 `KernelError`.
     pub fn read_dir(&mut self, inode_num: u32) -> Result<Vec<Ext2DirEntry>, KernelError> {
         let inode = self.read_inode(inode_num)?;
 
@@ -186,6 +201,10 @@ impl Ext2Fs {
     }
 
     /// 查找路径
+    ///
+    /// # Errors
+    /// 当中间目录读取失败时返回底层 `KernelError`;
+    /// 当路径中某组件不存在时返回 `FileNotFound`.
     pub fn lookup_path(&mut self, path: &str) -> Result<u32, KernelError> {
         let mut current_inode = 2; // 根目录 inode
 
@@ -218,6 +237,10 @@ impl Ext2Fs {
     }
 
     /// 读取文件内容
+    ///
+    /// # Errors
+    /// 当 inode 不是普通文件时返回 `InvalidArgument`;
+    /// 当 inode 或底层数据块读取失败时返回对应的 `KernelError`.
     pub fn read_file(&mut self, inode_num: u32, offset: u64, buf: &mut [u8]) -> Result<usize, KernelError> {
         let inode = self.read_inode(inode_num)?;
 
@@ -225,12 +248,12 @@ impl Ext2Fs {
             return Err(KernelError::InvalidArgument);
         }
 
-        let file_size = inode.i_size as u64;
+        let file_size = u64::from(inode.i_size);
         if offset >= file_size {
             return Ok(0);
         }
 
-        let block_size = self.super_block.block_size() as u64;
+        let block_size = u64::from(self.super_block.block_size());
         let mut bytes_read = 0;
         let mut pos = offset;
 
@@ -392,6 +415,10 @@ impl Ext2Fs {
     }
 
     /// 分配一个新 inode
+    ///
+    /// # Errors
+    /// 当所有块组都没有空闲 inode 时返回 `NoSpace`;
+    /// 当底层位图操作失败时返回 `Io`.
     pub fn allocate_inode(&mut self) -> Result<u32, KernelError> {
         // 遍历块组寻找有空闲 inode 的组
         for (i, bgd) in self.block_groups.iter().enumerate() {
@@ -409,6 +436,10 @@ impl Ext2Fs {
     }
 
     /// 分配一个新块
+    ///
+    /// # Errors
+    /// 当所有块组都没有空闲块时返回 `NoSpace`;
+    /// 当底层位图操作失败时返回 `Io`.
     pub fn allocate_block(&mut self) -> Result<u32, KernelError> {
         // 遍历块组寻找有空闲块的组
         for (i, bgd) in self.block_groups.iter().enumerate() {
@@ -426,6 +457,10 @@ impl Ext2Fs {
     }
 
     /// 释放一个块
+    ///
+    /// # Errors
+    /// 当 `block_num` 所属块组越界时返回 `InvalidArgument`;
+    /// 当底层位图操作失败时返回 `Io`.
     pub fn deallocate_block(&mut self, block_num: u32) -> Result<(), KernelError> {
         let group_idx = block_num / self.super_block.s_blocks_per_group;
         if group_idx as usize >= self.block_groups.len() {
@@ -441,6 +476,9 @@ impl Ext2Fs {
     }
 
     /// 写入 inode 到磁盘
+    ///
+    /// # Errors
+    /// 错误条件与 [`super::alloc::write_inode`] 相同, 参见其 `# Errors` 段.
     pub fn save_inode(&self, inode_num: u32, inode: &Ext2Inode) -> Result<(), KernelError> {
         super::alloc::write_inode(
             self.device_idx,
@@ -452,11 +490,18 @@ impl Ext2Fs {
     }
 
     /// 写入数据块
+    ///
+    /// # Errors
+    /// 错误条件与 [`super::alloc::write_block`] 相同, 参见其 `# Errors` 段.
     pub fn save_block(&self, block_num: u32, data: &[u8]) -> Result<(), KernelError> {
         super::alloc::write_block(self.device_idx, &self.super_block, block_num, data)
     }
 
     /// 写入文件内容
+    ///
+    /// # Errors
+    /// 当 inode 不是普通文件时返回 `InvalidArgument`;
+    /// 当 inode 读取、块分配或底层 I/O 失败时返回对应的 `KernelError`.
     pub fn write_file(
         &mut self,
         inode_num: u32,
@@ -469,7 +514,7 @@ impl Ext2Fs {
             return Err(KernelError::InvalidArgument);
         }
 
-        let block_size = self.super_block.block_size() as u64;
+        let block_size = u64::from(self.super_block.block_size());
         let mut bytes_written = 0;
         let mut pos = offset;
 
@@ -512,15 +557,15 @@ impl Ext2Fs {
         }
 
         // 更新 inode 大小
-        let new_size = (offset + bytes_written as u64).max(inode.i_size as u64);
+        let new_size = (offset + bytes_written as u64).max(u64::from(inode.i_size));
         inode.i_size = new_size as u32;
         inode.i_mtime = crate::arch!(timestamp()) as u32;
-        inode.i_blocks = ((new_size + self.super_block.block_size() as u64 - 1) / self.super_block.block_size() as u64 * 512 / self.super_block.block_size() as u64) as u32;
+        inode.i_blocks = ((new_size + u64::from(self.super_block.block_size()) - 1) / u64::from(self.super_block.block_size()) * 512 / u64::from(self.super_block.block_size())) as u32;
 
         self.save_inode(inode_num, &inode)?;
 
         // 更新缓存
-        for (num, cached) in self.inode_cache.iter_mut() {
+        for (num, cached) in &mut self.inode_cache {
             if *num == inode_num {
                 *cached = inode;
                 break;
@@ -639,6 +684,10 @@ impl Ext2Fs {
     }
 
     /// 创建目录项
+    ///
+    /// # Errors
+    /// 当父 inode 不是目录时返回 `NotADirectory`;
+    /// 当 inode/数据块读取或底层 I/O 失败时返回对应的 `KernelError`.
     pub fn create_dir_entry(
         &mut self,
         parent_inode_num: u32,
@@ -741,6 +790,11 @@ impl Ext2Fs {
     }
 
     /// 删除目录项
+    ///
+    /// # Errors
+    /// 当父 inode 不是目录时返回 `NotADirectory`;
+    /// 当目录项不存在时返回 `FileNotFound`;
+    /// 当底层 I/O 失败时返回对应的 `KernelError`.
     pub fn remove_dir_entry(
         &mut self,
         parent_inode_num: u32,
@@ -806,6 +860,10 @@ impl Ext2Fs {
     }
 
     /// 创建目录
+    ///
+    /// # Errors
+    /// 当父路径无效或底层 I/O 失败时返回对应的 `KernelError`;
+    /// 当同名目录已存在时返回 `AlreadyExists`.
     pub fn mkdir(&mut self, parent_path: &str, name: &str) -> Result<u32, KernelError> {
         let parent_inode_num = self.lookup_path(parent_path)?;
 
@@ -869,12 +927,16 @@ impl Ext2Fs {
     }
 
     /// 删除目录
+    ///
+    /// # Errors
+    /// 当目录非空时返回 `Busy`;
+    /// 当路径解析、目录项删除或底层 I/O 失败时返回对应的 `KernelError`.
     pub fn rmdir(&mut self, parent_path: &str, name: &str) -> Result<(), KernelError> {
         let parent_inode_num = self.lookup_path(parent_path)?;
         let dir_path = if parent_path == "/" {
-            format!("/{}", name)
+            format!("/{name}")
         } else {
-            format!("{}/{}", parent_path, name)
+            format!("{parent_path}/{name}")
         };
         let dir_inode_num = self.lookup_path(&dir_path)?;
 
@@ -916,6 +978,10 @@ impl Ext2Fs {
     }
 
     /// 创建符号链接
+    ///
+    /// # Errors
+    /// 当父路径无效时返回底层 `KernelError`;
+    /// 当同名链接已存在时返回 `AlreadyExists`.
     pub fn symlink(&mut self, target: &str, link_path: &str) -> Result<u32, KernelError> {
         // 解析路径
         let (parent_path, name) = if let Some(pos) = link_path.rfind('/') {
@@ -987,6 +1053,10 @@ impl Ext2Fs {
     }
 
     /// 读取符号链接目标
+    ///
+    /// # Errors
+    /// 当 inode 不是符号链接或目标块无效时返回 `InvalidArgument`;
+    /// 当底层数据块读取失败时返回 `Io`.
     pub fn readlink(&mut self, inode_num: u32) -> Result<alloc::vec::Vec<u8>, KernelError> {
         let inode = self.read_inode(inode_num)?;
 
@@ -1021,6 +1091,10 @@ impl Ext2Fs {
     }
 
     /// 创建硬链接
+    ///
+    /// # Errors
+    /// 当目标或父路径无效时返回底层 `KernelError`;
+    /// 当同名链接已存在时返回 `AlreadyExists`.
     pub fn link(
         &mut self,
         target_path: &str,

@@ -12,12 +12,12 @@
 //!
 //! ## 入口
 //!
-//! - [kgdb_breakpoint][]: 主动断点
-//! - [kgdb_handle_exception][]: 异常处理钩子
+//! - [`kgdb_breakpoint`][]: 主动断点
+//! - [`kgdb_handle_exception`][]: 异常处理钩子
 //!
 //! ## 当前限制
 //!
-//! - 串口驱动由 caller 提供 trait 实现, 通过 [kgdb_set_serial] 注入
+//! - 串口驱动由 caller 提供 trait 实现, 通过 [`kgdb_set_serial`] 注入
 //! - 不支持多线程同步, 进入 KGDB 后其他 CPU 自旋等待
 //!
 //! ## SAFETY 不变式
@@ -202,7 +202,7 @@ pub fn kgdb_recv_packet(out: &mut [u8]) -> usize {
     0
 }
 
-/// 处理器状态 (x86_64)
+/// 处理器状态 (`x86_64`)
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -286,7 +286,7 @@ fn format_stop(out: &mut [u8]) -> usize {
 fn format_registers(out: &mut [u8], r: &KgdbRegs) -> usize {
     use core::fmt::Write;
     struct W<'a>(Option<&'a mut [u8]>);
-    impl<'a> Write for W<'a> {
+    impl Write for W<'_> {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
             // take 暂时取走 self.0 以避免重借用与 outlive 推断冲突
             let slice = self.0.take().expect("W invariant: 1 slice at a time");
@@ -299,7 +299,7 @@ fn format_registers(out: &mut [u8], r: &KgdbRegs) -> usize {
         }
     }
     let mut w = W(Some(out));
-    let orig_len = w.0.as_ref().map(|s| s.len()).unwrap_or(0);
+    let orig_len = w.0.as_ref().map_or(0, |s| s.len());
     #[cfg(target_arch = "x86_64")]
     let _ = write!(
         w,
@@ -350,12 +350,14 @@ fn parse_hex(s: &[u8], out: &mut u64) -> bool {
             b'A'..=b'F' => b - b'A' + 10,
             _ => return false,
         };
-        v = (v << 4) | d as u64;
+        v = (v << 4) | u64::from(d);
     }
     *out = v;
     true
 }
 
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn handle_mem_read(arg: &[u8], out: &mut [u8]) -> Option<usize> {
     let mut comma = 0;
     while comma < arg.len() && arg[comma] != b',' {
@@ -386,6 +388,8 @@ fn handle_mem_read(arg: &[u8], out: &mut [u8]) -> Option<usize> {
     Some(idx)
 }
 
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 fn handle_mem_write(arg: &[u8]) -> bool {
     let mut colon = 0;
     while colon < arg.len() && arg[colon] != b':' {

@@ -1,6 +1,6 @@
-//! HvFS — framework 层 re-export 模块
+//! `HvFS` — framework 层 re-export 模块
 //!
-//! E6-6 阶段 2: HvFS 业务逻辑已迁移到 services::fs::hvfs.
+//! E6-6 阶段 2: `HvFS` 业务逻辑已迁移到 `services::fs::hvfs`.
 //! 本模块仅保留:
 //! - `arc_safe`: ARC 缓存裸指针→切片的 safe 封装 (框架层必要 unsafe)
 //! - re-export: 透传 services 层公开类型, 保持外部引用兼容

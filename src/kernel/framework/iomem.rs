@@ -1,4 +1,4 @@
-//! IoMem — MMIO 安全代理 (TCB)
+//! `IoMem` — MMIO 安全代理 (TCB)
 //!
 //! 防止 driver 访问其 BAR 之外的 MMIO 区域,
 //! 通过全局别名检测表防止同一物理地址被多个 driver 独占映射。
@@ -9,9 +9,9 @@
 //!
 //! ## SAFETY 不变量
 //!
-//! - 每个 IoMem 实例在创建时核验 phys..phys+len 不与其他实例冲突。
+//! - 每个 `IoMem` 实例在创建时核验 phys..phys+len 不与其他实例冲突。
 //! - 所有读/写操作检查 offset 在 [0, len) 范围内。
-//! - 底层访问使用 read_volatile/write_volatile 保证 MMIO 语义。
+//! - 底层访问使用 `read_volatile/write_volatile` 保证 MMIO 语义。
 
 use core::fmt;
 use core::ptr::NonNull;
@@ -20,7 +20,7 @@ use crate::kernel::framework::mm::{PhysAddr, phys_to_virt};
 use crate::kernel::framework::sync::IrqSpinLock;
 use crate::klog_warn;
 /// MMIO 别名注册表, 防止同一物理区域被多次映射。
-/// 使用 spin::Mutex (已在内核中广泛使用) 保证线程安全。
+/// 使用 `spin::Mutex` (已在内核中广泛使用) 保证线程安全。
 static ALIAS_REGISTRY: IrqSpinLock<AliasRegistry> = IrqSpinLock::new(AliasRegistry::new());
 
 const MAX_MMIO_MAPPINGS: usize = 64;
@@ -91,6 +91,8 @@ impl IoMem {
     /// - phys 必须指向有效的设备 MMIO 物理区域。
     /// - phys..phys+len 必须已映射到内核空间 (identity map / ioremap)。
     /// - 同一物理区域不重复创建 (由别名检测保证)。
+    /// # Errors
+    /// 长度为 0、物理地址未 4 字节对齐、虚拟地址映射为 null 或与已有 MMIO 区域别名冲突时返回 Err。
     pub unsafe fn new(phys: PhysAddr, len: usize, name: &'static str) -> Result<Self, &'static str> {
         if len == 0 {
             return Err("IoMem: zero-length MMIO region");
@@ -120,6 +122,8 @@ impl IoMem {
     /// - `bar_phys`: PCI BAR 基地址 (来自 PCI 枚举)
     /// - `len`: MMIO 区域大小 (来自 BAR 大小寄存器)
     /// - `name`: 设备名称 (用于调试和别名检测)
+    /// # Errors
+    /// PCI BAR 基地址为 0 (设备未配置) 或底层 `IoMem::new` 校验失败时返回 Err。
     pub fn from_pci_bar(bar_phys: PhysAddr, len: usize, name: &'static str) -> Result<Self, &'static str> {
         if bar_phys.as_u64() == 0 {
             return Err("IoMem: PCI BAR is zero (device not configured)");
@@ -137,7 +141,7 @@ impl IoMem {
 
     /// 确保 MMIO 物理地址范围在内核页表中有映射.
     /// 使用 2MB 大页映射, 覆盖 [phys, phys + len) 所在的所有 2MB 页.
-    /// 如果映射已存在 (同一 2MB 页), map_huge_page 会安全地跳过或覆盖.
+    /// 如果映射已存在 (同一 2MB 页), `map_huge_page` 会安全地跳过或覆盖.
     fn ensure_mmio_mapped(phys: u64, len: usize) {
         use crate::kernel::framework::mm::get_vmm;
         use crate::kernel::framework::mm::{VirtAddr, PageFlags, PageSize};
@@ -165,13 +169,13 @@ impl IoMem {
     #[inline(always)] pub fn is_empty(&self) -> bool { self.len == 0 }
     #[inline(always)] pub fn name(&self) -> &'static str { self.name }
 
-    /// 获取 IoMem 内部虚拟地址指针 (供上层安全访问结构体 MMIO)。
+    /// 获取 `IoMem` 内部虚拟地址指针 (供上层安全访问结构体 MMIO)。
     ///
     /// # SAFETY
     /// 调用方必须保证:
     /// - 返回的指针类型与 MMIO 寄存器布局一致 (大小/对齐)。
     /// - 仅通过 volatile 访问 (无编译器重排)。
-    /// - 不会写出 IoMem 自身的字节范围 (offset + size_of::<T>() <= self.len)。
+    /// - 不会写出 `IoMem` 自身的字节范围 (offset + `size_of::`<T>() <= self.len)。
     #[inline(always)]
     pub unsafe fn virt_ptr(&self) -> *mut u8 {
         // SAFETY: `self.virt` 是 `IoMem::from_*` 构造时由 `NonNull::new_unchecked`
@@ -190,45 +194,69 @@ impl IoMem {
         Ok(())
     }
 
+    /// 从 MMIO 区域读取一个字节。
+    /// # Panics
+    /// 读取范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn read_u8(&self, offset: usize) -> u8 {
         self.check_offset(offset, 1).expect("IoMem: read_u8 offset+1 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset` 已验证 `offset + 1 <= self.len`, 指针 `self.virt + offset`
         // 落在 IoMem 持有的 MMIO 区域内, 不会越界; `read_volatile` 防止编译器重排。
         unsafe { self.virt.as_ptr().add(offset).read_volatile() }
     }
+    /// 从 MMIO 区域读取一个 u16 (小端)。
+    /// # Panics
+    /// 读取范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn read_u16(&self, offset: usize) -> u16 {
         self.check_offset(offset, 2).expect("IoMem: read_u16 offset+2 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 2)` 已验证 2 字节访问不越界; u16 转换要求
         // 2 字节对齐 (PCI BAR MMIO 由 BIOS/UEFI 建立时保证自然对齐)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u16).read_volatile() }
     }
+    /// 从 MMIO 区域读取一个 u32 (小端)。
+    /// # Panics
+    /// 读取范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn read_u32(&self, offset: usize) -> u32 {
         self.check_offset(offset, 4).expect("IoMem: read_u32 offset+4 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 4)` 已验证 4 字节访问不越界; 4 字节自然对齐
         // 由 MMIO 基地址的页对齐保证 (PAGE_SIZE=4096, 任何 4 字节偏移都对其)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u32).read_volatile() }
     }
+    /// 从 MMIO 区域读取一个 u64 (小端)。
+    /// # Panics
+    /// 读取范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn read_u64(&self, offset: usize) -> u64 {
         self.check_offset(offset, 8).expect("IoMem: read_u64 offset+8 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 8)` 已验证 8 字节访问不越界; 8 字节自然对齐
         // 由 MMIO 基地址的页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *const u64).read_volatile() }
     }
+    /// 向 MMIO 区域写入一个字节。
+    /// # Panics
+    /// 写入范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn write_u8(&self, offset: usize, val: u8) {
         self.check_offset(offset, 1).expect("IoMem: write_u8 offset+1 越界 (构造函数保证合法范围)");
         // SAFETY: 与 `read_u8` 对称, 写 1 字节不会越界; volatile 写保证设备立即可见。
         unsafe { self.virt.as_ptr().add(offset).write_volatile(val); }
     }
+    /// 向 MMIO 区域写入一个 u16 (小端)。
+    /// # Panics
+    /// 写入范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn write_u16(&self, offset: usize, val: u16) {
         self.check_offset(offset, 2).expect("IoMem: write_u16 offset+2 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 2)` 已验证 2 字节写不越界; 2 字节对齐由 MMIO 基地址页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u16).write_volatile(val); }
     }
+    /// 向 MMIO 区域写入一个 u32 (小端)。
+    /// # Panics
+    /// 写入范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn write_u32(&self, offset: usize, val: u32) {
         self.check_offset(offset, 4).expect("IoMem: write_u32 offset+4 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 4)` 已验证 4 字节写不越界; 4 字节自然对齐由页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u32).write_volatile(val); }
     }
+    /// 向 MMIO 区域写入一个 u64 (小端)。
+    /// # Panics
+    /// 写入范围超出 MMIO 区域大小时 panic。
     #[inline] pub fn write_u64(&self, offset: usize, val: u64) {
         self.check_offset(offset, 8).expect("IoMem: write_u64 offset+8 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 8)` 已验证 8 字节写不越界; 8 字节自然对齐由页对齐保证。

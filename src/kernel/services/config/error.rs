@@ -17,7 +17,7 @@ use core::fmt;
 pub enum ConfigError {
     /// 检测到的 CPU 数超过 `MAX_CPUS`.
     CpuCountExceedsMax { actual: u32, max: usize },
-    /// 内存布局不一致 (例如 PAGE_SIZE 不是 2 的幂).
+    /// 内存布局不一致 (例如 `PAGE_SIZE` 不是 2 的幂).
     MemoryLayoutInvalid,
     /// 检测到的中断控制器 (APIC/IOAPIC/PIC) 未初始化.
     IrqControllerUnavailable,
@@ -43,19 +43,18 @@ impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConfigError::CpuCountExceedsMax { actual, max } => {
-                write!(f, "CPU count {} exceeds MAX_CPUS {}", actual, max)
+                write!(f, "CPU count {actual} exceeds MAX_CPUS {max}")
             }
             ConfigError::MemoryLayoutInvalid => write!(f, "memory layout invalid"),
             ConfigError::IrqControllerUnavailable => write!(f, "no interrupt controller initialized"),
             ConfigError::InconsistentConstant { name, lhs, rhs } => {
                 write!(
                     f,
-                    "constant {} mismatch: config.rs={} vs submodule={}",
-                    name, lhs, rhs
+                    "constant {name} mismatch: config.rs={lhs} vs submodule={rhs}"
                 )
             }
             ConfigError::DriverConfigInvalid(name) => {
-                write!(f, "driver {} misconfigured", name)
+                write!(f, "driver {name} misconfigured")
             }
             ConfigError::SlabNotPowerOfTwo => write!(f, "slab default size is not power of two"),
             ConfigError::SlabMisaligned => write!(f, "slab default size is not page-aligned"),

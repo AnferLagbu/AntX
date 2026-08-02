@@ -13,10 +13,10 @@
 //!
 //! ## TCB 减负
 //!
-//! 原 HvRaidzMap 8 个方法 (new/data_cols/generate_parity/...) 直接暴露.
+//! 原 `HvRaidzMap` 8 个方法 (`new/data_cols/generate_parity`/...) 直接暴露.
 //! 提取 trait 后:
-//! - SPA/DMU 调用方依赖 trait object / 泛型, 不再绑死 HvRaidzMap
-//! - 单元测试可注入 MockRaidz, 验证 stripe/reconstruct 逻辑
+//! - SPA/DMU 调用方依赖 trait object / 泛型, 不再绑死 `HvRaidzMap`
+//! - 单元测试可注入 `MockRaidz`, 验证 stripe/reconstruct 逻辑
 //!
 //! ## 与 LEGACY-5.1-5.5 范式一致
 
@@ -29,7 +29,7 @@ use super::raidz::{HvRaidzEngine, HvRaidzLevel, HvRaidzMap, HvScrubResult};
 
 /// RAID-Z 引擎 trait
 ///
-/// HvRaidzMap 的方法 (new/data_cols/generate_parity/...) 抽象为 trait,
+/// `HvRaidzMap` 的方法 (`new/data_cols/generate_parity`/...) 抽象为 trait,
 /// 让 SPA/DMU 等调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # Safety
@@ -67,12 +67,12 @@ pub trait RaidzEngine: Send + Sync {
 // StandardRaidz — 默认 RAID-Z 实现 (HvRaidzMap 包装)
 // ============================================================================
 
-/// 标准 RAID-Z 实现 — 包装 HvRaidzMap, 委托公共方法
+/// 标准 RAID-Z 实现 — 包装 `HvRaidzMap`, 委托公共方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockRaidz 替代本实现.
+/// 单元测试可注入 `MockRaidz` 替代本实现.
 ///
-/// 注: HvRaidzMap 内部包含 6KB+ GF_EXP 表 (编译期常量), trait object
+/// 注: `HvRaidzMap` 内部包含 6KB+ `GF_EXP` 表 (编译期常量), trait object
 /// dispatch 不复制表, 仅持有引用.
 pub struct StandardRaidz {
     pub level: HvRaidzLevel,
@@ -86,25 +86,25 @@ impl StandardRaidz {
         Self { level, ncols, ashift }
     }
 
-    /// 生成奇偶校验 (委托 HvRaidzMap)
+    /// 生成奇偶校验 (委托 `HvRaidzMap`)
     pub fn generate_parity(&self, data: &[u8]) -> Vec<Vec<u8>> {
         let mut map = HvRaidzMap::new(self.level, self.ncols, self.ashift);
         map.generate_parity(data)
     }
 
-    /// 重建数据 (委托 HvRaidzMap)
+    /// 重建数据 (委托 `HvRaidzMap`)
     pub fn reconstruct_data(&self, parity_data: &[Vec<u8>], failed_cols: &[usize]) -> Option<Vec<u8>> {
         let map = HvRaidzMap::new(self.level, self.ncols, self.ashift);
         map.reconstruct_data(parity_data, failed_cols)
     }
 
-    /// 校验 parity (委托 HvRaidzMap)
+    /// 校验 parity (委托 `HvRaidzMap`)
     pub fn verify_parity(&self, parity_data: &[Vec<u8>]) -> bool {
         let map = HvRaidzMap::new(self.level, self.ncols, self.ashift);
         map.verify_parity(parity_data)
     }
 
-    /// 调度 scrub (委托 HvRaidzEngine)
+    /// 调度 scrub (委托 `HvRaidzEngine`)
     pub fn scrub_block(&self, parity_data: &[Vec<u8>]) -> HvScrubResult {
         let map = HvRaidzMap::new(self.level, self.ncols, self.ashift);
         HvRaidzEngine::scrub_block(&map, parity_data)

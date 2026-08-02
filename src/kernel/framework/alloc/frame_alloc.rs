@@ -1,4 +1,4 @@
-//! FrameAlloc — 物理页分配器 trait (TCB)
+//! `FrameAlloc` — 物理页分配器 trait (TCB)
 //!
 //! 策略注入点: services 层通过此 trait 分配/释放物理帧,
 //! 而不直接操作 Buddy 分配器或位图。
@@ -45,7 +45,7 @@ pub trait FrameAlloc: Send + Sync {
 // 默认实现: 委托给现有 PMM
 // ============================================================================
 
-/// Buddy 分配器实现的 FrameAlloc。
+/// Buddy 分配器实现的 `FrameAlloc`。
 pub struct BuddyFrameAlloc;
 
 impl FrameAlloc for BuddyFrameAlloc {

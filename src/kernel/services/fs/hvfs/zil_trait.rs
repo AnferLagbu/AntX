@@ -13,10 +13,10 @@
 //!
 //! ## TCB 减负
 //!
-//! 原 HvZil 8 个公共方法 (init/add_record/commit/sync/replay/...) 直接暴露.
+//! 原 `HvZil` 8 个公共方法 (`init/add_record/commit/sync/replay`/...) 直接暴露.
 //! 提取 trait 后:
-//! - SPA/DMU 调用方依赖 trait object / 泛型, 不再绑死 HvZil
-//! - 单元测试可注入 MockZilLog, 验证 zil_persist 在不真实 ZIL 上的序列化和重放逻辑
+//! - SPA/DMU 调用方依赖 trait object / 泛型, 不再绑死 `HvZil`
+//! - 单元测试可注入 `MockZilLog`, 验证 `zil_persist` 在不真实 ZIL 上的序列化和重放逻辑
 //!
 //! ## 与 LEGACY-5.1-5.5/5.7/5.8 范式一致
 
@@ -30,7 +30,7 @@ use alloc::vec::Vec;
 
 /// ZIL 写入日志 trait
 ///
-/// HvZil 的核心方法 (init/add_record/commit/sync/replay) 抽象为 trait,
+/// `HvZil` 的核心方法 (`init/add_record/commit/sync/replay`) 抽象为 trait,
 /// 让 SPA/DMU 等调用方依赖抽象而非具体类型, 便于单元测试注入 mock 实现.
 ///
 /// # Safety
@@ -85,10 +85,10 @@ pub trait ZilLog: Send + Sync {
 // StandardZil — 默认 ZIL 实现 (HvZil 包装)
 // ============================================================================
 
-/// 标准 ZIL 实现 — 包装 HvZil, 委托所有方法
+/// 标准 ZIL 实现 — 包装 `HvZil`, 委托所有方法
 ///
 /// 0 unsafe, 0 thunk, 编译期类型安全.
-/// 单元测试可注入 MockZilLog 替代本实现.
+/// 单元测试可注入 `MockZilLog` 替代本实现.
 pub struct StandardZil(pub HvZil);
 
 impl StandardZil {
@@ -97,7 +97,7 @@ impl StandardZil {
         Self(HvZil::new())
     }
 
-    /// 访问内部 HvZil (向后兼容)
+    /// 访问内部 `HvZil` (向后兼容)
     pub fn inner(&self) -> &HvZil {
         &self.0
     }

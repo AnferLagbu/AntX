@@ -42,6 +42,9 @@ fn has_device_cap(pwm: u64, required: u64) -> bool {
     engine::check(pwm, CapDomain(CAP_DOMAIN_DEVICE), CapBits(required))
 }
 
+/// 将设备树节点绑定到指定用户进程, 使该进程获得该设备的独占访问权。
+/// # Errors
+/// PWM 缺少 `DEVICE_CAP_BIND` 权限、进程不存在、节点不存在、节点状态非法或节点已被其他进程占用时返回 Err。
 pub fn devtree_bind_user_device(
     node_id: NodeId,
     pid: u32,
@@ -90,6 +93,11 @@ pub fn devtree_bind_user_device(
     Ok(())
 }
 
+/// 解除设备树节点与用户进程的绑定, 并卸载进程虚拟地址空间中映射的设备 MMIO 范围。
+/// # Errors
+/// PWM 缺少 `DEVICE_CAP_BIND` 权限、进程不存在、节点不存在、节点映射的 PID 不匹配或节点未处于可解绑状态时返回 Err。
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn devtree_unbind_user_device(
     node_id: NodeId,
     pid: u32,
@@ -125,13 +133,10 @@ pub fn devtree_unbind_user_device(
                 devtree_clear_user_mapped(node_id);
                 return Err(UserDriverError::new(ERR_NOT_FOUND));
             }
-            match process_get_cr3(pid) {
-                Some(c) => c,
-                None => {
-                    process_dec_ref(pid);
-                    devtree_clear_user_mapped(node_id);
-                    return Err(UserDriverError::new(ERR_NOT_FOUND));
-                }
+            if let Some(c) = process_get_cr3(pid) { c } else {
+                process_dec_ref(pid);
+                devtree_clear_user_mapped(node_id);
+                return Err(UserDriverError::new(ERR_NOT_FOUND));
             }
         };
 
@@ -155,6 +160,11 @@ pub fn devtree_unbind_user_device(
     Ok(())
 }
 
+/// 将设备节点的 MMIO 资源映射到用户进程地址空间, 返回映射基址。
+/// # Errors
+/// PWM 缺少 `DEVICE_CAP_MMIO` 权限、进程或节点不存在、节点映射的 PID 不匹配、节点状态非法、缺少 reg 属性、物理地址或大小非法或内存不足时返回 Err。
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn devtree_map_user_device(
     node_id: NodeId,
     pid: u32,
@@ -178,13 +188,13 @@ pub fn devtree_map_user_device(
 
     let phys_addr: u64 = match node.get_prop("reg") {
         Some(PropertyValue::U64(addr)) => *addr,
-        Some(PropertyValue::U32(addr)) => *addr as u64,
+        Some(PropertyValue::U32(addr)) => u64::from(*addr),
         _ => return Err(UserDriverError::new(ERR_NO_MMIO)),
     };
 
     let size: u64 = match node.get_prop("size") {
         Some(PropertyValue::U64(sz)) => *sz,
-        Some(PropertyValue::U32(sz)) => *sz as u64,
+        Some(PropertyValue::U32(sz)) => u64::from(*sz),
         _ => PAGE_SIZE,
     };
 
@@ -254,6 +264,11 @@ pub fn devtree_map_user_device(
     Ok(map_base)
 }
 
+/// 解除设备节点的 MMIO 映射, 将指定虚拟地址范围从用户进程地址空间移除。
+/// # Errors
+/// PWM 缺少 `DEVICE_CAP_MMIO` 权限、进程不存在、节点不存在或节点映射的 PID 不匹配时返回 Err。
+// 有意窄化: 尺寸/地址转换, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn devtree_unmap_user_device(
     node_id: NodeId,
     pid: u32,
@@ -336,7 +351,7 @@ pub fn chitin_forward_irq(node_id: NodeId) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn user_driver_bind(node_id: u32, pid: u32, pwm: u64) -> i32 {
+pub extern "C" fn user_driver_bind(node_id: u32, pid: u32, pwm: u64) -> i32 {
     match devtree_bind_user_device(node_id, pid, pwm) {
         Ok(()) => 0,
         Err(e) => e.code(),
@@ -345,7 +360,7 @@ pub fn user_driver_bind(node_id: u32, pid: u32, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn user_driver_unbind(
+pub extern "C" fn user_driver_unbind(
     node_id: u32,
     pid: u32,
     pwm: u64,
@@ -376,10 +391,13 @@ pub extern "C" fn process_signal_pending_set(pid: u32, sig: u32) {
 }
 
 /// 进程退出时清理所有 Chitin 设备绑定
-/// 遍历设备树, 清除该进程在所有节点上的 user_mapped 标记,
+/// 遍历设备树, 清除该进程在所有节点上的 `user_mapped` 标记,
 /// 防止残留标记导致设备节点永远无法被其他进程重新绑定
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+// 注意: 本函数保持 Rust ABI, 因作为 ProcessCleanupFn (Rust fn 指针)
+//       注册到 framework::process_cleanup, 不能改为 extern "C".
 #[unsafe(no_mangle)]
+#[expect(clippy::no_mangle_with_rust_abi)]
 pub fn chitin_process_cleanup(pid: u32) {
     devtree_clear_user_mapped_by_pid(pid);
 }

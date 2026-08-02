@@ -413,6 +413,8 @@ pub struct BpfProg {
 }
 
 impl BpfProg {
+    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    #[expect(clippy::cast_possible_truncation)]
     pub fn new(prog_type: BpfProgType, insns: Vec<BpfInsn>) -> Self {
         let insn_cnt = insns.len() as u32;
         Self {
@@ -451,7 +453,7 @@ pub enum VerifyResult {
 ///
 /// # 注册流程
 ///
-/// 1. framework 在 BpfSubsystem 中持有 `Option<&'static dyn BpfVerifier>`
+/// 1. framework 在 `BpfSubsystem` 中持有 `Option<&'static dyn BpfVerifier>`
 /// 2. services 在启动时调用 `BpfSubsystem::set_verifier(&STANDARD_VERIFIER)`
 /// 3. `prog_load` 通过动态分派调用注册的 verifier
 ///
@@ -502,6 +504,8 @@ impl BpfHelper {
     /// - `maps`: Map FD → Arc<BpfMap> 映射
     ///
     /// 返回: R0 的值
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn execute(
         id: u32,
         r1: u64, r2: u64, r3: u64, _r4: u64, _r5: u64,
@@ -526,7 +530,7 @@ impl BpfHelper {
                 }
             }
             helper_id::GET_SMP_PROCESSOR => {
-                crate::kernel::framework::cpu::arch::cpu_id() as u64
+                u64::from(crate::kernel::framework::cpu::arch::cpu_id())
             }
             helper_id::TRACE_PRINTK => {
                 // r1 = fmt 指针, r2 = fmt 长度, r3 = arg1
@@ -657,6 +661,8 @@ impl BpfInterpreter {
         regs[reg::R0]
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn exec_alu(insn: &BpfInsn, regs: &mut [u64; BPF_REG_NUM]) {
         let dst = insn.dst() as usize;
         let src = insn.src() as usize;
@@ -694,8 +700,8 @@ impl BpfInterpreter {
             opcode::END => {
                 // 字节序转换: 简化为截断
                 match insn.imm {
-                    16 => (regs[dst] as u16) as u64,
-                    32 => (regs[dst] as u32) as u64,
+                    16 => u64::from(regs[dst] as u16),
+                    32 => u64::from(regs[dst] as u32),
                     64 => regs[dst],
                     _ => regs[dst],
                 }
@@ -706,7 +712,7 @@ impl BpfInterpreter {
         if is_64 {
             regs[dst] = result;
         } else {
-            regs[dst] = (result as u32) as u64;
+            regs[dst] = u64::from(result as u32);
         }
     }
 
@@ -716,8 +722,8 @@ impl BpfInterpreter {
 
         if op == opcode::LD | opcode::IMM | opcode::DW {
             // 64-bit immediate load (2 条指令)
-            regs[dst] = ((insn.imm as u32) as u64)
-                | (((insn.off as u32) as u64) << 32);
+            regs[dst] = u64::from(insn.imm as u32)
+                | (u64::from(insn.off as u32) << 32);
         } else if op == opcode::LD | opcode::ABS | opcode::W {
             // LD_ABS_W: 从 packet 偏移 insn.imm 加载 32-bit
             // 简化: 返回 0
@@ -728,31 +734,31 @@ impl BpfInterpreter {
         } else if op == opcode::LDX | opcode::MEM | opcode::W {
             // LDX_MEM_W: 从 *(u32*)(src + off) 加载
             let src = insn.src() as usize;
-            let addr = regs[src].wrapping_add(insn.off as i64 as u64);
+            let addr = regs[src].wrapping_add(i64::from(insn.off) as u64);
             let ptr = addr as *const u32;
             if !ptr.is_null() {
                 // SAFETY: 验证器保证 addr 指向有效内存 (MapValue/Stack/Ctx)
-                regs[dst] = unsafe { core::ptr::read_unaligned(ptr) } as u64;
+                regs[dst] = u64::from(unsafe { core::ptr::read_unaligned(ptr) });
             }
         } else if op == opcode::LDX | opcode::MEM | opcode::H {
             let src = insn.src() as usize;
-            let addr = regs[src].wrapping_add(insn.off as i64 as u64);
+            let addr = regs[src].wrapping_add(i64::from(insn.off) as u64);
             let ptr = addr as *const u16;
             if !ptr.is_null() {
                 // SAFETY: 同 LDX_MEM_W
-                regs[dst] = unsafe { core::ptr::read_unaligned(ptr) } as u64;
+                regs[dst] = u64::from(unsafe { core::ptr::read_unaligned(ptr) });
             }
         } else if op == opcode::LDX | opcode::MEM | opcode::B {
             let src = insn.src() as usize;
-            let addr = regs[src].wrapping_add(insn.off as i64 as u64);
+            let addr = regs[src].wrapping_add(i64::from(insn.off) as u64);
             let ptr = addr as *const u8;
             if !ptr.is_null() {
                 // SAFETY: 同 LDX_MEM_W
-                regs[dst] = unsafe { core::ptr::read_unaligned(ptr) } as u64;
+                regs[dst] = u64::from(unsafe { core::ptr::read_unaligned(ptr) });
             }
         } else if op == opcode::LDX | opcode::MEM | opcode::DW {
             let src = insn.src() as usize;
-            let addr = regs[src].wrapping_add(insn.off as i64 as u64);
+            let addr = regs[src].wrapping_add(i64::from(insn.off) as u64);
             let ptr = addr as *const u64;
             if !ptr.is_null() {
                 // SAFETY: 同 LDX_MEM_W
@@ -761,9 +767,11 @@ impl BpfInterpreter {
         }
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn exec_st(insn: &BpfInsn, regs: &mut [u64; BPF_REG_NUM]) {
         let dst = insn.dst() as usize;
-        let addr = regs[dst].wrapping_add(insn.off as i64 as u64);
+        let addr = regs[dst].wrapping_add(i64::from(insn.off) as u64);
 
         if insn.class() == opcode::ST {
             // ST_IMM: *(size*)(dst + off) = imm
@@ -835,6 +843,8 @@ impl BpfInterpreter {
         }
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn exec_jmp(
         insn: &BpfInsn,
         regs: &mut [u64; BPF_REG_NUM],
@@ -848,7 +858,7 @@ impl BpfInterpreter {
 
         match op_low {
             opcode::JA => {
-                Some((pc as i64 + 1 + insn.off as i64) as usize)
+                Some((pc as i64 + 1 + i64::from(insn.off)) as usize)
             }
             opcode::EXIT => None,
             opcode::CALL => {
@@ -872,7 +882,7 @@ impl BpfInterpreter {
                     Self::eval_cond64(op_low, dst_val, src_val)
                 };
                 if taken {
-                    Some((pc as i64 + 1 + insn.off as i64) as usize)
+                    Some((pc as i64 + 1 + i64::from(insn.off)) as usize)
                 } else {
                     Some(pc + 1)
                 }
@@ -921,9 +931,9 @@ impl BpfInterpreter {
 
 /// BPF 子系统 — 管理 Map 和程序的全局状态
 pub struct BpfSubsystem {
-    /// Map FD → BpfMap
+    /// Map FD → `BpfMap`
     maps: IrqSpinLock<BTreeMap<u32, Arc<BpfMap>>>,
-    /// 程序 FD → BpfProg
+    /// 程序 FD → `BpfProg`
     progs: IrqSpinLock<BTreeMap<u32, Arc<BpfProg>>>,
     /// 下一个 Map FD
     next_map_fd: AtomicU32,
@@ -932,7 +942,7 @@ pub struct BpfSubsystem {
     /// 是否已初始化
     initialized: AtomicBool,
     /// T4-3: 已注册的 verifier (None = 拒绝所有, 安全默认)
-    /// 使用 IrqSpinLock<Option<&'static dyn BpfVerifier>>, 支持运行时注册/查询
+    /// 使用 `IrqSpinLock`<Option<&'static dyn `BpfVerifier`>>, 支持运行时注册/查询
     verifier: IrqSpinLock<Option<&'static dyn BpfVerifier>>,
 }
 
@@ -1010,7 +1020,7 @@ impl BpfSubsystem {
                     return -(22i64); // EINVAL
                 }
                 maps.insert(fd, Arc::new(m));
-                fd as i64
+                i64::from(fd)
             }
             None => -(22i64), // EINVAL
         }
@@ -1027,16 +1037,13 @@ impl BpfSubsystem {
         // T4-3: 验证通过动态分派到注册的 verifier
         // 安全默认: 未注册时拒绝所有程序
         let verifier_slot = self.verifier.lock();
-        let verifier = match *verifier_slot {
-            Some(v) => v,
-            None => {
-                drop(verifier_slot);
-                crate::klog_ffi!(
-                    klog_ffi_warn,
-                    "[BPF] no verifier registered, rejecting all programs"
-                );
-                return -(1i64); // EPERM
-            }
+        let verifier = if let Some(v) = *verifier_slot { v } else {
+            drop(verifier_slot);
+            crate::klog_ffi!(
+                klog_ffi_warn,
+                "[BPF] no verifier registered, rejecting all programs"
+            );
+            return -(1i64); // EPERM
         };
         let result = verifier.verify(&prog);
         drop(verifier_slot);
@@ -1061,7 +1068,7 @@ impl BpfSubsystem {
             return -(22i64);
         }
         progs.insert(fd, Arc::new(prog));
-        fd as i64
+        i64::from(fd)
     }
 
     /// Map 操作: lookup
@@ -1153,21 +1160,23 @@ pub fn bpf_is_initialized() -> bool {
 // 系统调用
 // ============================================================================
 
-/// sys_bpf — BPF 系统调用多路复用
+/// `sys_bpf` — BPF 系统调用多路复用
 ///
-/// `a0`: cmd (BPF_CMD_*)
+/// `a0`: cmd (`BPF_CMD`_*)
 /// `a1`: attr 指针
 /// `a2`: attr 大小
 ///
 /// cmd 值:
-///   0 = MAP_CREATE
-///   1 = MAP_LOOKUP_ELEM
-///   2 = MAP_UPDATE_ELEM
-///   3 = MAP_DELETE_ELEM
-///   5 = PROG_LOAD
+///   0 = `MAP_CREATE`
+///   1 = `MAP_LOOKUP_ELEM`
+///   2 = `MAP_UPDATE_ELEM`
+///   3 = `MAP_DELETE_ELEM`
+///   5 = `PROG_LOAD`
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub extern "C" fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
     if !bpf_is_initialized() {
         return -(11i64); // EAGAIN
     }

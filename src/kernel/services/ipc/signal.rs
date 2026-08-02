@@ -16,7 +16,7 @@
 //! 提供异步进程间通知能力
 //! 功能等价于 POSIX signals
 
-use super::types::*;
+use super::types::{IPC_MAX_SIGNALS, SignalHandlerFn};
 use crate::kernel::framework::proc::{
     process_get_by_pid, process_get_current_pwm, process_get_pwm_by_pid,
     SignalDecision, SignalDefaultAction, register_signal_decision,
@@ -31,6 +31,10 @@ use crate::kernel::framework::proc::{
 /// # Returns
 /// * Ok(()) - 成功发送
 /// * Err(i32) - 错误码 (-1: 无效信号编号, -2: 进程不存在)
+///
+/// # Errors
+/// 当 `sig` 超出 1..=32 范围时返回 `Err(-1)`; 当目标进程不存在时返回 `Err(-2)`;
+/// 当发送方无权限向目标进程发送信号时返回 `Err(-3)`.
 pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
     if sig < 1 || sig > IPC_MAX_SIGNALS as u8 {
         return Err(-1);
@@ -65,6 +69,9 @@ pub fn signal_send_safe(sig: u8, target_pid: u32) -> Result<(), i32> {
 /// # Returns
 /// * Ok(()) - 成功注册
 /// * Err(i32) - 错误码 (-1: 无效信号)
+///
+/// # Errors
+/// 当 `sig` 超出 1..=32 范围时返回 `Err(-1)`.
 pub fn signal_register_safe(
     sig: u8,
     _handler: Option<SignalHandlerFn>,
@@ -88,6 +95,9 @@ pub fn signal_register_safe(
 /// # Returns
 /// * Ok(()) - 成功
 /// * Err(i32) - 错误码 (-1: 无效信号)
+///
+/// # Errors
+/// 当 `sig` 超出 1..=32 范围时返回 `Err(-1)`.
 pub fn signal_block_safe(sig: u8) -> Result<(), i32> {
     if sig < 1 || sig > IPC_MAX_SIGNALS as u8 {
         return Err(-1);
@@ -105,6 +115,9 @@ pub fn signal_block_safe(sig: u8) -> Result<(), i32> {
 /// # Returns
 /// * Ok(()) - 成功
 /// * Err(i32) - 错误码 (-1: 无效信号)
+///
+/// # Errors
+/// 当 `sig` 超出 1..=32 范围时返回 `Err(-1)`.
 pub fn signal_unblock_safe(sig: u8) -> Result<(), i32> {
     if sig < 1 || sig > IPC_MAX_SIGNALS as u8 {
         return Err(-1);

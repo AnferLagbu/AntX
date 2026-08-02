@@ -1,4 +1,4 @@
-use super::types::*;
+use super::types::{AuditEntry, PwmId, AuditAction, AuditResult};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 const AUDIT_CAPACITY: usize = 256;
@@ -87,7 +87,7 @@ pub fn dump() {
 // ============================================================================
 
 pub(crate) mod raw {
-    use super::*;
+    use super::{AuditAction, GLOBAL_AUDIT};
 
     /// 记录一条审计项 (使用 `&mut` 互斥访问)
     pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {

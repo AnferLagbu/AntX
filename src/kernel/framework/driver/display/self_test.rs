@@ -16,12 +16,14 @@ use super::framebuffer::{Color, Framebuffer, Rect};
 /// ├──────────────────────────────────────────────┤
 /// │  ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈              │  反走样直线 (Wu)
 /// ├──────────────────────────────────────────────┤
-/// │  QueenX Framebuffer Self-Test v2.0             │  调试文本
+/// │  `QueenX` Framebuffer Self-Test v2.0             │  调试文本
 /// │  Resolution: 1024x768x32                     │
 /// └──────────────────────────────────────────────┘
 ///
 /// 返回失败像素数（0 = 全部通过）。
 
+// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+#[expect(clippy::cast_possible_truncation)]
 pub fn framebuffer_self_test(fb: &mut Framebuffer, font: &Font) -> usize {
     let mut failures: usize = 0;
     let fw = fb.width();
@@ -89,7 +91,7 @@ pub fn framebuffer_self_test(fb: &mut Framebuffer, font: &Font) -> usize {
         failures += 1;
     }
     if let Some(g128) = fb.get_pixel(128.min(gray_len - 1), gray_y) {
-        if (g128.r as i32 - 128i32).abs() > 4 {
+        if (i32::from(g128.r) - 128i32).abs() > 4 {
             failures += 1;
         }
     } else {

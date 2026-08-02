@@ -2,7 +2,7 @@
 //! virtiofs — virtio 文件系统 (VM 通信)
 //!
 //! @SAFE: 本文件不含 unsafe 代码。
-//! 所有 unsafe 操作已委托至 framework::fs::vfs::api。
+//! 所有 unsafe 操作已委托至 `framework::fs::vfs::api`。
 //!
 //! ## 职责
 //!
@@ -182,6 +182,9 @@ impl VirtioFs {
     }
 
     /// 创建节点
+    ///
+    /// # Errors
+    /// 当父节点不存在时返回 `ENOENT`; 当节点表已满 (`MAX_NODES`) 时返回 `ENOMEM`.
     pub fn create_node(
         &mut self,
         parent_id: u64,
@@ -208,6 +211,10 @@ impl VirtioFs {
     }
 
     /// 删除节点
+    ///
+    /// # Errors
+    /// 当 `id` 为根节点 (0) 时返回 `EINVAL`; 当节点仍有子节点时返回 `ENOTEMPTY`;
+    /// 当节点不存在时返回 `ENOENT`.
     pub fn delete_node(&mut self, id: u64) -> Result<(), Errno> {
         if id == 0 {
             return Err(Errno::EINVAL);
@@ -240,6 +247,9 @@ impl VirtioFs {
     }
 
     /// 列出子节点
+    ///
+    /// # Errors
+    /// 当前实现不返回错误; 当缓冲区不足时输出会被截断.
     pub fn list_children(&self, parent_id: u64, buf: &mut [u8]) -> Result<usize, Errno> {
         let mut offset = 0;
         for i in 0..self.node_count as usize {
@@ -277,6 +287,9 @@ pub fn get_virtiofs() -> &'static Mutex<VirtioFs> {
 // ============================================================================
 
 /// 挂载 virtiofs
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 仅初始化根节点, 不返回错误.
 pub fn mount_virtiofs() -> Result<(), Errno> {
     let fs = get_virtiofs();
     fs.lock().init();
@@ -284,6 +297,9 @@ pub fn mount_virtiofs() -> Result<(), Errno> {
 }
 
 /// 卸载 virtiofs
+///
+/// # Errors
+/// 当前实现恒返回 `Ok(())`; 仅清空节点数据, 不返回错误.
 pub fn umount_virtiofs() -> Result<(), Errno> {
     let mut fs = get_virtiofs().lock();
     fs.node_count = 0;
@@ -292,6 +308,10 @@ pub fn umount_virtiofs() -> Result<(), Errno> {
 }
 
 /// 处理请求
+///
+/// # Errors
+/// 当 `opcode` 非法时返回 `EINVAL`; 当数据非 UTF-8 或操作对象不存在时返回 `EINVAL`/`ENOENT`;
+/// 当操作不被支持时返回 `ENOSYS`.
 pub fn handle_request(
     opcode: u32,
     node_id: u64,

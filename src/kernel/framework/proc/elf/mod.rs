@@ -57,7 +57,7 @@ pub struct Elf64Phdr {
 }
 
 const PT_LOAD: u32 = 1;
-/// PT_INTERP: 动态链接器路径 (指向 ELF 解释器)
+/// `PT_INTERP`: 动态链接器路径 (指向 ELF 解释器)
 const PT_INTERP: u32 = 3;
 const PT_GNU_STACK: u32 = 0x6474E551;
 const PF_X: u32 = 1;
@@ -65,7 +65,7 @@ const PF_W: u32 = 2;
 const PF_R: u32 = 4;
 const MAX_PHDR_COUNT: usize = 128;
 
-/// ET_DYN: 共享对象 / PIE 可执行文件
+/// `ET_DYN`: 共享对象 / PIE 可执行文件
 const ET_DYN: u16 = 3;
 
 pub struct ElfLoadResult {
@@ -97,6 +97,13 @@ pub fn elf_validate(elf_data: *const u8, elf_size: u64) -> Option<&'static Elf64
     Some(unsafe { &*(elf_data as *const Elf64Header) })
 }
 
+/// 加载 ELF 文件到当前进程地址空间 (`ET_EXEC`, 固定地址加载, 等价于 `load_bias = 0`).
+///
+/// # Errors
+/// 当 ELF 头校验失败时返回 `Err("Invalid ELF header")`; 当无 program header 时返回
+/// `Err("No program headers")`; 当段地址/大小溢出或物理页分配失败 (OOM) 时分别返回
+/// `Err("ELF: vaddr + memsz overflow")`, `Err("ELF: p_offset + p_filesz overflow")`,
+/// `Err("OOM loading ELF")`.
 pub fn elf_load(
     mm: &MmStruct,
     elf_data: *const u8,
@@ -107,8 +114,14 @@ pub fn elf_load(
 
 /// 加载 ELF 文件到指定地址空间, 支持可选加载偏移 (PIE/ASLR).
 ///
-/// `load_bias` = 0 表示 ET_EXEC (固定地址加载).
-/// `load_bias` > 0 表示 ET_DYN/PIE (在随机基址加载).
+/// `load_bias` = 0 表示 `ET_EXEC` (固定地址加载).
+/// `load_bias` > 0 表示 `ET_DYN/PIE` (在随机基址加载).
+///
+/// # Errors
+/// 当 ELF 头校验失败时返回 `Err("Invalid ELF header")`; 当无 program header 时返回
+/// `Err("No program headers")`; 当段地址/大小算术溢出时返回
+/// `Err("ELF: vaddr + memsz overflow")` 或 `Err("ELF: p_offset + p_filesz overflow")`;
+/// 当物理页分配失败时返回 `Err("OOM loading ELF")`.
 pub fn elf_load_with_bias(
     mm: &MmStruct,
     elf_data: *const u8,
@@ -275,9 +288,9 @@ const LINUX_INTERP_PREFIXES: &[&[u8]] = &[
     b"/lib/ld-musl-aarch64.so.1",
 ];
 
-/// 扫描 ELF program headers, 检测 PT_INTERP 是否为 Linux 动态链接器.
+/// 扫描 ELF program headers, 检测 `PT_INTERP` 是否为 Linux 动态链接器.
 ///
-/// 返回 true 表示需要改写 PT_INTERP (Linux 二进制).
+/// 返回 true 表示需要改写 `PT_INTERP` (Linux 二进制).
 pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
     let header = match elf_validate(elf_data, elf_size) {
         Some(h) => h,
@@ -323,7 +336,7 @@ pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
     false
 }
 
-/// 改写 ELF 数据中的 PT_INTERP 路径为 queenx 动态链接器.
+/// 改写 ELF 数据中的 `PT_INTERP` 路径为 queenx 动态链接器.
 ///
 /// # Safety
 /// `elf_data` 必须指向可写的有效 ELF 数据 (内核拷贝缓冲区).

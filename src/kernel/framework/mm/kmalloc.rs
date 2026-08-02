@@ -13,7 +13,7 @@ macro_rules! serial_println {
     ($($arg:tt)*) => {};
 }
 
-use super::*;
+use super::{VirtAddr, PAGE_SIZE, get_vmm, get_pmm, PhysAddr, PageFlags};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 // P1-I-28 修复: kmalloc 自旋锁在中断上下文会死锁 (同 CPU ISR 持锁 + 主线 spin)
@@ -105,11 +105,11 @@ impl HeapHeader {
 // 所有针对堆头内部的裸指针解引用都在此处封装.
 // 外层 `KernelHeap` 方法只调用 safe 包装, 分配算法本身保持纯 safe Rust.
 pub(crate) mod raw {
-    use super::*;
+    use super::{HeapHeader, UnsafeCell, VirtAddr};
 
     /// 对 `*mut HeapHeader` 的 safe 包装.
     ///
-    /// SAFETY 不变式: 指针指向堆内合法 HeapHeader, 且堆锁被持有.
+    /// SAFETY 不变式: 指针指向堆内合法 `HeapHeader`, 且堆锁被持有.
     #[derive(Clone, Copy)]
     pub struct HeaderRef(*mut HeapHeader);
 
@@ -197,7 +197,7 @@ pub(crate) mod raw {
             unsafe { (*self.0).data_ptr() }
         }
 
-        /// 在本地址写入新的 HeapHeader 值.
+        /// 在本地址写入新的 `HeapHeader` 值.
         #[inline(always)]
         pub fn write(&self, val: HeapHeader) {
             // SAFETY: 调用方保证指针合法, 且持锁
@@ -218,7 +218,7 @@ pub(crate) mod raw {
         }
     }
 
-    /// free_list_head 访问的 safe 包装.
+    /// `free_list_head` 访问的 safe 包装.
     ///
     /// 2026-07-02: 改用 raw pointer + volatile, 防 LTO 字段错位.
     /// 调用方通过 `addr_of!(self.free_list_head)` 传入真实字段地址.
@@ -243,7 +243,7 @@ pub(crate) mod raw {
         }
     }
 
-    /// heap_end 访问的 safe 包装.
+    /// `heap_end` 访问的 safe 包装.
     ///
     /// 与 `FreeListHeadRef` 同类 LTO 字段错位防御:
     /// 通过 `addr_of!(self.heap_end)` 传入真实字段地址,
@@ -295,7 +295,7 @@ use raw::{HeaderRef, FreeListHeadRef, HeapEndRef};
 /// 内核堆分配器状态
 ///
 /// 2026-07-02: 加 `#[repr(C)]` 防止 LTO 字段重排. 本次会话诊断发现
-/// LTO 在 release 模式错位 free_list_head 字段写入, 虽有 addr_of!
+/// LTO 在 release 模式错位 `free_list_head` 字段写入, 虽有 `addr_of`!
 /// 修复, repr(C) 提供额外防御层.
 #[repr(C)]
 pub struct KernelHeap {
@@ -303,7 +303,7 @@ pub struct KernelHeap {
     heap_start: VirtAddr,
 
     /// 堆当前尾地址 (虚拟地址)
-    /// SAFETY: 通过 UnsafeCell 包装, 允许在 &self 方法 (expand_heap) 中更新.
+    /// SAFETY: 通过 `UnsafeCell` 包装, 允许在 &self 方法 (`expand_heap`) 中更新.
     /// 所有写入都在堆锁 (self.lock) 保护下进行, 保证独占访问.
     heap_end: UnsafeCell<VirtAddr>,
 
@@ -342,6 +342,8 @@ pub struct KernelHeap {
 //         所有访问由 IrqSpinLock + 内部原子锁保护.
 unsafe impl Send for KernelHeap {}
 
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 const EARLY_BUFFER_SIZE: usize = PAGE_SIZE as usize;
 
 impl KernelHeap {
@@ -393,6 +395,8 @@ impl KernelHeap {
     }
 
     /// 从内核堆分配内存
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn allocate(&self, size: usize) -> Option<*mut u8> {
         if size == 0 {
             return None;
@@ -404,45 +408,42 @@ impl KernelHeap {
 
         let flags = self.acquire_lock();
 
-        let result = if !self.initialized.load(Ordering::Acquire) {
-            self.early_allocate(actual_size as usize)
-        } else {
+        let result = if self.initialized.load(Ordering::Acquire) {
             self.allocate_first_fit(actual_size)
+        } else {
+            self.early_allocate(actual_size as usize)
         };
 
-        match result {
-            Some(ptr) => {
-                self.alloc_count.fetch_add(1, Ordering::Relaxed);
-                self.total_allocated
-                    .fetch_add(actual_size, Ordering::Relaxed);
-                let usage =
-                    self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
+        if let Some(ptr) = result {
+            self.alloc_count.fetch_add(1, Ordering::Relaxed);
+            self.total_allocated
+                .fetch_add(actual_size, Ordering::Relaxed);
+            let usage =
+                self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
 
-                let mut peak = self.peak_usage.load(Ordering::Relaxed);
-                while usage > peak {
-                    match self.peak_usage.compare_exchange_weak(
-                        peak,
-                        usage,
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => break,
-                        Err(p) => peak = p,
-                    }
+            let mut peak = self.peak_usage.load(Ordering::Relaxed);
+            while usage > peak {
+                match self.peak_usage.compare_exchange_weak(
+                    peak,
+                    usage,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(p) => peak = p,
                 }
+            }
 
-                self.release_lock(&flags);
-                Some(ptr)
-            }
-            None => {
-                self.failed_allocs.fetch_add(1, Ordering::Relaxed);
-                self.release_lock(&flags);
-                None
-            }
+            self.release_lock(&flags);
+            Some(ptr)
+        } else {
+            self.failed_allocs.fetch_add(1, Ordering::Relaxed);
+            self.release_lock(&flags);
+            None
         }
     }
 
-    /// 释放 k_malloc 之前分配的内存
+    /// 释放 `k_malloc` 之前分配的内存
     pub fn deallocate(&self, ptr: *mut u8) {
         if ptr.is_null() {
             return;
@@ -489,6 +490,8 @@ impl KernelHeap {
     }
 
     /// 重新分配内存块
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     pub fn reallocate(&self, ptr: *mut u8, size: usize) -> Option<*mut u8> {
         if size == 0 {
             self.deallocate(ptr);
@@ -519,31 +522,28 @@ impl KernelHeap {
         // 在持锁状态下分配新块, 防止 ptr 在复制完成前被释放
         let actual_size =
             (new_aligned as u64 + core::mem::size_of::<HeapHeader>() as u64).max(MIN_BLOCK_SIZE);
-        let new_ptr = match self.allocate_first_fit(actual_size) {
-            Some(p) => {
-                self.alloc_count.fetch_add(1, Ordering::Relaxed);
-                self.total_allocated
-                    .fetch_add(actual_size, Ordering::Relaxed);
-                let usage =
-                    self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
-                let mut peak = self.peak_usage.load(Ordering::Relaxed);
-                while usage > peak {
-                    match self.peak_usage.compare_exchange_weak(
-                        peak,
-                        usage,
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => break,
-                        Err(p) => peak = p,
-                    }
+        let new_ptr = if let Some(p) = self.allocate_first_fit(actual_size) {
+            self.alloc_count.fetch_add(1, Ordering::Relaxed);
+            self.total_allocated
+                .fetch_add(actual_size, Ordering::Relaxed);
+            let usage =
+                self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
+            let mut peak = self.peak_usage.load(Ordering::Relaxed);
+            while usage > peak {
+                match self.peak_usage.compare_exchange_weak(
+                    peak,
+                    usage,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(p) => peak = p,
                 }
-                p
             }
-            None => {
-                self.release_lock(&flags);
-                return None;
-            }
+            p
+        } else {
+            self.release_lock(&flags);
+            return None;
         };
 
         // SAFETY: ptr 是指向 old_data_size 字节的合法指针; new_ptr 是不重叠的
@@ -690,6 +690,8 @@ impl KernelHeap {
     }
 
     /// 将一个块拆分为两个
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn split_block(&self, header: HeaderRef, size: u64) {
         let original_size = header.size();
         let remaining = original_size - size;
@@ -718,6 +720,8 @@ impl KernelHeap {
         self.coalesce_backward(header)
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn coalesce_forward(&self, header: HeaderRef) {
         let next_addr = header.adjacent_next(header.size() as usize);
         // SAFETY: 读取 heap_end, 持有堆锁, 独占访问
@@ -732,6 +736,8 @@ impl KernelHeap {
         }
     }
 
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn coalesce_backward(&self, header: HeaderRef) -> HeaderRef {
         let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
         let mut current = head.get();
@@ -759,14 +765,14 @@ impl KernelHeap {
         let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
         let head_ptr = head.get();
 
-        if !head_ptr.is_null() {
+        if head_ptr.is_null() {
+            header.set_next(core::ptr::null_mut());
+        } else {
             // SAFETY: head_ptr 由 head.get() 返回, !is_null 分支说明 free_list_head
             // 指向当前 free list 的头部 (合法堆块, 由 add_to_free_list 调用者保证).
             let old_head = unsafe { HeaderRef::new_unchecked(head_ptr) };
             header.set_next(old_head.as_ptr());
             old_head.set_prev(header.as_ptr());
-        } else {
-            header.set_next(core::ptr::null_mut());
         }
         header.set_prev(core::ptr::null_mut());
         head.set(header.as_ptr());
@@ -778,13 +784,13 @@ impl KernelHeap {
         let next = header.next();
         let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
 
-        if !prev.is_null() {
+        if prev.is_null() {
+            head.set(next);
+        } else {
             // SAFETY: prev 由 header.prev() 返回, !is_null 分支说明 prev 指向
             // free list 上的合法堆块 (remove_from_free_list 调用方持有堆锁).
             let p = unsafe { HeaderRef::new_unchecked(prev) };
             p.set_next(next);
-        } else {
-            head.set(next);
         }
 
         if !next.is_null() {
@@ -798,6 +804,8 @@ impl KernelHeap {
     }
 
     /// 通过 VMM/PMM 申请更多页来扩展堆
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
     fn expand_heap(&self, size: u64) -> Option<*mut u8> {
         let pages_needed = size.div_ceil(PAGE_SIZE);
         let expand_by = pages_needed * PAGE_SIZE;

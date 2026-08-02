@@ -62,7 +62,7 @@ impl DomainId {
     }
 
     pub fn from_uid(uid: u32) -> Self {
-        DomainId(uid as u64)
+        DomainId(u64::from(uid))
     }
 
     pub fn to_uid(&self) -> u32 {
@@ -204,9 +204,9 @@ pub struct PwmEntry {
     pub privilege_level: AtomicU8,
     pub flags: AtomicU16,
     pub caps: [AtomicU64; 16],
-    /// 备注 (T4-1 全 Atomic 化: u8 数组 → AtomicU8 数组, 支持 &self 写入)
+    /// 备注 (T4-1 全 Atomic 化: u8 数组 → `AtomicU8` 数组, 支持 &self 写入)
     pub note: [AtomicU8; PWM_NOTE_LEN],
-    /// 密码哈希 (T4-1 全 Atomic 化: u8 数组 → AtomicU8 数组, 支持 &self 写入)
+    /// 密码哈希 (T4-1 全 Atomic 化: u8 数组 → `AtomicU8` 数组, 支持 &self 写入)
     pub password_hash: [AtomicU8; PWM_HASH_LEN],
     pub created_time: AtomicU64,
     pub expires_at: AtomicU64,
@@ -277,15 +277,15 @@ impl PwmEntry {
     }
 
     /// T4-1: 全 Atomic 化后此 API 行为变化.
-    /// 原因: [AtomicU8; N] 不能直接借用为 &[u8], 返回 owned &str 需要内部静态缓冲.
+    /// 原因: [`AtomicU8`; N] 不能直接借用为 &[u8], 返回 owned &str 需要内部静态缓冲.
     /// 当前实现: 返回静态空串占位. 推荐使用 `note_bytes()` 复制 + 自行转换.
     /// 兼容保留: 签名不变, 行为退化为"返回空串 (新值前为 None)". 调用方应迁移.
-    pub fn get_note_str(&self) -> &str {
+    pub fn get_note_str(&self) -> &'static str {
         // T4-1: 静态生命周期 &str, 仅占位 (此 API 已废弃, 推荐 note_bytes/note_equals)
         ""
     }
 
-    /// T4-1: 复制 note 到 owned 数组 (替代 get_note_str 的 &str 返回)
+    /// T4-1: 复制 note 到 owned 数组 (替代 `get_note_str` 的 &str 返回)
     pub fn note_bytes(&self) -> [u8; PWM_NOTE_LEN] {
         let mut buf = [0u8; PWM_NOTE_LEN];
         for (i, slot) in self.note.iter().enumerate() {
@@ -294,7 +294,7 @@ impl PwmEntry {
         buf
     }
 
-    /// T4-1: 全 Atomic 化后, set_note 改用原子字节写入, 接受 &self.
+    /// T4-1: 全 Atomic 化后, `set_note` 改用原子字节写入, 接受 &self.
     pub fn set_note(&self, note: &str) {
         let bytes = note.as_bytes();
         let len = bytes.len().min(PWM_NOTE_LEN - 1);
@@ -474,8 +474,8 @@ pub struct AuditEntry {
 
 pub(crate) mod raw {
     /// 字节切片 → &str (safe 版本)
-    /// 合法来源: set_note() 写入的字符串已经是合法 UTF-8。
-    /// T6-7: 从 from_utf8_unchecked 改为 from_utf8, 消除唯一 unsafe,
+    /// 合法来源: `set_note()` 写入的字符串已经是合法 UTF-8。
+    /// T6-7: 从 `from_utf8_unchecked` 改为 `from_utf8`, 消除唯一 unsafe,
     /// 使 types.rs 可迁移到 services 层.
     pub fn bytes_to_str(bytes: &[u8]) -> &str {
         core::str::from_utf8(bytes).unwrap_or("")
