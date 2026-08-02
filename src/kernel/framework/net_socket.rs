@@ -134,7 +134,7 @@ pub fn qx_net_init() {
 ///
 /// # Safety
 ///
-/// try_lock 保证 ISR 安全; 多个 poll 调用可重入。
+/// `try_lock` 保证 ISR 安全; 多个 poll 调用可重入。
 pub fn poll_network() {
     // SAFETY: try_lock 保证 ISR 安全
     unsafe { init::poll_network() }
@@ -144,7 +144,7 @@ pub fn poll_network() {
 ///
 /// # Safety
 ///
-/// 由 services 串行调用, NET_LOCK 由内核管理。
+/// 由 services 串行调用, `NET_LOCK` 由内核管理。
 pub fn qx_net_start_dhcp() -> i32 {
     // SAFETY: 串行调用, NET_LOCK 由内核管理
     unsafe { init::qx_net_start_dhcp() }
@@ -341,7 +341,7 @@ pub fn sm_poll_sockets() -> i32 {
 // 保持 services 0 unsafe.
 // ============================================================================
 
-/// SmoltcpNetStack::bind — POSIX bind 委托
+/// `SmoltcpNetStack::bind` — POSIX bind 委托
 ///
 /// # Safety
 ///
@@ -351,13 +351,13 @@ pub fn sm_net_bind(fd: i32, addr: *const u8, addrlen: u32) -> i32 {
     unsafe { init::sm_bind(fd, addr, addrlen) }
 }
 
-/// SmoltcpNetStack::listen — POSIX listen 委托
+/// `SmoltcpNetStack::listen` — POSIX listen 委托
 pub fn sm_net_listen(fd: i32, backlog: i32) -> i32 {
     // SAFETY: NET_LOCK 内部获取
     unsafe { init::sm_listen(fd, backlog) }
 }
 
-/// SmoltcpNetStack::accept — POSIX accept 委托
+/// `SmoltcpNetStack::accept` — POSIX accept 委托
 ///
 /// # Safety
 ///
@@ -367,7 +367,7 @@ pub fn sm_net_accept(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 {
     unsafe { init::sm_accept(fd, addr, addrlen) }
 }
 
-/// SmoltcpNetStack::connect — POSIX connect 委托
+/// `SmoltcpNetStack::connect` — POSIX connect 委托
 ///
 /// # Safety
 ///
@@ -377,7 +377,7 @@ pub fn sm_net_connect(fd: i32, addr: *const u8, addrlen: u32) -> i32 {
     unsafe { init::sm_connect(fd, addr, addrlen) }
 }
 
-/// SmoltcpNetStack::send — POSIX send 委托
+/// `SmoltcpNetStack::send` — POSIX send 委托
 ///
 /// # Safety
 ///
@@ -387,7 +387,7 @@ pub fn sm_net_send(fd: i32, buf: *const u8, len: u32, flags: i32) -> i32 {
     unsafe { init::sm_send(fd, buf, len, flags) }
 }
 
-/// SmoltcpNetStack::recv — POSIX recv 委托
+/// `SmoltcpNetStack::recv` — POSIX recv 委托
 ///
 /// # Safety
 ///
@@ -397,7 +397,7 @@ pub fn sm_net_recv(fd: i32, buf: *mut u8, len: u32, flags: i32) -> i32 {
     unsafe { init::sm_recv(fd, buf, len, flags) }
 }
 
-/// SmoltcpNetStack::sendto — POSIX sendto 委托
+/// `SmoltcpNetStack::sendto` — POSIX sendto 委托
 ///
 /// # Safety
 ///
@@ -414,7 +414,7 @@ pub fn sm_net_sendto(
     unsafe { init::sm_sendto(fd, buf, len, flags, dest_addr, addrlen) }
 }
 
-/// SmoltcpNetStack::recvfrom — POSIX recvfrom 委托
+/// `SmoltcpNetStack::recvfrom` — POSIX recvfrom 委托
 ///
 /// # Safety
 ///
@@ -431,7 +431,7 @@ pub fn sm_net_recvfrom(
     unsafe { init::sm_recvfrom(fd, buf, len, flags, src_addr, addrlen) }
 }
 
-/// SmoltcpNetStack::close — POSIX close 委托
+/// `SmoltcpNetStack::close` — POSIX close 委托
 pub fn sm_net_close(fd: i32) -> i32 {
     // SAFETY: sm_close 内部 NET_LOCK 串行化
     unsafe { init::sm_close(fd) }
@@ -441,12 +441,12 @@ pub fn sm_net_close(fd: i32) -> i32 {
 // SmoltcpNetStack 专属 safe wrapper (W4.2.3.4)
 // ============================================================================
 
-/// SmoltcpNetStack::close 的 safe wrapper — 关闭 SmoltcpNetStack 范围内的 socket.
+/// `SmoltcpNetStack::close` 的 safe wrapper — 关闭 `SmoltcpNetStack` 范围内的 socket.
 ///
 /// # Safety
 ///
 /// `slot_idx` 必须在 `[smoltcp_net_stack_slot_base(), TOTAL_SLOTS)` 范围内,
-/// 由 SmoltcpNetStack 调用方保证.
+/// 由 `SmoltcpNetStack` 调用方保证.
 #[cfg(not(feature = "kernel_test"))]
 pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
     // SAFETY: 内部持有 NET_LOCK, slot_idx 范围由调用方保证
@@ -461,7 +461,7 @@ pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
 ///
 /// # Safety
 ///
-/// 由 NET_LOCK 内部串行化.
+/// 由 `NET_LOCK` 内部串行化.
 pub fn sm_net_socket(domain: i32, sock_type: i32, protocol: i32) -> i32 {
     // SAFETY: 内部持有 NET_LOCK, 串行化
     unsafe { init::sm_socket(domain, sock_type, protocol) }
@@ -491,7 +491,7 @@ pub fn sm_net_getsockopt(fd: i32, level: i32, optname: i32, val: *mut u8, optlen
 ///
 /// # Safety
 ///
-/// 内部持有 NET_LOCK, ISR 安全.
+/// 内部持有 `NET_LOCK`, ISR 安全.
 pub fn sm_net_poll_sockets() -> i32 {
     // SAFETY: 内部持有 NET_LOCK, 串行化
     unsafe { init::sm_poll_sockets() }

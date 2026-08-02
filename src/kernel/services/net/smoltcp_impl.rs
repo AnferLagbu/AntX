@@ -43,8 +43,8 @@
 //! - [docs/plan/maintenance-cycle-2026-06-19.md] §9.5 REVAL-W 第 6 组
 
 use crate::kernel::framework::net::iface_trait::{
-    DhcpState, Ipv4Addr, NetConfig, NetEndpoint, NetError, NetStack, PollOutcome, Result,
-    SocketHandle, SocketKind,
+    DhcpState, IpAddr, Ipv4Addr, Ipv6Addr, NetConfig, NetEndpoint, NetError, NetStack, PollOutcome,
+    Result, SocketHandle, SocketKind,
 };
 use crate::kernel::framework::net_socket as fw_net_socket;
 // REVAL-W W4.2.3.4 步骤 3: 调用 framework::init 的 safe wrapper, 实现
@@ -81,17 +81,17 @@ pub const MAX_SOCKETS: usize = 32;
 ///
 /// ## 内存布局 (W4.2.3.4 变化)
 ///
-/// - `Some((u, h))` = 句柄已分配, u 是用户态 ID, h 是 smol_handle (u32,
-///   从 smoltcp::iface::SocketHandle 通过 transmute + as cast 提取)
+/// - `Some((u, h))` = 句柄已分配, u 是用户态 ID, h 是 `smol_handle` (u32,
+///   从 `smoltcp::iface::SocketHandle` 通过 transmute + as cast 提取)
 /// - `None` = 句柄槽位空闲
 ///
 /// ## 为什么从 `(u32, u16)` 改为 `(u32, u32)`
 ///
 /// 旧设计: smoltcp 句柄 = 槽位索引, 用 u16 即可
-/// 新设计: SmoltcpNetStack 范围 `[MAX_SM_FD, TOTAL_SLOTS)`, 实际
-/// smoltcp SocketHandle index 是 0..MAX_SOCKETS (≤ 1024) 用 u16 够.
-/// 但跨 crate 翻译 (framework → services) 用 u32 简化, 统一 smol_handle
-/// 表示 (无论 sm_socket 路径还是 SmoltcpNetStack 路径, smol_handle index
+/// 新设计: `SmoltcpNetStack` 范围 `[MAX_SM_FD, TOTAL_SLOTS)`, 实际
+/// smoltcp `SocketHandle` index 是 `0..MAX_SOCKETS` (≤ 1024) 用 u16 够.
+/// 但跨 crate 翻译 (framework → services) 用 u32 简化, 统一 `smol_handle`
+/// 表示 (无论 `sm_socket` 路径还是 `SmoltcpNetStack` 路径, `smol_handle` index
 /// 都用 u32 表达).
 type HandleSlot = Option<(u32, u32)>;
 
@@ -99,7 +99,7 @@ type HandleSlot = Option<(u32, u32)>;
 // SmoltcpNetStack
 // ============================================================================
 
-/// smoltcp 网络协议栈的 NetStack trait 实现 (W3.2 trait 骨架).
+/// smoltcp 网络协议栈的 `NetStack` trait 实现 (W3.2 trait 骨架).
 ///
 /// ## 不变式
 ///
@@ -107,12 +107,12 @@ type HandleSlot = Option<(u32, u32)>;
 /// 2. **类型擦除**: 内部用 u32 ID, 对外暴露 `SocketHandle`
 /// 3. **句柄幂等**: 重复 `socket_close` 不报错 (DECISION-025)
 /// 4. **DHCP 句柄独占**: dhcp socket 不可被用户关闭
-/// 5. **socket_open 失败回滚**: DECISION-027
+/// 5. **`socket_open` 失败回滚**: DECISION-027
 ///
 /// ## W3.2 字段说明
 ///
-/// - `config`: init() 时缓存, 后续只读
-/// - `handle_map`: 句柄槽位表, 容量 = MAX_SOCKETS
+/// - `config`: `init()` 时缓存, 后续只读
+/// - `handle_map`: 句柄槽位表, 容量 = `MAX_SOCKETS`
 /// - `next_user_id`: 下一个分配的 user 句柄 (u32, 0 = INVALID)
 /// - `dhcp_user_id`: DHCP socket 的 user 句柄 (若有)
 /// - `dhcp_state`: DHCP 状态缓存
@@ -120,8 +120,8 @@ type HandleSlot = Option<(u32, u32)>;
 ///
 /// ## W4 整合时的字段扩展
 ///
-/// W4 将在 SmoltcpNetStack 中添加 (在 init.rs 内部构造):
-/// - `sockets: SocketSet<'static>` (smoltcp SocketSet, 'static 借用)
+/// W4 将在 `SmoltcpNetStack` 中添加 (在 init.rs 内部构造):
+/// - `sockets: SocketSet<'static>` (smoltcp `SocketSet`, 'static 借用)
 /// - `device: Box<dyn smoltcp::phy::Device>` 或泛型 D
 /// - `interface: smoltcp::iface::Interface` (由 device + config 构造)
 ///
@@ -131,17 +131,17 @@ type HandleSlot = Option<(u32, u32)>;
 pub struct SmoltcpNetStack {
     config: NetConfig,
     handle_map: [HandleSlot; MAX_SOCKETS],
-    /// 通过 socket_create_fd 创建的活动 fd 集合.
+    /// 通过 `socket_create_fd` 创建的活动 fd 集合.
     ///
-    /// fd-based 方法 (bind_fd, listen_fd 等) 在操作前检查此集合,
-    /// 拒绝未通过 SmoltcpNetStack 创建的 fd, 防止越权访问.
+    /// fd-based 方法 (`bind_fd`, `listen_fd` 等) 在操作前检查此集合,
+    /// 拒绝未通过 `SmoltcpNetStack` 创建的 fd, 防止越权访问.
     active_fds: [bool; MAX_SOCKETS],
     next_user_id: u32,
-    /// 下一个 SmoltcpNetStack 专属范围的 smol 槽位索引 (W4.2.3.4 阶段新增).
+    /// 下一个 `SmoltcpNetStack` 专属范围的 smol 槽位索引 (W4.2.3.4 阶段新增).
     ///
-    /// SmoltcpNetStack 范围: `[MAX_SM_FD, TOTAL_SLOTS)` (由 framework
+    /// `SmoltcpNetStack` 范围: `[MAX_SM_FD, TOTAL_SLOTS)` (由 framework
     /// `init.rs` 静态数组大小决定, W4.2.3.1 阶段实装). 我们用相对索引
-    /// `[0, MAX_SOCKETS)` 简化 SmoltcpNetStack 内部逻辑, 实际 smol 槽位
+    /// `[0, MAX_SOCKETS)` 简化 `SmoltcpNetStack` 内部逻辑, 实际 smol 槽位
     /// 索引 = `MAX_SM_FD + next_smol_idx`.
     next_smol_idx: u16,
     dhcp_user_id: Option<u32>,
@@ -163,7 +163,7 @@ pub struct SmoltcpNetStack {
 }
 
 impl SmoltcpNetStack {
-    /// 构造一个未初始化的 SmoltcpNetStack 实例.
+    /// 构造一个未初始化的 `SmoltcpNetStack` 实例.
     pub fn new() -> Self {
         Self {
             config: NetConfig::empty(),
@@ -194,7 +194,7 @@ impl SmoltcpNetStack {
 
     /// 找空槽位.
     fn find_free_slot(&self) -> Option<usize> {
-        self.handle_map.iter().position(|slot| slot.is_none())
+        self.handle_map.iter().position(core::option::Option::is_none)
     }
 
     /// 分配下一个 user 句柄 ID.
@@ -212,7 +212,7 @@ impl SmoltcpNetStack {
         self.dhcp_user_id == Some(user_id)
     }
 
-    /// 从 handle_map 反查 framework 侧 fd (sm_* 函数使用的 fd).
+    /// 从 `handle_map` 反查 framework 侧 fd (sm_* 函数使用的 fd).
     fn handle_to_fd(&self, h: SocketHandle) -> Option<i32> {
         for (i, slot) in self.handle_map.iter().enumerate() {
             if let Some((u, _)) = slot {
@@ -226,19 +226,23 @@ impl SmoltcpNetStack {
 
     // ---- fd-based 便捷方法 (供 socket.rs 直接调用, 无需 SocketHandle 查找) ----
 
-    /// 检查 fd 是否由 SmoltcpNetStack 创建且仍处于活动状态.
+    /// 检查 fd 是否由 `SmoltcpNetStack` 创建且仍处于活动状态.
     fn is_active_fd(&self, fd: i32) -> bool {
         let idx = fd as usize;
         idx < MAX_SOCKETS && self.active_fds[idx]
     }
 
     /// 将 fd 绑定到本地端点.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非本栈创建或已关闭时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_bind` 失败时返回 `Err(NetError::Other)`。
     pub fn bind_fd(&self, fd: i32, addr: NetEndpoint) -> Result<()> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
         }
-        let sin = endpoint_to_sockaddr(addr);
-        let rc = fw_net_socket::sm_net_bind(fd, sin.as_ptr(), 16);
+        let (sin, addrlen) = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_bind(fd, sin.as_ptr(), addrlen);
         if rc == 0 {
             Ok(())
         } else {
@@ -247,6 +251,10 @@ impl SmoltcpNetStack {
     }
 
     /// 将 fd 置为监听状态.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_listen` 失败时返回 `Err(NetError::Other)`。
     pub fn listen_fd(&self, fd: i32, backlog: i32) -> Result<()> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
@@ -260,6 +268,10 @@ impl SmoltcpNetStack {
     }
 
     /// 从监听 fd 的已完成连接队列中取出一个新连接.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 当队列为空或底层 `sm_net_accept` 失败时返回 `Err(NetError::Other)`。
     pub fn accept_fd(&self, fd: i32) -> Result<i32> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
@@ -273,12 +285,16 @@ impl SmoltcpNetStack {
     }
 
     /// 发起 TCP 连接到远端端点.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_connect` 失败时返回 `Err(NetError::Other)`。
     pub fn connect_fd(&self, fd: i32, addr: NetEndpoint) -> Result<()> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
         }
-        let sin = endpoint_to_sockaddr(addr);
-        let rc = fw_net_socket::sm_net_connect(fd, sin.as_ptr(), 16);
+        let (sin, addrlen) = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_connect(fd, sin.as_ptr(), addrlen);
         if rc == 0 {
             Ok(())
         } else {
@@ -287,6 +303,10 @@ impl SmoltcpNetStack {
     }
 
     /// 向已连接的 fd 发送数据.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_send` 失败时返回 `Err(NetError::Other)`。
     pub fn send_fd(&self, fd: i32, buf: &[u8]) -> Result<usize> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
@@ -300,6 +320,10 @@ impl SmoltcpNetStack {
     }
 
     /// 从已连接的 fd 接收数据.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_recv` 失败时返回 `Err(NetError::Other)`。
     pub fn recv_fd(&self, fd: i32, buf: &mut [u8]) -> Result<usize> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
@@ -313,13 +337,17 @@ impl SmoltcpNetStack {
     }
 
     /// 向指定端点发送数据报 (UDP 主要场景).
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_sendto` 失败时返回 `Err(NetError::Other)`。
     pub fn sendto_fd(&self, fd: i32, buf: &[u8], addr: NetEndpoint) -> Result<usize> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
         }
-        let sin = endpoint_to_sockaddr(addr);
+        let (sin, addrlen) = endpoint_to_sockaddr(addr);
         let rc =
-            fw_net_socket::sm_net_sendto(fd, buf.as_ptr(), buf.len() as u32, 0, sin.as_ptr(), 16);
+            fw_net_socket::sm_net_sendto(fd, buf.as_ptr(), buf.len() as u32, 0, sin.as_ptr(), addrlen);
         if rc >= 0 {
             Ok(rc as usize)
         } else {
@@ -328,12 +356,16 @@ impl SmoltcpNetStack {
     }
 
     /// 接收数据报并获取来源端点信息 (UDP 主要场景).
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_recvfrom` 失败时返回 `Err(NetError::Other)`。
     pub fn recvfrom_fd(&self, fd: i32, buf: &mut [u8]) -> Result<(usize, NetEndpoint)> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
         }
-        let mut src = [0u8; 16];
-        let mut addrlen = 16u32;
+        let mut src = [0u8; 28];
+        let mut addrlen = 28u32;
         let rc = fw_net_socket::sm_net_recvfrom(
             fd,
             buf.as_mut_ptr(),
@@ -343,7 +375,7 @@ impl SmoltcpNetStack {
             &mut addrlen,
         );
         if rc >= 0 {
-            let ep = sockaddr_to_endpoint(&src).unwrap_or(NetEndpoint::UNSPECIFIED);
+            let ep = sockaddr_to_endpoint(&src[..addrlen as usize]).unwrap_or(NetEndpoint::UNSPECIFIED);
             Ok((rc as usize, ep))
         } else {
             Err(NetError::Other)
@@ -351,6 +383,10 @@ impl SmoltcpNetStack {
     }
 
     /// 关闭 fd, 并从活动集合中移除.
+    ///
+    /// # Errors
+    ///
+    /// 当底层 `sm_net_close` 失败时返回 `Err(NetError::Other)`。
     pub fn close_fd(&mut self, fd: i32) -> Result<()> {
         let idx = fd as usize;
         if idx < MAX_SOCKETS {
@@ -365,6 +401,10 @@ impl SmoltcpNetStack {
     }
 
     /// 通过 fd 设置 Socket 选项.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_setsockopt` 失败时返回 `Err(NetError::Other)`。
     pub fn setsockopt_fd(&self, fd: i32, level: i32, optname: i32, val: &[u8]) -> Result<()> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
@@ -378,6 +418,10 @@ impl SmoltcpNetStack {
     }
 
     /// 通过 fd 获取 Socket 选项.
+    ///
+    /// # Errors
+    ///
+    /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_getsockopt` 失败时返回 `Err(NetError::Other)`。
     pub fn getsockopt_fd(&self, fd: i32, level: i32, optname: i32, out: &mut [u8]) -> Result<usize> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
@@ -392,6 +436,10 @@ impl SmoltcpNetStack {
     }
 
     /// 轮询所有 fd 的 Socket 状态.
+    ///
+    /// # Errors
+    ///
+    /// 当底层 `sm_net_poll_sockets` 失败时返回 `Err(NetError::Other)`。
     pub fn poll_all_fd(&self) -> Result<()> {
         let rc = fw_net_socket::sm_net_poll_sockets();
         if rc >= 0 {
@@ -402,6 +450,10 @@ impl SmoltcpNetStack {
     }
 
     /// 通过 domain + type 创建 socket, 返回 fd.
+    ///
+    /// # Errors
+    ///
+    /// 当底层 `sm_net_socket` 创建失败 (如协议不支持或资源耗尽) 时返回 `Err(NetError::Other)`。
     pub fn socket_create_fd(&mut self, domain: i32, sock_type: i32) -> Result<i32> {
         let fd = fw_net_socket::sm_net_socket(domain, sock_type, 0);
         if fd >= 0 {
@@ -416,23 +468,55 @@ impl SmoltcpNetStack {
     }
 }
 
-/// NetEndpoint → sockaddr_in [u8; 16] (network byte order for port, little-endian struct layout).
-fn endpoint_to_sockaddr(ep: NetEndpoint) -> [u8; 16] {
-    let mut sin = [0u8; 16];
-    sin[0..2].copy_from_slice(&2u16.to_le_bytes()); // AF_INET = 2
-    sin[2..4].copy_from_slice(&ep.port.to_be_bytes()); // port in network byte order
-    sin[4..8].copy_from_slice(&ep.addr.octets());
-    sin
+/// `NetEndpoint` → sockaddr 字节 (V4: 16 字节 `sockaddr_in` / V6: 28 字节 `sockaddr_in6`).
+///
+/// 返回 (缓冲区, 实际长度). 端口网络字节序, 布局与 `sm_fi.rs` 的
+/// `SockaddrIn` / `SockaddrIn6` (`#[repr(C)]`) 一致.
+fn endpoint_to_sockaddr(ep: NetEndpoint) -> ([u8; 28], u32) {
+    let mut buf = [0u8; 28];
+    match ep.addr {
+        IpAddr::V4(v4) => {
+            buf[0..2].copy_from_slice(&2u16.to_le_bytes()); // AF_INET = 2
+            buf[2..4].copy_from_slice(&ep.port.to_be_bytes()); // port in network byte order
+            buf[4..8].copy_from_slice(&v4.octets());
+            (buf, 16)
+        }
+        IpAddr::V6(v6) => {
+            buf[0..2].copy_from_slice(&10u16.to_le_bytes()); // AF_INET6 = 10
+            buf[2..4].copy_from_slice(&ep.port.to_be_bytes()); // port in network byte order
+            buf[4..20].copy_from_slice(&v6.octets());
+            (buf, 28)
+        }
+    }
 }
 
-/// sockaddr_in [u8; 16] → NetEndpoint.
-fn sockaddr_to_endpoint(buf: &[u8; 16]) -> Option<NetEndpoint> {
-    if buf[0..2] != [2, 0] {
+/// sockaddr 字节 (V4: 16 / V6: 28) → `NetEndpoint`.
+///
+/// 按 family 分支: 2 (`AF_INET`) → V4, 10 (`AF_INET6`) → V6, 其余 None.
+fn sockaddr_to_endpoint(buf: &[u8]) -> Option<NetEndpoint> {
+    if buf.len() < 2 {
         return None;
     }
-    let port = u16::from_be_bytes([buf[2], buf[3]]);
-    let addr = Ipv4Addr::new(buf[4], buf[5], buf[6], buf[7]);
-    Some(NetEndpoint::new(addr, port))
+    match (buf[0], buf[1]) {
+        (2, 0) => {
+            if buf.len() < 8 {
+                return None;
+            }
+            let port = u16::from_be_bytes([buf[2], buf[3]]);
+            let addr = Ipv4Addr::new(buf[4], buf[5], buf[6], buf[7]);
+            Some(NetEndpoint::new_v4(addr, port))
+        }
+        (10, 0) => {
+            if buf.len() < 28 {
+                return None;
+            }
+            let port = u16::from_be_bytes([buf[2], buf[3]]);
+            let mut octets = [0u8; 16];
+            octets.copy_from_slice(&buf[4..20]);
+            Some(NetEndpoint::new_v6(Ipv6Addr::from_octets(octets), port))
+        }
+        _ => None,
+    }
 }
 
 impl Default for SmoltcpNetStack {
@@ -452,8 +536,8 @@ impl NetStack for SmoltcpNetStack {
     ///
     /// 1. 检查重复 init (DECISION-027)
     /// 2. 缓存配置
-    /// 3. 若 cfg.use_dhcp(), 分配 DHCP 句柄槽位 + 标记 Discovering 状态
-    /// 4. 若 cfg.static_ipv4 != None, 标记 Bound 状态
+    /// 3. 若 `cfg.use_dhcp()`, 分配 DHCP 句柄槽位 + 标记 Discovering 状态
+    /// 4. 若 `cfg.static_ipv4` != None, 标记 Bound 状态
     /// 5. 标记 initialized
     ///
     /// ## W3.2 不实装
@@ -508,7 +592,7 @@ impl NetStack for SmoltcpNetStack {
 
     /// 轮询协议栈.
     ///
-    /// 委托给 framework safe wrapper, 内部持有 NET_LOCK 并调用
+    /// 委托给 framework safe wrapper, 内部持有 `NET_LOCK` 并调用
     /// smoltcp `Interface::poll` + `process_dhcp_events`.
     fn poll(&mut self, ts_ms: u64) -> PollOutcome {
         if !self.initialized {
@@ -532,7 +616,7 @@ impl NetStack for SmoltcpNetStack {
     ///
     /// 不实际构造 smoltcp socket (需要 &mut device + 'static buffer).
     /// W3.2 返回 `Err(NetError::NotReady)`, 但**仍分配槽位** (跟踪句柄).
-    /// 这样 W5 的 transmute 移除就有了替代路径 (用 SocketHandle 而非 usize).
+    /// 这样 W5 的 transmute 移除就有了替代路径 (用 `SocketHandle` 而非 usize).
     ///
     /// ## W4 整合时的实装
     ///
@@ -639,8 +723,8 @@ impl NetStack for SmoltcpNetStack {
             return Err(NetError::NotReady);
         }
         let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
-        let sin = endpoint_to_sockaddr(addr);
-        let rc = fw_net_socket::sm_net_bind(fd, sin.as_ptr(), 16);
+        let (sin, addrlen) = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_bind(fd, sin.as_ptr(), addrlen);
         if rc == 0 {
             Ok(())
         } else {
@@ -672,14 +756,14 @@ impl NetStack for SmoltcpNetStack {
             return Err(NetError::NotReady);
         }
         let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
-        let mut addr_buf = [0u8; 16];
-        let mut addrlen = 16u32;
+        let mut addr_buf = [0u8; 28];
+        let mut addrlen = 28u32;
         let new_fd = fw_net_socket::sm_net_accept(fd, addr_buf.as_mut_ptr(), &mut addrlen);
         if new_fd < 0 {
             return Err(NetError::Other);
         }
         if let Some(ep) = peer {
-            if let Some(parsed) = sockaddr_to_endpoint(&addr_buf) {
+            if let Some(parsed) = sockaddr_to_endpoint(&addr_buf[..addrlen as usize]) {
                 *ep = parsed;
             }
         }
@@ -694,8 +778,8 @@ impl NetStack for SmoltcpNetStack {
             return Err(NetError::NotReady);
         }
         let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
-        let sin = endpoint_to_sockaddr(addr);
-        let rc = fw_net_socket::sm_net_connect(fd, sin.as_ptr(), 16);
+        let (sin, addrlen) = endpoint_to_sockaddr(addr);
+        let rc = fw_net_socket::sm_net_connect(fd, sin.as_ptr(), addrlen);
         if rc == 0 {
             Ok(())
         } else {
@@ -743,14 +827,14 @@ impl NetStack for SmoltcpNetStack {
             return Err(NetError::NotReady);
         }
         let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
-        let sin = endpoint_to_sockaddr(addr);
+        let (sin, addrlen) = endpoint_to_sockaddr(addr);
         let rc = fw_net_socket::sm_net_sendto(
             fd,
             buf.as_ptr(),
             buf.len() as u32,
             flags,
             sin.as_ptr(),
-            16,
+            addrlen,
         );
         if rc >= 0 {
             Ok(rc as usize)
@@ -771,8 +855,8 @@ impl NetStack for SmoltcpNetStack {
             return Err(NetError::NotReady);
         }
         let fd = self.handle_to_fd(h).ok_or(NetError::InvalidHandle)?;
-        let mut addr_buf = [0u8; 16];
-        let mut addrlen = 16u32;
+        let mut addr_buf = [0u8; 28];
+        let mut addrlen = 28u32;
         let rc = fw_net_socket::sm_net_recvfrom(
             fd,
             buf.as_mut_ptr(),
@@ -783,7 +867,7 @@ impl NetStack for SmoltcpNetStack {
         );
         if rc >= 0 {
             if let Some(ep) = src {
-                if let Some(parsed) = sockaddr_to_endpoint(&addr_buf) {
+                if let Some(parsed) = sockaddr_to_endpoint(&addr_buf[..addrlen as usize]) {
                     *ep = parsed;
                 }
             }
@@ -888,7 +972,7 @@ impl SmoltcpNetStack {
     /// ## 参数
     ///
     /// - `now_ms`: 当前协议栈时间 (ms)
-    /// - `lease_duration_ms`: 租期总长 (ms, 静态 IP 传 u64::MAX)
+    /// - `lease_duration_ms`: 租期总长 (ms, 静态 IP 传 `u64::MAX`)
     #[inline]
     pub fn record_dhcp_bound(&mut self, now_ms: u64, lease_duration_ms: u64) {
         self.dhcp_bound_at_ms = now_ms;
@@ -898,7 +982,7 @@ impl SmoltcpNetStack {
 
     /// 记录 DHCP 退出 Bound 状态 (Idle/Failed/Deconfigured).
     ///
-    /// 退出 Bound 时不清零 retry_count, 留给 `record_dhcp_retry` 自然推进.
+    /// 退出 Bound 时不清零 `retry_count`, 留给 `record_dhcp_retry` 自然推进.
     /// 退出 Bound 时清零 `dhcp_bound_at_ms` 和 `dhcp_lease_duration_ms`,
     /// 避免 stale 值影响后续策略决策.
     #[inline]
@@ -916,8 +1000,8 @@ impl SmoltcpNetStack {
     ///
     /// ## 调用方契约
     ///
-    /// `now_ms` 应来自统一的协议栈时间源 (e.g. hrtimer_clock_read / 1_000_000).
-    /// 协议栈时间在每次 record_dhcp_bound 时记录, 续约阈值基于此计算.
+    /// `now_ms` 应来自统一的协议栈时间源 (e.g. `hrtimer_clock_read` / `1_000_000`).
+    /// 协议栈时间在每次 `record_dhcp_bound` 时记录, 续约阈值基于此计算.
     #[inline]
     pub fn dhcp_decide_at(&self, now_ms: u64) -> DhcpAction {
         let elapsed_ms = if self.dhcp_bound_at_ms == 0 {
@@ -1663,7 +1747,7 @@ mod tests {
     #[test]
     fn test_fd_based_methods_reject_inactive() {
         let stack = SmoltcpNetStack::new();
-        let ep = NetEndpoint::new(Ipv4Addr::new(127, 0, 0, 1), 8080);
+        let ep = NetEndpoint::new_v4(Ipv4Addr::new(127, 0, 0, 1), 8080);
         // fd=1 未被 active_fds 标记, 所有 fd-based 方法应返回 InvalidHandle
         assert_eq!(stack.bind_fd(1, ep), Err(NetError::InvalidHandle));
         assert_eq!(stack.listen_fd(1, 128), Err(NetError::InvalidHandle));

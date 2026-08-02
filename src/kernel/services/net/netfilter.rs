@@ -202,6 +202,13 @@ static NF_STATE: IrqSpinLock<NfState> = IrqSpinLock::new(NfState {
 // 核心 API
 // ============================================================================
 
+/// 添加一条 netfilter 规则到指定 hook 点
+///
+/// 规则按 `priority` 升序插入, 供后续报文匹配使用。
+///
+/// # Errors
+///
+/// 当规则数量已达 `MAX_RULES` 上限时返回 `Err(-EINVAL)` (错误码 -22)。
 pub fn nf_add_rule(hook: NfHook, rule: NfRule) -> Result<(), i32> {
     let mut state = NF_STATE.lock();
     let idx = hook as usize;
@@ -216,6 +223,11 @@ pub fn nf_add_rule(hook: NfHook, rule: NfRule) -> Result<(), i32> {
     Ok(())
 }
 
+/// 删除指定 hook 点上指定名称的 netfilter 规则
+///
+/// # Errors
+///
+/// 当链中不存在名为 `name` 的规则时返回 `Err(-ENOENT)` (错误码 -2)。
 pub fn nf_del_rule(hook: NfHook, name: &str) -> Result<(), i32> {
     let mut state = NF_STATE.lock();
     let idx = hook as usize;
@@ -231,6 +243,11 @@ pub fn nf_del_rule(hook: NfHook, name: &str) -> Result<(), i32> {
     }
 }
 
+/// 在指定 hook 点注册一个回调函数 (按 priority 升序执行)
+///
+/// # Errors
+///
+/// 当该 hook 点注册的回调数量已达 `MAX_HOOKS_PER_POINT` 上限时返回 `Err(-ENOMEM)` (错误码 -12)。
 pub fn nf_register_hook(hook: NfHook, priority: i32, callback: NfHookFn) -> Result<(), i32> {
     let mut state = NF_STATE.lock();
     let idx = hook as usize;
@@ -245,6 +262,11 @@ pub fn nf_register_hook(hook: NfHook, priority: i32, callback: NfHookFn) -> Resu
     Ok(())
 }
 
+/// 从指定 hook 点注销一个已注册的回调函数
+///
+/// # Errors
+///
+/// 当该 hook 点上不存在与 `callback` 函数指针匹配的回调时返回 `Err(-ENOENT)` (错误码 -2)。
 pub fn nf_unregister_hook(hook: NfHook, callback: NfHookFn) -> Result<(), i32> {
     let mut state = NF_STATE.lock();
     let idx = hook as usize;
@@ -268,14 +290,14 @@ pub fn nf_hook(hook: NfHook, pkt: &NfPacketInfo) -> NfVerdict {
     let state = NF_STATE.lock();
     let chain = &state.chains[idx];
 
-    for entry in chain.hooks.iter() {
+    for entry in &chain.hooks {
         let verdict = (entry.callback)(hook, pkt);
         if verdict != NfVerdict::Accept {
             return verdict;
         }
     }
 
-    for rule in chain.rules.iter() {
+    for rule in &chain.rules {
         if rule.matches(pkt) {
             return rule.verdict;
         }
@@ -298,18 +320,38 @@ pub fn nf_list_rules(hook: NfHook) -> Vec<NfRule> {
 // 安全封装 API (保持原有调用方兼容)
 // ============================================================================
 
+/// 兼容旧调用方的 `add_rule` 封装, 委托给 [`nf_add_rule`]
+///
+/// # Errors
+///
+/// 当规则数量已达上限时返回 `Err(-EINVAL)` (错误码 -22)。
 pub fn add_rule(hook: NfHook, rule: NfRule) -> Result<(), i32> {
     nf_add_rule(hook, rule)
 }
 
+/// 兼容旧调用方的 `del_rule` 封装, 委托给 [`nf_del_rule`]
+///
+/// # Errors
+///
+/// 当指定名称的规则不存在时返回 `Err(-ENOENT)` (错误码 -2)。
 pub fn del_rule(hook: NfHook, name: &str) -> Result<(), i32> {
     nf_del_rule(hook, name)
 }
 
+/// 兼容旧调用方的 `register_hook` 封装, 委托给 [`nf_register_hook`]
+///
+/// # Errors
+///
+/// 当 hook 点回调数量已达上限时返回 `Err(-ENOMEM)` (错误码 -12)。
 pub fn register_hook(hook: NfHook, priority: i32, callback: NfHookFn) -> Result<(), i32> {
     nf_register_hook(hook, priority, callback)
 }
 
+/// 兼容旧调用方的 `unregister_hook` 封装, 委托给 [`nf_unregister_hook`]
+///
+/// # Errors
+///
+/// 当 hook 点上不存在匹配的回调时返回 `Err(-ENOENT)` (错误码 -2)。
 pub fn unregister_hook(hook: NfHook, callback: NfHookFn) -> Result<(), i32> {
     nf_unregister_hook(hook, callback)
 }
@@ -354,7 +396,7 @@ pub fn sys_nf_add_rule(hook: u64, src_ip: u64, src_prefix: u64, dst_ip: u64, dst
 
     match nf_add_rule(hook, rule) {
         Ok(()) => 0,
-        Err(e) => e as i64,
+        Err(e) => i64::from(e),
     }
 }
 
@@ -364,9 +406,9 @@ pub fn sys_nf_del_rule(hook: u64, rule_index: u64) -> i64 {
         None => return -(Errno::EINVAL as i64),
     };
 
-    let name = alloc::format!("rule_{}", rule_index);
+    let name = alloc::format!("rule_{rule_index}");
     match nf_del_rule(hook, &name) {
         Ok(()) => 0,
-        Err(e) => e as i64,
+        Err(e) => i64::from(e),
     }
 }

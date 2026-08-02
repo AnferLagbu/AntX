@@ -98,7 +98,7 @@ impl Default for DhcpPolicyConfig {
 /// 由 `SmoltcpNetStack::poll()` 调用, 传入当前状态 + 已重试次数 +
 /// 租期参数, 返回 Action. 协议栈按 Action 推进, 不再保留策略逻辑.
 ///
-/// ## 与 NetStack::dhcp_state 的区别
+/// ## 与 `NetStack::dhcp_state` 的区别
 ///
 /// - `dhcp_state`: 报告**当前**状态 (观察)
 /// - `dhcp_policy::decide`: 决定**下一步**动作 (策略)
@@ -133,9 +133,9 @@ pub trait DhcpPolicy {
 /// 行为:
 /// - Idle: 启动 Discover (返回 Continue, 协议栈进入 Discovering)
 /// - Discovering / Requesting 状态:
-///   - retry_count < max_retries: 继续 (Continue)
-///   - retry_count >= max_retries: 走 fallback (按 fallback_to_static 决定)
-/// - Bound { ipv4, lease_expires_at } 状态:
+///   - `retry_count` < `max_retries`: 继续 (Continue)
+///   - `retry_count` >= `max_retries`: 走 fallback (按 `fallback_to_static` 决定)
+/// - Bound { ipv4, `lease_expires_at` } 状态:
 ///   - elapsed < lease * t1: 继续 (无需续约)
 ///   - elapsed < lease * t2: 触发续约 (Renew)
 ///   - elapsed >= lease * t2: 给 0 容忍, 立刻触发 Rebind
@@ -176,8 +176,8 @@ impl DhcpPolicy for DefaultDhcpPolicy {
                     // 0 表示租期未知, 永不续约
                     return DhcpAction::Continue;
                 }
-                let t1_ms = (lease_duration_ms as u128 * policy_cfg.renew_t1_ratio as u128 / 10_000) as u64;
-                let t2_ms = (lease_duration_ms as u128 * policy_cfg.renew_t2_ratio as u128 / 10_000) as u64;
+                let t1_ms = (u128::from(lease_duration_ms) * u128::from(policy_cfg.renew_t1_ratio) / 10_000) as u64;
+                let t2_ms = (u128::from(lease_duration_ms) * u128::from(policy_cfg.renew_t2_ratio) / 10_000) as u64;
                 if elapsed_ms < t1_ms {
                     DhcpAction::Continue
                 } else if elapsed_ms < t2_ms {

@@ -53,15 +53,15 @@ pub enum WakeReason {
 /// 单 fd 的等待队列.
 ///
 /// 持锁时间: `try_lock` 命中 → O(1) 修改 `pending` 标记 → 释放.
-/// syscall 端 `wait_with_timeout`: 释放 NET_LOCK 后睡眠 10ms, 重抢 NET_LOCK.
+/// syscall 端 `wait_with_timeout`: 释放 `NET_LOCK` 后睡眠 10ms, 重抢 `NET_LOCK`.
 pub struct SocketWaitQueue {
     /// 当前 fd 上是否有等待者 (简化: 1 个, 多于 1 个也只标记一次)
     pending: AtomicBool,
     /// 累计 wake 次数 (供测试 / 调试使用)
     wake_count: AtomicU32,
-    /// 最近一次 wake 原因 (u8 repr of WakeReason)
+    /// 最近一次 wake 原因 (u8 repr of `WakeReason`)
     last_reason: AtomicU32,
-    /// ISR 端抢锁 (try_lock) 用的 mutex
+    /// ISR 端抢锁 (`try_lock`) 用的 mutex
     lock: Mutex<()>,
 }
 
@@ -75,13 +75,13 @@ impl SocketWaitQueue {
         }
     }
 
-    /// 标记当前 fd 已被 wait. 由 sm_send/sm_recv 在 Err 分支调用 (未来).
+    /// 标记当前 fd 已被 wait. 由 `sm_send/sm_recv` 在 Err 分支调用 (未来).
     /// 返回 true 表示之前未标记 (首次 wait).
     pub fn mark_waiting(&self) -> bool {
         !self.pending.swap(true, Ordering::AcqRel)
     }
 
-    /// ISR / poll 端: 状态变化时调用 wake. 必须 try_lock 避免阻塞.
+    /// ISR / poll 端: 状态变化时调用 wake. 必须 `try_lock` 避免阻塞.
     /// 返回 true 表示成功唤醒了至少一个等待者.
     pub fn try_wake(&self, reason: WakeReason) -> bool {
         let _guard = match self.lock.try_lock() {

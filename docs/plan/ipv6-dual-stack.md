@@ -28,7 +28,7 @@
   - 内存布局: enum 判别式 + V6 16 字节 = 24 字节 (vs Ipv4Addr 4 字节)
   - 实现 `From<Ipv4Addr>` / `From<Ipv6Addr>` for IpAddr, 便于向上转换
   - 实现 `match` 分支处理 (调用方需处理 V4/V6 两路)
-- **状态**: []
+- **状态**: [X]
 - **详情**:
   ```rust
   pub struct Ipv6Addr(pub [u8; 16]);
@@ -46,7 +46,7 @@
   - `NetListenEndpoint { addr: Option<Ipv4Addr>, port: u16 }` → `{ addr: Option<IpAddr>, port: u16 }`
   - 所有调用方一次性迁移 (match V4/V6 分支)
   - 提供迁移辅助: `Ipv4Addr::into_ip_addr()` / `NetEndpoint::new_v4()` / `NetEndpoint::new_v6()`
-- **状态**: []
+- **状态**: [X]
 - **详情**: 破坏性改造符合 QueenX "简单优先" (§15.2), 避免三类型并存导致的复杂度. 所有调用点在编译期暴露, 无运行时风险.
 
 ### D3: C ABI 兼容 — sockaddr_in6 结构体
@@ -56,7 +56,7 @@
   - 新增 `SockaddrIn6` (`#[repr(C)]`, 28 字节): sin6_family/sin6_port/sin6_flowinfo/sin6_addr/sin6_scope_id
   - `write_sockaddr_in` 改名为 `write_sockaddr`, 按 `IpAddr` 分支写入对应结构
   - `parse_ipv4_endpoint_trait` 改名为 `parse_endpoint_trait`, 按 family 分支 (2=AF_INET, 10=AF_INET6)
-- **状态**: []
+- **状态**: [X]
 - **详情**:
   ```rust
   #[repr(C)]
@@ -75,7 +75,7 @@
 - **方案**:
   - 在 `sm_socket` 中新增 `domain == 10` 分支
   - 句柄表中区分 V4/V6 socket (或使用统一句柄 + 运行时 family 字段)
-- **状态**: []
+- **状态**: [X]
 - **详情**: smoltcp 的 `tcp::Socket` / `udp::Socket` 本身支持 IPv6, 无需在 smoltcp 层区分. QueenX 仅需在 FFI 层正确解析 sockaddr_in6 并转换为 `IpEndpoint` (smoltcp wire 类型).
 
 ---
@@ -91,7 +91,7 @@
   - `enum IpAddr { V4(Ipv4Addr), V6(Ipv6Addr) }` + `is_v4`/`is_v6`/`as_v4`/`as_v6`
   - `Ipv6Cidr { address, prefix_len }` (0-128)
   - 实现 `From`/`Into` 转换 (`Ipv4Addr` → `IpAddr`, `Ipv6Addr` → `IpAddr`)
-- **状态**: []
+- **状态**: [X]
 - **验证**: host-tests 新增 `Ipv6Addr` / `IpAddr` 单元测试 (构造/转换/match)
 
 ### Phase 2: NetEndpoint 破坏性改造
@@ -103,7 +103,7 @@
   - `NetListenEndpoint { addr: Option<Ipv4Addr>, port }` → `{ addr: Option<Ipv4Addr>, port }` (保留 V4 通配, 或改为 `Option<IpAddr>`)
   - 新增 `NetEndpoint::new_v4(addr: Ipv4Addr, port)` / `new_v6(addr: Ipv6Addr, port)` 辅助构造
   - 所有 `NetEndpoint.addr.octets()` 调用改为 `match addr { V4(v) => v.octets(), V6(v) => v.octets() }`
-- **状态**: []
+- **状态**: [X]
 - **验证**: 双架构 release 编译通过 (所有调用点编译期暴露)
 
 ### Phase 3: FFI 翻译层改造 (sm_fi.rs)
@@ -114,7 +114,7 @@
   - `endpoint_to_smol(e: NetEndpoint) -> IpEndpoint`: match `e.addr` → `IpAddress::Ipv4(v4)` / `IpAddress::Ipv6(v6)`
   - `endpoint_from_smol(ep: IpEndpoint) -> Option<NetEndpoint>`: match `ep.addr` → V4 路径保留 / V6 路径新增
   - `wire_to_smol_v4` 改名为 `wire_to_smol`, 接受 `IpAddr` 返回 `IpAddress`
-- **状态**: []
+- **状态**: [X]
 
 - **条目**: `write_sockaddr` / `parse_endpoint_trait` 支持 V4/V6
 - **描述**: C ABI 写入/解析支持 sockaddr_in6
@@ -122,7 +122,7 @@
   - `write_sockaddr_in` 改名 `write_sockaddr`, 接受 `IpAddr` 分支写入 sockaddr_in / sockaddr_in6
   - `parse_ipv4_endpoint_trait` 改名 `parse_endpoint_trait`, 按 family 分支 (2/10)
   - 新增 `SockaddrIn6` 结构 (28 字节, `#[repr(C)]`)
-- **状态**: []
+- **状态**: [X]
 
 ### Phase 4: sm_socket 与 syscall 层支持 AF_INET6
 
@@ -132,14 +132,14 @@
   - `sm_socket(domain, sock_type, protocol)` 新增 `domain == 10` 分支
   - 创建相同 smoltcp tcp/udp socket (smoltcp 层不区分 family)
   - 句柄表中记录 family (用于后续 bind/connect 的 sockaddr 解析)
-- **状态**: []
+- **状态**: [X]
 
 - **条目**: `sm_bind` / `sm_connect` / `sm_sendto` / `sm_recvfrom` / `sm_accept` 支持 V4/V6
 - **描述**: 所有 syscall 路径按 family 分支解析 sockaddr
 - **方案**:
   - 调用 `parse_endpoint_trait` (自动按 family 分支)
   - 调用 `write_sockaddr` (自动按 IpAddr 分支)
-- **状态**: []
+- **状态**: [X]
 
 ### Phase 5: 实现层 (SmoltcpNetStack) 适配
 
@@ -149,7 +149,7 @@
   - 接受 `NetEndpoint` (内含 `IpAddr`)
   - 转换为 smoltcp `IpEndpoint` via `endpoint_to_smol`
   - 调用 smoltcp socket.bind/connect (smoltcp 层已支持 V6)
-- **状态**: []
+- **状态**: [X]
 
 ### Phase 6: DHCPv6 / SLAAC (可选, 远期)
 
@@ -168,7 +168,7 @@
 - **方案**:
   - 现有 Ipv4 路由表结构扩展为 `enum IpCidr { V4(Ipv4Cidr), V6(Ipv6Cidr) }`
   - 路由查询按 family 分发
-- **状态**: []
+- **状态**: [X]
 
 ### Phase 8: 测试覆盖
 
@@ -178,7 +178,7 @@
   - `ipv6_addr_test.rs`: Ipv6Addr 构造/转换/match
   - `sockaddr_in6_test.rs`: SockaddrIn6 布局/字节序/family=10
   - `dual_stack_socket_test.rs`: V4/V6 双栈 socket 行为
-- **状态**: []
+- **状态**: [X]
 
 ---
 
@@ -232,3 +232,4 @@
 ## 状态记录
 
 - **2026-08-01**: 创建文档, 完成 DECISION-032 (D1-D4) 设计决策. Phase 1-8 全部 `[]` 未实施.
+- **2026-08-02**: 实施完成 Phase 1-5 + 7-8 (D1-D4 + Phase 1/2/3/4/5/7/8 全部 `[X]`). Phase 6 (DHCPv6/SLAAC) 保持 `[]` 远期. 验证: 双架构编译 0 error/0 warning, 四项审计通过, host-tests 838 passed/0 failed (含新增 net_ipv6_addr_test / net_sockaddr_in6_test / net_dual_stack_socket_test 19 项).

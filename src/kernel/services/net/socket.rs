@@ -8,7 +8,7 @@
 //! - [x] send/recv (TCP 字节流)
 //! - [x] sendto/recvfrom (UDP 数据报)
 //! - [x] 关闭/设置选项/获取选项 (close/setsockopt/getsockopt)
-//! - [x] poll_sockets
+//! - [x] `poll_sockets`
 //!
 //! ## 迁移方法
 //!
@@ -37,7 +37,7 @@ pub use crate::kernel::services::error::KernelError as SocketError;
 /// services 层结果类型
 pub type SocketResult<T> = Result<T, SocketError>;
 
-/// 将 framework 层的 NetError 精确映射为 KernelError
+/// 将 framework 层的 `NetError` 精确映射为 `KernelError`
 fn map_net_error(e: crate::kernel::framework::net::iface_trait::NetError) -> SocketError {
     use crate::kernel::framework::net::iface_trait::NetError;
     match e {
@@ -63,6 +63,8 @@ pub enum Domain {
     Unix = 1,
     /// IPv4 (`AF_INET = 2`)
     Inet = 2,
+    /// IPv6 (`AF_INET6 = 10`) — 双栈 (DECISION-032)
+    Inet6 = 10,
 }
 
 impl Domain {
@@ -70,6 +72,7 @@ impl Domain {
         match d {
             1 => Some(Self::Unix),
             2 => Some(Self::Inet),
+            10 => Some(Self::Inet6),
             _ => None,
         }
     }
@@ -115,6 +118,10 @@ impl SockAddrIn {
 /// POSIX `socket(domain, type, protocol)`
 ///
 /// 成功返回新 socket 的 FD, 失败返回 `SocketError`。
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; 协议不支持或资源耗尽等底层创建失败时返回对应的 `SocketError`。
 pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResult<i32> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let mut s = s.lock();
@@ -123,14 +130,22 @@ pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResu
 }
 
 /// POSIX `bind(fd, addr, addrlen)`
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效、地址非法或地址已被占用等底层错误被映射为对应的 `SocketError`。
 pub fn bind(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
-    let ep = NetEndpoint::new(Ipv4Addr::from_octets(addr.ip), addr.port);
+    let ep = NetEndpoint::new_v4(Ipv4Addr::from_octets(addr.ip), addr.port);
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
     s.bind_fd(fd, ep).map_err(map_net_error)
 }
 
 /// POSIX `listen(fd, backlog)`
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 未绑定或非流式 socket 等底层错误被映射为对应的 `SocketError`。
 pub fn listen(fd: i32, backlog: i32) -> SocketResult<()> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
@@ -138,6 +153,10 @@ pub fn listen(fd: i32, backlog: i32) -> SocketResult<()> {
 }
 
 /// POSIX `accept(fd, addr, addrlen)` — 返回新连接的 FD
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 非监听状态或完成队列为空等底层错误被映射为对应的 `SocketError`。
 pub fn accept(fd: i32) -> SocketResult<i32> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
@@ -145,14 +164,22 @@ pub fn accept(fd: i32) -> SocketResult<i32> {
 }
 
 /// POSIX `connect(fd, addr, addrlen)`
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效或连接失败等底层错误被映射为对应的 `SocketError`。
 pub fn connect(fd: i32, addr: &SockAddrIn) -> SocketResult<()> {
-    let ep = NetEndpoint::new(Ipv4Addr::from_octets(addr.ip), addr.port);
+    let ep = NetEndpoint::new_v4(Ipv4Addr::from_octets(addr.ip), addr.port);
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
     s.connect_fd(fd, ep).map_err(map_net_error)
 }
 
 /// POSIX `send(fd, buf, len, flags)` → 实际发送字节数
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 非活动 socket 或发送失败等底层错误被映射为对应的 `SocketError`。
 pub fn send(fd: i32, buf: &[u8]) -> SocketResult<usize> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
@@ -162,6 +189,10 @@ pub fn send(fd: i32, buf: &[u8]) -> SocketResult<usize> {
 /// POSIX `recv(fd, buf, len, flags)` → 实际接收字节数
 ///
 /// 写入 `out` 切片, 返回字节数; `WouldBlock` 表示无数据可读。
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效或接收失败 (含无数据可读时的 `WouldBlock`) 等底层错误被映射为对应的 `SocketError`。
 pub fn recv(fd: i32, out: &mut [u8]) -> SocketResult<usize> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
@@ -169,23 +200,39 @@ pub fn recv(fd: i32, out: &mut [u8]) -> SocketResult<usize> {
 }
 
 /// POSIX `sendto(fd, buf, len, flags, dest_addr, addrlen)`
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效或发送失败等底层错误被映射为对应的 `SocketError`。
 pub fn sendto(fd: i32, buf: &[u8], dest: &SockAddrIn) -> SocketResult<usize> {
-    let ep = NetEndpoint::new(Ipv4Addr::from_octets(dest.ip), dest.port);
+    let ep = NetEndpoint::new_v4(Ipv4Addr::from_octets(dest.ip), dest.port);
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
     s.sendto_fd(fd, buf, ep).map_err(map_net_error)
 }
 
 /// POSIX `recvfrom(fd, buf, len, flags, src_addr, addrlen)` → (字节数, 源地址)
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效或接收失败等底层错误被映射为对应的 `SocketError`; 源地址非 IPv4 时返回 `SocketError::AddrFamilyNotSupported`。
 pub fn recvfrom(fd: i32, out: &mut [u8]) -> SocketResult<(usize, SockAddrIn)> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();
     let (n, ep) = s.recvfrom_fd(fd, out).map_err(map_net_error)?;
-    let addr = SockAddrIn::new(ep.port, ep.addr.octets());
+    // 当前 services 层 SockAddrIn 仅承载 IPv4; IPv6 源地址在 Phase 4 引入 sockaddr_in6 后支持
+    let addr = match ep.addr.as_v4() {
+        Some(v4) => SockAddrIn::new(ep.port, v4.octets()),
+        None => return Err(SocketError::AddrFamilyNotSupported),
+    };
     Ok((n, addr))
 }
 
 /// POSIX `close(fd)`
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效或底层关闭失败时返回对应的 `SocketError`。
 pub fn close(fd: i32) -> SocketResult<()> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let mut s = s.lock();
@@ -195,9 +242,13 @@ pub fn close(fd: i32) -> SocketResult<()> {
 /// POSIX `setsockopt(fd, level, optname, optval, optlen)`
 ///
 /// # 参数
-/// - `level`: 协议层 (e.g. `1` = SOL_SOCKET)
+/// - `level`: 协议层 (e.g. `1` = `SOL_SOCKET`)
 /// - `optname`: 选项名
 /// - `val`: 选项值 (u32)
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效或选项不被支持等底层错误被映射为对应的 `SocketError`。
 pub fn setsockopt(fd: i32, level: i32, optname: i32, val: u32) -> SocketResult<()> {
     let val_bytes = val.to_ne_bytes();
     let s = net_stack().ok_or(SocketError::NotReady)?;
@@ -207,6 +258,10 @@ pub fn setsockopt(fd: i32, level: i32, optname: i32, val: u32) -> SocketResult<(
 }
 
 /// POSIX `getsockopt(fd, level, optname, optval, optlen)` → u32
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; `fd` 无效或底层 `getsockopt` 失败时返回对应的 `SocketError`。
 pub fn getsockopt(fd: i32, level: i32, optname: i32) -> SocketResult<u32> {
     let mut buf = [0u8; 4];
     let s = net_stack().ok_or(SocketError::NotReady)?;
@@ -219,6 +274,10 @@ pub fn getsockopt(fd: i32, level: i32, optname: i32) -> SocketResult<u32> {
 /// 轮询所有 socket (驱动事件分发)
 ///
 /// 由 timer ISR 或专用网络任务周期性调用。
+///
+/// # Errors
+///
+/// 当网络栈尚未就绪时返回 `SocketError::NotReady`; 底层轮询失败时返回对应的 `SocketError`。
 pub fn poll_all() -> SocketResult<i32> {
     let s = net_stack().ok_or(SocketError::NotReady)?;
     let s = s.lock();

@@ -1,6 +1,6 @@
 //! smoltcp 网络协议栈集成模块
 //!
-//! 实现 smoltcp 的 `Device` trait, 通过 Chitin NetOps 驱动任意网卡。
+//! 实现 smoltcp 的 `Device` trait, 通过 Chitin `NetOps` 驱动任意网卡。
 //! 不依赖具体驱动类型 (E1000 / Virtio-Net)。
 //!
 //! ## 架构
@@ -123,7 +123,7 @@ impl Device for ChitinNetDevice {
     }
 }
 
-impl<'a> RxToken for ChitinRxToken<'a> {
+impl RxToken for ChitinRxToken<'_> {
     fn consume<R, F>(self, f: F) -> R
     where
         F: FnOnce(&[u8]) -> R,
@@ -132,7 +132,7 @@ impl<'a> RxToken for ChitinRxToken<'a> {
     }
 }
 
-impl<'a> TxToken for ChitinTxToken<'a> {
+impl TxToken for ChitinTxToken<'_> {
     fn consume<R, F>(self, len: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,

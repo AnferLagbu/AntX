@@ -1,20 +1,20 @@
 //! Socket FFI 公共 API (sm_* 函数)
 //!
 //! 从 init.rs 拆分, 集中 POSIX socket FFI 实现:
-//! sm_socket、sm_bind、sm_listen、sm_accept、sm_connect、sm_send、
-//! sm_recv、sm_sendto、sm_recvfrom、sm_sendmsg、sm_recvmsg、sm_close、
-//! sm_setsockopt、sm_getsockopt、sm_getsockname、sm_getpeername、
-//! sm_poll_sockets 等函数.
+//! `sm_socket、sm_bind、sm_listen、sm_accept、sm_connect、sm_send`、
+//! `sm_recv、sm_sendto、sm_recvfrom、sm_sendmsg、sm_recvmsg、sm_close`、
+//! `sm_setsockopt、sm_getsockopt、sm_getsockname、sm_getpeername`、
+//! `sm_poll_sockets` 等函数.
 //!
 //! ## 依赖
 //!
-//! 通过 `use super::*` 访问 init.rs 的私有项 (NET_STATE, raw 模块, socket_set,
-//! parse_ipv4_endpoint 等). Rust 模块系统允许子模块访问父模块所有项.
+//! 通过 `use super::*` 访问 init.rs 的私有项 (`NET_STATE`, raw 模块, `socket_set`,
+//! `parse_endpoint` 等). Rust 模块系统允许子模块访问父模块所有项.
 
-use super::*;
+use super::{is_network_initialized, NET_STATE, MAX_SM_FD, raw, get_max_sockets, socket_set, Ordering, process_dhcp_events};
 use crate::kernel::services::net::unix as uds_svc;
 use smoltcp::socket::{tcp, udp};
-use smoltcp::wire::{IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address};
+use smoltcp::wire::{IpEndpoint, IpListenEndpoint, IpAddress, Ipv4Address, Ipv6Address};
 
 // ============================================================================
 // POSIX errno 常量 (i32)
@@ -49,11 +49,18 @@ const E_NODEV: i32 = 19;
 //   qemu_net_skel / update_ip_addrs 等 framework 内部使用.
 // ============================================================================
 
-/// 把 trait 抽象的 `Ipv4Addr` 翻译成 smoltcp 的 `Ipv4Address`.
+/// 把 trait 抽象的 `IpAddr` 翻译成 smoltcp 的 `IpAddress` (双栈, DECISION-032).
 #[inline(always)]
-pub(crate) fn wire_to_smol_v4(a: crate::kernel::framework::net::iface_trait::Ipv4Addr) -> Ipv4Address {
-    let o = a.octets();
-    Ipv4Address::new(o[0], o[1], o[2], o[3])
+pub(crate) fn wire_to_smol(a: crate::kernel::framework::net::iface_trait::IpAddr) -> IpAddress {
+    match a {
+        crate::kernel::framework::net::iface_trait::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            IpAddress::Ipv4(Ipv4Address::new(o[0], o[1], o[2], o[3]))
+        }
+        crate::kernel::framework::net::iface_trait::IpAddr::V6(v6) => {
+            IpAddress::Ipv6(Ipv6Address::from_octets(v6.octets()))
+        }
+    }
 }
 
 /// 把 trait 抽象的 `NetEndpoint` 翻译成 smoltcp 的 `IpEndpoint`.
@@ -62,7 +69,7 @@ pub(crate) fn endpoint_to_smol(
     e: crate::kernel::framework::net::iface_trait::NetEndpoint,
 ) -> IpEndpoint {
     IpEndpoint {
-        addr: IpAddress::Ipv4(wire_to_smol_v4(e.addr)),
+        addr: wire_to_smol(e.addr),
         port: e.port,
     }
 }
@@ -72,24 +79,30 @@ pub(crate) fn endpoint_from_smol(
     ep: IpEndpoint,
 ) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> {
     match ep.addr {
-        IpAddress::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new(
+        IpAddress::Ipv4(v4) => Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new_v4(
             crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(v4.octets()),
             ep.port,
         )),
-        _ => None,
+        IpAddress::Ipv6(v6) => Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new_v6(
+            crate::kernel::framework::net::iface_trait::Ipv6Addr::from_octets(v6.octets()),
+            ep.port,
+        )),
     }
 }
 
-/// 将 `NetEndpoint` 写入 sockaddr_in C 结构体 (供 recvfrom/accept 返回对端地址).
+/// 将 `NetEndpoint` 写入 sockaddr C 结构体 (供 recvfrom/getsockname/getpeername 返回地址).
 ///
+/// 双栈 (DECISION-032): V4 写 `SockaddrIn` (16 字节), V6 写 `SockaddrIn6` (28 字节).
 /// 调用方提供 `addr` 指针与 `addrlen` 指针:
 /// - `addr` 为 NULL: 跳过写入 (调用方不关心对端地址)
 /// - `addrlen` 为 NULL: 仅写 addr, 不回写长度
-/// - 正常情况: 写入 sockaddr_in 并将 addrlen 更新为 sizeof(sockaddr_in) = 16
+/// - 正常情况: 写入 sockaddr 并将 addrlen 更新为实际结构体大小 (16 / 28)
 ///
 /// # Safety
-/// `addr` 非空时必须指向至少 16 字节可写内存; `addrlen` 非空时必须指向有效 u32.
-pub(crate) unsafe fn write_sockaddr_in(
+/// `addr` 非空时必须指向至少 28 字节可写内存 (V6 路径); `addrlen` 非空时必须指向有效 u32.
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
+pub(crate) unsafe fn write_sockaddr(
     addr: *mut u8,
     addrlen: *mut u32,
     ep: &crate::kernel::framework::net::iface_trait::NetEndpoint,
@@ -97,16 +110,32 @@ pub(crate) unsafe fn write_sockaddr_in(
     if addr.is_null() {
         return;
     }
-    let octets = ep.addr.octets();
-    let sin = SockaddrIn {
-        sin_family: 2, // AF_INET
-        sin_port: ep.port.to_be(),
-        sin_addr: octets,
-        sin_zero: [0; 8],
-    };
-    core::ptr::write(addr as *mut SockaddrIn, sin);
-    if !addrlen.is_null() {
-        core::ptr::write(addrlen, 16);
+    match ep.addr {
+        crate::kernel::framework::net::iface_trait::IpAddr::V4(v4) => {
+            let sin = SockaddrIn {
+                sin_family: 2, // AF_INET
+                sin_port: ep.port.to_be(),
+                sin_addr: v4.octets(),
+                sin_zero: [0; 8],
+            };
+            core::ptr::write(addr as *mut SockaddrIn, sin);
+            if !addrlen.is_null() {
+                core::ptr::write(addrlen, core::mem::size_of::<SockaddrIn>() as u32);
+            }
+        }
+        crate::kernel::framework::net::iface_trait::IpAddr::V6(v6) => {
+            let sin6 = SockaddrIn6 {
+                sin6_family: 10, // AF_INET6
+                sin6_port: ep.port.to_be(),
+                sin6_flowinfo: 0,
+                sin6_addr: v6.octets(),
+                sin6_scope_id: 0,
+            };
+            core::ptr::write(addr as *mut SockaddrIn6, sin6);
+            if !addrlen.is_null() {
+                core::ptr::write(addrlen, core::mem::size_of::<SockaddrIn6>() as u32);
+            }
+        }
     }
 }}
 
@@ -118,40 +147,69 @@ struct SockaddrIn {
     sin_zero: [u8; 8],
 }
 
-/// 从 sockaddr_in C 结构体解析 IPv4 端点 (W4.4 trait 翻译版本).
+/// POSIX `sockaddr_in6` (28 字节, `#[repr(C)]`, 与 Linux 布局一致).
+#[repr(C)]
+struct SockaddrIn6 {
+    sin6_family: u16,
+    sin6_port: u16,
+    sin6_flowinfo: u32,
+    sin6_addr: [u8; 16],
+    sin6_scope_id: u32,
+}
+
+/// 从 sockaddr C 结构体解析端点 (W4.4 trait 翻译版本, 双栈).
+///
+/// 按 `sin_family` 分支: 2 (`AF_INET`) → `SockaddrIn` → V4 端点;
+/// 10 (`AF_INET6`) → `SockaddrIn6` → V6 端点; 其余族返回 None.
 ///
 /// 解析后**先**填充 trait 抽象的 `NetEndpoint`, 调用方按需通过
 /// `endpoint_to_smol()` 翻译回 smoltcp `IpEndpoint`. 这一层翻译是
 /// W4.4 目标: 让 sock 路径不直接持有 smoltcp wire 类型.
 ///
 /// # Safety
-/// `addr` 必须指向有效的 `SockaddrIn` 结构体, 至少含 8 字节已初始化。
-pub(crate) unsafe fn parse_ipv4_endpoint_trait(
+/// `addr` 必须指向有效的 sockaddr 结构体, 至少含对应族所需的已初始化字节。
+pub(crate) unsafe fn parse_endpoint_trait(
     addr: *const u8,
 ) -> Option<crate::kernel::framework::net::iface_trait::NetEndpoint> { unsafe {
     if addr.is_null() {
         return None;
     }
-    let sin = &*(addr as *const SockaddrIn);
-    if sin.sin_family != 2 {
-        return None;
+    // 读取族字段 (前 2 字节, 主机字节序)
+    let family = core::ptr::read_unaligned(addr as *const u16);
+    match family {
+        2 => {
+            let sin = &*(addr as *const SockaddrIn);
+            let octets = sin.sin_addr;
+            let port = u16::from_be(sin.sin_port);
+            Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new_v4(
+                crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(octets),
+                port,
+            ))
+        }
+        10 => {
+            let sin6 = &*(addr as *const SockaddrIn6);
+            let octets = sin6.sin6_addr;
+            let port = u16::from_be(sin6.sin6_port);
+            Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new_v6(
+                crate::kernel::framework::net::iface_trait::Ipv6Addr::from_octets(octets),
+                port,
+            ))
+        }
+        _ => None,
     }
-    let octets = sin.sin_addr;
-    let port = u16::from_be(sin.sin_port);
-    Some(crate::kernel::framework::net::iface_trait::NetEndpoint::new(
-        crate::kernel::framework::net::iface_trait::Ipv4Addr::from_octets(octets),
-        port,
-    ))
 }}
 
-/// 旧版 `parse_ipv4_endpoint` 包装, 保持向后兼容 (smoltcp wire 类型返回).
+/// 从 sockaddr C 结构体解析端点为 smoltcp `IpEndpoint` (双栈, DECISION-032).
 ///
-/// 内部走 trait 翻译路径, 调用方应优先改用 `parse_ipv4_endpoint_trait`.
+/// 与 `parse_endpoint_trait` 的区别: 本函数返回 smoltcp wire 类型 `IpEndpoint`,
+/// 供 `sm_bind`/`sm_connect`/`sm_sendto` 直接传给 smoltcp socket API;
+/// `parse_endpoint_trait` 返回 trait 抽象 `NetEndpoint`, 供上层 (services) 使用.
+/// 两者按 `sin_family` 分支逻辑相同 (2=AF_INET / 10=AF_INET6).
 ///
 /// # Safety
-/// 同 `parse_ipv4_endpoint_trait`.
-pub(crate) unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> { unsafe {
-    parse_ipv4_endpoint_trait(addr).map(endpoint_to_smol)
+/// 同 `parse_endpoint_trait`.
+pub(crate) unsafe fn parse_endpoint(addr: *const u8) -> Option<IpEndpoint> { unsafe {
+    parse_endpoint_trait(addr).map(endpoint_to_smol)
 }}
 
 // ============================================================================
@@ -162,7 +220,7 @@ pub(crate) unsafe fn parse_ipv4_endpoint(addr: *const u8) -> Option<IpEndpoint> 
 ///
 /// # Safety
 /// - 由 `sys_socket` 系统调用分发, 参数由 syscall 层校验 (cred 检查)。
-/// - 必须 NET_LOCK 持有。
+/// - 必须 `NET_LOCK` 持有。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) -> i32 { unsafe {
     if !is_network_initialized() {
@@ -190,7 +248,10 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
     // REVAL-W W4.2.3.3 (2026-06-25): sm_socket 路径迁移到 raw::socket_open_stub.
     // 删除 75 行重复 socket 构造代码, 统一走 raw 模块 (与 SmoltcpNetStack 共享).
     // 0 行为变更: sm_socket 仍返回 fd, k_malloc 失败仍返回 -E_NOMEM.
-    if domain == 2 && sock_type == 1 {
+    // 双栈 (DECISION-032): AF_INET(2) 与 AF_INET6(10) 均创建同一 smoltcp socket
+    // (smoltcp 层不区分 family, bind/connect 时按 sockaddr 族解析).
+    let is_af = domain == 2 || domain == 10;
+    if is_af && sock_type == 1 {
         // TCP — 委托 raw::socket_open_stub
         let sockets = &mut *socket_set();
         let kind = crate::kernel::framework::net::iface_trait::SocketKind::Tcp;
@@ -198,7 +259,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
             return -E_NOMEM;
         }
         fd
-    } else if domain == 2 && sock_type == 2 {
+    } else if is_af && sock_type == 2 {
         // UDP — 委托 raw::socket_open_stub
         let sockets = &mut *socket_set();
         let kind = crate::kernel::framework::net::iface_trait::SocketKind::Udp;
@@ -216,7 +277,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
 /// # Safety
 /// - `addr` 必须是有效的 sockaddr 指针, 含 `_addrlen` 字节已初始化。
 /// - 由 `sys_bind` 系统调用分发, 调用方验证权限。
-/// - NET_LOCK 持有。
+/// - `NET_LOCK` 持有。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -234,7 +295,7 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
     match raw::fd_type(fd as usize) {
         2 => {
             let sock = sockets.get_mut::<udp::Socket>(handle);
-            let endpoint = match parse_ipv4_endpoint(addr) {
+            let endpoint = match parse_endpoint(addr) {
                 Some(ep) => IpListenEndpoint {
                     addr: Some(ep.addr),
                     port: ep.port,
@@ -253,7 +314,7 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
 /// POSIX `listen(fd, backlog)` 内核实现。
 ///
 /// # Safety
-/// NET_LOCK 持有; 由 `sys_listen` 分发, 调用方验证权限。
+/// `NET_LOCK` 持有; 由 `sys_listen` 分发, 调用方验证权限。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -287,7 +348,7 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 { unsafe {
 ///
 /// # Safety
 /// - `addr`/`_addrlen` 必须是有效的 sockaddr 指针 (此处忽略)。
-/// - NET_LOCK 持有; 由 `sys_accept` 分发, 调用方验证权限。
+/// - `NET_LOCK` 持有; 由 `sys_accept` 分发, 调用方验证权限。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -318,7 +379,7 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
 ///
 /// # Safety
 /// `addr` 必须指向有效的 sockaddr 结构, 至少 `_addrlen` 字节。
-/// NET_LOCK 持有。
+/// `NET_LOCK` 持有。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -335,7 +396,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
         return -E_NODEV;
     }
 
-    let endpoint = match parse_ipv4_endpoint(addr) {
+    let endpoint = match parse_endpoint(addr) {
         Some(ep) => ep,
         None => return -E_INVAL,
     };
@@ -366,8 +427,10 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
 ///
 /// # Safety
 /// `buf` 必须指向至少 `len` 字节的有效可读内存, 内存必须在调用期间保持有效。
-/// NET_LOCK 持有; 由 `sys_send` 分发, cred 校验已通过。
+/// `NET_LOCK` 持有; 由 `sys_send` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -406,8 +469,10 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
 ///
 /// # Safety
 /// `buf` 必须指向至少 `len` 字节的有效可写内存, 内存必须在调用期间保持有效。
-/// NET_LOCK 持有; 由 `sys_recv` 分发。
+/// `NET_LOCK` 持有; 由 `sys_recv` 分发。
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -454,8 +519,10 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
 ///
 /// # Safety
 /// `buf`/`addr` 必须是有效指针, 内存至少含 `len`/`_addrlen` 字节。
-/// NET_LOCK 持有; 由 `sys_sendto` 分发。
+/// `NET_LOCK` 持有; 由 `sys_sendto` 分发。
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_sendto(
     fd: i32,
     buf: *const u8,
@@ -478,7 +545,7 @@ pub unsafe extern "C" fn sm_sendto(
         return -E_INVAL;
     }
 
-    let endpoint = match parse_ipv4_endpoint(addr) {
+    let endpoint = match parse_endpoint(addr) {
         Some(ep) => ep,
         None => return -E_INVAL,
     };
@@ -509,8 +576,10 @@ pub unsafe extern "C" fn sm_sendto(
 ///
 /// # Safety
 /// `buf` 必须是有效可写指针, 至少 `len` 字节; `addr`/`addrlen` 可选地写入对端地址。
-/// NET_LOCK 持有; 由 `sys_recvfrom` 分发。
+/// `NET_LOCK` 持有; 由 `sys_recvfrom` 分发。
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_recvfrom(
     fd: i32,
     buf: *mut u8,
@@ -544,7 +613,7 @@ pub unsafe extern "C" fn sm_recvfrom(
                     // 通过 endpoint_from_smol 将 smoltcp IpEndpoint 翻译为 NetEndpoint,
                     // 再写入 sockaddr_in 供用户态读取对端地址.
                     if let Some(ep) = endpoint_from_smol(meta.endpoint) {
-                        write_sockaddr_in(addr, addrlen, &ep);
+                        write_sockaddr(addr, addrlen, &ep);
                     }
                     n as i32
                 }
@@ -573,8 +642,10 @@ pub unsafe extern "C" fn sm_recvfrom(
 /// # Safety
 /// `msg` 必须是有效用户指针, 含完整 `Msghdr { msg_iov, msg_iovlen, ... }`.
 /// 调用方 (services) 须先校验可读范围.
-/// NET_LOCK 持有; 由 `sys_sendmsg` 分发.
+/// `NET_LOCK` 持有; 由 `sys_sendmsg` 分发.
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
@@ -635,8 +706,10 @@ pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32
 ///
 /// # Safety
 /// `msg` 必须是有效可写用户指针, services 校验.
-/// NET_LOCK 持有; 由 `sys_recvmsg` 分发.
+/// `NET_LOCK` 持有; 由 `sys_recvmsg` 分发.
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
@@ -702,7 +775,7 @@ pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
 /// POSIX `close(fd)` 内核实现。
 ///
 /// # Safety
-/// NET_LOCK 持有; 由 `sys_close` 分发, cred 校验已通过。
+/// `NET_LOCK` 持有; 由 `sys_close` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -755,8 +828,8 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
 
 /// POSIX `setsockopt` 内核实现 (当前空操作占位)。
 ///
-/// v2: 识别 SO_PASSCRED (level=SOL_SOCKET=1, optname=SO_PASSCRED=16).
-/// 路由到 UDS 服务层 (uds_setsockopt).
+/// v2: 识别 `SO_PASSCRED` (`level=SOL_SOCKET=1`, `optname=SO_PASSCRED=16`).
+/// 路由到 UDS 服务层 (`uds_setsockopt`).
 /// 其他 (level, optname): 0 (no-op).
 ///
 /// # Safety
@@ -799,12 +872,12 @@ pub unsafe extern "C" fn sm_getsockopt(
 /// POSIX `getsockname(fd, addr, addrlen)` 内核实现。
 ///
 /// 真实实现: 写回 socket 的 local endpoint 到 `*addr`, 更新 `*addrlen`。
-/// TCP 用 `local_endpoint()`, UDP 用 `endpoint()` (IpListenEndpoint).
+/// TCP 用 `local_endpoint()`, UDP 用 `endpoint()` (`IpListenEndpoint`).
 ///
 /// # Safety
 /// - `addr` 必须是可写 sockaddr 指针, 至少 `_addrlen` 字节.
 /// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
-/// - NET_LOCK 持有; 由 `sys_getsockname` 分发.
+/// - `NET_LOCK` 持有; 由 `sys_getsockname` 分发.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -845,18 +918,13 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
         Some(e) => e,
         None => return -E_NOTCONN, // TCP 未 connect
     };
-    let (ip_bytes, port) = match endpoint.addr {
-        IpAddress::Ipv4(v4) => (v4.octets(), endpoint.port),
-        _ => return -E_AFNOSUPPORT,
+    // 双栈 (DECISION-032): 翻译为 NetEndpoint 后按 V4/V6 分支写 sockaddr_in / sockaddr_in6
+    let ep = match endpoint_from_smol(endpoint) {
+        Some(ep) => ep,
+        None => return -E_AFNOSUPPORT,
     };
-    let sin = SockaddrIn {
-        sin_family: 2,
-        sin_port: u16::to_be(port),
-        sin_addr: ip_bytes,
-        sin_zero: [0u8; 8],
-    };
-    core::ptr::write_unaligned(addr as *mut SockaddrIn, sin);
-    *addrlen = core::mem::size_of::<SockaddrIn>() as u32;
+    // SAFETY: write_sockaddr 按 ep.addr 分支写对应 sockaddr 结构, addr 已校验非空且 ≥ 28 字节
+    write_sockaddr(addr, addrlen, &ep);
     0
 }}
 
@@ -867,7 +935,7 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
 /// # Safety
 /// - `addr` 必须是可写 sockaddr 指针, 至少 `_addrlen` 字节.
 /// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
-/// - NET_LOCK 持有; 由 `sys_getpeername` 分发.
+/// - `NET_LOCK` 持有; 由 `sys_getpeername` 分发.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -901,25 +969,20 @@ pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u3
         Some(e) => e,
         None => return -E_NOTCONN,
     };
-    let (ip_bytes, port) = match endpoint.addr {
-        IpAddress::Ipv4(v4) => (v4.octets(), endpoint.port),
-        _ => return -E_AFNOSUPPORT,
+    // 双栈 (DECISION-032): 翻译为 NetEndpoint 后按 V4/V6 分支写 sockaddr_in / sockaddr_in6
+    let ep = match endpoint_from_smol(endpoint) {
+        Some(ep) => ep,
+        None => return -E_AFNOSUPPORT,
     };
-    let sin = SockaddrIn {
-        sin_family: 2,
-        sin_port: u16::to_be(port),
-        sin_addr: ip_bytes,
-        sin_zero: [0u8; 8],
-    };
-    core::ptr::write_unaligned(addr as *mut SockaddrIn, sin);
-    *addrlen = core::mem::size_of::<SockaddrIn>() as u32;
+    // SAFETY: write_sockaddr 按 ep.addr 分支写对应 sockaddr 结构, addr 已校验非空且 ≥ 28 字节
+    write_sockaddr(addr, addrlen, &ep);
     0
 }}
 
 /// 轮询所有 socket 状态 (驱动 `select/poll` 内核实现)。
 ///
 /// # Safety
-/// NET_LOCK 持有; 由 `sys_poll`/`sys_select` 分发。
+/// `NET_LOCK` 持有; 由 `sys_poll`/`sys_select` 分发。
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sm_poll_sockets() -> i32 { unsafe {
     let _guard = NET_STATE.lock();

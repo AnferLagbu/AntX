@@ -79,6 +79,7 @@
 - **设计决策**: enum IpAddr { V4, V6 } 破坏性改造 (DECISION-032), 详见 [ipv6-dual-stack.md](./ipv6-dual-stack.md)
 - **规模**: ~930 行新增 / ~280 行修改 (excl. DHCPv6), 9 文件
 - **工作量**: 1-2 周 (Phase 1-5, 7-8), Phase 6 (DHCPv6) 远期
+- **状态**: [X] (Phase 1-5 + 7-8 已实施, 2026-08-02; Phase 6 DHCPv6/SLAAC 远期待办)
 
 ---
 
@@ -88,5 +89,5 @@
 Week 1-2:   F1 mdBook 文档体系
 Week 3-10:  F2 RISC-V / F3 TDX
 Week 11+:   F4 NFS (需内核模块框架)
-TBD:        F5 IPv6 双栈 (DECISION-032 已定, 代码未启动)
+已完成:     F5 IPv6 双栈 (DECISION-032, Phase 1-5 + 7-8, 2026-08-02; Phase 6 DHCPv6 远期)
 ```

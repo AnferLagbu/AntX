@@ -3,24 +3,24 @@
 //! 基于 smoltcp 协议栈的网络初始化和 Socket 操作入口。
 //!
 //! ## 调用方契约
-//! - `syscall::mod` —— sys_socket/sys_connect/sys_accept/sys_sendto/sys_recvfrom 系统调用
+//! - `syscall::mod` —— `sys_socket/sys_connect/sys_accept/sys_sendto/sys_recvfrom` 系统调用
 //! - `proc::api` —— 进程创建/销毁时关联 socket fd
 //! - `chitin::proto_net` —— 网卡设备注册/注销
 //! - `barrier::recovery` —— 网络子系统纳入恢复域
 //!
 //! ## 内部接口
-//! - `init.rs` —— 初始化状态机, DHCP, Socket API (poll_network/tcp_*/udp_*)
-//! - `smoltcp_impl.rs` —— ChitinNetDevice + NetworkStack + Device trait 实现
-//! - `types.rs` —— 公共状态 (NET_READY / NET_CONFIGURED)
+//! - `init.rs` —— 初始化状态机, DHCP, Socket API (`poll_network/tcp`_*/udp_*)
+//! - `smoltcp_impl.rs` —— `ChitinNetDevice` + `NetworkStack` + Device trait 实现
+//! - `types.rs` —— 公共状态 (`NET_READY` / `NET_CONFIGURED`)
 //!
 //! ## 安全约束
-//! - 所有 static mut 变量在 NET_LOCK: Mutex<()> 保护下访问
-//! - poll_network() 使用 try_lock() 避免 ISR 上下文阻塞
-//! - Socket 操作在 #[cfg(feature = "net")] 控制下, kernel_test 模式不链接
+//! - 所有 static mut 变量在 `NET_LOCK`: Mutex<()> 保护下访问
+//! - `poll_network()` 使用 `try_lock()` 避免 ISR 上下文阻塞
+//! - Socket 操作在 #[cfg(feature = "net")] 控制下, `kernel_test` 模式不链接
 //!
 //! ## 性能特征
-//! - poll_network(): 单次轮询, 无阻塞; ISR 安全
-//! - Socket 创建: O(1) 数组扫描 (MAX_SOCKETS = 8)
+//! - `poll_network()`: 单次轮询, 无阻塞; ISR 安全
+//! - Socket 创建: O(1) 数组扫描 (`MAX_SOCKETS` = 8)
 //! - DHCP: 异步状态机, 不阻塞内核主循环
 
 // ============================================================================
@@ -35,6 +35,9 @@ pub trait NetworkDevice: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// 发送以太网帧
+    ///
+    /// # Errors
+    /// 当发送失败 (如设备忙、链路断开或缓冲不足) 时返回 `Err(())`.
     fn transmit(&self, buf: &[u8]) -> Result<(), ()>;
 
     /// 轮询接收 (非阻塞, ISR 安全)
@@ -51,8 +54,8 @@ use super::init::InitState;
 /// 轮询网络设备 (由内核主循环或定时器调用)
 ///
 /// # 安全约束
-/// - ISR 安全: 使用 try_lock() 避免阻塞
-/// - kernel_test 模式下不可用 (无真实硬件)
+/// - ISR 安全: 使用 `try_lock()` 避免阻塞
+/// - `kernel_test` 模式下不可用 (无真实硬件)
 #[cfg(not(feature = "kernel_test"))]
 pub fn poll_network() {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -92,7 +95,7 @@ pub fn get_init_state() -> InitState {
 /// 启动期显式调用, 替代依赖自动初始化的隐式行为.
 ///
 /// # 行为
-/// - 状态机 Uninitialized → HardwareProbed → InterfaceReady
+/// - 状态机 Uninitialized → `HardwareProbed` → `InterfaceReady`
 /// - DHCP 配置是异步的, 此函数仅触发握手, 不等待结果
 /// - 若已初始化, 立即返回 true
 #[cfg(not(feature = "kernel_test"))]

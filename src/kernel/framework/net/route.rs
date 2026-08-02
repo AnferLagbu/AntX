@@ -25,7 +25,11 @@ pub use crate::kernel::services::net::route::{
 // smoltcp 同步 (framework 机制, 依赖 raw::stack_mut)
 // ============================================================================
 
-/// 将单条路由同步到 smoltcp Routes
+/// 将单条路由同步到 smoltcp Routes (双栈: V4/V6 按 family 分发)
+///
+/// # Errors
+/// 当前实现不会返回 `Err`: 网络未配置、smoltcp 栈不可用或路由 family 不匹配时
+/// 直接返回 `Ok(())` 并忽略该条目.
 pub fn sync_route_to_smoltcp(entry: &RouteEntry) -> Result<(), Errno> {
     if !NET_CONFIGURED.load(Ordering::Acquire) {
         return Ok(());
@@ -33,7 +37,8 @@ pub fn sync_route_to_smoltcp(entry: &RouteEntry) -> Result<(), Errno> {
 
     #[cfg(not(feature = "kernel_test"))]
     {
-        use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
+        use crate::kernel::framework::net::iface_trait::IpAddr;
+        use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address, Ipv4Cidr, Ipv6Address, Ipv6Cidr};
         use crate::kernel::framework::net::raw;
 
         let stack = match raw::stack_mut() {
@@ -41,16 +46,28 @@ pub fn sync_route_to_smoltcp(entry: &RouteEntry) -> Result<(), Errno> {
             None => return Ok(()),
         };
 
-        let gw = Ipv4Address::new(entry.gateway[0], entry.gateway[1], entry.gateway[2], entry.gateway[3]);
-        let cidr = Ipv4Cidr::new(
-            Ipv4Address::new(entry.dest[0], entry.dest[1], entry.dest[2], entry.dest[3]),
-            entry.prefix_len,
-        );
+        let (via_router, cidr) = match (entry.gateway, entry.dest) {
+            (IpAddr::V4(gw), IpAddr::V4(dest)) => {
+                let gw = Ipv4Address::new(gw.octets()[0], gw.octets()[1], gw.octets()[2], gw.octets()[3]);
+                let cidr = Ipv4Cidr::new(
+                    Ipv4Address::new(dest.octets()[0], dest.octets()[1], dest.octets()[2], dest.octets()[3]),
+                    entry.prefix_len,
+                );
+                (IpAddress::Ipv4(gw), IpCidr::Ipv4(cidr))
+            }
+            (IpAddr::V6(gw), IpAddr::V6(dest)) => {
+                let gw = Ipv6Address::from_octets(gw.octets());
+                let cidr = Ipv6Cidr::new(Ipv6Address::from_octets(dest.octets()), entry.prefix_len);
+                (IpAddress::Ipv6(gw), IpCidr::Ipv6(cidr))
+            }
+            // family 不匹配 (如 V4 目标 + V6 网关) — 忽略该条目
+            _ => return Ok(()),
+        };
 
         stack.iface.routes_mut().update(|routes| {
             let route = smoltcp::iface::Route {
-                cidr: cidr.into(),
-                via_router: gw.into(),
+                cidr,
+                via_router,
                 preferred_until: None,
                 expires_at: None,
             };
@@ -67,11 +84,12 @@ pub fn sync_route_to_smoltcp(entry: &RouteEntry) -> Result<(), Errno> {
     }
 }
 
-/// 从内核路由表全量重建 smoltcp Routes
+/// 从内核路由表全量重建 smoltcp Routes (双栈)
 pub fn rebuild_smoltcp_routes(table: &[RouteEntry]) {
     #[cfg(not(feature = "kernel_test"))]
     {
-        use smoltcp::wire::{Ipv4Address, Ipv4Cidr};
+        use crate::kernel::framework::net::iface_trait::IpAddr;
+        use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address, Ipv4Cidr, Ipv6Address, Ipv6Cidr};
         use crate::kernel::framework::net::raw;
 
         if !NET_CONFIGURED.load(Ordering::Acquire) {
@@ -86,14 +104,25 @@ pub fn rebuild_smoltcp_routes(table: &[RouteEntry]) {
         stack.iface.routes_mut().update(|routes| {
             routes.clear();
             for entry in table {
-                let gw = Ipv4Address::new(entry.gateway[0], entry.gateway[1], entry.gateway[2], entry.gateway[3]);
-                let cidr = Ipv4Cidr::new(
-                    Ipv4Address::new(entry.dest[0], entry.dest[1], entry.dest[2], entry.dest[3]),
-                    entry.prefix_len,
-                );
+                let (via_router, cidr) = match (entry.gateway, entry.dest) {
+                    (IpAddr::V4(gw), IpAddr::V4(dest)) => {
+                        let gw = Ipv4Address::new(gw.octets()[0], gw.octets()[1], gw.octets()[2], gw.octets()[3]);
+                        let cidr = Ipv4Cidr::new(
+                            Ipv4Address::new(dest.octets()[0], dest.octets()[1], dest.octets()[2], dest.octets()[3]),
+                            entry.prefix_len,
+                        );
+                        (IpAddress::Ipv4(gw), IpCidr::Ipv4(cidr))
+                    }
+                    (IpAddr::V6(gw), IpAddr::V6(dest)) => {
+                        let gw = Ipv6Address::from_octets(gw.octets());
+                        let cidr = Ipv6Cidr::new(Ipv6Address::from_octets(dest.octets()), entry.prefix_len);
+                        (IpAddress::Ipv6(gw), IpCidr::Ipv6(cidr))
+                    }
+                    _ => continue, // family 不匹配, 跳过
+                };
                 let route = smoltcp::iface::Route {
-                    cidr: cidr.into(),
-                    via_router: gw.into(),
+                    cidr,
+                    via_router,
                     preferred_until: None,
                     expires_at: None,
                 };

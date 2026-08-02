@@ -125,7 +125,7 @@ impl Default for SocketHandle {
 /// "类型安全" 不变式相悖.
 ///
 /// 本枚举在 **API 边界** 把 socket 类型显式化, 实现层 (W3 `smoltcp_impl.rs`)
-/// 负责把枚举映射到 smoltcp 的具体 socket 类型 (TcpSocket / UdpSocket / ...).
+/// 负责把枚举映射到 smoltcp 的具体 socket 类型 (`TcpSocket` / `UdpSocket` / ...).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SocketKind {
     /// TCP (面向连接, 流式)
@@ -136,7 +136,7 @@ pub enum SocketKind {
     Icmp,
     /// RAW (raw ethernet/IP 访问, 高级)
     Raw,
-    /// DHCPv4 客户端 (内部使用, 用户态不可见)
+    /// `DHCPv4` 客户端 (内部使用, 用户态不可见)
     Dhcpv4,
     /// DNS 客户端 (内部使用)
     Dns,
@@ -159,7 +159,7 @@ impl SocketKind {
 /// ## 设计动机
 ///
 /// smoltcp 的 `Interface::new(config, ...)` 直接接受 `Config` 结构体, 包含
-/// 大量易混淆的时序/缓冲区字段 (random_seed / hardware_addr / ...). 这些
+/// 大量易混淆的时序/缓冲区字段 (`random_seed` / `hardware_addr` / ...). 这些
 /// 字段属于"配置策略", 应由 services 决定, 但 `Config` 类型本身应在
 /// framework safe API 边界被封装.
 #[derive(Clone, Copy, Debug)]
@@ -168,9 +168,9 @@ pub struct NetConfig {
     pub mac_address: [u8; 6],
     /// 静态 IPv4 地址 (None = 走 DHCP)
     pub static_ipv4: Option<[u8; 4]>,
-    /// 子网前缀长度 (1-32, 仅 static_ipv4 生效)
+    /// 子网前缀长度 (1-32, 仅 `static_ipv4` 生效)
     pub prefix_len: u8,
-    /// 默认网关 (仅 static_ipv4 生效)
+    /// 默认网关 (仅 `static_ipv4` 生效)
     pub gateway: [u8; 4],
     /// 随机种子 (用于协议栈 PRNG, 0 = 自动)
     pub random_seed: u64,
@@ -189,7 +189,7 @@ impl NetConfig {
         }
     }
 
-    /// 是否使用 DHCP 获取 IP (static_ipv4 为 None).
+    /// 是否使用 DHCP 获取 IP (`static_ipv4` 为 None).
     #[inline(always)]
     pub const fn use_dhcp(&self) -> bool {
         self.static_ipv4.is_none()
@@ -296,7 +296,7 @@ pub enum NetError {
     InvalidHandle,
     /// 配置错误 (例如 IP 非法)
     BadConfig,
-    /// 协议栈未就绪 (NET_READY = false)
+    /// 协议栈未就绪 (`NET_READY` = false)
     NotReady,
     /// 操作超时
     Timeout,
@@ -336,6 +336,10 @@ pub trait NetStack {
     ///
     /// 内部完成: smoltcp Interface 构造, DHCP 客户端启动 (若配置为 DHCP),
     /// 套接字表初始化.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实际实现方在协议栈初始化失败
+    /// (如配置无效、资源不足) 时返回相应的 `NetError`.
     #[inline]
     fn init(&mut self, cfg: NetConfig) -> Result<()> {
         let _ = cfg;
@@ -364,6 +368,10 @@ pub trait NetStack {
     ///
     /// 句柄由实现方分配, 调用方必须 `socket_close()` 释放.
     /// 失败时返回 `Err(NetError)`, 无副作用 (DECISION-025).
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在句柄耗尽、类型不支持等
+    /// 失败情形下返回 `Err(NetError)`, 且不产生副作用.
     #[inline]
     fn socket_open(&mut self, kind: SocketKind) -> Result<SocketHandle> {
         let _ = kind;
@@ -373,6 +381,9 @@ pub trait NetStack {
     /// 关闭一个 Socket, 释放句柄.
     ///
     /// 幂等操作, 对 `SocketHandle::INVALID` 或已关闭句柄调用不报错.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Ok(())`; 实现方在关闭失败 (如句柄无效或资源释放出错) 时返回 `Err(NetError)`.
     #[inline]
     fn socket_close(&mut self, h: SocketHandle) -> Result<()> {
         let _ = h;
@@ -381,7 +392,7 @@ pub trait NetStack {
 
     /// 查询 DHCP 客户端状态.
     ///
-    /// 由 services/net/dhcp_policy.rs 实现策略 (何时重试, 何时 fallback).
+    /// 由 `services/net/dhcp_policy.rs` 实现策略 (何时重试, 何时 fallback).
     #[inline]
     fn dhcp_state(&self) -> DhcpState {
         DhcpState::default()
@@ -395,6 +406,10 @@ pub trait NetStack {
     ///
     /// 绑定后可开始 listen (TCP) 或直接 send/recv (UDP).
     /// 未绑定的 socket 发送数据时, 协议栈自动分配临时端口.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在端口冲突、地址无效、
+    /// 句柄不存在等失败情形下返回 `Err(NetError)`.
     #[inline]
     fn bind(&mut self, h: SocketHandle, addr: NetEndpoint) -> Result<()> {
         let _ = (h, addr);
@@ -405,6 +420,10 @@ pub trait NetStack {
     ///
     /// `backlog` 指定等待连接队列长度 (SOMAXCONN 语义).
     /// 仅 TCP socket 有效, UDP 调用返回 `Err(NetError::BadConfig)`.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在非 TCP socket 上调用时
+    /// 返回 `Err(NetError::BadConfig)`, 其他失败情形返回 `Err(NetError)`.
     #[inline]
     fn listen(&mut self, h: SocketHandle, backlog: i32) -> Result<()> {
         let _ = (h, backlog);
@@ -415,6 +434,10 @@ pub trait NetStack {
     ///
     /// 成功返回新 socket 的句柄. `peer` 若非 None, 填充对端端点信息.
     /// 仅 TCP 监听 socket 有效.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在完成队列为空、句柄不是
+    /// 监听 socket 等失败情形下返回 `Err(NetError)`.
     #[inline]
     fn accept(
         &mut self,
@@ -429,6 +452,10 @@ pub trait NetStack {
     ///
     /// 非阻塞语义: 调用仅发起连接请求, 真正建立需后续 poll + 事件.
     /// UDP socket 调用此方法会设置默认对端地址.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在连接请求无法发起
+    /// (如路由不可达、参数无效) 时返回 `Err(NetError)`.
     #[inline]
     fn connect(&mut self, h: SocketHandle, addr: NetEndpoint) -> Result<()> {
         let _ = (h, addr);
@@ -442,7 +469,11 @@ pub trait NetStack {
     /// 向已连接的 socket 发送数据.
     ///
     /// `flags` 预留 (当前为 0). 返回实际发送的字节数.
-    /// TCP 会在内部缓冲区满时阻塞 (非阻塞模式返回 WouldBlock).
+    /// TCP 会在内部缓冲区满时阻塞 (非阻塞模式返回 `WouldBlock`).
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在非阻塞模式下缓冲区满、
+    /// 连接已关闭等失败情形下返回 `Err(NetError)`.
     #[inline]
     fn send(&mut self, h: SocketHandle, buf: &[u8], flags: i32) -> Result<usize> {
         let _ = (h, buf, flags);
@@ -453,6 +484,10 @@ pub trait NetStack {
     ///
     /// `flags` 预留 (当前为 0). 返回实际读取的字节数.
     /// 对端关闭连接后返回 0 (EOF).
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在接收失败
+    /// (如非阻塞模式下无可用数据) 时返回 `Err(NetError)`.
     #[inline]
     fn recv(&mut self, h: SocketHandle, buf: &mut [u8], flags: i32) -> Result<usize> {
         let _ = (h, buf, flags);
@@ -463,6 +498,10 @@ pub trait NetStack {
     ///
     /// 与 `send` 的区别: 每次调用指定目标地址, 无需预先 connect.
     /// TCP socket 调用此方法等价于 `send` (忽略 addr).
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在目标端点无效或发送失败时
+    /// 返回 `Err(NetError)`.
     #[inline]
     fn sendto(
         &mut self,
@@ -479,6 +518,9 @@ pub trait NetStack {
     ///
     /// 与 `recv` 的区别: `src` 填充数据报来源地址+端口.
     /// TCP socket 调用此方法等价于 `recv` (忽略 src).
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在接收失败时返回 `Err(NetError)`.
     #[inline]
     fn recvfrom(
         &mut self,
@@ -499,6 +541,9 @@ pub trait NetStack {
     ///
     /// 与 `socket_close` 等价 — 保留 `socket_close` 以兼容现有调用方.
     /// 幂等操作, 对 `SocketHandle::INVALID` 或已关闭句柄调用不报错.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Ok(())`; 实现方在释放资源失败时返回 `Err(NetError)`.
     #[inline]
     fn close(&mut self, h: SocketHandle) -> Result<()> {
         let _ = h;
@@ -510,6 +555,10 @@ pub trait NetStack {
     // ========================================================================
 
     /// 设置 Socket 选项.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在选项不支持或参数非法时
+    /// 返回 `Err(NetError)`.
     #[inline]
     fn setsockopt(&mut self, h: SocketHandle, level: i32, optname: i32, val: &[u8]) -> Result<()> {
         let _ = (h, level, optname, val);
@@ -517,6 +566,10 @@ pub trait NetStack {
     }
 
     /// 获取 Socket 选项.
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在选项不支持或缓冲区过小时
+    /// 返回 `Err(NetError)`.
     #[inline]
     fn getsockopt(&mut self, h: SocketHandle, level: i32, optname: i32, out: &mut [u8]) -> Result<usize> {
         let _ = (h, level, optname, out);
@@ -524,6 +577,9 @@ pub trait NetStack {
     }
 
     /// 轮询所有 Socket 状态 (驱动 select/poll).
+    ///
+    /// # Errors
+    /// 默认实现返回 `Err(NetError::NotReady)`; 实现方在轮询过程出错时返回 `Err(NetError)`.
     #[inline]
     fn poll_sockets(&mut self) -> Result<()> {
         Err(NetError::NotReady)
@@ -835,7 +891,7 @@ mod tests {
 // 全部 Copy, 0 分配, 0 unsafe.
 // ============================================================================
 
-/// IPv4 地址 (替代 smoltcp::wire::Ipv4Address / IpAddress::Ipv4).
+/// IPv4 地址 (替代 `smoltcp::wire::Ipv4Address` / `IpAddress::Ipv4`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct Ipv4Addr(pub [u8; 4]);
 
@@ -866,6 +922,12 @@ impl Ipv4Addr {
     pub const fn is_unspecified(self) -> bool {
         self.0[0] == 0 && self.0[1] == 0 && self.0[2] == 0 && self.0[3] == 0
     }
+
+    /// 提升为统一 `IpAddr` (双栈迁移辅助, DECISION-032).
+    #[inline(always)]
+    pub const fn into_ip_addr(self) -> IpAddr {
+        IpAddr::V4(self)
+    }
 }
 
 impl From<[u8; 4]> for Ipv4Addr {
@@ -882,7 +944,7 @@ impl From<Ipv4Addr> for [u8; 4] {
     }
 }
 
-/// IPv4 CIDR (地址 + 前缀长度), 替代 smoltcp::wire::Ipv4Cidr / IpCidr::Ipv4.
+/// IPv4 CIDR (地址 + 前缀长度), 替代 `smoltcp::wire::Ipv4Cidr` / `IpCidr::Ipv4`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Ipv4Cidr {
     /// 网络地址 (主机字节序, 大端视图)
@@ -899,38 +961,218 @@ impl Ipv4Cidr {
     }
 }
 
-/// IP 端点 (地址 + 端口), 替代 smoltcp::wire::IpEndpoint.
+/// IPv6 地址 (替代 `smoltcp::wire::Ipv6Address` / `IpAddress::Ipv6`).
 ///
-/// 当前仅支持 IPv4 (与 Ipv4Addr 配对), 不引入 IPv6 路径.
+/// 双栈改造 (DECISION-032) 新增, 与 `Ipv4Addr` 对称.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct Ipv6Addr(pub [u8; 16]);
+
+impl Ipv6Addr {
+    /// 未指定地址 (::).
+    pub const UNSPECIFIED: Self = Self([0; 16]);
+
+    /// 环回地址 (`::1`).
+    pub const LOOPBACK: Self = Self([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+
+    /// 从 8 个 16 位组构造 (每组大端序写入, 与 `std::net::Ipv6Addr` 对齐).
+    #[inline(always)]
+    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    #[expect(clippy::cast_possible_truncation)]
+    pub const fn new(o0: u16, o1: u16, o2: u16, o3: u16, o4: u16, o5: u16, o6: u16, o7: u16) -> Self {
+        Self([
+            (o0 >> 8) as u8, o0 as u8,
+            (o1 >> 8) as u8, o1 as u8,
+            (o2 >> 8) as u8, o2 as u8,
+            (o3 >> 8) as u8, o3 as u8,
+            (o4 >> 8) as u8, o4 as u8,
+            (o5 >> 8) as u8, o5 as u8,
+            (o6 >> 8) as u8, o6 as u8,
+            (o7 >> 8) as u8, o7 as u8,
+        ])
+    }
+
+    /// 从 16 元组数组构造.
+    #[inline(always)]
+    pub const fn from_octets(octets: [u8; 16]) -> Self {
+        Self(octets)
+    }
+
+    /// 获取 16 元组数组.
+    #[inline(always)]
+    pub const fn octets(self) -> [u8; 16] {
+        self.0
+    }
+
+    /// 是否为未指定地址 (::).
+    #[inline(always)]
+    pub const fn is_unspecified(self) -> bool {
+        let mut i = 0;
+        while i < 16 {
+            if self.0[i] != 0 {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// 是否为环回地址 (`::1`).
+    #[inline(always)]
+    pub const fn is_loopback(self) -> bool {
+        let o = self.0;
+        o[0] == 0 && o[1] == 0 && o[2] == 0 && o[3] == 0
+            && o[4] == 0 && o[5] == 0 && o[6] == 0 && o[7] == 0
+            && o[8] == 0 && o[9] == 0 && o[10] == 0 && o[11] == 0
+            && o[12] == 0 && o[13] == 0 && o[14] == 0 && o[15] == 1
+    }
+
+    /// 是否为组播地址 (最高字节 0xFF).
+    #[inline(always)]
+    pub const fn is_multicast(self) -> bool {
+        self.0[0] == 0xFF
+    }
+
+    /// 提升为统一 `IpAddr` (双栈迁移辅助, DECISION-032).
+    #[inline(always)]
+    pub const fn into_ip_addr(self) -> IpAddr {
+        IpAddr::V6(self)
+    }
+}
+
+impl From<[u8; 16]> for Ipv6Addr {
+    #[inline(always)]
+    fn from(o: [u8; 16]) -> Self {
+        Self(o)
+    }
+}
+
+impl From<Ipv6Addr> for [u8; 16] {
+    #[inline(always)]
+    fn from(a: Ipv6Addr) -> Self {
+        a.0
+    }
+}
+
+/// IPv6 CIDR (地址 + 前缀长度), 替代 `smoltcp::wire::Ipv6Cidr` / `IpCidr::Ipv6`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Ipv6Cidr {
+    /// 网络地址 (主机字节序, 大端视图)
+    pub address: Ipv6Addr,
+    /// 前缀长度 (0-128)
+    pub prefix_len: u8,
+}
+
+impl Ipv6Cidr {
+    /// 构造一个 CIDR.
+    #[inline(always)]
+    pub const fn new(address: Ipv6Addr, prefix_len: u8) -> Self {
+        Self { address, prefix_len }
+    }
+}
+
+/// IP 地址 (IPv4 或 IPv6), 与 `std::net::IpAddr` 对齐.
+///
+/// 双栈改造 (DECISION-032) 引入的统一地址类型, `NetEndpoint.addr`
+/// 将于 Phase 2 迁移为 `IpAddr`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum IpAddr {
+    /// IPv4 地址
+    V4(Ipv4Addr),
+    /// IPv6 地址
+    V6(Ipv6Addr),
+}
+
+impl IpAddr {
+    /// 是否为 IPv4 地址.
+    #[inline(always)]
+    pub const fn is_v4(self) -> bool {
+        matches!(self, Self::V4(_))
+    }
+
+    /// 是否为 IPv6 地址.
+    #[inline(always)]
+    pub const fn is_v6(self) -> bool {
+        matches!(self, Self::V6(_))
+    }
+
+    /// 尝试取 IPv4 地址 (非 V4 返回 None).
+    #[inline(always)]
+    pub const fn as_v4(self) -> Option<Ipv4Addr> {
+        match self {
+            Self::V4(v4) => Some(v4),
+            Self::V6(_) => None,
+        }
+    }
+
+    /// 尝试取 IPv6 地址 (非 V6 返回 None).
+    #[inline(always)]
+    pub const fn as_v6(self) -> Option<Ipv6Addr> {
+        match self {
+            Self::V4(_) => None,
+            Self::V6(v6) => Some(v6),
+        }
+    }
+}
+
+impl From<Ipv4Addr> for IpAddr {
+    #[inline(always)]
+    fn from(a: Ipv4Addr) -> Self {
+        Self::V4(a)
+    }
+}
+
+impl From<Ipv6Addr> for IpAddr {
+    #[inline(always)]
+    fn from(a: Ipv6Addr) -> Self {
+        Self::V6(a)
+    }
+}
+
+/// IP 端点 (地址 + 端口), 替代 `smoltcp::wire::IpEndpoint`.
+///
+/// 双栈改造 (DECISION-032): `addr` 升级为 `IpAddr`, 支持 V4/V6 双栈.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NetEndpoint {
-    /// IPv4 地址
-    pub addr: Ipv4Addr,
+    /// IP 地址 (V4 或 V6)
+    pub addr: IpAddr,
     /// 端口 (主机字节序)
     pub port: u16,
 }
 
 impl NetEndpoint {
-    /// 构造一个端点.
+    /// 构造一个端点 (统一 `IpAddr` 入口).
     #[inline(always)]
-    pub const fn new(addr: Ipv4Addr, port: u16) -> Self {
+    pub const fn new(addr: IpAddr, port: u16) -> Self {
         Self { addr, port }
+    }
+
+    /// 构造 IPv4 端点 (双栈迁移辅助).
+    #[inline(always)]
+    pub const fn new_v4(addr: Ipv4Addr, port: u16) -> Self {
+        Self { addr: IpAddr::V4(addr), port }
+    }
+
+    /// 构造 IPv6 端点 (双栈迁移辅助).
+    #[inline(always)]
+    pub const fn new_v6(addr: Ipv6Addr, port: u16) -> Self {
+        Self { addr: IpAddr::V6(addr), port }
     }
 
     /// 未指定端点 (0.0.0.0:0).
     pub const UNSPECIFIED: Self = Self {
-        addr: Ipv4Addr::UNSPECIFIED,
+        addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
         port: 0,
     };
 }
 
-/// IP 监听端点 (地址可通配 + 端口), 替代 smoltcp::wire::IpListenEndpoint.
+/// IP 监听端点 (地址可通配 + 端口), 替代 `smoltcp::wire::IpListenEndpoint`.
 ///
-/// 与 NetEndpoint 区别: addr 可为 `None` (通配, 接受任何地址).
+/// 与 `NetEndpoint` 区别: addr 可为 `None` (通配, 接受任何地址).
+/// 双栈改造 (DECISION-032): `addr` 升级为 `Option<IpAddr>`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NetListenEndpoint {
     /// 监听地址 (None = 通配)
-    pub addr: Option<Ipv4Addr>,
+    pub addr: Option<IpAddr>,
     /// 监听端口
     pub port: u16,
 }
@@ -942,10 +1184,22 @@ impl NetListenEndpoint {
         Self { addr: None, port }
     }
 
-    /// 指定地址监听.
+    /// 指定地址监听 (统一 `IpAddr` 入口).
     #[inline(always)]
-    pub const fn new(addr: Ipv4Addr, port: u16) -> Self {
+    pub const fn new(addr: IpAddr, port: u16) -> Self {
         Self { addr: Some(addr), port }
+    }
+
+    /// 指定 IPv4 地址监听 (双栈迁移辅助).
+    #[inline(always)]
+    pub const fn new_v4(addr: Ipv4Addr, port: u16) -> Self {
+        Self { addr: Some(IpAddr::V4(addr)), port }
+    }
+
+    /// 指定 IPv6 地址监听 (双栈迁移辅助).
+    #[inline(always)]
+    pub const fn new_v6(addr: Ipv6Addr, port: u16) -> Self {
+        Self { addr: Some(IpAddr::V6(addr)), port }
     }
 }
 
@@ -979,10 +1233,15 @@ mod wire_type_tests {
 
     #[test]
     fn test_net_endpoint() {
-        let e = NetEndpoint::new(Ipv4Addr::new(192, 168, 1, 1), 8080);
-        assert_eq!(e.addr.octets(), [192, 168, 1, 1]);
+        let e = NetEndpoint::new_v4(Ipv4Addr::new(192, 168, 1, 1), 8080);
+        assert_eq!(e.addr.as_v4().unwrap().octets(), [192, 168, 1, 1]);
         assert_eq!(e.port, 8080);
         assert_eq!(NetEndpoint::UNSPECIFIED.port, 0);
+
+        // V6 构造路径
+        let e6 = NetEndpoint::new_v6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1), 8080);
+        assert!(e6.addr.is_v6());
+        assert_eq!(e6.port, 8080);
     }
 
     #[test]
@@ -991,8 +1250,71 @@ mod wire_type_tests {
         assert!(wc.addr.is_none());
         assert_eq!(wc.port, 80);
 
-        let sp = NetListenEndpoint::new(Ipv4Addr::new(127, 0, 0, 1), 22);
-        assert_eq!(sp.addr.unwrap().octets(), [127, 0, 0, 1]);
+        let sp = NetListenEndpoint::new_v4(Ipv4Addr::new(127, 0, 0, 1), 22);
+        assert_eq!(sp.addr.unwrap().as_v4().unwrap().octets(), [127, 0, 0, 1]);
         assert_eq!(sp.port, 22);
+
+        // V6 构造路径
+        let sp6 = NetListenEndpoint::new_v6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1), 22);
+        assert!(sp6.addr.unwrap().is_v6());
+    }
+
+    #[test]
+    fn test_ipv6_addr_constructors() {
+        let loopback = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+        assert_eq!(loopback.octets(), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        assert!(loopback.is_loopback());
+        assert!(!loopback.is_unspecified());
+        assert!(!loopback.is_multicast());
+
+        assert!(Ipv6Addr::UNSPECIFIED.is_unspecified());
+        assert!(!Ipv6Addr::UNSPECIFIED.is_loopback());
+
+        // 组播地址 (ff02::1, 所有节点)
+        let mcast = Ipv6Addr::from_octets([0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        assert!(mcast.is_multicast());
+        assert!(!mcast.is_loopback());
+    }
+
+    #[test]
+    fn test_ipv6_addr_conversions() {
+        let octets = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        let a: Ipv6Addr = octets.into();
+        let back: [u8; 16] = a.into();
+        assert_eq!(octets, back);
+        assert_eq!(a.octets(), octets);
+    }
+
+    #[test]
+    fn test_ipv6_cidr() {
+        let c = Ipv6Cidr::new(Ipv6Addr::new(0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0), 64);
+        assert_eq!(c.address.octets()[0..4], [0x20, 0x01, 0x0d, 0xb8]);
+        assert_eq!(c.prefix_len, 64);
+    }
+
+    #[test]
+    fn test_ip_addr_enum() {
+        let v4 = Ipv4Addr::new(192, 168, 1, 1);
+        let v6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1);
+
+        // From 转换
+        let a: IpAddr = v4.into();
+        let b: IpAddr = v6.into();
+        assert!(a.is_v4());
+        assert!(b.is_v6());
+        assert!(!a.is_v6());
+        assert!(!b.is_v4());
+
+        // as_v4 / as_v6
+        assert_eq!(a.as_v4(), Some(v4));
+        assert_eq!(a.as_v6(), None);
+        assert_eq!(b.as_v6(), Some(v6));
+        assert_eq!(b.as_v4(), None);
+
+        // match 分支
+        match b {
+            IpAddr::V4(_) => panic!("expected V6"),
+            IpAddr::V6(addr) => assert!(addr.is_loopback()),
+        }
     }
 }

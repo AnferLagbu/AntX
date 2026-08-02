@@ -21,13 +21,13 @@ use crate::kernel::framework::net_socket as fw_net_socket;
 use crate::kernel::framework::sync::{Mutex, OnceLock};
 use crate::kernel::services::net::smoltcp_impl::SmoltcpNetStack;
 
-/// 全局 SmoltcpNetStack 实例, 由 `init()` 初始化, socket.rs 通过 `net_stack()` 访问
+/// 全局 `SmoltcpNetStack` 实例, 由 `init()` 初始化, socket.rs 通过 `net_stack()` 访问
 ///
-/// M3 修复: 使用 Mutex 替代 IrqSpinLock, 因为网络操作 (socket/bind/listen 等)
+/// M3 修复: 使用 Mutex 替代 `IrqSpinLock`, 因为网络操作 (socket/bind/listen 等)
 /// 都在进程上下文执行, 不在中断上下文, 可以使用睡眠锁减少 CPU 空转。
 static NET_STACK_INSTANCE: OnceLock<Mutex<SmoltcpNetStack>> = OnceLock::new();
 
-/// 获取全局 SmoltcpNetStack 实例的引用 (需在 `init()` 之后调用)
+/// 获取全局 `SmoltcpNetStack` 实例的引用 (需在 `init()` 之后调用)
 ///
 /// 返回 `None` 表示网络子系统未初始化，调用方应返回 `NotReady` 错误而非 panic。
 pub fn net_stack() -> Option<&'static Mutex<SmoltcpNetStack>> {
@@ -38,7 +38,7 @@ pub fn net_stack() -> Option<&'static Mutex<SmoltcpNetStack>> {
 // 状态类型 (统一定义, 避免 kernel_test stub 重复)
 // ============================================================================
 
-/// 网络初始化状态 (与 kernel::net::init::InitState 对齐)
+/// 网络初始化状态 (与 `kernel::net::init::InitState` 对齐)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum InitState {
@@ -97,7 +97,7 @@ pub mod smoltcp_impl;
 /// REVAL-W 第 6 组 W6 (2026-06-25): DHCP 策略 trait 抽象
 /// (何时重试/续约/fallback), 机制与策略分离.
 pub mod dhcp_policy;
-/// T6-9: Socket 等待队列 (原 framework/net/wait_queue.rs)
+/// T6-9: Socket 等待队列 (原 `framework/net/wait_queue.rs`)
 pub mod wait_queue;
 pub mod unix;
 
@@ -122,7 +122,7 @@ pub use unix::{
 // 错误
 // ============================================================================
 
-/// 网络操作错误 — TD-20: 收敛到 KernelError, 1 字段 net 特有 + 1 共享包装.
+/// 网络操作错误 — TD-20: 收敛到 `KernelError`, 1 字段 net 特有 + 1 共享包装.
 ///
 /// 字段说明:
 ///   - `NotConfigured`: DHCP 未配置 (网络层语义, 不在 POSIX 通用集)
@@ -191,7 +191,7 @@ impl From<init::InitState> for InitState {
 /// 初始化网络子系统
 ///
 /// 探测网卡 (e1000 / virtio-net), 启动协议栈, 启动 DHCP 异步获取 IP。
-/// 如果无 NIC 则进入 "NoNetwork" 状态。
+/// 如果无 NIC 则进入 "`NoNetwork`" 状态。
 pub fn init() {
     // 初始化全局 SmoltcpNetStack 实例
     // M3 修复: 使用 Mutex 替代 IrqSpinLock
@@ -213,6 +213,10 @@ pub fn poll() {
 ///
 /// 调用后 DHCP Discover 会在下一个 timer tick 发出。
 /// 用户态通过 `is_configured()` 轮询等待完成。
+///
+/// # Errors
+///
+/// 当底层 DHCP 启动失败时返回 `Err(NetError)`, 例如网络栈尚未初始化或网卡不支持 DHCP。
 pub fn start_dhcp() -> NetResult<()> {
     let rc = fw_net_socket::qx_net_start_dhcp();
     if rc == 0 { Ok(()) } else { Err(NetError::from_i32(rc)) }
@@ -226,6 +230,10 @@ pub fn start_dhcp() -> NetResult<()> {
 ///
 /// # 返回
 /// 成功返回 `Ok(())`, 失败返回 `NetError`
+///
+/// # Errors
+///
+/// 当 CIDR 或网关字符串格式非法、无法解析, 或底层静态 IP 配置失败时返回 `Err(NetError)`。
 pub fn static_ip(cidr_str: &str, gw_str: &str) -> NetResult<()> {
     // 复制到 C 字符串 (添加 NUL 终止符)
     let mut cidr_c = alloc::vec::Vec::with_capacity(cidr_str.len() + 1);

@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 //! @SAFE: 本文件不含 unsafe 代码。所有 unsafe 操作已委托至 framework API。
-//! Unix Domain Socket (AF_UNIX) — services 层策略主体
+//! Unix Domain Socket (`AF_UNIX`) — services 层策略主体
 //!
 //! ## T3-4 迁移记录
 //!
@@ -27,13 +27,13 @@ pub const UNIX_PATH_MAX: usize = 108;
 /// 路径绑定表容量
 pub const UNIX_MAX_BINDINGS: usize = 32;
 
-/// SOCK_STREAM 单端接收缓冲大小
+/// `SOCK_STREAM` 单端接收缓冲大小
 pub const UNIX_STREAM_BUF: usize = 8192;
 
-/// SOCK_DGRAM 单消息最大长度
+/// `SOCK_DGRAM` 单消息最大长度
 pub const UNIX_DGRAM_MAX: usize = 8192;
 
-/// listen() 固定 backlog
+/// `listen()` 固定 backlog
 pub const UNIX_LISTEN_BACKLOG: usize = 5;
 
 // ============================================================================
@@ -114,8 +114,8 @@ pub struct UnixSocket {
     pub dgram_len: u32,
     pub dgram_pending: bool,
 
-    /// v2: SO_PASSCRED 选项 — 对端 socket 设置后, 发送消息自动附加
-    /// SCM_CREDENTIALS 凭据 (uid/gid/pid).
+    /// v2: `SO_PASSCRED` 选项 — 对端 socket 设置后, 发送消息自动附加
+    /// `SCM_CREDENTIALS` 凭据 (uid/gid/pid).
     pub passcred: bool,
 }
 
@@ -243,7 +243,7 @@ fn alloc_socket_id() -> u32 {
     id
 }
 
-/// FD → 槽位索引反查 (V3: 使用 idx_of, FD 编号由 fd_at 计算)
+/// FD → 槽位索引反查 (V3: 使用 `idx_of`, FD 编号由 `fd_at` 计算)
 #[inline]
 fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
     match crate::kernel::framework::proc::idx_of(fd) {
@@ -262,6 +262,13 @@ pub fn uds_init() {
     NEXT_SOCK_ID.with_mut(|id| *id = 1);
 }
 
+/// 创建一个新的 UDS 套接字, 返回其 FD
+///
+/// 通过集中分配器申请 FD, 并初始化对应槽位为空闲 (Unbound) 状态。
+///
+/// # Errors
+///
+/// 当无空闲套接字槽位或 FD 数量已达 `MAX_UDS_FD` 上限时返回 `Err(UdsError::NoMem)`。
 pub fn uds_create(sock_type: UnixSockType) -> Result<i32, UdsError> {
     UDS_STATE.with_mut(|state| {
         // 检查是否有空闲套接字槽位
@@ -302,6 +309,13 @@ pub fn uds_create(sock_type: UnixSockType) -> Result<i32, UdsError> {
     })
 }
 
+/// 将 UDS 套接字绑定到指定路径
+///
+/// # Errors
+///
+/// 当路径为空或超过 `UNIX_PATH_MAX` 时返回 `Err(UdsError::Invalid)`; `fd` 无效时返回 `Err(UdsError::BadFd)`;
+/// 套接字非 Unbound 状态时返回 `Err(UdsError::Invalid)`; 路径已被占用时返回 `Err(UdsError::AddrInUse)`;
+/// 路径表无空闲槽位时返回 `Err(UdsError::NoMem)`。
 pub fn uds_bind(fd: i32, path: &[u8]) -> Result<(), UdsError> {
     if path.is_empty() || path.len() > UNIX_PATH_MAX {
         return Err(UdsError::Invalid);
@@ -332,6 +346,11 @@ pub fn uds_bind(fd: i32, path: &[u8]) -> Result<(), UdsError> {
     })
 }
 
+/// 将已绑定的流式 UDS 套接字置为监听状态
+///
+/// # Errors
+///
+/// 当 `fd` 无效时返回 `Err(UdsError::BadFd)`; 套接字非流式或未处于 Bound 状态时返回 `Err(UdsError::Invalid)`。
 pub fn uds_listen(fd: i32) -> Result<(), UdsError> {
     UDS_STATE.with_mut(|state| {
         let idx = fd_to_idx(fd)? as usize;
@@ -350,6 +369,12 @@ pub fn uds_listen(fd: i32) -> Result<(), UdsError> {
     })
 }
 
+/// 从监听套接字的待连接队列中取出一个客户端连接, 返回新连接的 FD
+///
+/// # Errors
+///
+/// 当新 FD 分配失败时返回 `Err(UdsError::NoMem)`; `fd` 无效时返回 `Err(UdsError::BadFd)`;
+/// 套接字非流式或非 Listening 状态时返回 `Err(UdsError::Invalid)`; 待连接队列为空时返回 `Err(UdsError::Again)`。
 pub fn uds_accept(fd: i32) -> Result<i32, UdsError> {
     // V2: 使用集中分配器获取新 FD
     let new_fd = crate::kernel::services::proc::fd_alloc::alloc_fd(
@@ -393,6 +418,13 @@ pub fn uds_accept(fd: i32) -> Result<i32, UdsError> {
     })
 }
 
+/// 发起到指定路径 UDS 套接字的连接
+///
+/// # Errors
+///
+/// 当路径为空或过长时返回 `Err(UdsError::Invalid)`; `fd` 无效时返回 `Err(UdsError::BadFd)`;
+/// 套接字状态非法或两端类型不匹配时返回 `Err(UdsError::Invalid)`; 目标路径不存在时返回 `Err(UdsError::ConnRefused)`;
+/// 目标监听队列已满时返回 `Err(UdsError::Again)`。
 pub fn uds_connect(fd: i32, path: &[u8]) -> Result<(), UdsError> {
     if path.is_empty() || path.len() > UNIX_PATH_MAX {
         return Err(UdsError::Invalid);
@@ -441,6 +473,12 @@ pub fn uds_connect(fd: i32, path: &[u8]) -> Result<(), UdsError> {
     })
 }
 
+/// 通过流式 UDS 连接发送数据
+///
+/// # Errors
+///
+/// 当 `fd` 无效或非流式套接字时返回 `Err(UdsError::Invalid)`; 未连接或对端已关闭时返回 `Err(UdsError::NotFound)`;
+/// 对端缓冲区无剩余空间时返回 `Err(UdsError::Again)`。
 pub fn uds_send(fd: i32, data: &[u8]) -> Result<usize, UdsError> {
     UDS_STATE.with_mut(|state| {
         let idx = fd_to_idx(fd)? as usize;
@@ -485,8 +523,13 @@ pub fn uds_send(fd: i32, data: &[u8]) -> Result<usize, UdsError> {
     })
 }
 
-/// v2: 接收 stream 消息并提取凭据 (若对端发送时附加了 SCM_CREDENTIALS).
+/// v2: 接收 stream 消息并提取凭据 (若对端发送时附加了 `SCM_CREDENTIALS`).
 /// 返回 (字节数, 凭据或 None). 调用方分别处理数据和凭据.
+///
+/// # Errors
+///
+/// 当 `fd` 无效或非流式套接字时返回 `Err(UdsError::Invalid)`; 对端已关闭时返回 `Err(UdsError::NotFound)`;
+/// 缓冲为空且对端未关闭时返回 `Err(UdsError::Again)`。
 pub fn uds_recv_with_creds(
     fd: i32,
     out: &mut [u8],
@@ -525,6 +568,12 @@ pub fn uds_recv_with_creds(
     })
 }
 
+/// 通过流式 UDS 连接接收数据
+///
+/// # Errors
+///
+/// 当 `fd` 无效或非流式套接字时返回 `Err(UdsError::Invalid)`; 套接字未连接时返回 `Err(UdsError::Invalid)`;
+/// 缓冲为空且对端未关闭时返回 `Err(UdsError::Again)` (对端已关闭时返回 `Ok(0)`)。
 pub fn uds_recv(fd: i32, out: &mut [u8]) -> Result<usize, UdsError> {
     UDS_STATE.with_mut(|state| {
         let idx = fd_to_idx(fd)? as usize;
@@ -552,6 +601,11 @@ pub fn uds_recv(fd: i32, out: &mut [u8]) -> Result<usize, UdsError> {
     })
 }
 
+/// 向指定路径的 UDS 数据报套接字发送数据
+///
+/// # Errors
+///
+/// 当目标路径不存在时返回 `Err(UdsError::ConnRefused)`; 目标套接字非数据报类型时返回 `Err(UdsError::Invalid)`。
 pub fn uds_sendto(_fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsError> {
     UDS_STATE.with_mut(|state| {
         let pidx = state.find_path(dest_path).ok_or(UdsError::ConnRefused)? as usize;
@@ -582,12 +636,22 @@ pub fn uds_sendto(_fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsE
     })
 }
 
+/// 从 UDS 数据报套接字接收数据
+///
+/// # Errors
+///
+/// 传播自 [`uds_recvfrom_with_creds`]: `fd` 无效或非数据报类型时返回 `Err(UdsError::Invalid)`;
+/// 无待收数据时返回 `Err(UdsError::Again)`。
 pub fn uds_recvfrom(fd: i32, out: &mut [u8]) -> Result<usize, UdsError> {
     let (_n, _cred) = uds_recvfrom_with_creds(fd, out)?;
     Ok(_n)
 }
 
 /// v2: DGRAM 接收并提取凭据
+///
+/// # Errors
+///
+/// 当 `fd` 无效或非数据报类型时返回 `Err(UdsError::Invalid)`; 无待收数据时返回 `Err(UdsError::Again)`。
 pub fn uds_recvfrom_with_creds(
     fd: i32,
     out: &mut [u8],
@@ -618,6 +682,11 @@ pub fn uds_recvfrom_with_creds(
     })
 }
 
+/// 关闭 UDS 套接字并清理其路径绑定与对端关系
+///
+/// # Errors
+///
+/// 当 `fd` 无效 (非 UDS 或槽位已释放) 时返回 `Err(UdsError::BadFd)`。
 pub fn uds_close(fd: i32) -> Result<(), UdsError> {    UDS_STATE.with_mut(|state| {
         let idx = fd_to_idx(fd)? as usize;
         if state.sockets[idx].id == 0 {
@@ -669,6 +738,11 @@ pub fn uds_close(fd: i32) -> Result<(), UdsError> {    UDS_STATE.with_mut(|state
     })
 }
 
+/// 取消指定路径的 UDS 绑定并释放对应套接字
+///
+/// # Errors
+///
+/// 当路径为空或超过 `UNIX_PATH_MAX` 时返回 `Err(UdsError::Invalid)`; 路径不存在时返回 `Err(UdsError::NotFound)`。
 pub fn uds_unlink(path: &[u8]) -> Result<(), UdsError> {
     if path.is_empty() || path.len() > UNIX_PATH_MAX {
         return Err(UdsError::Invalid);
@@ -687,9 +761,9 @@ pub fn uds_unlink(path: &[u8]) -> Result<(), UdsError> {
 // v2: SO_PASSCRED / cmsg / 抽象命名空间
 // ============================================================================
 
-/// v2: SO_PASSCRED 选项 — 设置 socket 是否在 sendmsg 中附加 SCM_CREDENTIALS.
+/// v2: `SO_PASSCRED` 选项 — 设置 socket 是否在 sendmsg 中附加 `SCM_CREDENTIALS`.
 ///
-/// 由 framework::net::init::sm_setsockopt 路由 (level=SOL_SOCKET, optname=SO_PASSCRED).
+/// 由 `framework::net::init::sm_setsockopt` 路由 (`level=SOL_SOCKET`, `optname=SO_PASSCRED`).
 /// 仅对 UDS socket 生效, 其他 family 返 ENOPROTOOPT.
 pub fn uds_setsockopt(fd: i32, enable: bool) -> i32 {
     UDS_STATE.with_mut(|state| {
@@ -708,7 +782,7 @@ pub fn uds_setsockopt(fd: i32, enable: bool) -> i32 {
     })
 }
 
-/// v2: SO_PASSCRED 查询.
+/// v2: `SO_PASSCRED` 查询.
 pub fn uds_getsockopt_passcred(fd: i32) -> i32 {
     UDS_STATE.with(|state| {
         let idx = match fd_to_idx(fd) {
@@ -718,11 +792,11 @@ pub fn uds_getsockopt_passcred(fd: i32) -> i32 {
         if state.sockets[idx].id == 0 {
             return -9;
         }
-        state.sockets[idx].passcred as i32
+        i32::from(state.sockets[idx].passcred)
     })
 }
 
-/// v2: SCM_CREDENTIALS 数据结构 (Linux ABI 12 字节)
+/// v2: `SCM_CREDENTIALS` 数据结构 (Linux ABI 12 字节)
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ScmCredentials {
@@ -758,10 +832,10 @@ pub fn uds_parse_path(path: &[u8]) -> Option<(&[u8], bool)> {
 
 pub fn uds_reset_for_test() {
     UDS_STATE.with_mut(|state| {
-        for s in state.sockets.iter_mut() {
+        for s in &mut state.sockets {
             *s = UnixSocket::empty();
         }
-        for p in state.paths.iter_mut() {
+        for p in &mut state.paths {
             *p = UnixPathBinding::empty();
         }
     });
@@ -852,46 +926,101 @@ impl SockAddrUn {
 // 安全封装 API (保持原有调用方兼容)
 // ============================================================================
 
+/// 安全封装: 创建 UDS 套接字, 委托给 [`uds_create`]
+///
+/// # Errors
+///
+/// 无空闲槽位或 FD 数量达上限时映射为 `Err(UnixSocketError)`。
 pub fn socket(sock_type: SockType) -> UnixResult<i32> {
     uds_create(sock_type).map_err(Into::into)
 }
 
+/// 安全封装: 绑定 UDS 套接字, 委托给 [`uds_bind`]
+///
+/// # Errors
+///
+/// `fd` 无效、路径非法、已被占用或无空闲槽位时映射为对应的 `Err(UnixSocketError)`。
 pub fn bind(fd: i32, addr: &SockAddrUn) -> UnixResult<()> {
     uds_bind(fd, addr.path_slice()).map_err(Into::into)
 }
 
+/// 安全封装: 置为监听状态, 委托给 [`uds_listen`]
+///
+/// # Errors
+///
+/// `fd` 无效或套接字非流式/未绑定时映射为 `Err(UnixSocketError)`。
 pub fn listen(fd: i32) -> UnixResult<()> {
     uds_listen(fd).map_err(Into::into)
 }
 
+/// 安全封装: 接受连接, 委托给 [`uds_accept`]
+///
+/// # Errors
+///
+/// `fd` 无效、队列为空或新 FD 分配失败时映射为 `Err(UnixSocketError)`。
 pub fn accept(fd: i32) -> UnixResult<i32> {
     uds_accept(fd).map_err(Into::into)
 }
 
+/// 安全封装: 发起连接, 委托给 [`uds_connect`]
+///
+/// # Errors
+///
+/// `fd` 无效、目标路径不存在或连接被拒绝时映射为 `Err(UnixSocketError)`。
 pub fn connect(fd: i32, addr: &SockAddrUn) -> UnixResult<()> {
     uds_connect(fd, addr.path_slice()).map_err(Into::into)
 }
 
+/// 安全封装: 流式发送数据, 委托给 [`uds_send`]
+///
+/// # Errors
+///
+/// `fd` 无效、未连接或对端无空间时映射为 `Err(UnixSocketError)`。
 pub fn send(fd: i32, data: &[u8]) -> UnixResult<usize> {
     uds_send(fd, data).map_err(Into::into)
 }
 
+/// 安全封装: 流式接收数据, 委托给 [`uds_recv`]
+///
+/// # Errors
+///
+/// `fd` 无效、未连接或无数据可读时映射为 `Err(UnixSocketError)`。
 pub fn recv(fd: i32, out: &mut [u8]) -> UnixResult<usize> {
     uds_recv(fd, out).map_err(Into::into)
 }
 
+/// 安全封装: 数据报发送, 委托给 [`uds_sendto`]
+///
+/// # Errors
+///
+/// 目标路径不存在或目标非数据报套接字时映射为 `Err(UnixSocketError)`。
 pub fn sendto(fd: i32, data: &[u8], dest: &SockAddrUn) -> UnixResult<usize> {
     uds_sendto(fd, data, dest.path_slice()).map_err(Into::into)
 }
 
+/// 安全封装: 数据报接收, 委托给 [`uds_recvfrom`]
+///
+/// # Errors
+///
+/// `fd` 无效或无可读数据时映射为 `Err(UnixSocketError)`。
 pub fn recvfrom(fd: i32, out: &mut [u8]) -> UnixResult<usize> {
     uds_recvfrom(fd, out).map_err(Into::into)
 }
 
+/// 安全封装: 关闭套接字, 委托给 [`uds_close`]
+///
+/// # Errors
+///
+/// `fd` 无效时映射为 `Err(UnixSocketError)`。
 pub fn close(fd: i32) -> UnixResult<()> {
     uds_close(fd).map_err(Into::into)
 }
 
+/// 安全封装: 解除路径绑定, 委托给 [`uds_unlink`]
+///
+/// # Errors
+///
+/// 路径非法或不存在时映射为 `Err(UnixSocketError)`。
 pub fn unlink(addr: &SockAddrUn) -> UnixResult<()> {
     uds_unlink(addr.path_slice()).map_err(Into::into)
 }

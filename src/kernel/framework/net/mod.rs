@@ -3,7 +3,7 @@
 //! ## 依赖声明
 //!
 //! framework 内部依赖: sync, syscall, driver
-//! services 依赖: services::net (安全代理)
+//! services 依赖: `services::net` (安全代理)
 
 pub mod driver;
 #[cfg(not(feature = "kernel_test"))]
@@ -19,7 +19,7 @@ pub mod iface_trait;
 pub mod smoltcp_impl;
 /// P2-I-41: Socket WaitQueue 基础设施
 pub mod wait_queue;
-/// P2-I-44: 网络快照 (net_save / net_restore 完整实现)
+/// P2-I-44: 网络快照 (`net_save` / `net_restore` 完整实现)
 pub mod save;
 
 /// 网络子系统 Rust 模块

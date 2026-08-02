@@ -101,30 +101,30 @@ impl NetSnapshot {
         let mut h: u32 = 0xA5A5_5A5A;
         h ^= self.version;
         for b in &self.mac {
-            h ^= *b as u32;
+            h ^= u32::from(*b);
         }
         for b in &self.ip {
-            h = h.rotate_left(3) ^ (*b as u32);
+            h = h.rotate_left(3) ^ u32::from(*b);
         }
-        h ^= self.prefix_len as u32;
+        h ^= u32::from(self.prefix_len);
         for b in &self.gateway {
-            h = h.rotate_left(5) ^ (*b as u32);
+            h = h.rotate_left(5) ^ u32::from(*b);
         }
         for slot in &self.dns {
             for b in slot {
-                h = h.rotate_left(7) ^ (*b as u32);
+                h = h.rotate_left(7) ^ u32::from(*b);
             }
         }
         for t in &self.fd_types {
-            h = h.rotate_left(2) ^ (*t as u32);
+            h = h.rotate_left(2) ^ u32::from(*t);
         }
         for v in &self.fd_handles {
             h = h.rotate_left(11) ^ *v;
         }
-        h ^= self.net_ready as u32;
-        h ^= self.net_configured as u32;
-        h ^= self.sockets_initialized as u32;
-        h ^= self.init_state as u32;
+        h ^= u32::from(self.net_ready);
+        h ^= u32::from(self.net_configured);
+        h ^= u32::from(self.sockets_initialized);
+        h ^= u32::from(self.init_state);
         h
     }
 
@@ -141,12 +141,12 @@ impl NetSnapshot {
 
 static NET_SNAPSHOT_LOCK: Mutex<NetSnapshot> = Mutex::new(NetSnapshot::empty());
 
-/// 写快照 (NET_SNAPSHOT_LOCK 已持有, 不要二次加锁)
+/// 写快照 (`NET_SNAPSHOT_LOCK` 已持有, 不要二次加锁)
 ///
 /// # SAFETY
 ///
-/// 调用方必须持有 `NET_SNAPSHOT_LOCK` (这是本文件私有约定, 与外部 NET_STATE
-/// 互不干涉). 通过 data_ptr 直接写入快照数据, 必须串行调用.
+/// 调用方必须持有 `NET_SNAPSHOT_LOCK` (这是本文件私有约定, 与外部 `NET_STATE`
+/// 互不干涉). 通过 `data_ptr` 直接写入快照数据, 必须串行调用.
 pub unsafe fn save_unchecked<F>(filler: F)
 where
     F: FnOnce(&mut NetSnapshot),
@@ -159,7 +159,7 @@ where
     *ptr = snap;
 }}
 
-/// 读快照副本 (NET_SNAPSHOT_LOCK 持有)
+/// 读快照副本 (`NET_SNAPSHOT_LOCK` 持有)
 ///
 /// # SAFETY
 ///
@@ -169,7 +169,7 @@ pub unsafe fn load_unchecked() -> NetSnapshot { unsafe {
     *NET_SNAPSHOT_LOCK.data_ptr()
 }}
 
-/// 通过 NET_SNAPSHOT_LOCK 串行化的保存入口
+/// 通过 `NET_SNAPSHOT_LOCK` 串行化的保存入口
 pub fn save<F>(filler: F)
 where
     F: FnOnce(&mut NetSnapshot),
@@ -179,7 +179,7 @@ where
     unsafe { save_unchecked(filler) };
 }
 
-/// 通过 NET_SNAPSHOT_LOCK 串行化的读取入口
+/// 通过 `NET_SNAPSHOT_LOCK` 串行化的读取入口
 pub fn load() -> NetSnapshot {
     let _guard = NET_SNAPSHOT_LOCK.lock();
     // SAFETY: NET_SNAPSHOT_LOCK 由本调用方独占持有, 读路径串行, 内存

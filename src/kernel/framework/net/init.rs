@@ -9,7 +9,7 @@ use smoltcp::socket::{tcp, udp};
 // W4.4: Ipv4Address/IpCidr/IpEndpoint/IpAddress 通过 NetStack trait 类型
 // 翻译层访问 (services 边界), 直接使用 smoltcp wire 类型仅在 framework
 // 翻译 helper 内部 (qemu_net_skel 一类适配器). W4.4 阶段先把最常用的
-// 4 处 (net_save + setup + parse_ipv4_endpoint + endpoint 访问) 替换.
+// 4 处 (net_save + setup + parse_endpoint + endpoint 访问) 替换.
 use smoltcp::wire::IpCidr;
 
 // REVAL-W W4.1 (2026-06-25): 引入 SmoltcpNetStack 实例, 这是 NetStack
@@ -68,7 +68,7 @@ const MAX_SOCKETS: usize = 256;
 
 /// 网络子系统全局状态, 集中原  12 个 static mut.
 ///
-/// 由 `NET_STATE` (IrqSpinLock) 保护, 所有字段访问通过 `raw` 模块 accessor.
+/// 由 `NET_STATE` (`IrqSpinLock`) 保护, 所有字段访问通过 `raw` 模块 accessor.
 struct NetState {
     device: Option<ChitinNetDevice>,
     stack: Option<NetworkStack>,
@@ -106,8 +106,8 @@ impl NetState {
     }
 }
 
-/// 全局网络状态, IrqSpinLock 保护 (替代原 NET_LOCK + 12 static mut).
-/// poll_network 使用 try_lock() 避免 ISR 上下文阻塞.
+/// 全局网络状态, `IrqSpinLock` 保护 (替代原 `NET_LOCK` + 12 static mut).
+/// `poll_network` 使用 `try_lock()` 避免 ISR 上下文阻塞.
 static NET_STATE: Mutex<NetState> = Mutex::new(NetState::new());
 
 // 以下 static mut 保留: SOCKET_STORAGE/SOCKET_SET 是自引用结构,
@@ -128,11 +128,11 @@ static SOCKETS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 // ============================================================================
 const DEFAULT_MAX_SOCKETS: usize = 1024;
 
-/// 运行时活动 socket 数上限 (≤ MAX_SOCKETS).
-/// 初值取 [1, MAX_SOCKETS] 范围内的 DEFAULT_MAX_SOCKETS.
+/// 运行时活动 socket 数上限 (≤ `MAX_SOCKETS`).
+/// 初值取 [1, `MAX_SOCKETS`] 范围内的 `DEFAULT_MAX_SOCKETS`.
 static G_MAX_SOCKETS: AtomicUsize = AtomicUsize::new(0);
 
-/// 启动期初始化 G_MAX_SOCKETS. 必须在 init_sockets 前调用一次.
+/// 启动期初始化 `G_MAX_SOCKETS`. 必须在 `init_sockets` 前调用一次.
 pub fn configure_max_sockets() {
     let initial = if DEFAULT_MAX_SOCKETS > MAX_SOCKETS {
         MAX_SOCKETS
@@ -155,8 +155,8 @@ pub fn get_max_sockets() -> usize {
     }
 }
 
-/// 调整运行时 socket 上限. n=0 拒绝; n>MAX_SOCKETS 截断为 MAX_SOCKETS.
-/// 返回实际生效值. 运行时调大已分配的 SocketStorage 不会扩容 (仅控制新连接).
+/// 调整运行时 socket 上限. n=0 拒绝; `n>MAX_SOCKETS` 截断为 `MAX_SOCKETS`.
+/// 返回实际生效值. 运行时调大已分配的 `SocketStorage` 不会扩容 (仅控制新连接).
 pub fn set_max_sockets(n: usize) -> usize {
     let target = if n == 0 {
         return get_max_sockets();
@@ -309,12 +309,12 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 
 /// 轮询网络栈 (驱动 TX/RX、定时器、DHCP)。
 ///
-/// 在 timer ISR 或网络任务中调用, 内部 try_lock 避免阻塞。
-/// 若 NET_LOCK 已被持有则直接返回, 不会等待。
+/// 在 timer ISR 或网络任务中调用, 内部 `try_lock` 避免阻塞。
+/// 若 `NET_LOCK` 已被持有则直接返回, 不会等待。
 ///
 /// # Safety
 /// - `try_lock` 保证 ISR 安全 (不阻塞)。
-/// - 内部 raw::device_mut / raw::stack_mut 通过 NET_LOCK 互斥保护。
+/// - 内部 `raw::device_mut` / `raw::stack_mut` 通过 `NET_LOCK` 互斥保护。
 pub unsafe fn poll_network() { unsafe {
     let _guard = match NET_STATE.try_lock() {
         Some(g) => g,
@@ -452,9 +452,9 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
 /// # Safety
 ///
 /// - 调用方须保证单线程进入 (recovery 域串行执行)
-/// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
+/// - 必须在关中断上下文执行, `NET_LOCK` 由本函数获取
 ///
-/// SAFETY: 见上方 # Safety 章节, 调用方保证单线程 + 关中断; NET_LOCK 由本函数内部获取
+/// SAFETY: 见上方 # Safety 章节, 调用方保证单线程 + 关中断; `NET_LOCK` 由本函数内部获取
 unsafe fn net_save() { unsafe {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::net::save as snap;
@@ -501,10 +501,12 @@ unsafe fn net_save() { unsafe {
     });
 }}
 
-/// SocketHandle → u32 (smoltcp SocketHandle 是 `pub struct SocketHandle(usize)` 单字段
-/// Copy newtype, 用 transmute_copy 替代 transmute: 编译期强制 size 匹配, 不依赖
+/// `SocketHandle` → u32 (smoltcp `SocketHandle` 是 `pub struct SocketHandle(usize)` 单字段
+/// Copy newtype, 用 `transmute_copy` 替代 transmute: 编译期强制 size 匹配, 不依赖
 /// repr(transparent) 假设).
 #[inline]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 fn as_u32_handle(h: smoltcp::iface::SocketHandle) -> u32 {
     // SAFETY: smoltcp::iface::SocketHandle 是单字段 Copy tuple struct (字段类型 usize),
     //         size_of::<SocketHandle>() == size_of::<usize>() 编译期由 transmute_copy 强制.
@@ -513,12 +515,12 @@ fn as_u32_handle(h: smoltcp::iface::SocketHandle) -> u32 {
     raw as u32
 }
 
-/// u32 → SocketHandle (作为 `as_u32_handle` 的 companion helper).
+/// u32 → `SocketHandle` (作为 `as_u32_handle` 的 companion helper).
 ///
 /// # Safety
 ///
 /// 调用方必须保证 `raw` 是同构 smoltcp 版本下 `as_u32_handle` 的输出值;
-/// 跨 smoltcp 版本混用会破坏 SocketSet 索引语义. 0 是 INVALID 句柄,
+/// 跨 smoltcp 版本混用会破坏 `SocketSet` 索引语义. 0 是 INVALID 句柄,
 /// 不应被分配, 但 `SocketSet` 内部允许 0 (因为 `add` 一定返回非零索引).
 #[inline]
 unsafe fn smol_handle_from_u32(raw: u32) -> smoltcp::iface::SocketHandle {
@@ -530,9 +532,9 @@ unsafe fn smol_handle_from_u32(raw: u32) -> smoltcp::iface::SocketHandle {
 /// # Safety
 ///
 /// - 调用方须确保无其他线程持有 socket fd (例如文件系统已卸载完毕)
-/// - 必须在关中断上下文执行, NET_LOCK 由本函数获取
+/// - 必须在关中断上下文执行, `NET_LOCK` 由本函数获取
 ///
-/// SAFETY: 见上方 # Safety 章节, 调用方保证 socket fd 已无人持有 + 关中断; NET_LOCK 由本函数内部获取
+/// SAFETY: 见上方 # Safety 章节, 调用方保证 socket fd 已无人持有 + 关中断; `NET_LOCK` 由本函数内部获取
 unsafe fn net_restore() { unsafe {
     use core::sync::atomic::Ordering;
     use crate::kernel::framework::net::save as snap;
@@ -653,14 +655,11 @@ pub extern "C" fn qx_net_init() {
 
         raw::klog_msg("Step1: hardware probe");
 
-        let mut nic = match nic_probe_all() {
-            Some(n) => n,
-            None => {
-                let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
-                raw::klog_msg("No NIC found, running without network");
-                raw::klog_init("--- Network Subsystem Ready (No Network) ---");
-                return;
-            }
+        let mut nic = if let Some(n) = nic_probe_all() { n } else {
+            let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
+            raw::klog_msg("No NIC found, running without network");
+            raw::klog_init("--- Network Subsystem Ready (No Network) ---");
+            return;
         };
 
         raw::klog_msg("Step2: init device hardware");
@@ -768,14 +767,14 @@ pub extern "C" fn qx_net_init() {
     }
 }
 
-/// NetRx softirq 处理程序 — 网络包接收延迟处理
+/// `NetRx` softirq 处理程序 — 网络包接收延迟处理
 fn net_rx_softirq_handler() {
     // 当前 smoltcp 集成使用 poll 模式, 包处理在 poll_network() 中完成.
     // 此 handler 为多核 + 中断驱动模式预留.
     // TODO: 待 NAPI/中断驱动模式启用后, 此处实现 skb 投递到 smoltcp.
 }
 
-/// NetTx softirq 处理程序 — 网络发送完成回收
+/// `NetTx` softirq 处理程序 — 网络发送完成回收
 fn net_tx_softirq_handler() {
     // 当前发送通过 smoltcp 直接完成, 无异步发送队列.
     // 此 handler 为多核 + DMA 完成中断模式预留.
@@ -788,7 +787,7 @@ fn net_tx_softirq_handler() {
 /// 启动 DHCP (异步, 由 timer ISR 驱动 poll 完成)
 ///
 /// 调用后 DHCP Discover 会在下一个 timer tick 发出。
-/// 用户态通过 poll/select 或轮询 NET_CONFIGURED 等待完成。
+/// 用户态通过 poll/select 或轮询 `NET_CONFIGURED` 等待完成。
 ///
 /// # Safety
 /// 调用方保证 NET 已初始化 (通过 `qx_net_init` 注册)，
@@ -812,6 +811,8 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 { unsafe {
 ///   指向的内存必须在调用期间保持有效。
 /// - 调用方保证 NET 已初始化。
 #[unsafe(no_mangle)]
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 { unsafe {
     if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
         return -1;
@@ -835,10 +836,10 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
     loop {
         let b = *ptr;
         if b == 0 {
-            if !parsing_prefix {
-                octets[octet_idx] = current as u8;
-            } else {
+            if parsing_prefix {
                 prefix = current as u8;
+            } else {
+                octets[octet_idx] = current as u8;
             }
             break;
         }
@@ -852,7 +853,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
             if octet_idx >= 4 { return -1; }
             current = 0;
         } else if b.is_ascii_digit() {
-            current = current * 10 + (b - b'0') as u32;
+            current = current * 10 + u32::from(b - b'0');
         } else {
             return -1;
         }
@@ -878,7 +879,7 @@ pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8
             if gw_idx >= 4 { return -1; }
             gw_current = 0;
         } else if b.is_ascii_digit() {
-            gw_current = gw_current * 10 + (b - b'0') as u32;
+            gw_current = gw_current * 10 + u32::from(b - b'0');
         } else {
             return -1;
         }
@@ -995,7 +996,7 @@ fn ipv4_from_atomic(v: u32) -> Option<[u8; 4]> {
 /// # 行为
 /// - 状态机 = Uninitialized 时, 直接返回 false (需要先有 chitin 设备注册)
 /// - 状态机 = HardwareProbed/InterfaceReady 时, 启动 DHCP 握手
-/// - 状态机 = FullyInitialized 时, 直接返回 true
+/// - 状态机 = `FullyInitialized` 时, 直接返回 true
 /// - 状态机 = Failed 时, 不重试, 返回 false
 pub fn trigger_init() -> bool {
     match get_init_state() {
@@ -1079,6 +1080,8 @@ pub fn dns_resolve(name: &str) -> Option<[u8; 4]> {
 }
 
 /// 解析 IPv4 字面量 "a.b.c.d" (无错处理; 不合法返 None)
+// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+#[expect(clippy::cast_possible_truncation)]
 pub(crate) fn parse_ipv4_literal(s: &str) -> Option<[u8; 4]> {
     let mut octets = [0u8; 4];
     let mut idx = 0usize;
@@ -1094,7 +1097,7 @@ pub(crate) fn parse_ipv4_literal(s: &str) -> Option<[u8; 4]> {
             cur = 0;
             has_digit = false;
         } else if b.is_ascii_digit() {
-            cur = cur * 10 + (b - b'0') as u32;
+            cur = cur * 10 + u32::from(b - b'0');
             has_digit = true;
         } else {
             return None;
@@ -1123,7 +1126,7 @@ pub fn shutdown_network() {
 /// 重置网络栈状态 (供栏栈 BHR / 异常恢复使用)。
 ///
 /// # Safety
-/// - 必须持有 NET_LOCK (内部获取)。
+/// - 必须持有 `NET_LOCK` (内部获取)。
 /// - 必须在所有 socket 关闭后调用, 否则可能泄漏资源。
 pub unsafe fn reset_network_state() {
     let _guard = NET_STATE.lock();
@@ -1143,18 +1146,18 @@ pub unsafe fn reset_network_state() {
 // 时无 unsafe 暴露.
 // ============================================================================
 
-/// SmoltcpNetStack::socket_open 的 safe wrapper (W4.2.3.4 步骤 2).
+/// `SmoltcpNetStack::socket_open` 的 safe wrapper (W4.2.3.4 步骤 2).
 ///
 /// ## 调用方契约
 ///
 /// - `kind`: 要创建的 socket 类型 (Tcp/Udp/...)
 /// - `slot_idx`: 槽位索引, 必须在 `[MAX_SM_FD, TOTAL_SLOTS)` 范围
-///   (SmoltcpNetStack 专属范围, 不与 sm_socket 冲突)
+///   (`SmoltcpNetStack` 专属范围, 不与 `sm_socket` 冲突)
 ///
 /// ## 返回
 ///
-/// - `Some(u32)`: smoltcp handle (用于 smol_socket_get)
-/// - `None`: 创建失败 (k_malloc 失败 / 槽位已占用 / slot_idx 越界)
+/// - `Some(u32)`: smoltcp handle (用于 `smol_socket_get`)
+/// - `None`: 创建失败 (`k_malloc` 失败 / 槽位已占用 / `slot_idx` 越界)
 pub fn smoltcp_net_stack_socket_open(
     kind: crate::kernel::framework::net::iface_trait::SocketKind,
     slot_idx: usize,
@@ -1169,25 +1172,25 @@ pub fn smoltcp_net_stack_socket_open(
     Some(as_u32_handle(smol_handle))
 }
 
-/// SmoltcpNetStack 专属范围的 smol 槽位基址 (W4.2.3.4 步骤 2).
+/// `SmoltcpNetStack` 专属范围的 smol 槽位基址 (W4.2.3.4 步骤 2).
 ///
-/// 返回 `MAX_SM_FD` (即 SmoltcpNetStack 范围的起始索引). services 层
-/// SmoltcpNetStack::socket_open 内部 `smol_slot_idx = slot_base() + handle_map_idx`.
+/// 返回 `MAX_SM_FD` (即 `SmoltcpNetStack` 范围的起始索引). services 层
+/// `SmoltcpNetStack::socket_open` 内部 `smol_slot_idx = slot_base() + handle_map_idx`.
 pub fn smoltcp_net_stack_slot_base() -> usize {
     MAX_SM_FD
 }
 
-/// SmoltcpNetStack::poll 的 safe wrapper (W4.2.3.4).
+/// `SmoltcpNetStack::poll` 的 safe wrapper (W4.2.3.4).
 ///
-/// 委托给 `raw::smoltcp_net_stack_poll`, 内部持有 NET_LOCK 并调用
+/// 委托给 `raw::smoltcp_net_stack_poll`, 内部持有 `NET_LOCK` 并调用
 /// smoltcp `Interface::poll` + `process_dhcp_events`.
 pub fn smoltcp_net_stack_poll() -> crate::kernel::framework::net::iface_trait::PollOutcome {
     raw::smoltcp_net_stack_poll()
 }
 
-/// SmoltcpNetStack::close 的 safe wrapper (W4.2.3.4).
+/// `SmoltcpNetStack::close` 的 safe wrapper (W4.2.3.4).
 ///
-/// 关闭 SmoltcpNetStack 范围内的 smoltcp socket, 释放 buffer.
+/// 关闭 `SmoltcpNetStack` 范围内的 smoltcp socket, 释放 buffer.
 /// 委托给 `raw::smoltcp_net_stack_socket_close`.
 pub fn smoltcp_net_stack_close(slot_idx: usize) {
     raw::smoltcp_net_stack_socket_close(slot_idx);
@@ -1198,9 +1201,9 @@ pub fn smoltcp_net_stack_close(slot_idx: usize) {
 // ============================================================================
 
 pub(crate) mod raw {
-    use super::*;
+    use super::{NetState, NET_STATE, NetworkStack, ChitinNetDevice, SocketHandle, udp, UDP_META_COUNT, SocketSet, SOCKET_SET, TOTAL_SLOTS, TCP_BUF_SIZE, UDP_BUF_SIZE, dhcpv4, MAX_SM_FD, tcp, klog_net, klog_init_msg, klog_net_err};
 
-    /// 获取 NetState 可变引用 (调用方必须持有 NET_STATE 锁).
+    /// 获取 `NetState` 可变引用 (调用方必须持有 `NET_STATE` 锁).
     ///
     /// # Safety
     ///
@@ -1238,13 +1241,13 @@ pub(crate) mod raw {
         unsafe { state().stack = s; }
     }
 
-    /// 安全读取 dhcp_handle
+    /// 安全读取 `dhcp_handle`
     pub fn dhcp_handle() -> Option<SocketHandle> {
         // SAFETY: SocketHandle 是 Copy, 调用方持有锁.
         unsafe { state().dhcp_handle }
     }
 
-    /// 安全设置 dhcp_handle
+    /// 安全设置 `dhcp_handle`
     pub fn set_dhcp_handle(h: Option<SocketHandle>) {
         // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().dhcp_handle = h; }
@@ -1338,27 +1341,27 @@ pub(crate) mod raw {
         unsafe { state().udp_tx_bufs[fd] = val; }
     }
 
-    /// 读取 UDP RX metadata 数组 (可变借用, 用于 PacketBuffer 构造)
+    /// 读取 UDP RX metadata 数组 (可变借用, 用于 `PacketBuffer` 构造)
     ///
     /// # Safety
     ///
-    /// 调用方持有 NET_STATE 锁; 返回的引用仅在本次 socket 构造期间有效.
+    /// 调用方持有 `NET_STATE` 锁; 返回的引用仅在本次 socket 构造期间有效.
     pub unsafe fn udp_rx_meta(fd: usize) -> &'static mut [udp::PacketMetadata; UDP_META_COUNT] {
         // SAFETY: 调用方持有 NET_STATE 锁, 数据在 static 中.
         unsafe { &mut state().udp_rx_metas[fd] }
     }
 
-    /// 读取 UDP TX metadata 数组 (可变借用, 用于 PacketBuffer 构造)
+    /// 读取 UDP TX metadata 数组 (可变借用, 用于 `PacketBuffer` 构造)
     ///
     /// # Safety
     ///
-    /// 调用方持有 NET_STATE 锁; 返回的引用仅在本次 socket 构造期间有效.
+    /// 调用方持有 `NET_STATE` 锁; 返回的引用仅在本次 socket 构造期间有效.
     pub unsafe fn udp_tx_meta(fd: usize) -> &'static mut [udp::PacketMetadata; UDP_META_COUNT] {
         // SAFETY: 调用方持有 NET_STATE 锁, 数据在 static 中.
         unsafe { &mut state().udp_tx_metas[fd] }
     }
 
-    /// 安全获取 SocketSet 指针 (保留为 static mut, 自引用结构)
+    /// 安全获取 `SocketSet` 指针 (保留为 static mut, 自引用结构)
     pub fn socket_set() -> *mut SocketSet<'static> {
         // SAFETY: SOCKET_SET 在 init_sockets 后已初始化, 调用方在 NET_STATE 锁下.
         unsafe { SOCKET_SET.as_mut_ptr() }
@@ -1391,27 +1394,27 @@ pub(crate) mod raw {
 
     /// W4.2.2 DHCP 状态翻译的 prev state 缓存.
     ///
-    /// 使用 `core::sync::atomic::AtomicU8` 持有 DhcpState 的 discriminant
-    /// (枚举 tag). DhcpState::Bound 的 ipv4 + lease_expires_at 字段
-    /// 用 `AtomicU32` (ipv4) + `AtomicU64` (lease_expires_at) 单独存储.
+    /// 使用 `core::sync::atomic::AtomicU8` 持有 `DhcpState` 的 discriminant
+    /// (枚举 tag). `DhcpState::Bound` 的 ipv4 + `lease_expires_at` 字段
+    /// 用 `AtomicU32` (ipv4) + `AtomicU64` (`lease_expires_at`) 单独存储.
     ///
     /// ## 设计选择
     ///
     /// 不使用 `static mut` + 裸指针: Rust 2024 edition 启用了
     /// `invalid_reference_casting` lint, 编译失败. 不使用 `UnsafeCell<T>`
     /// 包装: `static` 要求 `Sync`, 而 `UnsafeCell<T>: Sync` 需要 `T: Send`,
-    /// 但 `unsafe impl Send` 在 no_std 环境下行为不可靠.
+    /// 但 `unsafe impl Send` 在 `no_std` 环境下行为不可靠.
     ///
     /// ## 同步策略
     ///
-    /// 调用方需持有 NET_LOCK 互斥访问. 原子操作保证多线程可见性.
-    /// 4 个原子 (tag, ipv4[4], lease_expires_at) 的"组合"通过 read 顺序保证
+    /// 调用方需持有 `NET_LOCK` 互斥访问. 原子操作保证多线程可见性.
+    /// 4 个原子 (tag, ipv4[4], `lease_expires_at`) 的"组合"通过 read 顺序保证
     /// 一致性 (看 acquire/release).
     ///
     /// ## 简化 (W4.2.2 阶段 1)
     ///
-    /// 仅 AtomicU8 持有 tag. Bound 的额外数据 (ipv4, lease_expires_at) 通过
-    /// G_IPV4 (AtomicU32) + 单独的 AtomicU64 持有. W4.2.2 阶段不实装完整
+    /// 仅 `AtomicU8` 持有 tag. Bound 的额外数据 (ipv4, `lease_expires_at`) 通过
+    /// `G_IPV4` (`AtomicU32`) + 单独的 `AtomicU64` 持有. W4.2.2 阶段不实装完整
     /// 数据, 仅追踪 tag 转换.
     static PREV_DHCP_TAG: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
 
@@ -1426,36 +1429,36 @@ pub(crate) mod raw {
     /// 实际打开一个 socket (W4.2.3.2 实装).
     ///
     /// 根据 `kind` 构造 smoltcp socket (Tcp/Udp), 加入 `sockets`, 记录 buffer
-    /// 指针到 SOCKET_TABLE / TCP_RX_BUFS / TCP_TX_BUFS / UDP_RX_BUFS /
-    /// UDP_TX_BUFS / FD_TYPES, 返回 smol_handle.
+    /// 指针到 `SOCKET_TABLE` / `TCP_RX_BUFS` / `TCP_TX_BUFS` / `UDP_RX_BUFS` /
+    /// `UDP_TX_BUFS` / `FD_TYPES`, 返回 `smol_handle`.
     ///
     /// ## 索引空间分配 (W4.2.3.1)
     ///
-    /// `slot_idx` ∈ [0, TOTAL_SLOTS):
-    /// - 0..MAX_SM_FD:           sm_socket 路径 (现有 sm_socket 调用)
-    /// - MAX_SM_FD..TOTAL_SLOTS: SmoltcpNetStack 路径 (W4.2.4 整合后)
+    /// `slot_idx` ∈ [0, `TOTAL_SLOTS)`:
+    /// - `0..MAX_SM_FD`:           `sm_socket` 路径 (现有 `sm_socket` 调用)
+    /// - `MAX_SM_FD..TOTAL_SLOTS`: `SmoltcpNetStack` 路径 (W4.2.4 整合后)
     ///
     /// 两个范围严格隔离, 不冲突.
     ///
     /// ## buffer 来源 (W4.2.3.2 实装)
     ///
-    /// Tcp/Udp RX/TX buffer 走 `k_malloc` (slab), 与现有 sm_socket 路径一致.
-    /// buffer 指针记入 TCP_RX_BUFS / TCP_TX_BUFS / UDP_RX_BUFS / UDP_TX_BUFS
-    /// (索引 = slot_idx). close 时通过 socket_close_stub + sm_close 归还.
+    /// Tcp/Udp RX/TX buffer 走 `k_malloc` (slab), 与现有 `sm_socket` 路径一致.
+    /// buffer 指针记入 `TCP_RX_BUFS` / `TCP_TX_BUFS` / `UDP_RX_BUFS` / `UDP_TX_BUFS`
+    /// (索引 = `slot_idx`). close 时通过 `socket_close_stub` + `sm_close` 归还.
     ///
     /// ## 安全性
     ///
-    /// buffer 'static 借用: smoltcp SocketSet<'static> 要求 socket 借用
+    /// buffer 'static 借用: smoltcp `SocketSet`<'static> 要求 socket 借用
     /// 'static. 我们用 `unsafe { core::slice::from_raw_parts_mut(ptr, size) }`
-    /// 强制 'static (与现有 sm_socket 模式一致). 安全性依赖于:
-    ///   - k_malloc 不会在进程生命周期内释放 (slab 进程级)
-    ///   - socket_close 时通过 `k_free` 归还 (W4.2.3.3 迁移时实装)
+    /// 强制 'static (与现有 `sm_socket` 模式一致). 安全性依赖于:
+    ///   - `k_malloc` 不会在进程生命周期内释放 (slab 进程级)
+    ///   - `socket_close` 时通过 `k_free` 归还 (W4.2.3.3 迁移时实装)
     ///
     /// ## 简化 (W4.2.3.2 阶段)
     ///
     /// - 暂不实装 Icmp/Raw/Dhcpv4/Dns (返回 None)
-    /// - sm_socket 路径暂不调用本函数 (W4.2.3.3 迁移)
-    /// - SmoltcpNetStack 路径暂不调用本函数 (W4.2.3.4 整合)
+    /// - `sm_socket` 路径暂不调用本函数 (W4.2.3.3 迁移)
+    /// - `SmoltcpNetStack` 路径暂不调用本函数 (W4.2.3.4 整合)
     pub fn socket_open_stub(
         sockets: &mut SocketSet<'_>,
         kind: crate::kernel::framework::net::iface_trait::SocketKind,
@@ -1585,22 +1588,22 @@ pub(crate) mod raw {
     /// 翻译 `dhcpv4::Socket::poll()` → `DhcpState`:
     /// - `None` → 保持 prev state (内部 static, 0 初始化 = Idle)
     /// - `Some(Event::Deconfigured)` → Idle
-    /// - `Some(Event::Configured(config))` → Bound { ipv4, lease_expires_at: u64::MAX }
+    /// - `Some(Event::Configured(config))` → Bound { ipv4, `lease_expires_at`: `u64::MAX` }
     ///
     /// ## 内部状态
     ///
     /// 使用 `static mut PREV_DHCP_STATE` 维护翻译结果. 0 初始化 = Idle.
-    /// 调用方需在 NET_LOCK 保护下调用 (确保互斥访问).
+    /// 调用方需在 `NET_LOCK` 保护下调用 (确保互斥访问).
     ///
     /// ## dhcpv4 poll 语义
     ///
-    /// smoltcp dhcpv4::Socket::poll() 返回 Option<Event>:
+    /// smoltcp `dhcpv4::Socket::poll()` 返回 Option<Event>:
     /// - None: 无新事件, DHCP 状态机内部推进中
-    /// - Some(Event::Configured): 收到 DHCP ACK, 已配置
-    /// - Some(Event::Deconfigured): 收到 DHCP NAK 或租约过期, 已取消配置
+    /// - `Some(Event::Configured)`: 收到 DHCP ACK, 已配置
+    /// - `Some(Event::Deconfigured)`: 收到 DHCP NAK 或租约过期, 已取消配置
     ///
-    /// 我们翻译为 trait DhcpState, 简化 lease_expires_at = u64::MAX
-    /// (实际租约管理在 init flow 中通过 G_IPV4 / G_GATEWAY 跟踪).
+    /// 我们翻译为 trait `DhcpState`, 简化 `lease_expires_at` = `u64::MAX`
+    /// (实际租约管理在 init flow 中通过 `G_IPV4` / `G_GATEWAY` 跟踪).
     pub fn dhcp_state_stub(
         sockets: &mut SocketSet<'_>,
         dhcp_handle: Option<smoltcp::iface::SocketHandle>,
@@ -1642,16 +1645,16 @@ pub(crate) mod raw {
         }
     }
 
-    /// SmoltcpNetStack::close 的 safe wrapper (W4.2.3.4).
+    /// `SmoltcpNetStack::close` 的 safe wrapper (W4.2.3.4).
     ///
     /// 关闭 `[MAX_SM_FD, TOTAL_SLOTS)` 范围内的 smoltcp socket,
     /// 释放 buffer 并清空槽位状态. 与 `sm_close` 逻辑对称, 但索引
-    /// 校验针对 SmoltcpNetStack 专属范围.
+    /// 校验针对 `SmoltcpNetStack` 专属范围.
     ///
     /// ## 返回
     ///
     /// - `true`: 关闭成功
-    /// - `false`: slot_idx 越界或槽位空闲
+    /// - `false`: `slot_idx` 越界或槽位空闲
     pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
         // SAFETY: 调用方持有 NET_STATE 锁, 整个函数体通过 raw accessor 访问 NetState.
         unsafe {
@@ -1709,10 +1712,10 @@ pub(crate) mod raw {
         }
     }
 
-    /// SmoltcpNetStack::poll 的 safe wrapper (W4.2.3.4).
+    /// `SmoltcpNetStack::poll` 的 safe wrapper (W4.2.3.4).
     ///
     /// 驱动 smoltcp 协议栈轮询 (TX/RX + 定时器 + DHCP), 返回 `PollOutcome`.
-    /// 与 `poll_network` 逻辑对称, 但由 SmoltcpNetStack 调用方主动触发
+    /// 与 `poll_network` 逻辑对称, 但由 `SmoltcpNetStack` 调用方主动触发
     /// (而非 timer ISR 自动轮询).
     pub fn smoltcp_net_stack_poll() -> crate::kernel::framework::net::iface_trait::PollOutcome {
         use crate::kernel::framework::net::iface_trait::PollOutcome;
@@ -1745,9 +1748,9 @@ pub(crate) mod raw {
         }
     }
 
-    /// DhcpState tag → DhcpState 翻译.
+    /// `DhcpState` tag → `DhcpState` 翻译.
     ///
-    /// tag 值 (来自 PREV_DHCP_TAG):
+    /// tag 值 (来自 `PREV_DHCP_TAG)`:
     /// - 0: Idle
     /// - 1: Discovering
     /// - 2: Requesting
@@ -1794,7 +1797,7 @@ pub(crate) mod raw {
         unsafe { klog_net(buf.as_ptr().cast()) };
     }
 
-    /// klog 初始化消息 (走 klog_init_msg)
+    /// klog 初始化消息 (走 `klog_init_msg`)
     pub fn klog_init(s: &str) {
         let mut buf = [0u8; 256];
         let bytes = s.as_bytes();
@@ -1827,14 +1830,18 @@ mod tests {
     };
     use smoltcp::wire::IpAddress;
 
-    /// W4.4: 验证 wire_to_smol_v4 / endpoint_to_smol 翻译不丢字段.
+    /// W4.4: 验证 wire_to_smol / endpoint_to_smol 翻译不丢字段 (双栈).
     #[test]
     fn test_wire_translation_roundtrip() {
         let trait_addr = TraitIpv4Addr::new(192, 168, 1, 100);
-        let smol = wire_to_smol_v4(trait_addr);
-        assert_eq!(smol.octets(), [192, 168, 1, 100]);
+        let smol = wire_to_smol(trait_addr.into_ip_addr());
+        if let IpAddress::Ipv4(v4) = smol {
+            assert_eq!(v4.octets(), [192, 168, 1, 100]);
+        } else {
+            panic!("expected IpAddress::Ipv4");
+        }
         // endpoint 翻译: 验证 addr+port 双向不丢
-        let ep = TraitEndpoint::new(TraitIpv4Addr::new(10, 0, 2, 15), 8080);
+        let ep = TraitEndpoint::new_v4(TraitIpv4Addr::new(10, 0, 2, 15), 8080);
         let ep_smol = endpoint_to_smol(ep);
         assert_eq!(ep_smol.port, 8080);
         if let IpAddress::Ipv4(v4) = ep_smol.addr {
@@ -1845,20 +1852,20 @@ mod tests {
         // 反向翻译 (从 smoltcp 类型)
         let back = endpoint_from_smol(ep_smol).unwrap();
         assert_eq!(back.port, 8080);
-        assert_eq!(back.addr.octets(), [10, 0, 2, 15]);
+        assert_eq!(back.addr.as_v4().unwrap().octets(), [10, 0, 2, 15]);
     }
 
-    /// W4.4: 验证 parse_ipv4_endpoint_trait 解析后立即落入 trait 抽象类型.
+    /// W4.4: 验证 parse_endpoint_trait 解析后立即落入 trait 抽象类型 (双栈).
     #[test]
-    fn test_parse_ipv4_endpoint_trait_bridge() {
+    fn test_parse_endpoint_trait_bridge() {
         // 构造一个 sockaddr_in 字节序列
         let mut buf = [0u8; 16];
         buf[0..2].copy_from_slice(&2u16.to_ne_bytes()); // AF_INET
         buf[2..4].copy_from_slice(&8080u16.to_be_bytes()); // port (big-endian)
         buf[4..8].copy_from_slice(&[192, 168, 1, 50]);
         // SAFETY: buf 完整 16 字节, 模拟 C sockaddr_in 布局
-        let ep = unsafe { parse_ipv4_endpoint_trait(buf.as_ptr()) }.unwrap();
-        assert_eq!(ep.addr.octets(), [192, 168, 1, 50]);
+        let ep = unsafe { parse_endpoint_trait(buf.as_ptr()) }.unwrap();
+        assert_eq!(ep.addr.as_v4().unwrap().octets(), [192, 168, 1, 50]);
         assert_eq!(ep.port, 8080);
     }
 

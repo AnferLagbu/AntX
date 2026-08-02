@@ -6,11 +6,18 @@
 //!
 //! 原属 framework/net/route.rs, 2026-06-16 提取到 services.
 //! 纯策略代码 (路由表 CRUD + CIDR 匹配 + syscall), 0 unsafe.
-//! smoltcp 同步逻辑留在 framework (依赖 raw::stack_mut).
+//! smoltcp 同步逻辑留在 framework (依赖 `raw::stack_mut`).
+//!
+//! ## 双栈扩展 (DECISION-032, 2026-08-02)
+//!
+//! `RouteEntry.dest` / `RouteEntry.gateway` 由 `[u8; 4]` 升级为 `IpAddr`,
+//! 支持 IPv4 (V4) 与 IPv6 (V6) 路由. syscall 层 (`sys_route_add` 等) 保持
+//! u32 ABI 兼容 (仅 IPv4), 内部结构按 family 分发.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use crate::kernel::framework::net::iface_trait::{IpAddr, Ipv4Addr, Ipv6Addr};
 use crate::kernel::framework::sync::IrqSpinLock;
 use crate::kernel::framework::syscall::Errno;
 
@@ -25,24 +32,28 @@ pub const MAX_ROUTES: usize = 16;
 // 路由条目
 // ============================================================================
 
-/// 路由条目 — 内核级路由表示
+/// 路由条目 — 内核级路由表示 (双栈, DECISION-032)
 #[derive(Debug, Clone)]
 pub struct RouteEntry {
-    /// 目标 CIDR 地址 (4 字节 IPv4)
-    pub dest: [u8; 4],
-    /// 前缀长度 (0-32)
+    /// 目标地址 (V4 或 V6)
+    pub dest: IpAddr,
+    /// 前缀长度 (V4: 0-32, V6: 0-128)
     pub prefix_len: u8,
-    /// 下一跳网关 (4 字节 IPv4)
-    pub gateway: [u8; 4],
+    /// 下一跳网关 (V4 或 V6)
+    pub gateway: IpAddr,
     /// 接口名 (可选)
     pub iface: Option<String>,
 }
 
 impl RouteEntry {
-    /// 构造默认路由 (0.0.0.0/0 via gateway)
-    pub fn default_route(gateway: [u8; 4]) -> Self {
+    /// 构造默认路由 (`::/0` via gateway)
+    pub fn default_route(gateway: IpAddr) -> Self {
+        let dest = match gateway {
+            IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+        };
         Self {
-            dest: [0, 0, 0, 0],
+            dest,
             prefix_len: 0,
             gateway,
             iface: None,
@@ -51,14 +62,18 @@ impl RouteEntry {
 
     /// 是否为默认路由
     pub fn is_default(&self) -> bool {
-        self.prefix_len == 0 && self.dest == [0, 0, 0, 0]
+        self.prefix_len == 0
+            && match self.dest {
+                IpAddr::V4(a) => a.is_unspecified(),
+                IpAddr::V6(a) => a.is_unspecified(),
+            }
     }
 }
 
 /// 路由查询结果
 #[derive(Debug, Clone)]
 pub struct RouteQueryResult {
-    pub gateway: [u8; 4],
+    pub gateway: IpAddr,
     pub prefix_len: u8,
 }
 
@@ -73,6 +88,11 @@ static KERNEL_ROUTE_TABLE: IrqSpinLock<Vec<RouteEntry>> = IrqSpinLock::new(Vec::
 // ============================================================================
 
 /// 添加路由条目
+///
+/// # Errors
+///
+/// 当路由表已满时返回 `Err(Errno::ENOMEM)`; 当存在完全相同的 (dest, `prefix_len`, gateway)
+/// 重复条目时返回 `Err(Errno::EEXIST)`; 同步到 smoltcp 路由表失败时返回对应的内核错误。
 pub fn route_add(entry: RouteEntry) -> Result<(), Errno> {
     let mut table = KERNEL_ROUTE_TABLE.lock();
 
@@ -98,7 +118,11 @@ pub fn route_add(entry: RouteEntry) -> Result<(), Errno> {
 }
 
 /// 删除路由条目
-pub fn route_del(dest: [u8; 4], prefix_len: u8, gateway: [u8; 4]) -> Result<(), Errno> {
+///
+/// # Errors
+///
+/// 当路由表中不存在与 (dest, `prefix_len`, gateway) 完全匹配的条目时返回 `Err(Errno::ENOENT)`。
+pub fn route_del(dest: IpAddr, prefix_len: u8, gateway: IpAddr) -> Result<(), Errno> {
     let mut table = KERNEL_ROUTE_TABLE.lock();
 
     let idx = table.iter().position(|r| {
@@ -115,8 +139,8 @@ pub fn route_del(dest: [u8; 4], prefix_len: u8, gateway: [u8; 4]) -> Result<(), 
     }
 }
 
-/// 查询路由 (最长前缀匹配)
-pub fn route_query(dest: [u8; 4]) -> Option<RouteQueryResult> {
+/// 查询路由 (最长前缀匹配, 按 family 分发)
+pub fn route_query(dest: IpAddr) -> Option<RouteQueryResult> {
     let table = KERNEL_ROUTE_TABLE.lock();
 
     table
@@ -135,32 +159,59 @@ pub fn route_list() -> Vec<RouteEntry> {
 }
 
 // ============================================================================
-// CIDR 匹配
+// CIDR 匹配 (V4: 32 位掩码 / V6: 128 位逐字节掩码)
 // ============================================================================
 
-fn cidr_contains(entry: &RouteEntry, dest: &[u8; 4]) -> bool {
+fn cidr_contains(entry: &RouteEntry, dest: &IpAddr) -> bool {
     if entry.prefix_len == 0 {
         return true;
     }
-    let mask = if entry.prefix_len >= 32 {
-        0xFF_FF_FF_FFu32
-    } else {
-        !((1u32 << (32 - entry.prefix_len)) - 1)
-    };
-    let net_dest = u32::from_be_bytes(*dest) & mask;
-    let net_entry = u32::from_be_bytes(entry.dest) & mask;
-    net_dest == net_entry
+    match (entry.dest, *dest) {
+        (IpAddr::V4(net), IpAddr::V4(d)) => {
+            let mask = if entry.prefix_len >= 32 {
+                0xFF_FF_FF_FFu32
+            } else {
+                !((1u32 << (32 - entry.prefix_len)) - 1)
+            };
+            let net_dest = u32::from_be_bytes(d.octets()) & mask;
+            let net_entry = u32::from_be_bytes(net.octets()) & mask;
+            net_dest == net_entry
+        }
+        (IpAddr::V6(net), IpAddr::V6(d)) => ipv6_cidr_contains(&net, &d, entry.prefix_len),
+        _ => false, // family 不匹配
+    }
+}
+
+/// IPv6 CIDR 匹配: 按 `prefix_len` (0-128) 逐字节掩码比较.
+fn ipv6_cidr_contains(net: &Ipv6Addr, dest: &Ipv6Addr, prefix_len: u8) -> bool {
+    let n = prefix_len as usize;
+    if n >= 128 {
+        return net == dest;
+    }
+    let full_bytes = n / 8;
+    let rem_bits = n % 8;
+    let n_octets = net.octets();
+    let d_octets = dest.octets();
+    if n_octets[..full_bytes] != d_octets[..full_bytes] {
+        return false;
+    }
+    if rem_bits == 0 {
+        return true;
+    }
+    // 剩余 1-7 位: 掩码 = 高 rem_bits 位为 1
+    let mask = 0xFFu8 << (8 - rem_bits);
+    (n_octets[full_bytes] & mask) == (d_octets[full_bytes] & mask)
 }
 
 // ============================================================================
-// Syscall 接口
+// Syscall 接口 (保持 u32 ABI 兼容, 仅 IPv4; V6 路由走 route_add/route_query)
 // ============================================================================
 
 pub fn sys_route_add(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
     let entry = RouteEntry {
-        dest: (dest_u32 as u32).to_be_bytes(),
+        dest: IpAddr::V4(Ipv4Addr::from_octets((dest_u32 as u32).to_be_bytes())),
         prefix_len: if prefix_len > 32 { return -(Errno::EINVAL as i64); } else { prefix_len as u8 },
-        gateway: (gateway_u32 as u32).to_be_bytes(),
+        gateway: IpAddr::V4(Ipv4Addr::from_octets((gateway_u32 as u32).to_be_bytes())),
         iface: None,
     };
 
@@ -172,9 +223,9 @@ pub fn sys_route_add(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
 
 pub fn sys_route_del(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
     match route_del(
-        (dest_u32 as u32).to_be_bytes(),
+        IpAddr::V4(Ipv4Addr::from_octets((dest_u32 as u32).to_be_bytes())),
         if prefix_len > 32 { return -(Errno::EINVAL as i64); } else { prefix_len as u8 },
-        (gateway_u32 as u32).to_be_bytes(),
+        IpAddr::V4(Ipv4Addr::from_octets((gateway_u32 as u32).to_be_bytes())),
     ) {
         Ok(()) => 0,
         Err(e) => -(e as i64),
@@ -182,8 +233,12 @@ pub fn sys_route_del(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
 }
 
 pub fn sys_route_query(dest_u32: u64) -> i64 {
-    match route_query((dest_u32 as u32).to_be_bytes()) {
-        Some(result) => u32::from_be_bytes(result.gateway) as i64,
+    match route_query(IpAddr::V4(Ipv4Addr::from_octets((dest_u32 as u32).to_be_bytes()))) {
+        Some(result) => match result.gateway {
+            IpAddr::V4(v4) => i64::from(u32::from_be_bytes(v4.octets())),
+            // V6 路由在 u32 syscall ABI 下不可表达, 视为不可达
+            IpAddr::V6(_) => -(Errno::ENETUNREACH as i64),
+        },
         None => -(Errno::ENETUNREACH as i64),
     }
 }

@@ -158,6 +158,9 @@ criterion_main!(benches);
 | `nic_probe_arch_neutral_test.rs` | NIC 探测架构无关 | I-37 |
 | `virtio_net_arch_unify_test.rs` | virtio-net 架构统一 | I-37 |
 | `net_snapshot_test.rs` | 网络快照 (net_save/net_restore) | P2-I-44 |
+| `net_ipv6_addr_test.rs` | IPv6 地址抽象类型契约 (Ipv6Addr/IpAddr/Ipv6Cidr) | DECISION-032 |
+| `net_sockaddr_in6_test.rs` | sockaddr_in6 结构 + FFI 翻译层契约 | DECISION-032 |
+| `net_dual_stack_socket_test.rs` | V4/V6 双栈 socket 契约 (sm_socket/分流/28B 缓冲) | DECISION-032 |
 | `driver_e1000_eeprom_test.rs` | e1000 EEPROM 读取 | I-40 |
 
 #### 进程 / 调度
