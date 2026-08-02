@@ -39,6 +39,24 @@
   - 描述: cast 截断/符号/回绕类警告无法自动修复 (涉及语义判断), 采用函数级 `#[expect(clippy::cast_*)]` + 中文注释说明收窄安全性
   - 方案: 优于全文件 `#[allow]` (精确到函数) + 优于逐个重构 (工作量过大). 放弃"逐个改用 checked_*/try_from" 方案 (部分场景确需截断, 如 u64→u32 系统调用返回值)
   - 状态: [X]
+- **DECISION-035: cast expect 注释统一模板**
+  - 描述: 已完成批次 (ab/ac 组 191 处) 注释格式存在 10+ 种变体, 不符合 §5.2 "Explain why, not what" 规范
+  - 方案: 统一为 `// 有意窄化: <具体原因>`, 原因需说明**为什么**可以安全截断 (如"u64→u32 取低 32 位, cpuid 返回值仅低 32 位有效"), 而非套用模板 (如"调用方保证值域安全"). 放弃保留多变体 (维护成本高, 可读性差)
+  - 状态: []
+
+### 质量评估 (2026-08-02)
+- **批次 2 自动修复 — 质量: 优 (8/10)**
+  - 描述: no_mangle 补 extern "C" 272 处正确, 双架构编译+审计+host-tests 全通过
+  - 方案: 漏修复 2 处 (barrier/api.rs `recovery_set/get_fault_rate` 在 `#[cfg(feature = "fault_injection")]` 下未触发 clippy)
+  - 状态: []
+- **批次 3 文档类 — 质量: 优 (9/10)**
+  - 描述: # Panics / # Errors 文档语义准确 (抽样 racy_cell.rs:127, ioport.rs:86), doc_markdown 反引号 3078 条
+  - 方案: doc_markdown 剩余 5 条 (数量极少, 批次 7 收尾时处理)
+  - 状态: []
+- **批次 4 ab/ac 组 cast expect — 质量: 中 (5/10)**
+  - 描述: 0 unfulfilled expect ✓, 0 无注释 expect ✓, 抽样 (cpuid.rs:18, idt/types.rs:135) 语义正确
+  - 方案: 注释格式 10+ 种变体不统一 (违反 DECISION-035); credo/storage.rs 3 处 expect 语义错误 (按字节拆分不该 expect); cast_sign_loss 643 条完全未处理
+  - 状态: []
 
 ### 变更历史
 - **2026-07-31**
@@ -47,6 +65,10 @@
   - 状态: [X]
 - **2026-08-01**
   - 描述: 批次 3 文档类清零 + 批次 4 cast_lossless 清零 + ab/ac 组 expect 提交
+  - 方案: -
+  - 状态: [X]
+- **2026-08-02**
+  - 描述: 质量评估完成, 发现 3 类问题 (注释不统一 / credo expect 错误 / sign_loss 未处理)
   - 方案: -
   - 状态: [X]
 
@@ -104,6 +126,20 @@
   - 描述: framework sync + services 前段 + services driver/fs 80 文件
   - 方案: 按新清单派 worker
   - 状态: []
+- **修复 credo/storage.rs 3 处错误 expect (高优先级)**
+  - 描述: w32/w64/w16 函数是按字节序列化 (拆分 u32/u64 为字节数组), `v as u8` 取低 8 位是正确逻辑, 不存在截断风险, 不应使用 expect
+  - 方案: 改用 `(v >> (i*8)) as u8` 或 `((v >> (i*8)) & 0xFF) as u8` 消除警告, 移除 3 处 `#[expect(clippy::cast_possible_truncation)]` + 错误注释
+  - 状态: []
+  - 详情: 详见 [src/kernel/framework/credo/storage.rs:44-64](src/kernel/framework/credo/storage.rs)
+- **统一已提交 expect 注释格式 (DECISION-035)**
+  - 描述: ab/ac 组 191 处 expect 注释存在 10+ 种变体, 不符合 §5.2 "Explain why, not what"
+  - 方案: 脚本化替换为统一模板 `// 有意窄化: <具体原因>`, 原因需说明为什么可以安全截断
+  - 状态: []
+- **补 barrier/api.rs 2 处 no_mangle extern "C"**
+  - 描述: `recovery_set_fault_rate` / `recovery_get_fault_rate` 在 `#[cfg(feature = "fault_injection")]` 下未触发 clippy, 漏修复
+  - 方案: 补 `extern "C"` ABI 标注
+  - 状态: []
+  - 详情: 详见 [src/kernel/framework/barrier/api.rs:304-311](src/kernel/framework/barrier/api.rs)
 
 ***
 
@@ -277,5 +313,73 @@
   - 状态: [X]
 - **2026-08-02**
   - 描述: 核对汇报进度, 确认 4643 条剩余 (cast 2005 + 指针 788 + 风格 1817 + 其他 33), 编写本工程计划
+  - 方案: -
+  - 状态: [X]
+
+***
+
+## 工程计划 7: 已完成批次质量评估与修复
+
+### 背景
+- **质量评估需求**
+  - 描述: 已完成批次 1-3 + 批次 4 部分 (ab/ac 组 191 处 expect) 需审查修复质量, 确保不引入语义错误或注释规范问题
+  - 方案: 深入源码抽样审查 + 编译期 unfulfilled 检测 + 注释规范性检查
+  - 状态: [X]
+
+### 目标
+- **识别并修复已完成批次的质量问题**
+  - 描述: 3 类问题 (注释不统一 / credo expect 错误 / no_mangle 漏修复) 需修复
+  - 方案: 按优先级分批修复
+  - 状态: []
+
+### 现状 (2026-08-02)
+- **质量评估总体结论: 中等偏上 (6/10)**
+  - 描述: 批次 2/3 质量优 (8-9/10), 批次 4 cast expect 质量中 (5/10)
+  - 方案: 修复 3 类问题后批次 4 质量可提升至良
+  - 状态: [X]
+- **已确认正确的修复**
+  - 描述: 0 unfulfilled expect ✓ (所有 expect 实际触发), 0 无注释 expect ✓, 抽样 cpuid.rs:18 `ebx_val as u32` (u64→u32 取低 32 位, cpuid 返回值语义正确), idt/types.rs:135 `err_code as u32` (u64→u32 错误码截断正确)
+  - 方案: 无需修改
+  - 状态: [X]
+
+### 方案
+- **步骤 1: 修复 credo/storage.rs 3 处错误 expect (高优先级)**
+  - 描述: w32/w64/w16 函数按字节序列化逻辑, `v as u8` 取低 8 位是正确逻辑, 不存在截断风险, expect 掩盖了正确逻辑为"截断"
+  - 方案: 移除 3 处 `#[expect(clippy::cast_possible_truncation)]` + 错误注释, 改用 `(v >> (i*8)) as u8` 消除警告
+  - 状态: []
+  - 详情: 详见 [src/kernel/framework/credo/storage.rs:44-64](src/kernel/framework/credo/storage.rs)
+- **步骤 2: 统一已提交 expect 注释格式 (DECISION-035)**
+  - 描述: ab/ac 组 191 处 expect 注释存在 10+ 种变体, 前 5 种: "显式收窄转换, 调用方/上下文保证值域安全" (111 处) / "长度/计数值域受调用方约束, 有意窄化" (40 处) / "内核寄存器/硬件字段宽度, 调用方保证值域" (38 处) / "尺寸/地址转换, 调用方保证值域" (27 处) / "fd/错误码/字节数 i32 约定, 调用方保证值域" (15 处)
+  - 方案: 脚本化替换为统一模板 `// 有意窄化: <具体原因>`, 原因需说明为什么可以安全截断, 而非套用模板
+  - 状态: []
+- **步骤 3: 补 barrier/api.rs 2 处 no_mangle extern "C"**
+  - 描述: `recovery_set_fault_rate` / `recovery_get_fault_rate` 在 `#[cfg(feature = "fault_injection")]` 下未触发 clippy missing_abi lint, 漏修复
+  - 方案: 补 `extern "C"` ABI 标注
+  - 状态: []
+  - 详情: 详见 [src/kernel/framework/barrier/api.rs:304-311](src/kernel/framework/barrier/api.rs)
+
+### 待办
+- **cred/storage.rs 3 处 expect 修复**
+  - 描述: 移除错误 expect, 改用位移消除警告
+  - 方案: `(v >> (i*8)) as u8` 替代 `v as u8`
+  - 状态: []
+- **191 处 expect 注释规范化**
+  - 描述: 按 DECISION-035 统一为具体原因说明
+  - 方案: 脚本化批量替换 + 人工审查语义
+  - 状态: []
+- **barrier/api.rs 2 处 extern "C" 补齐**
+  - 描述: 2 处 `#[no_mangle]` 补 `extern "C"`
+  - 方案: 直接编辑
+  - 状态: []
+
+### 决策记录
+- **DECISION-036: 按字节序列化场景禁用 cast expect**
+  - 描述: 按字节拆分 u32/u64 为字节数组的场景 (如 `w32`/`w64`/`w16` 函数), `v as u8` 取低 8 位是正确逻辑, 不存在截断风险, 禁止使用 `#[expect]` 掩盖警告
+  - 方案: 必须改用 `(v >> (i*8)) as u8` 或 `((v >> (i*8)) & 0xFF) as u8` 消除警告. 放弃保留 expect (掩盖正确逻辑为"截断", 注释误导)
+  - 状态: [X]
+
+### 变更历史
+- **2026-08-02**
+  - 描述: 质量评估完成, 识别 3 类问题, 添加工程计划 7
   - 方案: -
   - 状态: [X]
