@@ -66,27 +66,6 @@ pub fn raw_read_sockaddr_in6(ptr: u64) -> Result<[u8; 28], Errno> {
     Ok(buf)
 }
 
-/// 向用户空间写 8 字节 `sockaddr_in`
-///
-/// # Errors
-/// 当 `ptr` 无效或无法向用户空间写入数据时返回 `Errno::EFAULT`.
-pub fn raw_write_sockaddr_in(ptr: u64, addr: &SockAddrIn) -> Result<(), Errno> {
-    if ptr == 0 || !userptr::validate_user_buf(ptr, 8) {
-        return Err(Errno::EFAULT);
-    }
-    let mut out = [0u8; 8];
-    // 双栈 (DECISION-032): sin_family 用主机序 (NE) 写入, 与 raw_read_sockaddr_in
-    // 和 sm_fi.rs::parse_endpoint_trait 一致. sin_port 保持 BE (POSIX).
-    out[0..2].copy_from_slice(&(2u16).to_ne_bytes());
-    out[2..4].copy_from_slice(&addr.port.to_be_bytes());
-    out[4..8].copy_from_slice(&addr.ip);
-    // P0-I-37 修复: 走异常表保护版 copy_to_user
-    if safe_copy_to_user(ptr, &out, 8).is_err() {
-        return Err(Errno::EFAULT);
-    }
-    Ok(())
-}
-
 /// copy-in 用户空间数据到 `alloc::vec::Vec`
 ///
 /// # Errors
