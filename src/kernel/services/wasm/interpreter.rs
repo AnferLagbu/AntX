@@ -580,6 +580,7 @@ impl Interpreter {
         Ok(())
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     fn advance_pc(&mut self, amount: usize) -> Result<(), WasmError> {
         if let Some(frame) = self.call_stack.last_mut() {
             frame.pc += amount;
@@ -607,6 +608,7 @@ impl Interpreter {
         Ok(())
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     fn execute_return(&mut self) -> Result<(), WasmError> {
         while let Some(frame) = self.call_stack.pop() {
             let arity = frame.arity;
@@ -770,6 +772,7 @@ impl Interpreter {
         Ok(())
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     fn unwind_to(&mut self, depth: usize) -> Result<(), WasmError> {
         let target = self.call_stack.len().saturating_sub(depth + 1);
         while self.call_stack.len() > target {

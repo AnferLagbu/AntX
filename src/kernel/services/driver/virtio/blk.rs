@@ -323,6 +323,7 @@ impl VirtioBlkDriver {
 
     // ── 队列配置辅助 (通过 VirtioDevice MMIO) ──
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 配置指定 virtqueue 的 MMIO 寄存器.
     ///
     /// # 参数

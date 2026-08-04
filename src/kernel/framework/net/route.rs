@@ -25,6 +25,7 @@ pub use crate::kernel::services::net::route::{
 // smoltcp 同步 (framework 机制, 依赖 raw::stack_mut)
 // ============================================================================
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 将单条路由同步到 smoltcp Routes (双栈: V4/V6 按 family 分发)
 ///
 /// # Errors

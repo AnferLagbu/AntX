@@ -346,6 +346,7 @@ pub fn blk_name(drive: u8) -> Option<alloc::string::String> {
     chitin::chitin_blk_name(drive).map(alloc::string::String::from)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 块设备信息
 pub fn blk_info(drive: u8) -> Option<(alloc::string::String, bool, u64)> {
     let (name, present, sectors) = chitin::chitin_blk_info(drive);

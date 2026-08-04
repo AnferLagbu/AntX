@@ -128,6 +128,7 @@ impl CompositeBlockDevice {
     #[inline]
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     fn map_raid0_sector(&self, logical: u64) -> Option<(u8, u64)> {
         let stripe = logical / self.stripe_sectors;
         let child_idx = (stripe % u64::from(self.child_count)) as u8;

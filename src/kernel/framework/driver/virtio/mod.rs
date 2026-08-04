@@ -260,6 +260,7 @@ impl VirtioMmioDevice {
         );
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 在此设备上配置 virtqueue.
     /// # Errors
     /// 队列配置失败时返回 Err。
@@ -309,6 +310,7 @@ impl VirtioMmioDevice {
     /// 队列配置失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     pub fn setup_vq_legacy(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
         self.write32(QUEUE_SEL, u32::from(vq_index));
 

@@ -23,6 +23,7 @@ use crate::kernel::framework::syscall::Errno;
 // 读类
 // ============================================================================
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// `getuid()` — 取真实 UID
 ///
 /// # Errors
@@ -31,6 +32,7 @@ pub fn getuid_syscall() -> Result<usize, Errno> {
     Ok(fw::get_current_uid() as usize)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// `getgid()` — 取真实 GID
 ///
 /// # Errors
@@ -39,6 +41,7 @@ pub fn getgid_syscall() -> Result<usize, Errno> {
     Ok(fw::get_current_gid() as usize)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// `geteuid()` — 取有效 UID
 ///
 /// # Errors
@@ -47,6 +50,7 @@ pub fn geteuid_syscall() -> Result<usize, Errno> {
     Ok(fw::get_euid() as usize)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// `getegid()` — 取有效 GID
 ///
 /// # Errors

@@ -298,6 +298,7 @@ pub fn setitimer_syscall(
     Ok(0)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// alarm(seconds) — 设置 SIGALRM 触发间隔 (秒), 返回旧剩余时间 (秒).
 ///
 /// 真实实现: 通过 `framework/proc/api::proc_alarm` 在 Process 维护的
@@ -316,6 +317,7 @@ pub fn alarm_syscall(seconds: u32) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())

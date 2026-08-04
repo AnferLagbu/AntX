@@ -75,6 +75,7 @@ impl NumaMempolicy {
         }
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 根据策略选择分配节点
     pub fn preferred_node(&self, current_cpu_node: u32) -> Option<u32> {
         let mode = *self.mode.lock();

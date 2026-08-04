@@ -190,6 +190,7 @@ pub fn get_priority(pid: crate::kernel::framework::proc::Pid) -> Option<ProcessP
     with(pid, crate::kernel::framework::proc::process::Process::get_priority)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 设置进程优先级
 ///
 /// # Errors
@@ -205,6 +206,7 @@ pub fn is_kernel(pid: crate::kernel::framework::proc::Pid) -> Option<bool> {
     with(pid, crate::kernel::framework::proc::process::Process::is_kernel)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 设置内核/用户标志
 ///
 /// # Errors
@@ -220,6 +222,7 @@ pub fn get_sched_policy(pid: crate::kernel::framework::proc::Pid) -> Option<Sche
     with(pid, crate::kernel::framework::proc::process::Process::get_sched_policy)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 设置调度策略
 ///
 /// # Errors
@@ -235,6 +238,7 @@ pub fn get_rt_priority(pid: crate::kernel::framework::proc::Pid) -> Option<u8> {
     with(pid, crate::kernel::framework::proc::process::Process::get_rt_priority)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 设置 RT 优先级
 ///
 /// # Errors
@@ -250,6 +254,7 @@ pub fn get_pwm(pid: crate::kernel::framework::proc::Pid) -> Option<u64> {
     with(pid, crate::kernel::framework::proc::process::Process::get_pwm)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 设置 PMM
 ///
 /// # Errors
@@ -264,6 +269,7 @@ pub fn set_pwm(pid: crate::kernel::framework::proc::Pid, pwm: u64) -> TableResul
 // 信号
 // ============================================================================
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 设置待处理信号位
 ///
 /// # Errors
@@ -279,6 +285,7 @@ pub fn signal_get(pid: crate::kernel::framework::proc::Pid) -> Option<u64> {
     with(pid, crate::kernel::framework::proc::process::Process::signal_pending_get)
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 清除待处理信号位
 ///
 /// # Errors

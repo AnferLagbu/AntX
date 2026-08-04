@@ -246,6 +246,7 @@ impl VirtioFs {
         }
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 列出子节点
     ///
     /// # Errors
@@ -286,6 +287,7 @@ pub fn get_virtiofs() -> &'static Mutex<VirtioFs> {
 // safe API
 // ============================================================================
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 挂载 virtiofs
 ///
 /// # Errors
@@ -296,6 +298,7 @@ pub fn mount_virtiofs() -> Result<(), Errno> {
     Ok(())
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 卸载 virtiofs
 ///
 /// # Errors

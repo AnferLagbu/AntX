@@ -172,6 +172,7 @@ impl DynIpcNamespace {
 
     // ─── Message Queue ─────────────────────────────────────
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 创建消息队列并返回其 IPC ID。
     /// # Errors
     /// 队列创建失败时返回 Err。
@@ -227,6 +228,7 @@ impl DynIpcNamespace {
 
     // ─── Semaphore ─────────────────────────────────────────
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 创建信号量并返回其 IPC ID。
     /// # Errors
     /// 信号量创建失败时返回 Err。

@@ -344,6 +344,7 @@ impl Systree {
         None
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 列出子节点
     ///
     /// # Errors
@@ -502,6 +503,7 @@ fn format_u64(mut n: u64) -> [u8; 20] {
 // safe API
 // ============================================================================
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 挂载 systree
 ///
 /// # Errors
@@ -512,6 +514,7 @@ pub fn mount_systree() -> Result<(), Errno> {
     Ok(())
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 卸载 systree
 ///
 /// # Errors

@@ -288,6 +288,7 @@ impl CetSubsystem {
         }
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 为 CPU 分配内核 Shadow Stack
     pub fn alloc_kernel_shadow_stack(&self, cpu_id: u32) -> Option<u64> {
         // 分配 Shadow Stack 内存 (简化: 使用物理页)

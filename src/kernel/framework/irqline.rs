@@ -42,6 +42,7 @@ impl IrqLine {
     #[inline(always)] pub fn irq(&self) -> u32 { self.irq }
     #[inline(always)] pub fn vector(&self) -> u8 { self.vector }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 注册 ISR 到全局中断表。
     ///
     /// # 安全约束

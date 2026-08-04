@@ -328,6 +328,7 @@ fn wait_output_buffer_full(cmd_port: &IoPort) -> bool {
     false
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 向 PS/2 控制器发送命令
 fn ps2_send_command(cmd_port: &IoPort, cmd: u8) -> DriverResult<()> {
     wait_input_buffer_empty(cmd_port);
@@ -357,6 +358,7 @@ fn keyboard_reset(cmd_port: &IoPort, data_port: &IoPort) -> DriverResult<()> {
     }
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 向键盘发送数据
 fn keyboard_send_data(cmd_port: &IoPort, data_port: &IoPort, data: u8) -> DriverResult<()> {
     wait_input_buffer_empty(cmd_port);
@@ -644,6 +646,7 @@ impl KeyboardDriver {
         self.buffer.pop()
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 读取一行文本 (阻塞直到遇到 Enter)
     ///
     /// # Arguments

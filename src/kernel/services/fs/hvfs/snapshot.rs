@@ -59,6 +59,7 @@ impl HvSnapshotManager {
         }
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     pub fn create_snapshot(&self, ds: &HvDataset, name: &str, txg: u64) -> Option<u64> {
         let snap_id = self.next_snap_id.fetch_add(1, Ordering::AcqRel);
         let root_bp = *ds.root_bp.lock();

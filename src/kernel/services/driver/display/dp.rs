@@ -662,6 +662,7 @@ impl DpController {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// AUX 无硬件 fallback 读取 (保持原行为, 兼容 QEMU).
     fn aux_read_fallback(&mut self, address: u16, length: u8) -> Result<Vec<u8>, DpError> {
         let mut data = vec![0u8; length as usize];
@@ -1103,6 +1104,7 @@ impl DpController {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 写入 DP 时序 + sync + output enable 寄存器 — 通过 `DpIo` 安全代理, 无 unsafe.
     fn write_dp_timing_registers(
         &self,

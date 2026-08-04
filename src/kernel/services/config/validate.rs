@@ -85,6 +85,7 @@ pub fn validate_interrupt_config() -> Result<(), ConfigError> {
     Ok(())
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 跨模块一致性校验.
 ///
 /// # Errors
@@ -104,6 +105,7 @@ pub fn validate_pci_subsystem() -> Result<(), ConfigError> {
     Ok(())
 }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 /// 验证网络子系统配置一致性.
 ///
 /// # Errors

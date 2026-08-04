@@ -345,6 +345,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.6-8.10: unnecessary_wraps (71) / used_underscore_binding (63) / too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
+- **2026-08-04 (阶段 8.6: unnecessary_wraps 71 处 expect 兜底)**
+  - 描述: 推进 clippy 清理第 4 类 lint — unnecessary_wraps (fn 返回 Option<T>/Result<(), E> 但所有分支为 Some/Ok(()))
+  - 方案:
+    - 调研: 71 处 unnecessary_wraps hint, 涉及 45 文件
+    - 决策: 函数级 expect 兜底 (改返回类型需追改所有调用点 .unwrap()/.expect()/match, 风险大)
+    - 修复: 71 处加 `#[expect(clippy::unnecessary_wraps, reason = "...")]`
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
+  - 状态: [X]
+  - 后续阶段 8.7-8.10: used_underscore_binding (63) / too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
 
 ***
 

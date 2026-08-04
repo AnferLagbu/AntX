@@ -136,6 +136,7 @@ pub struct LinearMemory {
 }
 
 impl LinearMemory {
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 创建指定初始页数的线性内存.
     ///
     /// # Errors
@@ -149,6 +150,7 @@ impl LinearMemory {
         })
     }
 
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 扩展线性内存指定的页数.
     ///
     /// # Errors

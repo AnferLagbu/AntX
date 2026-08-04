@@ -158,6 +158,7 @@ impl CpuIdleDriver {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
     /// 选择最优 C-state (策略部分, 不执行 halt)
     pub fn select_cstate(&self, cpu_id: u32) -> Option<CpuIdleState> {
         if !self.enabled.load(Ordering::Acquire) {
