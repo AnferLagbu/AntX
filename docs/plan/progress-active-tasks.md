@@ -1,0 +1,483 @@
+# 跨文档战略矛盾与活跃任务收口
+
+> 0-1 句话说清"为什么有这个计划": 当前 4 份活跃 plan 文档 + 多份 explain 文档 + framework 内部模块注释之间存在 3 处 P1 跨文档战略矛盾与 6 处 P2 漂移, 若不收敛则后续 plan 同步工作反复漂移. 本计划同步建立"活跃任务进度对比基线", 一表覆盖 5 份 plan 文档与实装对齐状态.
+
+## 工程计划 A: 跨文档战略矛盾与活跃任务收口
+
+### 背景
+
+- **P1 跨文档战略矛盾根因**
+  - 描述: 2026-08-01 全仓审查 ([code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md)) 识别 8 项发现, 全部 `[]` 未实施. 但其中 3 项属"AGENTS.md 硬规则违反但 CI 未拦截"层级, 阻塞其他 plan 同步工作的有效性
+  - 方案: 优先收敛 3 个 P1 项 (syscall 编号空间 / CHANGELOG 处置 / userctx 边界), 再推进 P2 待办 (注释漂移 / clippy DECISION-035/036 落地 / IoMem 边界)
+  - 状态: []
+
+- **进度对比报告不可缺失**
+  - 描述: 当前活跃 plan 文档 (future-roadmap / ipv6-dual-stack / clippy-pedantic / code-review-2026-08-01 / test-compile-issues) 各自独立, 无法形成"项目活跃任务全景 + 任务间依赖关系"视图
+  - 方案: 建立本工程计划作为活跃任务进度对比的权威源, 每轮开发后更新 `[X]`/`[]` 状态
+  - 状态: []
+
+- **P2 任务与 P1 任务的依赖关系**
+  - 描述: 6 处 P2 待办 (注释漂移 / 注释统一 / extern "C" 漏修复 / IoMem 边界 expect / 固定上限硬编码 / sched task 抽象) 独立于 P1 但都属于"CI 未拦截、靠人工/plan 跟踪"类
+  - 方案: 纳入同一份工程计划统一登记, 避免 P2 项在多份文档间漂移
+  - 状态: []
+
+### 目标
+
+- **P1 跨文档矛盾收敛**
+  - 描述: 3 个 P1 项由用户决策并同步更新所有相关文档/源码
+  - 方案: 列出 A/B 方案 + 推荐项, 由用户决策后立即落 commit
+  - 状态: []
+
+- **活跃任务全景可见**
+  - 描述: 本工程计划成为 5+ 活跃任务的统一跟踪表
+  - 方案: 每项标注计划文档引用 + 源码实装状态 + 评估结论
+  - 状态: []
+
+- **P2 待办可执行化**
+  - 描述: 6 处 P2 待办从"已登记但未开工"推进到"开工"或"明确放弃"
+  - 方案: 每项给出具体修复方案 + 验证门槛
+  - 状态: []
+
+### 现状 (2026-08-03)
+
+> 本节基于 [future-roadmap.md](./future-roadmap.md) / [ipv6-dual-stack.md](./ipv6-dual-stack.md) / [clippy-pedantic-cleanup.md](./clippy-pedantic-cleanup.md) / [code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md) / [test-compile-issues-2026-07-31.md](./test-compile-issues-2026-07-31.md) 的静态分析 + 源码 grep 验证.
+
+- **活跃 plan 文档与实装对齐总览**
+  - 描述: 5 份文档中 1 份 (ipv6-dual-stack) 与源码完全对齐, 1 份 (test-compile-issues) 已归档为历史, 3 份 (clippy-pedantic / code-review-2026-08-01 / future-roadmap) 一致性各有差异
+  - 方案: 详见下表
+  - 状态: [X]
+
+  | 文档 | 整体进度 | 一致性 | 关键差距 |
+  |---|---|---|---|
+  | future-roadmap.md | 6 项中 1 项完成 | 完全一致 | F1/F2/F3/F4 远期未启动, 与实装吻合 |
+  | ipv6-dual-stack.md | Phase 1-5+7-8 完成 | 高度一致 | Phase 6 DHCPv6 远期未启动, 与实装吻合 |
+  | clippy-pedantic-cleanup.md | 10591 → 4643 | 部分一致 | DECISION-035/036 已决策但未落地; credo/storage.rs 3 处 expect 未修 |
+  | code-review-findings-2026-08-01.md | 8 项全部 `[]` | 完全一致 | 用户授权仅记录, 无修复动作 |
+  | test-compile-issues-2026-07-31.md | 9+8 全部已修 | 已归档 | 无待办 |
+
+- **P1 跨文档战略矛盾**
+  - 描述: 3 处 P1 项在不同文档/源码中立场互不相容
+  - 方案: 详见 §方案 A1-A3
+  - 状态: []
+
+- **P2 待办清单**
+  - 描述: 6 处 P2 待办
+  - 方案: 详见 §方案 B1-B6
+  - 状态: []
+
+### 方案
+
+#### A. P1 跨文档战略矛盾 (A/B 方案 + 推荐项)
+
+##### A1. syscall 编号空间立场统一
+
+- **条目**: DECISION-037 草案
+- **现状事实**:
+  - [ref-naming.md](../explain/ref-naming.md) §三 (2026-07-05 修订): 0-299 直接使用 Linux 原始编号, 无需翻译层
+  - [framework/syscall/mod.rs:24-35](../../src/kernel/framework/syscall/mod.rs#L24-L35): 0-299 保留给未来 linuxulator (与 Linux 1:1 映射), QX_* (500-899)
+  - [framework/syscall/api.rs:7](../../src/kernel/framework/syscall/api.rs#L7): 0-299 Linux 兼容编号 (SYS_*), 直接使用 Linux 标准编号
+  - [vision-hope.md](../explain/vision-hope.md) 风险 2: 提供 syscall 翻译层 (类似 linuxulator) 将 OpenHarmony syscall 编号映射到 QX 原生编号
+  - 同一 framework 内部 mod.rs 与 api.rs 自相矛盾
+- **方案 A (推荐)**: 走"直接 Linux ABI" 路线
+  - 描述: 统一为 ref-naming.md 立场 (0-299 直接用 Linux 编号)
+  - 优势: 简化 ABI 层; Linux 静态/动态二进制可直接运行; Asterinas 已验证
+  - 劣势: OpenHarmony 用户态需 syscall 翻译层 (与 vision-hope.md 风险 2 缓解方案需保留)
+  - 待修: 更新 framework/syscall/mod.rs:24-35 注释; 删除或改写 vision-hope.md 风险 2
+- **方案 B**: 走"QX_* 原生 + linuxulator 翻译" 路线
+  - 描述: 统一为 vision-hope.md 立场 (保留 linuxulator, QX_* 原生编号 500+)
+  - 优势: 与 OpenHarmony 战略对齐; 保留 syscall 翻译空间
+  - 劣势: 需实现 linuxulator; Linux 二进制需经翻译层; 与 Asterinas 偏离
+  - 待修: 更新 ref-naming.md §三; 保留 framework/syscall/mod.rs 现状
+- **状态**: [X] (2026-08-03 决策落地: A 主线 + B 部分. 0-299 直接 Linux, 500+ QX 错开)
+
+##### A2. CHANGELOG.md 处置
+
+- **条目**: DECISION-038 草案
+- **现状事实**:
+  - 全仓 glob 0 命中 `CHANGELOG.md` (已 `ls` 验证)
+  - 引用点: [README.md:11/163/210](../../README.md) + [AGENTS.md:48/363](../../AGENTS.md)
+  - 引用一致: 5 处全部指向 `CHANGELOG.md` (README 路径未含 `docs/`, AGENTS.md 指定 `docs/CHANGELOG.md`)
+  - 实际矛盾: README 期望根目录 `CHANGELOG.md`, AGENTS.md 期望 `docs/CHANGELOG.md`
+- **方案 A (推荐)**: 创建 `docs/CHANGELOG.md` 并补历史
+  - 描述: 符合 AGENTS.md §1 归属表 (`docs/CHANGELOG.md`, AI 起草/用户定稿)
+  - 优势: 与 AGENTS.md 一致; 归档于 docs/ 下符合文档组织; AI 可批量补历史
+  - 劣势: README.md 链接需从 `CHANGELOG.md` 改为 `docs/CHANGELOG.md`
+  - 待修: 创建 `docs/CHANGELOG.md`; 更新 README.md 3 处链接
+- **方案 B**: 删除所有引用, 放弃维护变更日志
+  - 描述: 用 commit log 替代正式 changelog
+  - 优势: 减少文档维护负担
+  - 劣势: 违反 AGENTS.md §1 归属表; 接手人无统一变更视图
+  - 待修: 删除 README.md 3 处 + AGENTS.md 2 处引用
+- **状态**: [X] (2026-08-03 决策落地: B 方案. 删除全部 10 处引用, git commit 即变更日志)
+
+##### A3. userctx 反向依赖 services 的 P1 边界违反
+
+- **条目**: DECISION-039 草案
+- **现状事实**:
+  - [framework/userctx.rs:9](../../src/kernel/framework/userctx.rs#L9) `pub use crate::kernel::services::userctx::*;` — TCB 层 re-export 非 TCB 层类型
+  - [framework/usermode.rs:38/58](../../src/kernel/framework/usermode.rs#L38) `unsafe fn enter_user_mode` 直接读取 `ctx.rip`/`ctx.elr_el1` 等字段
+  - 实际类型定义位于 [services/userctx.rs:30/57](../../src/kernel/services/userctx.rs#L30) 两个 `#[repr(C)] UserContext` 结构
+  - 违反 [explain-framekernel.md](../explain/explain-framekernel.md) "services→framework 单向数据流"
+- **方案 A (推荐)**: 将 `UserContext` 迁回 framework 层
+  - 描述: 寄存器快照属于"用户态 CPU 状态", 按 I3 不变式归 framework
+  - 优势: 恢复 framekernel 单向数据流; types 与 mechanism 自然分离
+  - 劣势: services/userctx.rs 调用方需更新 import (应只是 `pub use` 调整)
+  - 待修: framework/userctx.rs 重新声明 `UserContext` 完整定义 (x86_64 + aarch64 两个 cfg 分支); services/userctx.rs 改为反向 re-export 兼容
+- **方案 B**: 在 framework 层加编译期布局断言
+  - 描述: 在 framework 层重新声明 `#[repr(C)]` 等价结构 + `static_assertions::assert_eq_size!/assert_eq_offset!`
+  - 优势: 改动最小; 保留 services 层类型归属
+  - 劣势: 仍有运行时数据流 (即使编译期验证); 架构责任不清晰
+  - 待修: framework 层加镜像结构 + 编译期断言; services 层 UserContext 加 `#[repr(C)]` 验证
+- **状态**: [X] (2026-08-03 决策落地: A 方案. framework/userctx.rs 重声明 + services/userctx.rs 反向 re-export 兼容)
+
+#### B. P2 待办清单 (可执行化)
+
+##### B1. framework/mod.rs:10 注释漂移
+
+- **条目**: code-review-2026-08-01 #027
+- **现状**: `framework/ (TCB, ~3000+ LoC, unsafe 允许)` — 实际约 10 万行
+- **方案**:
+  - 描述: 改为 `framework/ (TCB, unsafe 允许)` 移除具体数字
+  - 优势: 避免再次漂移
+  - 状态: []
+
+##### B2. services/net 与 services/fs 头注释过期
+
+- **条目**: code-review-2026-08-01 #028
+- **现状**:
+  - [services/net/mod.rs:4-19](../../src/kernel/services/net/mod.rs#L4) 仍标 "状态 (v2.7, 2026-06-04)", checkbox 含未勾选项
+  - [services/fs/mod.rs:4-19](../../src/kernel/services/fs/mod.rs#L4) 仍标 "真实状态 (v2.5, 2026-06-04)", 含过期 checkbox
+  - 类似问题: [services/proc/mod.rs:4-21](../../src/kernel/services/proc/mod.rs#L4) 仍标 "状态 (v2.11, 2026-06-04)"
+- **方案**:
+  - 描述: 删除三文件头注释中的迁移状态块, 替换为当前真实状态描述
+  - 优势: 与代码现状一致
+  - 状态: []
+
+##### B3. README.md remote 命名与 kernel-roadmap 链接过期
+
+- **条目**: code-review-2026-08-01 #029
+- **现状**:
+  - [README.md:21](../../README.md) 仍 `git remote rename origin Gitee` (与 AGENTS.md §8.4 矛盾)
+  - [README.md:71](../../README.md) 仍链接 `docs/plan/kernel-roadmap.md` (已归档至 archive/)
+- **方案**:
+  - 描述: README.md:21 改为与 AGENTS.md §8.4 一致; README.md:71 改为 `docs/plan/future-roadmap.md`
+  - 优势: 与 AGENTS.md 对齐; 链接有效
+  - 状态: []
+
+##### B4. clippy DECISION-035 注释统一模板落地
+
+- **条目**: clippy-pedantic-cleanup 工程计划 7 步骤 2
+- **现状**: ab/ac 组 191 处 expect 注释存在 10+ 种变体, 与 DECISION-035 模板 `// 有意窄化: <具体原因>` 不一致
+- **方案**:
+  - 描述: 脚本化替换为统一模板, 原因需说明"为什么可以安全截断"而非套用模板
+  - 优势: 符合 §5.2 "Explain why, not what"
+  - 工作量: 中等 (需审查每处 expect 的语义)
+  - 状态: []
+
+##### B5. clippy DECISION-036 落地 + barrier/api.rs extern "C" 补齐
+
+- **条目**: clippy-pedantic-cleanup 工程计划 7 步骤 1 + 3
+- **现状**:
+  - [credo/storage.rs:45/54/62](../../src/kernel/framework/credo/storage.rs#L45) w32/w64/w16 仍带 `#[expect(clippy::cast_possible_truncation)]` 注释为 "显式收窄转换, 调用方/上下文保证值域安全" — 与 DECISION-036 矛盾
+  - [barrier/api.rs:303-312](../../src/kernel/framework/barrier/api.rs#L303) `recovery_set_fault_rate`/`recovery_get_fault_rate` 在 `#[cfg(feature = "fault_injection")]` 下仍 `#[no_mangle] pub fn` 无 `extern "C"` 标注
+- **方案**:
+  - B5.1: 移除 credo/storage.rs 3 处 expect, 改用 `(v >> (i*8)) as u8` 消除警告 (w64 已用此模式可参考)
+  - B5.2: barrier/api.rs 2 处补 `extern "C"` + 改为 `#[unsafe(no_mangle)]` (与 file 中其他函数 api.rs:30/43/56/77 一致)
+  - 状态: []
+
+##### B6. IoMem 边界 expect + 固定上限硬编码
+
+- **条目**: code-review-2026-08-01 #031
+- **现状**:
+  - [iomem.rs:201/210](../../src/kernel/framework/iomem.rs#L201) `read_u*`/`write_u*` 在 `check_offset` 失败时 `.expect("IoMem: ... 越界 (构造函数保证合法范围)")` panic
+  - `MAX_MMIO_MAPPINGS = 64` (iomem.rs:26) + `MAX_LOCK_CLASSES = 64` / `MAX_HELD_LOCKS = 8` (lockdep.rs:66/69) 均为硬编码
+- **方案**:
+  - 描述:
+    - B6.1: 评估 `read_u*` 是否改返回 `Result<_, &'static str>`; 或保持 expect 但加 `debug_assert!` 前置
+    - B6.2: 上限常量集中到 `framework/config/` 并注释超限行为 (lockdep 超限策略: 跳过检测 vs panic)
+  - 状态: []
+
+### 待办
+
+- **DECISION-037 决策** (用户决策)
+  - 描述: syscall 编号空间立场 A/B 选择
+  - 方案: 由用户基于方案 A/B 描述决策, 本计划不擅自选择
+  - 状态: []
+
+- **DECISION-038 决策** (用户决策)
+  - 描述: CHANGELOG.md 处置 A/B 选择
+  - 方案: 同上
+  - 状态: []
+
+- **DECISION-039 决策** (用户决策)
+  - 描述: userctx 边界违反 A/B 选择
+  - 方案: 同上
+  - 状态: []
+
+- **B1-B6 推进**
+  - 描述: 6 项 P2 待办按 clippy 计划/全仓审查计划分批推进
+  - 方案: 每项完成后更新本工程计划状态为 `[X]`, 并补充 commit hash
+  - 状态: []
+
+- **重跑 clippy 生成位置清单**
+  - 描述: clippy 计划工程 2 步骤 1 — 旧清单已陈旧, 需重新生成
+  - 方案: `cargo clippy --release -- -W clippy::pedantic --message-format=json` 解析 JSON 获取精确文件:行号
+  - 状态: []
+
+- **活跃任务全景每轮更新**
+  - 描述: 本工程计划每轮开发后更新 §现状表
+  - 方案: 任务推进到 `[X]` 立即同步, 更新验证门槛 5 条
+  - 状态: []
+
+### 决策记录
+
+- **DECISION-037** (2026-08-03 落地)
+  - 描述: syscall 编号空间立场统一 — **0-299 直接使用 Linux 标准 syscall 编号, 500+ 作为 QueenX 自由扩展 (QX_*) 与 Linux 错开**
+  - 方案: A 主线 (直接 Linux ABI) + B 部分 (QX_* 自由 syscall 500+ 错开, 避免未来 Linux 扩展冲突). framework/syscall/mod.rs 注释 + vision-hope.md 风险 2 同步更新. 不实现 linuxulator 翻译层.
+  - 状态: [X]
+
+- **DECISION-038** (2026-08-03 落地)
+  - 描述: CHANGELOG.md 处置 — **不维护独立 CHANGELOG.md, git commit 本身即变更日志**
+  - 方案: B 方案. 删除全部 10 处引用 (README.md 3 处 + AGENTS.md 2 处 + host-tests/README.md 2 处 + scripts/requirements.sh 1 处 + ci/audit.sh 1 处 + plan/code-review-2026-08-01.md 历史记录 1 处). AGENTS.md §1 归属表移除 `docs/CHANGELOG.md` 行.
+  - 状态: [X]
+
+- **DECISION-039** (2026-08-03 落地)
+  - 描述: userctx 反向依赖 services 的 P1 边界违反 — **UserContext 类型迁回 framework, services 改为反向 re-export**
+  - 方案: A 方案. framework/userctx.rs 重声明完整 `#[repr(C)] UserContext` (x86_64 + aarch64 两 cfg 分支) + 全部方法实现. services/userctx.rs 简化为 `pub use crate::kernel::framework::userctx::*;` 兼容旧调用路径. 调用方零修改 (services/syscall/mod.rs:25 已走 framework 路径).
+  - 状态: [X]
+
+### 变更历史
+
+- **2026-08-03**
+  - 描述: 创建本工程计划; 综合对比 5 份活跃/归档 plan 文档 + 源码实装, 识别 3 个 P1 跨文档矛盾 + 6 项 P2 待办
+  - 方案: -
+  - 状态: [X]
+- **2026-08-03 (归档)**
+  - 描述: test-compile-issues-2026-07-31.md 经实测验证全部 8 个 DECISION 真实 [X], 9 错误 + 8 pre-existing + 12 dead_code 全部修复, 双架构 0 error / 0 warning
+  - 方案: git mv docs/plan/test-compile-issues-2026-07-31.md docs/plan/archive/; 更新本工程计划引用路径
+  - 状态: [X]
+- **2026-08-03 (3 个 P1 决策落地)**
+  - 描述: 用户决策 DECISION-037/038/039, 全部落地为代码 + 文档变更
+  - 方案:
+    - **DECISION-037 syscall 编号**: 改 framework/syscall/mod.rs 注释 + vision-hope.md 风险 2. 0-299 直接 Linux, 500+ QX 自由错开, 不实现 linuxulator.
+    - **DECISION-038 放弃 CHANGELOG.md**: 删除 10 处引用 (README/AGENTS/host-tests/scripts/ci/audit + 1 处历史). git commit 即变更日志.
+    - **DECISION-039 userctx 迁回 framework**: framework/userctx.rs 重声明完整 UserContext + 全部方法; services/userctx.rs 改为反向 re-export 兼容.
+    - 验证: §2.4 5 条门槛全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed + QEMU x86_64 1/1 通过 + aarch64 1/1 通过).
+  - 状态: [X]
+
+***
+
+## 工程计划 B: 活跃 plan 文档进度对比基线
+
+### 背景
+
+- **建立统一进度对比基线**
+  - 描述: 当前 5 份 plan 文档各自独立, 缺乏"项目活跃任务全景 + 任务间依赖关系"视图
+  - 方案: 本工程计划作为权威基线, 每轮开发后更新
+  - 状态: []
+
+### 目标
+
+- **5 份 plan 文档与实装对齐表**
+  - 描述: 一表覆盖所有活跃任务, 含计划文档引用 + 源码实装状态 + 一致性评估
+  - 方案: 见 §现状 详细表
+  - 状态: []
+
+### 现状 (2026-08-03)
+
+- **总览表**
+  - 描述: 5 份 plan 文档对齐情况
+  - 方案:
+  - 状态: [X]
+
+  | 文档 | 任务数 | 已完成 | 待办 | 一致性 | 关键差距 |
+  |---|---|---|---|---|---|
+  | future-roadmap.md | 6 | 1 (WASM WASI) | 5 (F1/F2/F3/F4 + F5) | 完全一致 | 远期未启动, 与实装吻合 |
+  | ipv6-dual-stack.md | 9 (D1-D4 + Phase 1-8) | 8 (D1-D4 + Phase 1-5+7-8) | 1 (Phase 6 DHCPv6) | 高度一致 | 与实装完全对齐 |
+  | clippy-pedantic-cleanup.md | 7 批 | 4 批 (1-3 + 4 部分) | 3 批 (4 剩余 + 5 指针 + 6 风格) | 部分一致 | DECISION-035/036 决策已登记但未落地 |
+  | code-review-findings-2026-08-01.md | 8 项 | 0 | 8 | 完全一致 | 用户授权仅记录, 无修复 |
+  | test-compile-issues-2026-07-31.md (已归档) | 9 错误 + 8 pre-existing | 17 | 0 | 已归档 | 无待办 |
+
+- **future-roadmap 6 项详情**
+  - 描述: WASM WASI 已完成; F1-F5 (F5 见 ipv6-dual-stack) 远期/未启动
+  - 方案:
+  - 状态: [X]
+
+  | 编号 | 描述 | 计划状态 | 实装验证 |
+  |---|---|---|---|
+  | WASM WASI | services/wasm/wasi/ + 解释器增强 | [X] 2026-07-20 | [services/wasm/wasi/](../../src/kernel/services/wasm/wasi/) 8 个文件存在 |
+  | F1 mdBook | 5 部分文档 | [] | 无 mdBook 配置; 无 docs/book/ |
+  | F2 RISC-V | OpenSBI + Sv39 + PLIC/CLINT | [] | 无 arch/riscv64/ |
+  | F3 TDX | CPUID 0x21 + tdcall | [] | 无 tdx 模块 |
+  | F4 NFS | services 层 + FileSystem trait | [] | 无 services/fs/nfs/ |
+  | F5 IPv6 | 930 行 / 9 文件 | [X] 2026-08-02 | 见下方 ipv6-dual-stack 详情表 |
+
+- **ipv6-dual-stack 8 Phase 详情**
+  - 描述: Phase 1-5+7-8 已完成; Phase 6 远期
+  - 方案:
+  - 状态: [X]
+
+  | Phase | 描述 | 计划状态 | 实装验证 |
+  |---|---|---|---|
+  | 1 | Ipv6Addr + IpAddr + Ipv6Cidr + From 转换 | [X] | [iface_trait.rs:968/1078/1060](../../src/kernel/framework/net/iface_trait.rs#L968) 全部存在 |
+  | 2 | NetEndpoint.addr: IpAddr 破坏性改造 | [X] | sm_fi.rs 使用 `new_v4`/`new_v6` |
+  | 3 | FFI 翻译层 (endpoint_to_smol/endpoint_from_smol) | [X] | [sm_fi.rs:171-200](../../src/kernel/framework/net/init/sm_fi.rs#L171) `parse_endpoint_trait` 支持 V4/V6 |
+  | 4 | sm_socket 接受 AF_INET6 (domain=10) | [X] | [sm_fi.rs:253](../../src/kernel/framework/net/init/sm_fi.rs#L253) `is_af = domain == 2 \|\| domain == 10` |
+  | 5 | SmoltcpNetStack 适配 IpAddr | [X] | smoltcp_impl.rs 接受 NetEndpoint |
+  | 6 | DHCPv6 / SLAAC | [] 远期 | smoltcp vendored 不含 DHCPv6 客户端 |
+  | 7 | route.rs 扩展 Ipv6Cidr | [X] | 文档自标; 需 grep 二次确认 |
+  | 8 | 测试覆盖 | [X] | [net_ipv6_addr_test.rs](../../host-tests/tests/net_ipv6_addr_test.rs) + [net_sockaddr_in6_test.rs](../../host-tests/tests/net_sockaddr_in6_test.rs) + [net_dual_stack_socket_test.rs](../../host-tests/tests/net_dual_stack_socket_test.rs) 均存在 |
+
+- **clippy-pedantic 7 批详情**
+  - 描述: 10591 → 4643; 目标 0
+  - 方案:
+  - 状态: [X]
+
+  | 批次 | 警告数 | 状态 | 关键决策 |
+  |---|---|---|---|
+  | 1-3 | 10591 → ~2700 | [X] | DECISION-033 决定 cast 类采用函数级 `#[expect]` |
+  | 4 部分 (cast_lossless) | 170 → 0 | [X] | --fix 自动修复 |
+  | 4 部分 (ab/ac 组 expect) | 191 处 | [X] | DECISION-035 注释统一模板已登记但未落地 |
+  | 4 剩余 | 2005 | [] | 旧清单已陈旧, 需重跑 clippy |
+  | 5 指针 | 788 | [] | 需确认 nightly 工具链对 `core::ptr::from_ref` 支持 |
+  | 6 风格 | 1817 | [] | A 类自动修复 + B 类语义重构 + C 类 expect 兜底 |
+  | 7 验证 | 0 警告 | [] | DECISION-034 CI 升级 `-D warnings` + pedantic |
+
+- **code-review-2026-08-01 8 项详情**
+  - 描述: 8 项发现, 全部 `[]`
+  - 方案:
+  - 状态: [X]
+
+  | 编号 | 严重度 | 描述 | 状态 |
+  |---|---|---|---|
+  | 024 | P1 | CHANGELOG.md 缺失 | [] — 由 DECISION-038 决策 |
+  | 025 | P1 | syscall 编号空间矛盾 | [] — 由 DECISION-037 决策 |
+  | 026 | P1 | userctx 反向依赖 services | [] — 由 DECISION-039 决策 |
+  | 027 | P2 | framework/mod.rs:10 "3000+ LoC" 漂移 | [] |
+  | 028 | P2 | services/net\|fs 头注释过期 | [] |
+  | 029 | P2 | README remote/kernel-roadmap 链接过期 | [] |
+  | 030 | P3 | framework/sched task 抽象未开工 | [] |
+  | 031 | P3 | IoMem 边界 expect + 固定上限 | [] |
+
+- **test-compile-issues-2026-07-31 详情**
+  - 描述: 9 处编译错误 + 8 pre-existing + 12 衍生 dead_code 全部已修
+  - 方案:
+  - 状态: [X]
+
+  | DECISION | 描述 | 状态 |
+  |---|---|---|
+  | 020 | 9 处编译错误完整登记 | [X] 修于 `eb6aca96` + `429d931b` |
+  | 021 | E0152 工具链限制 (`lib.test = false`) | [X] |
+  | 022 | 受影响测试范围登记 (1340 测试不可用) | [X] |
+  | 023 | 8 pre-existing 错误根因与修复 | [X] |
+  | 024 | 12 衍生 dead_code 修复 | [X] |
+  | 025 | 验证结果 (0w0e + audit + host-tests) | [X] |
+  | 026 | make test-unit QEMU 路径恢复 (仅编译层) | [X] |
+  | 027 | 修改文件清单 (9 文件) | [X] |
+
+### 方案
+
+- **建立每轮更新机制**
+  - 描述: 每轮开发完成后, 重跑 §2.4 验证门槛 5 条, 更新本工程计划 §现状表
+  - 方案: 任务推进到 `[X]` 立即同步; 新增任务登记到对应 plan 文档 + 本工程计划交叉引用
+  - 状态: []
+
+### 待办
+
+- **2026-08-03 基线建立**
+  - 描述: 本工程计划作为初始基线
+  - 方案: 已有
+  - 状态: [X]
+
+- **首次复盘 (2026-08-10)**
+  - 描述: 一周内 P1 决策收敛 + P2 B1-B3 推进
+  - 方案: 见工程计划 A §待办
+  - 状态: []
+
+### 决策记录
+
+- (本工程计划 B 为基线建立任务, 无独立决策)
+
+### 变更历史
+
+- **2026-08-03**
+  - 描述: 创建工程计划 B, 建立 5 份 plan 文档进度对比基线
+  - 方案: -
+  - 状态: [X]
+
+***
+
+## 工程计划 C: 验证门槛与文档同步
+
+### 背景
+
+- **§2.4 验证门槛 5 条**
+  - 描述: AGENTS.md §2.4 规定每轮开发完成必须满足 5 条验证门槛
+  - 方案: 本工程计划任何 P1/P2 项推进后必须重跑 5 条
+  - 状态: []
+
+### 目标
+
+- **每项推进后重跑验证门槛**
+  - 描述: 5 条全部满足
+  - 方案:
+  - 状态: []
+
+### 方案
+
+- **验证步骤**
+  - 描述: 按 AGENTS.md §2.4 顺序执行
+  - 方案:
+    1. 双架构 `cargo check --release` 0 error / 0 warning
+    2. clippy 0 warning (`cargo clippy --release -- -D warnings`)
+    3. 三审计通过 (services_boundary + safety_coverage + deadlock_matrix)
+    4. host-tests 全部通过
+    5. QEMU 集成测试通过 (如改动 boot/架构相关)
+  - 状态: []
+
+- **文档同步**
+  - 描述: 按 §10.2 同步 plan/ 文档状态
+  - 方案: 实装完成项改 `[X]` + 详情列 commit hash; 本工程计划 §现状表同步更新
+  - 状态: []
+
+### 待办
+
+- **每项 P1/P2 推进后执行 5 条验证门槛**
+  - 描述: AGENTS.md §2.4 强制
+  - 方案: 验证失败 → 本轮未完成
+  - 状态: []
+
+### 决策记录
+
+- (本工程计划 C 为流程约束, 无独立决策)
+
+### 变更历史
+
+- **2026-08-03**
+  - 描述: 创建工程计划 C
+  - 方案: -
+  - 状态: [X]
+
+***
+
+## 交叉引用
+
+- **依赖清单**
+  - 描述: 10 个依赖源
+  - 方案:
+    - [docs/README.md](../README.md) — 文档写作规范 (计划文档格式来源)
+    - [AGENTS.md](../../AGENTS.md) — §2.4 验证门槛 5 条 / §6 硬规则 F1-F9 / §10 预存问题处理 / §15 AI 行为准则
+    - [docs/explain/explain-framekernel.md](../explain/explain-framekernel.md) — framekernel 架构 (services→framework 单向数据流)
+    - [docs/explain/ref-naming.md](../explain/ref-naming.md) — syscall 编号空间立场 (与 framework/syscall/mod.rs 矛盾)
+    - [docs/explain/vision-hope.md](../explain/vision-hope.md) — 项目愿景 (linuxulator 翻译层立场)
+    - [docs/plan/future-roadmap.md](./future-roadmap.md) — 远期规划 (WASM 已完成)
+    - [docs/plan/ipv6-dual-stack.md](./ipv6-dual-stack.md) — DECISION-032 双栈改造
+    - [docs/plan/clippy-pedantic-cleanup.md](./clippy-pedantic-cleanup.md) — DECISION-033/035/036
+    - [docs/plan/code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md) — 8 项发现 (REVIEW-FINDING-024~031)
+    - [docs/plan/archive/test-compile-issues-2026-07-31.md](./archive/test-compile-issues-2026-07-31.md) — DECISION-020~027 (2026-08-03 归档)
+  - 状态: [X]
+
+- **被引用清单**
+  - 描述: 本工程计划由 commit 消息引用
+  - 方案: 决策落地后 commit 消息附 DECISION-037/038/039 + 工程计划 A 引用
+  - 状态: []
