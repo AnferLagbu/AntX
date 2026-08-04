@@ -18,8 +18,8 @@ QueenX 是一个从零构建的操作系统内核 (Rust + 少量 NASM 汇编, �
 ```bash
 git clone git@gitee.com:AnferLagbu/QueenX.git
 cd QueenX
-git remote rename origin Gitee
-git push Gitee main
+git remote add origin git@gitee.com:AnferLagbu/QueenX.git
+git push origin main
 ```
 
 ## 架构
@@ -68,7 +68,7 @@ QueenX 采用 Asterinas 框内核 (Framekernel) 范式：单一地址空间，�
 | x86_64 | `x86_64-unknown-none` | `ARCH=x86_64` (默认) | 主架构 |
 | aarch64 | `aarch64-unknown-none` | `ARCH=aarch64` | QEMU 验证中 |
 
-详细路线图与各 Phase 进度见 [docs/plan/kernel-roadmap.md](file:///home/anfer/Code/QueenX/docs/plan/kernel-roadmap.md)。
+详细路线图与各 Phase 进度见 [docs/plan/future-roadmap.md](file:///home/anfer/Code/QueenX/docs/plan/future-roadmap.md)。
 
 ## 构建
 

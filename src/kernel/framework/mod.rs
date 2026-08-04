@@ -7,7 +7,7 @@
 //! ## 架构 (框内核 / Asterinas OSTD 范式)
 //!
 //! ```text
-//! framework/ (TCB, ~3000+ LoC, unsafe 允许)
+//! framework/ (TCB, unsafe 允许)
 //!   ├── arch/             架构特定 (GDT/IDT/APIC/MMU/GIC)
 //!   ├── boot/             引导协议 (Multiboot2/UEFI/...)
 //!   ├── cpu/              CPU 探测 (CPUID/MSR/TSC/缓存/拓扑)

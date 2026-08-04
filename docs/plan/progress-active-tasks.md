@@ -139,7 +139,7 @@
 - **方案**:
   - 描述: 改为 `framework/ (TCB, unsafe 允许)` 移除具体数字
   - 优势: 避免再次漂移
-  - 状态: []
+  - 状态: [X] (2026-08-04 落地, commit 待定)
 
 ##### B2. services/net 与 services/fs 头注释过期
 
@@ -162,7 +162,7 @@
 - **方案**:
   - 描述: README.md:21 改为与 AGENTS.md §8.4 一致; README.md:71 改为 `docs/plan/future-roadmap.md`
   - 优势: 与 AGENTS.md 对齐; 链接有效
-  - 状态: []
+  - 状态: [X] (2026-08-04 落地. README.md:21 改用 `git remote add origin`; README.md:71 改为 future-roadmap.md)
 
 ##### B4. clippy DECISION-035 注释统一模板落地
 
@@ -263,6 +263,14 @@
     - **DECISION-038 放弃 CHANGELOG.md**: 删除 10 处引用 (README/AGENTS/host-tests/scripts/ci/audit + 1 处历史). git commit 即变更日志.
     - **DECISION-039 userctx 迁回 framework**: framework/userctx.rs 重声明完整 UserContext + 全部方法; services/userctx.rs 改为反向 re-export 兼容.
     - 验证: §2.4 5 条门槛全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed + QEMU x86_64 1/1 通过 + aarch64 1/1 通过).
+  - 状态: [X]
+- **2026-08-04 (阶段 1: 纯文档 P2 修复)**
+  - 描述: code-review #027/028/029 三项 P2 纯文档修复全部落地
+  - 方案:
+    - **B1 framework/mod.rs:10**: 删 `~3000+ LoC` 数字, 改 `framework/ (TCB, unsafe 允许)`. 实测 src/kernel/mod.rs 无同类数字.
+    - **B2 services/net|fs|proc 头注释**: 删除 2026-06 状态评估块, 替换为简洁模块说明 + 引用 progress-active-tasks.md.
+    - **B3 README remote + 链接**: README.md:21 改用 `git remote add origin` (与 AGENTS.md §8.4 一致); README.md:71 改链接 `docs/plan/future-roadmap.md`.
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯文档).
   - 状态: [X]
 
 ***

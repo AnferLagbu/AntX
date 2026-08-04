@@ -1,21 +1,12 @@
 #![deny(unsafe_code)]
 //! 网络子系统 — services 层安全代理
 //!
-//! ## 状态 (v2.7, 2026-06-04)
+//! 封装 smoltcp 协议栈的 safe 入口, 提供 socket / DHCP / 路由 / Netfilter
+//! 等用户态可见的策略层 API. 0 unsafe, 全部硬件交互走 framework.
 //!
-//! 已完成 1/4 子系统迁移 (net 顶层), 封装 `kernel::net::*` 老 API:
-//! - [x] net (本文件) — init / poll / DHCP / 状态查询
-//! - [ ] smoltcp — 协议栈内部 (smoltcp 自身大量 unsafe 在 vendored code, 不在 TCB 范围)
-//! - [ ] e1000/virtio-net — 走 driver 子系统, 已通过 chitin 注册
-//! - [ ] socket API — 后续 Phase 2.4.x
-//!
-//! ## 迁移方法
-//!
-//! 1. 把 `unsafe extern "C" fn qx_net_init` → `safe fn init()`
-//! 2. 把 `unsafe fn poll_network` → `safe fn poll()` (内部仍走 unsafe, 但锁定语义保留)
-//! 3. `Result<_, NetError>` 替代 `i32` 返回码
-//!
-//! 评估日期: 2026-06-04
+//! 历史: 2026-06 之前 v2.7 状态评估已过时, 当前 Phase 2.4 网络栈收尾
+//! 已完成, IPv4/IPv6 双栈支持 (DECISION-032) 已实装. 详细进度见
+//! docs/plan/progress-active-tasks.md.
 
 use crate::kernel::framework::net_socket as fw_net_socket;
 use crate::kernel::framework::sync::{Mutex, OnceLock};

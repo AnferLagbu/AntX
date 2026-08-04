@@ -1,24 +1,12 @@
 #![deny(unsafe_code)]
-//! 进程管理子系统 — services 层安全代理
+//! 进程管理子系统 — services 层策略主体
 //!
-//! ## 状态 (v2.11, 2026-06-04)
+//! 进程生命周期 / 调度策略 / 信号 / namespace / cgroup / seccomp / rlimit
+//! / session / coredump / fd_table / clone / execve / elf / canary 等
+//! 18+ 子模块. 0 unsafe, 全部上下文切换/页表/调度底层走 framework.
 //!
-//! Phase 2.5 进程迁移 (1/4): 封装 `crate::kernel::framework::proc::types` 强类型与状态/ID API:
-//! - [x] types — `Pid` / `Tid` / `ProcessId` / `ThreadId` / `ProcessState` / `ProcessPriority`
-//! - [x] session — 初始化入口
-//! - [x] scheduler / scheduler_ex — 调度器初始化入口
-//! - [x] process / thread — 进程/线程初始化入口
-//! - [ ] process table — 完整 CRUD (后续 Phase 2.5.x)
-//! - [ ] ELF loader — 完整加载器 (后续 Phase 2.5.x)
-//! - [ ] signal — 信号系统 (后续 Phase 2.5.x)
-//!
-//! ## 迁移方法
-//!
-//! 1. `pub fn proc_init_*` 集合 → 单一 `services::proc::init()` 入口
-//! 2. `ProcessState` / `ProcessPriority` 直接 re-export (已是强类型)
-//! 3. 0 unsafe 出现在 services 层
-//!
-//! 评估日期: 2026-06-04
+//! 历史: 2026-06 之前 v2.11 状态评估已过时, 当前已远超当时范围.
+//! 详细进度见 docs/plan/progress-active-tasks.md.
 
 
 pub mod canary;
