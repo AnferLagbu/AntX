@@ -175,7 +175,7 @@ else
 fi
 popd > /dev/null
 
-# ── 5. miri 已于 2026-06-26 弃用 (见 CHANGELOG.md [Unreleased] 移除节) ──
+# ── 5. miri 已于 2026-06-26 弃用 ──
 # 原 Miri 严格 provenance 配置验证已删除, UB 检测由 Rust 编译期 + 7 个审计脚本覆盖
 
 # ── 6. 模块级 SAFETY 不变式审计 ────────────────────────────────

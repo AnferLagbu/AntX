@@ -890,7 +890,6 @@ if [ "$SKIP_OPTIONAL" = false ]; then
     fi
 
     # miri 已于 2026-06-26 弃用, 跳过 miri 组件检查
-    # print_subsection "Miri UB 检测" - 见 CHANGELOG.md [Unreleased] 移除节
 
     print_subsection "LLVM Tools (cargo cov / 性能分析)"
     print_check "llvm-tools-preview 组件"

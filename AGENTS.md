@@ -360,7 +360,7 @@ AI 输出若不通过上述审查, 视为预存问题, 必须修复后才能合�
 - 双架构编译 0 warning 0 error
 - 所有审计 (clippy + 项目脚本) 通过
 - 所有测试 (host-tests + QEMU 集成) 通过
-- 文档同步更新 (CHANGELOG.md + plan/ + explain/)
+- 文档同步更新 (plan/ + explain/; 变更记录由 git commit 承担, 不维护独立 CHANGELOG)
 - 代码无新增 services unsafe / 循环依赖 / 跨子系统内部访问
 
 ***

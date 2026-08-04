@@ -295,8 +295,7 @@ cargo test -p queenx-host-tests --test audit_comment_language_test
 5. **写测试函数**: 3 段式 (arrange/act/assert) + 中文注释
 6. **本地跑通**: `cargo test --test <name>`
 7. **更新本 README 索引**: 在对应 scope 段加一行
-8. **更新 CHANGELOG.md**: 在"维护周期"段加 1 行
-9. **提交 PR**: 标题格式 `test(<scope>): <feature> <action>`
+8. **提交 PR**: 标题格式 `test(<scope>): <feature> <action>`
 
 ## 退役测试流程
 
