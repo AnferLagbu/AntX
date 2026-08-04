@@ -300,14 +300,16 @@ pub extern "C" fn recovery_domain_get_failures(domain_id: u64) -> i32 {
     }
 }
 
+// SAFETY: FFI 导出函数, 通过 C ABI 与外部代码互操作
 #[cfg(feature = "fault_injection")]
-#[no_mangle]
-pub fn recovery_set_fault_rate(rate: u32) {
+#[unsafe(no_mangle)]
+pub extern "C" fn recovery_set_fault_rate(rate: u32) {
     super::fault_inject::FAULT_INJECTION_RATE.store(rate, Ordering::SeqCst);
 }
 
+// SAFETY: FFI 导出函数, 通过 C ABI 与外部代码互操作
 #[cfg(feature = "fault_injection")]
-#[no_mangle]
-pub fn recovery_get_fault_rate() -> u32 {
+#[unsafe(no_mangle)]
+pub extern "C" fn recovery_get_fault_rate() -> u32 {
     super::fault_inject::FAULT_INJECTION_RATE.load(Ordering::SeqCst)
 }

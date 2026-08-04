@@ -183,7 +183,7 @@
 - **方案**:
   - B5.1: 移除 credo/storage.rs 3 处 expect, 改用 `(v >> (i*8)) as u8` 消除警告 (w64 已用此模式可参考)
   - B5.2: barrier/api.rs 2 处补 `extern "C"` + 改为 `#[unsafe(no_mangle)]` (与 file 中其他函数 api.rs:30/43/56/77 一致)
-  - 状态: []
+  - 状态: [X] (2026-08-04 落地. B5.1: w32/w64/w16 三函数 `& 0xFF` 模式消除 cast expect, 移除 3 处 expect + 替换为函数 doc. B5.2: barrier/api.rs 2 处补 `extern "C"` + `#[unsafe(no_mangle)]` + SAFETY 注释)
 
 ##### B6. IoMem 边界 expect + 固定上限硬编码
 
@@ -271,6 +271,14 @@
     - **B2 services/net|fs|proc 头注释**: 删除 2026-06 状态评估块, 替换为简洁模块说明 + 引用 progress-active-tasks.md.
     - **B3 README remote + 链接**: README.md:21 改用 `git remote add origin` (与 AGENTS.md §8.4 一致); README.md:71 改链接 `docs/plan/future-roadmap.md`.
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯文档).
+  - 状态: [X]
+- **2026-08-04 (阶段 2: clippy DECISION-036 + barrier extern "C")**
+  - 描述: 推进 progress-active-tasks.md B5 拆分后两子项 (B5.1 + B5.2)
+  - 方案:
+    - **B5.1 credo/storage.rs**: w32/w64/w16 三函数移除 3 处 `#[expect(clippy::cast_possible_truncation)]`, 改 `& 0xFF` 显式收窄 (DECISION-036 落地). 3 个 expect 全部消除.
+    - **B5.2 barrier/api.rs**: 2 处 `#[no_mangle] pub fn` 改为 `#[unsafe(no_mangle)] pub extern "C" fn` + 加 SAFETY 注释, 与 file 中其他 FFI 函数 (api.rs:30/43/56/77) 一致.
+    - 调研发现: services/credo/storage/disk.rs 也有 7 处类似 cast 警告 (按字节序列化场景), 范围超出 B5.1, 按 §15.3 不顺手处理, 登记为下次 plan 待办.
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (5 行代码变更).
   - 状态: [X]
 
 ***

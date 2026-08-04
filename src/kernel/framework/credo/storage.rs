@@ -41,28 +41,25 @@ fn path_to_bytes(s: &str) -> [u8; 128] {
     buf
 }
 
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
-#[expect(clippy::cast_possible_truncation)]
+/// 按小端序写 u32 到 4 字节. `& 0xFF` 显式收窄避免 cast 警告.
 fn w32(buf: &mut [u8], p: &mut usize, v: u32) {
-    buf[*p] = v as u8;
-    buf[*p + 1] = (v >> 8) as u8;
-    buf[*p + 2] = (v >> 16) as u8;
-    buf[*p + 3] = (v >> 24) as u8;
+    buf[*p] = (v & 0xFF) as u8;
+    buf[*p + 1] = ((v >> 8) & 0xFF) as u8;
+    buf[*p + 2] = ((v >> 16) & 0xFF) as u8;
+    buf[*p + 3] = ((v >> 24) & 0xFF) as u8;
     *p += 4;
 }
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
-#[expect(clippy::cast_possible_truncation)]
+/// 按小端序写 u64 到 8 字节. 位移取每个字节, `& 0xFF` 显式收窄避免 cast 警告.
 fn w64(buf: &mut [u8], p: &mut usize, v: u64) {
     for i in 0..8 {
-        buf[*p + i] = (v >> (i * 8)) as u8;
+        buf[*p + i] = ((v >> (i * 8)) & 0xFF) as u8;
     }
     *p += 8;
 }
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
-#[expect(clippy::cast_possible_truncation)]
+/// 按小端序写 u16 到 2 字节. `& 0xFF` 显式收窄避免 cast 警告.
 fn w16(buf: &mut [u8], p: &mut usize, v: u16) {
-    buf[*p] = v as u8;
-    buf[*p + 1] = (v >> 8) as u8;
+    buf[*p] = (v & 0xFF) as u8;
+    buf[*p + 1] = ((v >> 8) & 0xFF) as u8;
     *p += 2;
 }
 fn w8(buf: &mut [u8], p: &mut usize, v: u8) {
