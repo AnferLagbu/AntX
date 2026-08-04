@@ -735,6 +735,7 @@ pub extern "C" fn cpu_init() -> i32 {
 /// FFI 导出函数 (C 可调用)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -880,6 +881,7 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 /// FFI 导出函数 (C 可调用)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致

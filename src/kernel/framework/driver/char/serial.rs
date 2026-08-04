@@ -650,6 +650,7 @@ pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { un
 
 use crate::kernel::framework::chitin::CharOps;
 
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 extern "C" fn serial_char_write(driver_data: *mut u8, buf: *const u8, len: usize) -> usize {
     if driver_data.is_null() || buf.is_null() { return 0; }
     // SAFETY: driver_data 由 Chitin CharOps 契约保证有效, buf 在调用期间有效。
@@ -671,6 +672,7 @@ extern "C" fn serial_char_write(driver_data: *mut u8, buf: *const u8, len: usize
     slice.len()
 }
 
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 extern "C" fn serial_char_read(driver_data: *mut u8, buf: *mut u8, len: usize) -> usize {
     if driver_data.is_null() || buf.is_null() { return 0; }
     // SAFETY: driver_data 由 Chitin CharOps 契约保证有效, buf 至少 len 字节可写。

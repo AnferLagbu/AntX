@@ -129,10 +129,12 @@ impl CStrExt for *const u8 {
 ///
 /// 适用于 FFI 中声明为 `char *`(可写)的参数。语义与 [`CStrExt`] 一致。
 impl CStrExt for *mut u8 {
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
     fn as_kstr(&self) -> &'static str {
         (*self as *const u8).as_kstr()
     }
 
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
     fn as_kstr_opt(&self) -> Option<&'static str> {
         (*self as *const u8).as_kstr_opt()
     }

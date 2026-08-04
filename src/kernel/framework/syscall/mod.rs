@@ -347,6 +347,7 @@ pub(crate) mod raw {
     /// # Safety
     /// 链接器符号，仅在 boot 后有效。
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     pub fn kernel_start_ptr() -> *const u8 {
         // SAFETY: _kernel_start 是链接器符号 (extern "C")，是静态地址，
         // boot 后由 VMM 建立映射可读。
@@ -356,6 +357,7 @@ pub(crate) mod raw {
     /// 内核映像结束物理地址（已减 `HHDM_OFFSET`）。
     /// # SAFETY: `链接器符号，hhdm_offset` 必须与启动时一致。
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     pub fn kernel_end_phys(hhdm_offset: usize) -> usize {
         unsafe { (&_kernel_end as *const u8 as usize).wrapping_sub(hhdm_offset) }
     }

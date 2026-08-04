@@ -314,6 +314,7 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 { unsa
 /// `ptr` 是有效指针. 若 `n` 非零, 则从 `ptr` 起至少有 `n` 字节可读.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -353,6 +354,7 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 /// `a` 与 `b` 均为有效指针. 各自至少有 `n` 字节可读.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {
         return core::ptr::null_mut();
@@ -395,6 +397,7 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 /// 找到的子串指针，或 NULL 如果未找到
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 ///
 /// # Safety
 ///
@@ -496,6 +499,7 @@ pub unsafe extern "C" fn memcpy(
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 ///
 /// # Safety
 ///
@@ -710,6 +714,7 @@ pub unsafe extern "C" fn memcmp(
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 ///
 /// # Safety
 ///

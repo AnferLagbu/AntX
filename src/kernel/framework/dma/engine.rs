@@ -223,6 +223,7 @@ impl DmaEngine {
 
     // =============== 流式 DMA 映射 ===============
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 将已有内核缓冲区映射为 DMA 缓冲区
     pub fn map_single(
         &self,
@@ -602,6 +603,7 @@ pub fn submit_transfer(
     Some(0)
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 pub fn submit_transfer_async(
     src: PhysAddr,
     dst: PhysAddr,

@@ -11,6 +11,7 @@ fn test_undo_log_basic() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 fn test_undo_log_record() -> TestResult {
     let mut undo = Box::new(UndoLog::new());
     undo.current_generation = 1;
@@ -25,6 +26,7 @@ fn test_undo_log_record() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 fn test_undo_log_dedup() -> TestResult {
     let mut undo = Box::new(UndoLog::new());
     undo.current_generation = 1;
@@ -40,6 +42,7 @@ fn test_undo_log_dedup() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 fn test_undo_log_rollback() -> TestResult {
     let mut undo = Box::new(UndoLog::new());
     undo.current_generation = 1;

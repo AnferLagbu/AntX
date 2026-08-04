@@ -51,6 +51,7 @@ fn rdrand_u64() -> Option<u64> {
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 fn fallback_entropy_byte(idx: usize) -> u8 {
     use core::sync::atomic::AtomicU64;
     static COUNTER: AtomicU64 = AtomicU64::new(0x5A3C_9E17_F2D8_4B61);

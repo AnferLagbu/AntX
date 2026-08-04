@@ -692,6 +692,7 @@ impl PhysicalMemoryManager {
     // 修复: 通过 raw pointer 直接读 self.bitmap_size, 强制 LTO 看到
     // 真实字段偏移, 不可错位. volatile read 防止任何 caching.
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: bitmap 已 init 时 self.bitmap_size 也是已 set 的有效值.
@@ -707,6 +708,7 @@ impl PhysicalMemoryManager {
 
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
     fn clear_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
@@ -720,6 +722,7 @@ impl PhysicalMemoryManager {
 
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
     fn test_bit(&self, bit: usize) -> bool {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
@@ -737,6 +740,7 @@ impl PhysicalMemoryManager {
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
         // SAFETY: bitmap 已 init 时 self.bitmap_size 有效
@@ -810,6 +814,7 @@ impl PhysicalMemoryManager {
 
     #[inline]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     fn buddy_heads_ref(&self) -> HeadsRef {
         // 2026-07-02: turn 28 排查. LTO 错位 buddy_heads 字段访问.
         // 用 core::ptr::addr_of! 获取真实字段地址, 防 LTO 错位.
@@ -868,6 +873,7 @@ impl PhysicalMemoryManager {
     }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 从双向链表中移除一个空闲块.
     fn buddy_list_remove(&self, pfn: u64, order: u8) {
         let heads = self.buddy_heads_ref();

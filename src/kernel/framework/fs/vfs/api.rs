@@ -93,6 +93,7 @@ pub extern "C" fn vfs_init_internal() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 pub extern "C" fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     let path = ptr_to_str(path);
     let fs_name = ptr_to_str(fs_name);
@@ -883,6 +884,7 @@ pub fn vfs_seek_safe(fd: u32, offset: i32, whence: u32) -> i32 {
     vfs_seek(fd, offset, whence)
 }
 
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 /// Safe 包装: `vfs_readdir`
 pub fn vfs_readdir_safe(fd: u32, entry: &mut crate::kernel::services::fs::vfs_types::VfsDirEntry) -> i32 {
     // SAFETY: entry 是调用方拥有的有效可写结构体
@@ -937,6 +939,7 @@ pub extern "C" fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     vfs_stat_internal(path, st, pwm)
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// Safe 包装: services 层用, 返回 `VfsStat` 而非 raw pointer.
 ///
 /// 内部复用 `vfs_stat_internal`, 在 stack 上接收结果, 然后转为 Option 返回.
@@ -1387,6 +1390,7 @@ pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
     result
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// Safe 包装: services 层用, 返回 `VfsStat` 而非 raw pointer.
 pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
     let mut st = VfsStat::default();

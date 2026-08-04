@@ -170,6 +170,7 @@ pub extern "C" fn pwm_find(pwm: u64) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 pub extern "C" fn pwm_find_entry(pwm: u64) -> *const PwmEntry {
     match identity::find(pwm) {
         Some(e) => e as *const PwmEntry,

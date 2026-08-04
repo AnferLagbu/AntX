@@ -121,6 +121,7 @@ impl UserWritePtr {
         unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
     /// 以不可变字节切片形式访问用户内存。
     pub fn as_slice(&self) -> &[u8] {
         // SAFETY: 构造时的 unsafe 契约保证 ptr + len 是有效的用户态内存

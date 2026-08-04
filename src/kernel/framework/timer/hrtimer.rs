@@ -244,6 +244,8 @@ pub fn is_hrtimer_ready() -> bool {
     HRTIMER_READY.load(Ordering::Acquire)
 }
 
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 /// 启动定时器 (绝对时间)
 ///
 /// 将定时器以绝对到期时间 `expiry_ns` 入队。

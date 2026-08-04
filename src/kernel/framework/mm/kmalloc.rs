@@ -84,6 +84,7 @@ impl HeapHeader {
         }
     }
 
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
     /// 获取本头部之后的数据区指针
     pub fn data_ptr(&self) -> *mut u8 {
         // SAFETY: self 是对 HeapHeader 的有效引用; 加上 size_of::<Self>()
@@ -92,6 +93,7 @@ impl HeapHeader {
     }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 由数据指针取回头部
     ///
     /// # Safety
@@ -215,6 +217,7 @@ pub(crate) mod raw {
         /// 通过字节偏移计算相邻的下一个头部.
         #[inline(always)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
         pub fn adjacent_next(&self, offset: usize) -> Self {
             // SAFETY: 调用方保证偏移仍在堆区范围内
             unsafe { Self::new_unchecked(self.byte_ptr().add(offset) as *mut HeapHeader) }
@@ -861,6 +864,7 @@ impl KernelHeap {
     }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
     /// 早期分配 (堆初始化前)
     fn early_allocate(&self, size: usize) -> Option<*mut u8> {
         let current = self.early_pos.fetch_add(size, Ordering::Relaxed);

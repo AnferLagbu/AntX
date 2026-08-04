@@ -449,6 +449,7 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 pub fn gdt_init() -> i32 {
     use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 
@@ -566,6 +567,7 @@ pub fn gdt_init() -> i32 {
 /// 本函数在 AP 进入长模式后调用，为目标 CPU 初始化独立的 GDT + TSS。
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 pub fn gdt_init_ap(cpu_index: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -623,6 +625,7 @@ pub fn gdt_init_ap(cpu_index: u32) {
 /// swapgs 后 `GS_BASE` = `IA32_GS_BASE` = 此函数返回的地址。
 /// 需要在用户页表中映射此地址所在的页面, 否则 KPTI 入口会触发 #PF。
 #[inline]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 pub fn get_syscall_per_cpu_base() -> u64 {
     &per_cpu_gdt(0).syscall as *const _ as u64
 }
@@ -658,6 +661,7 @@ pub unsafe fn get_tss_mut() -> &'static mut super::tss::TaskStateSegment {
 /// 用户态中断触发时 CPU 需要从 TSS 读取 RSP0/IST 栈指针,
 /// 用户页表必须映射 TSS 所在的页面.
 #[inline]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 pub fn get_tss_base() -> u64 {
     &per_cpu_gdt(0).tss as *const _ as u64
 }

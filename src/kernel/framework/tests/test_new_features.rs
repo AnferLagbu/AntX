@@ -106,6 +106,7 @@ fn test_elf_validation_null() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 fn test_elf_validation_small() -> TestResult {
     let result = crate::kernel::framework::proc::elf_validate(&0u8 as *const u8, 10);
     check!(result.is_none(), "too small rejected");
@@ -119,6 +120,7 @@ fn test_elf_magic_rejected() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 fn test_elf_valid_minimal() -> TestResult {
     use crate::kernel::framework::proc::Elf64Header;
     let data = [0u8; 80]; // header + some room

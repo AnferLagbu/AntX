@@ -730,6 +730,7 @@ static KEYBOARD_DEVICE: Mutex<Option<Box<KeyboardDriver>>> = Mutex::new(None);
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 pub extern "C" fn keyboard_init() {
     let mut driver = Box::new(KeyboardDriver::new());
     let _ = driver.init();
@@ -907,6 +908,8 @@ mod tests {
 use crate::kernel::framework::chitin::InputOps;
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
     if driver_data.is_null() { return core::ptr::null(); }
     // SAFETY: driver_data 由 Chitin InputOps 契约保证有效。
@@ -925,6 +928,7 @@ extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
 use core::sync::atomic::{AtomicU8, Ordering};
 static KB_READ_SLOT: AtomicU8 = AtomicU8::new(0);
 
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 extern "C" fn kb_input_has(driver_data: *mut u8) -> bool {
     if driver_data.is_null() { return false; }
     // SAFETY: 同上。
@@ -933,6 +937,7 @@ extern "C" fn kb_input_has(driver_data: *mut u8) -> bool {
 }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 extern "C" fn kb_input_irq(driver_data: *mut u8) {
     if driver_data.is_null() { return; }
     // SAFETY: driver_data 由 Chitin InputOps 契约保证有效。

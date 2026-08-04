@@ -373,6 +373,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
+- **2026-08-04 (阶段 8.10.3-8.10.5: borrow/ref/constness/alignment ptr 类 expect 兜底)**
+  - 描述: 推进 clippy 清理 ptr 类 4 子 lint — borrow_as_ptr (83) + ref_as_ptr (32) + ptr_cast_constness (33) + cast_ptr_alignment (89) = 237 处
+  - 方案:
+    - 调研: 237 处 hint, 涉及 ~ 50 文件
+    - 决策: 函数级 expect 兑底 (4 子 lint 均无安全风险, 改 Rust 2024 `&raw const` 语法需追改调用点)
+    - 修复: 56+31+27+63 = 177 处 expect 添加 (hint 去重为 fn 级)
+    - 修复 unfulfilled_lint_expectations: 20 处 (x86_64) + 1 处 (aarch64, e1000_probe 在 cfg(x86_64) 内不触发 aarch64 borrow_as_ptr), 脚本 + 手工删除
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用.
+  - 状态: [X]
 - **2026-08-04 (阶段 8.10.2: ptr_as_ptr 641 处 expect 兜底清零)**
   - 描述: 推进 clippy 清理第 11 类 lint — ptr_as_ptr (指针→指针 cast 不变 constness)
   - 方案:

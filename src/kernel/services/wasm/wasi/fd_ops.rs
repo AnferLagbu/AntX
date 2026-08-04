@@ -602,6 +602,7 @@ pub fn wasi_fd_dup(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<()
     Ok(())
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// WASI `fd_readdir`: 读取目录内容
 ///
 /// # Errors

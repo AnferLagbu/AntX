@@ -189,6 +189,7 @@ impl VirtQueue {
         head
     }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 提交描述符链到设备 (通知设备).
     /// 返回已提交的可用环索引.
     pub fn submit(&mut self, desc_head: u16) -> u16 {
@@ -204,6 +205,7 @@ impl VirtQueue {
         idx
     }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 提交后通知设备 (调用方必须设置 avail->idx 并写 `QueueNotify`).
     pub fn commit_and_kick(&mut self) {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -218,6 +220,7 @@ impl VirtQueue {
     /// 检查是否有已用描述符可用, 有则返回.
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     pub fn pop_used(&mut self) -> Option<(u16, u32)> {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {

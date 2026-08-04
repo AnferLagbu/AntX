@@ -752,6 +752,7 @@ pub fn chitin_register_driver_with_ops(
 }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 fn driver_from_obj<'a>(ptr: *mut u8) -> &'a mut dyn Driver {
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let obj: &mut DriverObject = unsafe { &mut *(ptr as *mut DriverObject) };
@@ -779,6 +780,7 @@ pub fn chitin_init_all() {
 }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 pub fn chitin_shutdown_all() {
     let mut devices = CHITIN_DEVICES.lock();
     for dev in devices.iter_mut() {

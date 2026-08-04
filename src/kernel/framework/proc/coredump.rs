@@ -455,6 +455,7 @@ fn build_load_phdr(seg: &CoreSegment, offset: u64) -> Elf64Phdr {
 }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// 写入 `NT_PRSTATUS` note
 fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut u64) {
     let prstatus_size = core::mem::size_of::<PrStatus>() as u32;
@@ -510,6 +511,7 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
 }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// 写入 `NT_SIGINFO` note
 fn write_note_siginfo(fd: u32, sig: u8, offset: &mut u64) {
     let siginfo_size = core::mem::size_of::<CoreSiginfo>() as u32;

@@ -267,6 +267,7 @@ impl VgaDriver {
     }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 获取显存缓冲区为 u16 切片 (可写)
     fn buffer_slice_mut(&mut self) -> &mut [u16] {
         // SAFETY: IoMem 保证 0xB8000 开始的 VGA_BUFFER_SIZE 字节已正确映射

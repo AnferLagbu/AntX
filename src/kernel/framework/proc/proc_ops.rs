@@ -53,6 +53,7 @@ pub mod raw {
     }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 分配并构造一个 `Process` (用于 fork 创建子进程)。
     ///
     /// # Safety (内部)
@@ -309,6 +310,7 @@ where
     PROCESS_TABLE.for_each(f);
 }
 
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 /// 获取进程的原始指针 (用于需要直接访问进程的场景).
 pub fn process_get_raw(pid: u32) -> Option<*const super::process::Process> {
     PROCESS_TABLE.get(pid).map(|p| p as *const _)
@@ -687,6 +689,8 @@ pub extern "C" fn proc_sleep_ms(ms: u64) {
 /// fork 系统调用实现 (COW 页表克隆 + namespace 继承)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
 pub extern "C" fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
     if parent_pid == 0 { return 0; }

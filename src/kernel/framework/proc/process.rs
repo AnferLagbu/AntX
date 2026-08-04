@@ -35,6 +35,7 @@ unsafe extern "C" {
     static stack_bottom: u8;
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// 检查 boot 栈 canary 是否完整.
 ///
 /// boot 栈位于低 1MB 恒等映射区 (.bootbss), 
@@ -51,6 +52,7 @@ pub fn check_boot_stack_canary() -> bool {
     }
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// 写入 boot 栈 canary 到 `stack_bottom`.
 ///
 /// 供 aarch64 入口在 `clear_bss` 之后调用 (`x86_64` 由 boot.asm trampoline 写入).

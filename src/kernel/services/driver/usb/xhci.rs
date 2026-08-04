@@ -818,6 +818,7 @@ impl TransferRing {
     }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 写入一个 TRB 到 enqueue 位置, 自动设置 cycle bit.
     ///
     /// 到达末尾时写入 Link TRB 并翻转 cycle, 回绕到起点.

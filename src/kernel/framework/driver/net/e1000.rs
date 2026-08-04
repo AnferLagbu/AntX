@@ -77,6 +77,7 @@ impl TxRing {
     /// 分配并初始化 TX 描述符环
     #[cfg(not(feature = "kernel_test"))]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     pub fn alloc(count: usize) -> Option<Self> {
         let size = core::mem::size_of::<E1000TxDesc>() * count;
         // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器; size > 0, align = 16 (2^4)。
@@ -167,6 +168,7 @@ impl RxRing {
     /// 分配并初始化 RX 描述符环及接收缓冲区
     #[cfg(not(feature = "kernel_test"))]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     pub fn alloc(count: usize, buf_size: usize) -> Option<Self> {
         let size = core::mem::size_of::<E1000RxDesc>() * count;
         // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器。
@@ -737,6 +739,7 @@ pub fn take_device() -> Option<Box<E1000Device>> {
 
 #[cfg(not(feature = "kernel_test"))]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() {
         return -1;
@@ -755,6 +758,7 @@ pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() {
         return -1;
@@ -769,6 +773,7 @@ pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u3
 }
 
 #[cfg(not(feature = "kernel_test"))]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 pub extern "C" fn e1000_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
     if driver_data.is_null() {
         return;
@@ -782,6 +787,7 @@ pub extern "C" fn e1000_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
 
 #[cfg(not(feature = "kernel_test"))]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 pub extern "C" fn e1000_net_irq(driver_data: *mut u8) {
     if driver_data.is_null() {
         return;
@@ -861,6 +867,7 @@ pub extern "C" fn e1000_probe() -> i32 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 pub extern "C" fn get_e1000_instance() -> *mut u8 {
     match &mut *E1000_DEVICE.lock() {
         Some(dev) => dev as *mut _ as *mut u8,

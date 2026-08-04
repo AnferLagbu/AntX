@@ -13,6 +13,7 @@ use super::config::{self, RecoveryLayer, RecoveryResult};
 use crate::kernel::framework::barrier::DomainState;
 use crate::kernel::framework::barrier::RECOVERY_MANAGER;
 
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 pub fn locate_domain_from_panic(panic_location: &core::panic::PanicInfo<'_>) -> Option<u64> {
     let manager = RECOVERY_MANAGER.lock();
 

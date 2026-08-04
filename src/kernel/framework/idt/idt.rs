@@ -374,6 +374,7 @@ impl IdtManager {
     /// # Safety
     /// 必须确保 IDT 表已正确初始化
     #[cfg(target_arch = "x86_64")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     unsafe fn load_idt(&self) { unsafe {
         let state = self.state.lock();
         let base_addr = state.entries.as_ptr() as u64;

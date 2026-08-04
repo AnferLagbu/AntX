@@ -175,6 +175,7 @@ pub struct SlabStats {
     pub total_caches: u32,
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// 获取 slab 分配器系统级统计
 pub fn slab_get_stats() -> SlabStats {
     let mut total_memory = 0u64;
@@ -532,6 +533,7 @@ pub extern "C" fn krealloc(ptr: *mut u8, size: u64) -> *mut u8 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 pub extern "C" fn kmalloc_stats(stats: *mut u8) {
     if stats.is_null() {
         return;

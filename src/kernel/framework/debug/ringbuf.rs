@@ -110,6 +110,7 @@ impl<const CAP: usize> RingBuffer<{ CAP }> {
         len
     }
 
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
     /// 把 src 写入到以 `abs_off` 起始的环形位置
     fn write_into(&self, src: &[u8], abs_off: usize) {
         let cap_mask = CAP - 1;

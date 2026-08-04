@@ -204,6 +204,7 @@ impl IoMem {
         // 落在 IoMem 持有的 MMIO 区域内, 不会越界; `read_volatile` 防止编译器重排。
         unsafe { self.virt.as_ptr().add(offset).read_volatile() }
     }
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 从 MMIO 区域读取一个 u16 (小端)。
     /// # Panics
     /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
@@ -215,6 +216,7 @@ impl IoMem {
         // 2 字节对齐 (PCI BAR MMIO 由 BIOS/UEFI 建立时保证自然对齐)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u16).read_volatile() }
     }
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 从 MMIO 区域读取一个 u32 (小端)。
     /// # Panics
     /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
@@ -226,6 +228,7 @@ impl IoMem {
         // 由 MMIO 基地址的页对齐保证 (PAGE_SIZE=4096, 任何 4 字节偏移都对其)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u32).read_volatile() }
     }
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 从 MMIO 区域读取一个 u64 (小端)。
     /// # Panics
     /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
@@ -248,6 +251,7 @@ impl IoMem {
         unsafe { self.virt.as_ptr().add(offset).write_volatile(val); }
     }
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 向 MMIO 区域写入一个 u16 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
@@ -259,6 +263,7 @@ impl IoMem {
         unsafe { (self.virt.as_ptr().add(offset) as *mut u16).write_volatile(val); }
     }
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 向 MMIO 区域写入一个 u32 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
@@ -270,6 +275,7 @@ impl IoMem {
         unsafe { (self.virt.as_ptr().add(offset) as *mut u32).write_volatile(val); }
     }
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     /// 向 MMIO 区域写入一个 u64 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).

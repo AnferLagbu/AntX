@@ -320,6 +320,7 @@ fn format_registers(out: &mut [u8], r: &KgdbRegs) -> usize {
 }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 fn parse_registers(hex: &[u8], r: &mut KgdbRegs) -> bool {
     #[cfg(target_arch = "x86_64")]
     const N: usize = 18;

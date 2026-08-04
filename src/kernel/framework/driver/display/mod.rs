@@ -284,6 +284,7 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
 /// 未找到可用帧缓冲或创建 Framebuffer 失败时返回 Err。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 pub fn display_init() -> framework::Result<()> {
     crate::klog_boot_info!("[DISPLAY] display_init: probing framebuffer");
 

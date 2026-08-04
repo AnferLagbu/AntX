@@ -355,6 +355,7 @@ impl SmoltcpNetStack {
         }
     }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 接收数据报并获取来源端点信息 (UDP 主要场景).
     ///
     /// # Errors
@@ -417,6 +418,7 @@ impl SmoltcpNetStack {
         }
     }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 通过 fd 获取 Socket 选项.
     ///
     /// # Errors
@@ -747,6 +749,7 @@ impl NetStack for SmoltcpNetStack {
         }
     }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 从监听 Socket 的已完成连接队列中取出一个新连接.
     fn accept(
         &mut self,
@@ -844,6 +847,7 @@ impl NetStack for SmoltcpNetStack {
         }
     }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
     /// 接收数据报并获取来源端点信息 (UDP 主要场景).
     fn recvfrom(
         &mut self,

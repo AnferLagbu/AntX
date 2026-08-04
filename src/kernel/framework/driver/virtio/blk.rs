@@ -292,6 +292,8 @@ impl VirtioBlk {
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
     fn do_io(&mut self, lba: u64, req_type: u32, buf: &[u8]) -> Result<(), ()> {
         // ── 在 DMA 缓冲区构造请求 ──
         let req_size = core::mem::size_of::<BlkRequest>();
@@ -462,6 +464,7 @@ pub extern "C" fn virtio_blk_irq_handler(frame: *mut InterruptFrame) {
 // I-42: 注册设备到全局注册表 (IRQ → completion + device).
 // enable_irq() 调用, ISR 查表使用.
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
 pub fn register_virtio_blk_device(irq: usize, completion: &IoCompletionArray, device: &VirtioBlk) {
     let mut registry = VIRTIO_BLK_REGISTRY.lock();
     if irq < MAX_VIRTIO_BLK_IRQS {

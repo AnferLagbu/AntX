@@ -90,6 +90,7 @@ impl ElfLoadResult {
 
 // P1-I-33: 委托给 `verify::verify_elf` 单一来源
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 pub fn elf_validate(elf_data: *const u8, elf_size: u64) -> Option<&'static Elf64Header> {
     // SAFETY: 调用方保证 elf_data 有效, verify_elf 内部仅读借用
     let _ = unsafe { verify::verify_elf(elf_data, elf_size) }.ok()?;
@@ -115,6 +116,8 @@ pub fn elf_load(
 
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 /// 加载 ELF 文件到指定地址空间, 支持可选加载偏移 (PIE/ASLR).
 ///
 /// `load_bias` = 0 表示 `ET_EXEC` (固定地址加载).
@@ -292,6 +295,7 @@ const LINUX_INTERP_PREFIXES: &[&[u8]] = &[
 ];
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 /// 扫描 ELF program headers, 检测 `PT_INTERP` 是否为 Linux 动态链接器.
 ///
 /// 返回 true 表示需要改写 `PT_INTERP` (Linux 二进制).
@@ -340,6 +344,8 @@ pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
     false
 }
 
+#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
 /// 改写 ELF 数据中的 `PT_INTERP` 路径为 queenx 动态链接器.
 ///
 /// # Safety

@@ -432,6 +432,7 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
 }
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// 投递待处理信号 (在返回用户态前调用)
 ///
 /// 遍历当前进程的 pending & ~blocked, 逐个投递:

@@ -176,6 +176,7 @@ impl Itimerval {
     }
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// times(buf) — 读取当前进程 user/sys 时间与子进程时间.
 ///
 /// 真实实现: 通过 `framework/proc/api::proc_get_times` 读取已累计的 jiffies,
@@ -205,6 +206,7 @@ pub fn times_syscall(buf_ptr: u64) -> Result<usize, Errno> {
     Ok(raw::get_ticks() as usize)
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// getitimer(which, value) — 读取间隔定时器.
 /// Framekernel 实现 `ITIMER_REAL` (which==0); VIRTUAL/PROF (which==1/2) 返 ENOSYS;
 /// 其他 (which==3 保留) 返 EINVAL.
@@ -244,6 +246,7 @@ pub fn getitimer_syscall(which: i32, value_ptr: u64) -> Result<usize, Errno> {
     }
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 /// setitimer(which, new, old) — 设置间隔定时器.
 /// Framekernel 实现 `ITIMER_REAL` (which==0); 其他返 EINVAL/ENOSYS.
 ///
