@@ -53,6 +53,7 @@ pub const CLONE_NEWCGROUP: u64 = 0x02000000;  // Cgroup namespace
 pub const CLONE_NEW_ALL: u64 =
     CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP;
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 /// clone 系统调用实现
 ///
 /// `flags`: 克隆标志 (`CLONE_VM` | `CLONE_FS` | ...)

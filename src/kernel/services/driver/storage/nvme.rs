@@ -647,6 +647,7 @@ impl NvmeController {
 
     // ── Admin 队列配置 ──
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 写 AQA (Admin Queue Attributes)
     pub fn set_aqa(&self, asqs: u16, acqs: u16) {
         let val = u32::from(asqs) | (u32::from(acqs) << 16);
@@ -886,6 +887,7 @@ impl NvmeController {
         success
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 创建 I/O 队列对 (CQ + SQ)
     pub fn create_io_queue(&mut self) -> bool {
         // 分配 I/O 队列 DMA 内存
@@ -972,6 +974,7 @@ impl NvmeController {
 
     // ── 数据读写 ──
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 读取扇区 (通过 framework DMA)
     ///
     /// # Errors
@@ -1015,6 +1018,7 @@ impl NvmeController {
         result
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 写入扇区 (通过 framework DMA)
     ///
     /// # Errors

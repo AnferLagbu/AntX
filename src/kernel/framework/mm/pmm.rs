@@ -368,6 +368,7 @@ impl PhysicalMemoryManager {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     pub fn init_bitmap(&self, reserved_after_kernel: u64) {
         if self.initialized.load(Ordering::Acquire) {
             return;

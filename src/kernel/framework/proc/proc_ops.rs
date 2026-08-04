@@ -462,6 +462,7 @@ pub extern "C" fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u6
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub extern "C" fn proc_create_user(
     path: *const u8,
     argv: *const *const u8,
@@ -534,6 +535,7 @@ pub extern "C" fn proc_create_user(
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub extern "C" fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> i32 {
     if path.is_null() {
         return -1;
@@ -1011,6 +1013,7 @@ pub extern "C" fn proc_check_itimer_real(pid: u32) -> i32 {
 /// POSIX getrusage(who, rusage) — 写回进程/子进程 user/sys 时间.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub extern "C" fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
     if out.is_null() || out_len < 32 {
         return -1;

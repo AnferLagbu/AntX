@@ -129,6 +129,7 @@ pub fn increment_bhr_count() -> u32 {
     BHR_ATTEMPT_COUNT.fetch_add(1, Ordering::SeqCst)
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub fn get_stats() -> (u32, u32, u32) {
     let bsr_count = BSR_ATTEMPT_COUNT.load(Ordering::SeqCst);
     let bhr_count = BHR_ATTEMPT_COUNT.load(Ordering::SeqCst);

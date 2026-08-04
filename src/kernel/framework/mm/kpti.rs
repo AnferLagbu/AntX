@@ -492,6 +492,7 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
 /// boot 阶段单线程执行, 无并发修改页表.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 unsafe fn map_text_page(
     user_pml4: *mut u64,
     vma: u64,
@@ -600,6 +601,7 @@ unsafe fn map_text_page(
 
 // ── KPTI 入口数据页映射 ──────────────────────────────────────────
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 /// KPTI 中断/系统调用入口代码在 CR3 切换前需要访问的数据页面。
 ///
 /// 当 CPU 在用户态触发中断/异常时, `isr_common/irq_common/syscall_entry`

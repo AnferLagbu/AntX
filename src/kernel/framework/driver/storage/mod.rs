@@ -767,6 +767,7 @@ pub fn ahci_copy_from_dma(dst: *mut u8, src_vaddr: u64, len: usize) {
 /// 填充 AHCI Command Header (slot 0)
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub fn ahci_fill_cmd_header(
     cmd_list_virt: u64,
     slot: u32,

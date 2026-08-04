@@ -607,6 +607,7 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
 // execve / 网络 / 时间
 // ============================================================================
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 fn sys_execve(
     path: *const u8,
     argv: *const *const u8,
@@ -674,6 +675,7 @@ fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     crate::kernel::framework::net::syscall::getpeername_syscall(sockfd, addr, addrlen)
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub(crate) fn sys_nanosleep(req: u64, rem: u64) -> i64 {
     if req == 0 || !raw::check_user_ptr(req) {
         return Errno::EINVAL.as_ret();

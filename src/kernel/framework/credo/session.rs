@@ -228,6 +228,7 @@ pub fn clear_lockout(pwm: u64) -> Result<(), PwmError> {
 // SUID 提权 (per-process 栈)
 // ============================================================================
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub fn elevate_for_suid(target_pwm: u64) -> bool {
     let pid = process_get_current_pid();
     if pid == 0 {
@@ -429,6 +430,7 @@ pub fn try_setegid(target_egid: u32) -> bool {
     }
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub fn try_setreuid(target_ruid: u32, target_euid: u32) -> bool {
     #[inline]
     fn has_uid_privilege(table: &identity::IdentityTable, uid: u32, current_pwm: u64) -> bool {
@@ -492,6 +494,7 @@ pub fn try_setreuid(target_ruid: u32, target_euid: u32) -> bool {
     })
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub fn try_setregid(target_rgid: u32, target_egid: u32) -> bool {
     #[inline]
     fn has_gid_privilege(table: &identity::IdentityTable, gid: u32, current_pwm: u64) -> bool {

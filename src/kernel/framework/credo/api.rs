@@ -96,6 +96,7 @@ pub extern "C" fn pwm_try_genesis(password: *const u8) -> i64 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub extern "C" fn pwm_create(
     password: *const u8,
     note: *const u8,

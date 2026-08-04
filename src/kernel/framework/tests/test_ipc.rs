@@ -101,6 +101,7 @@ fn test_semaphore_high_concurrency() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 fn test_invalid_ids() -> TestResult {
     let mut ns = create_test_namespace();
     let invalid_fd: i32 = 99999;

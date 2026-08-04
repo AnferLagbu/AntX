@@ -341,6 +341,7 @@ impl VirtualMemoryManager {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     pub fn get_physical_in_pml4(&self, pml4: u64, virt: VirtAddr) -> Option<PhysAddr> {
         if pml4 == 0 {
             return None;
@@ -440,6 +441,7 @@ impl VirtualMemoryManager {
         }
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 直接写入 PTE 原始值 (用于 swap 替换)
     ///
     /// 沿 PML4→PDPT→PD→PT 找到最终 PTE, 写入 `raw_pte` 后 TLB flush.
@@ -835,6 +837,7 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     pub fn unmap_page_in_table(&self, pml4: u64, virt: VirtAddr) {
         if pml4 == 0 {
             return;
@@ -931,6 +934,7 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     pub fn destroy_page_table(&self, pml4: u64) {
         if pml4 == 0 {
             return;
@@ -1423,6 +1427,7 @@ impl VirtualMemoryManager {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 {
             return None;

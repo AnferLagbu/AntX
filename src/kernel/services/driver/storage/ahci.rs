@@ -725,6 +725,7 @@ impl AhciPort {
         Ok(())
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 读取扇区 (DMA)
     ///
     /// # Errors
@@ -761,6 +762,7 @@ impl AhciPort {
         result
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 写入扇区 (DMA)
     ///
     /// # Errors

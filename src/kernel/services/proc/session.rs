@@ -261,6 +261,7 @@ pub fn init() {
 // 系统调用策略
 // ============================================================================
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 /// setsid — 创建新会话
 pub fn proc_setsid() -> i64 {
     let pid = process_get_current_pid();
@@ -379,6 +380,7 @@ pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
     result.unwrap_or(-3)
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 /// getpgid(pid) — 取进程组 ID
 pub fn proc_getpgid(pid: i32) -> i64 {
     if pid < 0 {
@@ -476,6 +478,7 @@ pub fn get_foreground_pgid() -> u32 {
     SESSION_MANAGER.get_foreground_pgid(sid)
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 /// tcsetpgrp — 设置前台进程组
 pub fn sys_tcsetpgrp(_fd: i32, pgid: i32) -> i64 {
     if pgid <= 0 {

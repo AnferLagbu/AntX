@@ -189,6 +189,7 @@ impl NumaTopology {
         }
     }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 用单节点拓扑初始化 (UMA 回退)
     pub fn init_uma(&self, total_memory: u64, num_cpus: u32) {
         let mut nodes = self.nodes.lock();

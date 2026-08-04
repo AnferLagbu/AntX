@@ -41,6 +41,7 @@ static LAST_CALIBRATION_RANGE: AtomicU64 = AtomicU64::new(0);
 // 校准算法实现
 // ============================================================================
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 /// 执行 TSC 频率校准
 ///
 /// 使用 PIT 作为精确的时间基准，测量 TSC 的实际运行频率。
@@ -212,6 +213,7 @@ pub fn is_calibrated() -> bool {
     CALIBRATION_DONE.load(Ordering::Acquire)
 }
 
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 /// 获取上次校准的详细信息
 ///
 /// # Returns

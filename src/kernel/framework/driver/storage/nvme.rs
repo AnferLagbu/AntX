@@ -644,6 +644,7 @@ impl NvmeController {
     /// 队列分配失败、获取 MMIO 失败或控制器初始化命令失败时返回 Err。
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     pub fn init_controller(&mut self) -> Result<()> {
         // 分配 Admin 队列
         self.alloc_admin_queues()?;
@@ -817,6 +818,7 @@ impl NvmeController {
     /// 队列分配失败、PRP 页分配失败或创建队列的管理命令失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     pub fn create_io_queue(&mut self) -> Result<()> {
         self.alloc_io_queues()?;
 

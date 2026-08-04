@@ -586,6 +586,7 @@ impl ProcfsData {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 读取进程状态 /proc/[pid]/status
     fn read_process_status(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -692,6 +693,7 @@ impl ProcfsData {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
     /// 读取进程统计 /proc/[pid]/stat
     fn read_process_stat(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;

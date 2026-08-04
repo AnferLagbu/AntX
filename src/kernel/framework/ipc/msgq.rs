@@ -152,6 +152,7 @@ pub unsafe extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, s
 /// `data` 必须是有效可写指针, 至少 `size` 字节; `type_out` 用于返回消息类型。
 /// 由 `sys_msgrcv` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
+#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 pub unsafe extern "C" fn ipc_msgq_recv(
     id: IpcId,
     type_out: *mut u64,

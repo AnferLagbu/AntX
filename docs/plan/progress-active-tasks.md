@@ -335,6 +335,16 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.5-8.10: similar_names (73) / unnecessary_wraps (71) / used_underscore_binding (63) / too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
+- **2026-08-04 (阶段 8.5: similar_names 73 处 expect 兜底)**
+  - 描述: 推进 clippy 清理第 3 类 lint — similar_names (同函数内变量名相似度过高)
+  - 方案:
+    - 调研: 73 处 similar_names hint, 经去重为 55 个不同函数
+    - 决策: 函数级 expect 兜底 (变量名相似度是局部问题, expect 影响整个 fn)
+    - 修复: 26 文件 55 处加 `#[expect(clippy::similar_names, reason = "...")]`
+    - 修复 unfulfilled_lint_expectations 错误: 7 处 expect 加在不再触发 lint 的 fn 上 (脚本向上找 fn 时, 部分 fn 内变量名实际并不相似), 手工删除这 7 处 expect
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
+  - 状态: [X]
+  - 后续阶段 8.6-8.10: unnecessary_wraps (71) / used_underscore_binding (63) / too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
 
 ***
 
