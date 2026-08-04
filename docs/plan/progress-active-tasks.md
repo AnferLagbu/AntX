@@ -298,6 +298,14 @@
     - 0 语义变更, 仅注释规范化. 符合 DECISION-035 模板 `// 有意窄化: <具体原因>`.
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯注释变更).
   - 状态: [X]
+- **2026-08-04 (阶段 5: P3 #030 framework/sched task 抽象调研 + 注释修复)**
+  - 描述: 调研 P3 #030 任务状态 + 修复 mod.rs 注释
+  - 方案:
+    - 调研发现: [sched_trait.rs:30-117](file:///home/anfer/Code/QueenX/src/kernel/framework/sched/sched_trait.rs#L30) **Task 抽象已完整实装** (struct Task + 10 个属性方法 + Send/Sync + Scheduler trait + QueenXScheduler 委托). 计划文档 (REVIEW-FINDING-030) "未开工" 描述与源码事实不符, 实装早于计划文档更新.
+    - 决策: 用户 2026-08-04 选 A 方案 — 仅修复 mod.rs:8 注释与事实不符的问题, 补 plan 记录 task 抽象实装完成. 不重写 plan 文档 (避免 §15.3 顺手优化).
+    - 修复: framework/sched/mod.rs 头注释更新为 "Task 抽象实装状态" 段, 列出 10 个属性方法 + 委托关系 + services/proc 暴露路径. 删除过期 "未实现" 注释.
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯注释变更).
+  - 状态: [X]
 
 ***
 
@@ -390,7 +398,7 @@
   | 027 | P2 | framework/mod.rs:10 "3000+ LoC" 漂移 | [] |
   | 028 | P2 | services/net\|fs 头注释过期 | [] |
   | 029 | P2 | README remote/kernel-roadmap 链接过期 | [] |
-  | 030 | P3 | framework/sched task 抽象未开工 | [] |
+  | 030 | P3 | framework/sched task 抽象未开工 | [X] (2026-08-04 阶段 5: 实际已实装, 仅 mod.rs 注释过期, 已修复) |
   | 031 | P3 | IoMem 边界 expect + 固定上限 | [] |
 
 - **test-compile-issues-2026-07-31 详情**
