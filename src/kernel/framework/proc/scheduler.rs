@@ -435,6 +435,7 @@ impl Scheduler {
         }
     }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn schedule(&self) -> Option<Pid> {
         let saved_flags = crate::arch!(interrupt_disable()) as u64;
 
@@ -890,6 +891,7 @@ impl Scheduler {
         self.has_runnable()
     }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn tick(&self, cpu_id: usize) {
         // SMP: 禁用中断保护整个 tick 临界区
         // 防止非中断上下文的 schedule() 调用与 timer ISR 的 tick() 并发修改 per-CPU 状态

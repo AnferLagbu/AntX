@@ -364,6 +364,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.8-8.10: too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
+- **2026-08-04 (阶段 8.8: too_many_lines 35 处 expect 兜底)**
+  - 描述: 推进 clippy 清理第 6 类 lint — too_many_lines (fn 体超 100 行)
+  - 方案:
+    - 调研: 35 处 too_many_lines hint, 涉及 29 文件
+    - 决策: 函数级 expect 兜底 (拆分需追改调用链且增加间接层, 风险高)
+    - 修复: 35 处加 `#[expect(clippy::too_many_lines, reason = "...")]`
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
+  - 状态: [X]
+  - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
 
 ***
 

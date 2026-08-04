@@ -511,6 +511,7 @@ impl VirtualMemoryManager {
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn create_user_page_table(&self) -> Option<u64> {
         let pmm = get_pmm();
         let pml4_phys = pmm.alloc_page()?;
@@ -1440,6 +1441,7 @@ impl VirtualMemoryManager {
     #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 #[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 {
             return None;

@@ -147,6 +147,7 @@ use core::panic::PanicInfo;
 use core::sync::atomic::Ordering;
 
 #[panic_handler]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 fn panic(info: &PanicInfo) -> ! {
     crate::kernel::framework::barrier::PANIC_FLAG.store(true, Ordering::SeqCst);
 
@@ -342,6 +343,7 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 /// Boot 栈 canary 校验失败 (栈溢出至栈底) 时立即 panic, 断言内核状态不可信.
 #[unsafe(no_mangle)]
 #[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 pub extern "C" fn kernel_init() {
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
     unsafe {

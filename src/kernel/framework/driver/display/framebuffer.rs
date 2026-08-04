@@ -548,6 +548,7 @@ impl Framebuffer {
     /// Wu 反走样直线
     // 有意窄化: 颜色分量/透明度经规范化计算, 值域 [0,255]
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn draw_line_aa(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
         let steep = (y1 - y0).abs() > (x1 - x0).abs();
         let (mut x0, mut y0, mut x1, mut y1) = (x0, y0, x1, y1);

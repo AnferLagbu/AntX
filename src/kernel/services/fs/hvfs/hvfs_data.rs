@@ -1261,6 +1261,7 @@ impl HvfsData {
         0
     }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     fn serialize_dataset_metadata(&self, txg: u64) -> Option<HvBlockPointer> {
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_SERIALIZE_OBJECTS: usize = 65536;
@@ -1414,6 +1415,7 @@ impl HvfsData {
         Some(bp)
     }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     fn deserialize_dataset_metadata(&self, bp: &HvBlockPointer) -> bool {
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_DESERIALIZE_OBJECTS: usize = 65536;

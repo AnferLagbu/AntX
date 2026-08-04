@@ -698,6 +698,7 @@ impl MmStruct {
     /// 当 PAGEOUT/DONTNEED 目标区域被 `mlock` 锁定而无法回收时返回 `EAGAIN`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn madvise_range(&self, start: usize, len: usize, advice: u32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 

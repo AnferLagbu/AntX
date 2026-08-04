@@ -138,6 +138,7 @@ pub unsafe extern "C" fn syscall_dispatch(
     result
 }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 fn syscall_dispatch_impl(
     num: u64,
     a0: u64,

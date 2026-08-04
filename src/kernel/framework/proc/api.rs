@@ -248,6 +248,7 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 pub extern "C" fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 

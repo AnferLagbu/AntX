@@ -92,6 +92,7 @@ impl VirtioNet {
     /// 调用者必须保证 `device` 的 `device_id` == `VIRTIO_ID_NET`.
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_NET {
             return None;

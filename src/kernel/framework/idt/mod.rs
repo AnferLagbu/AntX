@@ -124,6 +124,7 @@ pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 /// - `MODULE_INIT_FAILURE` (-1): 失败
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 pub extern "C" fn idt_init() -> i32 {
     use crate::klog_error;
 

@@ -971,6 +971,7 @@ impl UserProcManager {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn enter(&self, proc: *mut UserProcess) {
         crate::klog_boot_info!("[USER] enter() called with proc={:#X}", proc as u64);
         if proc.is_null() {
@@ -1510,6 +1511,7 @@ impl UserProcManager {
         new_sp
     }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwm: u64) -> i32 {
         crate::klog_boot_info!("[ELF] load_elf_from_memory: entry");
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {

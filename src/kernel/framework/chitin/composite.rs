@@ -263,6 +263,7 @@ impl BlockDevice for CompositeBlockDevice {
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 pub fn devtree_probe_composites() -> usize {
     let composite_compatibles: &[&str] = &["qx,raid0", "qx,raid1"];
 

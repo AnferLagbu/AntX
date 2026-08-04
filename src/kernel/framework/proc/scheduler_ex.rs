@@ -793,6 +793,7 @@ pub fn init() {
     SCHEDULER_EX.init();
 }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 /// 打印线程调试信息 (诊断用途)
 pub fn thread_dump_info(thread: ThreadRef) {
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致

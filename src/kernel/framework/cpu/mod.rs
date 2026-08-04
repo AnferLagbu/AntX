@@ -945,6 +945,7 @@ fn get_signature(sig_out: &mut CpuSignature, apic_id_out: &mut u8, logical_cores
 
 /// 收集 CPU 特性标志 (多个 CPUID leaf)
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 fn collect_features(
     features_out: &mut CpuFeatures,
     brand_out: &mut [u8; BRAND_STRING_LEN],

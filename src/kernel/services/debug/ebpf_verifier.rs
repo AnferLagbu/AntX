@@ -108,6 +108,7 @@ mod helper_id {
 const BPF_MAX_PATH_DEPTH: u32 = 8;
 
 impl BpfVerifier for StandardBpfVerifier {
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     fn verify(&self, prog: &BpfProg) -> VerifyResult {
         // 规则 1: 指令数量
         if prog.insn_cnt == 0 {

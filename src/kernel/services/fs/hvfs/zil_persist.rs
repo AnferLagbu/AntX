@@ -234,6 +234,7 @@ fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
     buf[payload_end..payload_end + 4].copy_from_slice(&rec_crc.to_le_bytes());
 }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 fn try_deserialize_record(buf: &[u8]) -> Result<HvZilRecord, HvZilPersistError> {
     let actual_size = 173 + 32 + 4;
     if buf.len() < actual_size {

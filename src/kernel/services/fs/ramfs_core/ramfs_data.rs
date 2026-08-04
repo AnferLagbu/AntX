@@ -761,6 +761,7 @@ impl RamFsData {
         })
     }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn truncate(&mut self, node_id: u32, new_size: u64, pwm: u64) -> i32 {
         if node_id as usize >= RAMFS_MAX_NODES {
             return KernelError::InvalidArgument.as_i32();

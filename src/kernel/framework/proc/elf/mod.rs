@@ -112,6 +112,7 @@ pub fn elf_load(
     elf_load_with_bias(mm, elf_data, elf_size, 0)
 }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 /// 加载 ELF 文件到指定地址空间, 支持可选加载偏移 (PIE/ASLR).
 ///
 /// `load_bias` = 0 表示 `ET_EXEC` (固定地址加载).

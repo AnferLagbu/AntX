@@ -281,6 +281,7 @@ impl Ext2Fs {
         Ok(bytes_read)
     }
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     /// 获取物理块号 (处理间接寻址)
     fn get_physical_block(&mut self, inode: &Ext2Inode, logical: u32) -> Result<u32, KernelError> {
         let block_size = self.super_block.block_size();

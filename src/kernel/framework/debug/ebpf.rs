@@ -1176,6 +1176,7 @@ pub fn bpf_is_initialized() -> bool {
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 pub extern "C" fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
     if !bpf_is_initialized() {
         return -(11i64); // EAGAIN

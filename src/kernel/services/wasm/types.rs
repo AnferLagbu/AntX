@@ -295,6 +295,7 @@ pub enum Opcode {
 }
 
 impl Opcode {
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     pub fn from_byte(b: u8) -> Option<Self> {
         match b {
             0x00 => Some(Self::Unreachable),

@@ -631,6 +631,7 @@ unsafe fn net_reset() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 pub extern "C" fn qx_net_init() {
     // SAFETY: 网络初始化由启动流程串行调用, 无并发访问全局状态。
     unsafe {
@@ -1427,6 +1428,7 @@ pub(crate) mod raw {
         core::sync::atomic::AtomicU8::new(0),
     ];
 
+#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     /// 实际打开一个 socket (W4.2.3.2 实装).
     ///
     /// 根据 `kind` 构造 smoltcp socket (Tcp/Udp), 加入 `sockets`, 记录 buffer
