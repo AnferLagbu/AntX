@@ -14,6 +14,24 @@ use super::types::SYS_CREDO_DISK_INSTALL;
 
 const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
 
+/// 用户态寄存器值 → 文件描述符 (i32) 严格转换
+///
+/// 用户态可在任意 64 位寄存器值上调用 syscall, 直接 `a0 as i32` 会导致
+/// 大于 i32::MAX 的合法 fd 被截断为负数, 或 0xFFFFFFFF..FFFF 被截断为 -1
+/// (误处理为 EBADF 而非 EINVAL). 此处用 try_from 严格校验, 失败时返回 -EINVAL.
+///
+/// SAFETY: 调用方需确保传入 fd (a0) 来自用户态寄存器, 内核不应信任其值域.
+#[inline]
+fn try_fd(a0: u64) -> Option<i32> {
+    i32::try_from(a0).ok()
+}
+
+/// 用户态寄存器值 → 标志 (i32) 严格转换 (mode/flags 等)
+#[inline]
+fn try_flags(a: u64) -> Option<i32> {
+    i32::try_from(a).ok()
+}
+
 #[cfg(target_arch = "x86_64")]
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
@@ -139,6 +157,8 @@ pub unsafe extern "C" fn syscall_dispatch(
 }
 
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::cast_possible_truncation, reason = "syscall handler 中 u64 → u32/i32 转换: 严格校验在 try_fd/try_flags helper 内; 剩余 cast 是 sys_* 函数内数据转换, 已知安全")]
+#[expect(clippy::cast_possible_wrap, reason = "syscall handler 中 usize/u64 互转: 内核/用户态地址均为 usize 表示, 位宽不变")]
 fn syscall_dispatch_impl(
     num: u64,
     a0: u64,
@@ -166,23 +186,36 @@ fn syscall_dispatch_impl(
     // framework 回退: 处理尚未迁移到 services 的 syscall
     match num {
         // ==================== 文件 I/O ====================
-        SYS_read => dispatch!(sys_read(a0 as i32, a1 as *mut u8, a2), b"read\0"),
-        SYS_write => dispatch!(sys_write(a0 as i32, a1 as *const u8, a2), b"write\0"),
+        SYS_read => {
+            // 严格校验 fd (用户态可传任意 u64), 失败返回 -EINVAL (Errno::EINVAL as i64)
+            match try_fd(a0) {
+                Some(fd) => dispatch!(sys_read(fd, a1 as *mut u8, a2), b"read\0"),
+                None => -(Errno::EINVAL as i64),
+            }
+        }
+        SYS_write => match try_fd(a0) {
+            Some(fd) => dispatch!(sys_write(fd, a1 as *const u8, a2), b"write\0"),
+            None => -(Errno::EINVAL as i64),
+        },
 
         // ==================== 内存管理 ====================
         SYS_mremap => {
             use crate::kernel::framework::mm::vma_get_current_mm;
             match vma_get_current_mm() {
                 Some(mm) => {
-                    dispatch!(
-                        match crate::kernel::services::mm::mremap::mremap_syscall(
-                            mm, a0, a1, a2, a3 as i32,
-                        ) {
+                    // flags (a3) 是 i32 (Linux mremap flags); 严格校验
+                    match try_flags(a3) {
+                        Some(flags) => dispatch!(
+                            match crate::kernel::services::mm::mremap::mremap_syscall(
+                                mm, a0, a1, a2, flags,
+                            ) {
                             Ok(addr) => addr as i64,
                             Err(e) => e.as_ret(),
-                        },
-                        b"mremap\0"
-                    )
+                            },
+                            b"mremap\0"
+                        ),
+                        None => -(Errno::EINVAL as i64),
+                    }
                 }
                 None => -1,
             }
@@ -446,6 +479,7 @@ fn syscall_dispatch_impl(
 // 文件 I/O — read / write
 // ============================================================================
 
+#[expect(clippy::cast_possible_truncation, reason = "fd as u32: fd 由 try_fd 严格校验, 在 i32 范围内; count as u32: 单次 read 不会超过 u32::MAX (Linux ABI)")]
 fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 {
         return Errno::EINVAL.as_ret();

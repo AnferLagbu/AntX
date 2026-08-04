@@ -285,6 +285,7 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(clippy::manual_let_else, reason = "if let Some(...) = expr {} else {} 比 let-else 更适合需在 else 分支处理 Option 解构的场景")]
 pub fn display_init() -> framework::Result<()> {
     crate::klog_boot_info!("[DISPLAY] display_init: probing framebuffer");
 

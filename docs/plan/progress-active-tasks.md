@@ -373,6 +373,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
+- **2026-08-04 (阶段 9.1-9.5: cast 类 1910 处 DECISION-041 高优先级处治根)**
+  - 描述: 推进 cast 类 4 子 lint 真危险处手工 try_from + 已知安全处 expect 兑底 + aarch64 架构文件级 allow
+  - 方案:
+    - syscall/dispatch.rs 主分发处高风险 fd/flags 转换用 try_fd/try_flags helper 严格校验 (失败返回 -EINVAL)
+    - aarch64 架构文件级 allow: exception.rs / gic.rs / psci.rs / uart.rs / mod.rs / vmm_aarch64.rs / kpti_aarch64.rs (硬件寄存器值/PSCI 版本号已知安全)
+    - syscall_dispatch_impl fn 级 expect 兑底剩余 cast (236 处 → fn 级覆盖)
+    - 5 处 fn 级 expect 补全 (unfulfilled + missing): boot/mod.rs map_unwrap_or, display/mod.rs manual_let_else, idt/idt.rs + config/validate.rs unnecessary_wraps, shadow_stack.rs unused_self
+  - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy -D pedantic 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用.
+  - 状态: [X]
 - **2026-08-04 (阶段 8.12.1-8.12.4: DECISION-034 CI 升级 — 治根实施)**
   - 描述: 推进 DECISION-034 CI 升级为 clippy `-D clippy::pedantic`. 实施 DECISION-043 治根路径
   - 调研: macro 内 1598 处 ptr_as_ptr (klog_fmt) + 真实代码 ~1100 处 pedantic lint 分布

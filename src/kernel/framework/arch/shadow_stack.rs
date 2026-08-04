@@ -369,6 +369,8 @@ impl CetSubsystem {
     /// 调用方必须确保:
     /// - CET 已初始化 (`caps.shadow_stack_enabled` = true)
     /// - ssp 指向有效的 Shadow Stack 内存
+    #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    /// 配置用户态影子栈 (CET MSR).
     /// - 仅在从内核态切换到用户态前调用
     pub unsafe fn configure_user_cet_msr(&self, ssp: u64) {
         // aarch64 无 CET, 抑制 unused 警告
@@ -413,6 +415,8 @@ impl CetSubsystem {
     ///
     /// # Safety
     ///
+    #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    /// 配置中断态影子栈表.
     /// 调用方必须确保:
     /// - CET 已初始化
     /// - `table_addr` 指向有效的 SSP 表内存 (16 字节对齐)

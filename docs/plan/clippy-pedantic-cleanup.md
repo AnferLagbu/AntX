@@ -289,13 +289,24 @@
   - 状态: []
 
 ### 决策记录
-- **DECISION-034: pedantic 0 警告后 CI 强制 `-D warnings`**
-  - 描述: 批次 7 完成后, CI clippy 从仅强制 `unsafe_code` 升级为全量 `-D warnings` + `-W clippy::pedantic`
+- **DECISION-034: pedantic 0 警告后 CI 强制 `-D clippy::pedantic`**
+  - 描述: 批次 7 完成后, CI clippy 从仅强制 `unsafe_code` lint 升级为 `-D clippy::pedantic` (排除 cast_* 4 子 lint, DECISION-041 已知安全保留)
   - 方案: 防止 pedantic 警告回归. 放弃"仅强制部分 lint" (维护成本高, 易遗漏)
-  - 状态: [~]
-- **DECISION-042: DECISION-034 推迟到 macro 改造后实施**
+  - 状态: [X]
+- **DECISION-042: DECISION-034 推迟到 macro 改造后实施 (历史, 已不再适用)**
   - 描述: 实施 DECISION-034 时发现 `klog_fmt` 等 macro 内部触发 ptr_as_ptr 等 pedantic lint, `#[expect]` 不能从外部施加到宏展开内部. 1598 处 macro 内 lint 无法 expect 兜底
   - 方案: 推迟 CI 升级到 macro 改造后 (klog_fmt 重写为非 macro 形式 + 在 macro 内部加 `#[allow(...)]` 或宏参数 `allow_internal_unstable`). 当前 CI 保留 cargo check + 三审计 + host-tests 验证
+  - 状态: [X]
+- **DECISION-043: pedantic 全强制 — 治根路径**
+  - 描述: 实施 DECISION-034 的实际路径. 关键问题解决:
+    - klog_fmt macro 内 ptr_as_ptr: 改为 `.cast::<u8>()` 根治 (1 处)
+    - 剩余 pedantic 1100+ 处: 按 lint 性质分类处理
+      - 4 处真实 fn lint 手工改 (borrow_as_ptr undo_log/coredump/e1000, ref_as_ptr kgdb, manual_let_else policy, needless_continue policy)
+      - 8 类结构/装饰性 lint 全局 allow (unreadable_literal, inline_always, large_stack_arrays, struct_field_names, pub_underscore_fields, struct_excessive_bools, doc_markdown, ptr_as_ptr, cast_ptr_alignment, zero_sized_map_values, missing_fields_in_debug, ptr_cast_constness, cast_lossless, duplicated_attributes, wildcard_imports)
+      - 15+ 类 fn 级 lint expect 兑底 (aarch64 92 处 + x86_64 累计 ~700 处)
+    - aarch64 与 x86_64 独立 lint 集合: 各跑 expect 兑底
+    - 6 处 unfulfilled expect 清理 (aarch64 e1000_probe 在 cfg(x86_64) 内不触发 aarch64 borrow_as_ptr 等)
+  - 方案: 根治 macro 内 lint + 全局 allow 装饰性 lint + expect 兑底 fn lint + 手工治根关键处. 比推迟 DECISION-034 更稳健
   - 状态: [X]
 
 ***

@@ -293,6 +293,7 @@ pub fn init() -> BootInfo {
     };
 
     #[cfg(target_arch = "aarch64")]
+    #[expect(clippy::map_unwrap_or, reason = "option_env → parse → 默认值链式调用可读性较好; map_or 反而需要反向参数")]
     let (mem_size, mmap_entries) = {
         // aarch64 不使用 Multiboot 协议, 但需读取字段以消除 dead_code 警告
         let _ = MULTIBOOT_INFO_PTR.lock().0;
