@@ -66,7 +66,8 @@ pub fn disk_list(disks_ptr: u64, max_count: u32) -> Result<usize, Errno> {
 /// 读单块设备信息. `info` 为 `UserDiskInfo` 用户指针 (76 字节).
 ///
 /// # Errors
-/// 当 `info_ptr` 无效或用户缓冲区校验失败时返回 `Errno::EFAULT`.
+/// 当 `info_ptr` 无效或用户缓冲区校验失败时返回 `Errno::EFAULT`;
+/// 当 `disk_id` 超出 u8 范围 (>255) 时返回 `Errno::EINVAL`.
 pub fn disk_info(disk_id: u32, info_ptr: u64) -> Result<(), Errno> {
     if info_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -74,14 +75,16 @@ pub fn disk_info(disk_id: u32, info_ptr: u64) -> Result<(), Errno> {
     if !raw::check_user_buf(info_ptr, USER_DISK_INFO_SIZE) {
         return Err(Errno::EFAULT);
     }
-    let present = blk::hdd_is_present(disk_id as u8);
+    // 有意窄化: 资源类型转换, u8 块设备 ID 范围 0-255
+    let id = u8::try_from(disk_id).map_err(|_| Errno::EINVAL)?;
+    let present = blk::hdd_is_present(id);
     let sectors = if present {
-        blk::hdd_total_sectors(disk_id as u8) as u32
+        blk::hdd_total_sectors(id) as u32
     } else {
         0
     };
     let (name, _is_present, _total) = if present {
-        blk::block_device_info(disk_id as u8)
+        blk::block_device_info(id)
     } else {
         ("", false, 0u64)
     };
@@ -105,7 +108,8 @@ pub fn disk_info(disk_id: u32, info_ptr: u64) -> Result<(), Errno> {
 /// 格式化块设备. `fstype` 为用户 C 字符串.
 ///
 /// # Errors
-/// 当指针无效时返回 `Errno::EFAULT`; 当当前身份缺少 storage 域写能力时返回
+/// 当指针无效时返回 `Errno::EFAULT`; 当 `disk_id` 超出 u8 范围时返回
+/// `Errno::EINVAL`; 当当前身份缺少 storage 域写能力时返回
 /// `Errno::EACCES`; 当设备不存在时返回 `Errno::ENOENT`; 当前实现为占位,
 /// 始终返回 `Errno::ENOSYS`.
 pub fn disk_format(disk_id: u32, fstype_ptr: u64) -> Result<(), Errno> {
@@ -120,7 +124,9 @@ pub fn disk_format(disk_id: u32, fstype_ptr: u64) -> Result<(), Errno> {
     if !credo::api::pwm_has_capability(pwm, PWM_DOMAIN_STORAGE, 1) {
         return Err(Errno::EACCES);
     }
-    if !blk::hdd_is_present(disk_id as u8) {
+    // 有意窄化: 资源类型转换, u8 块设备 ID 范围 0-255
+    let id = u8::try_from(disk_id).map_err(|_| Errno::EINVAL)?;
+    if !blk::hdd_is_present(id) {
         return Err(Errno::ENOENT);
     }
     // 委托 framework: 走 sys_disk_format 内置实现 (ATA/NVMe 各驱动的格式化路径).
@@ -133,6 +139,7 @@ pub fn disk_format(disk_id: u32, fstype_ptr: u64) -> Result<(), Errno> {
 ///
 /// # Errors
 /// 当 `total_sectors` 为 0 或超过 `u32::MAX` 时返回 `Errno::EINVAL`;
+/// 当 `disk_id` 超出 u8 范围时返回 `Errno::EINVAL`;
 /// 当当前身份缺少 storage 域写能力时返回 `Errno::EACCES`;
 /// 当设备不存在时返回 `Errno::ENOENT`; 当前实现为占位, 始终返回 `Errno::ENOSYS`.
 pub fn disk_partition(disk_id: u32, total_sectors: u64) -> Result<(), Errno> {
@@ -143,10 +150,12 @@ pub fn disk_partition(disk_id: u32, total_sectors: u64) -> Result<(), Errno> {
     if !credo::api::pwm_has_capability(pwm, PWM_DOMAIN_STORAGE, 1) {
         return Err(Errno::EACCES);
     }
-    if !blk::hdd_is_present(disk_id as u8) {
+    // 有意窄化: 资源类型转换, u8 块设备 ID 范围 0-255
+    let id = u8::try_from(disk_id).map_err(|_| Errno::EINVAL)?;
+    if !blk::hdd_is_present(id) {
         return Err(Errno::ENOENT);
     }
-    let _ = disk_id;
+    let _ = id;
     let _ = total_sectors;
     Err(Errno::ENOSYS)
 }
@@ -154,6 +163,7 @@ pub fn disk_partition(disk_id: u32, total_sectors: u64) -> Result<(), Errno> {
 /// FAT 格式化.
 ///
 /// # Errors
+/// 当 `disk_id` 超出 u8 范围时返回 `Errno::EINVAL`;
 /// 当当前身份缺少 storage 域写能力时返回 `Errno::EACCES`;
 /// 当设备不存在时返回 `Errno::ENOENT`; 当前实现为占位, 始终返回 `Errno::ENOSYS`.
 pub fn fat_format(disk_id: u32) -> Result<(), Errno> {
@@ -161,9 +171,11 @@ pub fn fat_format(disk_id: u32) -> Result<(), Errno> {
     if !credo::api::pwm_has_capability(pwm, PWM_DOMAIN_STORAGE, 1) {
         return Err(Errno::EACCES);
     }
-    if !blk::hdd_is_present(disk_id as u8) {
+    // 有意窄化: 资源类型转换, u8 块设备 ID 范围 0-255
+    let id = u8::try_from(disk_id).map_err(|_| Errno::EINVAL)?;
+    if !blk::hdd_is_present(id) {
         return Err(Errno::ENOENT);
     }
-    let _ = disk_id;
+    let _ = id;
     Err(Errno::ENOSYS)
 }

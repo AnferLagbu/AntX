@@ -306,6 +306,15 @@
     - 修复: framework/sched/mod.rs 头注释更新为 "Task 抽象实装状态" 段, 列出 10 个属性方法 + 委托关系 + services/proc 暴露路径. 删除过期 "未实现" 注释.
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯注释变更).
   - 状态: [X]
+- **2026-08-04 (阶段 6: services/credo/storage/disk.rs 7 处 cast 修复)**
+  - 描述: 推进 plan 文档登记的 disk.rs 7 处按字节序列化场景 cast 警告
+  - 方案:
+    - 调研发现: 7 处 cast 中 5 处是 `disk_id as u8` (u32 → u8 截断, 范围 0-255). 2 处 `i as u64` (usize → u64 截断, block_device_count 远小于 usize::MAX 实际安全).
+    - 风险: `disk_id as u8` 在 disk_id > 255 时静默丢失, 是真实风险, 不是按字节序列化的合法截断. 与 DECISION-036 决策不冲突 (DECISION-036 针对按字节序列化场景).
+    - 修复: 4 个公开函数 (disk_info/disk_format/disk_partition/fat_format) 全部改用 `u8::try_from(disk_id).map_err(|_| Errno::EINVAL)?` 替代 `disk_id as u8`. 5 处 cast 全部消除. 文档同步更新 (`# Errors` 段添加 "disk_id 超出 u8 范围" 错误).
+    - 2 处 `i as u64` 在 disk_list 函数中 (i: usize → u64), 块设备数量实际不超过 256 (u8 范围), 改为保留 `i as u64` 不动 (符合阶段 4 DECISION-035 "资源类型转换 POSIX 约定" 模板, usize→u64 在小值域下是合法无损).
+    - 验证: §2.4 5 条门槛全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed + QEMU x86_64 1/1 通过 + aarch64 1/1 通过).
+  - 状态: [X]
 
 ***
 
