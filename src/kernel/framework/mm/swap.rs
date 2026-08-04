@@ -723,6 +723,7 @@ pub fn swap_info() -> (u64, u64) {
 // #PF Swap Entry 检测
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 处理 swap-in 缺页
 ///
 /// 当 #PF 检测到 PTE 为 swap entry 时调用.

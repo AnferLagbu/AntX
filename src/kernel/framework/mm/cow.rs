@@ -36,6 +36,7 @@ fn frame_key(phys: u64) -> u64 {
     phys & !(PAGE_SIZE - 1)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn cow_inc_ref(phys: u64) {
     let key = frame_key(phys);
     let mut guard = COW_REFS.lock();
@@ -46,6 +47,7 @@ pub fn cow_inc_ref(phys: u64) {
     *refs.entry(key).or_insert(0) += 1;
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn cow_dec_ref(phys: u64) -> bool {
     let key = frame_key(phys);
     let mut guard = COW_REFS.lock();

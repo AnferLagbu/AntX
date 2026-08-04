@@ -165,6 +165,7 @@ fn parse_next_entry(data: &[u8], offset: usize) -> Option<(CpioEntry<'_>, usize)
 /// 数据指针为空、长度为 0 或 cpio 归档格式非法时返回 Err。
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str> { unsafe {
     if data.is_null() || len == 0 {
         return Err("initramfs: empty or null data");

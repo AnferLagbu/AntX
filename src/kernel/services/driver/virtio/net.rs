@@ -376,6 +376,7 @@ impl VirtioNetDriver {
 
     // ── 数据路径: 网络包收发 ──
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 发送网络包.
     ///
     /// `data` 包含完整以太网帧 (不含 `VirtIO` 头). 框架自动添加头.
@@ -435,6 +436,7 @@ impl VirtioNetDriver {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 尝试接收一个网络包.
     ///
     /// 将包数据 (不含 `VirtIO` 头) 复制到 `buf`, 返回实际拷贝的字节数.

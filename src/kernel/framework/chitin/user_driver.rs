@@ -42,6 +42,7 @@ fn has_device_cap(pwm: u64, required: u64) -> bool {
     engine::check(pwm, CapDomain(CAP_DOMAIN_DEVICE), CapBits(required))
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 将设备树节点绑定到指定用户进程, 使该进程获得该设备的独占访问权。
 /// # Errors
 /// PWM 缺少 `DEVICE_CAP_BIND` 权限、进程不存在、节点不存在、节点状态非法或节点已被其他进程占用时返回 Err。
@@ -98,6 +99,7 @@ pub fn devtree_bind_user_device(
 /// PWM 缺少 `DEVICE_CAP_BIND` 权限、进程不存在、节点不存在、节点映射的 PID 不匹配或节点未处于可解绑状态时返回 Err。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn devtree_unbind_user_device(
     node_id: NodeId,
     pid: u32,
@@ -165,6 +167,7 @@ pub fn devtree_unbind_user_device(
 /// PWM 缺少 `DEVICE_CAP_MMIO` 权限、进程或节点不存在、节点映射的 PID 不匹配、节点状态非法、缺少 reg 属性、物理地址或大小非法或内存不足时返回 Err。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn devtree_map_user_device(
     node_id: NodeId,
     pid: u32,
@@ -269,6 +272,7 @@ pub fn devtree_map_user_device(
 /// PWM 缺少 `DEVICE_CAP_MMIO` 权限、进程不存在、节点不存在或节点映射的 PID 不匹配时返回 Err。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn devtree_unmap_user_device(
     node_id: NodeId,
     pid: u32,
@@ -329,6 +333,7 @@ pub fn devtree_unmap_user_device(
     Ok(())
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn chitin_forward_irq(node_id: NodeId) -> bool {
     let pid = match devtree_get_user_mapped(node_id) {
         Some(p) => p,

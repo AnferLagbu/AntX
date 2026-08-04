@@ -392,6 +392,7 @@ impl VirtioBlkDriver {
         self.do_sector_io_write(lba, buf)
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 执行读扇区 I/O (设备 → DMA → buf).
     fn do_sector_io(&mut self, lba: u64, req_type: u32, buf: &mut [u8]) -> Result<(), ()> {
         let req_size = BlkRequest::header_size();
@@ -420,6 +421,7 @@ impl VirtioBlkDriver {
         Ok(())
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 执行写扇区 I/O (buf → DMA → 设备).
     fn do_sector_io_write(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
         let req_size = BlkRequest::header_size();

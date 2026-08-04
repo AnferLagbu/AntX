@@ -12,6 +12,7 @@ use super::{runner, TestResult};
 use crate::kernel::services::net::unix as uds;
 use crate::register_tests_inner;
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// STREAM 完整生命周期
 fn test_uds_stream_echo() -> TestResult {
     use uds::{UnixSockType, UdsError};

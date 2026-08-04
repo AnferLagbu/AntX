@@ -732,6 +732,7 @@ impl E1000Driver {
         None
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 批量处理接收描述符 (中断路径调用)
     ///
     /// 遍历所有就绪的 RX 描述符, 清除状态并推进 tail。

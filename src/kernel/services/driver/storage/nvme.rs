@@ -753,6 +753,7 @@ impl NvmeController {
         self.wait_disabled(1_000_000)
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 初始化控制器 (MMIO + 队列配置)
     pub fn init_controller(&mut self) -> bool {
         // 读取控制器版本
@@ -808,6 +809,7 @@ impl NvmeController {
         true
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// Identify 控制器
     pub fn identify_controller(&mut self) -> bool {
         let buf_size = 4096; // Identify 数据为 4KB
@@ -844,6 +846,7 @@ impl NvmeController {
         success
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// Identify 命名空间
     pub fn identify_namespace(&mut self, nsid: u32) -> bool {
         let buf_size = 4096;
@@ -888,6 +891,7 @@ impl NvmeController {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 创建 I/O 队列对 (CQ + SQ)
     pub fn create_io_queue(&mut self) -> bool {
         // 分配 I/O 队列 DMA 内存
@@ -975,6 +979,7 @@ impl NvmeController {
     // ── 数据读写 ──
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 读取扇区 (通过 framework DMA)
     ///
     /// # Errors
@@ -1019,6 +1024,7 @@ impl NvmeController {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 写入扇区 (通过 framework DMA)
     ///
     /// # Errors

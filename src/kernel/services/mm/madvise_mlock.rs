@@ -46,6 +46,7 @@ pub const MCL_ONFAULT: u32 = 4;
 // madvise
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_madvise(addr, len, advice) -> 0/-errno`
 pub fn sys_madvise(addr: u64, len: u64, advice: u64) -> i64 {
     let advice = advice as u32;
@@ -81,6 +82,7 @@ pub fn sys_madvise(addr: u64, len: u64, advice: u64) -> i64 {
 // mlock
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_mlock(addr, len) -> 0/-errno`
 pub fn sys_mlock(addr: u64, len: u64) -> i64 {
     if addr & (PAGE_SIZE - 1) != 0 {
@@ -106,6 +108,7 @@ pub fn sys_mlock(addr: u64, len: u64) -> i64 {
 // munlock
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_munlock(addr, len) -> 0/-errno`
 pub fn sys_munlock(addr: u64, len: u64) -> i64 {
     if addr & (PAGE_SIZE - 1) != 0 {
@@ -131,6 +134,7 @@ pub fn sys_munlock(addr: u64, len: u64) -> i64 {
 // mlockall
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_mlockall(flags) -> 0/-errno`
 pub fn sys_mlockall(flags: u64) -> i64 {
     let flags = flags as u32;
@@ -149,6 +153,7 @@ pub fn sys_mlockall(flags: u64) -> i64 {
 // munlockall
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_munlockall() -> 0/-errno`
 pub fn sys_munlockall() -> i64 {
     let mm = match vma_get_current_mm() {
@@ -166,6 +171,7 @@ pub fn sys_munlockall() -> i64 {
 // mincore
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_mincore(addr, len, vec_ptr) -> 0/-errno`
 pub fn sys_mincore(addr: u64, len: u64, vec_ptr: u64) -> i64 {
     if addr & (PAGE_SIZE - 1) != 0 {

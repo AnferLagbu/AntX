@@ -149,6 +149,7 @@ pub fn sys_epoll_create(size: i32) -> i64 {
     id as i64
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `epoll_ctl` — 控制 epoll 实例
 ///
 /// - `EPOLL_CTL_ADD`: 注册 fd
@@ -244,6 +245,7 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
     0
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `epoll_wait` — 等待事件
 ///
 /// `maxevents` 必须大于 0.
@@ -386,6 +388,7 @@ fn instance_watches_fd(instance: &EpollInstance, fd: i32) -> bool {
     instance.interest_list.iter().any(|item| item.fd == fd)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 策略: 把 fd 的就绪事件加入 epoll 实例的 `ready_list`
 ///
 /// REVAL-6.2: 从 `epoll_pwake` 提取, 封装:
@@ -424,6 +427,7 @@ fn enqueue_ready_for_fd(instance: &mut EpollInstance, fd: i32) -> bool {
 // 辅助函数
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 检查 fd 是否就绪 (完整集成 VFS)
 ///
 /// REVAL-6.1: 4 种 VFS `file_type` → events 位映射改走 `VfsPollPolicy` trait dispatch

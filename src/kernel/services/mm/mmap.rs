@@ -282,6 +282,7 @@ fn prot_to_vma_flags(prot: i32) -> VmaFlags {
 // syscall 入口 — 从 framework::syscall::sys_mmap/sys_munmap 迁移的策略层
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// mmap syscall 策略入口
 pub fn mmap_syscall_entry(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -> i64 {
     if size == 0 {
@@ -309,6 +310,7 @@ pub fn mmap_syscall_entry(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, 
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// munmap syscall 策略入口
 pub fn munmap_syscall_entry(addr: u64, size: u64) -> i64 {
     if addr == 0 || size == 0 {

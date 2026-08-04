@@ -172,6 +172,7 @@ impl IdentityTable {
         None
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     pub fn verify_password(&self, pwm: u64, password: &str) -> bool {
         let entry = match self.find(pwm) {
             Some(e) => e,
@@ -191,6 +192,7 @@ impl IdentityTable {
         constant_time_eq(&computed, &stored_digest)
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// T4-1: 全 Atomic 化后, create 改用 &self (替代 &mut self)
     /// 注: 调用方必须保证并发安全 (create 内已有 self.acquire/release 锁)
     /// # Errors

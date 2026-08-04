@@ -15,6 +15,7 @@ fn create_test_namespace() -> IpcNamespace {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_pipe_basic() -> TestResult {
     let mut ns = create_test_namespace();
     let mut next_id: IpcId = 1;
@@ -42,6 +43,7 @@ fn test_pipe_basic() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_shm_rapid_attach_detach() -> TestResult {
     crate::klog_ffi!(klog_ffi_info, "[SHM] creating ns");
     let mut ns = create_test_namespace();
@@ -78,6 +80,7 @@ fn test_shm_rapid_attach_detach() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_semaphore_high_concurrency() -> TestResult {
     let mut ns = create_test_namespace();
     let mut next_id: IpcId = 1;
@@ -128,6 +131,7 @@ fn test_invalid_ids() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_duplicate_close() -> TestResult {
     let mut ns = create_test_namespace();
     let mut next_id: IpcId = 1;

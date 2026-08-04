@@ -339,6 +339,7 @@ static INOTIFY_OPS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU6
 // inotify 系统调用实现
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `inotify_init1` — 创建 inotify 实例
 pub fn sys_inotify_init1(flags: i32) -> i64 {
     INOTIFY_OPS.fetch_add(1, Ordering::Relaxed);
@@ -370,6 +371,7 @@ pub fn sys_inotify_init1(flags: i32) -> i64 {
     i64::from(fd)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `inotify_add_watch` — 添加 watch
 pub fn sys_inotify_add_watch(fd: i64, ino: u32, mask: u32) -> i64 {
     INOTIFY_OPS.fetch_add(1, Ordering::Relaxed);
@@ -396,6 +398,7 @@ pub fn sys_inotify_add_watch(fd: i64, ino: u32, mask: u32) -> i64 {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `inotify_rm_watch` — 移除 watch
 pub fn sys_inotify_rm_watch(fd: i64, wd: i32) -> i64 {
     INOTIFY_OPS.fetch_add(1, Ordering::Relaxed);
@@ -429,6 +432,7 @@ pub fn sys_inotify_rm_watch(fd: i64, wd: i32) -> i64 {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `inotify_read` — 从 inotify fd 读取事件 (safe 部分)
 ///
 /// 返回事件列表和总字节数。用户指针写入由 framework 层处理。
@@ -478,6 +482,7 @@ fn fd_to_slot(fd: i32) -> usize {
     (fd - INOTIFY_FD_BASE) as usize
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 通知所有监控指定 inode 的 inotify 实例
 pub fn inotify_notify(ino: u32, mask: u32, name: &str, is_dir: bool) {
     if ino == 0 {

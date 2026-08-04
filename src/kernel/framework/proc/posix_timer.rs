@@ -371,6 +371,7 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
     Errno::EAGAIN.as_ret()
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `timer_settime` — 启动 / 重置 timer
 ///
 /// `timer_id`: 创建时返回的 ID
@@ -478,6 +479,7 @@ pub fn sys_timer_settime(
     0
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `timer_gettime` — 获取 timer 状态 (剩余时间 + interval)
 pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
     use crate::kernel::framework::userptr;
@@ -517,6 +519,7 @@ pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
     0
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `timer_delete` — 释放 timer
 pub fn sys_timer_delete(timer_id: i32) -> i64 {
     use crate::kernel::framework::errno::Errno;
@@ -548,6 +551,7 @@ pub fn sys_timer_delete(timer_id: i32) -> i64 {
     0
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `timer_getoverrun` — 返回上次 read 之后补打的次数
 ///
 /// POSIX 语义: overrun = (实际到期次数) - 1 (正常情况下一次)。

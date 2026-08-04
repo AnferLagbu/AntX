@@ -193,6 +193,7 @@ pub fn wasi_fd_prestat_dir_name(ctx: &mut WasiContext, interp: &mut Interpreter)
     Ok(())
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// WASI `fd_stat_get`: 获取 fd 状态信息
 ///
 /// # Errors

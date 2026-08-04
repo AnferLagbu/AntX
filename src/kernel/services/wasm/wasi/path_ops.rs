@@ -262,6 +262,7 @@ pub fn wasi_path_rename(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     Ok(())
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// WASI `path_filestat_get`: 获取文件/目录状态
 ///
 /// # Errors

@@ -529,6 +529,7 @@ impl KeyboardDriver {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 处理 IRQ1 键盘中断
     ///
     /// 从 PS/2 数据端口读取 scancode 并转换后存入缓冲区。

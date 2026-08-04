@@ -233,6 +233,7 @@ pub fn raw_write_sockaddr_un(
 // Socket 12 Syscall TCB 实现
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// socket — 创建 socket
 pub fn socket_syscall(domain: i32, sock_type: i32, _protocol: i32) -> i64 {
     let d = match Domain::from_i32(domain) {

@@ -35,6 +35,7 @@ pub fn is_pipe_fd(fd: i32) -> bool {
     pipe_find_by_fd_index(ns, fd).is_some()
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 创建管道, 返回 (读 fd, 写 fd) 对.
 ///
 /// # Errors
@@ -77,6 +78,7 @@ pub fn pipe_create_safe(
     Ok((pipe.read_fd, pipe.write_fd))
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 从管道读取数据到 `buf`.
 ///
 /// # Errors
@@ -131,6 +133,7 @@ pub fn pipe_read_safe(
     Ok(read_count)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 将 `buf` 中的数据写入管道.
 ///
 /// # Errors
@@ -183,6 +186,7 @@ pub fn pipe_write_safe(
     Ok(written)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 关闭管道的一个端点 fd.
 ///
 /// # Errors

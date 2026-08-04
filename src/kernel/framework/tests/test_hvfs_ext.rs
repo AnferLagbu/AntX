@@ -65,6 +65,7 @@ fn test_dmu_cow_preserves_old() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_zap_large_namespace() -> TestResult {
     let zap = HvZap::with_capacity(64);
     for i in 0..30u64 {

@@ -97,6 +97,7 @@ fn read_path_data(path: &[u8]) -> Result<Vec<u8>, i64> {
     Ok(out)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_fw_load`: 从用户态路径读取并附着固件到 node
 ///
 /// `a0=node_id`, `a1=path_ptr`, `a2=path_len`, a3=version  // 寄存器约定
@@ -145,6 +146,7 @@ pub fn sys_fw_load(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 #[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_fw_get_info`: 将 `FirmwareInfo` 写入用户态 info 指针
 ///
 /// `a0=node_id`, `a1=info_ptr`
@@ -179,6 +181,7 @@ pub fn sys_fw_get_info(a0: u64, a1: u64) -> i64 {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// `sys_fw_get`: 按 offset 拷贝固件到用户态 buf
 ///
 /// `a0=node_id`, `a1=buf_ptr`, `a2=buf_len`, a3=offset  // 寄存器约定

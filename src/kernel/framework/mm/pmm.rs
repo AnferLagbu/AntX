@@ -830,6 +830,7 @@ impl PhysicalMemoryManager {
     /// 返回 (`merged_pfn`, `final_order`).
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
@@ -959,6 +960,7 @@ impl PhysicalMemoryManager {
     /// 指定阶数执行核心分配.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     fn buddy_alloc(&self, order: u8) -> Option<(u64, u8)> {
         if order > MAX_BUDDY_ORDER {
             return None;
@@ -1073,6 +1075,7 @@ impl PhysicalMemoryManager {
     /// 扫描所有空闲页 (位未置位), 合并为最大阶的 buddy 块.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     fn buddy_init_free_lists(&self, total_pages: usize) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,

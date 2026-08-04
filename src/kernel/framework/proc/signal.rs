@@ -433,6 +433,7 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 #[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 投递待处理信号 (在返回用户态前调用)
 ///
 /// 遍历当前进程的 pending & ~blocked, 逐个投递:
@@ -606,6 +607,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
 // 便利函数
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 检查当前进程是否有可投递信号
 pub fn has_deliverable_signal(pid: Pid) -> bool {
     let proc_ptr = match PROCESS_TABLE.get(pid) {
@@ -619,6 +621,7 @@ pub fn has_deliverable_signal(pid: Pid) -> bool {
     (pending & !blocked) != 0
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 获取进程的信号屏蔽字
 pub fn get_blocked_mask(pid: Pid) -> u64 {
     let proc_ptr = match PROCESS_TABLE.get(pid) {
@@ -630,6 +633,7 @@ pub fn get_blocked_mask(pid: Pid) -> u64 {
     proc.blocked_mask.load(Ordering::Acquire)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 设置进程的信号屏蔽字
 pub fn set_blocked_mask(pid: Pid, mask: u64) {
     let proc_ptr = match PROCESS_TABLE.get(pid) {
@@ -690,6 +694,7 @@ pub fn set_sigaction(pid: Pid, sig: u8, action: u64) -> Option<u64> {
 //   即可在此实现, 保持调用点稳定.
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// I-48: 显式重置 execve 后进程的信号状态.
 ///
 /// 当前实现为幂等 no-op (新进程已由 `user_proc_load_elf` 分配, 默认状态已正确).

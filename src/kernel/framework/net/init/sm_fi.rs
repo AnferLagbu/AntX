@@ -227,6 +227,7 @@ pub(crate) unsafe fn parse_endpoint(addr: *const u8) -> Option<IpEndpoint> { uns
 /// - 由 `sys_socket` 系统调用分发, 参数由 syscall 层校验 (cred 检查)。
 /// - 必须 `NET_LOCK` 持有。
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) -> i32 { unsafe {
     if !is_network_initialized() {
         return -E_NODEV;
@@ -284,6 +285,7 @@ pub unsafe extern "C" fn sm_socket(domain: i32, sock_type: i32, _protocol: i32) 
 /// - 由 `sys_bind` 系统调用分发, 调用方验证权限。
 /// - `NET_LOCK` 持有。
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -321,6 +323,7 @@ pub unsafe extern "C" fn sm_bind(fd: i32, addr: *const u8, _addrlen: u32) -> i32
 /// # Safety
 /// `NET_LOCK` 持有; 由 `sys_listen` 分发, 调用方验证权限。
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -355,6 +358,7 @@ pub unsafe extern "C" fn sm_listen(fd: i32, _backlog: i32) -> i32 { unsafe {
 /// - `addr`/`_addrlen` 必须是有效的 sockaddr 指针 (此处忽略)。
 /// - `NET_LOCK` 持有; 由 `sys_accept` 分发, 调用方验证权限。
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -386,6 +390,7 @@ pub unsafe extern "C" fn sm_accept(fd: i32, _addr: *mut u8, _addrlen: *mut u32) 
 /// `addr` 必须指向有效的 sockaddr 结构, 至少 `_addrlen` 字节。
 /// `NET_LOCK` 持有。
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -436,6 +441,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -478,6 +484,7 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -528,6 +535,7 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_sendto(
     fd: i32,
     buf: *const u8,
@@ -585,6 +593,7 @@ pub unsafe extern "C" fn sm_sendto(
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_recvfrom(
     fd: i32,
     buf: *mut u8,
@@ -652,6 +661,7 @@ pub unsafe extern "C" fn sm_recvfrom(
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
@@ -717,6 +727,7 @@ pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
@@ -784,6 +795,7 @@ pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 {
 /// # Safety
 /// `NET_LOCK` 持有; 由 `sys_close` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -888,6 +900,7 @@ pub unsafe extern "C" fn sm_getsockopt(
 /// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
 /// - `NET_LOCK` 持有; 由 `sys_getsockname` 分发.
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 
@@ -946,6 +959,7 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
 /// - `_addrlen` 必须是可写 u32 指针 (写回实际长度).
 /// - `NET_LOCK` 持有; 由 `sys_getpeername` 分发.
 #[unsafe(no_mangle)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_getpeername(fd: i32, addr: *mut u8, addrlen: *mut u32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
 

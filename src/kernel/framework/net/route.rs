@@ -26,6 +26,7 @@ pub use crate::kernel::services::net::route::{
 // ============================================================================
 
 #[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 将单条路由同步到 smoltcp Routes (双栈: V4/V6 按 family 分发)
 ///
 /// # Errors
@@ -85,6 +86,7 @@ pub fn sync_route_to_smoltcp(entry: &RouteEntry) -> Result<(), Errno> {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 从内核路由表全量重建 smoltcp Routes (双栈)
 pub fn rebuild_smoltcp_routes(table: &[RouteEntry]) {
     #[cfg(not(feature = "kernel_test"))]

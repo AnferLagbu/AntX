@@ -268,6 +268,7 @@ impl BpfMap {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 查找元素
     pub fn lookup(&self, key: &[u8], value_out: &mut [u8]) -> bool {
         match self {
@@ -308,6 +309,7 @@ impl BpfMap {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 更新/插入元素
     pub fn update(&self, key: &[u8], value: &[u8]) -> bool {
         match self {
@@ -341,6 +343,7 @@ impl BpfMap {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 删除元素
     pub fn delete(&self, key: &[u8]) -> bool {
         match self {
@@ -1026,6 +1029,7 @@ impl BpfSubsystem {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 加载程序
     pub fn prog_load(
         &self,
@@ -1177,6 +1181,7 @@ pub fn bpf_is_initialized() -> bool {
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub extern "C" fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
     if !bpf_is_initialized() {
         return -(11i64); // EAGAIN

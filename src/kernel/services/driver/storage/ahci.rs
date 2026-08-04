@@ -544,6 +544,7 @@ impl AhciPort {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 分配 DMA 内存并设置寄存器
     pub fn setup_dma(&mut self, hba: &AhciHba) -> bool {
         let handle = if let Some(h) = crate::kernel::framework::driver::storage::ahci_alloc_port_dma() { h } else {
@@ -641,6 +642,7 @@ impl AhciPort {
 
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 #[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 提交 DMA 命令并等待完成
     ///
     /// 通过 framework safe wrapper 填充命令头、FIS、PRDT,
@@ -728,6 +730,7 @@ impl AhciPort {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 读取扇区 (DMA)
     ///
     /// # Errors
@@ -765,6 +768,7 @@ impl AhciPort {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 写入扇区 (DMA)
     ///
     /// # Errors

@@ -373,6 +373,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
+- **2026-08-04 (阶段 8.11: manual_let_else 307 处 expect 兜底)**
+  - 描述: 推进 clippy 清理第 12 类 lint — manual_let_else (if-let + unwrap 模式可改 let-else 语法)
+  - 方案:
+    - 调研: 307 处 hint, 涉及 81 文件
+    - 决策: 函数级 expect 兑底 (改 let-else 部分场景有 return value 需改 match, 工作量大; 当前优先 expect)
+    - 修复: 258 处 expect 添加 (hint 去重为 fn 级)
+    - 修复 unfulfilled_lint_expectations: 26 处, 脚本删除
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用.
+  - 状态: [X]
 - **2026-08-04 (阶段 8.10.3-8.10.5: borrow/ref/constness/alignment ptr 类 expect 兜底)**
   - 描述: 推进 clippy 清理 ptr 类 4 子 lint — borrow_as_ptr (83) + ref_as_ptr (32) + ptr_cast_constness (33) + cast_ptr_alignment (89) = 237 处
   - 方案:

@@ -149,6 +149,7 @@ static SFD_COUNT: AtomicU32 = AtomicU32::new(0);
 // 系统调用实现
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// signalfd — 创建/修改 signalfd 实例
 ///
 /// `fd`: -1 创建新实例, ≥ `SFD_FD_BASE` 修改已有实例的掩码
@@ -220,6 +221,7 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
     i64::from(new_fd)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// signalfd read — 读取一个待处理信号
 ///
 /// 检查当前进程 pending & sigmask, 取最低编号信号,
@@ -282,6 +284,7 @@ pub fn sys_signalfd_read(fd: i32, buf: u64) -> i64 {
     SIGNALFD_SIGINFO_SIZE as i64
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// signalfd close — 关闭 signalfd
 pub fn sys_signalfd_close(fd: i32) -> i64 {
     let idx = match fd_to_idx(fd) {
@@ -315,6 +318,7 @@ pub fn sys_signalfd_close(fd: i32) -> i64 {
 // epoll 集成
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 检查 signalfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (有待处理信号) 或 0

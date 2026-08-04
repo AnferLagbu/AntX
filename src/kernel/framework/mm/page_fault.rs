@@ -155,6 +155,7 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
@@ -191,6 +192,7 @@ fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user_cr3: u64) -> PfResult {
     let aligned = (info.fault_addr as usize) & !(PAGE_SIZE as usize - 1);
 
@@ -230,6 +232,7 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user
 /// 文件映射缺页处理: 从 Page Cache 获取/创建缓存页
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize, user_cr3: u64) -> PfResult {
     let page_index = ((aligned - vma.start) as u64 + vma.offset) / PAGE_SIZE;
 
@@ -336,6 +339,7 @@ fn is_stack_expansion_candidate(addr: usize) -> bool {
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
@@ -392,6 +396,7 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn do_cow_copy_with_mm(_mm: &MmStruct, _vma: &Vma, addr: usize, user_cr3: u64) -> PfResult {
     let vmm_inst = vmm::get_vmm();
     let pml4 = user_cr3;

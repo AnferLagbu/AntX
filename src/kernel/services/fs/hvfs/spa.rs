@@ -407,6 +407,7 @@ impl HvSpa {
             .store(crate::arch!(timestamp()), Ordering::Relaxed);
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     pub fn read_uberblock_from_disk(&self) -> Option<HvUberblock> {
         for i in (0..HV_UBERBLOCK_COUNT as u32).rev() {
             let sector = HV_UBERBLOCK_SECTOR + i;

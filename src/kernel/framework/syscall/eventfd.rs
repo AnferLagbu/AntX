@@ -97,6 +97,7 @@ static EFD_COUNT: AtomicU32 = AtomicU32::new(0);
 // 系统调用实现
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// eventfd — 创建 eventfd 实例
 ///
 /// `initval`: 初始计数器值
@@ -136,6 +137,7 @@ pub fn sys_eventfd(initval: u64, flags: i32) -> i64 {
     i64::from(fd)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// eventfd read — 读取计数器
 ///
 /// - semaphore=false: 返回 counter 并清零
@@ -185,6 +187,7 @@ pub fn sys_eventfd_read(fd: i32, buf: u64) -> i64 {
     8 // 成功读取 8 字节
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// eventfd write — 递增计数器
 ///
 /// `fd`: eventfd 文件描述符
@@ -218,6 +221,7 @@ pub fn sys_eventfd_write(fd: i32, value: u64) -> i64 {
     8
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// eventfd close — 关闭 eventfd
 ///
 /// 释放槽位, 返回 0 或负 errno
@@ -254,6 +258,7 @@ pub fn sys_eventfd_close(fd: i32) -> i64 {
 // epoll 集成
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 检查 eventfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (可读) / EPOLLOUT (可写) 事件掩码

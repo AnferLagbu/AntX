@@ -381,6 +381,7 @@ impl SafeRamFs {
 
     // ── 目录枚举 (Phase 2.2.1 增补) ──
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 列出目录内容
     ///
     /// # 参数

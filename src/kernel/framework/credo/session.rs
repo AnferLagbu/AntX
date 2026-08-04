@@ -71,6 +71,7 @@ where
 // 登录 / 登出
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 使用 note 与密码执行登录, 成功后把会话信息写入当前进程的 `PwmContext`。
 /// # Errors
 /// 当前进程不存在、note 对应的 PWM 不存在、身份被禁用、处于锁定期或密码错误时返回 Err。
@@ -229,6 +230,7 @@ pub fn clear_lockout(pwm: u64) -> Result<(), PwmError> {
 // ============================================================================
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn elevate_for_suid(target_pwm: u64) -> bool {
     let pid = process_get_current_pid();
     if pid == 0 {
@@ -308,6 +310,7 @@ pub fn has_elevation_authority(target_pwm: u64) -> bool {
 // POSIX setuid / setgid / setreuid / setregid 系列调用
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn try_setuid(target_uid: u32) -> bool {
     let table = identity::get_table();
     let target_entry = match table.find_by_uid(target_uid) {
@@ -328,6 +331,7 @@ pub fn try_setuid(target_uid: u32) -> bool {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn try_setgid(target_gid: u32) -> bool {
     let egid = get_egid();
     if target_gid == egid {
@@ -362,6 +366,7 @@ pub fn try_setgid(target_gid: u32) -> bool {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn try_seteuid(target_euid: u32) -> bool {
     let euid = get_euid();
     if target_euid == euid {
@@ -396,6 +401,7 @@ pub fn try_seteuid(target_euid: u32) -> bool {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn try_setegid(target_egid: u32) -> bool {
     let egid = get_egid();
     if target_egid == egid {

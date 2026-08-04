@@ -308,6 +308,7 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 // try_lock() 在 ISR 上下文中不会阻塞：若锁已被持有则直接返回。
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 轮询网络栈 (驱动 TX/RX、定时器、DHCP)。
 ///
 /// 在 timer ISR 或网络任务中调用, 内部 `try_lock` 避免阻塞。
@@ -634,6 +635,7 @@ unsafe fn net_reset() {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub extern "C" fn qx_net_init() {
     // SAFETY: 网络初始化由启动流程串行调用, 无并发访问全局状态。
     unsafe {
@@ -817,6 +819,7 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 { unsafe {
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 { unsafe {
     if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
         return -1;
@@ -1717,6 +1720,7 @@ pub(crate) mod raw {
         }
     }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// `SmoltcpNetStack::poll` 的 safe wrapper (W4.2.3.4).
     ///
     /// 驱动 smoltcp 协议栈轮询 (TX/RX + 定时器 + DHCP), 返回 `PollOutcome`.

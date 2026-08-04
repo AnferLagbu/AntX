@@ -372,6 +372,7 @@ pub fn list_rules(hook: NfHook) -> Vec<NfRule> {
 // Syscall 接口
 // ============================================================================
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn sys_nf_add_rule(hook: u64, src_ip: u64, src_prefix: u64, dst_ip: u64, dst_prefix: u64, verdict: u64) -> i64 {
     let hook = match NfHook::from_u8(hook as u8) {
         Some(h) => h,
@@ -400,6 +401,7 @@ pub fn sys_nf_add_rule(hook: u64, src_ip: u64, src_prefix: u64, dst_ip: u64, dst
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 pub fn sys_nf_del_rule(hook: u64, rule_index: u64) -> i64 {
     let hook = match NfHook::from_u8(hook as u8) {
         Some(h) => h,

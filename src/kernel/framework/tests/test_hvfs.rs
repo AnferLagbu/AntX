@@ -19,6 +19,7 @@ fn test_bp_null() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_bp_dva_set_get() -> TestResult {
     let mut bp = HvBlockPointer::null();
     let dva = HvDva::new(0, 4096, 8192);
@@ -120,6 +121,7 @@ fn test_dmu_object_dir_type() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_zap_insert_lookup() -> TestResult {
     let zap = HvZap::new();
     zap.insert_u64("key1", 42);
@@ -131,6 +133,7 @@ fn test_zap_insert_lookup() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_zap_overwrite() -> TestResult {
     let zap = HvZap::new();
     zap.insert_u64("key1", 10);
@@ -223,6 +226,7 @@ fn test_arc_lookup_miss() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 fn test_arc_insert_lookup() -> TestResult {
     let arc = HvArc::new();
     arc.init(128);

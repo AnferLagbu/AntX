@@ -294,6 +294,7 @@ impl IoUring {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
     /// 执行单个操作
     fn execute_op(&self, sqe: &Sqe) -> i32 {
         let opcode = match IoOpCode::from_u8(sqe.opcode) {
@@ -381,6 +382,7 @@ pub fn io_uring_submit(id: u32, sqe: Sqe) -> Result<(), Errno> {
     }
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// 进入 `io_uring` (处理待处理请求 + 可选等待)
 ///
 /// 返回处理的 CQE 数量

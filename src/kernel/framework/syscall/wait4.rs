@@ -32,6 +32,7 @@ pub const WNOHANG: i32 = 0x1;
 pub const WUNTRACED: i32 = 0x2;
 pub const WCONTINUED: i32 = 0x8;
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// wait4 系统调用实现
 ///
 /// 返回子进程 PID, 或错误 (ECHILD/EINTR).

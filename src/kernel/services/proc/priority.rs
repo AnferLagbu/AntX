@@ -62,6 +62,7 @@ pub fn nice_syscall(inc: i32) -> i64 {
     i64::from(new_nice)
 }
 
+#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
 /// getpriority(which, who) 系统调用策略
 pub fn getpriority_syscall(which: i32, who: u32) -> i64 {
     if which != PRIO_PROCESS {
