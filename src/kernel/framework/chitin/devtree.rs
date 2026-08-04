@@ -301,6 +301,7 @@ where
         return;
     }
 
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     fn walk_children<F: FnMut(&ChitinNode)>(nodes: &[ChitinNode], id: NodeId, f: &mut F) {
         if let Some(node) = nodes.iter().find(|n| n.id == id) {
             f(node);
@@ -336,6 +337,7 @@ fn devtree_print_impl() {
     let tree = DEV_TREE.lock();
     let root_id = ROOT_NODE_ID.load(Ordering::Acquire);
 
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     fn print_node(nodes: &[ChitinNode], id: NodeId, depth: usize) {
         if let Some(node) = nodes.iter().find(|n| n.id == id) {
             let _ = depth;

@@ -484,6 +484,7 @@ pub extern "C" fn kernel_init() {
         );
 
         // 4. kmalloc — 内核堆初始化
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
         #[cfg(target_arch = "x86_64")]
         let heap_start = crate::kernel::framework::mm::VirtAddr(
@@ -509,7 +510,9 @@ pub extern "C" fn kernel_init() {
         // otherwise bitmap shares a 2MB huge page with heap, and heap
         // expansion's 2MB huge split will overwrite the bitmap PTE.
         // GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE = 0x200000 + 16MB + 0x200000 = 20MB
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const GAP_SIZE: u64 = 0x200000;
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const BITMAP_GAP_SIZE: u64 = 0x200000;
         let reserved_after_kernel = GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE;
         crate::kernel::framework::mm::pmm::pmm_init_bitmap(reserved_after_kernel);

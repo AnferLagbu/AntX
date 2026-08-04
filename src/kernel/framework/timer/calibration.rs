@@ -86,6 +86,7 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     }
 
     // 多次采样取平均 (提高精度)
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const SAMPLE_COUNT: usize = 3;
     let mut measurements: [u64; SAMPLE_COUNT] = [0; 3];
 

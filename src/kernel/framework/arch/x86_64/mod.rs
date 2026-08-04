@@ -218,6 +218,7 @@ impl InterruptArch for X8664 {
                 // 链接脚本定义: _kernel_text_vma = 0xFFFF800001000000 + _kernel_text_lma
                 // 因此偏移量 = 0xFFFF800001000000 (不是 KERNEL_BASE)
                 // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
                 unsafe extern "C" { fn syscall_entry(); }
                 let entry_lma = syscall_entry as *const () as u64;
                 let entry_hi = entry_lma + 0xFFFF800001000000u64;

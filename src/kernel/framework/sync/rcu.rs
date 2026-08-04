@@ -171,6 +171,7 @@ fn synchronize_rcu_impl() {
         }
     }
 
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const SYNC_TIMEOUT_SPINS: u32 = 50_000_000;
     for i in 0..cpu_count {
         if i == current_cpu {

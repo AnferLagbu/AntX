@@ -567,9 +567,11 @@ impl Framebuffer {
 
         // 有意窄化: 浮点光栅化坐标/透明度取整, 值域有界
         #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         fn fpart(x: f32) -> f32 {
             x - (x as i32 as f32)
         }
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         fn rfpart(x: f32) -> f32 {
             1.0f32 - fpart(x)
         }

@@ -895,6 +895,7 @@ impl DpController {
     ) -> Result<(), DpError> {
         let mut elapsed_iters: usize = 0;
         // 单次迭代 ~50 spin_loops ≈ 1-2 µs, 10 ms = ~5_000 iters
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const MAX_TRAINING_ITERS: usize = 5_000;
 
         loop {
@@ -982,6 +983,7 @@ impl DpController {
     fn poll_lane_align_status(&self, io: &DpIo) -> Result<(), DpError> {
         let mut elapsed_iters: usize = 0;
         // 单次迭代 ~50 spin_loops ≈ 1-2 µs, 10 ms = ~5_000 iters
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const MAX_TRAINING_ITERS: usize = 5_000;
 
         loop {

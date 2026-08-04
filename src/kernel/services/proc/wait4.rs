@@ -31,8 +31,11 @@ pub fn wait4_syscall(pid: i32, wstatus_ptr: u64, options: i32) -> Result<usize, 
     }
 
     // options 标志验证
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const WNOHANG: i32 = 0x1;
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const WUNTRACED: i32 = 0x2;
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const WCONTINUED: i32 = 0x8;
     let valid_opts = WNOHANG | WUNTRACED | WCONTINUED;
     if options & !valid_opts != 0 {

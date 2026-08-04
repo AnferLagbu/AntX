@@ -821,6 +821,7 @@ pub extern "C" fn e1000_probe() -> i32 {
             match dev.probe() {
                 Ok(()) => {
                     let raw_ptr: *mut E1000Device = &mut *dev;
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
                     static E1000_NET_OPS: crate::kernel::framework::chitin::NetOps =
                         crate::kernel::framework::chitin::NetOps {
                             send: e1000_net_send,

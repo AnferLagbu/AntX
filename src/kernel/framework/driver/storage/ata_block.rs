@@ -76,6 +76,7 @@ impl BlockDevice for AtaBlockDevice {
             return -1;
         }
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         unsafe extern "C" {
             fn ata_read_sector(disk: u8, sector: u32, buf: *mut u8) -> i32;
         }
@@ -90,6 +91,7 @@ impl BlockDevice for AtaBlockDevice {
             return -1;
         }
         // SAFETY: C ABI 互操作, 函数签名与外部 C 代码约定一致; 调用方保证指针有效
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         unsafe extern "C" {
             fn ata_write_sector(disk: u8, sector: u32, buf: *const u8) -> i32;
         }

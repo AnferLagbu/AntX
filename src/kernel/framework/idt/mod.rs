@@ -131,6 +131,7 @@ pub extern "C" fn idt_init() -> i32 {
 
     // 获取 ISR 地址表 (从 isr.asm 导出的符号, 使用 fn 指针)
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     unsafe extern "C" {
         fn isr0();
         fn isr1();

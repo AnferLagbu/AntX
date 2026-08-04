@@ -395,6 +395,7 @@ pub fn recvfrom_syscall(
     if buf_ptr == 0 || len == 0 { return Errno::EFAULT.as_ret(); }
     if !userptr::validate_user_buf(buf_ptr, u64::from(len)) { return Errno::EFAULT.as_ret(); }
     // 在栈上准备临时缓冲
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const MAX: usize = 4096;
     let want = (len as usize).min(MAX);
     let mut stack_buf = [0u8; MAX];

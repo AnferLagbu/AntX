@@ -603,6 +603,7 @@ impl KmemCache {
         // 释放同等数量页. 调用方保证 slab 已不在任何链表中且不持有活动对象.
         unsafe {
             let pages_needed = SLAB_DEFAULT_SIZE.div_ceil(PAGE_SIZE as usize);
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
             unsafe extern "C" {
                 fn pmm_free_pages(addr: *mut u8, count: u64);
             }

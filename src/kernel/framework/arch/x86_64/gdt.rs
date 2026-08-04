@@ -518,7 +518,9 @@ pub fn gdt_init() -> i32 {
         // 进入 enter_user_asm 时在内核态, IA32_GS_BASE = per_cpu_addr.
         // 执行 swapgs 后, IA32_GS_BASE = 0 (用户态), IA32_KERNEL_GS_BASE = per_cpu_addr.
         // 用户态执行 syscall 时, syscall_entry 的 swapgs 将其换回 per_cpu_addr.
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const IA32_GS_BASE: u32 = 0xC0000101;
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
         crate::kernel::framework::cpu::msr::write_msr(IA32_GS_BASE, &gdt.syscall as *const _ as u64);
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, 0);
@@ -540,6 +542,7 @@ pub fn gdt_init() -> i32 {
         );
     }
 
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -607,6 +610,7 @@ pub fn gdt_init_ap(cpu_index: u32) {
             ap.syscall.user_pml4 = current_cr3;
         }
 
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
     }

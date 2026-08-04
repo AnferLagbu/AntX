@@ -544,6 +544,7 @@ pub fn hrtimer_sleep(delay_ns: u64) -> Result<(), ()> {
 
     // 闭包用 static 状态在 ISR (hrtimer 回调) 与调用方 (本函数) 之间传递完成信号.
     // SAFETY: SLEEP_FLAG 仅为本函数独占, 不会跨调用并发 (单线程执行模型).
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     static mut SLEEP_FLAG: AtomicBool = AtomicBool::new(false);
 
     let mut timer = HrTimer::uninit();
@@ -559,6 +560,7 @@ pub fn hrtimer_sleep(delay_ns: u64) -> Result<(), ()> {
     // 处理到期定时器, 触发回调 set SLEEP_FLAG=true.
     // SAFETY: SLEEP_FLAG 由本函数 set up, 此处仅 load 检查完成.
     let mut spins: u32 = 0;
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const SLEEP_WAIT_BOUND: u32 = 1_000_000_000; // ~1s @ 1GHz spin_loop
     unsafe {
         while !SLEEP_FLAG.load(Ordering::Acquire) {

@@ -30,6 +30,7 @@ pub fn sysinfo_syscall(info_ptr: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     struct SysInfo {
         uptime: i64,
         loads: [u64; 3],
@@ -77,6 +78,7 @@ pub fn getrlimit_syscall(_resource: i32, rlim_ptr: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     struct Rlimit {
         rlim_cur: u64,
         rlim_max: u64,

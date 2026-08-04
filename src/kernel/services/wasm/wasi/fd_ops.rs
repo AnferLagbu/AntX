@@ -224,6 +224,7 @@ pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
         let base = u64::from(buf_ptr);
 
         // 辅助函数: 写入 u64 到线性内存
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         fn write_u64_to(mem: &mut crate::kernel::services::wasm::runtime::LinearMemory, base: u64, off: u64, val: u64) {
             let bytes = val.to_le_bytes();
             for i in 0..8u64 {

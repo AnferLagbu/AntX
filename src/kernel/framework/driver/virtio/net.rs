@@ -276,6 +276,7 @@ impl VirtioNet {
             // 为该 RX 槽位分配缓冲区
             let pages = RX_BUFFER_SIZE.div_ceil(PAGE_SIZE as usize);
             // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
             unsafe extern "C" {
                 fn pmm_alloc_pages(count: u64) -> *mut u8;
             }

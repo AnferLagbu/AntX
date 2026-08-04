@@ -537,6 +537,7 @@ impl fmt::Display for PciDevice {
 pub extern "C" fn pci_rust_init() -> i32 {
     let count = init();
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     unsafe extern "C" {
         fn klog_ffi_info(msg: *const u8);
     }

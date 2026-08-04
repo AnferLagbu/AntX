@@ -192,6 +192,7 @@ impl VirtioBlk {
         let buf_size = 512 + core::mem::size_of::<BlkRequest>() + 1;
         let buf_pages = buf_size.div_ceil(PAGE_SIZE as usize);
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }

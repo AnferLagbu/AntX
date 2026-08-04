@@ -67,6 +67,7 @@ pub fn clock_gettime_syscall(clk_id: i32, tp_ptr: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     struct Timespec {
         tv_sec: i64,
         tv_nsec: i64,
@@ -92,6 +93,7 @@ pub fn poll_syscall(fds_ptr: u64, nfds: u32, _timeout: i32) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     struct PollFd {
         fd: i32,
         events: i16,

@@ -325,6 +325,16 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.4-8.10 待推进: items_after_statements / similar_names / unnecessary_wraps / used_underscore_binding / too_many_lines expect 兜底; cast/ptr/manual_let_else 难类手工重构 (中期).
+- **2026-08-04 (阶段 8.4: items_after_statements 58 处 expect 兜底)**
+  - 描述: 推进 clippy 清理第 2 类 lint — items_after_statements
+  - 方案:
+    - 调研: 60 处 (58 去重后), 涉及 36 文件
+    - 决策: expect 兜底 (不移动 item 至 scope 顶部, 避免破坏 FFI 声明顺序 + 局部阅读连续性)
+    - 修复: 58 处加 `#[expect(clippy::items_after_statements, reason = "...")]`
+    - 修复 useless_attribute 错误: 6 处 expect 加在 `use ...` 语句上, clippy 不对 use 触发 lint, 移除这 6 处 expect
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
+  - 状态: [X]
+  - 后续阶段 8.5-8.10: similar_names (73) / unnecessary_wraps (71) / used_underscore_binding (63) / too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
 
 ***
 

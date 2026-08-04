@@ -219,6 +219,7 @@ pub fn calibrate_timer(_pit_hz: u64, target_ms: u64) -> u64 {
     apic_write(APIC_TIMER_ICR, 0xFFFFFFFF);
 
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     unsafe extern "C" {
         fn timer_sleep_busy(ms: u64);
     }

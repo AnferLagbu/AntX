@@ -49,6 +49,7 @@ pub fn busy_wait_ns(ns: u64) {
     let start = read_tsc();
 
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     unsafe extern "C" {
         fn cpu_get_tsc_frequency() -> u64;
     }
@@ -239,6 +240,7 @@ fn timer_sleep_yield(ms: u64) -> Result<(), i32> {
         let start_tick = get_ticks();
         let target_ticks = ms_to_ticks(ms);
 
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
         unsafe extern "C" {
             fn scheduler_yield_ex();
         }
@@ -335,6 +337,7 @@ pub fn adaptive_sleep(ms: u64) {
     }
 
     // 阈值: 1 毫秒
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const BUSY_WAIT_THRESHOLD_MS: u64 = 1;
 
     if ms < BUSY_WAIT_THRESHOLD_MS {

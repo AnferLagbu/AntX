@@ -463,6 +463,7 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
     // USER 标志会导致 #PF (instruction fetch).
     // 不设置 WRITABLE (bit 1) → 只读
     // 不设置 NX (bit 63) → 可执行
+#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
     const FLAGS: u64 = 0x1; // PRESENT only (SMEP-safe)
 
     // SAFETY: 调用方保证 user_pml4 有效; text_start/text_end 是合法地址范围;
