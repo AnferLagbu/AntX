@@ -383,3 +383,51 @@
   - 描述: 质量评估完成, 识别 3 类问题, 添加工程计划 7
   - 方案: -
   - 状态: [X]
+
+***
+
+## 工程计划 8: 阶段 8.3-8.8 expect 兜底 + 阶段 8.9 cast 类治根决策
+
+### 背景
+- **2026-08-04 阶段 8.3-8.8**
+  - 描述: 用户决策"按序修复" 推进 6 类 lint 全部 expect 兜底
+  - 方案: unused_self (107) + items_after_statements (58) + similar_names (73) + unnecessary_wraps (71) + used_underscore_binding (63) + too_many_lines (35) = 407 处 expect
+  - 状态: [X]
+- **2026-08-04 阶段 8.9 cast 类调研**
+  - 描述: cast_possible_truncation 939 + cast_sign_loss 643 + cast_possible_wrap 285 + cast_precision_loss 43 = 1910 处
+  - 方案: 用户决策"稳健且治根" = D 路径 (仅手工 try_from 真危险 < 200 处, 保留已知安全 cast)
+  - 状态: [~]
+
+### 决策记录
+- **DECISION-040: expect 兜底批量处理 6 类 lint (阶段 8.3-8.8)**
+  - 描述: 6 类 lint (unused_self / items_after_statements / similar_names / unnecessary_wraps / used_underscore_binding / too_many_lines) 涉及 407 处警告, 通过 `#[expect(clippy::*)]` attribute 兜底
+  - 方案: 函数级 expect (不全局 allow) + 中文注释说明取舍. 比全局 allow 精确 (仅覆盖触发 lint 的 fn); 比手工重构工作量小. 部分 expect 出现 unfulfilled (脚本未去重 fn 级别), 手工删除冗余 expect
+  - 状态: [X]
+- **DECISION-041: cast 类已知安全保留, 仅真危险手工 try_from**
+  - 描述: cast 类 1910 处中 < 200 处为真实风险 (数据 size 截断, 字段值越界), 其余 1700+ 处是已知安全 cast
+  - 方案: **不**全局 allow (失去 lint 价值) + **不**expect 兜底 (fn 级 expect 变隐性 allow) + **不**全手工 try_from (1700+ 处无价值工作). 仅手工 try_from 改造 < 200 处真危险. 已知安全 cast 保留原状, 让 clippy 警告作为"提醒"
+  - 已知安全 cast 分类 (无需 try_from):
+    1. APIC ID 协议保证 < 256 → `apic_id as u8` 安全
+    2. 循环变量 i 且 i < 8 比较 → `i as u8` 安全
+    3. sizeof<T>() 已知 < u32 → `size_of as u32` 安全
+    4. 常量字符串长度 → `NOTE_NAME.len() as u32` 安全
+    5. u32 → usize (64 位系统无损)
+    6. syscall ABI 协议层 cast (如 `args[0] as u64`)
+  - 真实风险 cast 需手工 try_from (典型示例):
+    1. 用户数据 size → u8 (如 `value_size: size as u8`)
+    2. ELF 段数 → u16 (如 `phnum = ... as u16`)
+    3. 文件大小 → u32 (如 `device.len() as u32` 当 device 可能 > u32::MAX)
+    4. 用户态指针 → 内核指针 (需 check_user_ptr 前置检查, try_from 仅辅助)
+  - 状态: [X]
+
+### 变更历史
+- **2026-08-04 阶段 8.3-8.8**
+  - 描述: 6 类 lint expect 兜底批量完成 (407 处), commit 0ec1bc24 / f56c4390 / 08c7e0d6 / 27345598 / dd0f427f / fc945743
+  - 方案: 脚本化 + 手工修正 unfulfilled expect
+  - 状态: [X]
+- **2026-08-04 阶段 8.9 cast 类**
+  - 描述: cast 类 1910 处调研 + 决策登记 (DECISION-041), 实质 try_from 改造推未来阶段
+  - 方案: D 路径 (仅手工真危险 < 200 处)
+  - 状态: [~]
+
+***
