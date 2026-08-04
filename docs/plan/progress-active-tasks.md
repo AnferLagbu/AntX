@@ -373,6 +373,23 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
+- **2026-08-04 (阶段 8.9: cast 类调研 + 决策 — 未实质推进)**
+  - 描述: 推进 clippy 清理第 7-10 类 lint — cast_possible_truncation / cast_sign_loss / cast_possible_wrap / cast_precision_loss (1910 处)
+  - 调研:
+    - 实际分布: cast_possible_truncation 939 / cast_sign_loss 643 / cast_possible_wrap 285 / cast_precision_loss 43 (合计 1910)
+    - 涉及文件: ~ 200 文件 (155 文件含 cast_possible_truncation)
+    - top 集中: syscall/dispatch.rs 170 处, framework/syscall/dispatch.rs 42 处, services/fs/ramfs_core/ramfs_data.rs 38 处
+    - 真实风险 cast: 估算 < 200 处 (其余 1700+ 处是已知安全: APIC ID 协议保证 < 256, 循环变量 `i as u8` 且 i < 8, sizeof 已知 < u32, 常量字符串长度 < u32, etc.)
+  - 决策路径分析:
+    - A. 全局 allow (lib.rs #![allow(clippy::cast_*)]): 5 分钟, 失去未来增量发现能力. **不放纵但失去 lint 价值** (已知安全 cast 不需 clippy 警告).
+    - B. expect/allow fn 级 + 容忍 unfulfilled: 脚本化 0.5h, expect 变隐性 allow, **实际等同 A**.
+    - C. 手工 try_from 改造 1910 处全量: 2-4 周工作量. **真实风险 cast 仅 < 200 处, 其余 1700+ 处 try_from 是无价值工作**.
+    - **D. 治根路径**: 仅手工 try_from 改造 < 200 处真危险 cast + 保留其余已知安全 cast 不 expect/allow + 写 DECISION-041 文档说明已知安全 cast 分类.
+  - 用户决策: "稳健且治根" = D 路径
+  - 状态: [~] (本轮完成调研 + 决策登记; 实质 try_from 改造推未来阶段. cast 类 1910 处警告保留, 不引入 expect/allow 噪声)
+  - 后续阶段 8.10: DECISION-034 CI 升级 -D warnings (但 cast 类会失败, 需先做 8.9 D 路径)
+
+***
 
 ***
 
