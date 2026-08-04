@@ -18,12 +18,11 @@ use core::ptr::NonNull;
 
 use crate::kernel::framework::mm::{PhysAddr, phys_to_virt};
 use crate::kernel::framework::sync::IrqSpinLock;
+use crate::kernel::framework::constants::limits::MAX_MMIO_MAPPINGS;
 use crate::klog_warn;
 /// MMIO 别名注册表, 防止同一物理区域被多次映射。
 /// 使用 `spin::Mutex` (已在内核中广泛使用) 保证线程安全。
 static ALIAS_REGISTRY: IrqSpinLock<AliasRegistry> = IrqSpinLock::new(AliasRegistry::new());
-
-const MAX_MMIO_MAPPINGS: usize = 64;
 
 struct AliasRegistry {
     entries: [(u64, usize, &'static str); MAX_MMIO_MAPPINGS],
@@ -196,8 +195,10 @@ impl IoMem {
 
     /// 从 MMIO 区域读取一个字节。
     /// # Panics
-    /// 读取范围超出 MMIO 区域大小时 panic。
+    /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发, 便于单元测试与 early detection.
     #[inline] pub fn read_u8(&self, offset: usize) -> u8 {
+        debug_assert!(self.check_offset(offset, 1).is_ok(), "IoMem: read_u8 offset+1 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 1).expect("IoMem: read_u8 offset+1 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset` 已验证 `offset + 1 <= self.len`, 指针 `self.virt + offset`
         // 落在 IoMem 持有的 MMIO 区域内, 不会越界; `read_volatile` 防止编译器重排。
@@ -205,8 +206,10 @@ impl IoMem {
     }
     /// 从 MMIO 区域读取一个 u16 (小端)。
     /// # Panics
-    /// 读取范围超出 MMIO 区域大小时 panic。
+    /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发.
     #[inline] pub fn read_u16(&self, offset: usize) -> u16 {
+        debug_assert!(self.check_offset(offset, 2).is_ok(), "IoMem: read_u16 offset+2 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 2).expect("IoMem: read_u16 offset+2 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 2)` 已验证 2 字节访问不越界; u16 转换要求
         // 2 字节对齐 (PCI BAR MMIO 由 BIOS/UEFI 建立时保证自然对齐)。
@@ -214,8 +217,10 @@ impl IoMem {
     }
     /// 从 MMIO 区域读取一个 u32 (小端)。
     /// # Panics
-    /// 读取范围超出 MMIO 区域大小时 panic。
+    /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发.
     #[inline] pub fn read_u32(&self, offset: usize) -> u32 {
+        debug_assert!(self.check_offset(offset, 4).is_ok(), "IoMem: read_u32 offset+4 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 4).expect("IoMem: read_u32 offset+4 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 4)` 已验证 4 字节访问不越界; 4 字节自然对齐
         // 由 MMIO 基地址的页对齐保证 (PAGE_SIZE=4096, 任何 4 字节偏移都对其)。
@@ -223,8 +228,10 @@ impl IoMem {
     }
     /// 从 MMIO 区域读取一个 u64 (小端)。
     /// # Panics
-    /// 读取范围超出 MMIO 区域大小时 panic。
+    /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发.
     #[inline] pub fn read_u64(&self, offset: usize) -> u64 {
+        debug_assert!(self.check_offset(offset, 8).is_ok(), "IoMem: read_u64 offset+8 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 8).expect("IoMem: read_u64 offset+8 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 8)` 已验证 8 字节访问不越界; 8 字节自然对齐
         // 由 MMIO 基地址的页对齐保证。
@@ -232,32 +239,40 @@ impl IoMem {
     }
     /// 向 MMIO 区域写入一个字节。
     /// # Panics
-    /// 写入范围超出 MMIO 区域大小时 panic。
+    /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发.
     #[inline] pub fn write_u8(&self, offset: usize, val: u8) {
+        debug_assert!(self.check_offset(offset, 1).is_ok(), "IoMem: write_u8 offset+1 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 1).expect("IoMem: write_u8 offset+1 越界 (构造函数保证合法范围)");
         // SAFETY: 与 `read_u8` 对称, 写 1 字节不会越界; volatile 写保证设备立即可见。
         unsafe { self.virt.as_ptr().add(offset).write_volatile(val); }
     }
     /// 向 MMIO 区域写入一个 u16 (小端)。
     /// # Panics
-    /// 写入范围超出 MMIO 区域大小时 panic。
+    /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发.
     #[inline] pub fn write_u16(&self, offset: usize, val: u16) {
+        debug_assert!(self.check_offset(offset, 2).is_ok(), "IoMem: write_u16 offset+2 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 2).expect("IoMem: write_u16 offset+2 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 2)` 已验证 2 字节写不越界; 2 字节对齐由 MMIO 基地址页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u16).write_volatile(val); }
     }
     /// 向 MMIO 区域写入一个 u32 (小端)。
     /// # Panics
-    /// 写入范围超出 MMIO 区域大小时 panic。
+    /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发.
     #[inline] pub fn write_u32(&self, offset: usize, val: u32) {
+        debug_assert!(self.check_offset(offset, 4).is_ok(), "IoMem: write_u32 offset+4 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 4).expect("IoMem: write_u32 offset+4 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 4)` 已验证 4 字节写不越界; 4 字节自然对齐由页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u32).write_volatile(val); }
     }
     /// 向 MMIO 区域写入一个 u64 (小端)。
     /// # Panics
-    /// 写入范围超出 MMIO 区域大小时 panic。
+    /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
+    /// 调试构建下 `debug_assert!` 提前触发.
     #[inline] pub fn write_u64(&self, offset: usize, val: u64) {
+        debug_assert!(self.check_offset(offset, 8).is_ok(), "IoMem: write_u64 offset+8 越界 (offset={}, len={})", offset, self.len);
         self.check_offset(offset, 8).expect("IoMem: write_u64 offset+8 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 8)` 已验证 8 字节写不越界; 8 字节自然对齐由页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u64).write_volatile(val); }

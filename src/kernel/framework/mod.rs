@@ -81,6 +81,8 @@ pub mod console;
 pub mod klog;
 pub mod debug;
 pub mod config;
+/// TCB 内部容量常量 (与 framework::config 职责正交, 见 constants/mod.rs)
+pub mod constants;
 pub mod smp;
 pub mod lib;
 pub mod sync;

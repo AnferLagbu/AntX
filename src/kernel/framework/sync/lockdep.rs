@@ -57,16 +57,7 @@ macro_rules! lockdep_log {
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock;
-
-// ============================================================================
-// 常量
-// ============================================================================
-
-/// 最大锁类数量
-pub const MAX_LOCK_CLASSES: usize = 64;
-
-/// 每线程/每 CPU 最大持有锁深度
-pub const MAX_HELD_LOCKS: usize = 8;
+use crate::kernel::framework::constants::limits::{MAX_LOCK_CLASSES, MAX_HELD_LOCKS};
 
 /// 邻接矩阵中 "已验证无环" 的标记位 (避免重复 BFS)
 const DEPENDENCY_VERIFIED: u8 = 1;

@@ -195,7 +195,7 @@
   - 描述:
     - B6.1: 评估 `read_u*` 是否改返回 `Result<_, &'static str>`; 或保持 expect 但加 `debug_assert!` 前置
     - B6.2: 上限常量集中到 `framework/config/` 并注释超限行为 (lockdep 超限策略: 跳过检测 vs panic)
-  - 状态: []
+  - 状态: [X] (2026-08-04 落地. B6.1: 8 个 read_u*/write_u* 函数全部加 `debug_assert!` 前置 + 文档说明生产路径 panic 与调试构建 early detection. B6.2: 新建 `framework/constants/limits.rs` 集中 3 个 TCB 容量常量 (MAX_MMIO_MAPPINGS/MAX_LOCK_CLASSES/MAX_HELD_LOCKS), 配套 doc 说明"超限行为". iomem.rs/lockdep.rs 改 `use` 引用, 本地常量删除. `config/` 职责保持不变 (反向 re-export 白名单), 避免职责混淆.)
 
 ### 待办
 
@@ -279,6 +279,13 @@
     - **B5.2 barrier/api.rs**: 2 处 `#[no_mangle] pub fn` 改为 `#[unsafe(no_mangle)] pub extern "C" fn` + 加 SAFETY 注释, 与 file 中其他 FFI 函数 (api.rs:30/43/56/77) 一致.
     - 调研发现: services/credo/storage/disk.rs 也有 7 处类似 cast 警告 (按字节序列化场景), 范围超出 B5.1, 按 §15.3 不顺手处理, 登记为下次 plan 待办.
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (5 行代码变更).
+  - 状态: [X]
+- **2026-08-04 (阶段 3: B6 IoMem 边界 expect + 固定上限集中)**
+  - 描述: 推进 progress-active-tasks.md B6.1 + B6.2
+  - 方案:
+    - **B6.1 IoMem debug_assert!**: 8 个 read_u*/write_u* 函数 (read_u8/16/32/64 + write_u8/16/32/64) 全部加 `debug_assert!` 前置. 生产路径仍 expect panic; 调试构建提前触发便于 early detection. 0 风险 (仅增加 debug-only 检查).
+    - **B6.2 容量常量集中**: 新建 `framework/constants/limits.rs` 集中 3 个 TCB 容量常量 (MAX_MMIO_MAPPINGS/MAX_LOCK_CLASSES/MAX_HELD_LOCKS), 配套 doc 说明"超限行为". iomem.rs/lockdep.rs 改 `use` 引用, 本地常量删除. `framework/config/` 职责保持不变 (反向 re-export 白名单), 避免职责混淆.
+    - 验证: §2.4 5 条门槛全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed + QEMU x86_64 1/1 通过 + aarch64 1/1 通过).
   - 状态: [X]
 
 ***
