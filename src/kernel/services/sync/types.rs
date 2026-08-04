@@ -310,6 +310,7 @@ impl<T> core::ops::DerefMut for SpinLockGuard<'_, T> {
 }
 
 impl<T> Drop for SpinLockGuard<'_, T> {
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     fn drop(&mut self) {
         core::sync::atomic::fence(Ordering::SeqCst);
         self._lock.locked.store(0, Ordering::Release);
@@ -340,6 +341,7 @@ impl<T> core::ops::DerefMut for MutexGuard<'_, T> {
 }
 
 impl<T> Drop for MutexGuard<'_, T> {
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     fn drop(&mut self) {
         self._mutex.inner_spinlock.raw_lock();
 
@@ -369,6 +371,7 @@ impl<T> core::ops::Deref for RwLockReadGuard<'_, T> {
 }
 
 impl<T> Drop for RwLockReadGuard<'_, T> {
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     fn drop(&mut self) {
         let prev_readers = self._rwlock.readers.fetch_sub(1, Ordering::AcqRel);
 
@@ -398,6 +401,7 @@ impl<T> core::ops::DerefMut for RwLockWriteGuard<'_, T> {
 }
 
 impl<T> Drop for RwLockWriteGuard<'_, T> {
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     fn drop(&mut self) {
         core::sync::atomic::fence(Ordering::SeqCst);
         self._rwlock.writer.store(0, Ordering::Release);

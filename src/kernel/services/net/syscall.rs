@@ -20,6 +20,7 @@ use super::unix as uds;
 // 12 个 Socket Syscall 安全代理
 // ============================================================================
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
 /// socket(domain, type, protocol) — 返回新 FD
 ///
 /// 分流: `AF_UNIX(1)` → UDS 子系统; `AF_INET(2)` → smoltcp 协议栈; 其他 → EAFNOSUPPORT

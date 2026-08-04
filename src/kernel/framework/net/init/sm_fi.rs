@@ -836,6 +836,7 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
 /// # Safety
 /// `_optval` 必须是有效指针, 含 `_optlen` 字节 (此处忽略)。
 #[unsafe(no_mangle)]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
 pub unsafe extern "C" fn sm_setsockopt(
     _fd: i32,
     _level: i32,

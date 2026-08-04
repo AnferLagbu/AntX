@@ -325,6 +325,7 @@ pub fn process_insert(process: *mut super::process::Process) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
 pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
     if u64::from(_pid) == C_CURRENT_PROCESS.map(|p| p.pid) {
         C_CURRENT_PROCESS.as_ptr() as u64

@@ -108,6 +108,7 @@ impl VirtualMemoryManager {
         }
     }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     /// 映射单个 4KB 页到内核页表 (`KERNEL_PML4`), 并累加映射计数.
     ///
     /// # Errors
@@ -131,6 +132,7 @@ impl VirtualMemoryManager {
         result
     }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     /// 映射大页 (2MB/1GB, 或退回 4KB) 到内核页表, 并累加映射计数.
     ///
     /// # Errors
@@ -167,6 +169,7 @@ impl VirtualMemoryManager {
         result
     }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     pub fn unmap_page(&self, virt: VirtAddr) {
         let _flags = self.acquire_lock();
 
@@ -243,6 +246,7 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     /// 修改虚拟页的保护属性 (mprotect 核心实现)
     ///
     /// 遍历四级页表找到 PTE, 修改 R/W/U/NX 位, 然后 flush TLB.
@@ -442,6 +446,7 @@ impl VirtualMemoryManager {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     /// 直接写入 PTE 原始值 (用于 swap 替换)
     ///
     /// 沿 PML4→PDPT→PD→PT 找到最终 PTE, 写入 `raw_pte` 后 TLB flush.
@@ -505,6 +510,7 @@ impl VirtualMemoryManager {
     /// 该 unwrap 实际不会触发 panic.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     pub fn create_user_page_table(&self) -> Option<u64> {
         let pmm = get_pmm();
         let pml4_phys = pmm.alloc_page()?;
@@ -691,6 +697,7 @@ impl VirtualMemoryManager {
         Some(pml4_phys.as_u64())
     }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     pub fn map_page_in_table(&self, pml4: u64, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) {
         if pml4 == 0 {
             return;
@@ -762,6 +769,7 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     /// 映射内核高半区页到用户页表 (绕过 KPTI 安全门)
     ///
     /// 用于映射 RSP0 等内核结构到用户页表,使其在用户态可访问.
@@ -838,6 +846,7 @@ impl VirtualMemoryManager {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     pub fn unmap_page_in_table(&self, pml4: u64, virt: VirtAddr) {
         if pml4 == 0 {
             return;
@@ -935,6 +944,7 @@ impl VirtualMemoryManager {
     }
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     pub fn destroy_page_table(&self, pml4: u64) {
         if pml4 == 0 {
             return;
@@ -1266,6 +1276,7 @@ impl VirtualMemoryManager {
     /// 当分配新的页表页失败时返回 `Err("Failed to allocate PT")`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     pub fn split_2mb_page(&self, virt: u64) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
@@ -1428,6 +1439,7 @@ impl VirtualMemoryManager {
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 {
             return None;

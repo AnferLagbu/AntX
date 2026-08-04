@@ -354,6 +354,16 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.7-8.10: used_underscore_binding (63) / too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
+- **2026-08-04 (阶段 8.7: used_underscore_binding 63 处 expect 兜底)**
+  - 描述: 推进 clippy 清理第 5 类 lint — used_underscore_binding (_xxx 字段/变量被使用)
+  - 方案:
+    - 调研: 63 处 (62 去重后), 涉及 12 文件
+    - 决策: 函数级 expect 兜底 (字段重命名需追改所有访问点, 跨文件风险高)
+    - 修复: 39 个不同函数 (62 hint 去重后) 加 `#[expect(clippy::used_underscore_binding, reason = "...")]`
+    - 修复 unfulfilled_lint_expectations 错误: 12 处 expect 在 vmm_x86_64.rs 重复插入 (脚本逐 hint 行插入未去重 fn 级别), 手工删除冗余 expect
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
+  - 状态: [X]
+  - 后续阶段 8.8-8.10: too_many_lines (35) / cast (2092) / ptr (795) / manual_let_else (307).
 
 ***
 

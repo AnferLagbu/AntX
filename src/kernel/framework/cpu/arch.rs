@@ -49,6 +49,7 @@ pub fn broadcast_ipi(vector: u8) {
 /// `x86_64`: 写入 TSS 的 RSP0 字段 (ring 0 栈)。
 /// aarch64: 无操作 — `SP_EL1` 由上下文切换直接管理。
 #[inline(always)]
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
 pub fn set_kernel_stack(_stack: u64) {
     #[cfg(target_arch = "x86_64")]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)

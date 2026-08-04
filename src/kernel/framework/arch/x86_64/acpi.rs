@@ -674,6 +674,7 @@ pub struct HpetInfo {
 
 static HPET_INFO: IrqSpinLock<Option<HpetInfo>> = IrqSpinLock::new(None);
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
 fn parse_hpet(hpet_ptr: u64) {
     // SAFETY: `hpet_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(HpetTable)); 只读访问
     let hpet = unsafe { &*(hpet_ptr as *const HpetTable) };

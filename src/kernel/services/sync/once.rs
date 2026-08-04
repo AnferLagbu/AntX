@@ -56,6 +56,7 @@ impl Once {
         }
     }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
     /// 执行闭包, 多线程下仅首次调用方真正执行, 后续方阻塞等待完成。
     ///
     /// # Panics

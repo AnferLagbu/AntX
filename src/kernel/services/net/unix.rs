@@ -636,6 +636,7 @@ pub fn uds_sendto(_fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsE
     })
 }
 
+#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
 /// 从 UDS 数据报套接字接收数据
 ///
 /// # Errors
