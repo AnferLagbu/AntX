@@ -23,16 +23,16 @@ pub mod dispatch_trait;
 
 /// Syscall 模块 — `QueenX` 原生系统调用分发
 ///
-/// 编号空间 (遵循 queenx-naming-standpoint.md):
-///   0-299   : 保留给未来 linuxulator (与 Linux 1:1 映射)
+/// 编号空间 (DECISION-037, 2026-08-03):
+///   0-299   : 直接使用 Linux 标准 syscall 编号 (POSIX/syscall 透明兼容)
 ///   300-399 : 保留
 ///   400-499 : Credo 私有 syscall
-///   500-599 : 进程 / 内存 / 文件基础 (QX_*)
-///   600-699 : 网络 / IPC (QX_*)
-///   700-799 : 设备 / 系统 (QX_*)
-///   800-899 : 扩展 (QX_*)
+///   500-599 : QueenX 自由 syscall (QX_*) — 进程 / 内存 / 文件基础
+///   600-699 : QueenX 自由 syscall (QX_*) — 网络 / IPC
+///   700-799 : QueenX 自由 syscall (QX_*) — 设备 / 系统
+///   800-899 : QueenX 自由 syscall (QX_*) — 扩展
 ///
-/// Linux 兼容二进制通过 linuxulator 模块将架构特定编号翻译为 QX_* 编号。
+/// 0-299 直接走 Linux ABI, 无翻译层. 500+ 与 Linux 错开, 避免与未来 Linux 新增 syscall 冲突.
 
 // 公共接口 re-export — 避免跨子系统直接访问内部子模块
 pub use epoll::{EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLRDHUP, epoll_pwake};

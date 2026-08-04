@@ -69,7 +69,7 @@ QX 若成功与 OpenHarmony 上层结合, 其项目姿态应**先将重心放在
 
 这一姿态与 Asterinas NixOS 形成互补: Asterinas 走桌面/服务器/容器 (大计算资源), QueenX 走嵌入式/IoT/边缘 (小计算资源); 两个项目共同验证"通用内核 + 借力上层生态"路径在不同算力规模下的可行性.
 
-**风险 2: 内核 ABI 差异** — QueenX 主动错开 syscall 编号 (ref-naming.md), 这与 OpenHarmony 用户态预期不符. 缓解: 提供 syscall 翻译层 (类似 linuxulator), 将 OpenHarmony syscall 编号映射到 QX 原生编号.
+**风险 2: 内核 ABI 差异 (DECISION-037 已收敛)** — 2026-08-03 决策: 0-299 段直接使用 Linux 标准 syscall 编号, 500+ 段作为 QueenX 自由扩展与 Linux 错开. OpenHarmony 用户态若需 Linux 编号兼容, 走用户态侧适配层 (类似 musl 静态二进制模式); QueenX 内核侧不再提供 syscall 翻译层.
 
 **风险 3: 生态冷启动** — 即便与 OpenHarmony 结合, QueenX 仍是新进入者. 缓解: 以 OpenHarmony 设备为应用场景 (IoT/嵌入式), 避开与 Linux 直接竞争的服务器/桌面领域.
 
