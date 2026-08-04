@@ -435,6 +435,7 @@ impl SmoltcpNetStack {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 轮询所有 fd 的 Socket 状态.
     ///
     /// # Errors

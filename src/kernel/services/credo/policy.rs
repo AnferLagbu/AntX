@@ -254,6 +254,7 @@ impl PolicyEngine {
         Self {}
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 检查 (matrix, domain, required) 是否被允许
     pub fn check<M: CapabilityMatrix>(
         &self,
@@ -282,6 +283,7 @@ impl PolicyEngine {
         PolicyResult::Allow
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 委托 (使用 CAS 保证并发安全)
     pub fn grant<M: CapabilityMatrix>(
         &self,
@@ -314,6 +316,7 @@ impl PolicyEngine {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 撤销 (保护可行下界)
     pub fn revoke<M: CapabilityMatrix>(
         &self,

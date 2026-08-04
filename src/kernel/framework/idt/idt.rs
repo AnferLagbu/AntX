@@ -355,6 +355,7 @@ impl IdtManager {
         crate::klog_info!(Kernel, "IDT: MSI vectors 0x40-0x7F programmed");
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 内部函数: 设置门描述符 (需要 &mut state)
     fn set_gate_internal(
         &self,
@@ -464,6 +465,7 @@ impl IdtManager {
         Err("Handler not found")
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 启用指定 IRQ
     pub fn enable_irq(&self, irq: u8) {
         // 使用 GSI 路由, 不再限制 irq < 16
@@ -493,6 +495,7 @@ impl IdtManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 禁用指定 IRQ
     pub fn disable_irq(&self, irq: u8) {
         // 使用 GSI 路由, 不再限制 irq < 16
@@ -627,6 +630,7 @@ impl IdtManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// Kernel panic (停止系统)
     fn kernel_panic(&self, message: &str) {
         let _ = message;
@@ -706,6 +710,7 @@ impl IdtManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 发送 EOI (End of Interrupt)
     fn send_eoi(&self, irq: u8) {
         // Use Local APIC EOI if available (modern systems); 仅 x86_64 支持 APIC.

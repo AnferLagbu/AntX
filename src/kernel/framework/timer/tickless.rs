@@ -220,6 +220,7 @@ impl TicklessSubsystem {
         Self::program_periodic(hz);
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 获取下一个定时器到期时间
     fn get_next_timer_expiry(&self, _cpu_id: u32) -> u64 {
         // 查询 hrtimer 子系统的下一个到期时间

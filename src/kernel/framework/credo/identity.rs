@@ -111,6 +111,7 @@ impl IdentityTable {
         self.release();
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn generate_pwm(&self, password: &str, note: &str) -> u64 {
         let mut input = [0u8; 256];
         let mut pos = 0;

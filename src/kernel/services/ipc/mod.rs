@@ -143,6 +143,7 @@ pub struct IpcNamespaceRef;
 impl IpcNamespaceRef {
     pub fn new() -> Self { Self }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 获取命名空间锁 (spin, 短临界区)
     pub fn lock(&self) -> IpcLock {
         IpcLock
@@ -155,6 +156,7 @@ pub struct IpcLock;
 impl IpcLock {
     // ── Pipe ──
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 创建管道
     ///
     /// # Errors
@@ -167,6 +169,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 管道读
     ///
     /// # Errors
@@ -178,6 +181,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 管道写
     ///
     /// # Errors
@@ -189,6 +193,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 关闭管道
     ///
     /// # Errors
@@ -200,6 +205,7 @@ impl IpcLock {
 
     // ── SHM ──
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 创建共享内存段
     ///
     /// # Errors
@@ -212,6 +218,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 附加共享内存段
     ///
     /// # Errors
@@ -223,6 +230,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 分离共享内存段
     ///
     /// # Errors
@@ -232,6 +240,7 @@ impl IpcLock {
         self::shm::shm_detach_safe(ns, handle.id, current_pid).map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 删除共享内存段
     ///
     /// # Errors
@@ -243,6 +252,7 @@ impl IpcLock {
 
     // ── MsgQ ──
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 创建消息队列
     ///
     /// # Errors
@@ -255,6 +265,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 发送消息
     ///
     /// # Errors
@@ -265,6 +276,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 接收消息
     ///
     /// # Errors
@@ -278,6 +290,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 销毁消息队列
     ///
     /// # Errors
@@ -289,6 +302,7 @@ impl IpcLock {
 
     // ── Semaphore ──
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 创建信号量
     ///
     /// # Errors
@@ -301,6 +315,7 @@ impl IpcLock {
             .map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// P 操作 (wait)
     ///
     /// # Errors
@@ -310,6 +325,7 @@ impl IpcLock {
         sem::sem_wait_safe(ns, s.id).map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// V 操作 (signal/post)
     ///
     /// # Errors
@@ -319,6 +335,7 @@ impl IpcLock {
         sem::sem_post_safe(ns, s.id).map_err(IpcError::from_i32)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 销毁信号量
     ///
     /// # Errors

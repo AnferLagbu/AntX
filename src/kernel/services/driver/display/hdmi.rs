@@ -753,6 +753,7 @@ impl HdmiController {
         Ok(())
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 获取支持的视频模式列表
     pub fn get_supported_modes(&self) -> &[VideoMode] {
         STANDARD_VIDEO_MODES

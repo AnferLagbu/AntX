@@ -340,6 +340,7 @@ impl VirtualMemoryManager {
         self.get_physical_in_pml4(KERNEL_PML4.load(Ordering::Acquire), virt)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn get_physical_in_pml4(&self, pml4: u64, virt: VirtAddr) -> Option<PhysAddr> {
         if pml4 == 0 {
             return None;
@@ -398,6 +399,7 @@ impl VirtualMemoryManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 读取 PTE 原始值 (用于 swap entry 检测)
     ///
     /// 返回 4KB 页的 PTE 原始值, 若页表层级不存在则返回 None.
@@ -1183,6 +1185,7 @@ impl VirtualMemoryManager {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     unsafe fn get_or_create_table_entry(
         &self,
         entry: *mut PageTableEntry,
@@ -1602,6 +1605,7 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 获取 VMM 锁 (关中断 + 自旋), 支持单核可重入.
     ///
     /// # Panics
@@ -1629,6 +1633,7 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn release_lock(&self, flags: &IrqSaveFlags) {
         #[cfg(debug_assertions)]
         {
@@ -1640,12 +1645,14 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     unsafe fn read_cr3(&self) -> u64 {
         // SAFETY: Reading CR3 is always safe; returns current page table base
         crate::arch!(read_page_table_base())
     }
 
     #[inline(always)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     unsafe fn write_cr3(&self, val: u64) {
         // SAFETY: val must point to a valid PML4 table; caller guarantees this
         crate::arch!(write_page_table_base(val));
@@ -1654,6 +1661,7 @@ impl VirtualMemoryManager {
     #[inline(always)]
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn flush_tlb(&self, addr: u64) {
         crate::arch!(tlb_flush_page(addr as usize));
 
@@ -1666,6 +1674,7 @@ impl VirtualMemoryManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn is_table_empty(&self, table: *mut PageTableEntry) -> bool {
         for i in 0..512usize {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)

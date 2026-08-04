@@ -215,6 +215,7 @@ impl RecoveryManager {
 
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn rollback_domain(
         &self,
         dom: &RecoveryDomain,

@@ -661,6 +661,7 @@ impl DpController {
         Ok(data)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// AUX 无硬件 fallback 读取 (保持原行为, 兼容 QEMU).
     fn aux_read_fallback(&mut self, address: u16, length: u8) -> Result<Vec<u8>, DpError> {
         let mut data = vec![0u8; length as usize];
@@ -770,6 +771,7 @@ impl DpController {
         Ok(())
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 等待 AUX 控制器进入空闲状态 (busy == 0).
     fn aux_wait_not_busy(&self, io: &DpIo) -> Result<(), DpError> {
         let mut elapsed_iters: usize = 0;
@@ -1051,6 +1053,7 @@ impl DpController {
         Ok(())
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 派生 DP 视频时序 (复用 `hdmi::lookup_dmt_timing` + 简化公式 fallback).
     ///
     /// 注: 此方法**不依赖** `hdmi::derive_video_timing` (它是 `pub`),
@@ -1097,6 +1100,7 @@ impl DpController {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 写入 DP 时序 + sync + output enable 寄存器 — 通过 `DpIo` 安全代理, 无 unsafe.
     fn write_dp_timing_registers(
         &self,
@@ -1125,6 +1129,7 @@ impl DpController {
         Ok(())
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 获取设备名称
     pub fn name(&self) -> &'static str {
         "DisplayPort Controller"

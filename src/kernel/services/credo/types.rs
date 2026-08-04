@@ -276,6 +276,7 @@ impl PwmEntry {
         self.get_flags().contains(flag)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// T4-1: 全 Atomic 化后此 API 行为变化.
     /// 原因: [`AtomicU8`; N] 不能直接借用为 &[u8], 返回 owned &str 需要内部静态缓冲.
     /// 当前实现: 返回静态空串占位. 推荐使用 `note_bytes()` 复制 + 自行转换.

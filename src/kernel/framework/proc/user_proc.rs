@@ -705,6 +705,7 @@ impl UserProcManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn init(&self) {}
 
     fn destroy(&self, proc: NonNull<UserProcess>, keep_kstack: bool) {
@@ -1399,6 +1400,7 @@ impl UserProcManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 将 argc/argv/envp 写入用户进程栈
     /// 返回设置后的新栈指针 (RSP)
     ///

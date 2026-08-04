@@ -284,6 +284,7 @@ impl Scheduler {
         self.cfs_enqueue(pid);
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 设置 nice 值并更新进程的 CFS 权重.
     pub fn set_nice(&self, pid: Pid, nice: i8) {
         PROCESS_TABLE.with_process(pid, |proc| {
@@ -294,6 +295,7 @@ impl Scheduler {
         });
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 将进程入队 CFS 运行队列.
     fn cfs_enqueue(&self, pid: Pid) {
         let per_cpu = per_cpu();
@@ -310,6 +312,7 @@ impl Scheduler {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 为进程设置 `SCHED_DEADLINE` 参数.
     pub fn set_deadline_params(&self, pid: Pid, params: DeadlineParams) -> bool {
         if !params.is_valid() {
@@ -331,6 +334,7 @@ impl Scheduler {
         true
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn add_rt_task(&self, pid: Pid, rt_priority: u8, policy: SchedPolicy) {
         let priority = rt_priority.min(RT_PRIORITY_MAX);
 
@@ -363,6 +367,7 @@ impl Scheduler {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 选取一个 deadline 任务 (EDF —— 绝对 deadline 最早者优先).
     fn pick_deadline_task(&self) -> Option<Pid> {
         let per_cpu = per_cpu();
@@ -395,6 +400,7 @@ impl Scheduler {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 选取一个 CFS 任务 (vruntime 最小者).
     fn pick_cfs_task(&self) -> Option<Pid> {
         let per_cpu = per_cpu();
@@ -658,6 +664,7 @@ impl Scheduler {
         Some(next)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn current(&self) -> Option<Pid> {
         let pid = per_cpu().current.load(Ordering::SeqCst);
         if pid == 0 {
@@ -667,6 +674,7 @@ impl Scheduler {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn get_current_process(&self) -> Option<*mut Process> {
         let pid = per_cpu().current.load(Ordering::SeqCst);
         if pid == 0 {
@@ -687,6 +695,7 @@ impl Scheduler {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn unblock(&self, pid: Pid) {
         let sched_policy = PROCESS_TABLE
             .with_process(pid, |proc| {
@@ -828,10 +837,12 @@ impl Scheduler {
         self.schedule();
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn set_need_reschedule(&self) {
         per_cpu().need_reschedule.store(true, Ordering::SeqCst);
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn should_reschedule(&self) -> bool {
         per_cpu().need_reschedule.swap(false, Ordering::SeqCst)
     }
@@ -843,6 +854,7 @@ impl Scheduler {
         self.cfs_enqueue(pid);
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn set_current(&self, pid: Pid) {
         per_cpu().current.store(pid, Ordering::SeqCst);
 
@@ -858,6 +870,7 @@ impl Scheduler {
         self.initialized.load(Ordering::SeqCst)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn has_runnable(&self) -> bool {
         let per_cpu = per_cpu();
         if !per_cpu.dl_rq.lock().is_empty() {
@@ -1103,6 +1116,7 @@ impl Scheduler {
         crate::kernel::framework::sync::restore_interrupts(&flags);
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn set_sched_policy(&self, pid: Pid, policy: SchedPolicy, rt_priority: u8) -> bool {
         PROCESS_TABLE.with_process(pid, |proc| {
             proc.set_sched_policy(policy);
@@ -1110,10 +1124,12 @@ impl Scheduler {
         }).is_some()
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn get_rt_count(&self) -> usize {
         per_cpu().rt_queue.lock().len()
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// C2: 检查目标 CPU 是否在进程的 allowed cpuset 中
     ///
     /// 调度器选 CPU / 负载均衡迁移时调用, 约束进程 CPU 亲和性.
@@ -1168,6 +1184,7 @@ impl Scheduler {
         best_cpu
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn total_runnable_for(&self, cpu_id: u32) -> usize {
         let sched = per_cpu_for(cpu_id);
         let mut count = sched.cfs_rq.lock().nr_running as usize;

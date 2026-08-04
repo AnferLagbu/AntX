@@ -594,6 +594,7 @@ impl KmemCache {
     /// 销毁单个 Slab (释放物理页)
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn destroy_slab(&self, slab: *mut SlabHeader) {
         if slab.is_null() {
             return;

@@ -636,6 +636,7 @@ impl XhciController {
         Ok(slot)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 等待 Command Completion Event
     ///
     /// 轮询 Event Ring 等待命令完成。

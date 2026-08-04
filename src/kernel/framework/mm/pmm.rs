@@ -614,6 +614,7 @@ impl PhysicalMemoryManager {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn is_aligned_for_huge(&self, addr: PhysAddr, size_type: PageSize) -> bool {
         size_type.is_aligned(addr.0)
     }

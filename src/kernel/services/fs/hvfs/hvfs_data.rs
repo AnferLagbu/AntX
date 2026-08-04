@@ -116,6 +116,7 @@ pub fn get_hvfs() -> &'static HvfsData {
 }
 
 impl HvfsData {
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 扫描所有已注册的块设备，返回检测到的驱动器列表 (`drive_id`, `partition_start_lba`)
     /// 对于已格式化的磁盘读取 `QueenX` 签名，对于空白磁盘使用默认分区起始偏移
     fn scan_all_drives(&self) -> Vec<(u8, u32)> {
@@ -344,6 +345,7 @@ impl HvfsData {
         false
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn probe_partition_size_for_drive(&self, drive_id: u8, part_start: u32) -> u64 {
         if !block::hdd_is_present(drive_id) {
             return 0;
@@ -451,6 +453,7 @@ impl HvfsData {
         None
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn check_permission(&self, obj: &HvDmuObject, pwm: u64, cap: u64) -> bool {
         if pwm == 0 {
             return false;

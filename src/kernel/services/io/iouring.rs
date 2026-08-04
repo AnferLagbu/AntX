@@ -293,6 +293,7 @@ impl IoUring {
         processed
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 执行单个操作
     fn execute_op(&self, sqe: &Sqe) -> i32 {
         let opcode = match IoOpCode::from_u8(sqe.opcode) {

@@ -197,6 +197,7 @@ impl CetSubsystem {
         self.initialized.store(true, Ordering::Release);
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 检测 CPU CET 能力
     fn detect_capabilities(&self) -> CetCapabilities {
         let mut caps = CetCapabilities {
@@ -231,6 +232,7 @@ impl CetSubsystem {
         caps
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 启用内核态 Shadow Stack
     fn enable_kernel_shadow_stack(&self) -> bool {
         #[cfg(target_arch = "x86_64")]

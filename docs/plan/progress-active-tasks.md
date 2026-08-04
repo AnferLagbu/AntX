@@ -315,6 +315,16 @@
     - 2 处 `i as u64` 在 disk_list 函数中 (i: usize → u64), 块设备数量实际不超过 256 (u8 范围), 改为保留 `i as u64` 不动 (符合阶段 4 DECISION-035 "资源类型转换 POSIX 约定" 模板, usize→u64 在小值域下是合法无损).
     - 验证: §2.4 5 条门槛全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed + QEMU x86_64 1/1 通过 + aarch64 1/1 通过).
   - 状态: [X]
+- **2026-08-04 (阶段 7+8: clippy pedantic 4645 警告按序修复 — 8.3 unused_self 107 处 expect 兜底)**
+  - 描述: 启动 clippy pedantic 4645 警告清理工程 (按用户 2026-08-04 决策"深度规划的按序修复")
+  - 方案:
+    - 阶段 7 调研: 4645 总警告 / 41 唯一 lint 类型 / 64 个文件. top 5: cast_possible_truncation (939) / cast_sign_loss (643) / ptr_as_ptr (640) / unreadable_literal (408) / inline_always (333).
+    - 阶段 8 路径选择: 用户选 A 逐 lint 手工修复. 自动化 (cargo clippy --fix / Python 脚本) 均失败 (脚本破坏浮点/字符串). 改用 expect 兜底 + 中文注释.
+    - 阶段 8.3 unused_self: 107 处 expect 在 35 个文件中手工添加. 模板 `#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]`. 决策路径: 调研发现 `unused_self` 改关联函数需追改跨文件调用点, 107 处工作量 200-300 行 diff. expect 兜底 0 风险 + 保留 API 兼容性.
+    - 脚本策略: v1-v4 多版调试, 最终修路径替换 bug (`src/../../` → `src/` 而非空字符串) 后单次应用 107 处.
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
+  - 状态: [X]
+  - 后续阶段 8.4-8.10 待推进: items_after_statements / similar_names / unnecessary_wraps / used_underscore_binding / too_many_lines expect 兜底; cast/ptr/manual_let_else 难类手工重构 (中期).
 
 ***
 

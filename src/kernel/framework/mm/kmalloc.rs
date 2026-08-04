@@ -692,6 +692,7 @@ impl KernelHeap {
     /// 将一个块拆分为两个
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn split_block(&self, header: HeaderRef, size: u64) {
         let original_size = header.size();
         let remaining = original_size - size;

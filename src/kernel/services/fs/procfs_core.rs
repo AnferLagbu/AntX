@@ -585,6 +585,7 @@ impl ProcfsData {
         self.entry_count.load(Ordering::SeqCst)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 读取进程状态 /proc/[pid]/status
     fn read_process_status(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -643,6 +644,7 @@ impl ProcfsData {
         result.unwrap_or(-1)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 读取进程命令行 /proc/[pid]/cmdline
     fn read_process_cmdline(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -663,6 +665,7 @@ impl ProcfsData {
         result.unwrap_or(-1)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 读取进程文件描述符 /proc/[pid]/fd
     fn read_process_fd(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -688,6 +691,7 @@ impl ProcfsData {
         result.unwrap_or(-1)
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 读取进程统计 /proc/[pid]/stat
     fn read_process_stat(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;

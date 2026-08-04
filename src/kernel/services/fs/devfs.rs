@@ -243,6 +243,7 @@ impl DevfsData {
         None
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn read(&self, dev_type: u8, buf: &mut [u8]) -> i32 {
         match DevKind::from_u8(dev_type) {
             Some(DevKind::Null) => 0,
@@ -294,6 +295,7 @@ impl DevfsData {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn write(&self, dev_type: u8, buf: &[u8]) -> i32 {
         match DevKind::from_u8(dev_type) {
             Some(DevKind::Null | DevKind::Zero) => buf.len() as i32,

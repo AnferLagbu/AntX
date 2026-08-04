@@ -248,6 +248,7 @@ impl UefiSubsystem {
         );
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 解析系统表 (简化)
     fn parse_system_table(&self, _addr: u64) {
         // TODO(TRACK-4D5E78): 实际解析 EFI_SYSTEM_TABLE
@@ -339,6 +340,7 @@ impl UefiSubsystem {
     /// 获取时间
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn get_time(&self) -> EfiTime {
         // 简化: 从内核时钟转换
         let ns = crate::kernel::framework::timer::ticks_to_ns(
@@ -391,6 +393,7 @@ impl UefiSubsystem {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 设置时间 (软件模拟)
     pub fn set_time(&self, _time: &EfiTime) -> bool {
         // TODO(TRACK-5E6F89): 调用 EFI_RUNTIME_SERVICES.SetTime

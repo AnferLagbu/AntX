@@ -162,6 +162,7 @@ impl DmaEngine {
         }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 获取 CPU 虚拟地址对应的设备 (物理) DMA 地址
     pub fn device_address(&self, cpu_addr: VirtAddr) -> Option<PhysAddr> {
         if cpu_addr.0 == 0 {
@@ -302,6 +303,7 @@ impl DmaEngine {
 
     // =============== 缓存同步 ===============
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 为设备访问同步 (CPU → Device)
     pub fn sync_for_device(&self, _mapping: &DmaMapping, _offset: usize, _size: usize) {
         Self::barrier_device();
@@ -324,6 +326,7 @@ impl DmaEngine {
 
     // =============== 散聚表 (Scatter-Gather) ===============
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn sg_init(&self, sglist: &mut DmaScatterList) {
         sglist.entry_count = 0;
         sglist.total_length = 0;
@@ -331,6 +334,7 @@ impl DmaEngine {
 
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn sg_add_entry(&self, sglist: &mut DmaScatterList, addr: VirtAddr, length: usize) -> i32 {
         if addr.0 == 0 || length == 0 {
             return -1;
@@ -353,6 +357,7 @@ impl DmaEngine {
         0
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn sg_total_length(&self, sglist: &DmaScatterList) -> usize {
         sglist.total_length
     }
@@ -373,6 +378,7 @@ impl DmaEngine {
     /// 该函数与架构相关, 对非一致性 DMA 至关重要.
     #[inline(always)]
     #[allow(unused_variables)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn cache_flush(&self, addr: VirtAddr, size: usize) {
         // 架构相关缓存刷新
         #[cfg(target_arch = "x86_64")]
@@ -450,6 +456,7 @@ impl DmaEngine {
     /// aarch64: 按虚拟地址逐行失效 (DC IVAC).
     #[cfg_attr(target_arch = "x86_64", allow(unused_variables))]
     #[inline(always)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]
         {

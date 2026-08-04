@@ -371,6 +371,7 @@ impl MmStruct {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     fn unmap_vma_pages(&self, vma: &Vma) {
         // 锁序: 调用者持有 VMA_LOCK, 此处获取 VMM_LOCK
         // 这是唯一合法的嵌套方向 (VMA → VMM).
@@ -1050,6 +1051,7 @@ impl MmStruct {
     /// (`out_vec.len() < n_pages`) 时返回 `ENOMEM`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     pub fn mincore_range(
         &self,
         start: usize,

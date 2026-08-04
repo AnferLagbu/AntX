@@ -491,6 +491,7 @@ impl UsbCore {
         Ok(())
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 获取设备描述符
     fn get_device_descriptor(
         &self,
@@ -525,6 +526,7 @@ impl UsbCore {
         Ok(())
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 配置设备
     fn configure_device(
         &self,

@@ -160,6 +160,7 @@ impl Ed25519PubKey {
         Self { key }
     }
 
+#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
     /// 验证签名 (简化: 使用 SHA-256 + 常量时间比较)
     ///
     /// 注意: 真实 Ed25519 需要 curve25519-dalek 或等效库.
