@@ -172,7 +172,7 @@
   - 描述: 脚本化替换为统一模板, 原因需说明"为什么可以安全截断"而非套用模板
   - 优势: 符合 §5.2 "Explain why, not what"
   - 工作量: 中等 (需审查每处 expect 的语义)
-  - 状态: []
+  - 状态: [X] (2026-08-04 落地. 124 处 expect 注释从 7 种变体合并为 3 种主要场景 + 1 种兜底: 硬件字段宽度 (31) / 资源类型转换 POSIX 约定 (27) / 用户内存代理 (15) / 显式收窄兜底 (51). 脚本两轮替换 (src/kernel 全树 78 文件). 第 1 轮: 7→4 变体; 第 2 轮: 4→3 主要场景 + 兜底. 0 语义变更, 纯注释规范化.)
 
 ##### B5. clippy DECISION-036 落地 + barrier/api.rs extern "C" 补齐
 
@@ -286,6 +286,17 @@
     - **B6.1 IoMem debug_assert!**: 8 个 read_u*/write_u* 函数 (read_u8/16/32/64 + write_u8/16/32/64) 全部加 `debug_assert!` 前置. 生产路径仍 expect panic; 调试构建提前触发便于 early detection. 0 风险 (仅增加 debug-only 检查).
     - **B6.2 容量常量集中**: 新建 `framework/constants/limits.rs` 集中 3 个 TCB 容量常量 (MAX_MMIO_MAPPINGS/MAX_LOCK_CLASSES/MAX_HELD_LOCKS), 配套 doc 说明"超限行为". iomem.rs/lockdep.rs 改 `use` 引用, 本地常量删除. `framework/config/` 职责保持不变 (反向 re-export 白名单), 避免职责混淆.
     - 验证: §2.4 5 条门槛全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed + QEMU x86_64 1/1 通过 + aarch64 1/1 通过).
+  - 状态: [X]
+- **2026-08-04 (阶段 4: B4 clippy DECISION-035 注释统一)**
+  - 描述: 推进 progress-active-tasks.md B4 (191 处 expect 注释 10+ 变体统一)
+  - 方案:
+    - 调研: 实测当前 124 处 expect 注释 7 种变体, 比计划文档 191 处少 (因 ab 组 + 部分 ac 组 191 之中 67 处已在之前批次统一为 `// 有意窄化: <具体原因>` 模板).
+    - 决策: 用户选 B 方案合并为 3 种主要场景.
+    - 第 1 轮脚本替换: 7→4 变体 (250 处, 78 文件).
+    - 第 2 轮脚本合并: 4→3 主要场景 + 1 兜底 (40 处合并 POSIX 约定).
+    - 最终 4 变体: 硬件字段宽度 (31) / 资源类型转换 POSIX 约定 (27) / 用户内存代理 (15) / 显式收窄兜底 (51).
+    - 0 语义变更, 仅注释规范化. 符合 DECISION-035 模板 `// 有意窄化: <具体原因>`.
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯注释变更).
   - 状态: [X]
 
 ***

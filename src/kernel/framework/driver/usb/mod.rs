@@ -66,7 +66,7 @@ const XHCI_DEFAULT_MMIO_SIZE: usize = 0x10000; // 64 KiB
 /// - 返回 `Ok(Vec<XhciController>)`, 即使找不到控制器 (Vec 为空) 也不算错误.
 /// # Errors
 /// 为控制器分配 MMIO 或创建 `IoMem` 失败时返回 Err。
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn discover_xhci_controllers() -> framework::Result<Vec<XhciController>> {
     use crate::kernel::framework::iomem::IoMem;

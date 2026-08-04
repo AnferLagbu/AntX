@@ -258,7 +258,7 @@ impl NvmeCommand {
     }
 
     /// 创建 Create I/O Completion Queue 命令
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn create_cq(qid: u16, cq_phys: u64) -> Self {
         Self {
@@ -280,7 +280,7 @@ impl NvmeCommand {
     }
 
     /// 创建 Create I/O Submission Queue 命令
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn create_sq(qid: u16, cqid: u16, sq_phys: u64) -> Self {
         Self {
@@ -437,7 +437,7 @@ pub struct NvmeController {
 }
 
 impl NvmeController {
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(mmio_base: usize) -> Self {
         Self {
@@ -552,7 +552,7 @@ impl NvmeController {
         Ok(())
     }
 
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     fn free_queues(&mut self) {
         let dma = get_dma();
@@ -588,7 +588,7 @@ impl NvmeController {
 
     /// 提交 Admin 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> { unsafe {
         // 调试断言: 验证队列类型正确
@@ -642,7 +642,7 @@ impl NvmeController {
     /// 初始化控制器
     /// # Errors
     /// 队列分配失败、获取 MMIO 失败或控制器初始化命令失败时返回 Err。
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn init_controller(&mut self) -> Result<()> {
         // 分配 Admin 队列
@@ -720,7 +720,7 @@ impl NvmeController {
     /// 识别控制器
     /// # Errors
     /// DMA 缓冲区分配失败或识别命令执行失败时返回 Err。
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn identify_controller(&mut self) -> Result<()> {
         let dma = get_dma();
@@ -762,7 +762,7 @@ impl NvmeController {
     /// 识别命名空间
     /// # Errors
     /// DMA 缓冲区分配失败或识别命令执行失败时返回 Err。
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn identify_namespace(&mut self, nsid: u32) -> Result<()> {
         let dma = get_dma();
@@ -815,7 +815,7 @@ impl NvmeController {
     /// 创建 I/O 队列
     /// # Errors
     /// 队列分配失败、PRP 页分配失败或创建队列的管理命令失败时返回 Err。
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn create_io_queue(&mut self) -> Result<()> {
         self.alloc_io_queues()?;
@@ -854,7 +854,7 @@ impl NvmeController {
 
     /// 提交 I/O 命令并等待完成
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> { unsafe {
         // 调试断言: 验证队列类型正确
@@ -912,7 +912,7 @@ impl NvmeController {
     /// PRP 列表页在 `create_io_queue` 时预分配，供所有 I/O 命令复用。
     /// 依赖 `dma.alloc_coherent` 返回物理连续内存，因此条目地址线性递推即可。
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     unsafe fn build_prp(&self, phys_base: u64, byte_count: usize) -> (u64, u64) {
         let bytes = byte_count as u64;
@@ -947,7 +947,7 @@ impl NvmeController {
     /// 从 `NVMe` 命名空间读取扇区数据到指定缓冲区。
     /// # Errors
     /// 控制器未初始化、参数非法、DMA 缓冲区分配失败或 I/O 命令执行失败时返回 Err。
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn read(&mut self, nsid: u32, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {
         if !self.initialized {
@@ -987,7 +987,7 @@ impl NvmeController {
     /// 将缓冲区数据写入 `NVMe` 命名空间指定扇区。
     /// # Errors
     /// 控制器未初始化、参数非法、DMA 缓冲区分配失败或 I/O 命令执行失败时返回 Err。
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn write(&mut self, nsid: u32, lba: u64, count: u16, buffer: *const u8) -> Result<()> {
         if !self.initialized {
@@ -1164,7 +1164,7 @@ impl NvmeController {
     /// - 无并发访问 I/O 队列
     /// # Errors
     /// I/O 完成条目中检测到设备错误时返回 Err。
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn handle_interrupt(&mut self) -> Result<()> {
         if !self.initialized {

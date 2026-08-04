@@ -59,7 +59,7 @@ impl IrqLine {
 
     /// 启用该中断线 (unmask)
     #[cfg(target_arch = "x86_64")]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn enable(&self) {
         crate::kernel::framework::arch::ioapic::unmask_irq(self.irq as u8);
@@ -72,7 +72,7 @@ impl IrqLine {
 
     /// 禁用该中断线 (mask)
     #[cfg(target_arch = "x86_64")]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn disable(&self) {
         crate::kernel::framework::arch::ioapic::mask_irq(self.irq as u8);

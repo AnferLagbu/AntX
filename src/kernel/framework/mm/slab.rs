@@ -406,7 +406,7 @@ impl KmemCache {
     ///
     /// # Arguments
     /// * `obj` - 要释放的对象指针 (必须是从此缓存分配的)
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn deallocate(&mut self, obj: *mut u8) {
         if obj.is_null() {
@@ -535,7 +535,7 @@ impl KmemCache {
     // ========================================================================
 
     /// 创建新的 Slab (分配一页物理内存)
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn new_slab(&self) -> Option<*mut SlabHeader> {
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
@@ -592,7 +592,7 @@ impl KmemCache {
     }
 
     /// 销毁单个 Slab (释放物理页)
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn destroy_slab(&self, slab: *mut SlabHeader) {
         if slab.is_null() {
@@ -609,7 +609,7 @@ impl KmemCache {
         }
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn find_free_bit(&self, slab: *mut SlabHeader) -> Option<u32> {
         // SAFETY: slab 来自 find_free_bit 调用方, 是合法 Slab 头; lock 持有中.
@@ -878,7 +878,7 @@ pub struct SlabCacheSnapshot {
 
 /// 遍历所有通用缓存, 返回每个缓存的统计快照.
 /// `out` 由调用方提供, 最大写入 `out.len()` 项. 返回实际写入数.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub(crate) fn get_all_cache_snapshots(out: &mut [SlabCacheSnapshot]) -> usize {
     let mut count = 0usize;

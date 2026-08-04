@@ -161,7 +161,7 @@ fn deserialize(
     ))
 }
 
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn save_database() -> i32 {
     let t = identity::get_table();
@@ -215,7 +215,7 @@ pub fn save_database() -> i32 {
     0
 }
 
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn load_database() -> i32 {
     let path = path_to_bytes(DB_PATH);

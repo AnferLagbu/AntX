@@ -873,7 +873,7 @@ impl HostController for XhciController {
         }
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     fn submit_urb(&mut self, urb: &Urb) -> Result<()> {
         // USB-1.3: TRACK-688EA7 消除 — URB 提交骨架
@@ -941,7 +941,7 @@ impl HostController for XhciController {
         Err(DriverError::UnsupportedOperation)
     }
 
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     fn allocate_address(&mut self) -> Result<u8> {
         // USB-1.4: TRACK-2E0EB0 消除 — 设备地址分配

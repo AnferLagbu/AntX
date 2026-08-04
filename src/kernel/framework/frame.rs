@@ -63,7 +63,7 @@ impl Frame {
     }
 
     /// 帧大小 (字节)
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn size(&self) -> usize {
         (PAGE_SIZE as usize) << self.order

@@ -413,7 +413,7 @@ pub struct BpfProg {
 }
 
 impl BpfProg {
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(prog_type: BpfProgType, insns: Vec<BpfInsn>) -> Self {
         let insn_cnt = insns.len() as u32;
@@ -504,7 +504,7 @@ impl BpfHelper {
     /// - `maps`: Map FD → Arc<BpfMap> 映射
     ///
     /// 返回: R0 的值
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn execute(
         id: u32,
@@ -661,7 +661,7 @@ impl BpfInterpreter {
         regs[reg::R0]
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn exec_alu(insn: &BpfInsn, regs: &mut [u64; BPF_REG_NUM]) {
         let dst = insn.dst() as usize;
@@ -767,7 +767,7 @@ impl BpfInterpreter {
         }
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn exec_st(insn: &BpfInsn, regs: &mut [u64; BPF_REG_NUM]) {
         let dst = insn.dst() as usize;
@@ -843,7 +843,7 @@ impl BpfInterpreter {
         }
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn exec_jmp(
         insn: &BpfInsn,
@@ -1174,7 +1174,7 @@ pub fn bpf_is_initialized() -> bool {
 ///   5 = `PROG_LOAD`
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
     if !bpf_is_initialized() {

@@ -55,7 +55,7 @@ static NVME_CONTROLLERS: Mutex<Vec<NvmeController>> = Mutex::new(Vec::new());
 /// # Errors
 /// 存储控制器初始化失败时返回 Err。
 #[cfg(target_arch = "x86_64")]
-// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
@@ -695,7 +695,7 @@ impl AhciCmdListHandle {
 }
 
 /// 分配 AHCI 端口 DMA 资源 (命令列表 + FIS 缓冲区 + 命令表)
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn ahci_alloc_port_dma() -> Option<AhciCmdListHandle> {
     use crate::kernel::framework::dma::get_dma;
@@ -765,7 +765,7 @@ pub fn ahci_copy_from_dma(dst: *mut u8, src_vaddr: u64, len: usize) {
 }
 
 /// 填充 AHCI Command Header (slot 0)
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn ahci_fill_cmd_header(
     cmd_list_virt: u64,
@@ -806,7 +806,7 @@ pub fn ahci_fill_h2d_fis(cmd_table_virt: u64, fis_src: usize, fis_size: usize) {
 }
 
 /// 填充 AHCI PRDT entry (数据缓冲区物理地址 + 字节数)
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn ahci_fill_prdt(cmd_table_virt: u64, entry_index: usize, data_phys: u64, byte_count: u32, ioc: bool) {
     // SAFETY: cmd_table_virt 由 DMA 分配保证有效; entry_index < 8

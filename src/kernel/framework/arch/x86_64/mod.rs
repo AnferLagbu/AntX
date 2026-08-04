@@ -112,7 +112,7 @@ impl CoreArch for X8664 {
 impl InterruptArch for X8664 {
     /// 禁用中断并返回 RFLAGS (含 IF 位)。
     #[inline(always)]
-    // 有意窄化: 内核寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     fn interrupt_disable() -> usize {
         let flags: u64;
@@ -169,7 +169,7 @@ impl InterruptArch for X8664 {
 
     /// 向目标 CPU 发送 IPI (通过 Local APIC)。
     #[inline(always)]
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     fn send_ipi(target_cpu: u32, vector: u8) {
         use crate::kernel::framework::arch::x86_64::apic;
@@ -300,7 +300,7 @@ impl MmuArch for X8664 {
 
     /// 读取页故障地址 (mov rax, cr2)。
     #[inline(always)]
-    // 有意窄化: 内核寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     fn read_fault_address() -> usize {
         let cr2: u64;

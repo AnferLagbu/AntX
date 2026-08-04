@@ -312,7 +312,7 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 { unsa
 /// # Safety
 ///
 /// `ptr` 是有效指针. 若 `n` 非零, 则从 `ptr` 起至少有 `n` 字节可读.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {
@@ -351,7 +351,7 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 /// # Safety
 ///
 /// `a` 与 `b` 均为有效指针. 各自至少有 `n` 字节可读.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
     if s.is_null() {

@@ -86,7 +86,7 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
     result
 }
 
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
     if parent_pml4 == 0 {
@@ -249,7 +249,7 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
 /// # SMP Safety
 /// 所有页表修改通过 VMM 的 `map_page_in_table` 进行, 该函数内部持有 `VMM_LOCK`
 /// 并执行 TLB 刷新, 保证多核并发安全。
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let vmm_inst = vmm::get_vmm();

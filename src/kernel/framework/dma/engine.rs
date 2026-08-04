@@ -43,7 +43,7 @@ impl DmaEngine {
         self.initialized.store(true, Ordering::Release);
     }
 
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn shutdown(&self) {
         if !self.initialized.load(Ordering::Acquire) {
@@ -81,7 +81,7 @@ impl DmaEngine {
 
     /// 分配物理上连续的 DMA 一致性内存.
     /// 返回 `(cpu_virt_addr, dma_phys_addr)`.
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn alloc_coherent(&self, size: usize) -> Option<(VirtAddr, PhysAddr)> {
         if size == 0 || !self.initialized.load(Ordering::Acquire) {
@@ -130,7 +130,7 @@ impl DmaEngine {
     }
 
     /// 释放 DMA 一致性内存
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn free_coherent(&self, cpu_addr: VirtAddr, size: usize) {
         if size == 0 || cpu_addr.0 == 0 || !self.initialized.load(Ordering::Acquire) {
@@ -329,7 +329,7 @@ impl DmaEngine {
         sglist.total_length = 0;
     }
 
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn sg_add_entry(&self, sglist: &mut DmaScatterList, addr: VirtAddr, length: usize) -> i32 {
         if addr.0 == 0 || length == 0 {

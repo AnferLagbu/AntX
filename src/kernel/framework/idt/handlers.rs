@@ -410,7 +410,7 @@ impl ExceptionHandler for GeneralProtectionFaultHandler {
 }
 
 impl GeneralProtectionFaultHandler {
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     fn print_detailed_gpf_info(&self, frame: &InterruptFrame) {
         let selector = frame.err_code as u16;

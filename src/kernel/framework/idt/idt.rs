@@ -338,7 +338,7 @@ impl IdtManager {
     ///
     /// MSI 向量范围 0x40-0x7F 对应 irq16-irq79 (`MSI_VECTOR_BASE=0x40`).
     /// 这些 IDT 条目使用与传统 IRQ 相同的 `irq_common` 入口.
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn init_msi_idt(&self, msi_table: &[u64; 64]) {
         let mut state = self.state.lock();
@@ -387,7 +387,7 @@ impl IdtManager {
     }}
 
     /// 注册异常处理函数
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn set_exception_handler(&self, vector: u8, handler: extern "C" fn(*mut InterruptFrame)) {
         if vector < IDT_ENTRIES as u8 {
@@ -520,7 +520,7 @@ impl IdtManager {
     }
 
     /// 处理异常 (从 `exception_handler` FFI 调用)
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn handle_exception(&self, frame: *mut InterruptFrame) {
         if frame.is_null() {

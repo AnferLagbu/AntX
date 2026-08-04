@@ -366,7 +366,7 @@ impl PhysicalMemoryManager {
         );
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn init_bitmap(&self, reserved_after_kernel: u64) {
         if self.initialized.load(Ordering::Acquire) {
@@ -595,7 +595,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn free_huge_page(&self, addr: PhysAddr, size_type: PageSize) {
         match size_type {
@@ -728,7 +728,7 @@ impl PhysicalMemoryManager {
     }
 
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
@@ -814,7 +814,7 @@ impl PhysicalMemoryManager {
 
     /// 尝试将 `order` 处释放的 `pfn` 与其上方的 buddy 合并.
     /// 返回 (`merged_pfn`, `final_order`).
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
         let meta = match self.buddy_meta_ref() {
@@ -940,7 +940,7 @@ impl PhysicalMemoryManager {
     }
 
     /// 指定阶数执行核心分配.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn buddy_alloc(&self, order: u8) -> Option<(u64, u8)> {
         if order > MAX_BUDDY_ORDER {
@@ -982,7 +982,7 @@ impl PhysicalMemoryManager {
     }
 
     /// 主 `do_alloc`: 处理早期分配与 buddy 分配.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn do_alloc(&self, order: u8) -> Option<PhysAddr> {
         if !self.initialized.load(Ordering::Acquire) {
@@ -1010,7 +1010,7 @@ impl PhysicalMemoryManager {
     }
 
     /// 主 `do_free`: 处理 buddy 或 bitmap 释放.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn do_free(&self, addr: PhysAddr, order: u8) {
         if !self.initialized.load(Ordering::Acquire) {
@@ -1054,7 +1054,7 @@ impl PhysicalMemoryManager {
     }
 
     /// 扫描所有空闲页 (位未置位), 合并为最大阶的 buddy 块.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn buddy_init_free_lists(&self, total_pages: usize) {
         let meta = match self.buddy_meta_ref() {
@@ -1104,7 +1104,7 @@ impl PhysicalMemoryManager {
     }
 
     /// 1GB 页直接对齐分配 (超出 buddy 范围).
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn buddy_direct_alloc_aligned(&self, count: usize, alignment: u64) -> Option<PhysAddr> {
         let total = self.info.get().total_pages as usize;
@@ -1132,7 +1132,7 @@ impl PhysicalMemoryManager {
     }
 
     /// 回退 bitmap 扫描 (在 init 完成但 buddy 还未就绪, 或 buddy 关闭时使用).
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn alloc_from_bitmap_fallback(&self, count: usize) -> Option<PhysAddr> {
         let total = self.info.get().total_pages as usize;

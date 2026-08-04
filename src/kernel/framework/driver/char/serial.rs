@@ -526,7 +526,7 @@ static SERIAL_PORTS: IrqSpinLock<[Option<SerialPort>; MAX_COM_PORTS]> =
 /// 初始化指定串口 (C 兼容接口)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn serial_init(com: u32) {
     if (com as usize) < MAX_COM_PORTS {
@@ -542,7 +542,7 @@ pub extern "C" fn serial_init(com: u32) {
 /// 发送字符到串口 (C 兼容接口)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn serial_putc(com: u32, ch: i32) {
     if (com as usize) < MAX_COM_PORTS {
@@ -634,7 +634,7 @@ pub extern "C" fn serial_has_data(com: i32) -> bool {
 /// # Safety
 ///
 /// 串口已通过 `serial_init()` 初始化。仅在内核上下文中有效。
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { unsafe {
     let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);

@@ -505,7 +505,7 @@ unsafe fn net_save() { unsafe {
 /// Copy newtype, 用 `transmute_copy` 替代 transmute: 编译期强制 size 匹配, 不依赖
 /// repr(transparent) 假设).
 #[inline]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 fn as_u32_handle(h: smoltcp::iface::SocketHandle) -> u32 {
     // SAFETY: smoltcp::iface::SocketHandle 是单字段 Copy tuple struct (字段类型 usize),
@@ -811,7 +811,7 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 { unsafe {
 ///   指向的内存必须在调用期间保持有效。
 /// - 调用方保证 NET 已初始化。
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 { unsafe {
     if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
@@ -1080,7 +1080,7 @@ pub fn dns_resolve(name: &str) -> Option<[u8; 4]> {
 }
 
 /// 解析 IPv4 字面量 "a.b.c.d" (无错处理; 不合法返 None)
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub(crate) fn parse_ipv4_literal(s: &str) -> Option<[u8; 4]> {
     let mut octets = [0u8; 4];

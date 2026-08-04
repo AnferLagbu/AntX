@@ -72,7 +72,7 @@ fn rdmsr(msr: u32) -> u64 {
     (u64::from(high) << 32) | u64::from(low)
 }
 
-// 有意窄化: 内核寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 fn wrmsr(msr: u32, value: u64) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -148,7 +148,7 @@ pub fn eoi() {
     }
 }
 
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn send_ipi(apic_id: u8, vector: u8) {
     if !is_initialized() {
@@ -159,7 +159,7 @@ pub fn send_ipi(apic_id: u8, vector: u8) {
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn broadcast_ipi(vector: u8) {
     if !is_initialized() {
@@ -427,7 +427,7 @@ pub fn apic_is_level_triggered(vector: u8) -> bool {
 // ============================================================================
 
 /// 发送带 level 触发模式的 IPI
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn send_ipi_level(apic_id: u8, vector: u8) {
     if !is_initialized() {
@@ -442,7 +442,7 @@ pub fn send_ipi_level(apic_id: u8, vector: u8) {
 }
 
 /// 发送带 broadcast 模式的 IPI
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn broadcast_ipi_level(vector: u8) {
     if !is_initialized() {

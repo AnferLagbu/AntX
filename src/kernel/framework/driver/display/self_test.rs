@@ -22,7 +22,7 @@ use super::framebuffer::{Color, Framebuffer, Rect};
 ///
 /// 返回失败像素数（0 = 全部通过）。
 
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn framebuffer_self_test(fb: &mut Framebuffer, font: &Font) -> usize {
     let mut failures: usize = 0;

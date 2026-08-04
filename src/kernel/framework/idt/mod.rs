@@ -382,7 +382,7 @@ pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
 #[unsafe(link_section = ".kpti_trampoline")]
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
     if frame.is_null() {
@@ -405,7 +405,7 @@ pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
 /// * `type_attr` - 类型属性标志
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: u8) {
     let manager = IdtManager::instance();

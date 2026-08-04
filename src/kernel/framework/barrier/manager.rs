@@ -76,7 +76,7 @@ impl RecoveryManager {
         }
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn register(&mut self, domain: &'static RecoveryDomain) -> Option<u64> {
         let idx = self.count.load(Ordering::SeqCst) as usize;
@@ -155,7 +155,7 @@ impl RecoveryManager {
         }
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn find(&self, id: u64) -> Option<&'static RecoveryDomain> {
         let idx = id as usize;
@@ -213,7 +213,7 @@ impl RecoveryManager {
         None
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn rollback_domain(
         &self,

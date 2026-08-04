@@ -1141,7 +1141,7 @@ fn collect_features(
 
 /// 检测缓存配置 (Intel: Leaf 4, AMD: Leaf 80000005/6)
 #[cfg(target_arch = "x86_64")]
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: CpuVendor) {
     // 设置默认保守值
@@ -1225,7 +1225,7 @@ fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: C
 
 /// 探测多核拓扑 (Intel: Leaf 0xB, AMD: Leaf 80000008)
 #[cfg(target_arch = "x86_64")]
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 fn detect_topology(
     topo_out: &mut TopologyInfo,

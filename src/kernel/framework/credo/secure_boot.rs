@@ -627,7 +627,7 @@ pub fn tpm_is_initialized() -> bool {
 ///   3 = `stats()` → (`ok_count` 位于高 32 位 | `fail_count` 位于低 32 位)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     match cmd {
@@ -674,7 +674,7 @@ pub extern "C" fn sys_secure_boot(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
 ///   5 = `is_initialized()` → 是否已初始化
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn sys_tpm(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !tpm_is_initialized() && cmd != 5 {

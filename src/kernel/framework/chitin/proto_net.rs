@@ -38,7 +38,7 @@ impl NetOps {
     ///
     /// # Safety (调用方)
     /// - `driver_data` 必须有效, `data` 在调用期间有效, len 字节。
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn send(
         &self,
@@ -53,7 +53,7 @@ impl NetOps {
     ///
     /// # Safety (调用方)
     /// - `driver_data` 必须有效, `buf` 至少 `buf.capacity()` 字节。
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn try_receive(
         &self,

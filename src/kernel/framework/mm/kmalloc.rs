@@ -342,7 +342,7 @@ pub struct KernelHeap {
 //         所有访问由 IrqSpinLock + 内部原子锁保护.
 unsafe impl Send for KernelHeap {}
 
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 const EARLY_BUFFER_SIZE: usize = PAGE_SIZE as usize;
 
@@ -395,7 +395,7 @@ impl KernelHeap {
     }
 
     /// 从内核堆分配内存
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn allocate(&self, size: usize) -> Option<*mut u8> {
         if size == 0 {
@@ -490,7 +490,7 @@ impl KernelHeap {
     }
 
     /// 重新分配内存块
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn reallocate(&self, ptr: *mut u8, size: usize) -> Option<*mut u8> {
         if size == 0 {
@@ -690,7 +690,7 @@ impl KernelHeap {
     }
 
     /// 将一个块拆分为两个
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn split_block(&self, header: HeaderRef, size: u64) {
         let original_size = header.size();
@@ -720,7 +720,7 @@ impl KernelHeap {
         self.coalesce_backward(header)
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn coalesce_forward(&self, header: HeaderRef) {
         let next_addr = header.adjacent_next(header.size() as usize);
@@ -736,7 +736,7 @@ impl KernelHeap {
         }
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn coalesce_backward(&self, header: HeaderRef) -> HeaderRef {
         let head = FreeListHeadRef::new(core::ptr::addr_of!(self.free_list_head));
@@ -804,7 +804,7 @@ impl KernelHeap {
     }
 
     /// 通过 VMM/PMM 申请更多页来扩展堆
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn expand_heap(&self, size: u64) -> Option<*mut u8> {
         let pages_needed = size.div_ceil(PAGE_SIZE);

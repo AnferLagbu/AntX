@@ -330,7 +330,7 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     false
 }
 
-// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 fn parse_madt_entries(madt_ptr: u64) {
     // SAFETY: `madt_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(MadtHeader)); 只读访问
@@ -438,7 +438,7 @@ pub fn get_ioapic_count() -> u32 {
 }
 
 /// GSI → IOAPIC 路由: 返回 (`ioapic_index`, `local_irq`)
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn gsi_to_ioapic(gsi: u32) -> Option<(usize, u8)> {
     let ioapics = IOAPICS.lock();
@@ -552,7 +552,7 @@ fn parse_fadt(fadt_ptr: u64) {
 ///
 /// 通过 FADT 的 `PM1a_CNT` 寄存器写入 `SLP_TYP` + `SLP_EN` 实现关机.
 /// QEMU 和大多数硬件支持此方式.
-// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn acpi_shutdown() -> ! {
     if !FADT_FOUND.load(Ordering::Acquire) {
@@ -602,7 +602,7 @@ pub fn acpi_shutdown() -> ! {
 }
 
 /// ACPI 重启
-// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn acpi_reboot() -> ! {
     if FADT_FOUND.load(Ordering::Acquire) {
@@ -745,7 +745,7 @@ pub struct DmarDrhdInfo {
 static DMAR_DRHD_LIST: IrqSpinLock<Vec<DmarDrhdInfo>> = IrqSpinLock::new(Vec::new());
 static DMAR_HOST_ADDR_WIDTH: IrqSpinLock<u8> = IrqSpinLock::new(0);
 
-// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 fn parse_dmar(dmar_ptr: u64) {
     // SAFETY: `dmar_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(DmarTable)); 只读访问

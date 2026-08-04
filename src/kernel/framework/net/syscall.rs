@@ -89,7 +89,7 @@ pub fn raw_copy_in(ptr: u64, len: u32) -> Result<alloc::vec::Vec<u8>, Errno> {
 ///
 /// # Errors
 /// 当 `ptr` 无效 (`ptr == 0` 或未通过用户缓冲区校验) 或写入失败时返回 `Errno::EFAULT`.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn raw_copy_out(ptr: u64, len: u32, data: &[u8]) -> Result<u32, Errno> {
     if len == 0 {
@@ -158,7 +158,7 @@ pub fn raw_read_sun_family(ptr: u64) -> Result<u16, Errno> {
 /// 当 `ptr` 无效、`addrlen` 不足 2 字节或拷贝失败时返回 `Errno::EFAULT`;
 /// 当 `sun_family` 不是 `AF_UNIX` (1) 时返回 `Errno::EAFNOSUPPORT`;
 /// 当路径以 NUL 开头 (空路径) 时返回 `Errno::EINVAL`.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn raw_read_sockaddr_un(ptr: u64, addrlen: u32) -> Result<crate::kernel::services::net::unix::SockAddrUn, Errno> {
     if ptr == 0 || addrlen < 2 {
@@ -196,7 +196,7 @@ pub fn raw_read_sockaddr_un(ptr: u64, addrlen: u32) -> Result<crate::kernel::ser
 ///
 /// # Errors
 /// 当 `ptr`/`addrlen_ptr` 无效或任一用户缓冲区校验失败时返回 `Errno::EFAULT`.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn raw_write_sockaddr_un(
     ptr: u64,
@@ -331,7 +331,7 @@ pub fn connect_syscall(fd: i32, addr_ptr: u64, _addrlen: u32) -> i64 {
 }
 
 /// sendto / send
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn sendto_syscall(
     fd: i32,
@@ -381,7 +381,7 @@ pub fn sendto_syscall(
 }
 
 /// recvfrom / recv
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn recvfrom_syscall(
     fd: i32,
@@ -410,7 +410,7 @@ pub fn recvfrom_syscall(
 }
 
 /// setsockopt
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn setsockopt_syscall(
     fd: i32,
@@ -430,7 +430,7 @@ pub fn setsockopt_syscall(
 }
 
 /// getsockopt
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn getsockopt_syscall(
     fd: i32,

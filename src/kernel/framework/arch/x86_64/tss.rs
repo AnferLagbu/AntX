@@ -218,7 +218,7 @@ impl TaskStateSegment {
 
     /// 检查是否启用了 I/O 位图
     #[inline]
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn has_iomap(&self) -> bool {
         self.iomap_base < TSS_SIZE as u16

@@ -80,7 +80,7 @@ fn ioapic_write_on(base: u64, reg: u32, value: u32) {
 ///
 /// 每次从 ACPI MADT 枚举到 IOAPIC 时调用此函数.
 /// 多次调用会依次注册多个控制器.
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn init(base_addr: u64) {
     let base = if base_addr == 0 {
@@ -137,7 +137,7 @@ pub fn set_irq_gsi(gsi: u32, vector: u8, apic_id: u8, masked: bool) {
 }
 
 /// 按 IOAPIC 索引 + 本地 IRQ 设置
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn set_irq_on(ioapic_idx: usize, local_irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
     let ioapics = IOAPICS.lock();
@@ -159,7 +159,7 @@ pub fn set_irq_on(ioapic_idx: usize, local_irq: u8, vector: u8, apic_id: u8, mas
 }
 
 /// 按 GSI 屏蔽 IRQ
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn mask_irq_gsi(gsi: u32) {
     if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
@@ -173,7 +173,7 @@ pub fn mask_irq_gsi(gsi: u32) {
 }
 
 /// 按 GSI 取消屏蔽 IRQ
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn unmask_irq_gsi(gsi: u32) {
     if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {
@@ -187,7 +187,7 @@ pub fn unmask_irq_gsi(gsi: u32) {
 }
 
 /// 按 GSI 设置触发模式 (电平/边沿)
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn set_irq_level_gsi(gsi: u32, level_triggered: bool) {
     if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(gsi) {

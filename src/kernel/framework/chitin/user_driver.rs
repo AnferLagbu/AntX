@@ -96,7 +96,7 @@ pub fn devtree_bind_user_device(
 /// 解除设备树节点与用户进程的绑定, 并卸载进程虚拟地址空间中映射的设备 MMIO 范围。
 /// # Errors
 /// PWM 缺少 `DEVICE_CAP_BIND` 权限、进程不存在、节点不存在、节点映射的 PID 不匹配或节点未处于可解绑状态时返回 Err。
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn devtree_unbind_user_device(
     node_id: NodeId,
@@ -163,7 +163,7 @@ pub fn devtree_unbind_user_device(
 /// 将设备节点的 MMIO 资源映射到用户进程地址空间, 返回映射基址。
 /// # Errors
 /// PWM 缺少 `DEVICE_CAP_MMIO` 权限、进程或节点不存在、节点映射的 PID 不匹配、节点状态非法、缺少 reg 属性、物理地址或大小非法或内存不足时返回 Err。
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn devtree_map_user_device(
     node_id: NodeId,
@@ -267,7 +267,7 @@ pub fn devtree_map_user_device(
 /// 解除设备节点的 MMIO 映射, 将指定虚拟地址范围从用户进程地址空间移除。
 /// # Errors
 /// PWM 缺少 `DEVICE_CAP_MMIO` 权限、进程不存在、节点不存在或节点映射的 PID 不匹配时返回 Err。
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn devtree_unmap_user_device(
     node_id: NodeId,

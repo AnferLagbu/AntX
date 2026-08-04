@@ -221,7 +221,7 @@ impl RecoveryDomain {
         c >= self.cpu_quota_max
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn push_barrier_snapshot(&self, tick: u64) {
         let r#gen = self.barrier_generation.load(Ordering::SeqCst);
@@ -249,7 +249,7 @@ impl RecoveryDomain {
         stack[idx].generation
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn add_addr_range(&self, start: u64, end: u64) -> bool {
         let count = self.addr_range_count.load(Ordering::SeqCst) as usize;

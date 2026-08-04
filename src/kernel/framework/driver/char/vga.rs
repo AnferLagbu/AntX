@@ -370,7 +370,7 @@ impl VgaDriver {
 
     /// 更新硬件光标位置
     #[cfg(target_arch = "x86_64")]
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     fn update_hardware_cursor(&mut self) {
         let pos = (self.cursor_y * SCREEN_WIDTH + self.cursor_x) as u16;
@@ -436,7 +436,7 @@ pub extern "C" fn vga_init() {
 /// 向 VGA 输出字符 (C 兼容接口)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vga_putchar(ch: i32) {
     VGA_DRIVER.with_mut(|opt| {

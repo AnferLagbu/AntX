@@ -287,7 +287,7 @@ static LOG_SINK_COUNT: AtomicU8 = AtomicU8::new(0);
 ///
 /// # Safety
 /// `sink` 必须是 `'static` (其内部任何状态都不可被释放).
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe fn klog_register_sink(sink: &'static dyn LogSink) -> Option<usize> {
     let idx = LOG_SINK_COUNT.load(Ordering::SeqCst) as usize;

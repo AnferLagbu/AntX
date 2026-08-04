@@ -123,7 +123,7 @@ impl DynIpcNamespace {
     /// 创建共享内存段并返回其 IPC ID。
     /// # Errors
     /// 大小为 0 或超过最大限制时返回 Err, 物理页分配失败时返回 Err。
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn shm_create(&self, owner_pid: u32, size: u64) -> Result<IpcId, i32> {
         if size == 0 || size > SHM_MAX_SIZE {
@@ -155,7 +155,7 @@ impl DynIpcNamespace {
     /// 销毁指定共享内存段并释放其物理页。
     /// # Errors
     /// 共享内存段 ID 不存在时返回 Err。
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn shm_destroy(&self, id: IpcId) -> Result<(), i32> {
         let mut segs = self.shm_segs.lock();

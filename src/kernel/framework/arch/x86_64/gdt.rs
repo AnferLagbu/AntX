@@ -246,7 +246,7 @@ impl GdtEntry {
     /// * `tss_addr` - TSS 结构体的 64 位地址
     /// * `tss_size` - TSS 结构体大小 (bytes)
     #[inline]
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub const fn tss_low(tss_addr: u64, tss_size: u16) -> Self {
         let base_low = tss_addr as u32;
@@ -446,7 +446,7 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 /// 3. 设置 TSS 描述符 (占用2个槽位)
 /// 4. 加载 GDTR (lgdt 指令)
 /// 5. 加载 TR (ltr 指令, 任务寄存器)
-// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn gdt_init() -> i32 {
     use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
@@ -560,7 +560,7 @@ pub fn gdt_init() -> i32 {
 ///
 /// Trampoline 已通过 lgdt [`SINFO_GDT_LIMIT`] 加载了 BSP 的 GDT 作为过渡，
 /// 本函数在 AP 进入长模式后调用，为目标 CPU 初始化独立的 GDT + TSS。
-// 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
 pub fn gdt_init_ap(cpu_index: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)

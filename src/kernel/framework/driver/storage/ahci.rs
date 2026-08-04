@@ -53,7 +53,7 @@ const CMD_HEADER_SIZE: usize = 32;
 const CMD_LIST_SIZE: usize = CMD_SLOTS * CMD_HEADER_SIZE;
 
 /// FIS接收缓冲区大小 (一页)
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 const FIS_BUFFER_SIZE: usize = PAGE_SIZE as usize;
 
@@ -375,7 +375,7 @@ impl AhciPort {
     /// 分配 DMA 内存并设置寄存器
     /// # Errors
     /// DMA 引擎未初始化或 DMA 内存分配失败时返回 Err。
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn setup_dma(&mut self) -> Result<()> {
         let dma_engine = get_dma();
@@ -540,7 +540,7 @@ impl AhciPort {
     ///
     /// # Safety
     /// `buffer` 必须是有效的 DMA-coherent 内存指针
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     unsafe fn submit_dma_command(
         &mut self,
@@ -643,7 +643,7 @@ impl AhciPort {
     /// 读取扇区 (DMA)
     /// # Errors
     /// 端口未初始化、设备不存在、参数非法、DMA 缓冲区分配失败或硬件错误时返回 Err。
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn read(&mut self, lba: u64, count: u16, buffer: *mut u8) -> Result<()> {
         if !self.port_initialized || !self.device_present {
@@ -681,7 +681,7 @@ impl AhciPort {
     /// 写入扇区 (DMA)
     /// # Errors
     /// 端口未初始化、设备不存在、参数非法、DMA 缓冲区分配失败或硬件错误时返回 Err。
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn write(&mut self, lba: u64, count: u16, buffer: *const u8) -> Result<()> {
         if !self.port_initialized || !self.device_present {
@@ -760,7 +760,7 @@ impl AhciController {
     /// 初始化控制器
     /// # Errors
     /// 获取 MMIO 失败、HBA 复位超时或端口初始化失败时返回 Err。
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn init_controller(&mut self) -> Result<()> {
         // 初始化 IoMem

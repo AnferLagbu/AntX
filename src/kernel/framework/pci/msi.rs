@@ -95,7 +95,7 @@ static MSI_VECTORS: AtomicU32 = AtomicU32::new(0);
 /// 分配一个 MSI 向量
 ///
 /// 返回分配的向量号, 或 None (向量耗尽).
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn msi_alloc_vector() -> Option<u8> {
     let mut bitmap = MSI_VECTORS.load(Ordering::Acquire);
@@ -180,7 +180,7 @@ pub struct MsiConfig {
 /// 4. 启用 MSI
 ///
 /// 返回 MSI 配置, 或 None (无 MSI 能力/向量耗尽).
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub fn msi_enable(dev: &pci::PciDevice) -> Option<MsiConfig> {
     let cap_offset = pci_find_capability(dev, PCI_CAP_ID_MSI)?;

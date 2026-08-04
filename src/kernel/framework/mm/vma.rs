@@ -369,7 +369,7 @@ impl MmStruct {
         }
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn unmap_vma_pages(&self, vma: &Vma) {
         // 锁序: 调用者持有 VMA_LOCK, 此处获取 VMM_LOCK
@@ -414,7 +414,7 @@ impl MmStruct {
     ///
     /// # Errors
     /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出, 或范围内没有任何已映射的 VMA 时返回 `ENOMEM`.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn mprotect(&self, start: usize, len: usize, new_flags: PageFlags) -> Result<(), crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
@@ -561,7 +561,7 @@ impl MmStruct {
     /// 当 `old_size` 为 0 或 `flags` 含未实现位 (如 `MREMAP_FIXED`) 时返回 `EINVAL`;
     /// 当旧地址未映射、范围不匹配或原地扩展失败时返回 `EFAULT`;
     /// 当无法找到足够的空闲区 (`find_free_range` 失败) 或插入新 VMA 失败时返回 `ENOMEM`.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn mremap(
         &self,
@@ -659,7 +659,7 @@ impl MmStruct {
     /// # Errors
     /// 当扩展堆时插入的新 VMA 与已有 VMA 重叠且不兼容时, 返回 `Err`
     /// (错误信息来自 `insert_vma`).
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn set_brk(&self, new_brk: usize) -> Result<usize, &'static str> {
         let page_aligned = (new_brk + PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1);
@@ -695,7 +695,7 @@ impl MmStruct {
     /// 当 `len` 为 0 或 `advice` 为未实现的建议值时返回 `EINVAL`;
     /// 当 `start + len` 溢出时返回 `ENOMEM`;
     /// 当 PAGEOUT/DONTNEED 目标区域被 `mlock` 锁定而无法回收时返回 `EAGAIN`.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn madvise_range(&self, start: usize, len: usize, advice: u32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
@@ -868,7 +868,7 @@ impl MmStruct {
     /// # Errors
     /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出、范围内没有任何重叠 VMA,
     /// 或累计锁定字节数超过 `RLIMIT_MEMLOCK` 上限时返回 `ENOMEM`.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn mlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
@@ -931,7 +931,7 @@ impl MmStruct {
     ///
     /// # Errors
     /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出时返回 `ENOMEM`.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn munlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
@@ -1048,7 +1048,7 @@ impl MmStruct {
     /// # Errors
     /// 当 `len` 为 0 时返回 `EINVAL`; 当 `out_vec` 容量不足以容纳全部页的驻留状态
     /// (`out_vec.len() < n_pages`) 时返回 `ENOMEM`.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn mincore_range(
         &self,
@@ -1127,7 +1127,7 @@ pub fn mm_struct_new() -> MmStruct {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vma_find(mm_ptr: *const MmStruct, addr: u64) -> u64 {
     if mm_ptr.is_null() {

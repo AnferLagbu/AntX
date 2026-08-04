@@ -131,7 +131,7 @@ impl InterruptFrame {
     }
 
     /// 获取错误码的各个位域
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn error_code_flags(&self) -> ErrorFlags {
         ErrorFlags::from_bits_truncate(self.err_code as u32)
@@ -270,7 +270,7 @@ pub struct IdtPtr {
 
 impl IdtPtr {
     /// 创建新的 IDT 指针
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(base: u64) -> Self {
         Self {

@@ -310,7 +310,7 @@ pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
 
 // ── BAR parsing ──
 
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
     let mut bars = [PciBar::empty(); 6];
@@ -550,7 +550,7 @@ pub extern "C" fn pci_rust_init() -> i32 {
 
 /// C FFI: get device count
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn pci_get_device_count() -> i32 {
     device_count() as i32

@@ -62,7 +62,7 @@ pub struct EfiTime {
 }
 
 impl EfiTime {
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn to_unix_ns(&self) -> u64 {
         // 简化: 转换为秒数
@@ -337,7 +337,7 @@ impl UefiSubsystem {
     }
 
     /// 获取时间
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn get_time(&self) -> EfiTime {
         // 简化: 从内核时钟转换

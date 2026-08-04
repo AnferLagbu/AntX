@@ -69,7 +69,7 @@ unsafe impl Send for AtaBlockDevice {}
 unsafe impl Sync for AtaBlockDevice {}
 
 impl BlockDevice for AtaBlockDevice {
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 || sector > u64::from(u32::MAX) {
@@ -83,7 +83,7 @@ impl BlockDevice for AtaBlockDevice {
         unsafe { ata_read_sector(self.drive, sector as u32, buf.as_mut_ptr()) }
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32 {
         if buf.len() < 512 || sector > u64::from(u32::MAX) {

@@ -309,7 +309,7 @@ impl DetailedStatistics {
     }
 
     /// 获取最近 N 条历史记录
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn get_recent_events(&self, count: usize) -> Vec<InterruptEvent> {
         let history = self.history.lock();

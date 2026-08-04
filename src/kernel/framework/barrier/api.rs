@@ -212,7 +212,7 @@ pub extern "C" fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_v
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn recovery_undo_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -243,7 +243,7 @@ pub extern "C" fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn recovery_domain_dep_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
@@ -271,7 +271,7 @@ pub extern "C" fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn recovery_rollback_log_count() -> i32 {
     let log = super::manager::ROLLBACK_LOG.lock();

@@ -356,7 +356,7 @@ fn parse_hex(s: &[u8], out: &mut u64) -> bool {
     true
 }
 
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 fn handle_mem_read(arg: &[u8], out: &mut [u8]) -> Option<usize> {
     let mut comma = 0;
@@ -388,7 +388,7 @@ fn handle_mem_read(arg: &[u8], out: &mut [u8]) -> Option<usize> {
     Some(idx)
 }
 
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 fn handle_mem_write(arg: &[u8]) -> bool {
     let mut colon = 0;

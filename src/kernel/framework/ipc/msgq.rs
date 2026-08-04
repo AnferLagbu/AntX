@@ -123,7 +123,7 @@ pub extern "C" fn ipc_msgq_create(perm: i32) -> IpcId {
 /// `data` 必须是有效可读指针, 至少 `size` 字节, 内存必须在调用期间保持有效。
 /// 由 `sys_msgsnd` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, size: u64) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();

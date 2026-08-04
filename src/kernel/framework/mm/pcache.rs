@@ -30,7 +30,7 @@ use crate::kernel::framework::sync::IrqSpinLock;
 /// 将物理页内容清零
 ///
 /// 用于新分配的物理页初始化, 防止信息泄漏.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 fn zero_phys_page(phys: PhysAddr) {
     let virt = phys.to_virt();
@@ -44,7 +44,7 @@ fn zero_phys_page(phys: PhysAddr) {
 /// 将数据复制到物理页
 ///
 /// 复制长度取 `min(src.len(), PAGE_SIZE)`, 不足部分保持原值 (通常为零).
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 fn copy_to_phys_page(phys: u64, src: &[u8]) {
     let dst_virt = crate::kernel::framework::mm::phys_to_virt(phys);
@@ -59,7 +59,7 @@ fn copy_to_phys_page(phys: u64, src: &[u8]) {
 /// 从物理页复制数据到目标缓冲区
 ///
 /// 复制长度取 `min(dst.len(), PAGE_SIZE)`.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 fn copy_from_phys_page(phys: u64, dst: &mut [u8]) {
     let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
@@ -263,7 +263,7 @@ static PAGE_CACHE: [IrqSpinLock<PageCacheBucket>; PCACHE_HASH_BUCKETS] = {
 };
 
 /// 计算哈希桶索引
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 fn pcache_hash(inode_id: u32, page_index: u64) -> usize {
     let h = u64::from(inode_id)
@@ -321,7 +321,7 @@ pub fn pcache_invalidate_inode(inode_id: u32) {
 ///
 /// - `dest_virt` 必须指向有效的、已映射的用户空间页
 /// - `phys` 必须是 Page Cache 中的有效物理页
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) { unsafe {
     let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);

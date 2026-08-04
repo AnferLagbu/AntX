@@ -69,7 +69,7 @@ impl Clone for CompositeBlockDevice {
 }
 
 impl CompositeBlockDevice {
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(device_type: CompositeType, child_drives: &[u8], stripe_size: u64) -> Option<Self> {
         if child_drives.is_empty() || child_drives.len() > MAX_COMPOSITE_CHILDREN {
@@ -126,7 +126,7 @@ impl CompositeBlockDevice {
     }
 
     #[inline]
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     fn map_raid0_sector(&self, logical: u64) -> Option<(u8, u64)> {
         let stripe = logical / self.stripe_sectors;
@@ -139,7 +139,7 @@ impl CompositeBlockDevice {
 }
 
 impl BlockDevice for CompositeBlockDevice {
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {
         let num_sectors = (buf.len() / 512) as u64;
@@ -191,7 +191,7 @@ impl BlockDevice for CompositeBlockDevice {
         }
     }
 
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32 {
         let num_sectors = (buf.len() / 512) as u64;
@@ -260,7 +260,7 @@ impl BlockDevice for CompositeBlockDevice {
     }
 }
 
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn devtree_probe_composites() -> usize {
     let composite_compatibles: &[&str] = &["qx,raid0", "qx,raid1"];
@@ -422,7 +422,7 @@ pub fn devtree_probe_composites() -> usize {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn composite_probe() -> u32 {
     devtree_probe_composites() as u32

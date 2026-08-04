@@ -307,7 +307,7 @@ impl VirtioMmioDevice {
     /// 当 `VIRTIO_F_VERSION_1` 未协商时使用 (传统/旧版设备).
     /// # Errors
     /// 队列配置失败时返回 Err。
-    // 有意窄化: 物理地址/寄存器宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn setup_vq_legacy(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
         self.write32(QUEUE_SEL, u32::from(vq_index));

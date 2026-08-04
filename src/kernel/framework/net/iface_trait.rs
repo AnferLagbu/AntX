@@ -976,7 +976,7 @@ impl Ipv6Addr {
 
     /// 从 8 个 16 位组构造 (每组大端序写入, 与 `std::net::Ipv6Addr` 对齐).
     #[inline(always)]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub const fn new(o0: u16, o1: u16, o2: u16, o3: u16, o4: u16, o5: u16, o6: u16, o7: u16) -> Self {
         Self([

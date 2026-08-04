@@ -268,7 +268,7 @@ pub unsafe fn kpti_exit_to_user() {
 /// 调用方保证: `KERNEL_PML4` 已初始化; PMM 可分配页面; KPTI 全局状态在 boot 阶段被独占写入。
 /// # Panics
 /// 分配 `USER_PML4` 页失败时 panic。
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe fn kpti_init(kernel_pml4: u64) {
     if KPTI_READY.load(Ordering::Acquire) {
@@ -489,7 +489,7 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
 ///
 /// 调用方保证: `user_pml4` 有效; `vma` 和 `phys` 对齐;
 /// boot 阶段单线程执行, 无并发修改页表.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 unsafe fn map_text_page(
     user_pml4: *mut u64,

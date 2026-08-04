@@ -499,7 +499,7 @@ impl VirtualMemoryManager {
     /// 正常情况下不会 panic; 唯一存在的 unwrap 是
     /// `u64::from_le_bytes(buf[2..10].try_into().unwrap())`, 由于切片长度恒为 8 字节,
     /// 该 unwrap 实际不会触发 panic.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn create_user_page_table(&self) -> Option<u64> {
         let pmm = get_pmm();
@@ -1181,7 +1181,7 @@ impl VirtualMemoryManager {
     }
 
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     unsafe fn get_or_create_table_entry(
         &self,
@@ -1257,7 +1257,7 @@ impl VirtualMemoryManager {
     /// 当 PDPT/PD 不存在或 PD 条目未映射时分别返回 `Err("PDPT not present")`,
     /// `Err("PD not present")`, `Err("PD entry not present")`;
     /// 当分配新的页表页失败时返回 `Err("Failed to allocate PT")`.
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn split_2mb_page(&self, virt: u64) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
@@ -1418,7 +1418,7 @@ impl VirtualMemoryManager {
         self.flush_tlb(virt);
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 {
@@ -1652,7 +1652,7 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn flush_tlb(&self, addr: u64) {
         crate::arch!(tlb_flush_page(addr as usize));

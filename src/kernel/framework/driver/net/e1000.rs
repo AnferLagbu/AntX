@@ -397,7 +397,7 @@ fn read_mac_address(io: &E1000Io) -> [u8; 6] {
 // ============================================================================
 
 #[cfg(not(feature = "kernel_test"))]
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
     let tx_ring = TxRing::alloc(E1000_TX_RING_SIZE).ok_or_else(|| {
@@ -749,7 +749,7 @@ pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32
 }
 
 #[cfg(not(feature = "kernel_test"))]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() {
@@ -960,7 +960,7 @@ static KALLOC_OFF: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicU
 /// # Safety
 ///
 /// `reg` 是 BAR0 区域内的有效 MMIO 寄存器偏移。设备已探测且 MMIO 区域已映射。
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let s = size as usize;

@@ -100,7 +100,7 @@ pub(crate) fn endpoint_from_smol(
 ///
 /// # Safety
 /// `addr` 非空时必须指向至少 28 字节可写内存 (V6 路径); `addrlen` 非空时必须指向有效 u32.
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub(crate) unsafe fn write_sockaddr(
     addr: *mut u8,
@@ -429,7 +429,7 @@ pub unsafe extern "C" fn sm_connect(fd: i32, addr: *const u8, _addrlen: u32) -> 
 /// `buf` 必须指向至少 `len` 字节的有效可读内存, 内存必须在调用期间保持有效。
 /// `NET_LOCK` 持有; 由 `sys_send` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -471,7 +471,7 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
 /// `buf` 必须指向至少 `len` 字节的有效可写内存, 内存必须在调用期间保持有效。
 /// `NET_LOCK` 持有; 由 `sys_recv` 分发。
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -> i32 { unsafe {
     let _guard = NET_STATE.lock();
@@ -521,7 +521,7 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
 /// `buf`/`addr` 必须是有效指针, 内存至少含 `len`/`_addrlen` 字节。
 /// `NET_LOCK` 持有; 由 `sys_sendto` 分发。
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_sendto(
     fd: i32,
@@ -578,7 +578,7 @@ pub unsafe extern "C" fn sm_sendto(
 /// `buf` 必须是有效可写指针, 至少 `len` 字节; `addr`/`addrlen` 可选地写入对端地址。
 /// `NET_LOCK` 持有; 由 `sys_recvfrom` 分发。
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_recvfrom(
     fd: i32,
@@ -644,7 +644,7 @@ pub unsafe extern "C" fn sm_recvfrom(
 /// 调用方 (services) 须先校验可读范围.
 /// `NET_LOCK` 持有; 由 `sys_sendmsg` 分发.
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
@@ -708,7 +708,7 @@ pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32
 /// `msg` 必须是有效可写用户指针, services 校验.
 /// `NET_LOCK` 持有; 由 `sys_recvmsg` 分发.
 #[unsafe(no_mangle)]
-// 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+// 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {

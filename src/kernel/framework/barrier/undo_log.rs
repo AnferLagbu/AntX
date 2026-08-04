@@ -150,7 +150,7 @@ impl UndoLog {
         self.compact_keeping(4);
     }
 
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn compact_keeping(&mut self, keep_generations: usize) {
         if self.count == 0 {

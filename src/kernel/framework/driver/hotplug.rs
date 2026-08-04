@@ -166,7 +166,7 @@ impl HotplugManager {
     /// 返回热插拔状态摘要 (供 syscall / 调试使用)。
     ///
     /// 返回 (`slot_count`, `slot_summary`, `blk_device_count`, `blk_device_states`) 的扁平化视图。
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn status(&self) -> HotplugStatus {
         let init = self.initialized.lock();

@@ -37,7 +37,7 @@ impl Driver for PciBusDriver {
 /// 返回发现的设备数量。
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn pci_init() -> i32 {
     let count = crate::kernel::framework::pci::init() as i32;

@@ -163,7 +163,7 @@ fn parse_next_entry(data: &[u8], offset: usize) -> Option<(CpioEntry<'_>, usize)
 /// `data` 必须指向有效的、至少 `len` 字节的可读内存区域.
 /// # Errors
 /// 数据指针为空、长度为 0 或 cpio 归档格式非法时返回 Err。
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str> { unsafe {
     if data.is_null() || len == 0 {

@@ -34,7 +34,7 @@ use crate::kernel::framework::fd_notify;
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)
 const PCACHE_FAST_MAX_BYTES: usize = 64 * 1024;
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径下限 (1 页 = 4KB)
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 const PCACHE_FAST_MIN_BYTES: usize = PAGE_SIZE as usize;
 
@@ -175,7 +175,7 @@ pub extern "C" fn vfs_unmount_internal(path: *const u8) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -323,7 +323,7 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
@@ -417,7 +417,7 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
 // 注意: 保持 Rust ABI — 参数含 `Option<usize>` / `&mut [u8]` 等非 FFI-safe 类型
 #[unsafe(no_mangle)]
 #[expect(clippy::no_mangle_with_rust_abi)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
@@ -530,7 +530,7 @@ pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
@@ -720,7 +720,7 @@ pub extern "C" fn vfs_set_cwd_internal(path: *const u8) {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
@@ -857,7 +857,7 @@ pub fn vfs_utimensat_safe(path: &str, atime: u64, mtime: u64, pwm: u64) -> i32 {
 }
 
 /// Safe 包装: `vfs_read` (接受可变切片)
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn vfs_read_safe(fd: u32, buf: &mut [u8]) -> i32 {
     // SAFETY: buf 是调用方拥有的有效可写缓冲区
@@ -865,7 +865,7 @@ pub fn vfs_read_safe(fd: u32, buf: &mut [u8]) -> i32 {
 }
 
 /// Safe 包装: `vfs_write` (接受不可变切片)
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub fn vfs_write_safe(fd: u32, buf: &[u8]) -> i32 {
     // SAFETY: buf 是调用方拥有的有效只读缓冲区
@@ -1148,7 +1148,7 @@ pub extern "C" fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) 
 /// E6-5: 通过 trait object 分发
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 尺寸/地址转换, 调用方保证值域
+// 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
     let _ = pwm;
@@ -1274,7 +1274,7 @@ pub extern "C" fn vfs_set_cwd(path: *const u8) {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let whence = match VfsSeekWhence::from_u32(whence) {
@@ -1416,7 +1416,7 @@ pub fn vfs_get_fd_handle(fd_idx: usize) -> Option<u32> {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_dup(oldfd: u32) -> i32 {
     let old_usize = oldfd as usize;
@@ -1448,7 +1448,7 @@ pub extern "C" fn vfs_dup(oldfd: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
     let old_usize = oldfd as usize;
@@ -1523,7 +1523,7 @@ pub extern "C" fn vfs_setxattr_internal(path: *const u8, name: *const u8, value:
 /// 获取扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
@@ -1555,7 +1555,7 @@ pub extern "C" fn vfs_getxattr_internal(path: *const u8, name: *const u8, value:
 /// 列出扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);

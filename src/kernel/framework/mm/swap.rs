@@ -138,7 +138,7 @@ impl SwapArea {
     }
 
     /// 初始化 swap 区: 分配预留内存
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn init(&mut self) -> bool {
         if self.initialized {
@@ -191,7 +191,7 @@ impl SwapArea {
     }
 
     /// 释放 slot
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn free_slot(&mut self, slot: u64) {
         let idx = slot as usize;
@@ -211,7 +211,7 @@ impl SwapArea {
     /// # Safety
     ///
     /// - `src_virt` 必须指向有效的 4KB 数据源
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn write_slot(&self, slot: u64, src_virt: u64) {
         if !self.initialized {
@@ -233,7 +233,7 @@ impl SwapArea {
     /// # Safety
     ///
     /// - `dst_virt` 必须指向有效的 4KB 目标页
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn read_slot(&self, slot: u64, dst_virt: u64) {
         if !self.initialized {

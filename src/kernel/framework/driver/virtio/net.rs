@@ -90,7 +90,7 @@ impl VirtioNet {
     /// 创建并初始化 virtio-net 驱动实例.
     ///
     /// 调用者必须保证 `device` 的 `device_id` == `VIRTIO_ID_NET`.
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_NET {
@@ -265,7 +265,7 @@ impl VirtioNet {
     }
 
     /// 用空缓冲区填充 RX virtqueue, 供设备写入.
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     fn refill_rx(&mut self) {
         for i in 0..VQ_SIZE as usize {
@@ -350,7 +350,7 @@ impl VirtioNet {
 
     /// 轮询 RX 队列处理收到的包.
     /// 返回已处理的包数.
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn poll_rx(&mut self) -> usize {
         let mut processed = 0;
@@ -400,7 +400,7 @@ impl VirtioNet {
 
     /// 尝试接收一个包到提供的缓冲区.
     /// 成功返回 Some(len), 无包则返回 None.
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn try_receive(&mut self, buffer: &mut [u8]) -> Option<usize> {
         let result = self.rx_vq.pop_used()?;
@@ -518,7 +518,7 @@ pub fn probe() -> i32 {
 // NetOps 桥接 — 供 ChitinNetDevice 使用
 // ============================================================================
 
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() || len == 0 { return KernelError::InvalidArgument.as_i32(); }
@@ -546,7 +546,7 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     }
 }
 
-// 有意窄化: fd/错误码/字节数 i32 约定, 调用方保证值域
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return KernelError::InvalidArgument.as_i32(); }

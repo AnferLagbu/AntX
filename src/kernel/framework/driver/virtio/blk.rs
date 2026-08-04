@@ -155,7 +155,7 @@ impl VirtioBlk {
     ///
     /// # Safety
     /// `device` 必须具有 `device_id` == `VIRTIO_ID_BLOCK`.
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_BLOCK {
@@ -288,7 +288,7 @@ impl VirtioBlk {
     ///   desc[0] = `BlkRequest` 头 (设备读)
     ///   desc[1] = 数据缓冲区 (IN 时设备写, OUT 时设备读)
     ///   desc[2] = 状态字节 (设备写)
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     fn do_io(&mut self, lba: u64, req_type: u32, buf: &[u8]) -> Result<(), ()> {
         // ── 在 DMA 缓冲区构造请求 ──

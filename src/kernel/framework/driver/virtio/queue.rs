@@ -89,7 +89,7 @@ impl VirtQueue {
     /// 当 `legacy` 为 true 时, used ring 对齐到 4096 字节边界
     /// (QEMU 旧版 `VirtIO` 传输所要求 — `VIRTIO_PCI_VRING_ALIGN`).
     /// 此时需要 2 个页而不是 1 个.
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(legacy: bool) -> Option<Self> {
         let desc_size = VQ_SIZE as usize * core::mem::size_of::<VqDesc>();
@@ -215,7 +215,7 @@ impl VirtQueue {
     }
 
     /// 检查是否有已用描述符可用, 有则返回.
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn pop_used(&mut self) -> Option<(u16, u32)> {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -283,7 +283,7 @@ impl DmaBuffer {
     ///
     /// 返回 `Some(DmaBuffer)` 表示分配成功, `None` 表示内存不足.
     /// 缓冲区内容初始化为零.
-    // 有意窄化: 尺寸/地址转换, 调用方保证值域
+    // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn new(size: usize) -> Option<Self> {
         let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
@@ -355,7 +355,7 @@ impl DmaBuffer {
     }
 
     /// 向缓冲区 `offset` 处写入一个 u32 (小端).
-    // 有意窄化: 内核寄存器/硬件字段宽度, 调用方保证值域
+    // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
     pub fn write_u32(&mut self, offset: usize, val: u32) {
         self.write_byte(offset, val as u8);
@@ -372,7 +372,7 @@ impl DmaBuffer {
     }
 
     /// 向缓冲区 `offset` 处写入一个 u64 (小端).
-    // 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+    // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     pub fn write_u64(&mut self, offset: usize, val: u64) {
         self.write_u32(offset, val as u32);

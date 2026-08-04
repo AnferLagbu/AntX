@@ -430,7 +430,7 @@ pub fn kexec_is_initialized() -> bool {
 ///   7 = `is_initialized()` → 是否已初始化
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-// 有意窄化: 长度/计数值域受调用方约束, 有意窄化
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !kexec_is_initialized() && cmd != 7 {

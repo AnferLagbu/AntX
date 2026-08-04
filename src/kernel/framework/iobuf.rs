@@ -55,7 +55,7 @@ impl IobRegion {
         Self::alloc_pages(pages)
     }
 
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn alloc_pages(pages: u64) -> Option<Self> {
         if pages == 0 || pages > 1024 {
@@ -95,7 +95,7 @@ impl IobRegion {
 }
 
 impl Drop for IobRegion {
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     fn drop(&mut self) {
         if !self.vaddr.is_null() {

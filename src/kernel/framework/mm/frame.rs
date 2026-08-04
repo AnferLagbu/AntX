@@ -115,7 +115,7 @@ impl UFrame {
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn read_pod<T: Pod>(&self, offset: usize) -> Result<T, ()> {
         let size = core::mem::size_of::<T>();
@@ -143,7 +143,7 @@ impl UFrame {
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn write_pod<T: Pod>(&self, offset: usize, val: &T) -> Result<(), ()> {
         let size = core::mem::size_of::<T>();
@@ -166,7 +166,7 @@ impl UFrame {
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<usize, ()> {
         if offset.saturating_add(buf.len()) > PAGE_SIZE as usize {
@@ -182,7 +182,7 @@ impl UFrame {
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
-    // 有意窄化: 显式收窄转换, 调用方/上下文保证值域安全
+    // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     pub fn write_bytes(&self, offset: usize, data: &[u8]) -> Result<usize, ()> {
         if offset.saturating_add(data.len()) > PAGE_SIZE as usize {
