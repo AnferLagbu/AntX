@@ -482,6 +482,7 @@ pub unsafe extern "C" fn virtio_net_probe() -> i32 {
     probe()
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// 探测 virtio-net 设备并创建全局实例.
 ///
 /// 成功返回 0, 失败返回 -1.
@@ -522,6 +523,7 @@ pub fn probe() -> i32 {
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() || len == 0 { return KernelError::InvalidArgument.as_i32(); }
     // SAFETY: driver_data 由 Chitin 注册时设置, data 由 Chitin NetOps 契约保证有效。
@@ -550,6 +552,7 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() { return KernelError::InvalidArgument.as_i32(); }
     // SAFETY: driver_data 由 Chitin 注册时设置, buf 由 Chitin NetOps 契约保证有效。

@@ -43,6 +43,7 @@ pub const EM_AARCH64: u16 = 0xB7;
 /// `ET_DYN`: 共享对象 / PIE
 pub const ET_DYN: u16 = 3;
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// 验证 ELF 文件头 + program header table 边界
 ///
 /// ## 校验项

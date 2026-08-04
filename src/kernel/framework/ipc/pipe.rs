@@ -23,6 +23,7 @@ pub fn is_pipe_fd(fd: i32) -> bool {
 /// `pipefd` 必须是可写指针, 含至少 2 个 `i32` 空间 (用于返回 [`read_fd`, `write_fd`])。
 /// 由 `sys_pipe` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
     if pipefd.is_null() {
         return -1;

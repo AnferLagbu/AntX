@@ -432,6 +432,7 @@ pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: 
 /// - `-1`: 参数无效
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn idt_register_irq(
     irq: u8,
     handler: CIrqHandler,

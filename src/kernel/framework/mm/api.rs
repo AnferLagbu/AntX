@@ -434,6 +434,7 @@ pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn k_malloc(size: usize) -> *mut u8 {
     match get_kmalloc().allocate(size) {
         Some(ptr) => ptr as *mut u8,
@@ -445,6 +446,7 @@ pub extern "C" fn k_malloc(size: usize) -> *mut u8 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn k_free(ptr: *mut u8) {
     if !ptr.is_null() {
         get_kmalloc().deallocate(ptr as *mut u8);
@@ -455,6 +457,7 @@ pub extern "C" fn k_free(ptr: *mut u8) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn k_realloc(ptr: *mut u8, size: usize) -> *mut u8 {
     match get_kmalloc().reallocate(ptr as *mut u8, size) {
         Some(new_ptr) => new_ptr as *mut u8,
@@ -528,6 +531,7 @@ pub extern "C" fn krealloc(ptr: *mut u8, size: u64) -> *mut u8 {
 /// 注: 此为简化版本, 暂不填充结构
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn kmalloc_stats(stats: *mut u8) {
     if stats.is_null() {
         return;

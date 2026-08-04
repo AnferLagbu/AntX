@@ -461,6 +461,7 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 /// - 区域不能重叠（否则应使用 memmove）
 /// - dest 有足够空间
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn memcpy(
     dest: *mut u8,
     src: *const u8,
@@ -494,6 +495,7 @@ pub unsafe extern "C" fn memcpy(
 /// 目标地址
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -618,6 +620,7 @@ pub unsafe extern "C" fn memset(
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -659,6 +662,7 @@ pub unsafe extern "C" fn memset_optimized(
 /// * \>0 - s1 > s2
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -705,6 +709,7 @@ pub unsafe extern "C" fn memcmp(
 /// 找到的字符指针，或 NULL 如果未找到
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -744,6 +749,7 @@ pub unsafe extern "C" fn memchr(
 /// * `len` - 清零的字节数
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///

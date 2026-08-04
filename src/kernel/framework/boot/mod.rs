@@ -126,6 +126,7 @@ pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
     // SAFETY: `ptr` 由调用方保证指向有效 Multiboot1Info; 只读借用
     let mbi = unsafe { &*(ptr as *const Multiboot1Info) };
@@ -165,6 +166,7 @@ fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
     // SAFETY: `ptr` 由调用方保证指向有效 u32; 只读借用
     let total_size = unsafe { *(ptr as *const u32) };

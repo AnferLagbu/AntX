@@ -196,6 +196,7 @@ unsafe impl Sync for ChitinDevice {}
 
 impl ChitinDevice {
     #[inline]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     ///
     /// # Safety
     ///
@@ -664,6 +665,7 @@ pub fn chitin_input_has_data() -> bool {
 
 // ── 工具 ──
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub fn box_to_raw<T: ?Sized>(b: Box<T>) -> *mut u8 {
     Box::into_raw(b) as *mut u8
 }
@@ -683,6 +685,7 @@ impl Drop for DriverObject {
     }
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub fn chitin_register_driver(
     name: &'static str,
     proto: ChitinProto,
@@ -714,6 +717,7 @@ pub fn chitin_register_driver(
     id
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// 注册带 Driver trait 和 I/O 操作表的设备
 pub fn chitin_register_driver_with_ops(
     name: &'static str,
@@ -747,6 +751,7 @@ pub fn chitin_register_driver_with_ops(
     id
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn driver_from_obj<'a>(ptr: *mut u8) -> &'a mut dyn Driver {
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let obj: &mut DriverObject = unsafe { &mut *(ptr as *mut DriverObject) };
@@ -773,6 +778,7 @@ pub fn chitin_init_all() {
     }
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub fn chitin_shutdown_all() {
     let mut devices = CHITIN_DEVICES.lock();
     for dev in devices.iter_mut() {

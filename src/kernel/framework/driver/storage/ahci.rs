@@ -543,6 +543,7 @@ impl AhciPort {
     /// `buffer` 必须是有效的 DMA-coherent 内存指针
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     unsafe fn submit_dma_command(
         &mut self,
         fis: &H2dFis,
@@ -763,6 +764,7 @@ impl AhciController {
     /// 获取 MMIO 失败、HBA 复位超时或端口初始化失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn init_controller(&mut self) -> Result<()> {
         // 初始化 IoMem
         let iomem = IoMem::from_pci_bar(

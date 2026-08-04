@@ -765,6 +765,7 @@ impl NvmeController {
     /// DMA 缓冲区分配失败或识别命令执行失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn identify_namespace(&mut self, nsid: u32) -> Result<()> {
         let dma = get_dma();
         let (ident_virt, ident_phys) = dma.alloc_coherent(PAGE_SIZE as usize).ok_or(DriverError::Busy)?;

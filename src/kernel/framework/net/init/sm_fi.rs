@@ -103,6 +103,7 @@ pub(crate) fn endpoint_from_smol(
 /// `addr` 非空时必须指向至少 28 字节可写内存 (V6 路径); `addrlen` 非空时必须指向有效 u32.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub(crate) unsafe fn write_sockaddr(
     addr: *mut u8,
     addrlen: *mut u32,
@@ -158,6 +159,7 @@ struct SockaddrIn6 {
     sin6_scope_id: u32,
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// 从 sockaddr C 结构体解析端点 (W4.4 trait 翻译版本, 双栈).
 ///
 /// 按 `sin_family` 分支: 2 (`AF_INET`) → `SockaddrIn` → V4 端点;
@@ -647,6 +649,7 @@ pub unsafe extern "C" fn sm_recvfrom(
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
@@ -711,6 +714,7 @@ pub unsafe extern "C" fn sm_sendmsg(fd: i32, msg: *const u8, _flags: i32) -> i32
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_recvmsg(fd: i32, msg: *mut u8, _flags: i32) -> i32 { unsafe {
     if msg.is_null() {
         return -E_FAULT;
@@ -837,6 +841,7 @@ pub unsafe extern "C" fn sm_close(fd: i32) -> i32 { unsafe {
 /// `_optval` 必须是有效指针, 含 `_optlen` 字节 (此处忽略)。
 #[unsafe(no_mangle)]
 #[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn sm_setsockopt(
     _fd: i32,
     _level: i32,

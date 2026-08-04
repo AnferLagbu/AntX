@@ -291,6 +291,7 @@ impl VirtioBlk {
     ///   desc[2] = 状态字节 (设备写)
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     fn do_io(&mut self, lba: u64, req_type: u32, buf: &[u8]) -> Result<(), ()> {
         // ── 在 DMA 缓冲区构造请求 ──
         let req_size = core::mem::size_of::<BlkRequest>();

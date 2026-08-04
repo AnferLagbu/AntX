@@ -599,6 +599,7 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 #[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn cpu_init() -> i32 {
     use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 

@@ -439,6 +439,7 @@ pub(crate) mod raw {
         unsafe { elf_data.add(off) }
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 分配内存并清零 (类似 calloc)。
     pub fn alloc_zeroed(size: u64) -> *mut u8 {
         // SAFETY: kmalloc 由 kernel allocator 提供, 调用方负责释放。
@@ -450,6 +451,7 @@ pub(crate) mod raw {
         ptr
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 分配并构造一个 `UserProcess` 内存, 清零后返回。
     ///
     /// # Arguments
@@ -474,6 +476,7 @@ pub(crate) mod raw {
         }
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 分配并清零一个 `Process` (用于 process table)。
     pub fn alloc_kernel_process() -> Option<*mut Process> {
         let size = core::mem::size_of::<Process>() as u64;
@@ -485,6 +488,7 @@ pub(crate) mod raw {
         }
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 释放 `alloc_kernel_process` 分配的 `Process` 内存 (回滚路径专用).
     ///
     /// # Safety (内部)
@@ -503,6 +507,7 @@ pub(crate) mod raw {
         }
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 释放 `alloc_user_process` 分配的 `UserProcess` 镜像内存 (回滚路径专用).
     ///
     /// # Safety (内部)
@@ -534,6 +539,7 @@ pub(crate) mod raw {
     /// # Safety (内部)
     /// - `kproc_ptr` 必须为 `alloc_kernel_process` 返回的合法指针, 已被清零。
     #[allow(clippy::too_many_arguments)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn init_kernel_process_fields(
         kproc_ptr: *mut Process,
         pid: u32,
@@ -1512,6 +1518,7 @@ impl UserProcManager {
     }
 
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwm: u64) -> i32 {
         crate::klog_boot_info!("[ELF] load_elf_from_memory: entry");
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
@@ -1675,6 +1682,7 @@ impl UserProcManager {
         }
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn create_from_binary(&self, code: *const u8, code_size: u64, pwm: u64) -> i32 {
         let info = UserProcInfo {
             entry: USER_CODE_BASE,

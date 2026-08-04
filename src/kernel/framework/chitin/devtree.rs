@@ -367,6 +367,7 @@ pub extern "C" fn devtree_init() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn devtree_create_node(
     name: *const u8,
     proto: u32,

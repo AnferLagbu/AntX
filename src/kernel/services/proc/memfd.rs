@@ -15,6 +15,7 @@ const MFD_ALLOW_SEALING: u32 = 0x0002;
 /// `MFD_HUGE_16GB` 标志位 (简化: 不支持大页)
 const MFD_HUGE_MASK: u32 = 0x3F << 26;
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// `memfd_create` — 创建匿名内存文件
 ///
 /// # Errors

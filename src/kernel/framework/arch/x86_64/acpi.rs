@@ -94,6 +94,7 @@ pub fn find_rsdp(multiboot2_info_ptr: u64) -> Option<u64> {
     scan_bios_rom()
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
     let ptr = mb2_ptr as *const u8;
     // SAFETY: `ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(u32)); 只读访问
@@ -165,6 +166,7 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
     None
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn is_valid_rsdp(addr: u64) -> bool {
     let ptr = addr as *const u8;
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -192,6 +194,7 @@ fn is_valid_rsdp(addr: u64) -> bool {
 // SDT 解析
 // ============================================================================
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn get_rsdt(rsdp: u64) -> Option<&'static SdtHeader> {
     let ptr = rsdp as *const u8;
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -269,6 +272,7 @@ struct MadtIoApic {
 // MADT 解析 — 核心公共接口
 // ============================================================================
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
     let rsdp = if let Some(addr) = find_rsdp(multiboot2_info_ptr) { addr } else {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -803,6 +807,7 @@ pub fn get_dmar_host_addr_width() -> u8 {
 // 统一 SDT 遍历 — 发现所有表
 // ============================================================================
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// 解析所有 ACPI 表 (MADT + FADT + HPET + DMAR)
 ///
 /// 在内核启动时调用, 替代仅解析 MADT 的 `parse_madt`.

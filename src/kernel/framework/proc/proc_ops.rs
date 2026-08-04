@@ -52,6 +52,7 @@ pub mod raw {
         unsafe { &mut *ptr }
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 分配并构造一个 `Process` (用于 fork 创建子进程)。
     ///
     /// # Safety (内部)
@@ -464,6 +465,7 @@ pub extern "C" fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u6
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn proc_create_user(
     path: *const u8,
     argv: *const *const u8,
@@ -1015,6 +1017,7 @@ pub extern "C" fn proc_check_itimer_real(pid: u32) -> i32 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
     if out.is_null() || out_len < 32 {
         return -1;

@@ -441,6 +441,7 @@ impl SchedulerEx {
         priority as usize
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn init(&self) {
         // SAFETY: 分配 0 号 (idle) Thread, 立即写入有效值
         let idle = unsafe {

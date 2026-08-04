@@ -722,6 +722,7 @@ pub extern "C" fn vfs_set_cwd_internal(path: *const u8) {
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
         return -1;
@@ -1304,6 +1305,7 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn vfs_fd_table() -> *const u8 {
     VFS_MANAGER.fd_table.lock().as_ptr() as *const u8
 }

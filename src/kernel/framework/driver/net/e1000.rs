@@ -76,6 +76,7 @@ pub struct TxRing {
 impl TxRing {
     /// 分配并初始化 TX 描述符环
     #[cfg(not(feature = "kernel_test"))]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn alloc(count: usize) -> Option<Self> {
         let size = core::mem::size_of::<E1000TxDesc>() * count;
         // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器; size > 0, align = 16 (2^4)。
@@ -165,6 +166,7 @@ pub struct RxRing {
 impl RxRing {
     /// 分配并初始化 RX 描述符环及接收缓冲区
     #[cfg(not(feature = "kernel_test"))]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     pub fn alloc(count: usize, buf_size: usize) -> Option<Self> {
         let size = core::mem::size_of::<E1000RxDesc>() * count;
         // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器。
@@ -734,6 +736,7 @@ pub fn take_device() -> Option<Box<E1000Device>> {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() {
         return -1;
@@ -751,6 +754,7 @@ pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32
 #[cfg(not(feature = "kernel_test"))]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() {
         return -1;
@@ -777,6 +781,7 @@ pub extern "C" fn e1000_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
 }
 
 #[cfg(not(feature = "kernel_test"))]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn e1000_net_irq(driver_data: *mut u8) {
     if driver_data.is_null() {
         return;
@@ -855,6 +860,7 @@ pub extern "C" fn e1000_probe() -> i32 {
 #[cfg(not(feature = "kernel_test"))]
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub extern "C" fn get_e1000_instance() -> *mut u8 {
     match &mut *E1000_DEVICE.lock() {
         Some(dev) => dev as *mut _ as *mut u8,
@@ -963,6 +969,7 @@ static KALLOC_OFF: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicU
 /// `reg` 是 BAR0 区域内的有效 MMIO 寄存器偏移。设备已探测且 MMIO 区域已映射。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };

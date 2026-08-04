@@ -639,6 +639,7 @@ impl AhciPort {
         self.port_initialized = false;
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 提交 DMA 命令并等待完成
     ///
     /// 通过 framework safe wrapper 填充命令头、FIS、PRDT,

@@ -448,6 +448,7 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 /// 5. 加载 TR (ltr 指令, 任务寄存器)
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub fn gdt_init() -> i32 {
     use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
 

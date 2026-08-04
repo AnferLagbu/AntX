@@ -492,6 +492,7 @@ impl UsbCore {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 获取设备描述符
     fn get_device_descriptor(
         &self,

@@ -86,6 +86,7 @@ impl Device for ChitinNetDevice {
     type RxToken<'a> = ChitinRxToken<'a> where Self: 'a;
     type TxToken<'a> = ChitinTxToken<'a> where Self: 'a;
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     fn receive(
         &mut self,
         _timestamp: Instant,

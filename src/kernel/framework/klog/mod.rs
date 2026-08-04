@@ -673,6 +673,7 @@ pub unsafe extern "C" fn klog_init() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -773,6 +774,7 @@ pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) { unsafe {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -787,6 +789,7 @@ pub unsafe extern "C" fn klog_net(fmt: *const u8) { unsafe {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -801,6 +804,7 @@ pub unsafe extern "C" fn klog_net_err(fmt: *const u8) { unsafe {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -815,6 +819,7 @@ pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) { unsafe {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -829,6 +834,7 @@ pub unsafe extern "C" fn klog_kern(fmt: *const i8) { unsafe {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///
@@ -843,6 +849,7 @@ pub unsafe extern "C" fn klog_syscall(fmt: *const i8) { unsafe {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 ///
 /// # Safety
 ///

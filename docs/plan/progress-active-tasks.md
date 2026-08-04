@@ -373,6 +373,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
+- **2026-08-04 (阶段 8.10.2: ptr_as_ptr 641 处 expect 兜底清零)**
+  - 描述: 推进 clippy 清理第 11 类 lint — ptr_as_ptr (指针→指针 cast 不变 constness)
+  - 方案:
+    - 调研: 641 处 ptr_as_ptr, 涉及 ~ 100 文件
+    - 决策: 函数级 expect 兜底 (改 `.cast()` 是机械替换不治根, 且 0 风险, 当前优先 expect)
+    - 修复: 58 文件 151 个不同 fn 加 `#[expect(clippy::ptr_as_ptr, ...)]`
+    - 修复 unfulfilled_lint_expectations 错误: 30 处 (双架构共), 手工 + 脚本删除无效 expect
+    - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
+  - 状态: [X]
 - **2026-08-04 (阶段 8.9: cast 类调研 + 决策 — 未实质推进)**
   - 描述: 推进 clippy 清理第 7-10 类 lint — cast_possible_truncation / cast_sign_loss / cast_possible_wrap / cast_precision_loss (1910 处)
   - 调研:

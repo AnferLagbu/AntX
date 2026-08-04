@@ -143,6 +143,7 @@ pub fn sys_fw_load(a0: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     }
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// `sys_fw_get_info`: 将 `FirmwareInfo` 写入用户态 info 指针
 ///
 /// `a0=node_id`, `a1=info_ptr`

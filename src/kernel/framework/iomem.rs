@@ -247,6 +247,7 @@ impl IoMem {
         // SAFETY: 与 `read_u8` 对称, 写 1 字节不会越界; volatile 写保证设备立即可见。
         unsafe { self.virt.as_ptr().add(offset).write_volatile(val); }
     }
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 向 MMIO 区域写入一个 u16 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
@@ -257,6 +258,7 @@ impl IoMem {
         // SAFETY: `check_offset(offset, 2)` 已验证 2 字节写不越界; 2 字节对齐由 MMIO 基地址页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u16).write_volatile(val); }
     }
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 向 MMIO 区域写入一个 u32 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
@@ -267,6 +269,7 @@ impl IoMem {
         // SAFETY: `check_offset(offset, 4)` 已验证 4 字节写不越界; 4 字节自然对齐由页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *mut u32).write_volatile(val); }
     }
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 向 MMIO 区域写入一个 u64 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).

@@ -407,6 +407,7 @@ pub fn sys_timerfd_close(fd: i32) -> i64 {
 // HrTimer 回调
 // ============================================================================
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// timerfd 定时器回调
 ///
 /// 在中断上下文执行: 递增 `expiry_count`, 唤醒 epoll.

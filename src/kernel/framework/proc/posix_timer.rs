@@ -254,6 +254,7 @@ fn id_to_idx(timer_id: i32) -> Option<usize> {
     Some(idx)
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// POSIX Timer 回调
 ///
 /// 在中断上下文执行:

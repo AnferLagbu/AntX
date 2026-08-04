@@ -53,6 +53,7 @@ static TRY_GETC: AtomicPtr<TryGetcFn> = AtomicPtr::new(core::ptr::null_mut());
 static PUTC: AtomicPtr<PutcFn> = AtomicPtr::new(core::ptr::null_mut());
 
 #[inline]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn read_dispatch<T: KgdbSerial>(p: *const ()) -> Option<u8> {
     // SAFETY: SERIAL 由 kgdb_set_serial 注入, T 满足 trait 约束
     unsafe { (*(p as *const T)).try_getchar() }
@@ -318,6 +319,7 @@ fn format_registers(out: &mut [u8], r: &KgdbRegs) -> usize {
     orig_len - w.0.expect("W invariant: 1 slice at a time").len()
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 fn parse_registers(hex: &[u8], r: &mut KgdbRegs) -> bool {
     #[cfg(target_arch = "x86_64")]
     const N: usize = 18;

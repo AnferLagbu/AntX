@@ -91,6 +91,7 @@ impl HeapHeader {
         unsafe { (self as *const Self as *mut u8).add(core::mem::size_of::<Self>()) }
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 由数据指针取回头部
     ///
     /// # Safety
@@ -206,12 +207,14 @@ pub(crate) mod raw {
 
         /// 取得本头部的字节地址.
         #[inline(always)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
         pub fn byte_ptr(self) -> *mut u8 {
             self.0 as *mut u8
         }
 
         /// 通过字节偏移计算相邻的下一个头部.
         #[inline(always)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
         pub fn adjacent_next(&self, offset: usize) -> Self {
             // SAFETY: 调用方保证偏移仍在堆区范围内
             unsafe { Self::new_unchecked(self.byte_ptr().add(offset) as *mut HeapHeader) }
@@ -231,6 +234,7 @@ pub(crate) mod raw {
             Self { ptr }
         }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
         pub fn get(&self) -> *mut HeapHeader {
             // SAFETY: 持有堆锁; UnsafeCell 是 repr(transparent).
             // 用 read_volatile 强制 LTO 不可 cache/错位.
@@ -257,6 +261,7 @@ pub(crate) mod raw {
             Self { ptr }
         }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
         pub fn get(&self) -> VirtAddr {
             // SAFETY: 持有堆锁; UnsafeCell 是 repr(transparent).
             // 用 read_volatile 强制 LTO 不可 cache/错位.
@@ -855,6 +860,7 @@ impl KernelHeap {
         self.allocate_first_fit(size)
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 早期分配 (堆初始化前)
     fn early_allocate(&self, size: usize) -> Option<*mut u8> {
         let current = self.early_pos.fetch_add(size, Ordering::Relaxed);

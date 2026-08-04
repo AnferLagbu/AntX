@@ -636,6 +636,7 @@ pub extern "C" fn serial_has_data(com: i32) -> bool {
 /// 串口已通过 `serial_init()` 初始化。仅在内核上下文中有效。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { unsafe {
     let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
     for &b in bytes {

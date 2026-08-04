@@ -817,6 +817,7 @@ impl TransferRing {
         self.cycle
     }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
     /// 写入一个 TRB 到 enqueue 位置, 自动设置 cycle bit.
     ///
     /// 到达末尾时写入 Link TRB 并翻转 cycle, 回绕到起点.

@@ -209,6 +209,7 @@ fn set_failed() {
     G_INIT_STATE.store(InitState::Failed as u8, Ordering::Release);
 }
 
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 /// # Safety
 ///
 /// - 仅在内核启动网络子系统的临界区内调用一次
@@ -379,6 +380,7 @@ pub unsafe fn poll_network() { unsafe {
 /// - 在网络子系统初始化入口被调用, 期间无其他并发探测
 /// - 依赖的 chitin/driver 框架 (`Driver::init`) 自身保证设备独占
 #[cfg(not(feature = "kernel_test"))]
+#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 unsafe fn nic_probe_all() -> Option<ChitinNetDevice> { unsafe {
     // I-53 修复: 去除编译时架构互斥, 双架构二进制按运行时探测顺序
     // 尝试 e1000 (PCI 设备) 与 virtio-net (MMIO 设备). 两者驱动代码
