@@ -184,6 +184,7 @@ impl ZilBlockTrailer {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     pub fn is_valid(&self) -> bool {
         self.tail_magic == ZIL_TAIL_MAGIC
     }
@@ -194,6 +195,7 @@ impl ZilBlockTrailer {
     }
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 fn crc32_checksum(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFFFFFF;
     for &byte in data {

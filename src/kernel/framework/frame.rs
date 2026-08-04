@@ -52,6 +52,7 @@ impl Frame {
 
     /// 物理地址
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn phys(&self) -> PhysAddr {
         self.phys
     }
@@ -71,18 +72,21 @@ impl Frame {
 
     /// 当前引用计数
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn ref_count(&self) -> u32 {
         self.ref_count.load(Ordering::Acquire)
     }
 
     /// 增加引用计数 (如被页表映射、DMA 缓冲引用)
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn inc_ref(&self) {
         self.ref_count.fetch_add(1, Ordering::AcqRel);
     }
 
     /// 减少引用计数。返回 true 表示计数归零，可物理释放。
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn dec_ref(&self) -> bool {
         let prev = self.ref_count.fetch_sub(1, Ordering::AcqRel);
         debug_assert!(prev > 0, "Frame ref_count underflow");
@@ -91,6 +95,7 @@ impl Frame {
 
     /// 自定义元数据（services 可挂载任意 usize 值）
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn meta(&self) -> usize {
         self.meta
     }

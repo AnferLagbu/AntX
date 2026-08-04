@@ -230,6 +230,7 @@ impl TestRunner {
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 unsafe fn port_inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
@@ -332,6 +333,7 @@ macro_rules! register_tests_inner {
 
 pub use {assert_eq_test, check, skip_test};
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === QueenX Test Framework ===");
 

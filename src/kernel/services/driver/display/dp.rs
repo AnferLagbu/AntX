@@ -260,30 +260,35 @@ impl DpIo {
 
     /// 读取 8 位寄存器
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn read8(&self, reg: u32) -> u8 {
         self.mmio.read_u8(reg as usize)
     }
 
     /// 写入 8 位寄存器
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn write8(&self, reg: u32, val: u8) {
         self.mmio.write_u8(reg as usize, val);
     }
 
     /// 读取 16 位寄存器
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn read16(&self, reg: u32) -> u16 {
         self.mmio.read_u16(reg as usize)
     }
 
     /// 写入 16 位寄存器
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn write16(&self, reg: u32, val: u16) {
         self.mmio.write_u16(reg as usize, val);
     }
 
     /// 读取 32 位寄存器
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn read32(&self, reg: u32) -> u32 {
         self.mmio.read_u32(reg as usize)
     }
@@ -310,6 +315,7 @@ pub enum LinkRate {
 }
 
 impl LinkRate {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 返回链路速率对应的带宽 (10 Mbps 为单位, 即 162 = 1.62 Gbps)
     pub fn bandwidth_gbps(&self) -> u32 {
         match self {
@@ -883,6 +889,7 @@ impl DpController {
         Ok(())
     }
 
+#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
     /// 轮询 LANE 状态寄存器直到训练完成 (DISPLAY-2.6).
     ///
     /// 读取 `LANE0_1_STATUS` + `LANE2_3_STATUS` (4-lane 时), 等待所有活动 lane 报告
@@ -1057,6 +1064,7 @@ impl DpController {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 派生 DP 视频时序 (复用 `hdmi::lookup_dmt_timing` + 简化公式 fallback).
     ///
     /// 注: 此方法**不依赖** `hdmi::derive_video_timing` (它是 `pub`),
@@ -1105,6 +1113,7 @@ impl DpController {
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
 #[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 写入 DP 时序 + sync + output enable 寄存器 — 通过 `DpIo` 安全代理, 无 unsafe.
     fn write_dp_timing_registers(
         &self,

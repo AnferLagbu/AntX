@@ -12,6 +12,7 @@ pub const FAT_BAD: u32 = 0xFFFFFFF7;
 pub const FAT_END: u32 = 0x0FFFFFFF;
 
 #[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// 从 FAT 表读取簇链
 ///
 /// # Errors

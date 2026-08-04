@@ -59,6 +59,7 @@ const INVPCID_TYPE_ALL_INCL_GLOBAL: u64 = 2;
 ///
 /// 调用方保证 CPU 支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认).
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub unsafe fn invpcid(pcid: u64, addr: u64, typ: u64) {
     // INVPCID 描述符: 16 字节, [0:7] PCID, [8:15] 线性地址
     // 在栈上构造描述符, 通过内存操作数传递给 INVPCID.
@@ -81,6 +82,7 @@ pub unsafe fn invpcid(pcid: u64, addr: u64, typ: u64) {
 ///
 /// 调用方保证 CPU 支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认).
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub unsafe fn invpcid_flush_all() {
     // SAFETY: 调用方保证 CPU 支持 INVPCID; type 2 刷新所有 TLB 条目是安全操作.
     unsafe { invpcid(0, 0, INVPCID_TYPE_ALL_INCL_GLOBAL); }
@@ -97,6 +99,7 @@ pub unsafe fn invpcid_flush_all() {
 /// - 调用方保证 vaddr 属于当前地址空间或已通过 CR3 切换访问
 /// - CPU 必须支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认)
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub unsafe fn invpcid_flush_single(pcid: u16, vaddr: u64) {
     // SAFETY: INVPCID type 0 (by individual address + PCID).
     // 前提: pcid 有效 (0-4095), vaddr 页对齐.
@@ -107,6 +110,7 @@ pub unsafe fn invpcid_flush_single(pcid: u16, vaddr: u64) {
 
 /// CR3 值中嵌入 PCID: PML4 物理地址 | PCID.
 #[inline(always)]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 pub const fn cr3_with_pcid(pml4_phys: u64, pcid: u64) -> u64 {
     (pml4_phys & 0x000FFFFFFFFFF000) | (pcid & 0xFFF)
 }
@@ -161,12 +165,14 @@ static LAST_KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 /// 返回 KPTI 是否已就绪 (init 调用完成)。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn kpti_is_active() -> bool {
     KPTI_READY.load(Ordering::Acquire)
 }
 
 /// 返回 `USER_PML4` 物理地址 (供 COW fork 等路径构造子进程用户页表)。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn kpti_user_pml4() -> u64 {
     USER_PML4.load(Ordering::Acquire)
 }
@@ -270,6 +276,7 @@ pub unsafe fn kpti_exit_to_user() {
 /// 分配 `USER_PML4` 页失败时 panic。
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::verbose_bit_mask, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
 pub unsafe fn kpti_init(kernel_pml4: u64) {
     if KPTI_READY.load(Ordering::Acquire) {
         return;
@@ -416,6 +423,7 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
 
 // ── .text 区域映射 ──────────────────────────────────────────────
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// 在 `USER_PML4` 中映射整个 .text 区域 (PRESENT only, SMEP-safe).
 ///
 /// 映射 _`kernel_text_start` ~ _`kernel_text_end` 的所有页面到用户页表,
@@ -493,6 +501,7 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 unsafe fn map_text_page(
     user_pml4: *mut u64,
     vma: u64,
@@ -602,6 +611,7 @@ unsafe fn map_text_page(
 // ── KPTI 入口数据页映射 ──────────────────────────────────────────
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// KPTI 中断/系统调用入口代码在 CR3 切换前需要访问的数据页面。
 ///
 /// 当 CPU 在用户态触发中断/异常时, `isr_common/irq_common/syscall_entry`

@@ -182,6 +182,7 @@ fn cidr_contains(entry: &RouteEntry, dest: &IpAddr) -> bool {
     }
 }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
 /// IPv6 CIDR 匹配: 按 `prefix_len` (0-128) 逐字节掩码比较.
 fn ipv6_cidr_contains(net: &Ipv6Addr, dest: &Ipv6Addr, prefix_len: u8) -> bool {
     let n = prefix_len as usize;

@@ -173,6 +173,7 @@ pub struct UdsState {
 }
 
 impl UdsState {
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     pub const fn new() -> Self {
         Self {
             sockets: [const { UnixSocket::empty() }; MAX_UDS_FD],
@@ -473,6 +474,7 @@ pub fn uds_connect(fd: i32, path: &[u8]) -> Result<(), UdsError> {
     })
 }
 
+#[expect(clippy::many_single_char_names, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
 /// 通过流式 UDS 连接发送数据
 ///
 /// # Errors
@@ -523,6 +525,7 @@ pub fn uds_send(fd: i32, data: &[u8]) -> Result<usize, UdsError> {
     })
 }
 
+#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
 /// v2: 接收 stream 消息并提取凭据 (若对端发送时附加了 `SCM_CREDENTIALS`).
 /// 返回 (字节数, 凭据或 None). 调用方分别处理数据和凭据.
 ///

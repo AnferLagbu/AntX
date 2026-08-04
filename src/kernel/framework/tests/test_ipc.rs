@@ -6,6 +6,7 @@ use crate::kernel::services::ipc::{pipe, shm};
 use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
 fn create_test_namespace() -> IpcNamespace {
     IpcNamespace {
         pipes: [const { Pipe::new() }; IPC_MAX_PIPES],

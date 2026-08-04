@@ -64,6 +64,7 @@ pub struct EfiTime {
 impl EfiTime {
     // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn to_unix_ns(&self) -> u64 {
         // 简化: 转换为秒数
         let days_before_month: [u64; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
@@ -287,6 +288,7 @@ impl UefiSubsystem {
         });
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取 UEFI 变量
     pub fn get_variable(&self, name: &[u8], guid: &[u8; 16]) -> Option<(u32, Vec<u8>)> {
         let vars = self.variables.lock();
@@ -298,6 +300,7 @@ impl UefiSubsystem {
         None
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 设置 UEFI 变量
     pub fn set_variable(&self, name: &[u8], guid: &[u8; 16], attrs: u32, data: &[u8]) -> bool {
         if name.len() > EFI_MAX_VAR_NAME || data.len() > EFI_MAX_VAR_DATA {
@@ -323,6 +326,7 @@ impl UefiSubsystem {
         true
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 删除 UEFI 变量
     pub fn delete_variable(&self, name: &[u8], guid: &[u8; 16]) -> bool {
         let mut vars = self.variables.lock();
@@ -394,6 +398,7 @@ impl UefiSubsystem {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 设置时间 (软件模拟)
     pub fn set_time(&self, _time: &EfiTime) -> bool {
         // TODO(TRACK-5E6F89): 调用 EFI_RUNTIME_SERVICES.SetTime

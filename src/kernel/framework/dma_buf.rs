@@ -87,6 +87,7 @@ pub struct DmaStream {
 
 impl DmaStream {
 #[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 从 Frame 创建流式 DMA 映射。
     ///
     /// 验证 Frame 物理地址 + 大小满足:
@@ -140,24 +141,28 @@ impl DmaStream {
 
     /// CPU 可访问的虚拟地址
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn cpu_addr(&self) -> NonNull<u8> {
         self.cpu_addr
     }
 
     /// 设备可访问的物理地址
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn dma_addr(&self) -> PhysAddr {
         self.dma_addr
     }
 
     /// 缓冲区大小
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn size(&self) -> usize {
         self.size
     }
 
     /// 同步方向
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn direction(&self) -> DmaDirection {
         self.direction
     }

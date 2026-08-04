@@ -150,6 +150,7 @@ impl InterruptArch for Aarch64 {
         (daif & (1 << 7)) == 0
     }
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// GICv3 SGI 单播 (ICC_SGI1R_EL1)。
     fn send_ipi(target_cpu: u32, vector: u8) {
         let sgi: u64 = ((vector & 0xF) as u64) << 24 | (1u64 << (16 + (target_cpu & 0xF)));
@@ -160,6 +161,7 @@ impl InterruptArch for Aarch64 {
         }
     }
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// GICv3 SGI 广播 (IRM=1)。
     fn broadcast_ipi(vector: u8) {
         let sgi: u64 = (1u64 << 40) | ((vector & 0xF) as u64) << 24;

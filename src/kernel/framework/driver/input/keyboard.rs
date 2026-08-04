@@ -197,22 +197,26 @@ impl Default for ModifierState {
 impl ModifierState {
     /// 检查是否有 Shift 键按下
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn shift_pressed(&self) -> bool {
         self.left_shift || self.right_shift
     }
 
     /// 检查是否有 Ctrl 键按下
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn ctrl_pressed(&self) -> bool {
         self.left_ctrl || self.right_ctrl
     }
 
     /// 检查是否有 Alt 键按下
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn alt_pressed(&self) -> bool {
         self.left_alt || self.right_alt
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 计算 LED 状态字节
     pub fn to_led_byte(&self) -> u8 {
         let mut led: u8 = 0;
@@ -313,6 +317,7 @@ fn wait_input_buffer_empty(cmd_port: &IoPort) {
     }
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// 等待输出缓冲区满
 fn wait_output_buffer_full(cmd_port: &IoPort) -> bool {
     let mut timeout: u32 = 100000;
@@ -374,6 +379,7 @@ fn keyboard_read_data(cmd_port: &IoPort, data_port: &IoPort) -> Option<u8> {
     Some(data_port.read_u8(0))
 }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
 /// 更新键盘 LED 状态
 fn update_leds(cmd_port: &IoPort, data_port: &IoPort, modifiers: &ModifierState) {
     let _ = keyboard_send_data(cmd_port, data_port, KB_CMD_SET_LED);

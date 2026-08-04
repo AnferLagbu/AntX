@@ -129,6 +129,7 @@ pub fn socket(domain: Domain, sock_type: SockType, _protocol: i32) -> SocketResu
         .map_err(map_net_error)
 }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
 /// POSIX `bind(fd, addr, addrlen)`
 ///
 /// # Errors
@@ -163,6 +164,7 @@ pub fn accept(fd: i32) -> SocketResult<i32> {
     s.accept_fd(fd).map_err(map_net_error)
 }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
 /// POSIX `connect(fd, addr, addrlen)`
 ///
 /// # Errors
@@ -199,6 +201,7 @@ pub fn recv(fd: i32, out: &mut [u8]) -> SocketResult<usize> {
     s.recv_fd(fd, out).map_err(map_net_error)
 }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
 /// POSIX `sendto(fd, buf, len, flags, dest_addr, addrlen)`
 ///
 /// # Errors

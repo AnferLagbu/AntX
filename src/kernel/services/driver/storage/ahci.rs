@@ -205,6 +205,7 @@ pub enum AhciDeviceKind {
 }
 
 impl AhciDeviceKind {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 从 `PxSIG` 寄存器解析
     pub fn from_signature(sig: u32) -> Self {
         match sig {
@@ -239,6 +240,7 @@ impl SataStatus {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 设备是否已建立通信 (PxSSTS.DET == 3)
     pub fn is_connected(&self) -> bool {
         self.device_detection == 3

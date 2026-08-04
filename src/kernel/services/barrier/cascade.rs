@@ -150,6 +150,7 @@ impl CascadeQueue {
 pub struct CascadePolicy;
 
 impl CascadePolicy {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 给定故障域 + 拓扑, 决定级联方向
     pub fn direction(attribution: &FaultAttribution, topo: &DomainTopology, failed_id: u64) -> CascadeDirection {
         match attribution {

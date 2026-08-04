@@ -48,6 +48,7 @@ impl Pl011Driver {
         Self { initialized: false }
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 读取单个字节 (阻塞)
     ///
     /// 委托给底层 [uart::getc]。
@@ -56,6 +57,7 @@ impl Pl011Driver {
         unsafe { uart::getc() }
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 写入单个字节 (阻塞)
     ///
     /// 委托给底层 [uart::putc]。
@@ -66,6 +68,7 @@ impl Pl011Driver {
         }
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 检查 UART 硬件是否已启用
     fn is_hw_enabled(&self) -> bool {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)

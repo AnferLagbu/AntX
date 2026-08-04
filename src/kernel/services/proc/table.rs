@@ -78,6 +78,7 @@ pub enum TableError {
 }
 
 impl TableError {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 映射为 POSIX errno
     pub fn to_errno(self) -> crate::kernel::framework::syscall::Errno {
         use crate::kernel::framework::syscall::Errno as E;

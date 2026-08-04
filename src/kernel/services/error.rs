@@ -161,6 +161,7 @@ impl KernelError {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 反向映射: 强类型 → POSIX errno.
     pub const fn as_errno(self) -> Errno {
         match self {

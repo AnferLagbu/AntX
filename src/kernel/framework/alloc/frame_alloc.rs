@@ -75,6 +75,7 @@ impl FrameAlloc for BuddyFrameAlloc {
         unsafe { Some(Frame::from_raw(phys, order)) }
     }
 
+#[expect(clippy::match_wildcard_for_single_variants, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     fn alloc_huge(&self, size: PageSize) -> Option<Frame> {
         use crate::kernel::framework::mm::api;
         let phys = api::pmm_alloc_huge_page_phys(size)?;

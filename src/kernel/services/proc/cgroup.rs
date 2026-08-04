@@ -120,6 +120,7 @@ impl MemoryController {
         }
     }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
     pub fn try_charge(&self, bytes: u64) -> bool {
         let limit = self.limit_in_bytes.load(Ordering::Acquire);
         if limit == MEMORY_LIMIT_MAX {
@@ -166,6 +167,7 @@ impl MemoryController {
         self.usage_in_bytes.load(Ordering::Acquire) > limit
     }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
     fn update_max(&self, current: u64) {
         loop {
             let max = self.max_usage_in_bytes.load(Ordering::Acquire);
@@ -205,6 +207,7 @@ impl PidsController {
         }
     }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
     pub fn try_fork(&self) -> bool {
         let max = self.pids_max.load(Ordering::Acquire);
         if max == PIDS_MAX_DEFAULT {

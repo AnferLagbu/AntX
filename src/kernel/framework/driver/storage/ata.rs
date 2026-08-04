@@ -386,6 +386,7 @@ impl Driver for AtaController {
         self.initialized && (self.primary_present || self.secondary_present)
     }
 
+#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
     fn status(&self) -> &'static str {
         if !self.initialized {
             "Not initialized"

@@ -144,6 +144,7 @@ impl HrTimer {
         self.interval_ns.load(Ordering::Acquire)
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 获取当前状态
     pub fn state(&self) -> HrTimerState {
         match self.state.load(Ordering::Acquire) {

@@ -118,6 +118,7 @@ pub struct VirtioMmioDevice {
 impl VirtioMmioDevice {
     /// 从设备的 MMIO 空间读取 32 位寄存器.
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     fn read32(&self, offset: usize) -> u32 {
         self.iomem.read_u32(offset)
     }

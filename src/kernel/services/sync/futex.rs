@@ -108,6 +108,7 @@ pub enum FutexResult {
 }
 
 impl FutexResult {
+#[expect(clippy::comparison_chain, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     /// 从 syscall 返回值解析
     pub fn from_ret(ret: i64) -> Self {
         if ret == 0 {
@@ -120,6 +121,7 @@ impl FutexResult {
     }
 }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 /// safe 包装: futex 系统调用
 ///
 /// # Errors

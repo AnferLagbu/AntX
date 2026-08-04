@@ -51,12 +51,14 @@ impl VmSpace {
 
     /// 获取页表根物理地址
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn pt_root(&self) -> PhysAddr {
         self.pt_root
     }
 
     /// 是否是内核地址空间
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn is_kernel(&self) -> bool {
         self.is_kernel
     }

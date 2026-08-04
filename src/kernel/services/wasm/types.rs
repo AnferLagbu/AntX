@@ -53,18 +53,21 @@ pub enum Value {
 }
 
 impl Value {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_i32(&self) -> Option<i32> {
         match self {
             Value::I32(v) => Some(*v),
             _ => None,
         }
     }
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_u32(&self) -> Option<u32> {
         match self {
             Value::I32(v) => Some(*v as u32),
             _ => None,
         }
     }
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_i64(&self) -> Option<i64> {
         match self {
             Value::I64(v) => Some(*v),

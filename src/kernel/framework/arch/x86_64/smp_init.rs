@@ -142,6 +142,7 @@ unsafe fn copy_trampoline() { unsafe {
 
 #[inline(never)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
 unsafe fn start_ap(lapic_id: u32, cpu_index: u32) { unsafe {
     if cpu_index as usize >= super::acpi::MAX_CPUS {
         return;

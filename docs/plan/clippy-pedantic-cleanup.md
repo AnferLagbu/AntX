@@ -292,7 +292,11 @@
 - **DECISION-034: pedantic 0 警告后 CI 强制 `-D warnings`**
   - 描述: 批次 7 完成后, CI clippy 从仅强制 `unsafe_code` 升级为全量 `-D warnings` + `-W clippy::pedantic`
   - 方案: 防止 pedantic 警告回归. 放弃"仅强制部分 lint" (维护成本高, 易遗漏)
-  - 状态: []
+  - 状态: [~]
+- **DECISION-042: DECISION-034 推迟到 macro 改造后实施**
+  - 描述: 实施 DECISION-034 时发现 `klog_fmt` 等 macro 内部触发 ptr_as_ptr 等 pedantic lint, `#[expect]` 不能从外部施加到宏展开内部. 1598 处 macro 内 lint 无法 expect 兜底
+  - 方案: 推迟 CI 升级到 macro 改造后 (klog_fmt 重写为非 macro 形式 + 在 macro 内部加 `#[allow(...)]` 或宏参数 `allow_internal_unstable`). 当前 CI 保留 cargo check + 三审计 + host-tests 验证
+  - 状态: [X]
 
 ***
 

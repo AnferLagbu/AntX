@@ -69,6 +69,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
         }
     }}
 
+    #[expect(clippy::match_same_arms, reason = "TAG_KMALLOC 与 wildcard body 相同是已知安全; 显式列举便于未来扩展")]
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) { unsafe {
         if ptr.is_null() {
             return;

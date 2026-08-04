@@ -315,6 +315,7 @@ impl Inode for RamFsInode {
         }
     }
 
+#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
     fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
         // icache 快速路径: 避免 RAMFS_DATA 锁
         if let Some(cached) = crate::kernel::services::fs::dcache::icache_lookup(self.inode_id) {

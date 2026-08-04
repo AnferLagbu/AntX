@@ -105,6 +105,8 @@ impl Trb {
         Self { parameter, status, control }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 提取 TRB 类型 (control[15:10])
     pub fn trb_type(&self) -> TrbType {
         let ty = (self.control >> 10) & 0x3F;
@@ -133,6 +135,7 @@ impl Trb {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取 cycle bit (control[0])
     pub fn cycle_bit(&self) -> bool {
         self.control & 1 != 0
@@ -705,6 +708,7 @@ impl XhciController {
         self.set_crcr(val);
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 提交命令 TRB 到 Command Ring 并触发 Doorbell.
     ///
     /// # 参数
@@ -865,6 +869,7 @@ impl TransferRing {
         true
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 提交控制传输 (Setup → Data → Status, xHCI 规范 §4.11.2.3).
     ///
     /// # 参数

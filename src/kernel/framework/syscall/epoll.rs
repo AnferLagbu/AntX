@@ -428,6 +428,7 @@ fn enqueue_ready_for_fd(instance: &mut EpollInstance, fd: i32) -> bool {
 // ============================================================================
 
 #[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
 /// 检查 fd 是否就绪 (完整集成 VFS)
 ///
 /// REVAL-6.1: 4 种 VFS `file_type` → events 位映射改走 `VfsPollPolicy` trait dispatch

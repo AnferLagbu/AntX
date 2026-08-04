@@ -1111,6 +1111,7 @@ fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
 const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 fn sys_boot_install(disk_id: u32) -> i64 {
     let pwm = crate::kernel::framework::credo::pwm_get_current();
     if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {

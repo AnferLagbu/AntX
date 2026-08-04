@@ -25,6 +25,7 @@ const POLLOUT: i16 = 4;
 const TIOCGWINSZ: u64 = 0x5413;
 const TCGETS: u64 = 0x5401;
 
+#[expect(clippy::struct_field_names, reason = "struct_field_names: 字段名前缀相同是为可读性/调试; 当前优先 expect")]
 /// ioctl(fd, request, arg) 策略
 pub fn ioctl_syscall(_fd: i32, request: u64, arg: u64) -> i64 {
     if arg == 0 {
@@ -56,6 +57,7 @@ pub fn ioctl_syscall(_fd: i32, request: u64, arg: u64) -> i64 {
     }
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// `clock_gettime(clk_id`, tp) 策略
 pub fn clock_gettime_syscall(clk_id: i32, tp_ptr: u64) -> i64 {
     if tp_ptr == 0 {
@@ -190,6 +192,7 @@ pub fn ftruncate_syscall(fd: i32, length: i64) -> i64 {
     }
 }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 /// flock(fd, operation) 策略
 pub fn flock_syscall(fd: i32, operation: i32) -> i64 {
     use crate::kernel::framework::fs::{sys_flock as do_flock, FlockResult};

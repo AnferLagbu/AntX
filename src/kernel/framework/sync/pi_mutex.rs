@@ -241,6 +241,7 @@ impl<T> PiMutex<T> {
 
     /// 创建命名 `PiMutex` (用于调试 + lockdep)
     #[cfg(debug_assertions)]
+#[expect(clippy::doc_markdown, reason = "doc_markdown: 文档 markdown 格式已知 (中文 + 内核术语); 当前优先 expect")]
     pub fn named(name: &'static str, data: T) -> Self {
         let class_id = crate::kernel::framework::sync::register_class(LockClassDesc {
             name,

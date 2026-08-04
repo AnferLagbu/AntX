@@ -5,6 +5,7 @@ use super::undo_log::UndoLog;
 use crate::kernel::framework::sync::{IrqSpinLock, IrqSpinLockGuard};
 
 pub trait Snapshot: Copy + Sized {
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     fn snapshot(&self) -> Self {
         *self
     }

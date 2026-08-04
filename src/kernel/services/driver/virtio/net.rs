@@ -437,6 +437,7 @@ impl VirtioNetDriver {
     }
 
 #[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
     /// 尝试接收一个网络包.
     ///
     /// 将包数据 (不含 `VirtIO` 头) 复制到 `buf`, 返回实际拷贝的字节数.

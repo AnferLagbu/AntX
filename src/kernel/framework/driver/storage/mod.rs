@@ -57,8 +57,9 @@ static NVME_CONTROLLERS: Mutex<Vec<NvmeController>> = Mutex::new(Vec::new());
 #[cfg(target_arch = "x86_64")]
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(clippy::unnecessary_wraps, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
     let pci_count = crate::kernel::framework::pci::init();
@@ -324,6 +325,9 @@ pub fn storage_init() -> framework::Result<()> {
 
 /// AArch64 存储初始化 — 通过 virtio-mmio 发现块设备。
 #[cfg(not(target_arch = "x86_64"))]
+#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::uninlined_format_args, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::unnecessary_wraps, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 pub fn storage_init() -> framework::Result<()> {
     use crate::kernel::framework::driver::virtio::{self, VIRTIO_ID_BLOCK};
 

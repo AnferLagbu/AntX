@@ -58,6 +58,7 @@ impl VmFlags {
     pub const MADV_WILLNEED: Self = Self(1 << 9);
 
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn bits(&self) -> u32 {
         self.0
     }
@@ -70,10 +71,12 @@ impl VmFlags {
         (self.0 & other.0) == other.0
     }
     #[inline]
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub const fn insert(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
     #[inline]
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub const fn remove(self, other: Self) -> Self {
         Self(self.0 & !other.0)
     }
@@ -112,6 +115,7 @@ pub enum VmaType {
 }
 
 impl VmaType {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn from_u8(v: u8) -> Self {
         match v {
             0 => Self::Anonymous,

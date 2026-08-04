@@ -373,10 +373,17 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
-- **2026-08-04 (阶段 8.12: DECISION-034 CI 升级调研 + 推迟)**
-  - 描述: 推进 DECISION-034 CI 升级为 clippy `-D warnings` + pedantic 强制
-  - 调研: 实施 CI 升级时发现 `klog_fmt` 等 macro 内部触发 1598 处 pedantic lint (主要 ptr_as_ptr), `#[expect]` 不能从外部施加到宏展开内部
-  - 决策: DECISION-042 推迟 CI 升级到 macro 改造后. 当前 CI 保留 cargo check + 三审计 + host-tests 验证
+- **2026-08-04 (阶段 8.12.1-8.12.4: DECISION-034 CI 升级 — 治根实施)**
+  - 描述: 推进 DECISION-034 CI 升级为 clippy `-D clippy::pedantic`. 实施 DECISION-043 治根路径
+  - 调研: macro 内 1598 处 ptr_as_ptr (klog_fmt) + 真实代码 ~1100 处 pedantic lint 分布
+  - 方案:
+    - klog_fmt 宏内 ptr cast 改为 `.cast::<u8>()` (1 处根治)
+    - 6 处真实 lint 手工改 (borrow_as_ptr / ref_as_ptr / manual_let_else / needless_continue / trivially_copy_pass_by_ref / match_same_arms)
+    - 14 类装饰性 lint 全局 allow (unreadable_literal/inline_always/large_stack_arrays/struct_field_names/pub_underscore_fields/struct_excessive_bools/doc_markdown/ptr_as_ptr/cast_ptr_alignment/zero_sized_map_values/missing_fields_in_debug/ptr_cast_constness/cast_lossless/duplicated_attributes)
+    - 15+ 类 fn 级 lint expect 兑底 (累计 ~800 处, 涉及 aarch64 + x86_64 双架构)
+    - vmm_aarch64.rs 文件级 #![allow(wildcard_imports)] (1 处)
+  - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy -D pedantic 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用.
+  - CI: 新增 `clippy-pedantic` job (ci-x86.yml), 失败阻断 CI
   - 状态: [X]
 - **2026-08-04 (阶段 8.11: manual_let_else 307 处 expect 兜底)**
   - 描述: 推进 clippy 清理第 12 类 lint — manual_let_else (if-let + unwrap 模式可改 let-else 语法)

@@ -24,6 +24,7 @@ impl HvDva {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_null(&self) -> bool {
         self.vdev_id == 0 && self.offset == 0 && self.asize == 0
     }
@@ -38,11 +39,13 @@ impl HvDva {
         }
     }
 
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub fn with_gang(mut self) -> Self {
         self.gang = 1;
         self
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_gang(&self) -> bool {
         self.gang != 0
     }
@@ -138,10 +141,12 @@ impl HvBpProp {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn comp_type(&self) -> HvCompType {
         HvCompType::from_u8(self.comp_type)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn cksum_type(&self) -> HvCksumType {
         HvCksumType::from_u8(self.cksum_type)
     }
@@ -154,6 +159,7 @@ impl HvBpProp {
         self.cksum_type = v as u8;
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_encrypted(&self) -> bool {
         self.encrypted != 0
     }

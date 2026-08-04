@@ -712,7 +712,7 @@ fn write_bytes<T>(fd: u32, data: &T, offset: &mut u64) {
     unsafe {
         crate::kernel::framework::fs::vfs_write(
             fd,
-            data as *const T as *const u8,
+            core::ptr::from_ref::<T>(data).cast::<u8>(),
             size as u32,
         );
     }

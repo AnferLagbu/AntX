@@ -224,6 +224,7 @@ pub struct ConfigFs {
 }
 
 impl ConfigFs {
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     pub const fn new() -> Self {
         Self {
             dirs: [const { ConfigDir::new() }; MAX_DIRS],

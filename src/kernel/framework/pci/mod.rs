@@ -48,6 +48,7 @@ pub mod msi;
 mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub unsafe fn outl(port: u16, val: u32) {
         crate::arch!(outl(port, val));
     }
@@ -164,6 +165,7 @@ static PCI_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::Ato
 /// 计算给定 (bus, device, function, offset) 对应的 ECAM MMIO 地址.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 fn ecam_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u64 {
     ECAM_BASE
         | ((bus as u64) << 20)

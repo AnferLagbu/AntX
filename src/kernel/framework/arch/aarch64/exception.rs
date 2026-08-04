@@ -492,6 +492,7 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
 
 /// EL0 IRQ 处理器
 #[unsafe(no_mangle)]
+#[expect(clippy::items_after_statements, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
     // GIC ACK + handle + EOI
     let intid = super::gic::acknowledge();
@@ -547,6 +548,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 /// 默认同步异常处理 (EL1h)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::no_effect_underscore_binding, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     let esr: u64;
     let far: u64;
@@ -614,6 +616,7 @@ unsafe fn exc_puthex(val: u64) { unsafe {
 /// 默认 IRQ 处理 (EL1h)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::items_after_statements, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
     // GIC ACK
     let intid = super::gic::acknowledge();
@@ -701,6 +704,7 @@ pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
     }
 }
 
+#[expect(clippy::borrow_as_ptr, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 初始化异常: 设置 VBAR_EL1 指向向量表, 清除 DAIF
 ///
 /// # Safety

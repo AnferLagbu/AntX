@@ -111,12 +111,14 @@ pub(crate) mod raw {
         /// - `ptr` 必须为非空, 指向有效 `UserProcess` 分配
         /// - 在 `UserProcRef` 存活期间, 不会被释放
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub unsafe fn new_unchecked(ptr: *mut UserProcess) -> Self {
             Self(ptr)
         }
 
         /// 访问 pid 字段 (委托到 Process)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn pid(&self) -> u32 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().pid.0 }
@@ -124,6 +126,7 @@ pub(crate) mod raw {
 
         #[inline(always)]
 #[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_pid(&self, v: u32) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             // 注意: Process::pid 是 ProcessId (newtype), 需要通过 ptr::write 更新
@@ -135,12 +138,14 @@ pub(crate) mod raw {
 
         /// 访问 entry 字段 (读写)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn entry(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).entry }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_entry(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
@@ -149,6 +154,7 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_create_time(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
@@ -158,12 +164,14 @@ pub(crate) mod raw {
 
         /// 访问 pwm (委托到 Process)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn load_pwm(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().pwm.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn store_pwm(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -173,12 +181,14 @@ pub(crate) mod raw {
 
         /// 访问 cr3 (委托到 Process)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn load_cr3(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().cr3.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn store_cr3(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -188,12 +198,14 @@ pub(crate) mod raw {
 
         /// 访问 `kernel_stack` (委托到 Process)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn load_kernel_stack(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().kernel_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn store_kernel_stack(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -203,12 +215,14 @@ pub(crate) mod raw {
 
         /// 访问 `user_stack` (委托到 Process)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn load_user_stack(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().user_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn store_user_stack(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -217,12 +231,14 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn load_stack_bottom(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).stack_bottom.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn store_stack_bottom(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
@@ -232,6 +248,7 @@ pub(crate) mod raw {
 
         /// 访问 state (委托到 Process)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn store_state(&self, v: u32) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -246,12 +263,14 @@ pub(crate) mod raw {
             unsafe { (*self.0).process().state.load(Ordering::SeqCst) }
         }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
         /// 检查进程是否在运行状态 (Running = 2)
         pub fn is_running(&self) -> bool {
             use crate::kernel::services::proc::types::ProcessState;
             ProcessState::from_u32(self.load_state()).is_alive()
         }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
         /// 检查进程是否已退出 (Zombie = 4 或 Terminated = 5)
         pub fn is_exited(&self) -> bool {
             use crate::kernel::services::proc::types::ProcessState;
@@ -984,6 +1003,7 @@ impl UserProcManager {
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
     pub fn enter(&self, proc: *mut UserProcess) {
         crate::klog_boot_info!("[USER] enter() called with proc={:#X}", proc as u64);
         if proc.is_null() {

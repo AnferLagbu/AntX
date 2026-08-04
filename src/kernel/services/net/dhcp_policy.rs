@@ -103,6 +103,7 @@ impl Default for DhcpPolicyConfig {
 /// - `dhcp_state`: 报告**当前**状态 (观察)
 /// - `dhcp_policy::decide`: 决定**下一步**动作 (策略)
 pub trait DhcpPolicy {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 给定当前状态 + 上下文, 返回下一步 Action.
     ///
     /// ## 参数

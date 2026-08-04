@@ -118,6 +118,7 @@ pub struct CfsRunQueue {
 }
 
 impl CfsRunQueue {
+#[expect(clippy::zero_sized_map_values, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     pub fn new() -> Self {
         Self {
             tree: BTreeMap::new(),
@@ -259,6 +260,7 @@ pub struct DlRunQueue {
 }
 
 impl DlRunQueue {
+#[expect(clippy::zero_sized_map_values, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     pub fn new() -> Self {
         Self {
             tree: BTreeMap::new(),

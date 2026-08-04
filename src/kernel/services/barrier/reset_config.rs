@@ -23,6 +23,7 @@ pub enum RecoveryLayer {
 }
 
 impl RecoveryLayer {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn from_u32(v: u32) -> Self {
         match v {
             1 => RecoveryLayer::Layer1,
@@ -42,10 +43,12 @@ pub enum RecoveryResult {
 }
 
 impl RecoveryResult {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_success(&self) -> bool {
         matches!(self, RecoveryResult::Success)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn should_escalate(&self) -> bool {
         matches!(self, RecoveryResult::Escalate)
     }

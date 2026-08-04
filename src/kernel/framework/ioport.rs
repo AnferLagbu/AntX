@@ -63,6 +63,7 @@ impl IoPort {
 
     /// 基端口号
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn base(&self) -> u16 {
         self.base
     }
@@ -106,6 +107,7 @@ impl IoPort {
     /// 编译期由 `#[cfg(target_arch = "x86_64")]` 关闭实际定义。
     #[cfg(target_arch = "aarch64")]
     #[inline]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn read_u8(&self, _offset: u16) -> u8 {
         0xFF
     }
@@ -130,6 +132,7 @@ impl IoPort {
     /// 读取 u16 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn read_u16(&self, _offset: u16) -> u16 {
         0xFFFF
     }
@@ -154,6 +157,7 @@ impl IoPort {
     /// 读取 u32 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn read_u32(&self, _offset: u16) -> u32 {
         0xFFFF_FFFF
     }
@@ -179,6 +183,7 @@ impl IoPort {
     /// 调用方应使用 MMIO 寄存器访问 (IoMem) 替代。
     #[cfg(target_arch = "aarch64")]
     #[inline]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn write_u8(&self, _offset: u16, _val: u8) {
         // no-op on aarch64: PIO is x86-only.
     }
@@ -201,6 +206,7 @@ impl IoPort {
     /// 写入 u16 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn write_u16(&self, _offset: u16, _val: u16) {
         // no-op on aarch64.
     }
@@ -223,6 +229,7 @@ impl IoPort {
     /// 写入 u32 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn write_u32(&self, _offset: u16, _val: u32) {
         // no-op on aarch64.
     }

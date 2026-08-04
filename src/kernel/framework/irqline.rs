@@ -39,7 +39,9 @@ impl IrqLine {
         Self { vector, irq, registered: false }
     }
 
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     #[inline(always)] pub fn irq(&self) -> u32 { self.irq }
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     #[inline(always)] pub fn vector(&self) -> u8 { self.vector }
 
 #[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
@@ -84,6 +86,7 @@ impl IrqLine {
         let _ = self;
     }
 
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     #[inline(always)] pub fn is_registered(&self) -> bool { self.registered }
 }
 

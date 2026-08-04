@@ -25,6 +25,7 @@ impl AuditLog {
 
 #[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
 #[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     pub fn log(&self, pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
         let now = super::bootstrap::pwm_now();
         let idx = self.count.fetch_add(1, Ordering::AcqRel) % AUDIT_CAPACITY;
@@ -42,6 +43,7 @@ impl AuditLog {
         }
     }
 
+#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
     pub fn dump(&self) {
         let count = self.count.load(Ordering::Acquire);
         let len = if count > AUDIT_CAPACITY {

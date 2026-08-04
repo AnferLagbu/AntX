@@ -54,6 +54,7 @@ impl CpuIdleState {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 进入该 C-state 的预期延迟 (微秒)
     pub fn latency_us(&self) -> u32 {
         match self {
@@ -64,6 +65,7 @@ impl CpuIdleState {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 该 C-state 的功耗节省比例 (0-100)
     pub fn power_saving(&self) -> u32 {
         match self {
@@ -215,6 +217,7 @@ pub enum FreqGovernor {
 }
 
 impl FreqGovernor {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn from_u32(v: u32) -> Self {
         match v {
             0 => Self::Performance,

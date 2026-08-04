@@ -140,8 +140,11 @@ impl BpfInsn {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn dst(&self) -> u8 { self.dst_reg & 0xf }
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn src(&self) -> u8 { (self.dst_reg >> 4) & 0xf }
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn class(&self) -> u8 { self.op & 0x07 }
 }
 
@@ -369,6 +372,7 @@ impl BpfMap {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 获取 Map 定义
     pub fn def(&self) -> &BpfMapDef {
         match self {
@@ -509,6 +513,7 @@ impl BpfHelper {
     /// 返回: R0 的值
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::bool_to_int_with_if, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     pub fn execute(
         id: u32,
         r1: u64, r2: u64, r3: u64, _r4: u64, _r5: u64,
@@ -666,6 +671,8 @@ impl BpfInterpreter {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     fn exec_alu(insn: &BpfInsn, regs: &mut [u64; BPF_REG_NUM]) {
         let dst = insn.dst() as usize;
         let src = insn.src() as usize;
@@ -848,6 +855,7 @@ impl BpfInterpreter {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     fn exec_jmp(
         insn: &BpfInsn,
         regs: &mut [u64; BPF_REG_NUM],

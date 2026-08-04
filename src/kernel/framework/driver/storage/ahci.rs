@@ -440,6 +440,7 @@ impl AhciPort {
         }
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 检测设备
     pub fn detect_device(&mut self) -> bool {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -457,6 +458,7 @@ impl AhciPort {
         }
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 启动端口 (启用 FIS 接收 + 命令处理)
     /// # Errors
     /// DMA 设置失败或端口寄存器等待确认超时时返回 Err。
@@ -545,6 +547,7 @@ impl AhciPort {
     #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
 #[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     unsafe fn submit_dma_command(
         &mut self,
         fis: &H2dFis,

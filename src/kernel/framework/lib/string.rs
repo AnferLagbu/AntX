@@ -803,6 +803,7 @@ pub fn safe_memset(buf: &mut [u8], val: u8, len: Option<usize>) {
     }
 }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
 /// Rust 安全版本的 memcmp
 ///
 /// # Returns

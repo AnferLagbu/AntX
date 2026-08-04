@@ -75,6 +75,7 @@ pub enum UsbSpeed {
 }
 
 impl UsbSpeed {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn bandwidth_mbps(&self) -> u32 {
         match self {
             Self::Low => 1,
@@ -186,6 +187,7 @@ pub struct EndpointDescriptor {
 }
 
 impl EndpointDescriptor {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn direction(&self) -> Direction {
         if self.endpoint_address & 0x80 != 0 {
             Direction::In
@@ -194,10 +196,13 @@ impl EndpointDescriptor {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn number(&self) -> u8 {
         self.endpoint_address & 0x0F
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn transfer_type(&self) -> TransferType {
         match self.attributes & 0x03 {
             0 => TransferType::Control,

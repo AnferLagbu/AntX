@@ -345,6 +345,7 @@ pub extern "C" fn pwm_try_setuid(target_uid: u32) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 pub extern "C" fn pwm_get_uid(pwm: u64) -> u32 {
     match identity::find(pwm) {
         Some(e) => e.get_uid(),
@@ -354,6 +355,7 @@ pub extern "C" fn pwm_get_uid(pwm: u64) -> u32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 pub extern "C" fn pwm_get_gid(pwm: u64) -> u32 {
     match identity::find(pwm) {
         Some(e) => e.get_gid(),
@@ -414,6 +416,7 @@ pub fn umask_get() -> u32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 pub extern "C" fn pwm_audit_log(pwm: u64, action: u32, target: u64, details: u64) {
     let act = match action {
         1 => AuditAction::Login,

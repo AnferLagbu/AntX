@@ -92,6 +92,7 @@ fn test_spa_uberblock_checksum() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 fn test_spa_uberblock_invalid_magic() -> TestResult {
     let mut ub = HvUberblock::null();
     ub.magic = 0xDEADBEEF;

@@ -309,6 +309,7 @@ fn test_dyn_ipc_sem_create() -> TestResult {
 // VMA
 // ============================================================
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 fn test_vma_creation() -> TestResult {
     use crate::kernel::framework::mm::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
@@ -321,6 +322,7 @@ fn test_vma_creation() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 fn test_mm_struct_operations() -> TestResult {
     use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
@@ -343,6 +345,7 @@ fn test_mm_struct_operations() -> TestResult {
     TestResult::Pass
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 fn test_vma_stack_guard() -> TestResult {
     use crate::kernel::framework::mm::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;

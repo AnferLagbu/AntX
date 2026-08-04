@@ -144,3 +144,52 @@ jobs:
           name: host-tests-report
           path: build/log/host_tests.txt
           retention-days: 14
+
+  # ========================================================================
+  # Job 4: clippy -D pedantic (DECISION-034)
+  # 全 pedantic 强制 (除 cast_* DECISION-041); 防止 pedantic 警告回归
+  # ========================================================================
+  clippy-pedantic:
+    name: clippy pedantic 强制 (除 cast_*)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/rust/target
+          key: ${{ runner.os }}-clippy-${{ hashFiles('src/rust/Cargo.toml', 'src/rust/Cargo.lock') }}
+
+      - name: clippy -D pedantic (排除 cast_*)
+        working-directory: src/rust
+        run: |
+          mkdir -p build/log
+          cargo clippy --release --target x86_64-unknown-none --lib -- \
+            -D clippy::pedantic \
+            -A clippy::cast_possible_truncation \
+            -A clippy::cast_sign_loss \
+            -A clippy::cast_possible_wrap \
+            -A clippy::cast_precision_loss \
+            2>&1 | tee build/log/clippy_pedantic.txt | tail -20
+          if grep -qE "^error\[|^error:" build/log/clippy_pedantic.txt; then
+            echo "::error::clippy -D pedantic 失败"
+            exit 1
+          fi
+          echo "✅ clippy -D pedantic 通过 (cast_* 已豁免, 见 DECISION-041)"
+
+      - name: 上传 clippy 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-pedantic-report
+          path: build/log/clippy_pedantic.txt
+          retention-days: 14

@@ -306,6 +306,7 @@ impl VirtioNet {
         self.device.notify(0);
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 通过 TX virtqueue 发送一个包.
     ///
     /// `data` 指向包缓冲区 (物理连续).

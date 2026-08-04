@@ -135,6 +135,7 @@ impl KexecSubsystem {
         );
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 加载内核段
     ///
     /// `seg_type`: 段类型
@@ -432,6 +433,7 @@ pub fn kexec_is_initialized() -> bool {
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 pub extern "C" fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !kexec_is_initialized() && cmd != 7 {
         return -(11i64); // EAGAIN

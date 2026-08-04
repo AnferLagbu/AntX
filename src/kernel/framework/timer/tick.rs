@@ -152,6 +152,7 @@ pub fn is_initialized() -> bool {
 /// # Safety
 /// 只能从中断上下文调用
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn on_timer_interrupt() {
     // 递增 tick 计数
     TICK_COUNT.fetch_add(1, Ordering::Relaxed);

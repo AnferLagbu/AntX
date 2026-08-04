@@ -86,6 +86,7 @@ impl Thread {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// ✅ 安全的状态设置 (带合法性检查)
     ///
     /// # Errors

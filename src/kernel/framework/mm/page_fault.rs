@@ -233,6 +233,7 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(clippy::single_match_else, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
 fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize, user_cr3: u64) -> PfResult {
     let page_index = ((aligned - vma.start) as u64 + vma.offset) / PAGE_SIZE;
 

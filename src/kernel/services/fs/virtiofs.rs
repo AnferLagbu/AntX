@@ -67,6 +67,7 @@ pub enum VirtioFsOp {
 }
 
 impl VirtioFsOp {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 从操作码解析
     pub fn from_opcode(opcode: u32) -> Self {
         match opcode {
@@ -155,6 +156,7 @@ pub struct VirtioFs {
 }
 
 impl VirtioFs {
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     pub const fn new() -> Self {
         Self {
             nodes: [const { VirtioFsNode::new(0, 0, 0) }; MAX_NODES],
@@ -310,6 +312,7 @@ pub fn umount_virtiofs() -> Result<(), Errno> {
     Ok(())
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// 处理请求
 ///
 /// # Errors

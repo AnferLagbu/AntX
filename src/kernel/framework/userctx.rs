@@ -88,6 +88,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn syscall_number(&self) -> u64 {
         self.x8
     }
@@ -101,6 +102,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn set_return_value(&mut self, val: u64) {
         self.x0 = val;
     }
@@ -112,6 +114,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn arg0(&self) -> u64 { self.x0 }
 
     /// 参数 1
@@ -121,6 +124,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn arg1(&self) -> u64 { self.x1 }
 
     /// 参数 2
@@ -130,6 +134,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn arg2(&self) -> u64 { self.x2 }
 
     /// 参数 3
@@ -139,6 +144,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn arg3(&self) -> u64 { self.x3 }
 
     /// 参数 4
@@ -148,6 +154,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn arg4(&self) -> u64 { self.x4 }
 
     /// 参数 5
@@ -157,6 +164,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn arg5(&self) -> u64 { self.x5 }
 
     /// 用户态栈指针
@@ -166,6 +174,7 @@ impl UserContext {
 
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn user_sp(&self) -> u64 { self.sp_el0 }
 
     /// 用户态返回地址

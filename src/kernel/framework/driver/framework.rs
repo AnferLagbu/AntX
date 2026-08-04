@@ -27,6 +27,7 @@
 
 /// 向指定端口写入字节 (架构无关: `x86_64` → out, `AArch64` → MMIO)
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 ///
 /// # Safety
 ///
@@ -37,6 +38,7 @@ pub unsafe fn outb(port: u16, value: u8) {
 
 /// 从指定端口读入字节 (架构无关: `x86_64` → in, `AArch64` → MMIO)
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 ///
 /// # Safety
 ///
@@ -48,6 +50,7 @@ pub unsafe fn inb(port: u16) -> u8 {
 /// 向指定端口写入字 (`x86_64` 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 ///
 /// # Safety
 ///
@@ -64,6 +67,7 @@ pub unsafe fn outw(port: u16, value: u16) { unsafe {
 /// 从指定端口读入字 (`x86_64` 特有, 无 Arch trait 等价方法)
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 ///
 /// # Safety
 ///
@@ -81,6 +85,7 @@ pub unsafe fn inw(port: u16) -> u16 { unsafe {
 
 /// 向指定端口写入双字 (架构无关: `x86_64` → out, `AArch64` → MMIO)
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 ///
 /// # Safety
 ///
@@ -207,11 +212,13 @@ impl DeviceInfo {
         }
     }
 
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub fn with_io_base(mut self, base: u16) -> Self {
         self.io_base = Some(base);
         self
     }
 
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub fn with_irq(mut self, irq: u8) -> Self {
         self.irq = Some(irq);
         self

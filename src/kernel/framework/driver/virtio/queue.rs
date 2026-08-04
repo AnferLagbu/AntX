@@ -416,6 +416,7 @@ impl DmaBuffer {
 }
 
 impl Drop for DmaBuffer {
+#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
     fn drop(&mut self) {
         // 当前 PMM 不提供 pmm_free_pages, 缓冲区生命周期由系统管理.
         // 占位: PMM 增量后接入实际释放. self.pages 记录分配页数供将来使用.

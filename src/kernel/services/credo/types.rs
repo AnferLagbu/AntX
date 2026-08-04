@@ -28,10 +28,12 @@ pub struct PwmId(pub u64);
 impl PwmId {
     pub const ZERO: PwmId = PwmId(0);
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_valid(&self) -> bool {
         self.0 != 0
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -53,10 +55,12 @@ impl DomainId {
     pub const ROOT: DomainId = DomainId(1000);
     pub const NOBODY: DomainId = DomainId(65534);
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_valid(&self) -> bool {
         self.0 != 0
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -65,6 +69,7 @@ impl DomainId {
         DomainId(u64::from(uid))
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn to_uid(&self) -> u32 {
         self.0 as u32
     }
@@ -113,10 +118,12 @@ impl CapDomain {
     pub const DMA: CapDomain = CapDomain(14);
     pub const RESERVED: CapDomain = CapDomain(15);
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_usize(&self) -> usize {
         (self.0 as usize) % 16
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_u16(&self) -> u16 {
         self.0
     }
@@ -136,10 +143,12 @@ impl CapBits {
     pub const NONE: CapBits = CapBits(0);
     pub const ALL: CapBits = CapBits(0xFFFFFFFFFFFFFFFF);
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn contains(&self, other: CapBits) -> bool {
         (self.0 & other.0) == other.0
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     pub fn as_u64(&self) -> u64 {
         self.0
     }

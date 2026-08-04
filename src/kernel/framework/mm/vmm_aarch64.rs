@@ -3,6 +3,7 @@
 //! 实现与 x86_64 vmm.rs 相同的 FFI 接口, 提供:
 //! - 内核高半区页表 (TTBR1_EL1) 管理
 //! - 用户空间页表 (TTBR0_EL1) 创建/映射
+#![allow(clippy::wildcard_imports)] // 导入 vmm.rs 全部公共 API 是 aarch64 移植约定; vmm_x86_64.rs 同样模式
 //! - 页表遍历/克隆/销毁
 //!
 //! 架构: ARMv8-A 4KB granule, 48-bit VA
@@ -191,6 +192,7 @@ impl Aarch64Vmm {
     }
 
     #[inline(always)]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn acquire_lock(&self) -> IrqSaveFlags {
         let flags = disable_interrupts();
         while VMM_LOCK
@@ -210,6 +212,8 @@ impl Aarch64Vmm {
     }
 
     #[inline(always)]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn release_lock(&self, flags: &IrqSaveFlags) {
         #[cfg(debug_assertions)]
         {
@@ -267,6 +271,7 @@ impl Aarch64Vmm {
 
     // ─── Allocate a Page Table ───────────────────────────────────────
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     fn alloc_table(&self) -> Option<u64> {
         let paddr = get_pmm().alloc_page()?;
         // Zero the table
@@ -281,6 +286,7 @@ impl Aarch64Vmm {
         Some(paddr.as_u64())
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     fn free_table(&self, paddr: u64) {
         if paddr != 0 {
             get_pmm().free_page(PhysAddr(paddr));
@@ -289,6 +295,8 @@ impl Aarch64Vmm {
 
     // ─── Kernel Page Map ─────────────────────────────────────────────
 
+#[expect(clippy::unnecessary_wraps, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn map_page(
         &self,
         virt: VirtAddr,
@@ -302,6 +310,8 @@ impl Aarch64Vmm {
         Ok(())
     }
 
+#[expect(clippy::used_underscore_binding, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn map_huge_page(
         &self,
         virt: VirtAddr,
@@ -382,8 +392,10 @@ impl Aarch64Vmm {
         }
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn unmap_page(&self, _virt: VirtAddr) {}
 
+#[expect(clippy::used_underscore_binding, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 修改虚拟页的保护属性 (mprotect 核心实现)
     ///
     /// 遍历 aarch64 页表, 找到目标页/块描述符, 保留物理地址,
@@ -467,6 +479,9 @@ impl Aarch64Vmm {
         self.release_lock(&_lock_flags);
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::unnecessary_wraps, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn split_2mb_page(&self, _virt: u64) -> Result<(), &'static str> {
         // 在 aarch64 上, L2 块 (2MB) 是块映射的默认.
         // 无需拆分 — 可直接分配 L3 表并使用 4KB 页.
@@ -476,6 +491,9 @@ impl Aarch64Vmm {
 
     // ─── 页表遍历 / 映射 ───────────────────────────────────────
 
+#[expect(clippy::used_underscore_binding, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::manual_let_else, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::single_match_else, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 从 `root_paddr` 遍历页表, 按需创建中间级, 设置最终页描述符.
     pub fn map_page_in_table(
         &self,
@@ -559,6 +577,7 @@ impl Aarch64Vmm {
         }
     }
 
+#[expect(clippy::used_underscore_binding, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn unmap_page_in_table(&self, root_paddr: u64, virt: VirtAddr) {
         if root_paddr == 0 {
             return;
@@ -652,6 +671,7 @@ impl Aarch64Vmm {
         self.release_lock(&_lock_flags);
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 当一个页表页的全部 512 项均为 0 时返回 true.
     fn is_table_empty(&self, table: *mut u64) -> bool {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -665,6 +685,7 @@ impl Aarch64Vmm {
         true
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 遍历表项到下一级 (只读, 不分配).
     /// 若该表项不是合法的表描述符则返回 null.
     fn get_next_level(&self, table: *mut u64, idx: usize) -> *mut u64 {
@@ -682,6 +703,8 @@ impl Aarch64Vmm {
 
     // ─── 用户页表操作 ──────────────────────────────────
 
+#[expect(clippy::manual_let_else, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::single_match_else, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn create_user_page_table(&self) -> Option<u64> {
         // 为用户空间 (TTBR0_EL1) 分配一张干净的 L0 表
         let user_l0 = self.alloc_table()?;
@@ -726,12 +749,14 @@ impl Aarch64Vmm {
         Some(user_l0)
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn ensure_pml4_user(&self, _virt: u64) {
         // 在 aarch64 上, 内核与用户表是分离的 (TTBR0 vs TTBR1).
         // 内核表项无需 USER 位 — 用户访问走 TTBR0, 内核走 TTBR1.
         // 对 aarch64 而言此函数为空操作.
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn ensure_path_user(&self, virt: u64) {
         // 在 aarch64 上, 仅当路径位于用户页表才相关.
         // 由于用户表在 TTBR0 且天然用户可访问, 只需确保所有
@@ -742,6 +767,7 @@ impl Aarch64Vmm {
         // 用户表中的用户空间地址, 已在 map_page_in_table 中保证项合法
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn switch_page_table(&self, ttbr0: u64) {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -761,6 +787,7 @@ impl Aarch64Vmm {
         self.get_physical_in_pml4(self.kernel_l0, virt)
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn get_physical_in_pml4(&self, root_paddr: u64, virt: VirtAddr) -> Option<PhysAddr> {
         let vaddr = virt.as_u64();
 
@@ -813,6 +840,7 @@ impl Aarch64Vmm {
         ))
     }
 
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 读取 L3 页表项原始值 (用于 swap entry 检测)
     pub fn get_pte_value(&self, root_paddr: u64, virt: VirtAddr) -> Option<u64> {
         let vaddr = virt.as_u64();
@@ -849,6 +877,7 @@ impl Aarch64Vmm {
         Some(l3_entry)
     }
 
+#[expect(clippy::used_underscore_binding, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     /// 直接写入 L3 PTE 原始值 (用于 swap 替换)
     ///
     /// 沿 L0→L1→L2→L3 找到最终 PTE, 写入 raw_pte 后 TLB invalidate.

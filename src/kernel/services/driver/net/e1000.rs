@@ -203,6 +203,7 @@ impl E1000Io {
 
     /// 读取 32 位寄存器
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn read32(&self, reg: u32) -> u32 {
         self.mmio.read_u32(reg as usize)
     }
@@ -241,6 +242,7 @@ impl E1000Io {
         icr
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 清除所有待处理中断
     pub fn irq_disable_all(&self) {
         self.write32(E1000_IMC, 0xFFFFFFFF);
@@ -370,6 +372,7 @@ impl E1000Io {
 
     // ── MAC 地址 ──
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 写入 MAC 地址到 RAL0/RAH0 寄存器
     pub fn set_mac(&self, mac: &[u8; 6]) {
         let ral = u32::from(mac[0])
@@ -433,6 +436,7 @@ impl E1000Driver {
         &self.io
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 硬件复位与链路检测。
     ///
     /// 执行 E1000 软复位, 清除中断, 配置链路/速率/双工, 并等待链路 UP。
@@ -490,6 +494,7 @@ impl E1000Driver {
         Ok(())
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 完成初始化: TCTL/RCTL/MAC/IPG/IMS。
     ///
     /// 应在 DMA 环分配并配置基地址后调用。

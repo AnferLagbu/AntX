@@ -31,6 +31,7 @@ impl HvChecksum {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn compute(kind: HvCksumType, data: &[u8]) -> Self {
         let mut ck = Self::new(kind);
         match kind {
@@ -74,6 +75,7 @@ impl HvChecksum {
         self.value[3] = 0;
     }
 
+#[expect(clippy::many_single_char_names, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     fn fletcher4(&mut self, data: &[u8]) {
         let words = data.chunks_exact(8);
         let mut a: u64 = 0;

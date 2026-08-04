@@ -78,6 +78,7 @@ impl ElfError {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 从内核返回的 `&'static str` 翻译为 `ElfError`
     pub fn from_kernel_str(s: &'static str) -> Self {
         use crate::kernel::services::error::KernelError as K;

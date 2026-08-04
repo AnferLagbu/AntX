@@ -27,6 +27,7 @@ pub struct RamFsData {
 // RamFsData 全部字段自动实现 Send + Sync, 无需手动 impl.
 
 impl RamFsData {
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     pub const fn new() -> Self {
         Self {
             nodes: [RamFsNode::new(); RAMFS_MAX_NODES],
@@ -293,6 +294,7 @@ impl RamFsData {
         self.block_set_free(double_indirect_block);
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     fn check_permission(&self, node: &RamFsNode, pwm: u64, cap: u64) -> bool {
         let level = pwm_api::pwm_get_privilege_level(pwm);
 

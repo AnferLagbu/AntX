@@ -82,6 +82,7 @@ pub fn disable_interrupts() -> IrqSaveFlags {
     crate::kernel::framework::sync::disable_interrupts()
 }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
 /// 恢复中断到指定 flags
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
     crate::kernel::framework::sync::restore_interrupts(flags);

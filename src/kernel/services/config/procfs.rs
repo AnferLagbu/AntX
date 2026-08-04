@@ -16,6 +16,7 @@ pub enum ConfigFormat {
     Json,
 }
 
+#[expect(clippy::case_sensitive_file_extension_comparisons, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
 /// 将 procfs 条目名解析为 `ConfigFormat`.
 ///
 /// 规则: 文件名以 `.json` 结尾 → JSON; 否则 → Text. **调用方在 `mount`

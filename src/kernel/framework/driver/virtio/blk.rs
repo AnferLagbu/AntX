@@ -279,6 +279,8 @@ impl VirtioBlk {
 
     /// I-42: aarch64 平台 virtio-blk 暂未实现 IRQ 路径, 直接报错.
     #[cfg(target_arch = "aarch64")]
+#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
     pub fn enable_irq(&mut self) -> Result<(), &'static str> {
         Err("virtio-blk IRQ not implemented for aarch64")
     }

@@ -197,6 +197,7 @@ impl NvmeCommand {
         }
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 创建读命令
     pub fn read(nsid: u32, slba: u64, nlb: u16, prp1: u64) -> Self {
         Self {
@@ -217,6 +218,7 @@ impl NvmeCommand {
         }
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 创建写命令
     pub fn write(nsid: u32, slba: u64, nlb: u16, prp1: u64) -> Self {
         Self {
@@ -315,15 +317,18 @@ pub struct NvmeCompletion {
 }
 
 impl NvmeCompletion {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 阶段标记匹配 = 完成
     pub fn is_completed(&self, phase: u16) -> bool {
         (self.status & 0x01) == phase
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn status_code(&self) -> u16 {
         (self.status >> 1) & 0x7FF
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_success(&self) -> bool {
         self.status_code() == 0
     }

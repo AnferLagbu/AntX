@@ -93,6 +93,7 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
 #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
     if parent_pml4 == 0 {
         return None;
@@ -256,6 +257,7 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
 /// 并执行 TLB 刷新, 保证多核并发安全。
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 pub fn cow_handle_fault(pml4: u64, fault_addr: u64) -> Option<u64> {
     let vmm_inst = vmm::get_vmm();
     let page_aligned = fault_addr & !(PAGE_SIZE - 1);

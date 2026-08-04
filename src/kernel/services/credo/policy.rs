@@ -75,6 +75,7 @@ impl CapBits {
         self.0 == 0
     }
 
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub fn diff(self, other: CapBits) -> CapBits {
         CapBits(self.0 & !other.0)
     }
@@ -268,9 +269,8 @@ impl PolicyEngine {
         if required.is_empty() {
             return PolicyResult::Allow;
         }
-        let owned = match matrix.get(domain) {
-            Some(b) => b,
-            None => return PolicyResult::Deny(DenyReason::UnknownPwm),
+        let Some(owned) = matrix.get(domain) else {
+            return PolicyResult::Deny(DenyReason::UnknownPwm);
         };
         if !owned.contains(required) {
             return PolicyResult::Deny(DenyReason::NoAuthority);
@@ -298,9 +298,8 @@ impl PolicyEngine {
         if bits.is_empty() {
             return GrantResult::Empty;
         }
-        let owned = match from.get(domain) {
-            Some(b) => b,
-            None => return GrantResult::NoAuthority,
+        let Some(owned) = from.get(domain) else {
+            return GrantResult::NoAuthority;
         };
         if !owned.contains(bits) {
             return GrantResult::NoAuthority;
@@ -311,7 +310,7 @@ impl PolicyEngine {
             let to_new = to_current | bits;
             match to.compare_exchange(domain, to_current, to_new) {
                 Ok(_) => return GrantResult::Granted,
-                Err(_) => continue, // 重试
+                Err(_) => {} // 重试
             }
         }
     }
@@ -340,7 +339,7 @@ impl PolicyEngine {
             let new = current.diff(revocable);
             match matrix.compare_exchange(domain, current, new) {
                 Ok(_) => return RevokeResult::Revoked,
-                Err(_) => continue,
+                Err(_) => {}
             }
         }
     }

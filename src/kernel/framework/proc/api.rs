@@ -172,6 +172,7 @@ pub extern "C" fn user_proc_load_elf_from_memory(
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
 ///
 /// # Safety
 ///

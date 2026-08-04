@@ -137,6 +137,7 @@ impl TextAttribute {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_u8(&self) -> u8 {
         let fg = self.foreground as u8;
         let bg = (self.background as u8) << 4;

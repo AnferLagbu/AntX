@@ -33,6 +33,7 @@ fn rotr(x: u32, n: u32) -> u32 {
     x.rotate_right(n)
 }
 
+#[expect(clippy::many_single_char_names, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
 /// 处理单个 512 位块
 fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
     let mut w = [0u32; 64];

@@ -74,6 +74,7 @@ impl NtpTimestamp {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 转换为 Unix 时间 (ns)
     pub fn to_unix_ns(&self) -> u64 {
         let sec = u64::from(self.sec.wrapping_sub(NTP_EPOCH_OFFSET as u32));
@@ -159,6 +160,7 @@ pub struct NtpResult {
 }
 
 impl NtpResult {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 从 NTP 交换计算偏移和延迟
     ///
     /// offset = ((T2 - T1) + (T3 - T4)) / 2
@@ -473,6 +475,7 @@ pub fn timesync_is_initialized() -> bool {
 ///   9 = `is_initialized()` → bool (是否已初始化)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 pub extern "C" fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !timesync_is_initialized() && cmd != 9 {
         return -(11i64); // EAGAIN

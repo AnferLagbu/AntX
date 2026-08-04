@@ -13,6 +13,7 @@
 /// # Safety
 /// 必须在 Ring 0 (内核态) 调用, 否则触发 #GP 异常。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub unsafe fn read_msr(msr: u32) -> u64 { unsafe {
     let (low, high): (u32, u32);
 

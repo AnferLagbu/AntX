@@ -97,6 +97,7 @@ const F_SETFD: i32 = 2;
 const F_GETFL: i32 = 3;
 const F_SETFL: i32 = 4;
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 /// fcntl 系统调用
 pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
     if fd < 0 {
@@ -121,6 +122,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
     }
 }
 
+#[expect(clippy::comparison_chain, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
 /// fcntl POSIX record lock 处理
 ///
 /// `arg` 指向用户空间的 `flock` 结构体:

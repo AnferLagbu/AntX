@@ -381,6 +381,7 @@ impl DmaEngine {
     #[inline(always)]
     #[allow(unused_variables)]
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     fn cache_flush(&self, addr: VirtAddr, size: usize) {
         // 架构相关缓存刷新
         #[cfg(target_arch = "x86_64")]
@@ -459,6 +460,7 @@ impl DmaEngine {
     #[cfg_attr(target_arch = "x86_64", allow(unused_variables))]
     #[inline(always)]
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]
         {
@@ -500,6 +502,7 @@ impl DmaEngine {
     }
 
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     fn barrier_device() {
         // sfence: 确保所有 store 在 DMA 之前可见
         crate::arch!(fence_w());

@@ -85,6 +85,7 @@ impl SyscallDispatch for ServicesSyscallDispatch {
 // 子系统分发函数
 // ============================================================================
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 /// 文件系统相关系统调用
 fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
     use crate::kernel::services::syscall::types::{SYS_open, SYS_close, SYS_stat, SYS_fstat, SYS_lstat, SYS_creat, SYS_mkdir, SYS_rmdir, SYS_chmod, SYS_fchmod, SYS_umask, SYS_access, SYS_unlink, SYS_rename, SYS_symlink, SYS_readlink, SYS_link, SYS_openat, SYS_newfstatat, SYS_unlinkat, SYS_renameat, SYS_linkat, SYS_symlinkat, SYS_readlinkat, SYS_fchmodat, SYS_faccessat, SYS_fchown, SYS_sync, SYS_fsync, SYS_mount, SYS_umount2, SYS_getcwd, SYS_chdir, SYS_pipe, SYS_pipe2, SYS_dup, SYS_dup2, SYS_dup3, SYS_fcntl, SYS_ioctl, SYS_poll, SYS_select, SYS_chown, SYS_truncate, SYS_ftruncate, SYS_flock, SYS_lseek, SYS_getdents, SYS_inotify_init1, SYS_inotify_add_watch, SYS_inotify_rm_watch, SYS_clock_gettime, SYS_times, SYS_time, SYS_getitimer, SYS_alarm, SYS_setitimer, SYS_copy_file_range, SYS_name_to_handle_at, SYS_open_by_handle_at, QX_SETXATTR, QX_GETXATTR, QX_LISTXATTR, QX_REMOVEXATTR, QX_SNAPSHOT_CREATE, QX_SNAPSHOT_DESTROY, QX_SNAPSHOT_ROLLBACK, QX_SNAPSHOT_CLONE};
@@ -197,6 +198,7 @@ fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
     })
 }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 /// 进程相关系统调用
 fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
     use crate::kernel::services::syscall::types::{SYS_getpid, SYS_getppid, SYS_getpgid, SYS_gettid, SYS_setsid, SYS_getsid, SYS_setpgid, SYS_rt_sigaction, SYS_rt_sigprocmask, SYS_kill, SYS_nice, SYS_getpriority, SYS_setpriority, SYS_sched_setaffinity, SYS_sched_getaffinity, SYS_fork, SYS_exit, SYS_exit_group, SYS_sched_yield, SYS_getrusage, SYS_sysinfo, SYS_getrlimit, SYS_uname, SYS_gettimeofday, SYS_nanosleep, SYS_clone, SYS_wait4, SYS_memfd_create, SYS_pidfd_open, SYS_pidfd_send_signal, SYS_pidfd_getfd};
@@ -313,6 +315,7 @@ fn dispatch_mm(num: u64, args: [u64; 6]) -> Option<i64> {
     })
 }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 /// 同步原语相关系统调用
 fn dispatch_sync(num: u64, args: [u64; 6]) -> Option<i64> {
     use crate::kernel::services::syscall::types::{SYS_futex, SYS_epoll_create, SYS_epoll_create1, SYS_epoll_ctl, SYS_epoll_wait, SYS_eventfd, SYS_eventfd2, SYS_signalfd, SYS_signalfd4, SYS_timerfd_create, SYS_timerfd_settime, SYS_timerfd_gettime};

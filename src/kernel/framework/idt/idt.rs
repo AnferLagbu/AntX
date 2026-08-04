@@ -38,6 +38,7 @@ use crate::klog_info;
 /// 从端口读字节
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 unsafe fn port_inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
@@ -195,6 +196,7 @@ pub struct IdtManager {
 static IDT_MANAGER_INSTANCE: OnceLock<IdtManager> = OnceLock::new();
 
 impl IdtManager {
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 获取全局 IDT 管理器实例
     pub fn instance() -> &'static IdtManager {
         IDT_MANAGER_INSTANCE.get_or_init(|slot| {
@@ -526,6 +528,8 @@ impl IdtManager {
     /// 处理异常 (从 `exception_handler` FFI 调用)
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn handle_exception(&self, frame: *mut InterruptFrame) {
         if frame.is_null() {
             return;

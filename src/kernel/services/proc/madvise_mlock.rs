@@ -89,6 +89,7 @@ pub enum Advice {
 }
 
 impl Advice {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// 从 Linux 原始 advice 值构造
     pub fn from_u32(v: u32) -> Self {
         match v {

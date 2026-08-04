@@ -229,6 +229,8 @@ impl Trb {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn trb_type(&self) -> TrbType {
         let ty = (self.control >> 10) & 0x3F;
         match ty {
@@ -267,6 +269,7 @@ impl Trb {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn cycle_bit(&self) -> bool {
         self.control & 1 != 0
     }
@@ -361,6 +364,7 @@ impl XhciController {
         }
     }
 
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     /// 构造时附加 BAR0 信息 (用于日志/调试)
     pub fn with_bar(mut self, bar_base: u64, bar_size: u64) -> Self {
         self.bar_base = bar_base;

@@ -115,82 +115,96 @@ pub(crate) mod raw {
         /// - `ptr` 必须指向合法的 `SlabHeader`
         /// - 必须持有相应的锁
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub unsafe fn new_unchecked(ptr: *mut SlabHeader) -> Self {
             Self(ptr)
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn as_ptr(self) -> *mut SlabHeader {
             self.0
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn start_addr(&self) -> *mut u8 {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).start_addr }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_start_addr(&self, val: *mut u8) {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).start_addr = val; }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn obj_count(&self) -> u32 {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).obj_count }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_obj_count(&self, val: u32) {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).obj_count = val; }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn active_count(&self) -> u32 {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).active_count }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_active_count(&self, val: u32) {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).active_count = val; }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn is_full(&self) -> bool {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).is_full }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_is_full(&self, val: bool) {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).is_full = val; }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn prev(&self) -> *mut SlabHeader {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).prev }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_prev(&self, p: *mut SlabHeader) {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).prev = p; }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn next(&self) -> *mut SlabHeader {
             // SAFETY: caller guarantees valid pointer
             unsafe { (*self.0).next }
         }
 
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_next(&self, p: *mut SlabHeader) {
             // SAFETY: 调用方保证指针合法
             unsafe { (*self.0).next = p; }
@@ -198,6 +212,7 @@ pub(crate) mod raw {
 
         /// 在该位置写入默认的 `SlabHeader`.
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn write_default(&self) {
             // SAFETY: 调用方保证指针合法
             unsafe { *self.0 = SlabHeader::default(); }
@@ -206,6 +221,7 @@ pub(crate) mod raw {
         /// 获取该 slab 的 bitmap 指针.
         /// Bitmap 起始于 header + 对象区之后.
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn bitmap_ptr(&self, object_size: usize) -> *mut u8 {
             // SAFETY: 调用方保证指针合法且 object_size 正确
             unsafe {
@@ -216,6 +232,7 @@ pub(crate) mod raw {
 
         /// 获取指定索引处的对象指针.
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn object_ptr(&self, idx: u32, object_size: usize) -> *mut u8 {
             // SAFETY: 调用方保证指针合法且 idx < obj_count
             unsafe {
@@ -537,6 +554,7 @@ impl KmemCache {
     /// 创建新的 Slab (分配一页物理内存)
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::ptr_as_ptr, reason = "page as *mut SlabHeader: pmm_alloc_pages 返回页对齐 *mut u8, 安全 cast")]
     fn new_slab(&self) -> Option<*mut SlabHeader> {
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
         unsafe extern "C" {
@@ -719,6 +737,7 @@ impl KmemCache {
     /// * `head` - 链表头指针的可变引用 (如 &mut `self.slabs_partial`)
     /// * `slab` - 要移除的节点
     #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     fn list_remove(head: &mut *mut SlabHeader, slab: *mut SlabHeader) {
         if head.is_null() || slab.is_null() {
             return;

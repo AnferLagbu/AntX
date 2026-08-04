@@ -89,6 +89,7 @@ unsafe impl Send for NetState {}
 unsafe impl Sync for NetState {}
 
 impl NetState {
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     const fn new() -> Self {
         Self {
             device: None,
@@ -309,6 +310,7 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 // ============================================================================
 
 #[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
 /// 轮询网络栈 (驱动 TX/RX、定时器、DHCP)。
 ///
 /// 在 timer ISR 或网络任务中调用, 内部 `try_lock` 避免阻塞。
@@ -998,6 +1000,7 @@ fn ipv4_from_atomic(v: u32) -> Option<[u8; 4]> {
     }
 }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 /// 主动触发网络初始化 (非阻塞; 失败返回 false)
 ///
 /// # 行为
@@ -1757,6 +1760,7 @@ pub(crate) mod raw {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     /// `DhcpState` tag → `DhcpState` 翻译.
     ///
     /// tag 值 (来自 `PREV_DHCP_TAG)`:

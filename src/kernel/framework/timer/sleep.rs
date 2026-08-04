@@ -78,6 +78,7 @@ pub fn busy_wait_ns(ns: u64) {
 /// # Arguments
 /// * `us` - 等待时间 (微秒)
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn busy_wait_us(us: u64) {
     if us == 0 {
         return;

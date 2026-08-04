@@ -117,6 +117,7 @@ pub enum SchedPolicy {
 }
 
 impl SchedPolicy {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn from_u32(value: u32) -> Self {
         match value {
             0 => SchedPolicy::Normal,

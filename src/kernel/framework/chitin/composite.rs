@@ -18,6 +18,7 @@ pub enum CompositeType {
 }
 
 impl CompositeType {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn compatible_str(&self) -> &'static str {
         match self {
             CompositeType::Raid0 => "qx,raid0",
@@ -33,6 +34,7 @@ impl CompositeType {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn display_name(&self) -> &'static str {
         match self {
             CompositeType::Raid0 => "RAID0",

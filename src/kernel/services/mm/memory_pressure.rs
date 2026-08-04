@@ -56,14 +56,17 @@ impl MemoryPressure {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_critical(&self) -> bool {
         matches!(self, Self::Critical | Self::Emergency)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn is_emergency(&self) -> bool {
         matches!(self, Self::Emergency)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn description(&self) -> &'static str {
         match self {
             Self::Normal => "normal",

@@ -238,6 +238,7 @@ static FUTEX_TABLE: FutexHashTable = FutexHashTable {
     },
 };
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// 计算哈希桶索引
 fn hash_uaddr(uaddr: u64) -> usize {
     let hash = (uaddr.wrapping_mul(0x9E3779B97F4A7C15)) >> 58;

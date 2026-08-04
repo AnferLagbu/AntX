@@ -186,27 +186,32 @@ pub const PAGE_NX: u64 = 1u64 << 63;
 
 /// 页表索引辅助宏
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub const fn pml4_index(addr: u64) -> usize {
     ((addr >> 39) & 0x1FF) as usize
 }
 
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub const fn pdpt_index(addr: u64) -> usize {
     ((addr >> 30) & 0x1FF) as usize
 }
 
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub const fn pd_index(addr: u64) -> usize {
     ((addr >> 21) & 0x1FF) as usize
 }
 
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub const fn pt_index(addr: u64) -> usize {
     ((addr >> 12) & 0x1FF) as usize
 }
 
 /// 物理地址转虚拟地址 (内核空间)
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub const fn phys_to_virt(phys: u64) -> u64 {
     phys + KERNEL_BASE
 }
@@ -227,6 +232,7 @@ pub enum PageSize {
 }
 
 impl PageSize {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn size(&self) -> u64 {
         match self {
             PageSize::Size4K => PAGE_SIZE,
@@ -235,6 +241,7 @@ impl PageSize {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn shift(&self) -> u64 {
         match self {
             PageSize::Size4K => PAGE_SHIFT,
@@ -243,6 +250,7 @@ impl PageSize {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     /// 检查地址是否按当前页大小正确对齐
     pub fn is_aligned(&self, addr: u64) -> bool {
         let mask = self.size() - 1;
@@ -291,22 +299,29 @@ impl PhysAddr {
         Self(addr)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
 
     /// 向上对齐到页边界
     #[inline(always)]
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn align_up(&self, align: u64) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
     /// 向下对齐到页边界
     #[inline(always)]
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     pub fn align_down(&self, align: u64) -> Self {
         Self(self.0 & !(align - 1))
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 转为内核空间虚拟地址
     pub fn to_virt(&self) -> VirtAddr {
         VirtAddr(phys_to_virt(self.0))
@@ -322,42 +337,53 @@ impl VirtAddr {
         Self(addr)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
 
     /// 向上对齐到页边界
     #[inline(always)]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     pub fn align_up(&self, align: u64) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
     /// 向下对齐到页边界
     #[inline(always)]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub fn align_down(&self, align: u64) -> Self {
         Self(self.0 & !(align - 1))
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 转为物理地址 (假定为内核空间)
     pub fn to_phys(&self) -> PhysAddr {
         PhysAddr(virt_to_phys(self.0))
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取该地址的 PML4 索引
     pub fn pml4_idx(&self) -> usize {
         pml4_index(self.0)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取该地址的 PDPT 索引
     pub fn pdpt_idx(&self) -> usize {
         pdpt_index(self.0)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取该地址的 PD 索引
     pub fn pd_idx(&self) -> usize {
         pd_index(self.0)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     /// 获取该地址的 PT 索引
     pub fn pt_idx(&self) -> usize {
         pt_index(self.0)
@@ -502,11 +528,13 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & PAGE_HUGE != 0
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 返回帧地址 (页的物理地址).
     pub fn frame(&self) -> PhysAddr {
         PhysAddr(self.bits.load(Ordering::Acquire) & 0x000FFFFFFFFFF000)
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 设置帧地址.
     pub fn set_frame(&self, frame: PhysAddr) {
         let mut val = self.bits.load(Ordering::Acquire);
@@ -549,6 +577,7 @@ impl Default for PageTableEntry {
     }
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// 将帧缓冲物理地址映射到内核虚拟地址空间
 ///
 /// 帧缓冲位于 PCI MMIO 区域（高位物理地址），启动页表的恒等映射

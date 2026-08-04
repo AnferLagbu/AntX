@@ -544,6 +544,7 @@ impl VfsManager {
         });
     }
 
+#[expect(clippy::assigning_clones, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     pub fn restore_from_snapshot(&self) {
         if let Some(ref snap) = *self.snapshot.lock() {
             *self.mounts.lock() = snap.mounts.clone();

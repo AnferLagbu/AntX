@@ -114,6 +114,7 @@ pub enum ChitinProto {
 }
 
 impl ChitinProto {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn as_str(&self) -> &'static str {
         match self {
             ChitinProto::Block => "block",
@@ -405,6 +406,7 @@ pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
         .count()
 }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
 /// 查找第一个网络设备, 返回其 `NetOps` + `driver_data` + MAC 地址
 ///
 /// 供 `smoltcp_impl` 使用——协议栈不关心具体驱动类型, 只需要
@@ -584,6 +586,7 @@ pub fn chitin_blk_count() -> usize {
 
 // ── 字符设备 I/O (统一入口) ──
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
 /// 通过 Chitin 向第一个就绪字符设备写入字节
 ///
 /// 遍历 `CHITIN_DEVICES` 查找第一个 proto=Char+Ready 且携带 `CharOps` 的设备,
@@ -607,6 +610,7 @@ pub fn chitin_char_write(data: &[u8]) {
     }
 }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
 /// 通过 Chitin 从第一个就绪字符设备读取字节
 pub fn chitin_char_read(buf: &mut [u8]) -> usize {
     let devices = CHITIN_DEVICES.lock();
@@ -627,6 +631,7 @@ pub fn chitin_char_read(buf: &mut [u8]) -> usize {
 
 // ── 输入设备 I/O (统一入口) ──
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
 /// 通过 Chitin 从第一个就绪输入设备读取一个字符
 pub fn chitin_input_read() -> Option<u8> {
     let devices = CHITIN_DEVICES.lock();
@@ -645,6 +650,7 @@ pub fn chitin_input_read() -> Option<u8> {
     None
 }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
 /// 通过 Chitin 检查第一个就绪输入设备是否有数据
 pub fn chitin_input_has_data() -> bool {
     let devices = CHITIN_DEVICES.lock();

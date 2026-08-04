@@ -67,6 +67,7 @@ impl FirmwareBlob {
     }
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// FNV-1a 32-bit hash
 ///
 /// 用于固件名快速比对; 用户态与内核态均使用同一算法。

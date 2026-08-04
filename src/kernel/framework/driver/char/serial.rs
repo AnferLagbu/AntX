@@ -119,6 +119,7 @@ pub enum BaudRate {
 }
 
 impl BaudRate {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub(crate) fn to_divisor(&self) -> u16 {
         match self {
             Self::Baud9600 => BAUD_9600,
@@ -140,6 +141,7 @@ pub enum DataBits {
 }
 
 impl DataBits {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::Bits5 => 0x00,
@@ -158,6 +160,7 @@ pub enum StopBits {
 }
 
 impl StopBits {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::One => 0x00,
@@ -177,6 +180,7 @@ pub enum ParityMode {
 }
 
 impl ParityMode {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::None => 0x00,

@@ -93,6 +93,7 @@ pub struct AuditLog {
 pub const AUDIT_BUFFER_SIZE: usize = 1024;
 
 impl AuditLog {
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     pub const fn new() -> Self {
         const EMPTY_NODE: HashChainNode = HashChainNode {
             index: 0,
@@ -162,6 +163,7 @@ impl AuditLog {
         None
     }
 
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     /// 验证哈希链完整性
     ///
     /// 返回: (ok, 第一个被破坏的 index)
@@ -255,6 +257,7 @@ impl AuditError {
 
 use crate::kernel::framework::syscall::Errno;
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 /// FNV-1a 64 位哈希 (services 层, 用于审计链)
 fn compute_hash(prev: u64, event: &AuditEvent) -> u64 {
     const OFFSET: u64 = 0xcbf29ce484222325;

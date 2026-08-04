@@ -51,12 +51,14 @@ pub mod raw {
 
         /// 获取底层 `NonNull`
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn as_non_null(self) -> NonNull<Message> {
             self.0
         }
 
         /// 读 `next` 字段 (侵入式链表)
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn next(&self) -> Option<NonNull<Message>> {
             // SAFETY: 调用方保证 self 指向有效 Message。
             unsafe { (*self.0.as_ptr()).next }
@@ -64,6 +66,7 @@ pub mod raw {
 
         /// 写 `next` 字段
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn set_next(&self, next: Option<NonNull<Message>>) {
             // SAFETY: 同上, self 必须是有效 Message。
             unsafe { (*self.0.as_ptr()).next = next }
@@ -71,6 +74,7 @@ pub mod raw {
 
         /// 获取 &Message 引用
         #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
         pub fn get(&self) -> &Message {
             // SAFETY: self 指向有效 Message。
             unsafe { &*self.0.as_ptr() }

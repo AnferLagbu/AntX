@@ -39,6 +39,8 @@ pub enum PixelFormat {
 }
 
 impl PixelFormat {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取每像素字节数
     pub fn bytes_per_pixel(&self) -> usize {
         match self {
@@ -50,6 +52,7 @@ impl PixelFormat {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取每像素位数
     pub fn bits_per_pixel(&self) -> usize {
         self.bytes_per_pixel() * 8
@@ -81,6 +84,7 @@ impl Color {
         Self { r, g, b, a }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 转换为RGB565格式
     pub fn to_rgb565(&self) -> u16 {
         let r = (u16::from(self.r) >> 3) & 0x1F;
@@ -89,11 +93,13 @@ impl Color {
         (r << 11) | (g << 5) | b
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 转换为RGB888格式 (返回u32方便使用)
     pub fn to_rgb888(&self) -> u32 {
         (u32::from(self.r) << 16) | (u32::from(self.g) << 8) | u32::from(self.b)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 转换为ARGB8888格式
     pub fn to_argb8888(&self) -> u32 {
         (u32::from(self.a) << 24) | (u32::from(self.r) << 16) | (u32::from(self.g) << 8) | u32::from(self.b)
@@ -126,6 +132,8 @@ impl Color {
     /// 混合两个颜色 (alpha混合)
     // 有意窄化: 颜色分量/透明度经规范化计算, 值域 [0,255]
     #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     pub fn blend(&self, other: &Color) -> Color {
         let alpha = u32::from(self.a);
         let inv_alpha = 255 - alpha;
@@ -192,6 +200,7 @@ impl Rect {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 检查点是否在矩形内
     pub fn contains(&self, point: Point) -> bool {
         point.x >= self.x
@@ -200,6 +209,7 @@ impl Rect {
             && point.y < self.y + self.height as i32
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 检查是否与另一个矩形相交
     pub fn intersects(&self, other: &Rect) -> bool {
         self.x < other.x + other.width as i32
@@ -208,6 +218,7 @@ impl Rect {
             && self.y + self.height as i32 > other.y
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 获取两个矩形的交集
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
         if !self.intersects(other) {

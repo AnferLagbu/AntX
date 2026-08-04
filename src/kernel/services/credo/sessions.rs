@@ -302,6 +302,8 @@ impl<'a> SessionManager<'a> {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::match_wildcard_for_single_variants, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
     /// 登录流程 (services 层抽象, 实际密码验证由 `framework::credo::password` 提供)
     pub fn login(
         &mut self,

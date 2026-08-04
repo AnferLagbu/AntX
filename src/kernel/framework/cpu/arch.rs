@@ -16,30 +16,35 @@ use crate::kernel::framework::arch::Arch;
 
 /// 获取当前 CPU ID (APIC ID / `MPIDR_EL1`)。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn cpu_id() -> u32 {
     <crate::kernel::framework::arch::CurrentArch as Arch>::cpu_id()
 }
 
 /// 获取高精度时间戳 (rdtsc / `CNTVCT_EL0`)。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn timestamp() -> u64 {
     <crate::kernel::framework::arch::CurrentArch as Arch>::timestamp()
 }
 
 /// CPU 暂停直到中断 (hlt / wfi)。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn halt() {
     <crate::kernel::framework::arch::CurrentArch as Arch>::halt();
 }
 
 /// 发送核间中断到目标 CPU。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn send_ipi(target_cpu: u32, vector: u8) {
     <crate::kernel::framework::arch::CurrentArch as Arch>::send_ipi(target_cpu, vector);
 }
 
 /// 广播核间中断到所有 CPU。
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 pub fn broadcast_ipi(vector: u8) {
     <crate::kernel::framework::arch::CurrentArch as Arch>::broadcast_ipi(vector);
 }

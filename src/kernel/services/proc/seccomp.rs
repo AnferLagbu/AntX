@@ -59,6 +59,7 @@ pub enum SeccompAction {
 }
 
 impl SeccompAction {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn from_linux(ret: u32) -> Self {
         match ret & 0xFFFF_0000 {
             0x7FFF_0000 => Self::Allow,
@@ -215,6 +216,7 @@ impl SeccompState {
 // ============================================================================
 
 #[inline(never)]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 pub fn seccomp_check(syscall_nr: u64, args: &[u64; 6]) -> Option<i64> {
     let pid = process_get_current_pid();
     let mode = PROCESS_TABLE

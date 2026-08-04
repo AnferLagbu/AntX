@@ -320,6 +320,7 @@ pub fn proc_getsid(pid: i32) -> i64 {
         .unwrap_or(-3)
 }
 
+#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
 /// setpgid(pid, pgid) — 设置进程组
 pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
     if pid < 0 || pgid < 0 {

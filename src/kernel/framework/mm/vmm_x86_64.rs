@@ -346,6 +346,7 @@ impl VirtualMemoryManager {
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     pub fn get_physical_in_pml4(&self, pml4: u64, virt: VirtAddr) -> Option<PhysAddr> {
         if pml4 == 0 {
             return None;
@@ -405,6 +406,8 @@ impl VirtualMemoryManager {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
     /// 读取 PTE 原始值 (用于 swap entry 检测)
     ///
     /// 返回 4KB 页的 PTE 原始值, 若页表层级不存在则返回 None.
@@ -447,6 +450,7 @@ impl VirtualMemoryManager {
 
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 #[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 直接写入 PTE 原始值 (用于 swap 替换)
     ///
     /// 沿 PML4→PDPT→PD→PT 找到最终 PTE, 写入 `raw_pte` 后 TLB flush.
@@ -1202,6 +1206,7 @@ impl VirtualMemoryManager {
     #[expect(clippy::cast_possible_truncation)]
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     unsafe fn get_or_create_table_entry(
         &self,
         entry: *mut PageTableEntry,
@@ -1445,6 +1450,7 @@ impl VirtualMemoryManager {
 #[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
 #[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
 #[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 {
             return None;
@@ -1628,6 +1634,7 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     /// 获取 VMM 锁 (关中断 + 自旋), 支持单核可重入.
     ///
     /// # Panics
@@ -1656,6 +1663,8 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn release_lock(&self, flags: &IrqSaveFlags) {
         #[cfg(debug_assertions)]
         {
@@ -1668,6 +1677,7 @@ impl VirtualMemoryManager {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     unsafe fn read_cr3(&self) -> u64 {
         // SAFETY: Reading CR3 is always safe; returns current page table base
         crate::arch!(read_page_table_base())
@@ -1675,6 +1685,7 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     unsafe fn write_cr3(&self, val: u64) {
         // SAFETY: val must point to a valid PML4 table; caller guarantees this
         crate::arch!(write_page_table_base(val));

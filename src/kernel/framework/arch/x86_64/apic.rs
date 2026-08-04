@@ -173,6 +173,7 @@ pub fn broadcast_ipi(vector: u8) {
     while apic_read(APIC_ICR_LOW) & (1 << 12) != 0 {}
 }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 pub fn init_timer(vector: u8, periodic: bool, divisor: u32) {
     if !is_initialized() {
         return;
@@ -209,6 +210,7 @@ pub fn get_timer_count() -> u32 {
     apic_read(APIC_TIMER_CCR)
 }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
 pub fn calibrate_timer(_pit_hz: u64, target_ms: u64) -> u64 {
     if !is_initialized() {
         return 0;

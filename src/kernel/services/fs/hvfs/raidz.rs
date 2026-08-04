@@ -16,6 +16,8 @@ pub enum HvRaidzLevel {
 }
 
 impl HvRaidzLevel {
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn parity_cols(&self) -> usize {
         match self {
             Self::Single => 0,
@@ -26,6 +28,8 @@ impl HvRaidzLevel {
         }
     }
 
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn max_failures(&self) -> usize {
         match self {
             Self::Single => 0,
@@ -114,6 +118,7 @@ const GF_LOG: [u8; 256] = [
 ];
 
 #[inline(always)]
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
 fn gf_mul(a: u8, b: u8) -> u8 {
     if a == 0 || b == 0 {
         return 0;

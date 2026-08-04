@@ -86,6 +86,7 @@ pub enum CpuVendor {
 }
 
 impl CpuVendor {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 从厂商字符串识别厂商
     ///
     /// # Arguments
@@ -103,6 +104,7 @@ impl CpuVendor {
 
     /// 获取厂商名称 (用于显示)
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Intel => "Intel",
@@ -117,6 +119,7 @@ impl CpuVendor {
 
     /// 是否为虚拟化环境
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn is_virtualized(&self) -> bool {
         matches!(self, Self::Qemu | Self::Unknown) // Unknown 可能是VMware等
     }
@@ -263,36 +266,42 @@ bitflags::bitflags! {
 impl CpuFeatures {
     /// 检查是否为 Intel 处理器 (基于特性组合判断)
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn is_intel_style(&self) -> bool {
         self.contains(Self::VMX) && !self.contains(Self::SVM)
     }
 
     /// 检查是否为 AMD 处理器
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn is_amd_style(&self) -> bool {
         self.contains(Self::SVM) && !self.contains(Self::VMX)
     }
 
     /// 检查是否支持 x86-64 长模式
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn supports_64bit(&self) -> bool {
         self.contains(Self::LM)
     }
 
     /// 检查是否支持 SIMD 向量指令
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn supports_simd(&self) -> bool {
         self.contains(Self::SSE | Self::SSE2)
     }
 
     /// 检查是否支持 AVX/AVX2
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn supports_avx(&self) -> bool {
         self.contains(Self::AVX | Self::AVX2)
     }
 
     /// 检查是否支持虚拟化扩展
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub fn supports_virtualization(&self) -> bool {
         self.contains(Self::VMX | Self::SVM)
     }
@@ -331,6 +340,7 @@ impl CpuSignature {
     /// - 如果 Family != 0xF, `Effective_Family` = Family
     /// - 如果 Family == 0xF, `Effective_Family` = `Extended_Family` + Family
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn effective_family(&self) -> u8 {
         if self.family == 0x0F {
             self.ext_family.saturating_add(self.family)
@@ -341,6 +351,7 @@ impl CpuSignature {
 
     /// 计算有效的型号 (同上逻辑)
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn effective_model(&self) -> u8 {
         if self.family == 0x06 || self.family == 0x0F {
             (self.ext_model << 4).saturating_add(self.model)
@@ -349,6 +360,7 @@ impl CpuSignature {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 格式化为人类可读字符串 (如 "6-158-10" 表示 Family 6, Model 158, Stepping 10)
     /// 返回一个静态数组 (避免堆分配)
     pub fn to_string(&self) -> [u8; 16] {
@@ -452,6 +464,7 @@ pub struct TopologyInfo {
 impl TopologyInfo {
     /// 获取每物理核心的逻辑线程数
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn threads_per_core(&self) -> u8 {
         if self.physical_cores > 0 && self.logical_threads >= self.physical_cores {
             self.logical_threads / self.physical_cores
@@ -462,6 +475,7 @@ impl TopologyInfo {
 
     /// 检查是否为单核 CPU
     #[inline]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     pub const fn is_single_core(&self) -> bool {
         self.physical_cores <= 1 && self.logical_threads <= 1
     }
@@ -1233,6 +1247,7 @@ fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: C
 #[cfg(target_arch = "x86_64")]
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
 fn detect_topology(
     topo_out: &mut TopologyInfo,
     _sig: &CpuSignature,

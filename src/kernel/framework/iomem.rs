@@ -138,6 +138,7 @@ impl IoMem {
         unsafe { Self::new(bar_phys, len, name) }
     }
 
+#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
     /// 确保 MMIO 物理地址范围在内核页表中有映射.
     /// 使用 2MB 大页映射, 覆盖 [phys, phys + len) 所在的所有 2MB 页.
     /// 如果映射已存在 (同一 2MB 页), `map_huge_page` 会安全地跳过或覆盖.
@@ -163,9 +164,13 @@ impl IoMem {
         }
     }
 
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     #[inline(always)] pub fn phys(&self) -> PhysAddr { self.phys_base }
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     #[inline(always)] pub fn len(&self) -> usize { self.len }
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     #[inline(always)] pub fn is_empty(&self) -> bool { self.len == 0 }
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     #[inline(always)] pub fn name(&self) -> &'static str { self.name }
 
     /// 获取 `IoMem` 内部虚拟地址指针 (供上层安全访问结构体 MMIO)。

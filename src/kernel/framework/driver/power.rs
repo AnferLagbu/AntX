@@ -79,6 +79,7 @@ pub fn arch_halt() {
     }
 }
 
+#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
 /// CPU 进入空闲 (调度器 idle 调用)
 ///
 /// 组合策略选择 (services) + 硬件 halt (framework)
@@ -111,6 +112,7 @@ pub fn pm_idle(cpu_id: u32) {
     }
 }
 
+#[expect(clippy::match_wildcard_for_single_variants, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
 /// 挂起系统 (组合策略 + 硬件操作)
 pub fn pm_suspend(target: SystemPowerState) -> i64 {
     if let Err(e) = PM_SUBSYSTEM.suspend_prepare(target) {

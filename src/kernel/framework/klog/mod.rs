@@ -99,12 +99,14 @@ macro_rules! klog_fmt {
         let mut w = $crate::kernel::framework::klog::KlogWriter::new();
         let _ = core::fmt::Write::write_fmt(&mut w, format_args!($($arg)*));
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        // cast 已知安全: LogLevel/LogCategory 枚举值 < 256; ptr 改用 .cast() 根治 ptr_as_ptr
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         unsafe {
             $crate::kernel::framework::klog::klog_write(
                 $crate::kernel::framework::klog::LogLevel::$lvl as u8,
                 $crate::kernel::framework::klog::LogCategory::$cat as u8,
                 core::ptr::null(), core::ptr::null(), 0,
-                w.as_slice().as_ptr() as *const u8,
+                w.as_slice().as_ptr().cast::<u8>(),
             );
         }
     }};
@@ -151,6 +153,7 @@ mod serial_impl {
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
     unsafe fn port_outb(port: u16, value: u8) {
         crate::arch!(outb(port, value));
     }
@@ -385,6 +388,7 @@ struct RingBuf {
 }
 
 impl RingBuf {
+#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
     const fn new() -> Self {
         Self {
             data: [0; RING_SIZE],
@@ -675,6 +679,7 @@ pub unsafe extern "C" fn klog_init() {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
 ///
 /// # Safety
 ///

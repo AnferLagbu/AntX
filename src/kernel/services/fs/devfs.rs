@@ -71,11 +71,13 @@ impl DevKind {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 是否为虚拟设备 (内核内部实现)
     pub fn is_virtual(&self) -> bool {
         matches!(self, Self::Null | Self::Zero | Self::Console | Self::Tty | Self::Credo)
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 是否为物理设备 (由 Chitin 驱动提供)
     pub fn is_physical(&self) -> bool {
         matches!(self, Self::Block | Self::Char | Self::Net | Self::Input)
@@ -244,6 +246,7 @@ impl DevfsData {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn read(&self, dev_type: u8, buf: &mut [u8]) -> i32 {
         match DevKind::from_u8(dev_type) {
             Some(DevKind::Null) => 0,
@@ -296,6 +299,7 @@ impl DevfsData {
     }
 
 #[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
     pub fn write(&self, dev_type: u8, buf: &[u8]) -> i32 {
         match DevKind::from_u8(dev_type) {
             Some(DevKind::Null | DevKind::Zero) => buf.len() as i32,
@@ -398,6 +402,7 @@ pub struct DevFile {
 }
 
 impl DevFile {
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 设备名 (如 "null", "zero", "console")
     /// 物理设备无固定名称, 返回 "device"
     pub fn name(&self) -> &'static str {
@@ -460,6 +465,7 @@ impl SafeDevFs {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 从设备读
     ///
     /// # Errors
@@ -473,6 +479,7 @@ impl SafeDevFs {
         }
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 向设备写
     ///
     /// # Errors

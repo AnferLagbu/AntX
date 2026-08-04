@@ -130,12 +130,14 @@ impl TextAttribute {
         Self { foreground, background, blink: false }
     }
 
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     /// 设置闪烁位
     pub const fn with_blink(mut self) -> Self {
         self.blink = true;
         self
     }
 
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
     /// 编码为 u8 (VGA 显存格式)
     pub const fn as_u8(&self) -> u8 {
         let fg = self.foreground as u8;
@@ -195,6 +197,7 @@ pub struct CursorPos {
 }
 
 impl CursorPos {
+#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
     /// 钳制到屏幕范围内
     pub fn clamp(self) -> Self {
         Self {

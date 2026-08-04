@@ -162,6 +162,7 @@ pub unsafe fn init_distributor() { unsafe {
     gicd_write(GICD_ITARGETSR + 4, 0x0101_0101);
 }}
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 初始化 GICv3 Redistributor (当前 CPU):
 /// 1. 唤醒 redistributor
 /// 2. 配置 SGI/PPI 分组
@@ -258,6 +259,7 @@ pub fn acknowledge() -> u32 {
     iar as u32
 }
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 中断完成 (EOI)
 pub fn end_of_interrupt(intid: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -266,6 +268,7 @@ pub fn end_of_interrupt(intid: u32) {
     }
 }
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 发送 EOI 并解除优先级 (drop priority)
 pub fn deactivate(intid: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -305,6 +308,7 @@ pub fn is_valid_irq(irq: u32) -> bool {
     irq < SPI_BASE + 960 // GICv3 最多支持 1024 个中断
 }
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 使能 SPI 中断
 ///
 /// # Safety
@@ -319,6 +323,7 @@ pub unsafe fn enable_spi(irq: u32) { unsafe {
     gicd_write(reg_offset, bit);
 }}
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 禁用 SPI 中断
 ///
 /// # Safety
@@ -334,6 +339,7 @@ pub unsafe fn disable_spi(irq: u32) { unsafe {
     gicd_write(reg_offset + 0x80, bit);
 }}
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 设置 SPI 中断为 pending
 ///
 /// # Safety
@@ -348,6 +354,7 @@ pub unsafe fn set_spi_pending(irq: u32) { unsafe {
     gicd_write(reg_offset, bit);
 }}
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 配置 SPI 中断为 level-triggered
 ///
 /// # Safety
@@ -364,6 +371,7 @@ pub unsafe fn configure_spi_level(irq: u32) { unsafe {
     gicd_write(reg_offset, val & !(3 << shift));
 }}
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 配置 SPI 中断为 edge-triggered
 ///
 /// # Safety
@@ -380,6 +388,7 @@ pub unsafe fn configure_spi_edge(irq: u32) { unsafe {
     gicd_write(reg_offset, val | (1 << shift));
 }}
 
+#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
 /// 读取 SPI 中断状态 (是否 pending)
 pub fn is_spi_pending(irq: u32) -> bool {
     if !is_spi(irq) {

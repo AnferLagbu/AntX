@@ -73,7 +73,7 @@ fn write_dispatch<T: KgdbSerial>(p: *const (), c: u8) {
 /// 满足轮询读写语义。
 // SAFETY: 见上 # Safety 段. 调用方必须保证 serial 指向 'static 对象且 trait 满足轮询读写语义.
 pub unsafe fn kgdb_set_serial<T: KgdbSerial>(serial: &'static T) {
-    let data = serial as *const _ as *const () as *mut ();
+    let data = core::ptr::from_ref::<T>(serial).cast::<()>().cast_mut();
     SERIAL.store(data, Ordering::Release);
     let try_getc: TryGetcFn = read_dispatch::<T>;
     let putc: PutcFn = write_dispatch::<T>;
@@ -122,6 +122,7 @@ fn pkt_checksum(data: &[u8]) -> u8 {
     data.iter().fold(0u8, |a, b| a.wrapping_add(*b))
 }
 
+#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
 /// 发送一个 packet (含 ACK 等待)
 pub fn kgdb_send_packet(payload: &[u8]) {
     kgdb_putc(b'$');
