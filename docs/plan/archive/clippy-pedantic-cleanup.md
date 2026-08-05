@@ -1,5 +1,7 @@
 # clippy pedantic 全量修复工程
 
+> **DEPRECATED 2026-08-06**: 本文档 8 个工程计划已合并到 [stage-engineering-master.md](../stage-engineering-master.md) 工程计划 A. 保留本文档作为历史快照, 不再更新.
+>
 > 消除全部 clippy pedantic 警告 (最初 10591 → 当前 4643 → 目标 0), 分 7 批次推进.
 
 ## 工程计划 1: 批次 1-3 已完成 (清单/自动修复/文档类)
