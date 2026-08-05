@@ -140,7 +140,7 @@ mod ghc {
 }
 
 /// AHCI 端口命令寄存器 (`PxCMD`) — AHCI 规范 §3.3.2
-/// 未实现位: ICC [28:31] (接口通信控制)
+/// 未实现位: ICC `[28:31]` (接口通信控制)
 mod pxcmd {
     pub const ST: u32 = 1 << 0;
     pub const FRE: u32 = 1 << 4;

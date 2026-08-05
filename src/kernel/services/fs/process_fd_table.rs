@@ -23,7 +23,7 @@ use crate::kernel::framework::syscall::Errno;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-/// FD 条目 — Plan B: 直接持有 Arc<OpenFile>
+/// FD 条目 — Plan B: 直接持有 `Arc<OpenFile>`
 #[derive(Debug)]
 pub struct FdEntry {
     /// 打开文件描述 (共享引用)
@@ -125,7 +125,7 @@ impl ProcessFdTable {
         }
     }
 
-    /// 复制 FD (dup 语义) — 共享同一个 Arc<OpenFile>
+    /// 复制 FD (dup 语义) — 共享同一个 `Arc<OpenFile>`
     pub fn dup_fd(&self, old_fd: u32) -> Option<u32> {
         let open_file = {
             let entries = self.entries.lock();

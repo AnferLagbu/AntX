@@ -261,7 +261,7 @@ impl GdtEntry {
         }
     }
 
-    /// 创建 TSS 描述符的高64位 (base[63:32])
+    /// 创建 TSS 描述符的高64位 (base`[63:32]`)
     #[inline]
     pub const fn tss_high(tss_addr: u64) -> Self {
         let base_high32 = (tss_addr >> 32) as u32;
@@ -592,7 +592,7 @@ pub fn gdt_init() -> i32 {
 
 /// 初始化 AP 的 per-CPU GDT 和独立 TSS
 ///
-/// Trampoline 已通过 lgdt [`SINFO_GDT_LIMIT`] 加载了 BSP 的 GDT 作为过渡，
+/// Trampoline 已通过 `lgdt [gdt_ptr]` 加载了 BSP 的 GDT 作为过渡，
 /// 本函数在 AP 进入长模式后调用，为目标 CPU 初始化独立的 GDT + TSS。
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
@@ -729,10 +729,10 @@ pub unsafe fn gdt_set_kpti_pml4(cpu_index: u32, kernel_pml4: u64, user_pml4: u64
     gdt.syscall.user_pml4 = user_pml4;
 }
 
-/// 更新当前 CPU 的 per-CPU 用户页表 CR3 值 ([`gs:USER_PML4_OFF`]).
+/// 更新当前 CPU 的 per-CPU 用户页表 CR3 值 (`gs:USER_PML4_OFF`).
 ///
 /// 每个用户进程有独立的用户页表, syscall/中断返回用户态时
-/// 从 [`gs:USER_PML4_OFF`] 读取 CR3, 因此必须在进入用户态前
+/// 从 `gs:USER_PML4_OFF` 读取 CR3, 因此必须在进入用户态前
 /// 将当前进程的用户页表物理地址写入该字段.
 ///
 /// # Safety

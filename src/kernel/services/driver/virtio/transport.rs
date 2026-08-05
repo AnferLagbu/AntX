@@ -3,7 +3,7 @@
 //!
 //! `VirtIO` MMIO Transport — services 层安全代理
 //!
-//! 封装 [`kernel::driver::virtio::VirtioMmioDevice`] 的核心 MMIO 操作,
+//! 封装 [`crate::kernel::framework::driver::virtio::VirtioMmioDevice`] 的核心 MMIO 操作,
 //! 通过 `framework::IoMem` 提供类型安全的 `VirtIO` 设备访问。
 //!
 //! ## 设计原则
@@ -44,11 +44,11 @@ pub const VERSION: usize = 0x004;
 pub const DEVICE_ID: usize = 0x008;
 /// `VendorID` 寄存器: 0x554d4551 ("QEMU")
 pub const VENDOR_ID: usize = 0x00c;
-/// `DeviceFeatures`[sel:0]: 设备特性位 [0..31]
+/// `DeviceFeatures` `[sel:0]`: 设备特性位 `[0..31]`
 pub const DEVICE_FEATURES: usize = 0x010;
 /// `DeviceFeaturesSel`: 写以选择 32 位特性字
 pub const DEVICE_FEATURES_SEL: usize = 0x014;
-/// `DriverFeatures`[sel:0]: 驱动写特性位
+/// `DriverFeatures` `[sel:0]`: 驱动写特性位
 pub const DRIVER_FEATURES: usize = 0x020;
 /// `DriverFeaturesSel`
 pub const DRIVER_FEATURES_SEL: usize = 0x024;
@@ -70,17 +70,17 @@ pub const INTERRUPT_STATUS: usize = 0x060;
 pub const INTERRUPT_ACK: usize = 0x064;
 /// Status 寄存器
 pub const STATUS: usize = 0x070;
-/// `QueueDescLow`: 描述符表 phys [31:0]
+/// `QueueDescLow`: 描述符表 phys `[31:0]`
 pub const QUEUE_DESC_LOW: usize = 0x080;
-/// `QueueDescHigh`: 描述符表 phys [63:32]
+/// `QueueDescHigh`: 描述符表 phys `[63:32]`
 pub const QUEUE_DESC_HIGH: usize = 0x084;
-/// `QueueDriverLow`: available ring 物理地址 [31:0]
+/// `QueueDriverLow`: available ring 物理地址 `[31:0]`
 pub const QUEUE_DRIVER_LOW: usize = 0x090;
-/// `QueueDriverHigh`: available ring 物理地址 [63:32]
+/// `QueueDriverHigh`: available ring 物理地址 `[63:32]`
 pub const QUEUE_DRIVER_HIGH: usize = 0x094;
-/// `QueueDeviceLow`: used ring 物理地址 [31:0]
+/// `QueueDeviceLow`: used ring 物理地址 `[31:0]`
 pub const QUEUE_DEVICE_LOW: usize = 0x0a0;
-/// `QueueDeviceHigh`: used ring 物理地址 [63:32]
+/// `QueueDeviceHigh`: used ring 物理地址 `[63:32]`
 pub const QUEUE_DEVICE_HIGH: usize = 0x0a4;
 /// `ConfigGeneration`: 配置变更计数器
 pub const CONFIG_GENERATION: usize = 0x0fc;

@@ -154,7 +154,7 @@ impl CommandRing {
         self.enqueue_index = 0;
     }
 
-    /// 获取 ring 基地址 (DMA 映射后由调用方填充, 此处返回 parameter[0] 占位).
+    /// 获取 ring 基地址 (DMA 映射后由调用方填充, 此处返回 parameter`[0]` 占位).
     ///
     /// 注: 真实硬件应在 `push` 前通过 DMA 映射 ring buffer 获取物理地址,
     ///     并写入 Link TRB 的 parameter 字段. 当前为软件骨架.

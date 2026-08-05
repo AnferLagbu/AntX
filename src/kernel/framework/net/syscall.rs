@@ -154,7 +154,7 @@ pub fn raw_read_sun_family(ptr: u64) -> Result<u16, Errno> {
     Ok(u16::from_be_bytes([hi, lo]))
 }
 
-/// 从用户指针读 `sockaddr_un` (110 字节布局: family u16 + path[108])
+/// 从用户指针读 `sockaddr_un` (110 字节布局: family u16 + path`[108]`)
 ///
 /// 返回 (`path_bytes`, `path_len)。若用户提供的` addrlen 不足 2 字节返回 EFAULT。
 ///

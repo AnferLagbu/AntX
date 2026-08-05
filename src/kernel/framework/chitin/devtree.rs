@@ -318,7 +318,7 @@ where
 }
 
 /// 从设备树节点读取 "reg" 属性的地址部分
-/// reg 格式: <addr size> 对, 返回第一个 addr
+/// reg 格式: `<addr size>` 对, 返回第一个 addr
 pub fn devtree_read_addr(node_id: NodeId) -> Option<u64> {
     let tree = DEV_TREE.lock();
     let node = tree.nodes.iter().find(|n| n.id == node_id)?;

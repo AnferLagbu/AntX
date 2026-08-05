@@ -656,7 +656,7 @@ impl ProcessTable {
         table[pid as usize].take().map(core::ptr::NonNull::as_ptr)
     }
 
-    /// 移除进程并释放 Box<Process> 内存
+    /// 移除进程并释放 `Box<Process>` 内存
     /// 如果其他线程持有引用 (`ref_count` > 1), 则仅设置 `pending_free` 标志,
     /// 由最后的 `dec_ref_and_maybe_free` 调用完成实际释放。
     /// 全程持有 table lock 以防止与 `dec_ref_and_maybe_free` 竞争。

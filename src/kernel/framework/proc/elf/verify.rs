@@ -57,7 +57,7 @@ pub const ET_DYN: u16 = 3;
 ///
 /// 1. `elf_data != null && elf_size >= sizeof(Elf64Header)`  // 缓冲长度检查
 /// 2. `e_ident[0..4] == b"\x7FELF"`  // ELF 文件魔数
-/// 3. `e_ident[4] == 2` (ELFCLASS64)  // 64 位 ELF
+/// 3. `e_ident` `[4]` == 2 (ELFCLASS64)  // 64 位 ELF
 /// 4. `e_machine ∈ {0x3E, 0xB7}` (`x86_64` / aarch64)  // 目标架构
 /// 5. `e_phentsize == sizeof(Elf64Phdr)` (56)  // PHDR 项大小
 /// 6. `e_phnum <= MAX_PHDR_COUNT` (128)  // PHDR 数量上限

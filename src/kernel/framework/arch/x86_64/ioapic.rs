@@ -12,9 +12,9 @@ const IOREGSEL: u32 = 0x00;
 const IOWIN: u32 = 0x10;
 
 const IOAPIC_VER: u32 = 0x01;
-/// IOAPIC ID 寄存器 (读写, bit[24:27] 为 APIC ID)
+/// IOAPIC ID 寄存器 (读写, bit`[24:27]` 为 APIC ID)
 const IOAPIC_ID: u32 = 0x00;
-/// IOAPIC 仲裁 ID 寄存器 (只读, bit[24:27] 为仲裁 ID)
+/// IOAPIC 仲裁 ID 寄存器 (只读, bit`[24:27]` 为仲裁 ID)
 const IOAPIC_ARB: u32 = 0x02;
 const IOREDTBL_BASE: u32 = 0x10;
 
@@ -275,7 +275,7 @@ pub fn route_irq_to_cpu(irq: u8, apic_id: u8) {
 // IOAPIC ID / 仲裁 API
 // ============================================================================
 
-/// 读取指定 IOAPIC 的 ID (bit[24:27])
+/// 读取指定 IOAPIC 的 ID (bit`[24:27]`)
 ///
 /// 多 IOAPIC 系统中, 每个 IOAPIC 有唯一 ID, 用于中断路由决策.
 pub fn get_id_on(ioapic_idx: usize) -> u8 {
@@ -288,7 +288,7 @@ pub fn get_id_on(ioapic_idx: usize) -> u8 {
     }
 }
 
-/// 设置指定 IOAPIC 的 ID (bit[24:27])
+/// 设置指定 IOAPIC 的 ID (bit`[24:27]`)
 ///
 /// # Safety
 ///
@@ -303,7 +303,7 @@ pub fn set_id_on(ioapic_idx: usize, id: u8) {
     }
 }
 
-/// 读取指定 IOAPIC 的仲裁 ID (只读, bit[24:27])
+/// 读取指定 IOAPIC 的仲裁 ID (只读, bit`[24:27]`)
 pub fn get_arbitration_id_on(ioapic_idx: usize) -> u8 {
     let ioapics = IOAPICS.lock();
     if let Some(ref state) = ioapics[ioapic_idx] {

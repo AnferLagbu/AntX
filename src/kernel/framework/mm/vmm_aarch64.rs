@@ -37,13 +37,13 @@ const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
 const MAIR_NORMAL_NC: u64 = 2; // Normal non-cacheable
 const MAIR_USER_NORMAL: u64 = 4; // Normal WBWA for user pages
 
-/// 访问权限位 [7:6] (描述符中)
+/// 访问权限位 `[7:6]` (描述符中)
 const AP_EL1_RW: u64 = 0 << 6; // EL1 读写, EL0 不可访问
 const AP_BOTH_RW: u64 = 1 << 6; // EL1 读写, EL0 读写
 const AP_EL1_RO: u64 = 2 << 6; // EL1 只读, EL0 不可访问
 const AP_BOTH_RO: u64 = 3 << 6; // EL1 只读, EL0 只读
 
-/// 属性索引移位 (位 [4:2])
+/// 属性索引移位 (位 `[4:2]`)
 const ATTR_SHIFT: u64 = 2;
 
 /// 访问标志 (位 10)

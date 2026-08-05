@@ -23,12 +23,12 @@
 //! | 0x060  | InterruptStatus | R     | Interrupt reason                  |
 //! | 0x064  | InterruptACK    | W     | Acknowledge interrupt             |
 //! | 0x070  | Status          | RW    | Device status                     |
-//! | 0x080  | QueueDescLow    | W     | Descriptor table phys addr [31:0] |
-//! | 0x084  | QueueDescHigh   | W     | Descriptor table phys addr [63:32]|
-//! | 0x090  | QueueDriverLow  | W     | Available ring phys addr [31:0]   |
-//! | 0x094  | QueueDriverHigh | W     | Available ring phys addr [63:32]  |
-//! | 0x0a0  | QueueDeviceLow  | W     | Used ring phys addr [31:0]        |
-//! | 0x0a4  | QueueDeviceHigh | W     | Used ring phys addr [63:32]       |
+//! | 0x080  | QueueDescLow    | W     | Descriptor table phys addr `[31:0]` |
+//! | 0x084  | QueueDescHigh   | W     | Descriptor table phys addr `[63:32]`|
+//! | 0x090  | QueueDriverLow  | W     | Available ring phys addr `[31:0]`   |
+//! | 0x094  | QueueDriverHigh | W     | Available ring phys addr `[63:32]`  |
+//! | 0x0a0  | QueueDeviceLow  | W     | Used ring phys addr `[31:0]`        |
+//! | 0x0a4  | QueueDeviceHigh | W     | Used ring phys addr `[63:32]`       |
 //! | 0x0fc  | ConfigGeneration| R     | Config change counter             |
 //! | 0x100+ | Config          | RW    | Device-specific configuration     |
 //!

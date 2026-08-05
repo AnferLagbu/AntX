@@ -16,7 +16,7 @@ use crate::kernel::framework::syscall::Errno;
 
 /// pipe 系统调用安全代理
 ///
-/// `fds` 指向用户空间 i32[2] 数组 (8 字节)
+/// `fds` 指向用户空间 i32`[2]` 数组 (8 字节)
 ///
 /// # Errors
 /// 当 `fds` 为空指针时返回 `EFAULT`; 其余错误由底层 `sys_pipe` 以对应 `Errno` 传播.

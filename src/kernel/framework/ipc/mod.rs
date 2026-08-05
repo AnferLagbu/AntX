@@ -12,10 +12,10 @@
 //! ```text
 //! IPC Subsystem
 //! ├── Namespace (全局资源容器)
-//! │   ├── pipes[64]        // 管道数组
-//! │   ├── shm_segs[16]     // 共享内存段数组
-//! │   ├── msg_queues[32]   // 消息队列数组
-//! │   └── semaphores[64]   // 信号量数组
+//! │   ├── pipes`[64]`        // 管道数组
+//! │   ├── shm_segs`[16]`     // 共享内存段数组
+//! │   ├── msg_queues`[32]`   // 消息队列数组
+//! │   └── semaphores`[64]`   // 信号量数组
 //!
 //! ├── Pipe Module         // 管道管理
 //! ├── Shm Module          // 共享内存管理

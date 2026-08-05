@@ -143,7 +143,7 @@ pub const PxTFD_BSY: u32 = 1 << 7;
 // PxSSTS 寄存器位
 // ============================================================================
 
-/// Device Detection (`PxSSTS`[3:0])
+/// Device Detection (`PxSSTS` `[3:0]`)
 pub const PxSSTS_DET: u32 = 0xF;
 
 // ============================================================================
@@ -227,10 +227,10 @@ impl AhciDeviceKind {
 /// AHCI 端口 SATA 状态 (`PxSSTS`) 解析
 #[derive(Debug, Clone, Copy)]
 pub struct SataStatus {
-    /// 设备检测 (`PxSSTS`[3:0])
+    /// 设备检测 (`PxSSTS` `[3:0]`)
     /// 0=未连接, 1=已连接但未建立通信, 3=建立通信, 4=离线
     pub device_detection: u8,
-    /// 接口速度 (`PxSSTS`[7:4])
+    /// 接口速度 (`PxSSTS` `[7:4]`)
     pub interface_speed: u8,
 }
 

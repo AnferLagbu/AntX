@@ -167,7 +167,7 @@ pub struct Vma {
     pub file_pwm: u64,
     /// 文件映射: 挂载点在 `VFS_MANAGER.mounts` 中的索引. None = 匿名 VMA
     /// 或未注册挂载 (退到根). #PF miss 时由 `page_fault` 读此字段
-    /// 查 `VFS_MANAGER.mounts`[idx].fs trait object, 调对应 `FileSystem` 的
+    /// 查 `VFS_MANAGER.mounts` `[idx].fs` trait object, 调对应 `FileSystem` 的
     /// `fs_pread_inode` 完成 mmap prewarm. 用 usize 而非 &str 避免
     /// 'static 借用 / 静态 buffer 泄漏的复杂度.
     pub mount_idx: Option<usize>,

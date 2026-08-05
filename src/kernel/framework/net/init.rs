@@ -1511,7 +1511,7 @@ pub(crate) mod raw {
     /// ## 同步策略
     ///
     /// 调用方需持有 `NET_LOCK` 互斥访问. 原子操作保证多线程可见性.
-    /// 4 个原子 (tag, ipv4[4], `lease_expires_at`) 的"组合"通过 read 顺序保证
+    /// 4 个原子 (tag, ipv4`[4]`, `lease_expires_at`) 的"组合"通过 read 顺序保证
     /// 一致性 (看 acquire/release).
     ///
     /// ## 简化 (W4.2.2 阶段 1)

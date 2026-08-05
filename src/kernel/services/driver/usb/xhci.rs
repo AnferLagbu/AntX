@@ -117,7 +117,7 @@ impl Trb {
         clippy::trivially_copy_pass_by_ref,
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
-    /// 提取 TRB 类型 (control[15:10])
+    /// 提取 TRB 类型 (control`[15:10]`)
     pub fn trb_type(&self) -> TrbType {
         let ty = (self.control >> 10) & 0x3F;
         match ty {
@@ -149,7 +149,7 @@ impl Trb {
         clippy::trivially_copy_pass_by_ref,
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
-    /// 获取 cycle bit (control[0])
+    /// 获取 cycle bit (control`[0]`)
     pub fn cycle_bit(&self) -> bool {
         self.control & 1 != 0
     }
@@ -277,11 +277,11 @@ pub const SPEED_SUPER_PLUS: u8 = 5;
 /// 结构参数 1 解析
 #[derive(Debug, Clone, Copy)]
 pub struct StructuralParams1 {
-    /// 最大设备槽位数 (HCSPARAMS1[3:0] - 1)
+    /// 最大设备槽位数 (HCSPARAMS1`[3:0]` - 1)
     pub max_device_slots: u8,
-    /// 最大中断器数 (HCSPARAMS1[18:8] - 1)
+    /// 最大中断器数 (HCSPARAMS1`[18:8]` - 1)
     pub max_interrupters: u16,
-    /// 最大端口数 (HCSPARAMS1[31:24] - 1)
+    /// 最大端口数 (HCSPARAMS1`[31:24]` - 1)
     pub max_ports: u8,
 }
 
@@ -307,7 +307,7 @@ pub struct PortStatus {
     pub reset: bool,
     /// 端口已供电
     pub powered: bool,
-    /// 速度 (PORTSC[10:13] 解码)
+    /// 速度 (PORTSC`[10:13]` 解码)
     pub speed: u8,
 }
 

@@ -857,7 +857,7 @@ pub struct Cmsghdr {
     pub data: [u8; 0], // flex array, 通过指针偏移访问
 }
 
-/// 抽象 namespace 路径解析: `path[0] == 0` 标识 abstract namespace.
+/// 抽象 namespace 路径解析: `path` `[0]` == 0` 标识 abstract namespace.
 /// 返回 `&path[1..]` (去掉前导 0 字节), 其余按文件系统路径处理.
 pub fn uds_parse_path(path: &[u8]) -> Option<(&[u8], bool)> {
     if path.is_empty() {

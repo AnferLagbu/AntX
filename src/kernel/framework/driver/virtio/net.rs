@@ -6,7 +6,7 @@
 //!   - 队列 1: 发送 (TX) — 驱动写入要发送的包
 //!
 //! 配置空间 (偏移 0x100):
-//!   - 0x00: mac[6] (MAC 地址, 当 `VIRTIO_NET_F_MAC` 被设置时)
+//!   - 0x00: mac`[6]` (MAC 地址, 当 `VIRTIO_NET_F_MAC` 被设置时)
 //!   - 0x06: status (u16, 当 `VIRTIO_NET_F_STATUS` 被设置时)
 
 use super::queue::{VQ_SIZE, VirtQueue};

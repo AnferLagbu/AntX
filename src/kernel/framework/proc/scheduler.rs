@@ -10,7 +10,7 @@
 //! | RT   | `Fifo`/`Rr` | 固定优先级 FIFO + 时间片 RR       | `SCHED_FIFO/RR` 实时 |
 //! | CFS  | `Normal`    | vruntime 红黑树 (Linux CFS 风格)  | `SCHED_NORMAL` 普通进程 |
 //!
-//! **MLFQ 已退役**: 历史上 MLFQ 的多级反馈队列 (level 0..3 + 时间片 [10,20,40,80] ms)
+//! **MLFQ 已退役**: 历史上 MLFQ 的多级反馈队列 (level 0..3 + 时间片 `[10,20,40,80]` ms)
 //! 已完全被 CFS 取代 (注释中保留 "preserved from MLFQ" 仅为历史可追溯性).
 //! `add_to_run_queue` 路径已重定向到 `cfs_enqueue`; `queues[MLFQ_LEVELS]` 字段
 //! 与 `boost_priority` 保留仅作调试读 (`has_runnable`), 不再被任何调度决策读取.

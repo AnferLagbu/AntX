@@ -12,7 +12,7 @@
 //!   +0x28: rbx(未用/0)               +0xA8: elr_el1
 //!   +0x30: rbp(未用/0)               +0xB0: ss(未用/0)
 //!   +0x38: rax(未用/0)
-//!   +0xD8: fpu_state[64] (512 bytes, Phase 1 预留)
+//!   +0xD8: fpu_state`[64]` (512 bytes, Phase 1 预留)
 
 use core::arch::global_asm;
 

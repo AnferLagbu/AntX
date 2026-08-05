@@ -12,7 +12,7 @@
 //!
 //! ## FD 类型识别
 //!
-//! - VFS fd: fd ∈ [3, `VFS_MAX_FDS`) 且 `fd_table`[fd].used
+//! - VFS fd: fd ∈ [3, `VFS_MAX_FDS`) 且 `fd_table` `[`fd`].used
 //! - Pipe fd: 由 `ipc_pipe` 分配 (`pipe_id` * 2 / `pipe_id` * 2 + 1)
 //! - Eventfd/Signalfd/Timerfd/Inotify: 各自独立 FD 空间, 不参与 sendfile/splice
 //!

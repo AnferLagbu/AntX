@@ -16,7 +16,7 @@ use crate::kernel::framework::syscall::raw;
 
 /// pipe 系统调用
 ///
-/// `fds` 指向 i32[2] 数组, 返回读端和写端文件描述符.
+/// `fds` 指向 i32`[2]` 数组, 返回读端和写端文件描述符.
 pub fn sys_pipe(fds: u64) -> i64 {
     if fds == 0 || !raw::check_user_buf(fds, 8) {
         return Errno::EFAULT.as_ret();

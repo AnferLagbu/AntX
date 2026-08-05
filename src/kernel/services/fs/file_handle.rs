@@ -32,7 +32,7 @@ pub const FILE_HANDLE_SIZE: usize = 144; // 8 + 128 + 8 (对齐)
 /// 句柄布局:
 /// [0..4]  `inode_id` (u32 LE)
 /// [4..8]  `mount_idx` (u32 LE)
-/// [8]     `handle_type` (u8)
+/// `[8]`     `handle_type` (u8)
 /// [9..12] reserved
 /// [12..16] `handle_bytes` (u32 LE)
 const HANDLE_INODE_OFF: usize = 0;

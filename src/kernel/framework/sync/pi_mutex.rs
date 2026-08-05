@@ -23,7 +23,7 @@
 //!
 //! ## v2.1 扩展 (2026-06-29)
 //!
-//! - 等待者优先级动态重算: nice/setpriority 变化时通过 [PiMutex::update_waiter_priority]
+//! - 等待者优先级动态重算: nice/setpriority 变化时通过 `PiMutex::update_waiter_priority`
 //!   更新等待者基线, 自动重算 effective_priority 并触发捐赠/撤销通知
 //! - `recompute_effective` 提取为私有助手, 统一 register/unlock/update 3 路径
 //!
