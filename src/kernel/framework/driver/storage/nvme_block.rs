@@ -39,7 +39,7 @@ impl NvmeBlockDevice {
             return None;
         }
 
-        Some(NvmeBlockDevice {
+        Some(Self {
             controller_index,
             namespace_id,
             total_sectors,

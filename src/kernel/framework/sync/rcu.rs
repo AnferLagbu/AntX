@@ -25,9 +25,9 @@ use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering, fence};
 
 pub struct RcuHead {
-    pub next: *mut RcuHead,
+    pub next: *mut Self,
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
-    pub func: Option<unsafe fn(*mut RcuHead)>,
+    pub func: Option<unsafe fn(*mut Self)>,
 }
 
 impl RcuHead {

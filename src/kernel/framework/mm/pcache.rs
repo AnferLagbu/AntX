@@ -93,7 +93,7 @@ struct PageCacheEntry {
 
 impl PageCacheEntry {
     const fn empty() -> Self {
-        PageCacheEntry {
+        Self {
             inode_id: 0,
             page_index: 0,
             phys: 0,
@@ -120,7 +120,7 @@ struct PageCacheBucket {
 
 impl PageCacheBucket {
     const fn new() -> Self {
-        PageCacheBucket {
+        Self {
             entries: [
                 PageCacheEntry::empty(),
                 PageCacheEntry::empty(),

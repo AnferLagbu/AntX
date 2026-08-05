@@ -61,7 +61,7 @@ impl From<u64> for SyscallNumber {
 
 impl From<SyscallNumber> for u64 {
     #[inline]
-    fn from(s: SyscallNumber) -> u64 {
+    fn from(s: SyscallNumber) -> Self {
         s.0
     }
 }

@@ -48,7 +48,7 @@ impl AhciBlockDevice {
             return None;
         }
 
-        Some(AhciBlockDevice {
+        Some(Self {
             controller_index,
             port_index,
             total_sectors,

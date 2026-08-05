@@ -141,7 +141,7 @@ impl BootKeyboardReport {
         if data.len() < 8 {
             return Err(DriverError::InvalidParameter);
         }
-        Ok(BootKeyboardReport {
+        Ok(Self {
             modifier: data[0],
             reserved: data[1],
             keycodes: [data[2], data[3], data[4], data[5], data[6], data[7]],
@@ -227,7 +227,7 @@ impl BootMouseReport {
         if data.len() < 3 {
             return Err(DriverError::InvalidParameter);
         }
-        Ok(BootMouseReport {
+        Ok(Self {
             buttons: data[0],
             x: data[1] as i8,
             y: data[2] as i8,
@@ -288,9 +288,9 @@ impl HidDeviceType {
     /// 从 Interface Subclass 字节构造.
     pub fn from_subclass(subclass: u8) -> Self {
         match subclass {
-            0 => HidDeviceType::None,
-            1 => HidDeviceType::Boot,
-            other => HidDeviceType::Other(other),
+            0 => Self::None,
+            1 => Self::Boot,
+            other => Self::Other(other),
         }
     }
 }
@@ -312,10 +312,10 @@ impl HidProtocolType {
     /// 从 Interface Protocol 字节构造.
     pub fn from_protocol(protocol: u8) -> Self {
         match protocol {
-            0 => HidProtocolType::None,
-            1 => HidProtocolType::Keyboard,
-            2 => HidProtocolType::Mouse,
-            other => HidProtocolType::Other(other),
+            0 => Self::None,
+            1 => Self::Keyboard,
+            2 => Self::Mouse,
+            other => Self::Other(other),
         }
     }
 }
@@ -370,7 +370,7 @@ impl HidDriver {
             })
             .ok_or(DriverError::InvalidParameter)?;
 
-        Ok(HidDriver {
+        Ok(Self {
             interface_number: iface.interface_number,
             interrupt_in_endpoint: interrupt_in.endpoint_address,
             interrupt_in_max_packet: interrupt_in.max_packet_size,

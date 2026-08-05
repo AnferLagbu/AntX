@@ -226,7 +226,7 @@ pub struct PidNamespace {
     /// 命名空间全局 ID
     pub id: u64,
     /// 父 PID namespace (None = 根 namespace)
-    pub parent: Option<Arc<PidNamespace>>,
+    pub parent: Option<Arc<Self>>,
     /// 当前 namespace 内的下一个 PID
     next_pid: AtomicU32,
     /// 当前 namespace 内的进程数量
@@ -327,9 +327,9 @@ pub struct UserNamespace {
     /// 命名空间全局 ID
     pub id: u64,
     /// 父 User namespace (None = 根 namespace)
-    pub parent: Option<Arc<UserNamespace>>,
+    pub parent: Option<Arc<Self>>,
     /// 该 namespace 的拥有者 User namespace
-    pub owner: Option<Arc<UserNamespace>>,
+    pub owner: Option<Arc<Self>>,
     /// namespace 内 root 的映射: (`inner_start`, `outer_start`, count)
     pub uid_map: IrqSpinLock<Option<(u32, u32, u32)>>,
     /// namespace 内 root group 的映射
@@ -519,7 +519,7 @@ impl NamespaceSet {
     }
 
     /// fork 继承 (默认共享所有 namespace)
-    pub fn fork_from(parent: &NamespaceSet) -> Self {
+    pub fn fork_from(parent: &Self) -> Self {
         Self {
             uts: UtsNamespace::fork_from(&parent.uts),
             ipc: IpcNamespace::fork_from(&parent.ipc),
@@ -532,7 +532,7 @@ impl NamespaceSet {
     }
 
     /// 根据 `clone_flags` 创建新 namespace
-    pub fn clone_from(parent: &NamespaceSet, flags: u64) -> Self {
+    pub fn clone_from(parent: &Self, flags: u64) -> Self {
         let new_ns_flags = flags & CLONE_NEW_ALL;
 
         // CLONE_NEWUSER 必须最先处理

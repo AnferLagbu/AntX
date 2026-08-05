@@ -36,7 +36,7 @@ impl ExfatFs {
         let super_block =
             ExfatSuperBlock::from_bytes(&boot_data).ok_or(KernelError::InvalidArgument)?;
 
-        Ok(ExfatFs {
+        Ok(Self {
             super_block,
             device_idx,
         })

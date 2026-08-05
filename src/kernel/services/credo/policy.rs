@@ -35,22 +35,22 @@ pub const CAP_BITS_PER_DOMAIN: u64 = 64;
 pub struct CapDomain(pub u8);
 
 impl CapDomain {
-    pub const SYSTEM: CapDomain = CapDomain(0);
-    pub const FS: CapDomain = CapDomain(1);
-    pub const NET: CapDomain = CapDomain(2);
-    pub const PROC: CapDomain = CapDomain(3);
-    pub const DEVICE: CapDomain = CapDomain(4);
-    pub const USER_MGMT: CapDomain = CapDomain(5);
-    pub const IPC: CapDomain = CapDomain(6);
-    pub const MEM: CapDomain = CapDomain(7);
-    pub const TIME: CapDomain = CapDomain(8);
-    pub const BARRIER: CapDomain = CapDomain(9);
-    pub const SIGNAL: CapDomain = CapDomain(10);
-    pub const SHM: CapDomain = CapDomain(11);
-    pub const SEM: CapDomain = CapDomain(12);
-    pub const MSGQ: CapDomain = CapDomain(13);
-    pub const DMA: CapDomain = CapDomain(14);
-    pub const RESERVED: CapDomain = CapDomain(15);
+    pub const SYSTEM: Self = Self(0);
+    pub const FS: Self = Self(1);
+    pub const NET: Self = Self(2);
+    pub const PROC: Self = Self(3);
+    pub const DEVICE: Self = Self(4);
+    pub const USER_MGMT: Self = Self(5);
+    pub const IPC: Self = Self(6);
+    pub const MEM: Self = Self(7);
+    pub const TIME: Self = Self(8);
+    pub const BARRIER: Self = Self(9);
+    pub const SIGNAL: Self = Self(10);
+    pub const SHM: Self = Self(11);
+    pub const SEM: Self = Self(12);
+    pub const MSGQ: Self = Self(13);
+    pub const DMA: Self = Self(14);
+    pub const RESERVED: Self = Self(15);
 
     pub fn is_valid(self) -> bool {
         (self.0 as usize) < CAP_DOMAINS
@@ -63,11 +63,11 @@ impl CapDomain {
 pub struct CapBits(pub u64);
 
 impl CapBits {
-    pub const NONE: CapBits = CapBits(0);
+    pub const NONE: Self = Self(0);
     /// 全能力 (所有 64 位)
-    pub const ALL: CapBits = CapBits(u64::MAX);
+    pub const ALL: Self = Self(u64::MAX);
 
-    pub fn contains(self, other: CapBits) -> bool {
+    pub fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0
     }
 
@@ -79,29 +79,29 @@ impl CapBits {
         clippy::return_self_not_must_use,
         reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
     )]
-    pub fn diff(self, other: CapBits) -> CapBits {
-        CapBits(self.0 & !other.0)
+    pub fn diff(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
     }
 }
 
 impl core::ops::BitOr for CapBits {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self {
-        CapBits(self.0 | rhs.0)
+        Self(self.0 | rhs.0)
     }
 }
 
 impl core::ops::BitAnd for CapBits {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self {
-        CapBits(self.0 & rhs.0)
+        Self(self.0 & rhs.0)
     }
 }
 
 impl core::ops::Not for CapBits {
     type Output = Self;
     fn not(self) -> Self {
-        CapBits(!self.0)
+        Self(!self.0)
     }
 }
 

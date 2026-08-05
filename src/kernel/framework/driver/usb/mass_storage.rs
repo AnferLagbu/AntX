@@ -91,7 +91,7 @@ impl CommandBlockWrapper {
         }
         let mut cb_arr = [0u8; SCSI_CB_MAX_LENGTH];
         cb_arr[..cb.len()].copy_from_slice(cb);
-        Ok(CommandBlockWrapper {
+        Ok(Self {
             tag,
             data_transfer_length,
             flags: if direction_in { 0x80 } else { 0x00 },
@@ -151,7 +151,7 @@ impl CommandStatusWrapper {
         if signature != CSW_SIGNATURE {
             return Err(DriverError::InvalidParameter);
         }
-        Ok(CommandStatusWrapper {
+        Ok(Self {
             tag: u32::from_le_bytes([data[4], data[5], data[6], data[7]]),
             data_residue: u32::from_le_bytes([data[8], data[9], data[10], data[11]]),
             status: data[12],
@@ -318,7 +318,7 @@ impl MassStorageDriver {
             .find(|ep| ep.attributes == 0x02 && ep.endpoint_address & 0x80 == 0)
             .ok_or(DriverError::InvalidParameter)?;
 
-        Ok(MassStorageDriver {
+        Ok(Self {
             device_address: device.address,
             interface_number: iface.interface_number,
             bulk_in: bulk_in.endpoint_address,

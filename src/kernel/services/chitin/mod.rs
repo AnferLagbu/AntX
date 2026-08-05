@@ -127,12 +127,12 @@ impl Proto {
     )]
     pub fn as_str(&self) -> &'static str {
         match self {
-            Proto::Block => "block",
-            Proto::Char => "char",
-            Proto::Net => "net",
-            Proto::Input => "input",
-            Proto::Bus => "bus",
-            Proto::Other => "other",
+            Self::Block => "block",
+            Self::Char => "char",
+            Self::Net => "net",
+            Self::Input => "input",
+            Self::Bus => "bus",
+            Self::Other => "other",
         }
     }
 }
@@ -140,12 +140,12 @@ impl Proto {
 impl From<chitin::ChitinProto> for Proto {
     fn from(p: chitin::ChitinProto) -> Self {
         match p {
-            chitin::ChitinProto::Block => Proto::Block,
-            chitin::ChitinProto::Char => Proto::Char,
-            chitin::ChitinProto::Net => Proto::Net,
-            chitin::ChitinProto::Input => Proto::Input,
-            chitin::ChitinProto::Bus => Proto::Bus,
-            chitin::ChitinProto::Other => Proto::Other,
+            chitin::ChitinProto::Block => Self::Block,
+            chitin::ChitinProto::Char => Self::Char,
+            chitin::ChitinProto::Net => Self::Net,
+            chitin::ChitinProto::Input => Self::Input,
+            chitin::ChitinProto::Bus => Self::Bus,
+            chitin::ChitinProto::Other => Self::Other,
         }
     }
 }

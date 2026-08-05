@@ -20,7 +20,7 @@ pub struct DependencyLayer {
 
 impl DependencyLayer {
     pub const fn new(level: usize) -> Self {
-        DependencyLayer {
+        Self {
             domains: [0; MAX_DOMAINS_PER_LAYER],
             count: 0,
             level,
@@ -46,7 +46,7 @@ pub struct DependencyLayers {
 impl DependencyLayers {
     pub const fn new() -> Self {
         const EMPTY_LAYER: DependencyLayer = DependencyLayer::new(0);
-        DependencyLayers {
+        Self {
             layers: [EMPTY_LAYER; MAX_DEPENDENCY_LAYERS],
             count: 0,
         }

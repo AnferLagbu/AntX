@@ -39,7 +39,7 @@ impl ExecveResult {
     /// 从 syscall 返回值解析
     pub fn from_ret(ret: i64) -> Self {
         if ret >= 0 {
-            ExecveResult::Success
+            Self::Success
         } else {
             let errno = match -ret as i32 {
                 2 => Errno::ENOENT,
@@ -48,7 +48,7 @@ impl ExecveResult {
                 8 => Errno::ENOEXEC,
                 _ => Errno::EINVAL,
             };
-            ExecveResult::Err(errno)
+            Self::Err(errno)
         }
     }
 
@@ -59,8 +59,8 @@ impl ExecveResult {
     /// 转换为 syscall 返回值
     pub fn as_ret(&self) -> i64 {
         match self {
-            ExecveResult::Success => 0,
-            ExecveResult::Err(e) => -(*e as i64),
+            Self::Success => 0,
+            Self::Err(e) => -(*e as i64),
         }
     }
 }

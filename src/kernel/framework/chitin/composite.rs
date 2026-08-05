@@ -26,15 +26,15 @@ impl CompositeType {
     )]
     pub fn compatible_str(&self) -> &'static str {
         match self {
-            CompositeType::Raid0 => "qx,raid0",
-            CompositeType::Raid1 => "qx,raid1",
+            Self::Raid0 => "qx,raid0",
+            Self::Raid1 => "qx,raid1",
         }
     }
 
     pub fn from_compatible(compat: &str) -> Option<Self> {
         match compat {
-            "qx,raid0" => Some(CompositeType::Raid0),
-            "qx,raid1" | "qx,mirror" => Some(CompositeType::Raid1),
+            "qx,raid0" => Some(Self::Raid0),
+            "qx,raid1" | "qx,mirror" => Some(Self::Raid1),
             _ => None,
         }
     }
@@ -45,8 +45,8 @@ impl CompositeType {
     )]
     pub fn display_name(&self) -> &'static str {
         match self {
-            CompositeType::Raid0 => "RAID0",
-            CompositeType::Raid1 => "RAID1",
+            Self::Raid0 => "RAID0",
+            Self::Raid1 => "RAID1",
         }
     }
 }

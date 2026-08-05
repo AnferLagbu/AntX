@@ -10,7 +10,7 @@ pub struct Ext2Bitmap {
 impl Ext2Bitmap {
     /// 从字节切片创建位图
     pub fn from_bytes(data: &[u8]) -> Self {
-        Ext2Bitmap {
+        Self {
             data: data.to_vec(),
         }
     }

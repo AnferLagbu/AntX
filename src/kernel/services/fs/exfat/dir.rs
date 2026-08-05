@@ -31,7 +31,7 @@ impl ExfatDirEntry {
             return None;
         }
 
-        let mut entry = ExfatDirEntry {
+        let mut entry = Self {
             entry_type: data[0],
             data: [0; 31],
         };

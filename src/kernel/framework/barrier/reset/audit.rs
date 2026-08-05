@@ -24,7 +24,7 @@ pub struct ResetAuditEntry {
 
 impl ResetAuditEntry {
     pub const fn empty() -> Self {
-        ResetAuditEntry {
+        Self {
             tick: 0,
             layer: RecoveryLayer::Layer1,
             result: RecoveryResult::Success,
@@ -37,7 +37,7 @@ impl ResetAuditEntry {
 
 impl ResetAuditLog {
     pub const fn new() -> Self {
-        ResetAuditLog {
+        Self {
             entries: [ResetAuditEntry::empty(); MAX_AUDIT_ENTRIES],
             count: 0,
         }

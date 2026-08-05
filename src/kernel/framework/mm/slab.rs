@@ -80,8 +80,8 @@ pub(crate) struct SlabHeader {
     is_full: bool,
 
     /// 双向链表指针 (用于挂在 `KmemCache` 的链表中)
-    prev: *mut SlabHeader,
-    next: *mut SlabHeader,
+    prev: *mut Self,
+    next: *mut Self,
 }
 
 impl Default for SlabHeader {

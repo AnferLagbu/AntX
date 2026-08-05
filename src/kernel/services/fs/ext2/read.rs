@@ -67,7 +67,7 @@ impl Ext2Fs {
         let bg_count = super_block.block_group_count() as usize;
         let block_groups = Ext2BlockGroupDescriptor::from_table(&bgd_data, bg_count);
 
-        Ok(Ext2Fs {
+        Ok(Self {
             super_block,
             block_groups,
             device_idx,

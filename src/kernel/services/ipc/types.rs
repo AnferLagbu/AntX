@@ -118,21 +118,21 @@ impl From<u8> for SignalNum {
     )]
     fn from(val: u8) -> Self {
         match val {
-            0 => SignalNum::None,
-            1 => SignalNum::Int,
-            2 => SignalNum::Ill,
-            3 => SignalNum::Fpe,
-            4 => SignalNum::Segv,
-            5 => SignalNum::Term,
-            6 => SignalNum::Kill,
-            7 => SignalNum::Stop,
-            8 => SignalNum::Cont,
-            9 => SignalNum::Chld,
-            10 => SignalNum::Usr1,
-            11 => SignalNum::Usr2,
-            12 => SignalNum::Alarm,
-            13 => SignalNum::Pipe,
-            _ => SignalNum::None,
+            0 => Self::None,
+            1 => Self::Int,
+            2 => Self::Ill,
+            3 => Self::Fpe,
+            4 => Self::Segv,
+            5 => Self::Term,
+            6 => Self::Kill,
+            7 => Self::Stop,
+            8 => Self::Cont,
+            9 => Self::Chld,
+            10 => Self::Usr1,
+            11 => Self::Usr2,
+            12 => Self::Alarm,
+            13 => Self::Pipe,
+            _ => Self::None,
         }
     }
 }
@@ -378,7 +378,7 @@ pub struct Message {
     /// 消息数据
     pub data: [u8; MSG_MAX_SIZE],
     /// 下一条消息 (链表)
-    pub next: Option<NonNull<Message>>,
+    pub next: Option<NonNull<Self>>,
 }
 
 impl Message {

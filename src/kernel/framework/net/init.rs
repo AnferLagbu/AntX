@@ -1038,7 +1038,7 @@ impl NetStatus {
             ipv4_from_atomic(G_DNS[1].load(Ordering::Acquire)),
             ipv4_from_atomic(G_DNS[2].load(Ordering::Acquire)),
         ];
-        NetStatus {
+        Self {
             state: get_init_state(),
             mac,
             ipv4,

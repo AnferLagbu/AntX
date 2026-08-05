@@ -81,7 +81,7 @@ pub enum Color {
 
 impl Default for Color {
     fn default() -> Self {
-        Color::LightGrey
+        Self::LightGrey
     }
 }
 
@@ -89,22 +89,22 @@ impl Color {
     /// 从 u8 安全转换
     pub fn from_u8(v: u8) -> Option<Self> {
         Some(match v {
-            0 => Color::Black,
-            1 => Color::Blue,
-            2 => Color::Green,
-            3 => Color::Cyan,
-            4 => Color::Red,
-            5 => Color::Magenta,
-            6 => Color::Brown,
-            7 => Color::LightGrey,
-            8 => Color::DarkGrey,
-            9 => Color::LightBlue,
-            10 => Color::LightGreen,
-            11 => Color::LightCyan,
-            12 => Color::LightRed,
-            13 => Color::LightMagenta,
-            14 => Color::Yellow,
-            15 => Color::White,
+            0 => Self::Black,
+            1 => Self::Blue,
+            2 => Self::Green,
+            3 => Self::Cyan,
+            4 => Self::Red,
+            5 => Self::Magenta,
+            6 => Self::Brown,
+            7 => Self::LightGrey,
+            8 => Self::DarkGrey,
+            9 => Self::LightBlue,
+            10 => Self::LightGreen,
+            11 => Self::LightCyan,
+            12 => Self::LightRed,
+            13 => Self::LightMagenta,
+            14 => Self::Yellow,
+            15 => Self::White,
             _ => return None,
         })
     }

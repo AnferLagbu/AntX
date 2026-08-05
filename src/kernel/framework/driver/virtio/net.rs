@@ -248,7 +248,7 @@ impl VirtioNet {
         // 设置 DRIVER_OK — 队列配置完成后设备进入 live
         device.set_driver_ok();
 
-        let mut net = VirtioNet {
+        let mut net = Self {
             device,
             rx_vq,
             tx_vq,

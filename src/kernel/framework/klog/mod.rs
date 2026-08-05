@@ -494,12 +494,12 @@ pub enum LogCategory {
 impl LogLevel {
     fn prefix(&self) -> &[u8] {
         match self {
-            LogLevel::Debug => b"[DBG] ",
-            LogLevel::Info => b"[INFO]",
-            LogLevel::Note => b"[NOTE]",
-            LogLevel::Warn => b"[WARN]",
-            LogLevel::Error => b"[ERR] ",
-            LogLevel::Crit => b"[CRIT]",
+            Self::Debug => b"[DBG] ",
+            Self::Info => b"[INFO]",
+            Self::Note => b"[NOTE]",
+            Self::Warn => b"[WARN]",
+            Self::Error => b"[ERR] ",
+            Self::Crit => b"[CRIT]",
         }
     }
 }
@@ -507,21 +507,21 @@ impl LogLevel {
 impl LogCategory {
     fn name(&self) -> &[u8] {
         match self {
-            LogCategory::Boot => b"BOOT",
-            LogCategory::Kernel => b"KERN",
-            LogCategory::Memory => b"MEM",
-            LogCategory::Process => b"PROC",
-            LogCategory::FS => b"FS",
-            LogCategory::Net => b"NET",
-            LogCategory::Driver => b"DRV",
-            LogCategory::Syscall => b"SYSCALL",
-            LogCategory::IPC => b"IPC",
-            LogCategory::Security => b"SEC",
-            LogCategory::Test => b"TEST",
-            LogCategory::Sync => b"SYNC",
-            LogCategory::Swap => b"SWAP",
-            LogCategory::Acpi => b"ACPI",
-            LogCategory::Timer => b"TIMER",
+            Self::Boot => b"BOOT",
+            Self::Kernel => b"KERN",
+            Self::Memory => b"MEM",
+            Self::Process => b"PROC",
+            Self::FS => b"FS",
+            Self::Net => b"NET",
+            Self::Driver => b"DRV",
+            Self::Syscall => b"SYSCALL",
+            Self::IPC => b"IPC",
+            Self::Security => b"SEC",
+            Self::Test => b"TEST",
+            Self::Sync => b"SYNC",
+            Self::Swap => b"SWAP",
+            Self::Acpi => b"ACPI",
+            Self::Timer => b"TIMER",
         }
     }
 }

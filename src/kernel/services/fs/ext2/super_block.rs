@@ -91,7 +91,7 @@ impl Ext2SuperBlock {
             last_mounted.copy_from_slice(&data[136..200]);
         }
 
-        let sb = Ext2SuperBlock {
+        let sb = Self {
             s_inodes_count: u32::from_le_bytes([data[0], data[1], data[2], data[3]]),
             s_blocks_count: u32::from_le_bytes([data[4], data[5], data[6], data[7]]),
             s_r_blocks_count: u32::from_le_bytes([data[8], data[9], data[10], data[11]]),

@@ -63,20 +63,20 @@ impl VfsFileType {
     /// 返回 `None` 表示非法值 (0-3 为合法值)
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
-            0 => Some(VfsFileType::File),
-            1 => Some(VfsFileType::Dir),
-            2 => Some(VfsFileType::Dev),
-            3 => Some(VfsFileType::Symlink),
+            0 => Some(Self::File),
+            1 => Some(Self::Dir),
+            2 => Some(Self::Dev),
+            3 => Some(Self::Symlink),
             _ => None,
         }
     }
 
     pub fn as_u8(self) -> u8 {
         match self {
-            VfsFileType::File => 0,
-            VfsFileType::Dir => 1,
-            VfsFileType::Dev => 2,
-            VfsFileType::Symlink => 3,
+            Self::File => 0,
+            Self::Dir => 1,
+            Self::Dev => 2,
+            Self::Symlink => 3,
         }
     }
 }
@@ -110,9 +110,9 @@ impl VfsSeekWhence {
     /// 返回 `None` 表示非法值 (0-2 为合法值)
     pub fn from_u32(value: u32) -> Option<Self> {
         match value {
-            0 => Some(VfsSeekWhence::Set),
-            1 => Some(VfsSeekWhence::Cur),
-            2 => Some(VfsSeekWhence::End),
+            0 => Some(Self::Set),
+            1 => Some(Self::Cur),
+            2 => Some(Self::End),
             _ => None,
         }
     }
@@ -133,27 +133,27 @@ pub enum FsType {
 impl FsType {
     pub fn from_name(name: &str) -> Self {
         match name {
-            "ramfs" => FsType::RamFs,
-            "hvfs" => FsType::HvFs,
-            "devfs" => FsType::DevFs,
-            "ext2" => FsType::Ext2,
-            "exfat" => FsType::ExFat,
-            "tmpfs" => FsType::TmpFs,
-            "overlay" => FsType::OverlayFs,
-            _ => FsType::Unknown,
+            "ramfs" => Self::RamFs,
+            "hvfs" => Self::HvFs,
+            "devfs" => Self::DevFs,
+            "ext2" => Self::Ext2,
+            "exfat" => Self::ExFat,
+            "tmpfs" => Self::TmpFs,
+            "overlay" => Self::OverlayFs,
+            _ => Self::Unknown,
         }
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
-            FsType::RamFs => "ramfs",
-            FsType::HvFs => "hvfs",
-            FsType::DevFs => "devfs",
-            FsType::Ext2 => "ext2",
-            FsType::ExFat => "exfat",
-            FsType::TmpFs => "tmpfs",
-            FsType::OverlayFs => "overlay",
-            FsType::Unknown => "unknown",
+            Self::RamFs => "ramfs",
+            Self::HvFs => "hvfs",
+            Self::DevFs => "devfs",
+            Self::Ext2 => "ext2",
+            Self::ExFat => "exfat",
+            Self::TmpFs => "tmpfs",
+            Self::OverlayFs => "overlay",
+            Self::Unknown => "unknown",
         }
     }
 }

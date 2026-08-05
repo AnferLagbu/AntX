@@ -156,12 +156,13 @@ fn test_log_category_has_timer_variant() {
         src.contains("Timer = 14"),
         "LogCategory 必须新增 Timer = 14 变体"
     );
-    let pos = src.find("LogCategory::Acpi => b\"ACPI\"").expect("Acpi 行");
+    // use_self fix 改 `LogCategory::Acpi` 为 `Acpi` (impl 块内 fn name 调用)
+    let pos = src.find("Acpi => b\"ACPI\"").expect("Acpi 行");
     let window_end = (pos + 200).min(src.len());
     let safe_end = src.floor_char_boundary(window_end);
     let window = &src[pos..safe_end];
     assert!(
-        window.contains("LogCategory::Timer => b\"TIMER\""),
+        window.contains("Timer => b\"TIMER\""),
         "LogCategory::Timer 必须有对应 name() 输出"
     );
 }

@@ -185,7 +185,7 @@ impl VirtioMmioDevice {
 
         let queue_count = if device_id == VIRTIO_ID_BLOCK { 1 } else { 2 };
 
-        Some(VirtioMmioDevice {
+        Some(Self {
             iomem,
             device_id,
             queue_count,

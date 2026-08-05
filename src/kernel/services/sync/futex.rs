@@ -113,11 +113,11 @@ impl FutexResult {
     /// 从 syscall 返回值解析
     pub fn from_ret(ret: i64) -> Self {
         if ret == 0 {
-            FutexResult::Woken
+            Self::Woken
         } else if ret > 0 {
-            FutexResult::WokenCount(ret as u32)
+            Self::WokenCount(ret as u32)
         } else {
-            FutexResult::Pending
+            Self::Pending
         }
     }
 }

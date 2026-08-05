@@ -161,11 +161,11 @@ impl Color {
         clippy::return_self_not_must_use,
         reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
     )]
-    pub fn blend(&self, other: &Color) -> Color {
+    pub fn blend(&self, other: &Self) -> Self {
         let alpha = u32::from(self.a);
         let inv_alpha = 255 - alpha;
 
-        Color {
+        Self {
             r: ((u32::from(self.r) * alpha + u32::from(other.r) * inv_alpha) / 255) as u8,
             g: ((u32::from(self.g) * alpha + u32::from(other.g) * inv_alpha) / 255) as u8,
             b: ((u32::from(self.b) * alpha + u32::from(other.b) * inv_alpha) / 255) as u8,
@@ -244,7 +244,7 @@ impl Rect {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     /// 检查是否与另一个矩形相交
-    pub fn intersects(&self, other: &Rect) -> bool {
+    pub fn intersects(&self, other: &Self) -> bool {
         self.x < other.x + other.width as i32
             && self.x + self.width as i32 > other.x
             && self.y < other.y + other.height as i32
@@ -256,7 +256,7 @@ impl Rect {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     /// 获取两个矩形的交集
-    pub fn intersection(&self, other: &Rect) -> Option<Rect> {
+    pub fn intersection(&self, other: &Self) -> Option<Self> {
         if !self.intersects(other) {
             return None;
         }
@@ -266,7 +266,7 @@ impl Rect {
         let x2 = (self.x + self.width as i32).min(other.x + other.width as i32);
         let y2 = (self.y + self.height as i32).min(other.y + other.height as i32);
 
-        Some(Rect::new(x, y, (x2 - x) as u32, (y2 - y) as u32))
+        Some(Self::new(x, y, (x2 - x) as u32, (y2 - y) as u32))
     }
 }
 

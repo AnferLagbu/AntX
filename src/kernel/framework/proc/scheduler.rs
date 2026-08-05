@@ -125,12 +125,12 @@ impl SchedPolicy {
     )]
     pub fn from_u32(value: u32) -> Self {
         match value {
-            0 => SchedPolicy::Normal,
-            1 => SchedPolicy::Fifo,
-            2 => SchedPolicy::Rr,
-            3 => SchedPolicy::Idle,
-            4 => SchedPolicy::Deadline,
-            _ => SchedPolicy::Normal,
+            0 => Self::Normal,
+            1 => Self::Fifo,
+            2 => Self::Rr,
+            3 => Self::Idle,
+            4 => Self::Deadline,
+            _ => Self::Normal,
         }
     }
 }

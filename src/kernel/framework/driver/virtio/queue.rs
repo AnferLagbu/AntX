@@ -142,7 +142,7 @@ impl VirtQueue {
             core::ptr::write_bytes(avail_ptr as *mut u8, 0, avail_size);
             core::ptr::write_bytes(used_ptr as *mut u8, 0, used_size);
 
-            Some(VirtQueue {
+            Some(Self {
                 desc: desc_ptr,
                 avail: avail_ptr,
                 used: used_ptr,

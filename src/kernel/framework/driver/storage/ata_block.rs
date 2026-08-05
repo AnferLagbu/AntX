@@ -56,7 +56,7 @@ impl AtaBlockDevice {
             return None;
         }
 
-        Some(AtaBlockDevice {
+        Some(Self {
             drive,
             total_sectors_cache: detected / 512,
         })

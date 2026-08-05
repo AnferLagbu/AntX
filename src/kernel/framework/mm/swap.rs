@@ -68,7 +68,7 @@ impl SwapEntry {
     pub fn new(slot: u64) -> Self {
         // Bit 0 = 0 (not present), Bit 1 = 0 (type 0)
         // Slot 存储在 bits 2-55
-        SwapEntry((slot & 0x003F_FFFF_FFFF_FFFF) << 2)
+        Self((slot & 0x003F_FFFF_FFFF_FFFF) << 2)
     }
 
     /// 从 PTE 值解析 swap entry
@@ -81,7 +81,7 @@ impl SwapEntry {
         if pte & 0x2 != 0 {
             return None;
         }
-        Some(SwapEntry(pte))
+        Some(Self(pte))
     }
 
     #[expect(
@@ -141,7 +141,7 @@ struct SwapArea {
 
 impl SwapArea {
     const fn new() -> Self {
-        SwapArea {
+        Self {
             bitmap: [SlotState::Free as u8; SWAP_MAX_SLOTS],
             used_count: 0,
             storage_virt: 0,
@@ -299,7 +299,7 @@ struct LruEntry {
 
 impl LruEntry {
     const fn empty() -> Self {
-        LruEntry {
+        Self {
             pml4: 0,
             virt_addr: 0,
             phys_addr: 0,
@@ -312,7 +312,7 @@ impl LruEntry {
 
 impl LruList {
     const fn new() -> Self {
-        LruList {
+        Self {
             active: [LruEntry::empty(); LRU_CAPACITY],
             active_count: 0,
             inactive: [LruEntry::empty(); LRU_CAPACITY],

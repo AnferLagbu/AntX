@@ -56,7 +56,7 @@ impl Ext2Inode {
             return None;
         }
 
-        let mut inode = Ext2Inode {
+        let mut inode = Self {
             i_mode: 0,
             i_uid: 0,
             i_size: 0,

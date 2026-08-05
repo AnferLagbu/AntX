@@ -51,14 +51,14 @@ impl ProcessState {
     /// 安全的从 u8 值转换为 `ProcessState`
     pub fn from_u8(value: u8) -> Self {
         match value {
-            0 => ProcessState::Created,
-            1 => ProcessState::Ready,
-            2 => ProcessState::Running,
-            3 => ProcessState::Blocked,
-            4 => ProcessState::Zombie,
-            5 => ProcessState::Terminated,
-            6 => ProcessState::Frozen,
-            _ => ProcessState::Created, // 无效值安全回退
+            0 => Self::Created,
+            1 => Self::Ready,
+            2 => Self::Running,
+            3 => Self::Blocked,
+            4 => Self::Zombie,
+            5 => Self::Terminated,
+            6 => Self::Frozen,
+            _ => Self::Created, // 无效值安全回退
         }
     }
 
@@ -74,13 +74,13 @@ impl ProcessState {
     /// 获取状态名称 (用于日志和调试)
     pub fn name(&self) -> &'static str {
         match self {
-            ProcessState::Created => "Created",
-            ProcessState::Ready => "Ready",
-            ProcessState::Running => "Running",
-            ProcessState::Blocked => "Blocked",
-            ProcessState::Zombie => "Zombie",
-            ProcessState::Terminated => "Terminated",
-            ProcessState::Frozen => "Frozen",
+            Self::Created => "Created",
+            Self::Ready => "Ready",
+            Self::Running => "Running",
+            Self::Blocked => "Blocked",
+            Self::Zombie => "Zombie",
+            Self::Terminated => "Terminated",
+            Self::Frozen => "Frozen",
         }
     }
 
@@ -90,7 +90,7 @@ impl ProcessState {
     )]
     /// ✅ 检查进程是否可调度 (在就绪队列或运行中)
     pub fn is_runnable(&self) -> bool {
-        matches!(self, ProcessState::Ready | ProcessState::Running)
+        matches!(self, Self::Ready | Self::Running)
     }
 
     #[expect(
@@ -99,7 +99,7 @@ impl ProcessState {
     )]
     /// ✅ 检查进程是否存活 (未终止或僵尸)
     pub fn is_alive(&self) -> bool {
-        !matches!(self, ProcessState::Zombie | ProcessState::Terminated)
+        !matches!(self, Self::Zombie | Self::Terminated)
     }
 
     #[expect(
@@ -110,7 +110,7 @@ impl ProcessState {
     pub fn can_freeze(&self) -> bool {
         matches!(
             self,
-            ProcessState::Running | ProcessState::Ready | ProcessState::Blocked
+            Self::Running | Self::Ready | Self::Blocked
         )
     }
 
@@ -119,9 +119,9 @@ impl ProcessState {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     /// ✅ 检查进程是否可以被唤醒 (从 Frozen 解冻后应转到的状态)
-    pub fn thaw_target_state(&self) -> Option<ProcessState> {
+    pub fn thaw_target_state(&self) -> Option<Self> {
         match self {
-            ProcessState::Frozen => Some(ProcessState::Ready), // 默认解冻到 Ready
+            Self::Frozen => Some(Self::Ready), // 默认解冻到 Ready
             _ => None,
         }
     }
@@ -140,12 +140,12 @@ pub enum BlockReason {
 impl BlockReason {
     pub fn from_u8(value: u8) -> Self {
         match value {
-            0 => BlockReason::WaitingForIo,
-            1 => BlockReason::WaitingForChild,
-            2 => BlockReason::WaitingForSignal,
-            3 => BlockReason::Sleeping,
-            4 => BlockReason::FutexWait,
-            _ => BlockReason::Unknown,
+            0 => Self::WaitingForIo,
+            1 => Self::WaitingForChild,
+            2 => Self::WaitingForSignal,
+            3 => Self::Sleeping,
+            4 => Self::FutexWait,
+            _ => Self::Unknown,
         }
     }
 }
@@ -166,12 +166,12 @@ impl ProcessPriority {
     )]
     pub fn from_u32(value: u32) -> Self {
         match value {
-            0 => ProcessPriority::Idle,
-            1 => ProcessPriority::Low,
-            2 => ProcessPriority::Normal,
-            3 => ProcessPriority::High,
-            4 => ProcessPriority::RealTime,
-            _ => ProcessPriority::Normal,
+            0 => Self::Idle,
+            1 => Self::Low,
+            2 => Self::Normal,
+            3 => Self::High,
+            4 => Self::RealTime,
+            _ => Self::Normal,
         }
     }
 }
@@ -309,12 +309,12 @@ impl ThreadPriority {
     )]
     pub fn from_u32(value: u32) -> Self {
         match value {
-            0 => ThreadPriority::Idle,
-            1 => ThreadPriority::Low,
-            2 => ThreadPriority::Normal,
-            3 => ThreadPriority::High,
-            4 => ThreadPriority::Realtime,
-            _ => ThreadPriority::Normal,
+            0 => Self::Idle,
+            1 => Self::Low,
+            2 => Self::Normal,
+            3 => Self::High,
+            4 => Self::Realtime,
+            _ => Self::Normal,
         }
     }
 }
@@ -338,14 +338,14 @@ impl ThreadState {
     )]
     pub fn from_u32(value: u32) -> Self {
         match value {
-            0 => ThreadState::Created,
-            1 => ThreadState::Ready,
-            2 => ThreadState::Running,
-            3 => ThreadState::Blocked,
-            4 => ThreadState::Zombie,
-            5 => ThreadState::Terminated,
-            6 => ThreadState::Frozen,
-            _ => ThreadState::Created,
+            0 => Self::Created,
+            1 => Self::Ready,
+            2 => Self::Running,
+            3 => Self::Blocked,
+            4 => Self::Zombie,
+            5 => Self::Terminated,
+            6 => Self::Frozen,
+            _ => Self::Created,
         }
     }
 
@@ -354,7 +354,7 @@ impl ThreadState {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     pub fn is_runnable(&self) -> bool {
-        matches!(self, ThreadState::Ready | ThreadState::Running)
+        matches!(self, Self::Ready | Self::Running)
     }
 
     #[expect(
@@ -362,7 +362,7 @@ impl ThreadState {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     pub fn is_alive(&self) -> bool {
-        !matches!(self, ThreadState::Zombie | ThreadState::Terminated)
+        !matches!(self, Self::Zombie | Self::Terminated)
     }
 
     #[expect(
@@ -372,7 +372,7 @@ impl ThreadState {
     pub fn can_freeze(&self) -> bool {
         matches!(
             self,
-            ThreadState::Running | ThreadState::Ready | ThreadState::Blocked
+            Self::Running | Self::Ready | Self::Blocked
         )
     }
 }

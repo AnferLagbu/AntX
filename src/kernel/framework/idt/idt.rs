@@ -209,9 +209,9 @@ impl IdtManager {
         reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
     )]
     /// 获取全局 IDT 管理器实例
-    pub fn instance() -> &'static IdtManager {
+    pub fn instance() -> &'static Self {
         IDT_MANAGER_INSTANCE.get_or_init(|slot| {
-            slot.write(IdtManager {
+            slot.write(Self {
                 state: IrqSpinLock::new(IdtState::default()),
                 stats: InterruptStatistics::new(),
                 detailed_stats: DetailedStatistics::new(), // Phase 3

@@ -43,9 +43,9 @@ impl SysctlValue {
     /// 序列化为文本 (用于 /proc/sys/* 节点读取)
     pub fn write_to(&self, buf: &mut [u8]) -> usize {
         match *self {
-            SysctlValue::Int(v) => write_i64(buf, v),
-            SysctlValue::UInt(v) => write_u64(buf, v),
-            SysctlValue::Bool(v) => write_bool(buf, v),
+            Self::Int(v) => write_i64(buf, v),
+            Self::UInt(v) => write_u64(buf, v),
+            Self::Bool(v) => write_bool(buf, v),
         }
     }
 
@@ -54,7 +54,7 @@ impl SysctlValue {
     /// # Errors
     /// 当文本无法按 `kind` 对应的类型解析 (如 `Int` 解析为整数失败,
     /// `Bool` 不是 `1/0/true/false/yes/no/on/off`) 时, 返回 `SysctlError::ParseFailed`.
-    pub fn parse(kind: SysctlKind, text: &str) -> Result<SysctlValue, SysctlError> {
+    pub fn parse(kind: SysctlKind, text: &str) -> Result<Self, SysctlError> {
         match kind {
             SysctlKind::Int => text
                 .trim()
@@ -67,8 +67,8 @@ impl SysctlValue {
                 .map(SysctlValue::UInt)
                 .map_err(|_| SysctlError::ParseFailed),
             SysctlKind::Bool => match text.trim() {
-                "1" | "true" | "yes" | "on" => Ok(SysctlValue::Bool(true)),
-                "0" | "false" | "no" | "off" => Ok(SysctlValue::Bool(false)),
+                "1" | "true" | "yes" | "on" => Ok(Self::Bool(true)),
+                "0" | "false" | "no" | "off" => Ok(Self::Bool(false)),
                 _ => Err(SysctlError::ParseFailed),
             },
         }

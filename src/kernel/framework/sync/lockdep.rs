@@ -90,12 +90,12 @@ pub enum LockKind {
 impl LockKind {
     /// 是否可在中断上下文中安全获取
     pub fn irq_safe(self) -> bool {
-        matches!(self, LockKind::SpinLock | LockKind::IrqSpinLock)
+        matches!(self, Self::SpinLock | Self::IrqSpinLock)
     }
 
     /// 是否为睡眠锁 (获取时可能 yield)
     pub fn may_sleep(self) -> bool {
-        matches!(self, LockKind::Mutex | LockKind::PiMutex)
+        matches!(self, Self::Mutex | Self::PiMutex)
     }
 }
 
@@ -109,7 +109,7 @@ pub struct LockClassId(pub u16);
 
 impl LockClassId {
     /// 无效 ID
-    pub const INVALID: LockClassId = LockClassId(u16::MAX);
+    pub const INVALID: Self = Self(u16::MAX);
 }
 
 // ============================================================================
