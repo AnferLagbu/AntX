@@ -14,9 +14,9 @@
 //! - VFS 交互: fd → `inode_id` 解析 (属于 services 层职责)
 //! - 文件映射 Page Cache 引用释放
 
-use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
-use crate::kernel::framework::mm::{PageFlags as VmaFlags, PAGE_SIZE};
+use crate::kernel::framework::mm::{PAGE_SIZE, PageFlags as VmaFlags};
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // mmap 标志位
@@ -167,7 +167,11 @@ pub fn mmap_syscall(
 }
 
 /// 查找或分配映射地址
-fn find_or_allocate_addr(mm: &MmStruct, addr_hint: u64, len_aligned: usize) -> Result<usize, Errno> {
+fn find_or_allocate_addr(
+    mm: &MmStruct,
+    addr_hint: u64,
+    len_aligned: usize,
+) -> Result<usize, Errno> {
     if addr_hint != 0 && addr_hint < 0x0000_7FFF_FFFF_F000 {
         Ok(addr_hint as usize)
     } else {
@@ -282,9 +286,19 @@ fn prot_to_vma_flags(prot: i32) -> VmaFlags {
 // syscall 入口 — 从 framework::syscall::sys_mmap/sys_munmap 迁移的策略层
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// mmap syscall 策略入口
-pub fn mmap_syscall_entry(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, offset: u64) -> i64 {
+pub fn mmap_syscall_entry(
+    addr: u64,
+    size: u64,
+    prot: i32,
+    flags: i32,
+    fd: i32,
+    offset: u64,
+) -> i64 {
     if size == 0 {
         return Errno::EINVAL.as_ret();
     }
@@ -310,7 +324,10 @@ pub fn mmap_syscall_entry(addr: u64, size: u64, prot: i32, flags: i32, fd: i32, 
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// munmap syscall 策略入口
 pub fn munmap_syscall_entry(addr: u64, size: u64) -> i64 {
     if addr == 0 || size == 0 {

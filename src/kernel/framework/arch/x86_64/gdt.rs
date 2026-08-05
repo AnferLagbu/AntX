@@ -341,7 +341,11 @@ impl PerCpuGdt {
             entries: [GdtEntry::null(); GDT_MAX_ENTRIES],
             ptr: GdtPtr { limit: 0, base: 0 },
             tss: super::tss::TaskStateSegment::zeroed(),
-            syscall: SyscallPerCpu { kernel_rsp: 0, kernel_pml4: 0, user_pml4: 0 },
+            syscall: SyscallPerCpu {
+                kernel_rsp: 0,
+                kernel_pml4: 0,
+                user_pml4: 0,
+            },
             syscall_stack: [0u8; PER_CPU_SYSCALL_STACK_SIZE],
             ist0: [0u8; PER_CPU_IST_SIZE],
             ist1: [0u8; PER_CPU_IST_SIZE],
@@ -448,11 +452,20 @@ unsafe fn init_gdt_entries(entries: &mut [GdtEntry; GDT_MAX_ENTRIES]) {
 /// 5. 加载 TR (ltr 指令, 任务寄存器)
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub fn gdt_init() -> i32 {
-    use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
+    use crate::kernel::framework::klog::{LogCategory, LogLevel, klog_write};
 
     static INIT_MSG: &[u8] = b"Initializing GDT and TSS (BSP)...\0";
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -521,19 +534,31 @@ pub fn gdt_init() -> i32 {
         // 进入 enter_user_asm 时在内核态, IA32_GS_BASE = per_cpu_addr.
         // 执行 swapgs 后, IA32_GS_BASE = 0 (用户态), IA32_KERNEL_GS_BASE = per_cpu_addr.
         // 用户态执行 syscall 时, syscall_entry 的 swapgs 将其换回 per_cpu_addr.
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const IA32_GS_BASE: u32 = 0xC0000101;
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
-        crate::kernel::framework::cpu::msr::write_msr(IA32_GS_BASE, &gdt.syscall as *const _ as u64);
+        crate::kernel::framework::cpu::msr::write_msr(
+            IA32_GS_BASE,
+            &gdt.syscall as *const _ as u64,
+        );
         crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, 0);
 
         // 诊断: 验证 write_msr 后 IA32_GS_BASE 的实际值
         let gs_base_readback = crate::kernel::framework::cpu::msr::read_msr(IA32_GS_BASE);
-        let kernel_gs_base_readback = crate::kernel::framework::cpu::msr::read_msr(IA32_KERNEL_GS_BASE);
+        let kernel_gs_base_readback =
+            crate::kernel::framework::cpu::msr::read_msr(IA32_KERNEL_GS_BASE);
         crate::klog_boot_info!(
             "[GDT] GS MSR verify: IA32_GS_BASE={:#x} (expect {:#x}), IA32_KERNEL_GS_BASE={:#x} (expect 0)",
-            gs_base_readback, &gdt.syscall as *const _ as u64, kernel_gs_base_readback
+            gs_base_readback,
+            &gdt.syscall as *const _ as u64,
+            kernel_gs_base_readback
         );
 
         crate::klog_boot_info!(
@@ -545,7 +570,10 @@ pub fn gdt_init() -> i32 {
         );
     }
 
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     static OK_MSG: &[u8] = b"GDT and TSS initialized successfully (BSP)\0";
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -568,8 +596,14 @@ pub fn gdt_init() -> i32 {
 /// 本函数在 AP 进入长模式后调用，为目标 CPU 初始化独立的 GDT + TSS。
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub fn gdt_init_ap(cpu_index: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
@@ -615,9 +649,15 @@ pub fn gdt_init_ap(cpu_index: u32) {
             ap.syscall.user_pml4 = current_cr3;
         }
 
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
-        crate::kernel::framework::cpu::msr::write_msr(IA32_KERNEL_GS_BASE, &ap.syscall as *const _ as u64);
+        crate::kernel::framework::cpu::msr::write_msr(
+            IA32_KERNEL_GS_BASE,
+            &ap.syscall as *const _ as u64,
+        );
     }
 }
 
@@ -627,7 +667,10 @@ pub fn gdt_init_ap(cpu_index: u32) {
 /// swapgs 后 `GS_BASE` = `IA32_GS_BASE` = 此函数返回的地址。
 /// 需要在用户页表中映射此地址所在的页面, 否则 KPTI 入口会触发 #PF。
 #[inline]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 pub fn get_syscall_per_cpu_base() -> u64 {
     &per_cpu_gdt(0).syscall as *const _ as u64
 }
@@ -663,7 +706,10 @@ pub unsafe fn get_tss_mut() -> &'static mut super::tss::TaskStateSegment {
 /// 用户态中断触发时 CPU 需要从 TSS 读取 RSP0/IST 栈指针,
 /// 用户页表必须映射 TSS 所在的页面.
 #[inline]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 pub fn get_tss_base() -> u64 {
     &per_cpu_gdt(0).tss as *const _ as u64
 }
@@ -711,14 +757,19 @@ pub unsafe fn gdt_set_user_cr3(user_cr3: u64) {
 /// # Safety
 /// 此函数修改 GDTR 寄存器, 会立即影响内存分段行为。
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-unsafe fn gdt_flush(gdt_ptr: &GdtPtr) { unsafe {
-    core::arch::asm!(
-        "lgdt [{0}]",
-        in(reg) gdt_ptr,
-        options(nostack, preserves_flags),
-    );
-}}
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
+unsafe fn gdt_flush(gdt_ptr: &GdtPtr) {
+    unsafe {
+        core::arch::asm!(
+            "lgdt [{0}]",
+            in(reg) gdt_ptr,
+            options(nostack, preserves_flags),
+        );
+    }
+}
 
 /// 执行 LTR 指令 (Load Task Register)
 ///
@@ -728,13 +779,15 @@ unsafe fn gdt_flush(gdt_ptr: &GdtPtr) { unsafe {
 /// # Safety
 /// 此函数加载新的 TSS 到任务寄存器, 会标记 TSS 为 busy。
 #[inline(always)]
-unsafe fn tss_flush(selector: u16) { unsafe {
-    core::arch::asm!(
-        "ltr {0:x}",
-        in(reg) selector,
-        options(nostack, preserves_flags),
-    );
-}}
+unsafe fn tss_flush(selector: u16) {
+    unsafe {
+        core::arch::asm!(
+            "ltr {0:x}",
+            in(reg) selector,
+            options(nostack, preserves_flags),
+        );
+    }
+}
 
 // ============================================================================
 // 单元测试

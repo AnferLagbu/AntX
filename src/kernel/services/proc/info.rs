@@ -49,7 +49,11 @@ pub fn getpgid_syscall(pid: i32) -> Result<usize, Errno> {
         return Err(Errno::EINVAL);
     }
     let ret = crate::kernel::framework::syscall::info::sys_getpgid(pid);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 // ============================================================================
@@ -68,7 +72,11 @@ pub fn uname_syscall(buf: u64) -> Result<usize, Errno> {
         return Err(Errno::EFAULT);
     }
     let ret = crate::kernel::framework::syscall::info::sys_uname(buf);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 // ============================================================================
@@ -87,5 +95,9 @@ pub fn gettimeofday_syscall(tv: u64) -> Result<usize, Errno> {
         return Err(Errno::EFAULT);
     }
     let ret = crate::kernel::framework::syscall::info::sys_gettimeofday(tv);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }

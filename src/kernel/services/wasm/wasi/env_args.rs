@@ -1,21 +1,26 @@
 //! WASI 环境/参数: `environ_get`, `environ_sizes_get`, `args_get`, `args_sizes_get`
 
-use alloc::format;
-use crate::kernel::services::wasm::types::{Value, WasmError};
-use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::WasiContext;
 use super::fd_table::write_u32_to_memory;
+use crate::kernel::services::wasm::interpreter::Interpreter;
+use crate::kernel::services::wasm::types::{Value, WasmError};
+use alloc::format;
 
 /// WASI `environ_sizes_get`: 获取环境变量数量和总缓冲区大小
 ///
 /// 参数: (`count_ptr`: i32, `buf_size_ptr`: i32)
 /// 返回: 0 (成功)
-pub fn wasi_environ_sizes_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_environ_sizes_get(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let count_ptr = interp.stack.pop_i32()? as u32;
     let buf_size_ptr = interp.stack.pop_i32()? as u32;
 
     let count = ctx.env.len() as u32;
-    let buf_size: u32 = ctx.env.iter()
+    let buf_size: u32 = ctx
+        .env
+        .iter()
         .map(|(k, v)| k.len() as u32 + 1 + v.len() as u32 + 1) // "key=value\0"
         .sum();
 
@@ -56,12 +61,17 @@ pub fn wasi_environ_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
 ///
 /// 参数: (`count_ptr`: i32, `buf_size_ptr`: i32)
 /// 返回: 0 (成功)
-pub fn wasi_args_sizes_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_args_sizes_get(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let count_ptr = interp.stack.pop_i32()? as u32;
     let buf_size_ptr = interp.stack.pop_i32()? as u32;
 
     let count = ctx.args.len() as u32;
-    let buf_size: u32 = ctx.args.iter()
+    let buf_size: u32 = ctx
+        .args
+        .iter()
         .map(|a| a.len() as u32 + 1) // "arg\0"
         .sum();
 

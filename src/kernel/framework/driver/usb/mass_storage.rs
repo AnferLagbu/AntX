@@ -29,8 +29,8 @@
 //! - `usb/ring.rs` USB-1.5 (Bulk 端点 TRB 提交使用 Command Ring)
 //! - `services/driver/storage/ahci.rs` (ATA/SCSI 命令分发, 类似结构)
 
-use super::usb_core::{DeviceClass, UsbDevice};
 use super::framework::{DriverError, Result};
+use super::usb_core::{DeviceClass, UsbDevice};
 
 // ============================================================================
 // CBW / CSW 结构 (USB MSC BBB §3.1, §3.2)
@@ -79,7 +79,13 @@ impl CommandBlockWrapper {
     /// SCSI 命令块为空或长度超过最大允许值时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-    pub fn new(tag: u32, data_transfer_length: u32, direction_in: bool, lun: u8, cb: &[u8]) -> Result<Self> {
+    pub fn new(
+        tag: u32,
+        data_transfer_length: u32,
+        direction_in: bool,
+        lun: u8,
+        cb: &[u8],
+    ) -> Result<Self> {
         if cb.is_empty() || cb.len() > SCSI_CB_MAX_LENGTH {
             return Err(DriverError::InvalidParameter);
         }
@@ -152,13 +158,19 @@ impl CommandStatusWrapper {
         })
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 是否成功.
     pub fn is_success(&self) -> bool {
         self.status == csw_status::SUCCESS
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 是否为 Phase Error (协议层错误, 通常需 reset recovery).
     pub fn is_phase_error(&self) -> bool {
         self.status == csw_status::PHASE_ERROR
@@ -191,15 +203,15 @@ pub mod scsi_op {
 pub fn build_read_10_cmd(lba: u32, blocks: u16) -> [u8; 10] {
     [
         scsi_op::READ_10,
-        0x00,                                 // byte 1: flags + LBA high (lba < 2^24 时为 0)
+        0x00, // byte 1: flags + LBA high (lba < 2^24 时为 0)
         ((lba >> 24) & 0xFF) as u8,
         ((lba >> 16) & 0xFF) as u8,
         ((lba >> 8) & 0xFF) as u8,
         (lba & 0xFF) as u8,
-        0x00,                                 // Group Number
+        0x00, // Group Number
         ((blocks >> 8) & 0xFF) as u8,
         (blocks & 0xFF) as u8,
-        0x00,                                 // Control
+        0x00, // Control
     ]
 }
 
@@ -226,7 +238,15 @@ pub fn build_inquiry_cmd(allocation_length: u16) -> [u8; 6] {
 pub fn build_read_capacity_10_cmd() -> [u8; 10] {
     [
         scsi_op::READ_CAPACITY_10,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
     ]
 }
 
@@ -240,7 +260,8 @@ pub fn build_request_sense_cmd(allocation_length: u8) -> [u8; 6] {
     [
         scsi_op::REQUEST_SENSE,
         0x00, // DESC = 0
-        0x00, 0x00,
+        0x00,
+        0x00,
         allocation_length,
         0x00,
     ]
@@ -358,7 +379,12 @@ impl MassStorageDriver {
     /// - `lun`: 逻辑单元号 LUN
     /// # Errors
     /// 底层 CBW 构造失败时返回 Err。
-    pub fn build_read_10_cbw(&mut self, lba: u32, blocks: u16, lun: u8) -> Result<CommandBlockWrapper> {
+    pub fn build_read_10_cbw(
+        &mut self,
+        lba: u32,
+        blocks: u16,
+        lun: u8,
+    ) -> Result<CommandBlockWrapper> {
         let cmd = build_read_10_cmd(lba, blocks);
         let data_len = u32::from(blocks) * 512; // 假设 512 字节/扇区
         self.build_cbw(data_len, true, lun, &cmd)
@@ -412,12 +438,12 @@ impl MassStorageDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
+    use crate::kernel::framework::driver::usb::enumerate::parse_device_descriptor;
+    use crate::kernel::framework::driver::usb::usb_core::DeviceState;
     use crate::kernel::framework::driver::usb::usb_core::EndpointDescriptor;
     use crate::kernel::framework::driver::usb::usb_core::InterfaceDescriptor;
     use crate::kernel::framework::driver::usb::usb_core::UsbSpeed;
-    use crate::kernel::framework::driver::usb::usb_core::DeviceState;
-    use crate::kernel::framework::driver::usb::enumerate::parse_device_descriptor;
+    use alloc::vec;
 
     // ----------------- CBW Tests -----------------
 
@@ -468,7 +494,7 @@ mod tests {
             0x53, 0x55, 0x42, 0x53, // Signature "USBS"
             0x78, 0x56, 0x34, 0x12, // Tag = 0x12345678
             0x10, 0x00, 0x00, 0x00, // Data residue = 16
-            0x00,                   // Status = Success
+            0x00, // Status = Success
         ];
         let csw = CommandStatusWrapper::from_bytes(&data).unwrap();
         assert_eq!(csw.tag, 0x1234_5678);
@@ -493,9 +519,7 @@ mod tests {
     #[test]
     fn test_csw_phase_error_status() {
         let data = [
-            0x53, 0x55, 0x42, 0x53,
-            0x01, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00,
+            0x53, 0x55, 0x42, 0x53, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x02, // PHASE_ERROR
         ];
         let csw = CommandStatusWrapper::from_bytes(&data).unwrap();
@@ -562,8 +586,8 @@ mod tests {
 
     fn make_test_msc_device() -> UsbDevice {
         let device_data = [
-            18, 1, 0x10, 0x01, 0x08, 0x06, 0x50, 0x40, 0xAB, 0x12, 0xCD, 0x34, 0x00, 0x01,
-            1, 2, 0, 1,
+            18, 1, 0x10, 0x01, 0x08, 0x06, 0x50, 0x40, 0xAB, 0x12, 0xCD, 0x34, 0x00, 0x01, 1, 2, 0,
+            1,
         ];
         let descriptor = parse_device_descriptor(&device_data).unwrap();
 
@@ -591,7 +615,7 @@ mod tests {
                     length: 7,
                     descriptor_type: 5,
                     endpoint_address: 0x81, // IN, EP1
-                    attributes: 0x02,        // Bulk
+                    attributes: 0x02,       // Bulk
                     max_packet_size: 512,
                     interval: 0,
                 },
@@ -600,7 +624,7 @@ mod tests {
                     length: 7,
                     descriptor_type: 5,
                     endpoint_address: 0x02, // OUT, EP2
-                    attributes: 0x02,        // Bulk
+                    attributes: 0x02,       // Bulk
                     max_packet_size: 512,
                     interval: 0,
                 },

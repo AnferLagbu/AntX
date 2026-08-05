@@ -293,8 +293,14 @@ impl IoUring {
         processed
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 执行单个操作
     fn execute_op(&self, sqe: &Sqe) -> i32 {
         let opcode = match IoOpCode::from_u8(sqe.opcode) {
@@ -309,10 +315,7 @@ impl IoUring {
                 // 当前返回 ENOSYS, 待 VFS fd 表统一后实现
                 -(Errno::ENOSYS as i32)
             }
-            IoOpCode::Accept
-            | IoOpCode::Connect
-            | IoOpCode::Send
-            | IoOpCode::Recv => {
+            IoOpCode::Accept | IoOpCode::Connect | IoOpCode::Send | IoOpCode::Recv => {
                 // TODO(TRACK-9CADCD): 实现网络异步操作
                 -(Errno::ENOSYS as i32)
             }
@@ -337,7 +340,11 @@ static NEXT_URING_ID: AtomicU32 = AtomicU32::new(0);
 /// # Errors
 /// 当实例表已满 (`MAX_URING_INSTANCES`) 时返回 `ENOMEM`.
 pub fn io_uring_setup(entries: u32, owner_pid: u32) -> Result<u32, Errno> {
-    let ring_size = if entries == 0 { DEFAULT_RING_SIZE } else { entries.next_power_of_two() };
+    let ring_size = if entries == 0 {
+        DEFAULT_RING_SIZE
+    } else {
+        entries.next_power_of_two()
+    };
 
     let mut table = URING_TABLE.lock();
     if table.len() >= MAX_URING_INSTANCES {
@@ -356,7 +363,9 @@ pub fn io_uring_setup(entries: u32, owner_pid: u32) -> Result<u32, Errno> {
 /// 当指定 ID 的实例不存在时返回 `EBADF`.
 pub fn io_uring_destroy(id: u32) -> Result<(), Errno> {
     let mut table = URING_TABLE.lock();
-    let pos = table.iter().position(|u| u.as_ref().map_or(false, |u| u.id == id));
+    let pos = table
+        .iter()
+        .position(|u| u.as_ref().map_or(false, |u| u.id == id));
     match pos {
         Some(i) => {
             table.remove(i);
@@ -382,7 +391,10 @@ pub fn io_uring_submit(id: u32, sqe: Sqe) -> Result<(), Errno> {
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 进入 `io_uring` (处理待处理请求 + 可选等待)
 ///
 /// 返回处理的 CQE 数量
@@ -476,7 +488,14 @@ pub fn sys_io_uring_register(_id: u64, _opcode: u64, _arg: u64, _nr_args: u64) -
 }
 
 /// `sys_io_uring_submit_sqe` — 提交单个 SQE
-pub fn sys_io_uring_submit_sqe(id: u64, opcode: u64, flags: u64, user_data: u64, fd: u64, offset_len: u64) -> i64 {
+pub fn sys_io_uring_submit_sqe(
+    id: u64,
+    opcode: u64,
+    flags: u64,
+    user_data: u64,
+    fd: u64,
+    offset_len: u64,
+) -> i64 {
     let sqe = Sqe {
         opcode: opcode as u8,
         flags: flags as u8,

@@ -108,7 +108,10 @@ impl VirtQueue {
 
         let pages = total_size.div_ceil(PAGE_SIZE as usize);
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
@@ -189,7 +192,10 @@ impl VirtQueue {
         head
     }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 提交描述符链到设备 (通知设备).
     /// 返回已提交的可用环索引.
     pub fn submit(&mut self, desc_head: u16) -> u16 {
@@ -205,7 +211,10 @@ impl VirtQueue {
         idx
     }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 提交后通知设备 (调用方必须设置 avail->idx 并写 `QueueNotify`).
     pub fn commit_and_kick(&mut self) {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -220,7 +229,10 @@ impl VirtQueue {
     /// 检查是否有已用描述符可用, 有则返回.
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     pub fn pop_used(&mut self) -> Option<(u16, u32)> {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -292,7 +304,10 @@ impl DmaBuffer {
     pub fn new(size: usize) -> Option<Self> {
         let pages = (size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
@@ -334,7 +349,10 @@ impl DmaBuffer {
     /// # Panics
     /// offset 超出缓冲区范围时 panic。
     pub fn read_byte(&self, offset: usize) -> u8 {
-        assert!(offset < self.size, "DmaBuffer::read_byte: offset out of bounds");
+        assert!(
+            offset < self.size,
+            "DmaBuffer::read_byte: offset out of bounds"
+        );
         // SAFETY: virt 指向有效内核页, offset < size 已检查
         unsafe { *self.virt.add(offset) }
     }
@@ -343,7 +361,10 @@ impl DmaBuffer {
     /// # Panics
     /// offset 超出缓冲区范围时 panic。
     pub fn write_byte(&mut self, offset: usize, val: u8) {
-        assert!(offset < self.size, "DmaBuffer::write_byte: offset out of bounds");
+        assert!(
+            offset < self.size,
+            "DmaBuffer::write_byte: offset out of bounds"
+        );
         // SAFETY: virt 指向有效内核页, offset < size 已检查, &mut self 保证独占
         unsafe {
             *self.virt.add(offset) = val;
@@ -416,7 +437,10 @@ impl DmaBuffer {
 }
 
 impl Drop for DmaBuffer {
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+    #[expect(
+        clippy::no_effect_underscore_binding,
+        reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+    )]
     fn drop(&mut self) {
         // 当前 PMM 不提供 pmm_free_pages, 缓冲区生命周期由系统管理.
         // 占位: PMM 增量后接入实际释放. self.pages 记录分配页数供将来使用.

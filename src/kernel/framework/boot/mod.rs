@@ -10,7 +10,6 @@
 
 use crate::kernel::framework::sync::IrqSpinLock;
 
-
 use crate::kernel::framework::sync::OnceLock;
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
@@ -92,8 +91,7 @@ impl BootInfo {
     }
 }
 
-struct MultibootPtr(
-    *const u8);
+struct MultibootPtr(*const u8);
 // SAFETY: MultibootPtr 包装一个指向启动信息数据的裸指针, 启动早期写入
 // 一次, 之后只读. 访问受 MULTIBOOT_INFO_PTR Mutex 保护.
 unsafe impl Send for MultibootPtr {}
@@ -126,8 +124,14 @@ pub extern "C" fn boot_set_multiboot_info(magic: u32, ptr: *const u8) {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
     // SAFETY: `ptr` 由调用方保证指向有效 Multiboot1Info; 只读借用
     let mbi = unsafe { &*(ptr as *const Multiboot1Info) };
@@ -167,8 +171,14 @@ fn parse_multiboot1(ptr: *const u8) -> (u64, usize) {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
     // SAFETY: `ptr` 由调用方保证指向有效 u32; 只读借用
     let total_size = unsafe { *(ptr as *const u32) };
@@ -258,7 +268,10 @@ fn parse_multiboot2(ptr: *const u8) -> (u64, usize) {
     (mem_size, mmap_entries)
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 pub fn init() -> BootInfo {
     // SAFETY: `const` 由调用方保证为有效指针; 只读访问
     // NOTE: &_kernel_end 在本链接脚本中的 VMA 等于物理地址 (0x1CF7000),
@@ -293,7 +306,10 @@ pub fn init() -> BootInfo {
     };
 
     #[cfg(target_arch = "aarch64")]
-    #[expect(clippy::map_unwrap_or, reason = "option_env → parse → 默认值链式调用可读性较好; map_or 反而需要反向参数")]
+    #[expect(
+        clippy::map_unwrap_or,
+        reason = "option_env → parse → 默认值链式调用可读性较好; map_or 反而需要反向参数"
+    )]
     let (mem_size, mmap_entries) = {
         // aarch64 不使用 Multiboot 协议, 但需读取字段以消除 dead_code 警告
         let _ = MULTIBOOT_INFO_PTR.lock().0;
@@ -312,7 +328,9 @@ pub fn init() -> BootInfo {
         mmap_entries,
     };
 
-    BOOT_INFO.get_or_init(|slot| { slot.write(info); });
+    BOOT_INFO.get_or_init(|slot| {
+        slot.write(info);
+    });
 
     info
 }

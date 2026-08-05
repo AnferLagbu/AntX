@@ -57,7 +57,9 @@ impl ExfatSuperBlock {
         // 手动解析超级块字段
         let sb = ExfatSuperBlock {
             jump_boot: [data[0], data[1], data[2]],
-            fs_name: [data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10]],
+            fs_name: [
+                data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10],
+            ],
             must_be_zero: [0; 53],
             partition_offset: u64::from_le_bytes(data[64..72].try_into().ok()?),
             volume_length: u64::from_le_bytes(data[72..80].try_into().ok()?),

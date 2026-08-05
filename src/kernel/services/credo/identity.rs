@@ -493,9 +493,18 @@ mod tests {
     #[test]
     fn error_from_i32() {
         assert_eq!(PwmError::from_i32(-2), PwmError::TableFull);
-        assert_eq!(PwmError::from_i32(-3), PwmError::Kernel(crate::kernel::services::error::KernelError::FileNotFound));
-        assert_eq!(PwmError::from_i32(0), PwmError::Kernel(crate::kernel::services::error::KernelError::Other(0)));
-        assert_eq!(PwmError::from_i32(42), PwmError::Kernel(crate::kernel::services::error::KernelError::Other(42)));
+        assert_eq!(
+            PwmError::from_i32(-3),
+            PwmError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)
+        );
+        assert_eq!(
+            PwmError::from_i32(0),
+            PwmError::Kernel(crate::kernel::services::error::KernelError::Other(0))
+        );
+        assert_eq!(
+            PwmError::from_i32(42),
+            PwmError::Kernel(crate::kernel::services::error::KernelError::Other(42))
+        );
     }
 
     #[test]

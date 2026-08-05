@@ -16,19 +16,27 @@ const PSCI_VERSION: u32 = 0x84000000;
 /// 返回: x0 = return value
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-unsafe fn smc(func: u32) -> i64 { unsafe {
-    let ret: i64;
-    core::arch::asm!(
-        "smc #0",
-        in("x0") func as u64,
-        lateout("x0") ret,
-        options(nostack),
-    );
-    ret
-}}
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
+unsafe fn smc(func: u32) -> i64 {
+    unsafe {
+        let ret: i64;
+        core::arch::asm!(
+            "smc #0",
+            in("x0") func as u64,
+            lateout("x0") ret,
+            options(nostack),
+        );
+        ret
+    }
+}
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 检查 PSCI 版本。返回 (major, minor) 或 None。
 fn psci_version() -> Option<(u32, u32)> {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)

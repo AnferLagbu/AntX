@@ -20,41 +20,41 @@
 //! 本文件不含 `unsafe`. 所有硬件交互通过 `framework::credo` 的安全 API.
 
 pub mod audit;
+/// Credo 认证策略 — PWM 登录/登出/创建/删除/验证/授权
+pub mod auth;
 /// T6-8: PWM 能力常量定义 (原 framework/credo/capability.rs)
 pub mod capability;
 pub mod crypto;
 pub mod grants;
 pub mod identity;
+pub mod policy;
 /// D6: 安全启动 + TPM 安全封装
 pub mod secure_boot;
-pub mod policy;
 pub mod sessions;
-/// Credo 认证策略 — PWM 登录/登出/创建/删除/验证/授权
-pub mod auth;
 /// T6-8: SHA-256 哈希实现 (原 framework/credo/sha256.rs)
 pub mod sha256;
+/// Credo 私有存储子系统 — 块设备/格式化/分区 safe 代理
+pub mod storage;
 /// T6-7: Credo 类型定义 (原 framework/credo/types.rs)
 pub mod types;
 pub mod uid;
-/// Credo 私有存储子系统 — 块设备/格式化/分区 safe 代理
-pub mod storage;
 
-pub use audit::{AuditEvent, AuditEventKind, AuditLog, HashChainNode, AUDIT_BUFFER_SIZE};
+pub use audit::{AUDIT_BUFFER_SIZE, AuditEvent, AuditEventKind, AuditLog, HashChainNode};
+pub use capability::{
+    CAP_DOMAIN_DEVICE, CAP_DOMAIN_FS, CAP_DOMAIN_IPC, CAP_DOMAIN_MEM, CAP_DOMAIN_NET,
+    CAP_DOMAIN_PROC, CAP_DOMAIN_SYSTEM, CAP_DOMAIN_TIME, CAP_DOMAIN_USER_MGMT, DEVICE_CAP_BIND,
+    DEVICE_CAP_DMA, DEVICE_CAP_IRQ, DEVICE_CAP_MMIO,
+};
 pub use grants::{
     DelegationDeny, DelegationEngine, DelegationResult, GrantFlags, GrantRecord, GrantTable,
     MAX_GRANT_RECORDS,
 };
+pub use identity::{PwmError, PwmId, PwmResult};
 pub use policy::{
-    CapBits, CapDomain, CapabilityMatrix, DenyReason, GrantResult, InMemoryMatrix,
-    PolicyEngine, PolicyResult, RevokeResult, VIABLE_FLOOR, CAP_DOMAINS,
+    CAP_DOMAINS, CapBits, CapDomain, CapabilityMatrix, DenyReason, GrantResult, InMemoryMatrix,
+    PolicyEngine, PolicyResult, RevokeResult, VIABLE_FLOOR,
 };
 pub use sessions::{
-    LoginDeny, LoginResult, Session, SessionError, SessionId, SessionManager, SessionState,
-    SessionTable, MAX_SESSIONS,
-};
-pub use identity::{PwmError, PwmId, PwmResult};
-pub use capability::{
-    CAP_DOMAIN_SYSTEM, CAP_DOMAIN_FS, CAP_DOMAIN_NET, CAP_DOMAIN_PROC,
-    CAP_DOMAIN_DEVICE, CAP_DOMAIN_USER_MGMT, CAP_DOMAIN_IPC, CAP_DOMAIN_MEM,
-    CAP_DOMAIN_TIME, DEVICE_CAP_MMIO, DEVICE_CAP_IRQ, DEVICE_CAP_DMA, DEVICE_CAP_BIND,
+    LoginDeny, LoginResult, MAX_SESSIONS, Session, SessionError, SessionId, SessionManager,
+    SessionState, SessionTable,
 };

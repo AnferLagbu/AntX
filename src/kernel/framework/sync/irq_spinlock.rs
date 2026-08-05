@@ -32,10 +32,10 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::{
-    disable_interrupts, restore_interrupts, SpinLock, IrqSaveFlags,
+    IrqSaveFlags, SpinLock, disable_interrupts, restore_interrupts,
 };
 #[cfg(debug_assertions)]
-use crate::kernel::framework::sync::{LockClassId, LockClassDesc, LockKind};
+use crate::kernel::framework::sync::{LockClassDesc, LockClassId, LockKind};
 
 /// 中断安全自旋锁 (TCB)。
 ///
@@ -69,7 +69,10 @@ impl<T: fmt::Debug> fmt::Debug for IrqSpinLock<T> {
         match self.try_lock() {
             // 拿不到锁时, 用占位符表示 (避免 Debug 死锁)
             None => f.write_str("IrqSpinLock(<locked>)"),
-            Some(guard) => f.debug_struct("IrqSpinLock").field("data", &*guard).finish(),
+            Some(guard) => f
+                .debug_struct("IrqSpinLock")
+                .field("data", &*guard)
+                .finish(),
         }
     }
 }
@@ -88,7 +91,10 @@ impl<T> IrqSpinLock<T> {
 
     /// 创建命名 `IrqSpinLock` (用于调试 + lockdep)
     #[cfg(debug_assertions)]
-#[expect(clippy::doc_markdown, reason = "doc_markdown: 文档 markdown 格式已知 (中文 + 内核术语); 当前优先 expect")]
+    #[expect(
+        clippy::doc_markdown,
+        reason = "doc_markdown: 文档 markdown 格式已知 (中文 + 内核术语); 当前优先 expect"
+    )]
     pub fn named(name: &'static str, data: T) -> Self {
         let class_id = crate::kernel::framework::sync::register_class(LockClassDesc {
             name,

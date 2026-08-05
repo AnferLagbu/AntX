@@ -32,8 +32,7 @@ impl<T> CpuLocal<T> {
         // `core::mem::zeroed()` 把所有字节置 0, 即每个槽位都是 `None`, 这对 `Option<T>`
         // 始终是合法状态 (None 变体不要求 T 初始化)。`MAX_CPUS` 在编译期已知常量,
         // 数组大小匹配, 不会越界。
-        let slots: [UnsafeCell<Option<T>>; MAX_CPUS] =
-            unsafe { core::mem::zeroed() };
+        let slots: [UnsafeCell<Option<T>>; MAX_CPUS] = unsafe { core::mem::zeroed() };
         Self { slots }
     }
 

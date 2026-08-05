@@ -5,13 +5,13 @@
 
 // 重导出强类型
 pub use crate::kernel::framework::timer::{
-    NtpTimestamp, NtpPacket, NtpResult, PtpMessageType, ClockAdjState, TimeSyncSubsystem,
-    NTP_EPOCH_OFFSET, NTP_PORT, PTP_EVENT_PORT, PTP_GENERAL_PORT,
-    MAX_FREQ_ADJUST_PPM, MAX_OFFSET_NS, ADJ_RATE_NS,
+    ADJ_RATE_NS, ClockAdjState, MAX_FREQ_ADJUST_PPM, MAX_OFFSET_NS, NTP_EPOCH_OFFSET, NTP_PORT,
+    NtpPacket, NtpResult, NtpTimestamp, PTP_EVENT_PORT, PTP_GENERAL_PORT, PtpMessageType,
+    TimeSyncSubsystem,
 };
 
 use crate::kernel::framework::timer::{
-    timesync_init, timesync_is_initialized, timesync_subsystem, sys_timesync,
+    sys_timesync, timesync_init, timesync_is_initialized, timesync_subsystem,
 };
 
 /// 初始化时间同步

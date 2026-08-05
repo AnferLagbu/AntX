@@ -11,7 +11,7 @@
 //! 提供进程间同步原语
 //! 功能等价于 POSIX semaphores
 
-use super::types::{IpcNamespace, Semaphore, IpcId};
+use super::types::{IpcId, IpcNamespace, Semaphore};
 use crate::kernel::framework::proc::process_get_current_pid;
 
 /// 查找空闲信号量槽位
@@ -24,7 +24,10 @@ fn sem_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&mut Semaph
     namespace.semaphores.iter_mut().find(|s| s.id == id)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 创建信号量 (Rust 安全接口)
 ///
 /// # Arguments
@@ -67,7 +70,10 @@ pub fn sem_create_safe(
     Ok(sem.id)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 等待/获取信号量 (P 操作) (Rust 安全接口)
 ///
 /// 如果计数 > 0，则减少计数并立即返回；
@@ -103,7 +109,10 @@ pub fn sem_wait_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32>
     Ok(())
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 释放/通知信号量 (V 操作) (Rust 安全接口)
 ///
 /// 增加计数并唤醒一个等待的线程。
@@ -137,7 +146,10 @@ pub fn sem_post_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32>
     Ok(())
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 销毁信号量 (Rust 安全接口)
 ///
 /// # Arguments

@@ -1,18 +1,18 @@
+use crate::kernel::framework::idt::DetailedStatistics;
 use crate::kernel::framework::idt::handlers::{
-    create_handler, AccessType, DefaultHandler, DivisionByZeroHandler, ExceptionCategory,
-    ExceptionHandler, ExceptionStatisticsCollector, FaultCause, Mode, PageFaultHandler, PanicInfo,
-    RecoveryAction, Severity,
+    AccessType, DefaultHandler, DivisionByZeroHandler, ExceptionCategory, ExceptionHandler,
+    ExceptionStatisticsCollector, FaultCause, Mode, PageFaultHandler, PanicInfo, RecoveryAction,
+    Severity, create_handler,
 };
 use crate::kernel::framework::idt::{
-    is_null_or_invalid, is_valid_kernel_address, is_valid_user_address, CpuFeatures,
+    CpuFeatures, is_null_or_invalid, is_valid_kernel_address, is_valid_user_address,
+};
+use crate::kernel::framework::idt::{
+    ErrorFlags, GDT_KERNEL_CODE, IDT_ENTRIES, IDT_TYPE_INTERRUPT, IRQ_BASE, IdtEntry, IdtPtr,
+    InterruptFrame, InterruptStatistics, get_exception_name, get_irq_name,
 };
 use crate::kernel::framework::mm::{KERNEL_BASE, KERNEL_TEXT_BASE};
-use crate::kernel::framework::idt::DetailedStatistics;
-use crate::kernel::framework::idt::{
-    get_exception_name, get_irq_name, ErrorFlags, IdtEntry, IdtPtr, InterruptFrame,
-    InterruptStatistics, GDT_KERNEL_CODE, IDT_ENTRIES, IDT_TYPE_INTERRUPT, IRQ_BASE,
-};
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 use crate::register_tests_inner;
 use core::sync::atomic::Ordering;
 
@@ -315,10 +315,7 @@ fn address_validation() -> TestResult {
     check!(is_null_or_invalid(0xFFF), "0xFFF is invalid");
     check!(!is_null_or_invalid(0x1000), "0x1000 is valid");
     check!(is_valid_user_address(0x400000), "0x400000 is user");
-    check!(
-        !is_valid_user_address(KERNEL_BASE),
-        "kernel is not user"
-    );
+    check!(!is_valid_user_address(KERNEL_BASE), "kernel is not user");
     check!(
         is_valid_kernel_address(KERNEL_TEXT_BASE),
         "kernel addr is valid"

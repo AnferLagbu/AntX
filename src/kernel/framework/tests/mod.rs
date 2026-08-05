@@ -1,7 +1,6 @@
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
-
 use crate::kernel::framework::sync::irq_spinlock::IrqSpinLock;
 
 use crate::kernel::framework::sync::once_lock::OnceLock;
@@ -33,12 +32,12 @@ pub mod test_hvfs;
 pub mod test_hvfs_ext;
 pub mod test_ipc;
 pub mod test_mm;
-pub mod test_uds;
-pub mod test_pi_mutex;
 pub mod test_new_features;
+pub mod test_pi_mutex;
 pub mod test_proc;
 pub mod test_pwm;
 pub mod test_smp;
+pub mod test_uds;
 pub mod test_vfs;
 
 pub type TestFn = fn() -> TestResult;
@@ -230,7 +229,10 @@ impl TestRunner {
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 unsafe fn port_inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
@@ -290,7 +292,9 @@ pub fn serial_print_num(mut n: u64) {
 static TEST_RUNNER: OnceLock<TestRunner> = OnceLock::new();
 
 pub fn runner() -> &'static TestRunner {
-    TEST_RUNNER.get_or_init(|slot| { slot.write(TestRunner::new()); })
+    TEST_RUNNER.get_or_init(|slot| {
+        slot.write(TestRunner::new());
+    })
 }
 
 #[macro_export]
@@ -333,7 +337,10 @@ macro_rules! register_tests_inner {
 
 pub use {assert_eq_test, check, skip_test};
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub fn test_runner_init() {
     crate::klog_boot_info!("[TEST] === QueenX Test Framework ===");
 
@@ -416,7 +423,8 @@ pub fn test_runner_init() {
         let pd63 = read_u64(0x109000, 63);
         crate::klog_boot_info!(
             "[PAGETABLE] before run_all: pd[24]=0x{:016X} pd[63]=0x{:016X}",
-            pd24, pd63
+            pd24,
+            pd63
         );
     }
 

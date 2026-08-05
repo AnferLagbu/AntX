@@ -55,8 +55,14 @@ pub fn get_framebuffer_info() -> Option<&'static FramebufferInfo> {
     FB_INFO.get()
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 /// 从 Multiboot2 tag 中解析帧缓冲信息
 ///
 /// `tag_data` 指向 tag 的 payload 起始位置 (tag 头部的 type/size 之后)
@@ -108,6 +114,8 @@ pub fn parse_framebuffer_tag(tag_data: *const u8, _tag_size: u32) {
             fb.blue_mask_size = *(tag_data.add(29));
         }
 
-        FB_INFO.get_or_init(|slot| { slot.write(fb); });
+        FB_INFO.get_or_init(|slot| {
+            slot.write(fb);
+        });
     }
 }

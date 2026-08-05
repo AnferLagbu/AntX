@@ -229,8 +229,14 @@ impl Trb {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn trb_type(&self) -> TrbType {
         let ty = (self.control >> 10) & 0x3F;
         match ty {
@@ -269,7 +275,10 @@ impl Trb {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn cycle_bit(&self) -> bool {
         self.control & 1 != 0
     }
@@ -364,7 +373,10 @@ impl XhciController {
         }
     }
 
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     /// 构造时附加 BAR0 信息 (用于日志/调试)
     pub fn with_bar(mut self, bar_base: u64, bar_size: u64) -> Self {
         self.bar_base = bar_base;
@@ -551,8 +563,7 @@ impl XhciController {
         let ring_bytes = ring_size * core::mem::size_of::<Trb>();
 
         // 分配 Command Ring DMA 内存
-        let (virt, phys) = dma.alloc_coherent(ring_bytes)
-            .ok_or(DriverError::Busy)?;
+        let (virt, phys) = dma.alloc_coherent(ring_bytes).ok_or(DriverError::Busy)?;
 
         self.cmd_ring_virt = virt;
         self.cmd_ring_phys = phys;
@@ -572,7 +583,8 @@ impl XhciController {
         crate::klog_ffi!(
             klog_ffi_info,
             "[xHCI] Command Ring initialized: phys=0x{:x}, size={}",
-            phys.0, ring_size
+            phys.0,
+            ring_size
         );
 
         Ok(())
@@ -640,8 +652,14 @@ impl XhciController {
         Ok(slot)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 等待 Command Completion Event
     ///
     /// 轮询 Event Ring 等待命令完成。
@@ -688,7 +706,8 @@ impl XhciController {
         crate::klog_ffi!(
             klog_ffi_info,
             "[xHCI] Stop Endpoint completed: slot={}, ep={}",
-            slot_id, ep_id
+            slot_id,
+            ep_id
         );
 
         Ok(())
@@ -725,7 +744,8 @@ impl XhciController {
         crate::klog_ffi!(
             klog_ffi_info,
             "[xHCI] Reset Endpoint completed: slot={}, ep={}",
-            slot_id, ep_id
+            slot_id,
+            ep_id
         );
 
         Ok(())
@@ -780,7 +800,8 @@ impl Driver for XhciController {
     }
 
     fn init(&mut self) -> Result<()> {
-        self.init_hardware().map_err(|_| DriverError::HardwareError)?;
+        self.init_hardware()
+            .map_err(|_| DriverError::HardwareError)?;
         self.initialized = true;
         Ok(())
     }
@@ -929,8 +950,8 @@ impl HostController for XhciController {
         // SAFETY: cap_regs 由 init_hardware 已设置, db_off 字段有效.
         unsafe {
             let cap = &*self.cap_regs;
-            let doorbell_base = (self.iomem.as_ref().unwrap().virt_ptr() as usize)
-                + cap.db_off as usize;
+            let doorbell_base =
+                (self.iomem.as_ref().unwrap().virt_ptr() as usize) + cap.db_off as usize;
             let doorbell_addr = doorbell_base + slot_id * 4;
             // SAFETY: doorbell 寄存器已通过 init_hardware 验证, slot_id 在 [1, num_slots).
             //         write_volatile 保证 MMIO 写入不被编译器优化掉.
@@ -1023,8 +1044,12 @@ mod tests {
     fn test_xhci_controller_creation() {
         // SAFETY: 测试用固定 MMIO 地址, identity-mapped in test environment
         let iomem = unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
+            IoMem::new(
+                crate::kernel::framework::mm::PhysAddr(0xFE000000),
+                0x10000,
+                "xhci-test",
+            )
+            .expect("test IoMem")
         };
         let ctrl = XhciController::new(iomem);
         assert_eq!(ctrl.name(), "xHCI Controller");
@@ -1058,8 +1083,12 @@ mod tests {
     fn make_test_ctrl() -> XhciController {
         // SAFETY: 测试脚手架, 详见函数 doc.
         let iomem = unsafe {
-            IoMem::new(crate::kernel::framework::mm::PhysAddr(0xFE000000), 0x10000, "xhci-test")
-                .expect("test IoMem")
+            IoMem::new(
+                crate::kernel::framework::mm::PhysAddr(0xFE000000),
+                0x10000,
+                "xhci-test",
+            )
+            .expect("test IoMem")
         };
         XhciController::new(iomem)
     }

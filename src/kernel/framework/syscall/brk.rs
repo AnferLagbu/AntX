@@ -5,8 +5,8 @@
 
 use core::sync::atomic::AtomicU64;
 
+use crate::kernel::framework::mm::{PAGE_SIZE, api};
 use crate::kernel::framework::syscall::Errno;
-use crate::kernel::framework::mm::{api, PAGE_SIZE};
 
 /// 用户空间最大地址
 #[cfg(target_arch = "x86_64")]

@@ -18,8 +18,8 @@
 
 use super::types::{IPC_MAX_SIGNALS, SignalHandlerFn};
 use crate::kernel::framework::proc::{
-    process_get_by_pid, process_get_current_pwm, process_get_pwm_by_pid,
-    SignalDecision, SignalDefaultAction, register_signal_decision,
+    SignalDecision, SignalDefaultAction, process_get_by_pid, process_get_current_pwm,
+    process_get_pwm_by_pid, register_signal_decision,
 };
 
 /// 发送信号到指定进程 (Rust 安全接口)
@@ -156,11 +156,7 @@ pub fn ipc_signal_send(pid: i32, sig: i32) -> i32 {
 }
 
 /// FFI: 注册信号处理函数
-pub fn ipc_signal_register(
-    sig: i32,
-    handler: Option<extern "C" fn(i32)>,
-    flags: u32,
-) -> i32 {
+pub fn ipc_signal_register(sig: i32, handler: Option<extern "C" fn(i32)>, flags: u32) -> i32 {
     match signal_register_safe(sig as u8, handler, flags) {
         Ok(()) => 0,
         Err(_) => -1,

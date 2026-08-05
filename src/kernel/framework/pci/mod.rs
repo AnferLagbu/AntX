@@ -34,8 +34,8 @@
 //! 这是有意为之: e1000 需要特殊的 MMIO 页表设置, 与其 probe 紧耦合.
 //! 详见 `src/net/driver/e1000.c` → `e1000_probe()`.
 
-use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use alloc::vec::Vec;
 use core::fmt;
 
 pub mod api;
@@ -48,7 +48,10 @@ pub mod msi;
 mod port_io {
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub unsafe fn outl(port: u16, val: u32) {
         crate::arch!(outl(port, val));
     }
@@ -165,7 +168,10 @@ static PCI_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::Ato
 /// 计算给定 (bus, device, function, offset) 对应的 ECAM MMIO 地址.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 fn ecam_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u64 {
     ECAM_BASE
         | ((bus as u64) << 20)
@@ -352,8 +358,8 @@ fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
                 write_config_dword(bus, dev, func, offset + 4, 0xFFFF_FFFF);
                 let hi_mask = read_config_dword(bus, dev, func, offset + 4);
                 write_config_dword(bus, dev, func, offset + 4, bar_hi);
-                let size =
-                    (!(u64::from(size_mask & !0x0Fu32) | (u64::from(hi_mask) << 32))).wrapping_add(1);
+                let size = (!(u64::from(size_mask & !0x0Fu32) | (u64::from(hi_mask) << 32)))
+                    .wrapping_add(1);
                 bars[count].size = size;
                 bars[count].bar_type = BarType::Memory64;
                 i += 1; // skip next slot
@@ -539,7 +545,10 @@ impl fmt::Display for PciDevice {
 pub extern "C" fn pci_rust_init() -> i32 {
     let count = init();
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     unsafe extern "C" {
         fn klog_ffi_info(msg: *const u8);
     }

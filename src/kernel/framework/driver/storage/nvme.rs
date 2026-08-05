@@ -32,7 +32,7 @@
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::framework::dma::get_dma;
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::kernel::framework::mm::{PAGE_SIZE, PhysAddr, VirtAddr};
 use crate::klog_info;
 use core::ptr;
 
@@ -55,15 +55,15 @@ const SECTOR_SIZE: usize = 512;
 const MAX_SECTORS_PER_CMD: u16 = 128;
 
 // NVMe 控制器寄存器偏移 (BAR0)  // 硬件寄存器描述
-const NVME_REG_CAP: usize = 0x00;    // u64: 控制器能力
-const NVME_REG_VS: usize = 0x08;     // u32: 版本 (NVMe 规范 §3.1.2)
-const NVME_REG_INTMS: usize = 0x0C;  // u32: 中断掩码设置 (NVMe 规范 §3.1.6)
-const NVME_REG_INTMC: usize = 0x10;  // u32: 中断掩码清除 (NVMe 规范 §3.1.6)
-const NVME_REG_CC: usize = 0x14;     // u32: 控制器配置
-const NVME_REG_CSTS: usize = 0x1C;   // u32: 控制器状态
-const NVME_REG_AQA: usize = 0x24;    // u32: Admin 队列属性
-const NVME_REG_ASQ: usize = 0x28;    // u64: Admin SQ 基地址
-const NVME_REG_ACQ: usize = 0x30;    // u64: Admin CQ 基地址
+const NVME_REG_CAP: usize = 0x00; // u64: 控制器能力
+const NVME_REG_VS: usize = 0x08; // u32: 版本 (NVMe 规范 §3.1.2)
+const NVME_REG_INTMS: usize = 0x0C; // u32: 中断掩码设置 (NVMe 规范 §3.1.6)
+const NVME_REG_INTMC: usize = 0x10; // u32: 中断掩码清除 (NVMe 规范 §3.1.6)
+const NVME_REG_CC: usize = 0x14; // u32: 控制器配置
+const NVME_REG_CSTS: usize = 0x1C; // u32: 控制器状态
+const NVME_REG_AQA: usize = 0x24; // u32: Admin 队列属性
+const NVME_REG_ASQ: usize = 0x28; // u64: Admin SQ 基地址
+const NVME_REG_ACQ: usize = 0x30; // u64: Admin CQ 基地址
 
 // Doorbell registers start at offset 0x1000
 const NVME_DB_BASE: usize = 0x1000;
@@ -197,7 +197,10 @@ impl NvmeCommand {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 创建读命令
     pub fn read(nsid: u32, slba: u64, nlb: u16, prp1: u64) -> Self {
         Self {
@@ -218,7 +221,10 @@ impl NvmeCommand {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 创建写命令
     pub fn write(nsid: u32, slba: u64, nlb: u16, prp1: u64) -> Self {
         Self {
@@ -317,18 +323,27 @@ pub struct NvmeCompletion {
 }
 
 impl NvmeCompletion {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 阶段标记匹配 = 完成
     pub fn is_completed(&self, phase: u16) -> bool {
         (self.status & 0x01) == phase
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn status_code(&self) -> u16 {
         (self.status >> 1) & 0x7FF
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_success(&self) -> bool {
         self.status_code() == 0
     }
@@ -410,9 +425,9 @@ struct QueueDma {
 
 /// `NVMe` 控制器驱动
 pub struct NvmeController {
-    mmio_phys: u64,            // PCI BAR0 physical address (for external use)
-    iomem: Option<IoMem>,      // MMIO region handle (safe access proxy)
-    db_stride: u32,            // 门铃步长
+    mmio_phys: u64,       // PCI BAR0 physical address (for external use)
+    iomem: Option<IoMem>, // MMIO region handle (safe access proxy)
+    db_stride: u32,       // 门铃步长
 
     // Admin 队列 (DMA 分配的 SQ/CQ)
     admin_sq_dma: QueueDma,
@@ -595,61 +610,66 @@ impl NvmeController {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-    unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> { unsafe {
-        // 调试断言: 验证队列类型正确
-        debug_assert!(!self.admin_sq_dma.is_cq, "admin SQ should not be CQ");
-        debug_assert!(self.admin_cq_dma.is_cq, "admin CQ should be CQ");
+    unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> {
+        unsafe {
+            // 调试断言: 验证队列类型正确
+            debug_assert!(!self.admin_sq_dma.is_cq, "admin SQ should not be CQ");
+            debug_assert!(self.admin_cq_dma.is_cq, "admin CQ should be CQ");
 
-        let cid = self.admin_cid;
-        self.admin_cid = self.admin_cid.wrapping_add(1);
+            let cid = self.admin_cid;
+            self.admin_cid = self.admin_cid.wrapping_add(1);
 
-        // 写入 SQ entry
-        let sq = self.admin_sq_dma.virt.0 as *mut NvmeCommand;
-        let mut entry_cmd = *cmd;
-        entry_cmd.cid = cid;
-        sq.add(self.admin_sq_tail as usize)
-            .write_volatile(entry_cmd);
+            // 写入 SQ entry
+            let sq = self.admin_sq_dma.virt.0 as *mut NvmeCommand;
+            let mut entry_cmd = *cmd;
+            entry_cmd.cid = cid;
+            sq.add(self.admin_sq_tail as usize)
+                .write_volatile(entry_cmd);
 
-        // 更新尾指针并敲门铃
-        self.admin_sq_tail = (self.admin_sq_tail + 1) % (QUEUE_DEPTH as u32);
-        self.write_doorbell(ADMIN_QUEUE_ID, true, self.admin_sq_tail);
+            // 更新尾指针并敲门铃
+            self.admin_sq_tail = (self.admin_sq_tail + 1) % (QUEUE_DEPTH as u32);
+            self.write_doorbell(ADMIN_QUEUE_ID, true, self.admin_sq_tail);
 
-        // 等待完成
-        let cq = self.admin_cq_dma.virt.0 as *const NvmeCompletion;
-        let mut timeout = 5_000_000u64;
-        loop {
-            let entry = cq.add(self.admin_cq_head as usize).read_volatile();
-            if entry.is_completed(self.admin_cq_dma.phase) {
-                // 更新头指针
-                let new_head = (self.admin_cq_head + 1) % (QUEUE_DEPTH as u32);
-                self.admin_cq_head = new_head;
-                if new_head == 0 {
-                    self.admin_cq_dma.phase ^= 1;
+            // 等待完成
+            let cq = self.admin_cq_dma.virt.0 as *const NvmeCompletion;
+            let mut timeout = 5_000_000u64;
+            loop {
+                let entry = cq.add(self.admin_cq_head as usize).read_volatile();
+                if entry.is_completed(self.admin_cq_dma.phase) {
+                    // 更新头指针
+                    let new_head = (self.admin_cq_head + 1) % (QUEUE_DEPTH as u32);
+                    self.admin_cq_head = new_head;
+                    if new_head == 0 {
+                        self.admin_cq_dma.phase ^= 1;
+                    }
+
+                    // 敲响 CQ 门铃
+                    self.write_doorbell(ADMIN_QUEUE_ID, false, new_head);
+
+                    if !entry.is_success() {
+                        return Err(DriverError::HardwareError);
+                    }
+                    return Ok(entry);
                 }
 
-                // 敲响 CQ 门铃
-                self.write_doorbell(ADMIN_QUEUE_ID, false, new_head);
-
-                if !entry.is_success() {
-                    return Err(DriverError::HardwareError);
+                timeout -= 1;
+                if timeout == 0 {
+                    return Err(DriverError::Timeout);
                 }
-                return Ok(entry);
+                core::hint::spin_loop();
             }
-
-            timeout -= 1;
-            if timeout == 0 {
-                return Err(DriverError::Timeout);
-            }
-            core::hint::spin_loop();
         }
-    }}
+    }
 
     /// 初始化控制器
     /// # Errors
     /// 队列分配失败、获取 MMIO 失败或控制器初始化命令失败时返回 Err。
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
     pub fn init_controller(&mut self) -> Result<()> {
         // 分配 Admin 队列
         self.alloc_admin_queues()?;
@@ -659,7 +679,8 @@ impl NvmeController {
             PhysAddr(self.mmio_phys),
             8192, // NVMe BAR0 is typically 8KB+
             "nvme-bar0",
-        ).map_err(|_| DriverError::HardwareError)?;
+        )
+        .map_err(|_| DriverError::HardwareError)?;
 
         // 读取能力: 门铃步长
         let cap = iomem.read_u64(NVME_REG_CAP);
@@ -671,7 +692,13 @@ impl NvmeController {
         let major = (vs >> 16) & 0xFFFF;
         let minor = (vs >> 8) & 0xFF;
         let patch = vs & 0xFF;
-        crate::klog_info!(Driver, "[NVMe] controller version: {}.{}.{}", major, minor, patch);
+        crate::klog_info!(
+            Driver,
+            "[NVMe] controller version: {}.{}.{}",
+            major,
+            minor,
+            patch
+        );
 
         // MPS: 使用 4KB (= 0)
         let mps: u32 = 0; // 2^(12 + 0) = 4096
@@ -730,7 +757,9 @@ impl NvmeController {
     #[expect(clippy::cast_possible_truncation)]
     pub fn identify_controller(&mut self) -> Result<()> {
         let dma = get_dma();
-        let (ident_virt, ident_phys) = dma.alloc_coherent(PAGE_SIZE as usize).ok_or(DriverError::Busy)?;
+        let (ident_virt, ident_phys) = dma
+            .alloc_coherent(PAGE_SIZE as usize)
+            .ok_or(DriverError::Busy)?;
 
         // 清零
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -770,11 +799,19 @@ impl NvmeController {
     /// DMA 缓冲区分配失败或识别命令执行失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     pub fn identify_namespace(&mut self, nsid: u32) -> Result<()> {
         let dma = get_dma();
-        let (ident_virt, ident_phys) = dma.alloc_coherent(PAGE_SIZE as usize).ok_or(DriverError::Busy)?;
+        let (ident_virt, ident_phys) = dma
+            .alloc_coherent(PAGE_SIZE as usize)
+            .ok_or(DriverError::Busy)?;
 
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -825,7 +862,10 @@ impl NvmeController {
     /// 队列分配失败、PRP 页分配失败或创建队列的管理命令失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
     pub fn create_io_queue(&mut self) -> Result<()> {
         self.alloc_io_queues()?;
 
@@ -865,51 +905,53 @@ impl NvmeController {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-    unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> { unsafe {
-        // 调试断言: 验证队列类型正确
-        debug_assert!(!self.io_sq_dma.is_cq, "IO SQ should not be CQ");
-        debug_assert!(self.io_cq_dma.is_cq, "IO CQ should be CQ");
+    unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> {
+        unsafe {
+            // 调试断言: 验证队列类型正确
+            debug_assert!(!self.io_sq_dma.is_cq, "IO SQ should not be CQ");
+            debug_assert!(self.io_cq_dma.is_cq, "IO CQ should be CQ");
 
-        let cid = self.io_cid;
-        self.io_cid = self.io_cid.wrapping_add(1);
+            let cid = self.io_cid;
+            self.io_cid = self.io_cid.wrapping_add(1);
 
-        let sq = self.io_sq_dma.virt.0 as *mut NvmeCommand;
-        let mut entry_cmd = *cmd;
-        entry_cmd.cid = cid;
-        sq.add(self.io_sq_tail as usize).write_volatile(entry_cmd);
+            let sq = self.io_sq_dma.virt.0 as *mut NvmeCommand;
+            let mut entry_cmd = *cmd;
+            entry_cmd.cid = cid;
+            sq.add(self.io_sq_tail as usize).write_volatile(entry_cmd);
 
-        let new_tail = (self.io_sq_tail + 1) % (QUEUE_DEPTH as u32);
-        self.io_sq_tail = new_tail;
+            let new_tail = (self.io_sq_tail + 1) % (QUEUE_DEPTH as u32);
+            self.io_sq_tail = new_tail;
 
-        self.write_doorbell(IO_QUEUE_ID, true, new_tail);
+            self.write_doorbell(IO_QUEUE_ID, true, new_tail);
 
-        // 等待完成
-        let cq = self.io_cq_dma.virt.0 as *const NvmeCompletion;
-        let mut timeout = 5_000_000u64;
-        loop {
-            let entry = cq.add(self.io_cq_head as usize).read_volatile();
-            if entry.is_completed(self.io_phase) {
-                let new_head = (self.io_cq_head + 1) % (QUEUE_DEPTH as u32);
-                self.io_cq_head = new_head;
-                if new_head == 0 {
-                    self.io_phase ^= 1;
+            // 等待完成
+            let cq = self.io_cq_dma.virt.0 as *const NvmeCompletion;
+            let mut timeout = 5_000_000u64;
+            loop {
+                let entry = cq.add(self.io_cq_head as usize).read_volatile();
+                if entry.is_completed(self.io_phase) {
+                    let new_head = (self.io_cq_head + 1) % (QUEUE_DEPTH as u32);
+                    self.io_cq_head = new_head;
+                    if new_head == 0 {
+                        self.io_phase ^= 1;
+                    }
+
+                    self.write_doorbell(IO_QUEUE_ID, false, new_head);
+
+                    if !entry.is_success() {
+                        return Err(DriverError::HardwareError);
+                    }
+                    return Ok(());
                 }
 
-                self.write_doorbell(IO_QUEUE_ID, false, new_head);
-
-                if !entry.is_success() {
-                    return Err(DriverError::HardwareError);
+                timeout -= 1;
+                if timeout == 0 {
+                    return Err(DriverError::Timeout);
                 }
-                return Ok(());
+                core::hint::spin_loop();
             }
-
-            timeout -= 1;
-            if timeout == 0 {
-                return Err(DriverError::Timeout);
-            }
-            core::hint::spin_loop();
         }
-    }}
+    }
 
     /// 构造 `NVMe` PRP 地址对, 使用 per-controller PRP 列表页
     ///
@@ -947,11 +989,13 @@ impl NvmeController {
 
     /// 填充 `NVMe` 命令的 PRP1/PRP2 字段 (与 `build_prp` 配套)
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) { unsafe {
-        let (prp1, prp2) = self.build_prp(phys_base, byte_count);
-        cmd.mptr = prp1;
-        cmd.prp2 = prp2;
-    }}
+    unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
+        unsafe {
+            let (prp1, prp2) = self.build_prp(phys_base, byte_count);
+            cmd.mptr = prp1;
+            cmd.prp2 = prp2;
+        }
+    }
 
     /// 从 `NVMe` 命名空间读取扇区数据到指定缓冲区。
     /// # Errors
@@ -1079,7 +1123,10 @@ impl Driver for NvmeController {
         Ok(())
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     fn shutdown(&mut self) -> Result<()> {
         if !self.initialized {
             return Ok(());
@@ -1176,7 +1223,10 @@ impl NvmeController {
     /// I/O 完成条目中检测到设备错误时返回 Err。
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     pub fn handle_interrupt(&mut self) -> Result<()> {
         if !self.initialized {
             return Ok(());
@@ -1205,7 +1255,9 @@ impl NvmeController {
                 crate::klog_ffi!(
                     klog_ffi_warn,
                     "[NVMe] I/O completion error: sqid={}, cid={}, status={}",
-                    sqid, cid, status
+                    sqid,
+                    cid,
+                    status
                 );
             }
 

@@ -20,12 +20,8 @@
 //! - T2-3: Slab 策略提取 (2026-06-19)
 //! - 互补: pmm_trait::PmmPolicy (物理页分配策略)
 
-use crate::kernel::framework::mm::slab_trait::{
-    SlabPolicy, SlabPolicyContext, SlabAllocSource,
-};
-use crate::kernel::framework::config::{
-    SLAB_MIN_OBJECT_SIZE, SLAB_MAX_OBJECT_SIZE,
-};
+use crate::kernel::framework::config::{SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE};
+use crate::kernel::framework::mm::slab_trait::{SlabAllocSource, SlabPolicy, SlabPolicyContext};
 
 // ============================================================================
 // 默认 Slab 策略 — 标准 slab 分配器行为
@@ -116,7 +112,7 @@ pub fn register_default_slab_policy() -> Result<(), ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::framework::mm::slab_trait::{SlabPolicyContext, SlabAllocSource};
+    use crate::kernel::framework::mm::slab_trait::{SlabAllocSource, SlabPolicyContext};
 
     /// 1. find_cache_index: 命中首个 >= size 的 cache
     #[test]
@@ -173,16 +169,40 @@ mod tests {
     fn test_slab_select_alloc_source() {
         let policy = DefaultSlabPolicy;
         // partial > 0 → Partial (优先)
-        let ctx = SlabPolicyContext { object_size: 32, objects_per_slab: 100, partial_slabs: 5, free_slabs: 0, total_slabs: 10 };
+        let ctx = SlabPolicyContext {
+            object_size: 32,
+            objects_per_slab: 100,
+            partial_slabs: 5,
+            free_slabs: 0,
+            total_slabs: 10,
+        };
         assert_eq!(policy.select_alloc_source(ctx), SlabAllocSource::Partial);
         // partial > 0, free > 0 → Partial (仍优先)
-        let ctx = SlabPolicyContext { object_size: 32, objects_per_slab: 100, partial_slabs: 1, free_slabs: 3, total_slabs: 5 };
+        let ctx = SlabPolicyContext {
+            object_size: 32,
+            objects_per_slab: 100,
+            partial_slabs: 1,
+            free_slabs: 3,
+            total_slabs: 5,
+        };
         assert_eq!(policy.select_alloc_source(ctx), SlabAllocSource::Partial);
         // partial = 0, free > 0 → Free
-        let ctx = SlabPolicyContext { object_size: 32, objects_per_slab: 100, partial_slabs: 0, free_slabs: 3, total_slabs: 5 };
+        let ctx = SlabPolicyContext {
+            object_size: 32,
+            objects_per_slab: 100,
+            partial_slabs: 0,
+            free_slabs: 3,
+            total_slabs: 5,
+        };
         assert_eq!(policy.select_alloc_source(ctx), SlabAllocSource::Free);
         // partial = 0, free = 0 → NewSlab
-        let ctx = SlabPolicyContext { object_size: 32, objects_per_slab: 100, partial_slabs: 0, free_slabs: 0, total_slabs: 0 };
+        let ctx = SlabPolicyContext {
+            object_size: 32,
+            objects_per_slab: 100,
+            partial_slabs: 0,
+            free_slabs: 0,
+            total_slabs: 0,
+        };
         assert_eq!(policy.select_alloc_source(ctx), SlabAllocSource::NewSlab);
     }
 
@@ -196,14 +216,20 @@ mod tests {
         assert_eq!(policy.normalize_object_size(SLAB_MAX_OBJECT_SIZE + 1), None);
         assert_eq!(policy.normalize_object_size(SLAB_MAX_OBJECT_SIZE * 2), None);
         // == MIN → MIN
-        assert_eq!(policy.normalize_object_size(SLAB_MIN_OBJECT_SIZE), Some(SLAB_MIN_OBJECT_SIZE));
+        assert_eq!(
+            policy.normalize_object_size(SLAB_MIN_OBJECT_SIZE),
+            Some(SLAB_MIN_OBJECT_SIZE)
+        );
         // < MIN → 提升到 MIN
         assert_eq!(policy.normalize_object_size(1), Some(SLAB_MIN_OBJECT_SIZE));
         assert_eq!(policy.normalize_object_size(8), Some(SLAB_MIN_OBJECT_SIZE));
         // MIN < size <= MAX → 原值
         assert_eq!(policy.normalize_object_size(64), Some(64));
         assert_eq!(policy.normalize_object_size(1024), Some(1024));
-        assert_eq!(policy.normalize_object_size(SLAB_MAX_OBJECT_SIZE), Some(SLAB_MAX_OBJECT_SIZE));
+        assert_eq!(
+            policy.normalize_object_size(SLAB_MAX_OBJECT_SIZE),
+            Some(SLAB_MAX_OBJECT_SIZE)
+        );
     }
 
     /// 5. integration: 完整分配流程
@@ -221,7 +247,13 @@ mod tests {
         let objects = policy.calculate_objects_per_slab(4096, 128, 100);
         assert_eq!(objects, 39);
         // 4. partial > 0 → 选 Partial
-        let ctx = SlabPolicyContext { object_size: 100, objects_per_slab: objects, partial_slabs: 2, free_slabs: 1, total_slabs: 4 };
+        let ctx = SlabPolicyContext {
+            object_size: 100,
+            objects_per_slab: objects,
+            partial_slabs: 2,
+            free_slabs: 1,
+            total_slabs: 4,
+        };
         assert_eq!(policy.select_alloc_source(ctx), SlabAllocSource::Partial);
     }
 }

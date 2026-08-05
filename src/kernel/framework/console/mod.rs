@@ -6,7 +6,10 @@ use gfx_console::GfxConsole;
 static GFX_READY: AtomicBool = AtomicBool::new(false);
 static GFX_CONSOLE_PTR: AtomicPtr<GfxConsole> = AtomicPtr::new(core::ptr::null_mut());
 
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 /// 初始化图形控制台 —— 绑定到已分配在静态存储中的 `GfxConsole`
 ///
 /// # Safety

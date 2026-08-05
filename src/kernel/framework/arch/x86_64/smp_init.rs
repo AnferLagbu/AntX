@@ -129,87 +129,94 @@ pub fn init() {
 }
 
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn copy_trampoline() { unsafe {
-    let src = ap_trampoline_start as *const u8;
-    let end = ap_trampoline_end as *const u8;
-    let size = end as usize - src as usize;
-    let dst = TRAMPOLINE_BASE as *mut u8;
+unsafe fn copy_trampoline() {
+    unsafe {
+        let src = ap_trampoline_start as *const u8;
+        let end = ap_trampoline_end as *const u8;
+        let size = end as usize - src as usize;
+        let dst = TRAMPOLINE_BASE as *mut u8;
 
-    for i in 0..size {
-        dst.add(i).write_volatile(src.add(i).read_volatile());
+        for i in 0..size {
+            dst.add(i).write_volatile(src.add(i).read_volatile());
+        }
     }
-}}
+}
 
 #[inline(never)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
-unsafe fn start_ap(lapic_id: u32, cpu_index: u32) { unsafe {
-    if cpu_index as usize >= super::acpi::MAX_CPUS {
-        return;
-    }
-
-    core::arch::asm!("cli", options(nomem, nostack));
-
-    let _lock = AP_STARTUP_LOCK.lock();
-
-    let per_cpu = alloc::boxed::Box::new(ApPerCpu {
-        stack: [0u8; AP_STACK_SIZE],
-    });
-
-    let stack_top = per_cpu.stack.as_ptr() as u64 + AP_STACK_SIZE as u64;
-    AP_PER_CPU[cpu_index as usize] = Some(alloc::boxed::Box::into_raw(per_cpu));
-
-    let cr3_val = crate::kernel::framework::mm::get_kernel_pml4();
-    let gdt_ptr = super::gdt::get_gdt_ptr();
-    let entry_addr = ap_entry as *const () as u64;
-
-    let info = (TRAMPOLINE_BASE + AP_INFO_OFFSET) as *mut ApStartupInfo;
-    (*info).cr3 = cr3_val;
-    (*info).entry = entry_addr;
-    (*info).gdt_limit = gdt_ptr.limit;
-    (*info).gdt_base = gdt_ptr.base;
-    (*info).stack = stack_top;
-    (*info).lapic_id = lapic_id;
-    (*info).ready = 0;
-    (*info).cpu_index = cpu_index;
-    (*info).done = 0;
-
-    core::arch::asm!("sfence", options(nomem, nostack));
-
-    send_init_ipi(lapic_id, true);
-    timer_udelay(INIT_WAIT_US);
-    send_init_ipi(lapic_id, false);
-
-    send_sipi(lapic_id, 0x08);
-    timer_udelay(SIPI_DELAY_US);
-    send_sipi(lapic_id, 0x08);
-
-    // 等待 AP 就绪 (最多 100ms), volatile 读取跨 CPU 写入
-    let mut timeout = READY_TIMEOUT_LOOPS;
-    let ready_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 38) as *const u32;
-    while timeout > 0 {
-        if core::ptr::read_volatile(ready_ptr) != 0 {
-            break;
+#[expect(
+    clippy::large_stack_arrays,
+    reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+)]
+unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
+    unsafe {
+        if cpu_index as usize >= super::acpi::MAX_CPUS {
+            return;
         }
-        timer_udelay(READY_POLL_US);
-        timeout -= 1;
-    }
 
-    if timeout > 0 {
-        // AP 已就绪，等待 ap_entry 完成 per-CPU GDT+TSS 初始化
-        let done_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 46) as *const u32;
-        let mut wait = AP_ENTRY_TIMEOUT_LOOPS;
-        while wait > 0 {
-            if core::ptr::read_volatile(done_ptr) != 0 {
+        core::arch::asm!("cli", options(nomem, nostack));
+
+        let _lock = AP_STARTUP_LOCK.lock();
+
+        let per_cpu = alloc::boxed::Box::new(ApPerCpu {
+            stack: [0u8; AP_STACK_SIZE],
+        });
+
+        let stack_top = per_cpu.stack.as_ptr() as u64 + AP_STACK_SIZE as u64;
+        AP_PER_CPU[cpu_index as usize] = Some(alloc::boxed::Box::into_raw(per_cpu));
+
+        let cr3_val = crate::kernel::framework::mm::get_kernel_pml4();
+        let gdt_ptr = super::gdt::get_gdt_ptr();
+        let entry_addr = ap_entry as *const () as u64;
+
+        let info = (TRAMPOLINE_BASE + AP_INFO_OFFSET) as *mut ApStartupInfo;
+        (*info).cr3 = cr3_val;
+        (*info).entry = entry_addr;
+        (*info).gdt_limit = gdt_ptr.limit;
+        (*info).gdt_base = gdt_ptr.base;
+        (*info).stack = stack_top;
+        (*info).lapic_id = lapic_id;
+        (*info).ready = 0;
+        (*info).cpu_index = cpu_index;
+        (*info).done = 0;
+
+        core::arch::asm!("sfence", options(nomem, nostack));
+
+        send_init_ipi(lapic_id, true);
+        timer_udelay(INIT_WAIT_US);
+        send_init_ipi(lapic_id, false);
+
+        send_sipi(lapic_id, 0x08);
+        timer_udelay(SIPI_DELAY_US);
+        send_sipi(lapic_id, 0x08);
+
+        // 等待 AP 就绪 (最多 100ms), volatile 读取跨 CPU 写入
+        let mut timeout = READY_TIMEOUT_LOOPS;
+        let ready_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 38) as *const u32;
+        while timeout > 0 {
+            if core::ptr::read_volatile(ready_ptr) != 0 {
                 break;
             }
             timer_udelay(READY_POLL_US);
-            wait -= 1;
+            timeout -= 1;
         }
-    }
 
-    core::arch::asm!("sti", options(nomem, nostack));
-}}
+        if timeout > 0 {
+            // AP 已就绪，等待 ap_entry 完成 per-CPU GDT+TSS 初始化
+            let done_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 46) as *const u32;
+            let mut wait = AP_ENTRY_TIMEOUT_LOOPS;
+            while wait > 0 {
+                if core::ptr::read_volatile(done_ptr) != 0 {
+                    break;
+                }
+                timer_udelay(READY_POLL_US);
+                wait -= 1;
+            }
+        }
+
+        core::arch::asm!("sti", options(nomem, nostack));
+    }
+}
 
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn send_init_ipi(lapic_id: u32, assert: bool) {
@@ -229,11 +236,13 @@ unsafe fn send_sipi(lapic_id: u32, vector: u8) {
 }
 
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn timer_udelay(us: u32) { unsafe {
-    for _ in 0..us {
-        core::arch::asm!("out dx, al", in("dx") 0x80u16, in("al") 0u8, options(nomem, nostack));
+unsafe fn timer_udelay(us: u32) {
+    unsafe {
+        for _ in 0..us {
+            core::arch::asm!("out dx, al", in("dx") 0x80u16, in("al") 0u8, options(nomem, nostack));
+        }
     }
-}}
+}
 
 extern "C" fn ap_entry(lapic_id: u32) -> ! {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)

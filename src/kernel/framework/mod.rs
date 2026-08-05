@@ -63,53 +63,53 @@
 //! 2. 调用方保证: 哪些条件由调用上下文的类型/生命周期保证
 //! 3. 硬件契约: 对 CPU/MMU/DMA 行为的假设
 
+pub mod alloc;
 pub mod arch;
-pub mod boot;
-pub mod cpu;
-pub mod mm;
-pub mod irq;
-pub mod idt;
-pub mod dma;
-pub mod driver;
-pub mod net;
-pub mod fs;
-pub mod ipc;
-pub mod credo;
-pub mod chitin;
 pub mod barrier;
-pub mod console;
-pub mod klog;
-pub mod debug;
+pub mod boot;
+pub mod chitin;
 pub mod config;
+pub mod console;
 /// TCB 内部容量常量 (与 framework::config 职责正交, 见 constants/mod.rs)
 pub mod constants;
-pub mod smp;
+pub mod cpu;
+pub mod credo;
+pub mod debug;
+pub mod dma;
+pub mod driver;
+pub mod fs;
+pub mod idt;
+pub mod iobuf;
+pub mod ipc;
+pub mod irq;
+pub mod klog;
 pub mod lib;
-pub mod sync;
-pub mod alloc;
-pub mod sched;
+pub mod mm;
+pub mod net;
+pub mod pci;
 pub mod proc;
+pub mod sched;
+pub mod smp;
+pub mod sync;
 pub mod syscall;
+pub mod tests;
 pub mod timer;
 pub mod wasm;
-pub mod tests;
-pub mod pci;
-pub mod iobuf;
 
+pub mod cpu_local;
 pub mod frame;
 /// C4: I/O 子系统 (io_uring)
 pub mod io;
-pub mod vmspace;
-pub mod usermode;
 pub mod userctx;
+pub mod usermode;
 pub mod userptr;
-pub mod cpu_local;
+pub mod vmspace;
 
 // Phase 1.3 — 设备访问抽象
+pub mod dma_buf;
 pub mod iomem;
 pub mod ioport;
 pub mod irqline;
-pub mod dma_buf;
 pub mod page_table;
 
 pub mod net_socket;

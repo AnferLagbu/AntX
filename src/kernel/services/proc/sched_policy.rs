@@ -17,13 +17,10 @@ use crate::kernel::framework::proc::Pid;
 // ============================================================================
 
 pub use crate::kernel::framework::config::{
-    CFS_NICE0_WEIGHT as NICE0_WEIGHT,
-    CFS_TARGET_LATENCY as TARGET_LATENCY_TICKS,
-    CFS_MIN_GRANULARITY as MIN_GRANULARITY_TICKS,
     CFS_BOOST_INTERVAL as CFS_BOOST_INTERVAL_TICKS,
-    CFS_DL_MIN_RUNTIME as DL_MIN_RUNTIME_TICKS,
-    CFS_DL_MIN_PERIOD as DL_MIN_PERIOD_TICKS,
-    CFS_DL_MAX_UTILIZATION_PCT as DL_MAX_UTILIZATION_PCT,
+    CFS_DL_MAX_UTILIZATION_PCT as DL_MAX_UTILIZATION_PCT, CFS_DL_MIN_PERIOD as DL_MIN_PERIOD_TICKS,
+    CFS_DL_MIN_RUNTIME as DL_MIN_RUNTIME_TICKS, CFS_MIN_GRANULARITY as MIN_GRANULARITY_TICKS,
+    CFS_NICE0_WEIGHT as NICE0_WEIGHT, CFS_TARGET_LATENCY as TARGET_LATENCY_TICKS,
 };
 
 pub const LOAD_BALANCE_THRESHOLD: u64 = 1024;
@@ -33,14 +30,9 @@ pub const LOAD_BALANCE_THRESHOLD: u64 = 1024;
 // ============================================================================
 
 pub const NICE_TO_WEIGHT: [u64; 40] = [
-    88761, 71755, 56483, 46273, 36291,
-    29154, 23254, 18705, 14949, 11916,
-    9548, 7620, 6100, 4904, 3906,
-    3121, 2501, 1991, 1586, 1277,
-    1024, 820, 655, 526, 423,
-    335, 272, 215, 172, 137,
-    110, 87, 70, 56, 45,
-    36, 29, 23, 18, 15,
+    88761, 71755, 56483, 46273, 36291, 29154, 23254, 18705, 14949, 11916, 9548, 7620, 6100, 4904,
+    3906, 3121, 2501, 1991, 1586, 1277, 1024, 820, 655, 526, 423, 335, 272, 215, 172, 137, 110, 87,
+    70, 56, 45, 36, 29, 23, 18, 15,
 ];
 
 #[inline]
@@ -118,7 +110,10 @@ pub struct CfsRunQueue {
 }
 
 impl CfsRunQueue {
-#[expect(clippy::zero_sized_map_values, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn new() -> Self {
         Self {
             tree: BTreeMap::new(),
@@ -197,10 +192,7 @@ impl CfsRunQueue {
             return;
         }
 
-        let min_vr = self
-            .tree
-            .first_key_value()
-            .map_or(0, |(&(vr, _), ())| vr);
+        let min_vr = self.tree.first_key_value().map_or(0, |(&(vr, _), ())| vr);
 
         let entries: alloc::vec::Vec<(Pid, u64)> =
             self.tree.keys().map(|&(vr, pid)| (pid, vr)).collect();
@@ -219,10 +211,7 @@ impl CfsRunQueue {
             return;
         }
 
-        let min_vr = self
-            .tree
-            .first_key_value()
-            .map_or(0, |(&(vr, _), ())| vr);
+        let min_vr = self.tree.first_key_value().map_or(0, |(&(vr, _), ())| vr);
 
         let entries: alloc::vec::Vec<(Pid, u64)> =
             self.tree.keys().map(|&(vr, pid)| (pid, vr)).collect();
@@ -260,7 +249,10 @@ pub struct DlRunQueue {
 }
 
 impl DlRunQueue {
-#[expect(clippy::zero_sized_map_values, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn new() -> Self {
         Self {
             tree: BTreeMap::new(),
@@ -366,7 +358,10 @@ impl SchedDecision for DefaultPolicy {
     }
 
     fn time_slice_for(&self, priority: ThreadPriority) -> u32 {
-        use crate::kernel::framework::config::{SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM};
+        use crate::kernel::framework::config::{
+            SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM,
+            SCHED_LEVEL_3_QUANTUM,
+        };
         match priority {
             ThreadPriority::Realtime => SCHED_LEVEL_0_QUANTUM,
             ThreadPriority::High => SCHED_LEVEL_1_QUANTUM,
@@ -456,7 +451,11 @@ mod tests {
         // 默认: 全 0 → invalid
         assert!(!DeadlineParams::new().is_valid());
         // runtime < MIN → invalid
-        let mut p = DeadlineParams { runtime: 1, deadline: 100, period: 100 };
+        let mut p = DeadlineParams {
+            runtime: 1,
+            deadline: 100,
+            period: 100,
+        };
         assert!(!p.is_valid());
         // runtime >= MIN, deadline >= runtime, period >= deadline, period >= MIN_PERIOD → valid
         p.runtime = DL_MIN_RUNTIME_TICKS;
@@ -473,11 +472,19 @@ mod tests {
     /// 5. DeadlineParams: utilization_pct 利用率
     #[test]
     fn test_sched_deadline_utilization() {
-        assert_eq!(DeadlineParams::new().utilization_pct(), 0);  // period=0 → 0
-        let p = DeadlineParams { runtime: 50, deadline: 100, period: 100 };
-        assert_eq!(p.utilization_pct(), 50);  // 50/100 * 100 = 50%
-        let p = DeadlineParams { runtime: 100, deadline: 100, period: 100 };
-        assert_eq!(p.utilization_pct(), 100);  // 100%
+        assert_eq!(DeadlineParams::new().utilization_pct(), 0); // period=0 → 0
+        let p = DeadlineParams {
+            runtime: 50,
+            deadline: 100,
+            period: 100,
+        };
+        assert_eq!(p.utilization_pct(), 50); // 50/100 * 100 = 50%
+        let p = DeadlineParams {
+            runtime: 100,
+            deadline: 100,
+            period: 100,
+        };
+        assert_eq!(p.utilization_pct(), 100); // 100%
     }
 
     /// 6. CfsRunQueue: 入队/选下一个/出队
@@ -553,7 +560,10 @@ mod tests {
     #[test]
     fn test_sched_default_time_slice() {
         let p = DefaultPolicy;
-        assert_eq!(p.time_slice(ThreadPriority::Realtime), SCHED_LEVEL_0_QUANTUM);
+        assert_eq!(
+            p.time_slice(ThreadPriority::Realtime),
+            SCHED_LEVEL_0_QUANTUM
+        );
         assert_eq!(p.time_slice(ThreadPriority::High), SCHED_LEVEL_1_QUANTUM);
         assert_eq!(p.time_slice(ThreadPriority::Normal), SCHED_LEVEL_2_QUANTUM);
         assert_eq!(p.time_slice(ThreadPriority::Low), SCHED_LEVEL_3_QUANTUM);
@@ -578,18 +588,18 @@ mod tests {
         let mut q = CfsRunQueue::new();
         // 加入 4 个进程, 不同 vruntime + weight
         q.enqueue(10, 100, 1024);
-        q.enqueue(20, 50, 2048);   // 更高权重
+        q.enqueue(20, 50, 2048); // 更高权重
         q.enqueue(30, 150, 1024);
         q.enqueue(40, 80, 1024);
         // 按 vruntime 顺序调度
         let (pid, _) = q.pick_next().unwrap();
-        assert_eq!(pid, 20);  // vruntime=50
+        assert_eq!(pid, 20); // vruntime=50
         let (pid, _) = q.pick_next().unwrap();
-        assert_eq!(pid, 40);  // vruntime=80
+        assert_eq!(pid, 40); // vruntime=80
         let (pid, _) = q.pick_next().unwrap();
-        assert_eq!(pid, 10);  // vruntime=100
+        assert_eq!(pid, 10); // vruntime=100
         let (pid, _) = q.pick_next().unwrap();
-        assert_eq!(pid, 30);  // vruntime=150
+        assert_eq!(pid, 30); // vruntime=150
         assert!(q.is_empty());
     }
 }

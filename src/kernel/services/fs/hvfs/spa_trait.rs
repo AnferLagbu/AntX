@@ -213,7 +213,7 @@ mod tests {
         spa.init("tank");
         let cfg = HvVdevConfig {
             vdev_id: 0,
-            asize: 32 * 1024 * 1024,  // 32 MB
+            asize: 32 * 1024 * 1024, // 32 MB
             ..Default::default()
         };
         assert!(spa.add_vdev(cfg));
@@ -243,10 +243,10 @@ mod tests {
         spa.init("tank");
         let stats = spa.get_stats();
         // 初始: alloc=0, free=0, read=0, write=0, total_txg=?
-        assert_eq!(stats.0, 0);  // alloc
-        assert_eq!(stats.1, 0);  // free
-        assert_eq!(stats.2, 0);  // read
-        assert_eq!(stats.3, 0);  // write
+        assert_eq!(stats.0, 0); // alloc
+        assert_eq!(stats.1, 0); // free
+        assert_eq!(stats.2, 0); // read
+        assert_eq!(stats.3, 0); // write
     }
 
     /// 7. is_disk_present / is_formatted: 未格式化 → false

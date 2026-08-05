@@ -24,8 +24,8 @@
 //! - 内部数据由 `DEV_TREE` spinlock 保护
 //! - 路径/缓冲在拷贝时按字节校验, 不假设用户态字符串
 
+use super::devtree::{DEV_TREE, NodeId};
 use alloc::vec::Vec;
-use super::devtree::{NodeId, DEV_TREE};
 
 /// 固件元数据 + 内容的最大尺寸上限 (16 MiB)
 ///
@@ -59,7 +59,11 @@ pub struct FirmwareBlob {
 
 impl FirmwareBlob {
     pub fn new(data: Vec<u8>, name_hash: u32, version: u32) -> Self {
-        Self { data, name_hash, version }
+        Self {
+            data,
+            name_hash,
+            version,
+        }
     }
 
     pub fn size(&self) -> usize {
@@ -67,7 +71,10 @@ impl FirmwareBlob {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// FNV-1a 32-bit hash
 ///
 /// 用于固件名快速比对; 用户态与内核态均使用同一算法。

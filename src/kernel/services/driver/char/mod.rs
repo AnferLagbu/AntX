@@ -17,5 +17,5 @@
 //!
 //! 评估日期: 2026-06-04
 
-pub mod vga;
 pub mod serial;
+pub mod vga;

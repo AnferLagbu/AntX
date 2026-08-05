@@ -36,8 +36,8 @@
 //! - mlock 锁定的页不会被 swap/reclaim, 但会参与 `madvise(MADV_PAGEOUT)` 的忽略
 //! - 进程退出时由 `framework::proc::vma::MmStruct::release` 释放所有锁定
 
-use crate::kernel::framework::proc::madvise_mlock as fw_ml;
 use crate::kernel::framework::mm::PAGE_SIZE;
+use crate::kernel::framework::proc::madvise_mlock as fw_ml;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -89,7 +89,10 @@ pub enum Advice {
 }
 
 impl Advice {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 从 Linux 原始 advice 值构造
     pub fn from_u32(v: u32) -> Self {
         match v {
@@ -304,7 +307,9 @@ pub fn munlockall() -> MlockResult<()> {
 pub fn mincore(addr: usize, len: usize, vec: &mut [u8]) -> MlockResult<()> {
     let expected_pages = (len + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
     if vec.len() < expected_pages {
-        return Err(MlockError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));
+        return Err(MlockError::Kernel(
+            crate::kernel::services::error::KernelError::InvalidArgument,
+        ));
     }
     let rc = fw_ml::sys_mincore(addr as u64, len as u64, vec.as_mut_ptr() as u64);
     if rc == 0 {

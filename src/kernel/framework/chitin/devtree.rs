@@ -24,12 +24,12 @@
 //! └── timer                       compatible: "arm,armv8-timer"
 //! ```
 
+use super::{ChitinProto, DeviceState, chitin_register};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use super::{chitin_register, ChitinProto, DeviceState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyValue {
@@ -301,7 +301,10 @@ where
         return;
     }
 
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     fn walk_children<F: FnMut(&ChitinNode)>(nodes: &[ChitinNode], id: NodeId, f: &mut F) {
         if let Some(node) = nodes.iter().find(|n| n.id == id) {
             f(node);
@@ -337,7 +340,10 @@ fn devtree_print_impl() {
     let tree = DEV_TREE.lock();
     let root_id = ROOT_NODE_ID.load(Ordering::Acquire);
 
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     fn print_node(nodes: &[ChitinNode], id: NodeId, depth: usize) {
         if let Some(node) = nodes.iter().find(|n| n.id == id) {
             let _ = depth;
@@ -367,12 +373,11 @@ pub extern "C" fn devtree_init() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-pub extern "C" fn devtree_create_node(
-    name: *const u8,
-    proto: u32,
-    parent_id: u32,
-) -> u32 {
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+pub extern "C" fn devtree_create_node(name: *const u8, proto: u32, parent_id: u32) -> u32 {
     let name_str = if name.is_null() {
         "unknown"
     } else {

@@ -6,7 +6,7 @@
 #![deny(unsafe_code)]
 
 pub use crate::kernel::framework::syscall::{
-    SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT,
+    SPLICE_F_GIFT, SPLICE_F_MORE, SPLICE_F_MOVE, SPLICE_F_NONBLOCK,
 };
 
 /// sendfile 系统调用

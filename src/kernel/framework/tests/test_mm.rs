@@ -1,11 +1,18 @@
 use super::check;
 use crate::kernel::framework::mm::KERNEL_BASE;
-use crate::kernel::framework::mm::{pd_index, pdpt_index, phys_to_virt, pml4_index, pt_index, virt_to_phys};
-use crate::kernel::framework::mm::{MemoryInfo, PageFlags, PageSize, PageTableEntry, PhysAddr, VirtAddr};
-use crate::kernel::framework::tests::{runner, TestResult};
+use crate::kernel::framework::mm::{
+    MemoryInfo, PageFlags, PageSize, PageTableEntry, PhysAddr, VirtAddr,
+};
+use crate::kernel::framework::mm::{
+    pd_index, pdpt_index, phys_to_virt, pml4_index, pt_index, virt_to_phys,
+};
+use crate::kernel::framework::tests::{TestResult, runner};
 use crate::register_tests_inner;
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_phys_addr() -> TestResult {
     let pa = PhysAddr::new(0x1000);
     check!(pa.as_u64() == 0x1000, "PhysAddr as_u64 mismatch");
@@ -34,7 +41,10 @@ fn test_virt_addr() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_page_size() -> TestResult {
     let s4k = PageSize::Size4K;
     check!(s4k.size() == 4096, "4K size mismatch");
@@ -96,7 +106,10 @@ fn test_memory_info() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_address_translation() -> TestResult {
     let phys: u64 = 0x1234000;
     let virt = phys_to_virt(phys);

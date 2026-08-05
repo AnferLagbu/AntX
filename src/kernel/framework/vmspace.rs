@@ -17,7 +17,7 @@
 
 use core::fmt;
 
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PageSize, PageFlags, get_vmm};
+use crate::kernel::framework::mm::{PageFlags, PageSize, PhysAddr, VirtAddr, get_vmm};
 
 #[cfg(target_arch = "x86_64")]
 const USER_VADDR_MASK: u64 = 0x00007FFF_FFFFFFFF;
@@ -51,14 +51,20 @@ impl VmSpace {
 
     /// 获取页表根物理地址
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn pt_root(&self) -> PhysAddr {
         self.pt_root
     }
 
     /// 是否是内核地址空间
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn is_kernel(&self) -> bool {
         self.is_kernel
     }
@@ -77,7 +83,12 @@ impl VmSpace {
     /// # Errors
     /// 当 `vaddr` 超出用户地址空间范围 ([0, `USER_ADDR_MAX`)) 时返回
     /// `Err("vaddr outside user address space")`.
-    pub fn map(&self, vaddr: VirtAddr, frame: &Frame, flags: PageFlags) -> Result<(), &'static str> {
+    pub fn map(
+        &self,
+        vaddr: VirtAddr,
+        frame: &Frame,
+        flags: PageFlags,
+    ) -> Result<(), &'static str> {
         let va = vaddr.as_u64();
         if va & !USER_VADDR_MASK != 0 {
             return Err("vaddr outside user address space");
@@ -92,7 +103,10 @@ impl VmSpace {
         Ok(())
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 映射大页 (2MB / 1GB)
     ///
     /// # Errors
@@ -139,11 +153,7 @@ impl VmSpace {
     /// # Errors
     /// 当 `vaddr` 超出用户地址空间范围 ([0, `USER_ADDR_MAX`)) 时返回
     /// `Err("vaddr outside user address space")`.
-    pub fn protect(
-        &self,
-        vaddr: VirtAddr,
-        new_flags: PageFlags,
-    ) -> Result<(), &'static str> {
+    pub fn protect(&self, vaddr: VirtAddr, new_flags: PageFlags) -> Result<(), &'static str> {
         let va = vaddr.as_u64();
         if va & !USER_VADDR_MASK != 0 {
             return Err("vaddr outside user address space");

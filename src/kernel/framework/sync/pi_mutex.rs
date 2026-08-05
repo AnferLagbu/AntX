@@ -38,14 +38,13 @@
 //! 2026-06-08 初始化, 2026-06-29 扩展 v2.1
 //! 关联 DECISION-009/010/011/012 (DECISION-012: 等待者动态重算)
 
-
 use alloc::collections::VecDeque;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock;
 #[cfg(debug_assertions)]
-use crate::kernel::framework::sync::{LockClassId, LockClassDesc, LockKind};
+use crate::kernel::framework::sync::{LockClassDesc, LockClassId, LockKind};
 
 // ============================================================================
 // v2.5: 鲁棒 mutex — 进程退出时强制释放所有 PI Mutex
@@ -241,7 +240,10 @@ impl<T> PiMutex<T> {
 
     /// 创建命名 `PiMutex` (用于调试 + lockdep)
     #[cfg(debug_assertions)]
-#[expect(clippy::doc_markdown, reason = "doc_markdown: 文档 markdown 格式已知 (中文 + 内核术语); 当前优先 expect")]
+    #[expect(
+        clippy::doc_markdown,
+        reason = "doc_markdown: 文档 markdown 格式已知 (中文 + 内核术语); 当前优先 expect"
+    )]
     pub fn named(name: &'static str, data: T) -> Self {
         let class_id = crate::kernel::framework::sync::register_class(LockClassDesc {
             name,
@@ -319,20 +321,25 @@ impl<T: ?Sized> PiMutex<T> {
     /// 成功时返回 true, 失败时返回 false 并**已自动注册为等待者 + 触发捐赠**。
     pub fn try_lock(&self, my_pid: u32, my_base_priority: u32) -> bool {
         // fast path: 直接尝试
-        if self.inner.locked.compare_exchange(
-            false,
-            true,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ).is_ok()
+        if self
+            .inner
+            .locked
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
         {
             self.inner.holder.store(my_pid, Ordering::Release);
-            self.inner.effective_priority.store(my_base_priority, Ordering::Release);
-            self.holder_base_priority.store(my_base_priority, Ordering::Release);
+            self.inner
+                .effective_priority
+                .store(my_base_priority, Ordering::Release);
+            self.holder_base_priority
+                .store(my_base_priority, Ordering::Release);
 
             // Lockdep: 通知锁获取
             #[cfg(debug_assertions)]
-            crate::kernel::framework::sync::acquire(self.lockdep_class, crate::kernel::framework::sync::in_irq_context());
+            crate::kernel::framework::sync::acquire(
+                self.lockdep_class,
+                crate::kernel::framework::sync::in_irq_context(),
+            );
 
             return true;
         }
@@ -430,7 +437,9 @@ impl<T: ?Sized> PiMutex<T> {
             let cl = chain.1;
             if cl > 0 {
                 // SAFETY: chain is UnsafeCell; single-threaded access guaranteed by lock
-                unsafe { *self.inner.chain.get() = chain_arr; }
+                unsafe {
+                    *self.inner.chain.get() = chain_arr;
+                }
                 self.inner.chain_len.store(cl, Ordering::Relaxed);
             } else {
                 self.inner.chain_len.store(0, Ordering::Relaxed);
@@ -442,7 +451,9 @@ impl<T: ?Sized> PiMutex<T> {
         if new_effective == prev {
             return;
         }
-        self.inner.effective_priority.store(new_effective, Ordering::Release);
+        self.inner
+            .effective_priority
+            .store(new_effective, Ordering::Release);
 
         let holder_pid = self.inner.holder.load(Ordering::Acquire);
         if holder_pid == PID_NONE {
@@ -554,11 +565,14 @@ impl<T: ?Sized> PiMutex<T> {
         // 我们直接设置 holder, 让它从自旋中退出并完成获取
         self.inner.holder.store(next_pid, Ordering::Release);
         self.inner.locked.store(true, Ordering::Release);
-        self.inner.effective_priority.store(next_base_prio, Ordering::Release);
+        self.inner
+            .effective_priority
+            .store(next_base_prio, Ordering::Release);
         // 持有者 base_priority 由 next 在 try_lock 时设置
         // (这里没有, 因为我们走的是 unlock 路径而非 try_lock)
         // 修正: 重新赋值
-        self.holder_base_priority.store(next_base_prio, Ordering::Release);
+        self.holder_base_priority
+            .store(next_base_prio, Ordering::Release);
 
         // v2.2: 如果有捐赠链, 传递给下一个持有者
         // 链式: C→B→A, 当 A unlock M1, B 成为 holder, B 的链是 [C]
@@ -637,4 +651,3 @@ fn scheduler_yield() {
     // v2.6: 用 SCHEDULER_EX.yield_current() 让出 CPU, 替代旧的 C ABI scheduler_yield
     crate::kernel::framework::proc::scheduler_ex::SCHEDULER_EX.yield_current();
 }
-

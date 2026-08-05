@@ -143,7 +143,10 @@ impl PcieHotplugSlot {
         })
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 读取 Slot Status 寄存器，返回变化事件位掩码。
     /// 自动清除已读事件。
     pub fn read_and_clear_events(&mut self) -> u16 {

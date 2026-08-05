@@ -52,7 +52,9 @@ pub fn auth_delete_syscall(target: u64) -> i64 {
 
 /// `auth_info(target)` 策略
 pub fn auth_info_syscall(target: u64) -> i64 {
-    i64::from(crate::kernel::framework::credo::pwm_get_privilege_level(target))
+    i64::from(crate::kernel::framework::credo::pwm_get_privilege_level(
+        target,
+    ))
 }
 
 /// `auth_changepw(old_pw`, `new_pw`) 策略
@@ -68,7 +70,10 @@ pub fn auth_changepw_syscall(old_pw_ptr: u64, new_pw_ptr: u64) -> i64 {
 /// `auth_verify(password)` 策略
 pub fn auth_verify_syscall(password_ptr: u64) -> i64 {
     let pwm = crate::kernel::framework::credo::pwm_get_current();
-    i64::from(crate::kernel::framework::credo::pwm_verify_password(pwm, password_ptr as *const u8))
+    i64::from(crate::kernel::framework::credo::pwm_verify_password(
+        pwm,
+        password_ptr as *const u8,
+    ))
 }
 
 /// `auth_create_first(password)` 策略
@@ -81,17 +86,23 @@ pub fn auth_create_first_syscall(password_ptr: u64) -> i64 {
 
 /// `auth_grant(grantor`, grantee, domain, caps) 策略
 pub fn auth_grant_syscall(grantor: u64, grantee: u64, domain: u16, caps: u64) -> i64 {
-    i64::from(crate::kernel::framework::credo::pwm_grant(grantor, grantee, domain, caps))
+    i64::from(crate::kernel::framework::credo::pwm_grant(
+        grantor, grantee, domain, caps,
+    ))
 }
 
 /// `auth_revoke(revoker`, target, domain, caps) 策略
 pub fn auth_revoke_syscall(revoker: u64, target: u64, domain: u16, caps: u64) -> i64 {
-    i64::from(crate::kernel::framework::credo::pwm_revoke(revoker, target, domain, caps))
+    i64::from(crate::kernel::framework::credo::pwm_revoke(
+        revoker, target, domain, caps,
+    ))
 }
 
 /// `auth_check_cap(pwm`, domain, required) 策略
 pub fn auth_check_cap_syscall(pwm: u64, domain: u16, required: u64) -> i64 {
-    i64::from(crate::kernel::framework::credo::pwm_has_capability(pwm, domain, required))
+    i64::from(crate::kernel::framework::credo::pwm_has_capability(
+        pwm, domain, required,
+    ))
 }
 
 /// `auth_get_caps(pwm`, domain) 策略

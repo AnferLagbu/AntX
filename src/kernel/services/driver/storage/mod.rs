@@ -21,7 +21,7 @@
 //!
 //! 评估日期: 2026-06-04
 
-pub mod nvme;
 pub mod ahci;
 /// 传统 ATA PIO 驱动桩模块
 pub mod ata;
+pub mod nvme;

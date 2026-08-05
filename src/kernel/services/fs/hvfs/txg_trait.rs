@@ -20,8 +20,8 @@
 //!
 //! ## 与 LEGACY-5.1 (ZAP) 范式一致
 
-use super::txg::{HvTxgGroup, HvTxgState, HvIo};
 use super::bp::HvBlockPointer;
+use super::txg::{HvIo, HvTxgGroup, HvTxgState};
 
 // ============================================================================
 // TxgManager trait — 事务组管理接口
@@ -139,20 +139,26 @@ impl TxgManager for StandardTxg {
         if let Some(txg) = self.0.get_open_txg() {
             txg.state
         } else {
-            HvTxgState::Committed  // 无 open → fallback
+            HvTxgState::Committed // 无 open → fallback
         }
     }
 
     fn is_sync_in_progress(&self) -> bool {
-        self.0.sync_in_progress.load(core::sync::atomic::Ordering::Acquire)
+        self.0
+            .sync_in_progress
+            .load(core::sync::atomic::Ordering::Acquire)
     }
 
     fn total_syncs(&self) -> u64 {
-        self.0.total_syncs.load(core::sync::atomic::Ordering::Acquire)
+        self.0
+            .total_syncs
+            .load(core::sync::atomic::Ordering::Acquire)
     }
 
     fn total_dirty(&self) -> u64 {
-        self.0.total_dirty.load(core::sync::atomic::Ordering::Acquire)
+        self.0
+            .total_dirty
+            .load(core::sync::atomic::Ordering::Acquire)
     }
 
     fn add_dirty_to_open(&self, bp: HvBlockPointer) {
@@ -176,8 +182,8 @@ impl TxgManager for StandardTxg {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::bp::HvBlockPointer;
+    use super::*;
 
     /// 1. init / current_txg
     #[test]

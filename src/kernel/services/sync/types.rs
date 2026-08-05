@@ -240,7 +240,10 @@ pub struct CondVarInner {
 pub struct IrqSaveFlags(pub u64);
 
 impl IrqSaveFlags {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 检查中断是否启用 (IF bit = bit 9)
     pub fn interrupts_enabled(&self) -> bool {
         (self.0 & (1 << 9)) != 0
@@ -265,7 +268,10 @@ pub struct LockStatistics {
 
 #[cfg(feature = "lock_stats")]
 impl Default for LockStatistics {
-#[expect(clippy::pub_underscore_fields, reason = "pub_underscore_fields: pub _xxx 是模块内约定 (如 _inner); 当前优先 expect")]
+    #[expect(
+        clippy::pub_underscore_fields,
+        reason = "pub_underscore_fields: pub _xxx 是模块内约定 (如 _inner); 当前优先 expect"
+    )]
     fn default() -> Self {
         Self {
             total_acquires: AtomicU64::new(0),
@@ -312,7 +318,10 @@ impl<T> core::ops::DerefMut for SpinLockGuard<'_, T> {
 }
 
 impl<T> Drop for SpinLockGuard<'_, T> {
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     fn drop(&mut self) {
         core::sync::atomic::fence(Ordering::SeqCst);
         self._lock.locked.store(0, Ordering::Release);
@@ -343,7 +352,10 @@ impl<T> core::ops::DerefMut for MutexGuard<'_, T> {
 }
 
 impl<T> Drop for MutexGuard<'_, T> {
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     fn drop(&mut self) {
         self._mutex.inner_spinlock.raw_lock();
 
@@ -373,7 +385,10 @@ impl<T> core::ops::Deref for RwLockReadGuard<'_, T> {
 }
 
 impl<T> Drop for RwLockReadGuard<'_, T> {
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     fn drop(&mut self) {
         let prev_readers = self._rwlock.readers.fetch_sub(1, Ordering::AcqRel);
 
@@ -403,7 +418,10 @@ impl<T> core::ops::DerefMut for RwLockWriteGuard<'_, T> {
 }
 
 impl<T> Drop for RwLockWriteGuard<'_, T> {
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     fn drop(&mut self) {
         core::sync::atomic::fence(Ordering::SeqCst);
         self._rwlock.writer.store(0, Ordering::Release);

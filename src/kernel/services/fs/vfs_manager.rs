@@ -11,11 +11,11 @@
 //! 提供 mount/unmount/resolve/alloc_fd 等纯策略操作。
 //! 不含 unsafe, 不直接操作硬件。
 
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::services::fs::vfs_types::{FileSystem, FsType, KernelError};
+use crate::kernel::services::fs::vfs_types::{VFS_MAX_FDS, VFS_MAX_MOUNTS, VFS_MAX_PATH};
 use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::services::fs::vfs_types::{KernelError, FileSystem, FsType};
-use crate::kernel::services::fs::vfs_types::{VFS_MAX_PATH, VFS_MAX_MOUNTS, VFS_MAX_FDS};
 
 pub struct VfsMount {
     pub path: [u8; VFS_MAX_PATH],
@@ -297,11 +297,7 @@ impl VfsManager {
 
         let rel_path = rel_path.trim_start_matches('/');
 
-        if rel_path.is_empty() {
-            "/"
-        } else {
-            rel_path
-        }
+        if rel_path.is_empty() { "/" } else { rel_path }
     }
 
     pub fn resolve_mount(&self, path: &str) -> Option<(usize, FsType)> {
@@ -321,7 +317,10 @@ impl VfsManager {
     }
 
     /// E6-4: 解析挂载点, 同时返回 trait object (优先于 `fs_type`)
-    pub fn resolve_mount_fs(&self, path: &str) -> Option<(usize, FsType, Option<&'static dyn FileSystem>)> {
+    pub fn resolve_mount_fs(
+        &self,
+        path: &str,
+    ) -> Option<(usize, FsType, Option<&'static dyn FileSystem>)> {
         let mount_idx = self.find_mount(path)?;
         let (fs_type, fs) = {
             let mounts = self.mounts.lock();
@@ -393,11 +392,7 @@ impl VfsManager {
         let fd_table = self.fd_table.lock();
         if idx < VFS_MAX_FDS && fd_table[idx].used {
             let hid = fd_table[idx].handle_id;
-            if hid == u32::MAX {
-                None
-            } else {
-                Some(hid)
-            }
+            if hid == u32::MAX { None } else { Some(hid) }
         } else {
             None
         }
@@ -427,7 +422,10 @@ impl VfsManager {
             buf.copy_from_slice(&fd_table[idx].path);
             buf
         };
-        let path_end = path_buf.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_PATH);
+        let path_end = path_buf
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(VFS_MAX_PATH);
         let path_str = core::str::from_utf8(&path_buf[..path_end]).unwrap_or("");
         self.find_mount(path_str)
     }
@@ -469,7 +467,12 @@ impl VfsManager {
     ///
     /// # Errors
     /// 当该路径已挂载时返回 `AlreadyExists`; 当挂载表已满时返回 `NoSpace`.
-    pub fn mount_with_fs(&self, path: &str, fs_name: &str, fs: &'static dyn FileSystem) -> Result<(), KernelError> {
+    pub fn mount_with_fs(
+        &self,
+        path: &str,
+        fs_name: &str,
+        fs: &'static dyn FileSystem,
+    ) -> Result<(), KernelError> {
         let mut mounts = self.mounts.lock();
 
         for mount in mounts.iter() {
@@ -544,7 +547,10 @@ impl VfsManager {
         });
     }
 
-#[expect(clippy::assigning_clones, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::assigning_clones,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn restore_from_snapshot(&self) {
         if let Some(ref snap) = *self.snapshot.lock() {
             *self.mounts.lock() = snap.mounts.clone();

@@ -12,8 +12,8 @@
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::proc::api as proc_fw;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // rename
@@ -39,11 +39,7 @@ pub fn rename_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno
         return Err(Errno::EINVAL);
     }
     let pwm = current_pwm()?;
-    let r = fw::vfs_rename(
-        oldpath_ptr as *const u8,
-        newpath_ptr as *const u8,
-        pwm,
-    );
+    let r = fw::vfs_rename(oldpath_ptr as *const u8, newpath_ptr as *const u8, pwm);
     if r < 0 {
         Err(Errno::from_ret(i64::from(r)))
     } else {
@@ -143,8 +139,7 @@ struct Tms {
     cstime: u64,
 }
 
-impl Tms {
-}
+impl Tms {}
 
 /// itimerval 结构体 (POSIX): {`it_interval`, `it_value`} 各为 {`tv_sec`, `tv_usec`}
 #[repr(C)]
@@ -156,10 +151,16 @@ struct Timeval {
 
 impl Timeval {
     const fn from_secs(sec: u64) -> Self {
-        Self { tv_sec: sec, tv_usec: 0 }
+        Self {
+            tv_sec: sec,
+            tv_usec: 0,
+        }
     }
     const fn zero() -> Self {
-        Self { tv_sec: 0, tv_usec: 0 }
+        Self {
+            tv_sec: 0,
+            tv_usec: 0,
+        }
     }
 }
 
@@ -172,11 +173,17 @@ struct Itimerval {
 
 impl Itimerval {
     const fn zero() -> Self {
-        Self { it_interval: Timeval::zero(), it_value: Timeval::zero() }
+        Self {
+            it_interval: Timeval::zero(),
+            it_value: Timeval::zero(),
+        }
     }
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// times(buf) — 读取当前进程 user/sys 时间与子进程时间.
 ///
 /// 真实实现: 通过 `framework/proc/api::proc_get_times` 读取已累计的 jiffies,
@@ -196,7 +203,12 @@ pub fn times_syscall(buf_ptr: u64) -> Result<usize, Errno> {
     if r < 0 {
         return Err(Errno::EFAULT);
     }
-    let tms = Tms { utime, stime, cutime: 0, cstime: 0 };
+    let tms = Tms {
+        utime,
+        stime,
+        cutime: 0,
+        cstime: 0,
+    };
     if buf_ptr != 0 {
         if !raw::write_struct_to_user(buf_ptr, &tms) {
             return Err(Errno::EFAULT);
@@ -206,7 +218,10 @@ pub fn times_syscall(buf_ptr: u64) -> Result<usize, Errno> {
     Ok(raw::get_ticks() as usize)
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// getitimer(which, value) — 读取间隔定时器.
 /// Framekernel 实现 `ITIMER_REAL` (which==0); VIRTUAL/PROF (which==1/2) 返 ENOSYS;
 /// 其他 (which==3 保留) 返 EINVAL.
@@ -246,18 +261,17 @@ pub fn getitimer_syscall(which: i32, value_ptr: u64) -> Result<usize, Errno> {
     }
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// setitimer(which, new, old) — 设置间隔定时器.
 /// Framekernel 实现 `ITIMER_REAL` (which==0); 其他返 EINVAL/ENOSYS.
 ///
 /// # Errors
 /// 当 `which` 超出 0..=3 范围时返回 `EINVAL`; 当 `which` 非 0 时返回 `ENOSYS`;
 /// 当 `new_ptr` 为空/越界、`old_ptr` 越界、读取/写入用户空间失败或底层设置失败时返回 `EFAULT`.
-pub fn setitimer_syscall(
-    which: i32,
-    new_ptr: u64,
-    old_ptr: u64,
-) -> Result<usize, Errno> {
+pub fn setitimer_syscall(which: i32, new_ptr: u64, old_ptr: u64) -> Result<usize, Errno> {
     if !(0..=3).contains(&which) {
         return Err(Errno::EINVAL);
     }
@@ -301,7 +315,10 @@ pub fn setitimer_syscall(
     Ok(0)
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// alarm(seconds) — 设置 SIGALRM 触发间隔 (秒), 返回旧剩余时间 (秒).
 ///
 /// 真实实现: 通过 `framework/proc/api::proc_alarm` 在 Process 维护的
@@ -320,7 +337,10 @@ pub fn alarm_syscall(seconds: u32) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())

@@ -97,7 +97,10 @@ static EFD_COUNT: AtomicU32 = AtomicU32::new(0);
 // 系统调用实现
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// eventfd — 创建 eventfd 实例
 ///
 /// `initval`: 初始计数器值
@@ -133,11 +136,20 @@ pub fn sys_eventfd(initval: u64, flags: i32) -> i64 {
     s.semaphore = semaphore;
     EFD_COUNT.fetch_add(1, Ordering::Relaxed);
 
-    crate::klog_debug!(Sync, "[eventfd] Created fd={} initval={} sem={}", fd, initval, semaphore);
+    crate::klog_debug!(
+        Sync,
+        "[eventfd] Created fd={} initval={} sem={}",
+        fd,
+        initval,
+        semaphore
+    );
     i64::from(fd)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// eventfd read — 读取计数器
 ///
 /// - semaphore=false: 返回 counter 并清零
@@ -187,7 +199,10 @@ pub fn sys_eventfd_read(fd: i32, buf: u64) -> i64 {
     8 // 成功读取 8 字节
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// eventfd write — 递增计数器
 ///
 /// `fd`: eventfd 文件描述符
@@ -217,11 +232,20 @@ pub fn sys_eventfd_write(fd: i32, value: u64) -> i64 {
 
     slot.counter += value;
 
-    crate::klog_debug!(Sync, "[eventfd] Write fd={} value={} counter={}", fd, value, slot.counter);
+    crate::klog_debug!(
+        Sync,
+        "[eventfd] Write fd={} value={} counter={}",
+        fd,
+        value,
+        slot.counter
+    );
     8
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// eventfd close — 关闭 eventfd
 ///
 /// 释放槽位, 返回 0 或负 errno
@@ -258,12 +282,15 @@ pub fn sys_eventfd_close(fd: i32) -> i64 {
 // epoll 集成
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 检查 eventfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (可读) / EPOLLOUT (可写) 事件掩码
 pub fn eventfd_poll_events(fd: i32) -> u32 {
-    use crate::kernel::framework::syscall::{EPOLLIN, EPOLLOUT, EPOLLERR};
+    use crate::kernel::framework::syscall::{EPOLLERR, EPOLLIN, EPOLLOUT};
 
     let idx = match fd_to_idx(fd) {
         Some(i) => i,
@@ -298,9 +325,7 @@ pub fn eventfd_poll_events(fd: i32) -> u32 {
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
     match crate::kernel::framework::proc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::FdSubsystem::EventFd, slot)) => {
-            Some(slot)
-        }
+        Some((crate::kernel::framework::proc::FdSubsystem::EventFd, slot)) => Some(slot),
         _ => None,
     }
 }
@@ -321,7 +346,7 @@ pub fn is_eventfd_fd(fd: i32) -> bool {
 
 #[cfg(feature = "kernel_test")]
 fn test_eventfd_create_read_write() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     // 创建 eventfd, initval=5
     let fd = sys_eventfd(5, 0);
@@ -355,7 +380,7 @@ fn test_eventfd_create_read_write() -> crate::kernel::framework::tests::TestResu
 
 #[cfg(feature = "kernel_test")]
 fn test_eventfd_semaphore() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     // 创建 semaphore 模式 eventfd, initval=3
     let fd = sys_eventfd(3, EFD_SEMAPHORE);
@@ -386,8 +411,8 @@ fn test_eventfd_semaphore() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_eventfd_poll() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
     use crate::kernel::framework::syscall::{EPOLLIN, EPOLLOUT};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     let fd = sys_eventfd(0, 0);
     check!(fd >= 200, "eventfd for poll ok");
@@ -411,7 +436,11 @@ fn test_eventfd_poll() -> crate::kernel::framework::tests::TestResult {
 pub fn register_eventfd_tests() {
     use crate::kernel::framework::tests::runner;
     let r = runner();
-    r.register("eventfd", "create_read_write", test_eventfd_create_read_write);
+    r.register(
+        "eventfd",
+        "create_read_write",
+        test_eventfd_create_read_write,
+    );
     r.register("eventfd", "semaphore", test_eventfd_semaphore);
     r.register("eventfd", "poll", test_eventfd_poll);
 }

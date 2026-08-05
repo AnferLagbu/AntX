@@ -5,10 +5,12 @@
 //! 本模块使用 framework 层的 safe wrapper (vfs_*_safe) 调用 VFS，
 //! 无需 unsafe 块。
 
-use crate::kernel::services::wasm::types::{Value, WasmError};
+use super::fd_table::{
+    WasiFdEntry, WasiFileType, WasiRights, read_bytes_from_memory, write_u32_to_memory,
+};
+use super::{WasiContext, WasiErrno, wasi_errno, wasi_success};
 use crate::kernel::services::wasm::interpreter::Interpreter;
-use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
-use super::fd_table::{WasiFileType, WasiRights, WasiFdEntry, read_bytes_from_memory, write_u32_to_memory};
+use crate::kernel::services::wasm::types::{Value, WasmError};
 use alloc::string::String;
 
 /// 从 WASM 线性内存读取路径字符串 (NUL 终止)
@@ -20,7 +22,10 @@ fn read_path(interp: &Interpreter, ptr: u32, len: u32) -> Result<String, WasiErr
         .map_err(|_| WasiErrno::Inval)
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 解析路径: 将 dirfd + relative path 组合为绝对路径
 ///
 /// WASI 语义: dirfd 是 preopen fd (通过 `fd_prestat_get` 获取), relative path
@@ -48,10 +53,18 @@ fn resolve_path(ctx: &WasiContext, dirfd: u32, path: &str) -> Result<String, Was
 /// WASI `o_flags` → VFS flags 映射
 fn wasi_o_flags_to_vfs(o_flags: u32) -> u32 {
     let mut flags = o_flags & 0x03; // O_RDONLY/WRONLY/RDWR
-    if o_flags & 0x100 != 0 { flags |= 0x100; } // O_CREAT
-    if o_flags & 0x200 != 0 { flags |= 0x200; } // O_EXCL
-    if o_flags & 0x400 != 0 { flags |= 0x400; } // O_TRUNC
-    if o_flags & 0x008 != 0 { flags |= 0x008; } // O_APPEND
+    if o_flags & 0x100 != 0 {
+        flags |= 0x100;
+    } // O_CREAT
+    if o_flags & 0x200 != 0 {
+        flags |= 0x200;
+    } // O_EXCL
+    if o_flags & 0x400 != 0 {
+        flags |= 0x400;
+    } // O_TRUNC
+    if o_flags & 0x008 != 0 {
+        flags |= 0x008;
+    } // O_APPEND
     flags
 }
 
@@ -80,7 +93,9 @@ pub fn wasi_path_open(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     let vfs_fd = crate::kernel::framework::fs::vfs::api::vfs_open_safe(&abs_path, vfs_flags, 0);
 
     if vfs_fd < 0 {
-        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Noent)))?;
+        interp
+            .stack
+            .push(Value::I32(wasi_errno(WasiErrno::Noent)))?;
         return Ok(());
     }
 
@@ -108,7 +123,10 @@ pub fn wasi_path_open(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
 /// # Errors
 ///
 /// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
-pub fn wasi_path_create_directory(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_path_create_directory(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
     let path_len = interp.stack.pop_i32()? as u32;
@@ -131,7 +149,10 @@ pub fn wasi_path_create_directory(ctx: &mut WasiContext, interp: &mut Interprete
 /// # Errors
 ///
 /// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
-pub fn wasi_path_remove_directory(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_path_remove_directory(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
     let path_len = interp.stack.pop_i32()? as u32;
@@ -154,7 +175,10 @@ pub fn wasi_path_remove_directory(ctx: &mut WasiContext, interp: &mut Interprete
 /// # Errors
 ///
 /// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
-pub fn wasi_path_unlink_file(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_path_unlink_file(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
     let path_len = interp.stack.pop_i32()? as u32;
@@ -205,7 +229,10 @@ pub fn wasi_path_symlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Res
 ///
 /// 当栈弹出参数失败、路径读取/解析失败或写入线性内存失败时
 /// 返回对应的 `WasmError`.
-pub fn wasi_path_readlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_path_readlink(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
     let path_len = interp.stack.pop_i32()? as u32;
@@ -218,7 +245,8 @@ pub fn wasi_path_readlink(ctx: &mut WasiContext, interp: &mut Interpreter) -> Re
 
     // 分配临时缓冲区接收 readlink 结果
     let mut link_buf = alloc::vec![0u8; buf_len as usize];
-    let result = crate::kernel::framework::fs::vfs::api::vfs_readlink_safe(&abs_path, &mut link_buf, 0);
+    let result =
+        crate::kernel::framework::fs::vfs::api::vfs_readlink_safe(&abs_path, &mut link_buf, 0);
 
     if result < 0 {
         interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
@@ -263,14 +291,20 @@ pub fn wasi_path_rename(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     Ok(())
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// WASI `path_filestat_get`: 获取文件/目录状态
 ///
 /// # Errors
 ///
 /// 当栈弹出参数失败、路径读取/解析失败或写入线性内存失败时
 /// 返回对应的 `WasmError`.
-pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_path_filestat_get(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let _flags = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
@@ -283,20 +317,25 @@ pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -
     let stat = crate::kernel::framework::fs::vfs::api::with_cstr(&abs_path, |ptr| {
         crate::kernel::framework::fs::vfs::api::vfs_stat_safe(ptr, 0)
     });
-    let stat = if let Some(s) = stat { s } else {
-        interp.stack.push(Value::I32(wasi_errno(WasiErrno::Noent)))?;
+    let stat = if let Some(s) = stat {
+        s
+    } else {
+        interp
+            .stack
+            .push(Value::I32(wasi_errno(WasiErrno::Noent)))?;
         return Ok(());
     };
 
     // 写入 WASI filestat 结构
     if let Some(ref mut mem) = interp.memory {
         let base = u64::from(buf_ptr);
-        let write_u64 = |mem: &mut crate::kernel::services::wasm::runtime::LinearMemory, off: u64, val: u64| {
-            let bytes = val.to_le_bytes();
-            for i in 0..8u64 {
-                let _ = mem.write_u8((base + off + i) as u32, bytes[i as usize]);
-            }
-        };
+        let write_u64 =
+            |mem: &mut crate::kernel::services::wasm::runtime::LinearMemory, off: u64, val: u64| {
+                let bytes = val.to_le_bytes();
+                for i in 0..8u64 {
+                    let _ = mem.write_u8((base + off + i) as u32, bytes[i as usize]);
+                }
+            };
 
         write_u64(mem, 0, u64::from(stat.node_id));
         write_u64(mem, 8, u64::from(stat.node_id));
@@ -317,7 +356,10 @@ pub fn wasi_path_filestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -
 /// # Errors
 ///
 /// 当栈弹出参数失败或路径读取/解析失败时返回对应的 `WasmError`.
-pub fn wasi_path_filestat_set_times(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_path_filestat_set_times(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let dirfd = interp.stack.pop_i32()? as u32;
     let _flags = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
@@ -328,7 +370,8 @@ pub fn wasi_path_filestat_set_times(ctx: &mut WasiContext, interp: &mut Interpre
     let path = read_path(interp, path_ptr, path_len)?;
     let abs_path = resolve_path(ctx, dirfd, &path)?;
 
-    let result = crate::kernel::framework::fs::vfs::api::vfs_utimensat_safe(&abs_path, atim, mtim, 0);
+    let result =
+        crate::kernel::framework::fs::vfs::api::vfs_utimensat_safe(&abs_path, atim, mtim, 0);
 
     if result < 0 {
         interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;

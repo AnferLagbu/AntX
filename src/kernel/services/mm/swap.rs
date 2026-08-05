@@ -29,7 +29,10 @@ impl SwapSlot {
         SwapSlot(slot)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取 slot 索引
     pub fn index(&self) -> u64 {
         self.0
@@ -50,13 +53,19 @@ pub struct SwapInfo {
 }
 
 impl SwapInfo {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 已使用容量 (字节)
     pub fn used_bytes(&self) -> u64 {
         self.total_bytes - self.free_bytes
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 使用率 (0.0 ~ 1.0)
     pub fn usage_ratio(&self) -> f64 {
         if self.total_bytes == 0 {

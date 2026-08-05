@@ -3,7 +3,10 @@ use alloc::vec::Vec;
 
 pub const HV_COMP_MIN_SIZE: usize = 64;
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 pub fn compress(data: &[u8], comp_type: HvCompType) -> Option<Vec<u8>> {
     if data.len() < HV_COMP_MIN_SIZE {
         return None;
@@ -123,7 +126,10 @@ fn compress_lz4(data: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn lz4_hash(data: &[u8], pos: usize) -> u32 {
     let v = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
     (v.wrapping_mul(2654435761)) >> 16

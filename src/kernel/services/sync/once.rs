@@ -56,7 +56,10 @@ impl Once {
         }
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     /// 执行闭包, 多线程下仅首次调用方真正执行, 后续方阻塞等待完成。
     ///
     /// # Panics
@@ -136,10 +139,14 @@ mod tests {
     fn once_cell_lazy() {
         let cell: OnceCell<u32> = OnceCell::new();
         assert!(cell.get().is_none());
-        let v = cell.get_or_init(|slot| { slot.write(42); });
+        let v = cell.get_or_init(|slot| {
+            slot.write(42);
+        });
         assert_eq!(*v, 42);
         // 第二次调用不应执行闭包
-        let v2 = cell.get_or_init(|slot| { slot.write(999); });
+        let v2 = cell.get_or_init(|slot| {
+            slot.write(999);
+        });
         assert_eq!(*v2, 42);
     }
 

@@ -34,29 +34,31 @@
 //!
 //! 进度: 1/6 → 2/6 (transport 为后续 2.1.2/2.1.3 共享底层, 视为部分完成)
 
-/// T24: E1000 网卡驱动 (services 层安全逻辑)
-pub mod net;
-pub mod virtio;
+pub mod acpi;
 pub mod char;
 pub mod firmware;
-pub mod storage;
-pub mod usb;
-pub mod acpi;
+/// T24: E1000 网卡驱动 (services 层安全逻辑)
+pub mod net;
 /// D5: 电源管理安全封装
 pub mod power;
+pub mod storage;
+pub mod usb;
+pub mod virtio;
 
+/// 显示子系统 (DDC + HDMI) 安全封装
+pub mod display;
 /// D10: kexec 安全封装
 pub mod kexec;
 /// D11: UEFI 安全封装
 pub mod uefi;
-/// 显示子系统 (DDC + HDMI) 安全封装
-pub mod display;
 
 // ============================================================================
 // T-04: 中断处理决策策略
 // ============================================================================
 
-use crate::kernel::framework::idt::irq_trait::{IrqDecision, IrqContext, SoftirqContext, register_irq_decision};
+use crate::kernel::framework::idt::irq_trait::{
+    IrqContext, IrqDecision, SoftirqContext, register_irq_decision,
+};
 
 /// 驱动层中断处理决策策略
 ///

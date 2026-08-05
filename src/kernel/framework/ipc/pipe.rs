@@ -9,8 +9,8 @@
 //! - FFI 函数通过 `RacyCell::get_mut()` 安全访问全局 IPC_NAMESPACE.
 //! - 用户空间指针通过 `UserReadPtr/WritePtr/RefMut` 安全访问.
 
-use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::framework::proc::process_get_current_pid;
+use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 
 /// 判断 fd 是否为 pipe fd (公开接口, 供 sendfile/splice 使用)
 pub fn is_pipe_fd(fd: i32) -> bool {
@@ -23,7 +23,10 @@ pub fn is_pipe_fd(fd: i32) -> bool {
 /// `pipefd` 必须是可写指针, 含至少 2 个 `i32` 空间 (用于返回 [`read_fd`, `write_fd`])。
 /// 由 `sys_pipe` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub unsafe extern "C" fn ipc_pipe_create(pipefd: *mut i32) -> i32 {
     if pipefd.is_null() {
         return -1;
@@ -62,7 +65,8 @@ pub unsafe extern "C" fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32
     // SAFETY: buf 已校验非空; 调用方保证其指向用户态内存中
     // 至少 `count` 个有效字节.
     let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
-    match crate::kernel::services::ipc::pipe::pipe_read_safe(ns, fd, user_buf.as_mut_slice(), count) {
+    match crate::kernel::services::ipc::pipe::pipe_read_safe(ns, fd, user_buf.as_mut_slice(), count)
+    {
         Ok(n) => n as i32,
         Err(_) => -1,
     }

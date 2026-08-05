@@ -27,8 +27,7 @@
 
 #[allow(unused_imports)]
 use crate::kernel::framework::debug::{
-    BpfInsn, BpfProg, BpfVerifier, VerifyResult,
-    BPF_MAX_INSNS, BPF_REG_NUM,
+    BPF_MAX_INSNS, BPF_REG_NUM, BpfInsn, BpfProg, BpfVerifier, VerifyResult,
 };
 
 /// 寄存器类型 (验证器内部状态, 策略相关, 不导出)
@@ -52,10 +51,14 @@ struct RegState {
 
 impl RegState {
     fn new() -> Self {
-        Self { r#type: RegType::NotInit }
+        Self {
+            r#type: RegType::NotInit,
+        }
     }
     fn scalar() -> Self {
-        Self { r#type: RegType::Scalar }
+        Self {
+            r#type: RegType::Scalar,
+        }
     }
 }
 
@@ -82,11 +85,11 @@ mod opcode {
     pub const JMP: u8 = 0x05;
     pub const JMP32: u8 = 0x06;
     pub const ALU64: u8 = 0x07;
-    pub const MOV: u8 = 0xb0;       // ALU 操作子码
-    pub const JA: u8 = 0x00;        // JMP 操作子码: 无条件跳转
-    pub const CALL: u8 = 0x80;      // JMP 操作子码: helper 调用
-    pub const EXIT: u8 = 0x90;      // JMP 操作子码: 退出
-    pub const X: u8 = 0x08;         // 源操作数为寄存器
+    pub const MOV: u8 = 0xb0; // ALU 操作子码
+    pub const JA: u8 = 0x00; // JMP 操作子码: 无条件跳转
+    pub const CALL: u8 = 0x80; // JMP 操作子码: helper 调用
+    pub const EXIT: u8 = 0x90; // JMP 操作子码: 退出
+    pub const X: u8 = 0x08; // 源操作数为寄存器
 }
 
 mod reg {
@@ -108,8 +111,14 @@ mod helper_id {
 const BPF_MAX_PATH_DEPTH: u32 = 8;
 
 impl BpfVerifier for StandardBpfVerifier {
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     fn verify(&self, prog: &BpfProg) -> VerifyResult {
         // 规则 1: 指令数量
         if prog.insn_cnt == 0 {
@@ -128,8 +137,12 @@ impl BpfVerifier for StandardBpfVerifier {
 
         // 初始化寄存器状态
         let mut regs = [RegState::new(); BPF_REG_NUM];
-        regs[reg::R1] = RegState { r#type: RegType::CtxPtr };
-        regs[reg::R10] = RegState { r#type: RegType::StackPtr };
+        regs[reg::R1] = RegState {
+            r#type: RegType::CtxPtr,
+        };
+        regs[reg::R10] = RegState {
+            r#type: RegType::StackPtr,
+        };
 
         // 逐条验证
         let mut visited = [false; BPF_MAX_INSNS as usize];
@@ -145,9 +158,7 @@ impl BpfVerifier for StandardBpfVerifier {
             let src = insn.src() as usize;
             if dst >= BPF_REG_NUM || src >= BPF_REG_NUM {
                 return VerifyResult::Err(
-                    alloc::format!(
-                        "invalid register at pc={pc}: dst={dst} src={src}"
-                    ).into_bytes()
+                    alloc::format!("invalid register at pc={pc}: dst={dst} src={src}").into_bytes(),
                 );
             }
 
@@ -160,7 +171,7 @@ impl BpfVerifier for StandardBpfVerifier {
             {
                 if insn.class() == opcode::ST || insn.class() == opcode::STX {
                     return VerifyResult::Err(
-                        alloc::format!("write to R10 (frame pointer) at pc={pc}").into_bytes()
+                        alloc::format!("write to R10 (frame pointer) at pc={pc}").into_bytes(),
                     );
                 }
             }
@@ -175,7 +186,8 @@ impl BpfVerifier for StandardBpfVerifier {
                     let target = pc as i64 + 1 + i64::from(insn.off);
                     if target < 0 || target as usize >= prog.insn_cnt as usize {
                         return VerifyResult::Err(
-                            alloc::format!("jump out of bounds at pc={pc}: target={target}").into_bytes()
+                            alloc::format!("jump out of bounds at pc={pc}: target={target}")
+                                .into_bytes(),
                         );
                     }
                     // 规则 4: 回边检测
@@ -183,7 +195,7 @@ impl BpfVerifier for StandardBpfVerifier {
                         path_depth += 1;
                         if path_depth > BPF_MAX_PATH_DEPTH {
                             return VerifyResult::Err(
-                                alloc::format!("too many backward jumps at pc={pc}").into_bytes()
+                                alloc::format!("too many backward jumps at pc={pc}").into_bytes(),
                             );
                         }
                     }
@@ -192,7 +204,7 @@ impl BpfVerifier for StandardBpfVerifier {
                     let helper_id = insn.imm as u32;
                     if !is_valid_helper(helper_id) {
                         return VerifyResult::Err(
-                            alloc::format!("unknown helper {helper_id} at pc={pc}").into_bytes()
+                            alloc::format!("unknown helper {helper_id} at pc={pc}").into_bytes(),
                         );
                     }
                     // EBPF-3 规则 8: helper 调用前 R1 必须已初始化
@@ -200,9 +212,8 @@ impl BpfVerifier for StandardBpfVerifier {
                     // (实际 BPF verifier 会按 helper 签名校验参数类型, 此处简化)
                     if regs[reg::R1].r#type == RegType::NotInit {
                         return VerifyResult::Err(
-                            alloc::format!(
-                                "helper call at pc={pc} with uninitialized R1"
-                            ).into_bytes()
+                            alloc::format!("helper call at pc={pc} with uninitialized R1")
+                                .into_bytes(),
                         );
                     }
                     // EBPF-6 规则 11: helper 调用前 R1-R5 全部必须已初始化
@@ -223,14 +234,15 @@ impl BpfVerifier for StandardBpfVerifier {
                     let target = pc as i64 + 1 + i64::from(insn.off);
                     if target < 0 || target as usize >= prog.insn_cnt as usize {
                         return VerifyResult::Err(
-                            alloc::format!("conditional jump OOB at pc={pc}: target={target}").into_bytes()
+                            alloc::format!("conditional jump OOB at pc={pc}: target={target}")
+                                .into_bytes(),
                         );
                     }
                     if target < pc as i64 {
                         path_depth += 1;
                         if path_depth > BPF_MAX_PATH_DEPTH {
                             return VerifyResult::Err(
-                                alloc::format!("too many backward jumps at pc={pc}").into_bytes()
+                                alloc::format!("too many backward jumps at pc={pc}").into_bytes(),
                             );
                         }
                     }
@@ -241,13 +253,14 @@ impl BpfVerifier for StandardBpfVerifier {
                     if insn.op & opcode::X != 0 {
                         if regs[src].r#type == RegType::NotInit {
                             return VerifyResult::Err(
-                                alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
+                                alloc::format!("use of uninitialized R{src} at pc={pc}")
+                                    .into_bytes(),
                             );
                         }
                     }
                     if regs[dst].r#type == RegType::NotInit {
                         return VerifyResult::Err(
-                            alloc::format!("use of uninitialized R{dst} at pc={pc}").into_bytes()
+                            alloc::format!("use of uninitialized R{dst} at pc={pc}").into_bytes(),
                         );
                     }
                 }
@@ -257,7 +270,7 @@ impl BpfVerifier for StandardBpfVerifier {
             if class == opcode::ALU || class == opcode::ALU64 {
                 if regs[dst].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{dst} at pc={pc}").into_bytes()
+                        alloc::format!("use of uninitialized R{dst} at pc={pc}").into_bytes(),
                     );
                 }
                 let op_low = insn.op & 0xf0;
@@ -266,7 +279,8 @@ impl BpfVerifier for StandardBpfVerifier {
                         // MOV reg: 复制源类型
                         if regs[src].r#type == RegType::NotInit {
                             return VerifyResult::Err(
-                                alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
+                                alloc::format!("use of uninitialized R{src} at pc={pc}")
+                                    .into_bytes(),
                             );
                         }
                         regs[dst] = regs[src];
@@ -287,9 +301,8 @@ impl BpfVerifier for StandardBpfVerifier {
                 // 实际 BPF verifier 会基于 prog_type 校验 ctx 大小
                 if insn.off < -4096 || insn.off > 4096 {
                     return VerifyResult::Err(
-                        alloc::format!(
-                            "LD ctx offset out of range at pc={}: off={}", pc, insn.off
-                        ).into_bytes()
+                        alloc::format!("LD ctx offset out of range at pc={}: off={}", pc, insn.off)
+                            .into_bytes(),
                     );
                 }
                 regs[dst] = RegState::scalar();
@@ -297,7 +310,7 @@ impl BpfVerifier for StandardBpfVerifier {
             if class == opcode::LDX {
                 if regs[src].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
+                        alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes(),
                     );
                 }
                 // EBPF-4 规则 10: LDX 加载要求 src 必须是已知指针 (StackPtr 或 MapValue)
@@ -310,8 +323,11 @@ impl BpfVerifier for StandardBpfVerifier {
                         return VerifyResult::Err(
                             alloc::format!(
                                 "LDX from non-pointer register R{} at pc={}: type={:?}",
-                                src, pc, regs[src].r#type
-                            ).into_bytes()
+                                src,
+                                pc,
+                                regs[src].r#type
+                            )
+                            .into_bytes(),
                         );
                     }
                 }
@@ -322,7 +338,7 @@ impl BpfVerifier for StandardBpfVerifier {
             if class == opcode::ST || class == opcode::STX {
                 if regs[dst].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("store to uninitialized R{dst} at pc={pc}").into_bytes()
+                        alloc::format!("store to uninitialized R{dst} at pc={pc}").into_bytes(),
                     );
                 }
                 match regs[dst].r#type {
@@ -334,14 +350,16 @@ impl BpfVerifier for StandardBpfVerifier {
                         return VerifyResult::Err(
                             alloc::format!(
                                 "store to invalid pointer type {:?} at pc={}",
-                                regs[dst].r#type, pc
-                            ).into_bytes()
+                                regs[dst].r#type,
+                                pc
+                            )
+                            .into_bytes(),
                         );
                     }
                 }
                 if class == opcode::STX && regs[src].r#type == RegType::NotInit {
                     return VerifyResult::Err(
-                        alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes()
+                        alloc::format!("use of uninitialized R{src} at pc={pc}").into_bytes(),
                     );
                 }
             }
@@ -352,13 +370,14 @@ impl BpfVerifier for StandardBpfVerifier {
 }
 
 fn is_valid_helper(id: u32) -> bool {
-    matches!(id,
+    matches!(
+        id,
         helper_id::TRACE_PRINTK
-        | helper_id::KTIME_GET_NS
-        | helper_id::GET_SMP_PROCESSOR
-        | helper_id::MAP_LOOKUP_ELEM
-        | helper_id::MAP_UPDATE_ELEM
-        | helper_id::MAP_DELETE_ELEM
+            | helper_id::KTIME_GET_NS
+            | helper_id::GET_SMP_PROCESSOR
+            | helper_id::MAP_LOOKUP_ELEM
+            | helper_id::MAP_UPDATE_ELEM
+            | helper_id::MAP_DELETE_ELEM
     )
 }
 
@@ -370,12 +389,18 @@ fn is_valid_helper(id: u32) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::framework::debug::BpfProgType;
+    use crate::kernel::framework::debug::opcode;
     use alloc::vec;
     use alloc::vec::Vec;
-    use crate::kernel::framework::debug::opcode;
 
     fn make_insn(op: u8, dst: u8, src: u8, off: i16, imm: i32) -> BpfInsn {
-        BpfInsn { op, dst, src, off, imm }
+        BpfInsn {
+            op,
+            dst,
+            src,
+            off,
+            imm,
+        }
     }
 
     fn make_prog(insns: Vec<BpfInsn>) -> BpfProg {
@@ -387,18 +412,24 @@ mod tests {
     #[test]
     fn test_empty_program_rejected() {
         let prog = BpfProg::new(BpfProgType::Kprobe, vec![]);
-        assert!(matches!(STANDARD_VERIFIER.verify(&prog), VerifyResult::Err(_)));
+        assert!(matches!(
+            STANDARD_VERIFIER.verify(&prog),
+            VerifyResult::Err(_)
+        ));
     }
 
     #[test]
     fn test_program_must_end_with_exit() {
         // 最后一条不是 EXIT
         let insns = vec![
-            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 1),  // R0 = 1
-            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 2),  // R0 = 2 (无 EXIT)
+            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 1), // R0 = 1
+            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 2), // R0 = 2 (无 EXIT)
         ];
         let prog = make_prog(insns);
-        assert!(matches!(STANDARD_VERIFIER.verify(&prog), VerifyResult::Err(_)));
+        assert!(matches!(
+            STANDARD_VERIFIER.verify(&prog),
+            VerifyResult::Err(_)
+        ));
     }
 
     #[test]
@@ -428,8 +459,8 @@ mod tests {
     fn test_write_to_r10_rejected() {
         // ST [R10+0] = 1
         let insns = vec![
-            make_insn(opcode::ALU64 | opcode::MOV, 1, 0, 0, 1),  // R1 = 1
-            make_insn(opcode::STX, 10, 1, 0, 0),                  // [R10+0] = R1 (违规)
+            make_insn(opcode::ALU64 | opcode::MOV, 1, 0, 0, 1), // R1 = 1
+            make_insn(opcode::STX, 10, 1, 0, 0),                // [R10+0] = R1 (违规)
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -453,7 +484,7 @@ mod tests {
     fn test_uninit_register_use_rejected() {
         // 读未初始化的 R2
         let insns = vec![
-            make_insn(opcode::ALU64 | opcode::ADD, 0, 2, 0, 0),  // R0 = R0 + R2 (R2 未初始化)
+            make_insn(opcode::ALU64 | opcode::ADD, 0, 2, 0, 0), // R0 = R0 + R2 (R2 未初始化)
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -465,7 +496,13 @@ mod tests {
     fn test_valid_helper_call() {
         // 调用 ktime_get_ns helper, 然后 EXIT
         let insns = vec![
-            make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::KTIME_GET_NS as i32),
+            make_insn(
+                opcode::JMP | opcode::CALL,
+                0,
+                0,
+                0,
+                helper_id::KTIME_GET_NS as i32,
+            ),
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -480,9 +517,9 @@ mod tests {
         // R0 = 1; R0 += 2; R0 &= 3; R0 ^= 0xF; EXIT
         let insns = vec![
             make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 1),
-            make_insn(opcode::ALU64 | 0x04, 0, 0, 0, 2),  // ADD imm
-            make_insn(opcode::ALU64 | 0x50, 0, 0, 0, 3),  // AND imm
-            make_insn(opcode::ALU64 | 0xa0, 0, 0, 0, 0xF),  // XOR imm
+            make_insn(opcode::ALU64 | 0x04, 0, 0, 0, 2), // ADD imm
+            make_insn(opcode::ALU64 | 0x50, 0, 0, 0, 3), // AND imm
+            make_insn(opcode::ALU64 | 0xa0, 0, 0, 0, 0xF), // XOR imm
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -495,7 +532,7 @@ mod tests {
         // R1 = 0x42 (CtxPtr 状态在 verifier 中是 scalar-compatible);
         // R0 = R1; EXIT
         let insns = vec![
-            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 1),  // R0 = 1 (初始化)
+            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 1), // R0 = 1 (初始化)
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -509,7 +546,7 @@ mod tests {
         // 第 0 条: JA 0
         // 第 1 条: EXIT
         let insns = vec![
-            make_insn(opcode::JMP | opcode::JA, 0, 0, -1, 0),  // pc=0, target=0+1-1=0
+            make_insn(opcode::JMP | opcode::JA, 0, 0, -1, 0), // pc=0, target=0+1-1=0
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -536,9 +573,27 @@ mod tests {
         // 调用 get_smp_processor; EXIT
         let insns = vec![
             make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 0),
-            make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::KTIME_GET_NS as i32),
-            make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::TRACE_PRINTK as i32),
-            make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::GET_SMP_PROCESSOR as i32),
+            make_insn(
+                opcode::JMP | opcode::CALL,
+                0,
+                0,
+                0,
+                helper_id::KTIME_GET_NS as i32,
+            ),
+            make_insn(
+                opcode::JMP | opcode::CALL,
+                0,
+                0,
+                0,
+                helper_id::TRACE_PRINTK as i32,
+            ),
+            make_insn(
+                opcode::JMP | opcode::CALL,
+                0,
+                0,
+                0,
+                helper_id::GET_SMP_PROCESSOR as i32,
+            ),
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -564,7 +619,8 @@ mod tests {
             let prog = make_prog(insns);
             assert!(
                 matches!(STANDARD_VERIFIER.verify(&prog), VerifyResult::Ok),
-                "helper {} should be accepted", h
+                "helper {} should be accepted",
+                h
             );
         }
     }
@@ -610,7 +666,13 @@ mod tests {
     fn test_ebpf_3_helper_r1_initialized() {
         // R1 默认 CtxPtr 状态, CALL ktime_get_ns 应被接受
         let insns = vec![
-            make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::KTIME_GET_NS as i32),
+            make_insn(
+                opcode::JMP | opcode::CALL,
+                0,
+                0,
+                0,
+                helper_id::KTIME_GET_NS as i32,
+            ),
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -648,8 +710,8 @@ mod tests {
     fn test_ebpf_4_ldx_from_scalar_rejected() {
         // MOV R2 = 0 (scalar); LDX R0 = [R2] (从 scalar 加载 → 拒绝)
         let insns = vec![
-            make_insn(opcode::ALU64 | opcode::MOV, 2, 0, 0, 0),  // R2 = 0 (scalar)
-            make_insn(opcode::LDX, 0, 2, 0, 0),                  // R0 = [R2] (scalar → invalid)
+            make_insn(opcode::ALU64 | opcode::MOV, 2, 0, 0, 0), // R2 = 0 (scalar)
+            make_insn(opcode::LDX, 0, 2, 0, 0),                 // R0 = [R2] (scalar → invalid)
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -662,7 +724,7 @@ mod tests {
     fn test_ebpf_4_ldx_from_stack_ptr_ok() {
         // LDX R0 = [R10+0] (从栈指针加载, 合法)
         let insns = vec![
-            make_insn(opcode::LDX, 0, 10, 0, 0),  // R0 = [R10+0]
+            make_insn(opcode::LDX, 0, 10, 0, 0), // R0 = [R10+0]
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);
@@ -677,7 +739,13 @@ mod tests {
         // R1 默认 CtxPtr; 直接 CALL, 不显式初始化 R2-R5
         // 应被接受 (与 Linux 早期 verifier 一致)
         let insns = vec![
-            make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, helper_id::KTIME_GET_NS as i32),
+            make_insn(
+                opcode::JMP | opcode::CALL,
+                0,
+                0,
+                0,
+                helper_id::KTIME_GET_NS as i32,
+            ),
             make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
         ];
         let prog = make_prog(insns);

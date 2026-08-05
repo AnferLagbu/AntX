@@ -38,9 +38,9 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use alloc::vec::Vec;
-use crate::kernel::framework::sync::IrqSpinLock;
 use crate::kernel::framework::config::PAGE_SIZE;
+use crate::kernel::framework::sync::IrqSpinLock;
+use alloc::vec::Vec;
 
 // ============================================================================
 // 常量
@@ -185,7 +185,9 @@ impl CetSubsystem {
         crate::klog_ffi!(
             klog_ffi_info,
             "[CET] capabilities: shadow_stack={}, ibt={}, wrss={}",
-            caps.shadow_stack, caps.ibt, caps.wrss
+            caps.shadow_stack,
+            caps.ibt,
+            caps.wrss
         );
 
         if caps.shadow_stack {
@@ -197,7 +199,10 @@ impl CetSubsystem {
         self.initialized.store(true, Ordering::Release);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 检测 CPU CET 能力
     fn detect_capabilities(&self) -> CetCapabilities {
         let mut caps = CetCapabilities {
@@ -232,7 +237,10 @@ impl CetSubsystem {
         caps
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 启用内核态 Shadow Stack
     fn enable_kernel_shadow_stack(&self) -> bool {
         #[cfg(target_arch = "x86_64")]
@@ -263,9 +271,7 @@ impl CetSubsystem {
             let s_cet_val: u64 = 0x3; // SH_STK_EN | WR_SHSTK_EN
             // SAFETY: 写入 IA32_S_CET MSR 配置内核态 CET
             unsafe {
-                crate::kernel::framework::cpu::msr::write_msr(
-                    x86_msrs::IA32_S_CET, s_cet_val
-                );
+                crate::kernel::framework::cpu::msr::write_msr(x86_msrs::IA32_S_CET, s_cet_val);
             }
 
             crate::klog_ffi!(
@@ -288,7 +294,10 @@ impl CetSubsystem {
         }
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 为 CPU 分配内核 Shadow Stack
     pub fn alloc_kernel_shadow_stack(&self, cpu_id: u32) -> Option<u64> {
         // 分配 Shadow Stack 内存 (简化: 使用物理页)
@@ -308,9 +317,7 @@ impl CetSubsystem {
             if self.caps.lock().shadow_stack_enabled {
                 // SAFETY: 写入 IA32_PL0_SSP 设置内核态 Shadow Stack 指针
                 unsafe {
-                    crate::kernel::framework::cpu::msr::write_msr(
-                        x86_msrs::IA32_PL0_SSP, ssp
-                    );
+                    crate::kernel::framework::cpu::msr::write_msr(x86_msrs::IA32_PL0_SSP, ssp);
                 }
             }
         }
@@ -325,7 +332,11 @@ impl CetSubsystem {
         if !self.caps.lock().shadow_stack {
             return None;
         }
-        let actual_size = if size == 0 { SHADOW_STACK_DEFAULT_SIZE } else { size };
+        let actual_size = if size == 0 {
+            SHADOW_STACK_DEFAULT_SIZE
+        } else {
+            size
+        };
 
         // 分配 Shadow Stack 物理页
         let pages_needed = (actual_size + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
@@ -353,7 +364,10 @@ impl CetSubsystem {
             crate::klog_ffi!(
                 klog_ffi_info,
                 "[CET] user shadow stack created: base=0x{:x}, size={}, U_CET=0x{:x}, PL3_SSP=0x{:x}",
-                virt_addr, actual_size, u_cet_val, pl3_ssp_val
+                virt_addr,
+                actual_size,
+                u_cet_val,
+                pl3_ssp_val
             );
         }
 
@@ -369,7 +383,13 @@ impl CetSubsystem {
     /// 调用方必须确保:
     /// - CET 已初始化 (`caps.shadow_stack_enabled` = true)
     /// - ssp 指向有效的 Shadow Stack 内存
-    #[cfg_attr(target_arch = "aarch64", expect(clippy::unused_self, reason = "aarch64 CET 兼容占位函数, 不依赖 self 字段"))]
+    #[cfg_attr(
+        target_arch = "aarch64",
+        expect(
+            clippy::unused_self,
+            reason = "aarch64 CET 兼容占位函数, 不依赖 self 字段"
+        )
+    )]
     /// 配置用户态影子栈 (CET MSR).
     /// - 仅在从内核态切换到用户态前调用
     pub unsafe fn configure_user_cet_msr(&self, ssp: u64) {
@@ -389,22 +409,19 @@ impl CetSubsystem {
 
             // SAFETY: 写入 IA32_U_CET 配置用户态 CET
             unsafe {
-                crate::kernel::framework::cpu::msr::write_msr(
-                    x86_msrs::IA32_U_CET, u_cet_val
-                );
+                crate::kernel::framework::cpu::msr::write_msr(x86_msrs::IA32_U_CET, u_cet_val);
             }
 
             // SAFETY: 写入 IA32_PL3_SSP 设置用户态 Shadow Stack 指针
             unsafe {
-                crate::kernel::framework::cpu::msr::write_msr(
-                    x86_msrs::IA32_PL3_SSP, ssp
-                );
+                crate::kernel::framework::cpu::msr::write_msr(x86_msrs::IA32_PL3_SSP, ssp);
             }
 
             crate::klog_ffi!(
                 klog_ffi_info,
                 "[CET] user MSR configured: U_CET=0x{:x}, PL3_SSP=0x{:x}",
-                u_cet_val, ssp
+                u_cet_val,
+                ssp
             );
         }
     }
@@ -415,7 +432,13 @@ impl CetSubsystem {
     ///
     /// # Safety
     ///
-    #[cfg_attr(target_arch = "aarch64", expect(clippy::unused_self, reason = "aarch64 CET 兼容占位函数, 不依赖 self 字段"))]
+    #[cfg_attr(
+        target_arch = "aarch64",
+        expect(
+            clippy::unused_self,
+            reason = "aarch64 CET 兼容占位函数, 不依赖 self 字段"
+        )
+    )]
     /// 配置中断态影子栈表.
     /// 调用方必须确保:
     /// - CET 已初始化
@@ -433,7 +456,8 @@ impl CetSubsystem {
             // SAFETY: 写入 IA32_INTERRUPT_SSP_TABLE 设置中断 Shadow Stack 表
             unsafe {
                 crate::kernel::framework::cpu::msr::write_msr(
-                    x86_msrs::IA32_INTERRUPT_SSP_TABLE, table_addr
+                    x86_msrs::IA32_INTERRUPT_SSP_TABLE,
+                    table_addr,
                 );
             }
 
@@ -561,11 +585,21 @@ pub extern "C" fn sys_cet(cmd: u64, a1: u64, _a2: u64) -> i64 {
             // capabilities
             let caps = cet_subsystem().capabilities();
             let mut flags: u64 = 0;
-            if caps.shadow_stack { flags |= 1 << 0; }
-            if caps.ibt { flags |= 1 << 1; }
-            if caps.wrss { flags |= 1 << 2; }
-            if caps.shadow_stack_enabled { flags |= 1 << 3; }
-            if caps.ibt_enabled { flags |= 1 << 4; }
+            if caps.shadow_stack {
+                flags |= 1 << 0;
+            }
+            if caps.ibt {
+                flags |= 1 << 1;
+            }
+            if caps.wrss {
+                flags |= 1 << 2;
+            }
+            if caps.shadow_stack_enabled {
+                flags |= 1 << 3;
+            }
+            if caps.ibt_enabled {
+                flags |= 1 << 4;
+            }
             flags as i64
         }
         1 => {

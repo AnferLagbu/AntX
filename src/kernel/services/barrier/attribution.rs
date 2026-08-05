@@ -58,27 +58,43 @@ pub enum TcbModule {
 
 impl TcbModule {
     pub const fn from_name(name: &[u8]) -> Self {
-        if contains_substr(name, b"barrier") { Self::Barrier }
-        else if contains_substr(name, b"credo") { Self::Credo }
-        else if contains_substr(name, b"mm") || contains_substr(name, b"pmm") { Self::Memory }
-        else if contains_substr(name, b"sync") { Self::Sync }
-        else if contains_substr(name, b"idt") { Self::Idt }
-        else { Self::Other }
+        if contains_substr(name, b"barrier") {
+            Self::Barrier
+        } else if contains_substr(name, b"credo") {
+            Self::Credo
+        } else if contains_substr(name, b"mm") || contains_substr(name, b"pmm") {
+            Self::Memory
+        } else if contains_substr(name, b"sync") {
+            Self::Sync
+        } else if contains_substr(name, b"idt") {
+            Self::Idt
+        } else {
+            Self::Other
+        }
     }
 }
 
 const fn contains_substr(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() { return true; }
-    if haystack.len() < needle.len() { return false; }
+    if needle.is_empty() {
+        return true;
+    }
+    if haystack.len() < needle.len() {
+        return false;
+    }
     let mut i = 0;
     while i + needle.len() <= haystack.len() {
         let mut j = 0;
         let mut match_ = true;
         while j < needle.len() {
-            if haystack[i + j] != needle[j] { match_ = false; break; }
+            if haystack[i + j] != needle[j] {
+                match_ = false;
+                break;
+            }
             j += 1;
         }
-        if match_ { return true; }
+        if match_ {
+            return true;
+        }
         i += 1;
     }
     false
@@ -100,19 +116,55 @@ impl AddrRange {
 
 /// 服务域地址范围
 pub const SERVICE_RANGES: &[AddrRange] = &[
-    AddrRange { start: 0xFFFF_FFFF_0000_0000, end: 0xFFFF_FFFF_1000_0000, name: b"services::credo" },
-    AddrRange { start: 0xFFFF_FFFF_1000_0000, end: 0xFFFF_FFFF_2000_0000, name: b"services::fs" },
-    AddrRange { start: 0xFFFF_FFFF_2000_0000, end: 0xFFFF_FFFF_3000_0000, name: b"services::net" },
-    AddrRange { start: 0xFFFF_FFFF_3000_0000, end: 0xFFFF_FFFF_4000_0000, name: b"services::proc" },
+    AddrRange {
+        start: 0xFFFF_FFFF_0000_0000,
+        end: 0xFFFF_FFFF_1000_0000,
+        name: b"services::credo",
+    },
+    AddrRange {
+        start: 0xFFFF_FFFF_1000_0000,
+        end: 0xFFFF_FFFF_2000_0000,
+        name: b"services::fs",
+    },
+    AddrRange {
+        start: 0xFFFF_FFFF_2000_0000,
+        end: 0xFFFF_FFFF_3000_0000,
+        name: b"services::net",
+    },
+    AddrRange {
+        start: 0xFFFF_FFFF_3000_0000,
+        end: 0xFFFF_FFFF_4000_0000,
+        name: b"services::proc",
+    },
 ];
 
 /// TCB 模块地址范围
 pub const TCB_RANGES: &[AddrRange] = &[
-    AddrRange { start: 0xFFFF_FFFF_8000_0000, end: 0xFFFF_FFFF_8001_0000, name: b"framework::barrier" },
-    AddrRange { start: 0xFFFF_FFFF_8001_0000, end: 0xFFFF_FFFF_8002_0000, name: b"framework::credo" },
-    AddrRange { start: 0xFFFF_FFFF_8002_0000, end: 0xFFFF_FFFF_8003_0000, name: b"framework::mm" },
-    AddrRange { start: 0xFFFF_FFFF_8003_0000, end: 0xFFFF_FFFF_8004_0000, name: b"framework::sync" },
-    AddrRange { start: 0xFFFF_FFFF_8004_0000, end: 0xFFFF_FFFF_8005_0000, name: b"framework::idt" },
+    AddrRange {
+        start: 0xFFFF_FFFF_8000_0000,
+        end: 0xFFFF_FFFF_8001_0000,
+        name: b"framework::barrier",
+    },
+    AddrRange {
+        start: 0xFFFF_FFFF_8001_0000,
+        end: 0xFFFF_FFFF_8002_0000,
+        name: b"framework::credo",
+    },
+    AddrRange {
+        start: 0xFFFF_FFFF_8002_0000,
+        end: 0xFFFF_FFFF_8003_0000,
+        name: b"framework::mm",
+    },
+    AddrRange {
+        start: 0xFFFF_FFFF_8003_0000,
+        end: 0xFFFF_FFFF_8004_0000,
+        name: b"framework::sync",
+    },
+    AddrRange {
+        start: 0xFFFF_FFFF_8004_0000,
+        end: 0xFFFF_FFFF_8005_0000,
+        name: b"framework::idt",
+    },
 ];
 
 /// 故障归属器
@@ -133,7 +185,10 @@ impl FaultAttributor {
             if r.contains(panic_rip) {
                 // 用地址哈希作为 domain_id (实际实现应由 framework 提供映射)
                 let domain_id = (panic_rip >> 12) & 0xFFFF;
-                return FaultAttribution::Service { domain_id, recoverable: true };
+                return FaultAttribution::Service {
+                    domain_id,
+                    recoverable: true,
+                };
             }
         }
         FaultAttribution::Unknown
@@ -148,7 +203,10 @@ impl FaultAttributor {
         for r in TCB_RANGES {
             if r.contains(callee_panic_rip) {
                 let module = TcbModule::from_name(r.name);
-                return FaultAttribution::CrossLayer { caller: caller_id, callee: module };
+                return FaultAttribution::CrossLayer {
+                    caller: caller_id,
+                    callee: module,
+                };
             }
         }
         Self::attribute(callee_panic_rip)
@@ -183,7 +241,8 @@ impl DomainFailureRecord {
     pub fn record_failure(&self, current_tick: u64) -> u32 {
         self.total_failures.fetch_add(1, Ordering::AcqRel);
         self.consecutive_failures.fetch_add(1, Ordering::AcqRel);
-        self.last_failure_tick.store(current_tick, Ordering::Release);
+        self.last_failure_tick
+            .store(current_tick, Ordering::Release);
         let n = self.consecutive_failures.load(Ordering::Acquire);
         // tier 0 → 1: 3 次连续失败
         // tier 1 → 2: 5 次连续失败
@@ -206,7 +265,10 @@ impl DomainFailureRecord {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 能力降级策略
 ///
 /// tier 1: 撤销可写能力 (WRITE/SEND/CREATE)
@@ -241,7 +303,11 @@ impl<'a> CrossLayerHandler<'a> {
         records: &'a mut [DomainFailureRecord; MAX_SERVICE_DOMAINS],
         current_tick: u64,
     ) -> Self {
-        Self { matrix, records, current_tick }
+        Self {
+            matrix,
+            records,
+            current_tick,
+        }
     }
 
     /// 处理故障: 降级 + 审计
@@ -275,14 +341,25 @@ mod tests {
     fn attribute_tcb() {
         // 0xFFFF_FFFF_8000_5000 落在 framework::barrier
         let attr = FaultAttributor::attribute(0xFFFF_FFFF_8000_5000);
-        assert_eq!(attr, FaultAttribution::Tcb { module: TcbModule::Barrier });
+        assert_eq!(
+            attr,
+            FaultAttribution::Tcb {
+                module: TcbModule::Barrier
+            }
+        );
     }
 
     #[test]
     fn attribute_service() {
         // 0xFFFF_FFFF_0500_0000 落在 services::credo
         let attr = FaultAttributor::attribute(0xFFFF_FFFF_0500_0000);
-        assert!(matches!(attr, FaultAttribution::Service { recoverable: true, .. }));
+        assert!(matches!(
+            attr,
+            FaultAttribution::Service {
+                recoverable: true,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -294,15 +371,24 @@ mod tests {
     #[test]
     fn attribute_cross_layer() {
         let attr = FaultAttributor::attribute_cross(
-            42, // caller_id
+            42,                    // caller_id
             0xFFFF_FFFF_8001_8000, // framework::credo 地址
         );
-        assert!(matches!(attr, FaultAttribution::CrossLayer { caller: 42, callee: TcbModule::Credo }));
+        assert!(matches!(
+            attr,
+            FaultAttribution::CrossLayer {
+                caller: 42,
+                callee: TcbModule::Credo
+            }
+        ));
     }
 
     #[test]
     fn tcb_module_from_name() {
-        assert_eq!(TcbModule::from_name(b"framework::barrier"), TcbModule::Barrier);
+        assert_eq!(
+            TcbModule::from_name(b"framework::barrier"),
+            TcbModule::Barrier
+        );
         assert_eq!(TcbModule::from_name(b"framework::credo"), TcbModule::Credo);
         assert_eq!(TcbModule::from_name(b"framework::pmm"), TcbModule::Memory);
         assert_eq!(TcbModule::from_name(b"unknown"), TcbModule::Other);

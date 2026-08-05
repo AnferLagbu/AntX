@@ -176,7 +176,10 @@ impl FtraceState {
 /// 全局 ftrace 状态实例
 pub static FTRACE: FtraceState = FtraceState::new();
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 计算 FNV-1a 32-bit
 pub const fn fnv1a_32(s: &[u8]) -> u32 {
     let mut h: u32 = 0x811c9dc5;
@@ -214,31 +217,46 @@ macro_rules! trace_event {
     ($name:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
-            0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
         );
     }};
     ($name:expr_2021, $a0:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
-            $a0 as u64, 0, 0, 0,
+            $a0 as u64,
+            0,
+            0,
+            0,
         );
     }};
     ($name:expr_2021, $a0:expr_2021, $a1:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
-            $a0 as u64, $a1 as u64, 0, 0,
+            $a0 as u64,
+            $a1 as u64,
+            0,
+            0,
         );
     }};
     ($name:expr_2021, $a0:expr_2021, $a1:expr_2021, $a2:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
-            $a0 as u64, $a1 as u64, $a2 as u64, 0,
+            $a0 as u64,
+            $a1 as u64,
+            $a2 as u64,
+            0,
         );
     }};
     ($name:expr_2021, $a0:expr_2021, $a1:expr_2021, $a2:expr_2021, $a3:expr_2021) => {{
         $crate::kernel::framework::debug::ftrace::record_named(
             $crate::kernel::framework::debug::ftrace::fnv1a_32($name.as_bytes()),
-            $a0 as u64, $a1 as u64, $a2 as u64, $a3 as u64,
+            $a0 as u64,
+            $a1 as u64,
+            $a2 as u64,
+            $a3 as u64,
         );
     }};
 }

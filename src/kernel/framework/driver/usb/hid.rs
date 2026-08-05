@@ -19,8 +19,8 @@
 //! - `usb/enumerate.rs` USB-1.6 设备枚举 (找到 HID Interface 后调用本驱动初始化)
 //! - `xhci.rs` USB-1.3 URB 提交 (本驱动使用 `submit_urb` 发送中断 IN 报告)
 
-use super::usb_core::{DeviceClass, UsbDevice, UsbSetupPacket};
 use super::framework::{DriverError, Result};
+use super::usb_core::{DeviceClass, UsbDevice, UsbSetupPacket};
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -107,7 +107,7 @@ fn make_set_protocol_request(protocol: HidProtocol) -> UsbSetupPacket {
         request_type: 0x21, // Host-to-Device, Class, Interface
         request: 0x0B,      // SET_PROTOCOL
         value: protocol as u16,
-        index: 0,           // 由调用方填入 Interface number
+        index: 0, // 由调用方填入 Interface number
         length: 0,
     }
 }
@@ -148,25 +148,37 @@ impl BootKeyboardReport {
         })
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 检查 Ctrl 是否按下.
     pub fn ctrl_pressed(&self) -> bool {
         self.modifier & 0x01 != 0 || self.modifier & 0x10 != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 检查 Shift 是否按下.
     pub fn shift_pressed(&self) -> bool {
         self.modifier & 0x02 != 0 || self.modifier & 0x20 != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 检查 Alt 是否按下.
     pub fn alt_pressed(&self) -> bool {
         self.modifier & 0x04 != 0 || self.modifier & 0x40 != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 返回当前按下的所有 keycode 列表 (去重).
     pub fn pressed_keys(&self) -> Vec<u8> {
         let mut keys = Vec::new();
@@ -222,19 +234,28 @@ impl BootMouseReport {
         })
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// Left button 是否按下.
     pub fn left_pressed(&self) -> bool {
         self.buttons & 0x01 != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// Right button 是否按下.
     pub fn right_pressed(&self) -> bool {
         self.buttons & 0x02 != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// Middle button 是否按下.
     pub fn middle_pressed(&self) -> bool {
         self.buttons & 0x04 != 0
@@ -421,22 +442,22 @@ impl HidDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
     use crate::kernel::framework::driver::usb::usb_core::EndpointDescriptor;
     use crate::kernel::framework::driver::usb::usb_core::InterfaceDescriptor;
     use crate::kernel::framework::driver::usb::usb_core::UsbSpeed;
+    use alloc::vec;
 
     // ----------------- HID 描述符解析器测试 -----------------
 
     #[test]
     fn test_parse_hid_descriptor_valid() {
         let data = [
-            6,         // bLength
-            0x21,      // bDescriptorType = HID
+            6,    // bLength
+            0x21, // bDescriptorType = HID
             0x10, 0x01, // bcdHID = 0x0110 (HID 1.1)
-            0x21,      // bCountryCode = US
-            1,         // bNumDescriptors = 1
-            0x22,      // bDescriptorType = Report
+            0x21, // bCountryCode = US
+            1,    // bNumDescriptors = 1
+            0x22, // bDescriptorType = Report
             0x3F, 0x00, // wDescriptorLength = 63
         ];
         let desc = parse_hid_descriptor(&data).unwrap();
@@ -491,8 +512,16 @@ mod tests {
 
     #[test]
     fn test_boot_keyboard_modifier_helpers() {
-        let lshift = BootKeyboardReport { modifier: modifier::LSHIFT, reserved: 0, keycodes: [0; 6] };
-        let rctrl = BootKeyboardReport { modifier: modifier::RCTRL, reserved: 0, keycodes: [0; 6] };
+        let lshift = BootKeyboardReport {
+            modifier: modifier::LSHIFT,
+            reserved: 0,
+            keycodes: [0; 6],
+        };
+        let rctrl = BootKeyboardReport {
+            modifier: modifier::RCTRL,
+            reserved: 0,
+            keycodes: [0; 6],
+        };
         assert!(lshift.shift_pressed());
         assert!(rctrl.ctrl_pressed());
         assert!(!lshift.alt_pressed());
@@ -559,8 +588,8 @@ mod tests {
         use crate::kernel::framework::driver::usb::enumerate::parse_device_descriptor;
 
         let device_data = [
-            18, 1, 0x10, 0x01, 0x00, 0x00, 0x00, 0x40, 0xAB, 0x12, 0xCD, 0x34, 0x00, 0x01,
-            1, 2, 0, 1,
+            18, 1, 0x10, 0x01, 0x00, 0x00, 0x00, 0x40, 0xAB, 0x12, 0xCD, 0x34, 0x00, 0x01, 1, 2, 0,
+            1,
         ];
         let descriptor = parse_device_descriptor(&device_data).unwrap();
 
@@ -586,7 +615,7 @@ mod tests {
                 length: 7,
                 descriptor_type: 5,
                 endpoint_address: 0x81, // IN, EP1
-                attributes: 0x03,        // Interrupt
+                attributes: 0x03,       // Interrupt
                 max_packet_size: 8,
                 interval: 10,
             }],

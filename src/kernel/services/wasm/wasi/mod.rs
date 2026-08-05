@@ -25,23 +25,22 @@ pub mod fd_table;
 // WASI 函数模块
 mod clock_random;
 mod env_args;
-mod process;
 pub mod fd_ops;
 pub mod path_ops;
+mod process;
 pub mod sock;
 
-pub use errno::{WasiErrno, wasi_success, wasi_errno};
+pub use errno::{WasiErrno, wasi_errno, wasi_success};
 pub use fd_table::{
-    WasiFdTable, WasiFdEntry, WasiRights, WasiFileType,
-    WASI_STDIN, WASI_STDOUT, WASI_STDERR,
-    WasiIoVec, read_iovec_from_memory,
-    write_u32_to_memory, write_i64_to_memory, write_i32_to_memory,
+    WASI_STDERR, WASI_STDIN, WASI_STDOUT, WasiFdEntry, WasiFdTable, WasiFileType, WasiIoVec,
+    WasiRights, read_iovec_from_memory, write_i32_to_memory, write_i64_to_memory,
+    write_u32_to_memory,
 };
 
+use crate::kernel::services::wasm::interpreter::Interpreter;
+use crate::kernel::services::wasm::types::WasmError;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::kernel::services::wasm::types::WasmError;
-use crate::kernel::services::wasm::interpreter::Interpreter;
 
 /// WASI 运行时上下文 (每个 WASM 实例一个)
 pub struct WasiContext {
@@ -73,10 +72,16 @@ pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
         ("proc_exit", process::wasi_proc_exit as WasiFunc),
         ("sched_yield", process::wasi_sched_yield as WasiFunc),
         // G2: 时钟/随机
-        ("clock_time_get", clock_random::wasi_clock_time_get as WasiFunc),
+        (
+            "clock_time_get",
+            clock_random::wasi_clock_time_get as WasiFunc,
+        ),
         ("random_get", clock_random::wasi_random_get as WasiFunc),
         // G3: 环境/参数
-        ("environ_sizes_get", env_args::wasi_environ_sizes_get as WasiFunc),
+        (
+            "environ_sizes_get",
+            env_args::wasi_environ_sizes_get as WasiFunc,
+        ),
         ("environ_get", env_args::wasi_environ_get as WasiFunc),
         ("args_sizes_get", env_args::wasi_args_sizes_get as WasiFunc),
         ("args_get", env_args::wasi_args_get as WasiFunc),
@@ -86,7 +91,10 @@ pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
         ("fd_tell", fd_ops::wasi_fd_tell as WasiFunc),
         ("fd_sync", fd_ops::wasi_fd_sync as WasiFunc),
         ("fd_prestat_get", fd_ops::wasi_fd_prestat_get as WasiFunc),
-        ("fd_prestat_dir_name", fd_ops::wasi_fd_prestat_dir_name as WasiFunc),
+        (
+            "fd_prestat_dir_name",
+            fd_ops::wasi_fd_prestat_dir_name as WasiFunc,
+        ),
         ("fd_stat_get", fd_ops::wasi_fd_stat_get as WasiFunc),
         // G5: FD I/O
         ("fd_read", fd_ops::wasi_fd_read as WasiFunc),
@@ -101,14 +109,29 @@ pub fn wasi_function_table() -> &'static [(&'static str, WasiFunc)] {
         ("fd_readdir", fd_ops::wasi_fd_readdir as WasiFunc),
         // G6: 路径操作
         ("path_open", path_ops::wasi_path_open as WasiFunc),
-        ("path_create_directory", path_ops::wasi_path_create_directory as WasiFunc),
-        ("path_remove_directory", path_ops::wasi_path_remove_directory as WasiFunc),
-        ("path_unlink_file", path_ops::wasi_path_unlink_file as WasiFunc),
+        (
+            "path_create_directory",
+            path_ops::wasi_path_create_directory as WasiFunc,
+        ),
+        (
+            "path_remove_directory",
+            path_ops::wasi_path_remove_directory as WasiFunc,
+        ),
+        (
+            "path_unlink_file",
+            path_ops::wasi_path_unlink_file as WasiFunc,
+        ),
         ("path_symlink", path_ops::wasi_path_symlink as WasiFunc),
         ("path_readlink", path_ops::wasi_path_readlink as WasiFunc),
         ("path_rename", path_ops::wasi_path_rename as WasiFunc),
-        ("path_filestat_get", path_ops::wasi_path_filestat_get as WasiFunc),
-        ("path_filestat_set_times", path_ops::wasi_path_filestat_set_times as WasiFunc),
+        (
+            "path_filestat_get",
+            path_ops::wasi_path_filestat_get as WasiFunc,
+        ),
+        (
+            "path_filestat_set_times",
+            path_ops::wasi_path_filestat_set_times as WasiFunc,
+        ),
         ("path_link", path_ops::wasi_path_link as WasiFunc),
         // G8: Socket
         ("sock_accept", sock::wasi_sock_accept as WasiFunc),

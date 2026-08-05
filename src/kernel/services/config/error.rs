@@ -46,7 +46,9 @@ impl fmt::Display for ConfigError {
                 write!(f, "CPU count {actual} exceeds MAX_CPUS {max}")
             }
             ConfigError::MemoryLayoutInvalid => write!(f, "memory layout invalid"),
-            ConfigError::IrqControllerUnavailable => write!(f, "no interrupt controller initialized"),
+            ConfigError::IrqControllerUnavailable => {
+                write!(f, "no interrupt controller initialized")
+            }
             ConfigError::InconsistentConstant { name, lhs, rhs } => {
                 write!(
                     f,

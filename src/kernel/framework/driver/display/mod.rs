@@ -19,7 +19,7 @@ pub mod framebuffer;
 pub mod self_test;
 
 // 导出Framebuffer类型
-pub use framebuffer::{colors, Color, Framebuffer, PixelFormat, Point, Rect};
+pub use framebuffer::{Color, Framebuffer, PixelFormat, Point, Rect, colors};
 
 // 导出控制器类型
 pub use controller::{DisplayController, DisplayManager, DisplayMode, DisplayOutput, MonitorInfo};
@@ -67,7 +67,8 @@ pub static FB_PHYS_SIZE: core::sync::atomic::AtomicU64 = core::sync::atomic::Ato
 ///
 /// 返回 `IrqSpinLockGuard` 持有锁期间访问帧缓冲。
 /// 调用方通过 `.as_ref()` 获取 `Option<&Framebuffer>`。
-pub fn get_framebuffer() -> Option<crate::kernel::framework::sync::IrqSpinLockGuard<'static, Option<Framebuffer>>> {
+pub fn get_framebuffer()
+-> Option<crate::kernel::framework::sync::IrqSpinLockGuard<'static, Option<Framebuffer>>> {
     let guard = GLOBAL_FRAMEBUFFER.lock();
     if guard.is_some() { Some(guard) } else { None }
 }
@@ -207,7 +208,8 @@ unsafe fn read_bochs_disp_mode_mmio(mmio_base: u64) -> Option<(u32, u32, u8)> {
 /// 通过 PCI 探测 VGA 设备 BAR0 获取帧缓冲信息
 #[cfg(target_arch = "x86_64")]
 fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
-    let devices = crate::kernel::framework::pci::find_by_class(crate::kernel::framework::pci::CLASS_DISPLAY);
+    let devices =
+        crate::kernel::framework::pci::find_by_class(crate::kernel::framework::pci::CLASS_DISPLAY);
     for dev in &devices {
         if dev.subclass_code != 0x00 {
             crate::klog_info!(
@@ -284,8 +286,17 @@ fn probe_vga_fb_via_pci() -> Option<VgaFbInfo> {
 /// 未找到可用帧缓冲或创建 Framebuffer 失败时返回 Err。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[cfg_attr(target_arch = "aarch64", expect(clippy::manual_let_else, reason = "aarch64 display_init 是占位; x86_64 走 multiboot2 + pci 两条路径"))]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[cfg_attr(
+    target_arch = "aarch64",
+    expect(
+        clippy::manual_let_else,
+        reason = "aarch64 display_init 是占位; x86_64 走 multiboot2 + pci 两条路径"
+    )
+)]
 pub fn display_init() -> framework::Result<()> {
     crate::klog_boot_info!("[DISPLAY] display_init: probing framebuffer");
 
@@ -315,7 +326,9 @@ pub fn display_init() -> framework::Result<()> {
         None => {
             #[cfg(target_arch = "x86_64")]
             {
-                if let Some(info) = probe_vga_fb_via_pci() { (info.addr, info.width, info.height, info.bpp, info.pitch) } else {
+                if let Some(info) = probe_vga_fb_via_pci() {
+                    (info.addr, info.width, info.height, info.bpp, info.pitch)
+                } else {
                     crate::klog_drv_warn!("[DISPLAY] no VGA device found via PCI");
                     return Ok(());
                 }
@@ -394,16 +407,23 @@ pub fn display_init() -> framework::Result<()> {
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-unsafe fn port_outw(port: u16, val: u16) { unsafe {
-    core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
-}}
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
+unsafe fn port_outw(port: u16, val: u16) {
+    unsafe {
+        core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack));
+    }
+}
 
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn port_inw(port: u16) -> u16 { unsafe {
-    let ret: u16;
-    core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
-    ret
-}}
+unsafe fn port_inw(port: u16) -> u16 {
+    unsafe {
+        let ret: u16;
+        core::arch::asm!("in ax, dx", out("ax") ret, in("dx") port, options(nomem, nostack));
+        ret
+    }
+}

@@ -462,7 +462,9 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
     // 当信号投递实现后, 从用户栈读取 Aarch64SignalFrame 并恢复 x0-x30/elr/spsr/sp.
     if syscall_num == 139 {
         // 清除 SS_ONSTACK 标记
-        if let Some(pid) = Some(crate::kernel::framework::proc::process_get_current_pid()).filter(|&p| p != 0) {
+        if let Some(pid) =
+            Some(crate::kernel::framework::proc::process_get_current_pid()).filter(|&p| p != 0)
+        {
             crate::kernel::framework::proc::process_with_mut(pid, |proc| {
                 use core::sync::atomic::Ordering;
                 let flags = proc.sigaltstack_flags.load(Ordering::Acquire);
@@ -494,7 +496,10 @@ pub extern "C" fn svc_handler(frame: &mut ExceptionFrame) -> u64 {
 
 /// EL0 IRQ 处理器
 #[unsafe(no_mangle)]
-#[expect(clippy::items_after_statements, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::items_after_statements,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
     // GIC ACK + handle + EOI
     let intid = super::gic::acknowledge();
@@ -515,7 +520,8 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
                 Boot,
                 "TIMER IRQ (EL0) count={} ready={}",
                 el0count,
-                crate::kernel::framework::net::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+                crate::kernel::framework::net::NET_READY
+                    .load(core::sync::atomic::Ordering::Acquire)
             );
         }
 
@@ -550,7 +556,10 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 /// 默认同步异常处理 (EL1h)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::no_effect_underscore_binding, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::no_effect_underscore_binding,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
     let esr: u64;
     let far: u64;
@@ -603,22 +612,27 @@ pub extern "C" fn sync_exception_handler(_frame: &ExceptionFrame) {
 
 /// 辅助函数: 通过 UART 以十六进制输出 u64
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn exc_puthex(val: u64) { unsafe {
-    for shift in (0..16).rev() {
-        let nibble = ((val >> (shift * 4)) & 0xF) as u8;
-        let c = if nibble < 10 {
-            b'0' + nibble
-        } else {
-            b'A' + nibble - 10
-        };
-        super::uart::putc(c);
+unsafe fn exc_puthex(val: u64) {
+    unsafe {
+        for shift in (0..16).rev() {
+            let nibble = ((val >> (shift * 4)) & 0xF) as u8;
+            let c = if nibble < 10 {
+                b'0' + nibble
+            } else {
+                b'A' + nibble - 10
+            };
+            super::uart::putc(c);
+        }
     }
-}}
+}
 
 /// 默认 IRQ 处理 (EL1h)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::items_after_statements, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::items_after_statements,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
     // GIC ACK
     let intid = super::gic::acknowledge();
@@ -658,7 +672,8 @@ pub extern "C" fn irq_handler(_frame: &ExceptionFrame) {
                 Boot,
                 "TIMER IRQ count={} ready={}",
                 tcount,
-                crate::kernel::framework::net::NET_READY.load(core::sync::atomic::Ordering::Acquire)
+                crate::kernel::framework::net::NET_READY
+                    .load(core::sync::atomic::Ordering::Acquire)
             );
         }
 
@@ -706,7 +721,10 @@ pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
     }
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 初始化异常: 设置 VBAR_EL1 指向向量表, 清除 DAIF
 ///
 /// # Safety
@@ -716,15 +734,17 @@ pub extern "C" fn serror_handler(_frame: &ExceptionFrame) {
 /// VBAR_EL1 必须使用 TTBR1 高地址 (0xFFFF_0000_...), 因为进入 EL0 后
 /// TTBR0_EL1 指向用户页表, 低地址无法通过 TTBR0 访问。TTBR1_EL1 映射:
 /// VA = PA + 0xFFFF_0000_0000_0000, 所有相对跳转 (b/bl/adrp) 自动适配。
-pub unsafe fn init() { unsafe {
-    let vbar_low = &exception_vector_table as *const u8 as u64;
-    // 转换为 TTBR1 高地址: VA = PA + 0xFFFF_0000_0000_0000
-    let vbar = 0xFFFF_0000_0000_0000u64 + vbar_low;
-    core::arch::asm!("msr vbar_el1, {}", in(reg) vbar);
+pub unsafe fn init() {
+    unsafe {
+        let vbar_low = &exception_vector_table as *const u8 as u64;
+        // 转换为 TTBR1 高地址: VA = PA + 0xFFFF_0000_0000_0000
+        let vbar = 0xFFFF_0000_0000_0000u64 + vbar_low;
+        core::arch::asm!("msr vbar_el1, {}", in(reg) vbar);
 
-    // 清除 DAIF (Debug/SError/IRQ/FIQ 掩码), 使能中断
-    core::arch::asm!("msr daifclr, #0xF");
+        // 清除 DAIF (Debug/SError/IRQ/FIQ 掩码), 使能中断
+        core::arch::asm!("msr daifclr, #0xF");
 
-    // ISB 确保写 VBAR 在取指前完成
-    core::arch::asm!("isb");
-}}
+        // ISB 确保写 VBAR 在取指前完成
+        core::arch::asm!("isb");
+    }
+}

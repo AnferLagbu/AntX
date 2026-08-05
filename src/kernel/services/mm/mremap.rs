@@ -41,18 +41,29 @@ pub fn mremap_syscall(
         return Err(Errno::EINVAL);
     }
     // 限制最大搬迁大小: 1 GiB 防止恶意/错误请求耗尽地址空间
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const MAX_REMAP: u64 = 1 << 30;
     if old_size > MAX_REMAP || new_size > MAX_REMAP {
         return Err(Errno::ENOMEM);
     }
     // flags 仅允许 MAYMOVE=1
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const MREMAP_MAYMOVE: i32 = 1;
     if flags & !MREMAP_MAYMOVE != 0 {
         return Err(Errno::EINVAL);
     }
 
     // 2. 委托 framework 层执行搬迁
-    mm.mremap(old_addr as usize, old_size as usize, new_size as usize, flags)
+    mm.mremap(
+        old_addr as usize,
+        old_size as usize,
+        new_size as usize,
+        flags,
+    )
 }

@@ -12,9 +12,7 @@
 //! 本文件不含 `unsafe`. 通过 `framework::barrier::types` 的 `RollbackEvent`
 //! 与 TCB 交互.
 
-use crate::kernel::framework::barrier::{
-    recovery_rollback_log_count, ROLLBACK_LOG,
-};
+use crate::kernel::framework::barrier::{ROLLBACK_LOG, recovery_rollback_log_count};
 
 /// 审计摘要 (压缩视图, 适合 dmesg 导出)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +59,9 @@ impl RollbackSummary {
 /// 整数写入辅助 (无 alloc)
 fn write_u64(buf: &mut [u8], mut v: u64) -> usize {
     if v == 0 {
-        if !buf.is_empty() { buf[0] = b'0'; }
+        if !buf.is_empty() {
+            buf[0] = b'0';
+        }
         return 1;
     }
     let mut tmp = [0u8; 20];
@@ -82,7 +82,9 @@ fn write_u64(buf: &mut [u8], mut v: u64) -> usize {
 
 fn write_i32(buf: &mut [u8], mut v: i32) -> usize {
     if v == 0 {
-        if !buf.is_empty() { buf[0] = b'0'; }
+        if !buf.is_empty() {
+            buf[0] = b'0';
+        }
         return 1;
     }
     let negative = v < 0;
@@ -118,7 +120,10 @@ pub struct AuditExporter {
 
 impl AuditExporter {
     pub const fn new() -> Self {
-        Self { output_buf: [0u8; 4096], output_count: 0 }
+        Self {
+            output_buf: [0u8; 4096],
+            output_count: 0,
+        }
     }
 
     /// 收集 `ROLLBACK_LOG` → `output_buf`
@@ -160,18 +165,28 @@ impl AuditExporter {
         self.output_count
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 统计: 成功回滚次数
     pub fn count_success(&self) -> usize {
         let log = ROLLBACK_LOG.lock();
-        log.iter().filter(|e| e.is_some_and(|x| x.result == 0)).count()
+        log.iter()
+            .filter(|e| e.is_some_and(|x| x.result == 0))
+            .count()
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 统计: 失败回滚次数
     pub fn count_failure(&self) -> usize {
         let log = ROLLBACK_LOG.lock();
-        log.iter().filter(|e| e.is_some_and(|x| x.result != 0)).count()
+        log.iter()
+            .filter(|e| e.is_some_and(|x| x.result != 0))
+            .count()
     }
 }
 

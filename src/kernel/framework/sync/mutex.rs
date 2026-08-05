@@ -28,9 +28,9 @@
 
 use core::sync::atomic::Ordering;
 
-use super::types::{MutexInner, MutexGuard};
 #[cfg(debug_assertions)]
-use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
+use super::lockdep::{self, LockClassDesc, LockClassId, LockKind};
+use super::types::{MutexGuard, MutexInner};
 
 /// 睡眠锁 (Mutex)
 ///
@@ -201,7 +201,10 @@ impl<T> Mutex<T> {
 
         // 设置持有者 PID (从 C 函数获取)
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         unsafe extern "C" {
             fn process_get_current_pid() -> u32;
         }
@@ -294,7 +297,10 @@ impl CondVar {
         mutex.raw_unlock();
 
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         unsafe extern "C" {
             fn timer_sleep_busy(ms: u64);
         }

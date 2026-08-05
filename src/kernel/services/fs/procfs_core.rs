@@ -6,10 +6,10 @@
 //! 从 framework/fs/procfs/procfs.rs 迁移而来, 0 unsafe, 纯策略.
 //! framework 层转为 re-export 层.
 
-use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::mm::api as pmm_api;
-use crate::kernel::framework::mm::api::{slab_get_cache_infos, slab_get_stats, SlabCacheInfo};
+use crate::kernel::framework::mm::api::{SlabCacheInfo, slab_get_cache_infos, slab_get_stats};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 pub const PROCFS_MAX_ENTRIES: usize = 32;
 pub const PROCFS_MAX_NAME: usize = 32;
@@ -146,7 +146,10 @@ impl ProcfsData {
         -1
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
     pub fn read(&self, name: &str, buf: &mut [u8]) -> i32 {
         // /proc/cpuinfo
         if name == "cpuinfo" {
@@ -165,7 +168,11 @@ impl ProcfsData {
                     write_str(buf, &mut pos, "processor\t: 0\n");
                     write_str(buf, &mut pos, "vendor_id\t: ");
                     write_str(buf, &mut pos, info.vendor.name());
-                    write_str(buf, &mut pos, "\ncpu family\t: 6\nmodel\t\t: 142\nmodel name\t: ");
+                    write_str(
+                        buf,
+                        &mut pos,
+                        "\ncpu family\t: 6\nmodel\t\t: 142\nmodel name\t: ",
+                    );
                     write_str(buf, &mut pos, info.brand_name());
                     write_str(buf, &mut pos, "\nstepping\t: 10\nmicrocode\t: 0xf0\n");
                     write_str(buf, &mut pos, "cpu MHz\t\t: ");
@@ -177,21 +184,45 @@ impl ProcfsData {
                     let cache_kb = info.cache.l1d_size / 1024;
                     write_str(buf, &mut pos, &alloc::format!("{cache_kb} KB"));
                     write_str(buf, &mut pos, "\nphysical id\t: 0\nsiblings\t: ");
-                    write_str(buf, &mut pos, &alloc::format!("{}", info.topology.logical_threads));
+                    write_str(
+                        buf,
+                        &mut pos,
+                        &alloc::format!("{}", info.topology.logical_threads),
+                    );
                     write_str(buf, &mut pos, "\ncore id\t\t: 0\ncpu cores\t: ");
-                    write_str(buf, &mut pos, &alloc::format!("{}", info.topology.physical_cores));
+                    write_str(
+                        buf,
+                        &mut pos,
+                        &alloc::format!("{}", info.topology.physical_cores),
+                    );
                     write_str(buf, &mut pos, "\napicid\t\t: 0\napicilid\t: 0\n");
-                    write_str(buf, &mut pos, "flags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm invpcid_single\n");
+                    write_str(
+                        buf,
+                        &mut pos,
+                        "flags\t\t: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology cpuid pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm invpcid_single\n",
+                    );
                     write_str(buf, &mut pos, "bogomips\t: ");
                     let bogo = mhz * 2.0;
                     let bogo_int = bogo as u64;
                     let bogo_frac = ((bogo - bogo_int as f64) * 100.0) as u64;
                     write_str(buf, &mut pos, &alloc::format!("{bogo_int}.{bogo_frac:02}"));
-                    write_str(buf, &mut pos, "\nclflush size\t: 64\ncache_alignment\t: 64\n");
-                    write_str(buf, &mut pos, "address sizes\t: 46 bits physical, 48 bits virtual\npower management:\n\n");
+                    write_str(
+                        buf,
+                        &mut pos,
+                        "\nclflush size\t: 64\ncache_alignment\t: 64\n",
+                    );
+                    write_str(
+                        buf,
+                        &mut pos,
+                        "address sizes\t: 46 bits physical, 48 bits virtual\npower management:\n\n",
+                    );
                 }
                 None => {
-                    write_str(buf, &mut pos, "processor\t: 0\nvendor_id\t: Unknown\ncpu family\t: 0\nmodel\t\t: 0\nmodel name\t: Unknown CPU\n");
+                    write_str(
+                        buf,
+                        &mut pos,
+                        "processor\t: 0\nvendor_id\t: Unknown\ncpu family\t: 0\nmodel\t\t: 0\nmodel name\t: Unknown CPU\n",
+                    );
                 }
             }
 
@@ -219,13 +250,29 @@ impl ProcfsData {
             write_str(buf, &mut pos, &alloc::format!("{free} kB"));
             write_str(buf, &mut pos, "\nMemAvailable:    ");
             write_str(buf, &mut pos, &alloc::format!("{free} kB"));
-            write_str(buf, &mut pos, "\nBuffers:         0 kB\nCached:          0 kB\nSwapCached:      0 kB\n");
+            write_str(
+                buf,
+                &mut pos,
+                "\nBuffers:         0 kB\nCached:          0 kB\nSwapCached:      0 kB\n",
+            );
             write_str(buf, &mut pos, "Active:          ");
             write_str(buf, &mut pos, &alloc::format!("{used} kB"));
-            write_str(buf, &mut pos, "\nInactive:        0 kB\nSwapTotal:       0 kB\nSwapFree:        0 kB\n");
-            write_str(buf, &mut pos, "Dirty:           0 kB\nWriteback:       0 kB\nAnonPages:       ");
+            write_str(
+                buf,
+                &mut pos,
+                "\nInactive:        0 kB\nSwapTotal:       0 kB\nSwapFree:        0 kB\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "Dirty:           0 kB\nWriteback:       0 kB\nAnonPages:       ",
+            );
             write_str(buf, &mut pos, &alloc::format!("{used} kB"));
-            write_str(buf, &mut pos, "\nMapped:          0 kB\nShmem:           0 kB\nKReclaimable:    0 kB\n");
+            write_str(
+                buf,
+                &mut pos,
+                "\nMapped:          0 kB\nShmem:           0 kB\nKReclaimable:    0 kB\n",
+            );
             let slab = slab_get_stats();
             let slab_kb = (slab.total_memory / 1024) as u64;
             let slab_used_kb = (slab.used_memory / 1024) as u64;
@@ -234,20 +281,56 @@ impl ProcfsData {
             write_str(buf, &mut pos, "\nSReclaimable:    ");
             write_str(buf, &mut pos, &alloc::format!("{slab_used_kb} kB"));
             write_str(buf, &mut pos, "\nSUnreclaim:      ");
-            write_str(buf, &mut pos, &alloc::format!("{} kB", slab_kb.saturating_sub(slab_used_kb)));
+            write_str(
+                buf,
+                &mut pos,
+                &alloc::format!("{} kB", slab_kb.saturating_sub(slab_used_kb)),
+            );
             write_str(buf, &mut pos, "\n");
-            write_str(buf, &mut pos, "KernelStack:     0 kB\nPageTables:      0 kB\nNFS_Unstable:    0 kB\n");
-            write_str(buf, &mut pos, "Bounce:          0 kB\nWritebackTmp:    0 kB\nCommitLimit:     0 kB\n");
+            write_str(
+                buf,
+                &mut pos,
+                "KernelStack:     0 kB\nPageTables:      0 kB\nNFS_Unstable:    0 kB\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "Bounce:          0 kB\nWritebackTmp:    0 kB\nCommitLimit:     0 kB\n",
+            );
             let kmalloc = pmm_api::kmalloc_get_stats();
             let kmalloc_kb = (kmalloc.current_usage / 1024) as u64;
-            write_str(buf, &mut pos, "Committed_AS:    0 kB\nVmallocTotal:    0 kB\nVmallocUsed:     ");
+            write_str(
+                buf,
+                &mut pos,
+                "Committed_AS:    0 kB\nVmallocTotal:    0 kB\nVmallocUsed:     ",
+            );
             write_str(buf, &mut pos, &alloc::format!("{kmalloc_kb} kB"));
             write_str(buf, &mut pos, "\n");
-            write_str(buf, &mut pos, "Percpu:          0 kB\nHardwareCorrupted: 0 kB\nAnonHugePages:   0 kB\n");
-            write_str(buf, &mut pos, "ShmemHugePages:  0 kB\nShmemPmdMapped:  0 kB\nFileHugePages:   0 kB\n");
-            write_str(buf, &mut pos, "FilePmdMapped:   0 kB\nHugePages_Total: 0\nHugePages_Free:  0\nHugePages_Rsvd:  0\n");
-            write_str(buf, &mut pos, "HugePages_Surp:  0\nHugepagesize:    2048 kB\nHugetlb:         0 kB\n");
-            write_str(buf, &mut pos, "DirectMap4k:     0 kB\nDirectMap2M:     0 kB\nDirectMap1G:     0 kB\n");
+            write_str(
+                buf,
+                &mut pos,
+                "Percpu:          0 kB\nHardwareCorrupted: 0 kB\nAnonHugePages:   0 kB\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "ShmemHugePages:  0 kB\nShmemPmdMapped:  0 kB\nFileHugePages:   0 kB\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "FilePmdMapped:   0 kB\nHugePages_Total: 0\nHugePages_Free:  0\nHugePages_Rsvd:  0\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "HugePages_Surp:  0\nHugepagesize:    2048 kB\nHugetlb:         0 kB\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "DirectMap4k:     0 kB\nDirectMap2M:     0 kB\nDirectMap1G:     0 kB\n",
+            );
 
             return pos as i32;
         }
@@ -286,14 +369,22 @@ impl ProcfsData {
 
             write_str(buf, &mut pos, "cpu  0 0 0 0 0 0 0 0 0 0\n");
             write_str(buf, &mut pos, "cpu0 0 0 0 0 0 0 0 0 0 0\n");
-            write_str(buf, &mut pos, "intr 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+            write_str(
+                buf,
+                &mut pos,
+                "intr 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+            );
             let ticks = crate::kernel::framework::tick_query::current_tick();
             write_str(buf, &mut pos, "ctxt 0\n");
             write_str(buf, &mut pos, "btime 0\n");
             write_str(buf, &mut pos, "processes 0\n");
             write_str(buf, &mut pos, "procs_running 1\n");
             write_str(buf, &mut pos, "procs_blocked 0\n");
-            write_str(buf, &mut pos, &alloc::format!("softirq {ticks} 0 0 0 0 0 0 0 0 0 0\n"));
+            write_str(
+                buf,
+                &mut pos,
+                &alloc::format!("softirq {ticks} 0 0 0 0 0 0 0 0 0 0\n"),
+            );
 
             return pos as i32;
         }
@@ -317,18 +408,23 @@ impl ProcfsData {
             }; 16];
             let count = slab_get_cache_infos(&mut infos);
 
-            write_str(buf, &mut pos, "# <name> <active_objs> <num_objs> <objsize> <objperslab> <pagesperslab>\n");
+            write_str(
+                buf,
+                &mut pos,
+                "# <name> <active_objs> <num_objs> <objsize> <objperslab> <pagesperslab>\n",
+            );
 
             for info in infos.iter().take(count) {
                 let objperslab = if info.object_size > 0 {
-                    (crate::kernel::framework::mm::PAGE_SIZE as usize
-                        / info.object_size as usize) as u32
+                    (crate::kernel::framework::mm::PAGE_SIZE as usize / info.object_size as usize)
+                        as u32
                 } else {
                     0
                 };
                 // pagesperslab: 每个 slab 占用的页数, 由 slab 配置决定
                 let pagesperslab = (crate::kernel::services::config::slab::SLAB_DEFAULT_SIZE
-                    / crate::kernel::framework::mm::PAGE_SIZE as usize) as u32;
+                    / crate::kernel::framework::mm::PAGE_SIZE as usize)
+                    as u32;
                 write_str(
                     buf,
                     &mut pos,
@@ -417,9 +513,21 @@ impl ProcfsData {
                 *pos += len;
             };
 
-            write_str(buf, &mut pos, "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\n");
-            write_str(buf, &mut pos, "devtmpfs /dev devtmpfs rw,nosuid,relatime 0 0\n");
-            write_str(buf, &mut pos, "tmpfs /tmp tmpfs rw,nosuid,nodev,relatime 0 0\n");
+            write_str(
+                buf,
+                &mut pos,
+                "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "devtmpfs /dev devtmpfs rw,nosuid,relatime 0 0\n",
+            );
+            write_str(
+                buf,
+                &mut pos,
+                "tmpfs /tmp tmpfs rw,nosuid,nodev,relatime 0 0\n",
+            );
 
             return pos as i32;
         }
@@ -586,8 +694,14 @@ impl ProcfsData {
         self.entry_count.load(Ordering::SeqCst)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
     /// 读取进程状态 /proc/[pid]/status
     fn read_process_status(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -621,7 +735,11 @@ impl ProcfsData {
             write_str(buf, &mut pos, &alloc::format!("NSpid:\t{pid}\n"));
             write_str(buf, &mut pos, &alloc::format!("NSpgid:\t{pid}\n"));
             write_str(buf, &mut pos, &alloc::format!("NSsid:\t{pid}\n"));
-            write_str(buf, &mut pos, "VmPeak:\t   1024 kB\nVmSize:\t   1024 kB\nVmRSS:\t     256 kB\nVmSwap:\t       0 kB\n");
+            write_str(
+                buf,
+                &mut pos,
+                "VmPeak:\t   1024 kB\nVmSize:\t   1024 kB\nVmRSS:\t     256 kB\nVmSwap:\t       0 kB\n",
+            );
             write_str(buf, &mut pos, "Threads:\t1\n");
             write_str(buf, &mut pos, "SigQ:\t0/30670\n");
             write_str(buf, &mut pos, "SigPnd:\t0000000000000000\n");
@@ -646,7 +764,10 @@ impl ProcfsData {
         result.unwrap_or(-1)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 读取进程命令行 /proc/[pid]/cmdline
     fn read_process_cmdline(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -667,7 +788,10 @@ impl ProcfsData {
         result.unwrap_or(-1)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 读取进程文件描述符 /proc/[pid]/fd
     fn read_process_fd(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -684,7 +808,11 @@ impl ProcfsData {
             };
 
             for (local_fd, global_fd) in &fds {
-                write_str(buf, &mut pos, &alloc::format!("{local_fd} -> [{global_fd}]\n"));
+                write_str(
+                    buf,
+                    &mut pos,
+                    &alloc::format!("{local_fd} -> [{global_fd}]\n"),
+                );
             }
 
             pos as i32
@@ -693,10 +821,22 @@ impl ProcfsData {
         result.unwrap_or(-1)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::no_effect_underscore_binding,
+        reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+    )]
     /// 读取进程统计 /proc/[pid]/stat
     fn read_process_stat(&self, pid: u32, buf: &mut [u8]) -> i32 {
         use crate::kernel::framework::proc::api::process_with;
@@ -712,13 +852,13 @@ impl ProcfsData {
             // 用户时间, 系统时间, 子用户时间, 子系统时间, 优先级, nice值,
             // 线程数, 虚拟启动时间, 虚拟内存大小, 常驻集大小
             let state = match proc.state.load(core::sync::atomic::Ordering::SeqCst) {
-                0 => "R",  // Created
-                1 => "R",  // Ready
-                2 => "R",  // Running
-                3 => "S",  // Blocked
-                4 => "T",  // Frozen
-                5 => "Z",  // Zombie
-                _ => "X",  // Terminated
+                0 => "R", // Created
+                1 => "R", // Ready
+                2 => "R", // Running
+                3 => "S", // Blocked
+                4 => "T", // Frozen
+                5 => "Z", // Zombie
+                _ => "X", // Terminated
             };
 
             let ppid = proc.parent.map_or(0, |p| p.0);
@@ -727,7 +867,7 @@ impl ProcfsData {
             // 使用 create_time 作为进程启动时间 (ticks)
             let start = crate::kernel::framework::proc::api::proc_get_create_time(pid);
             let vsize = 0u64; // 暂时返回 0
-            let _rss = 0u64;   // 暂时返回 0
+            let _rss = 0u64; // 暂时返回 0
 
             let s = alloc::format!(
                 "{pid} ({name}) {state} {ppid} {pid} 0 0 0 0 0 0 {utime} {stime} 0 0 0 {start} 1 0 0 {vsize} 0 0 0 0 0 0 0 0 0 0\n"

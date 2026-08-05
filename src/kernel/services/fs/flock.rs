@@ -205,7 +205,11 @@ impl FlockTable {
     /// 查找指定 inode 上是否存在冲突的排他锁
     fn find_conflict_shared(&self, ino: u32, exclude_pid: u32) -> Option<u32> {
         for entry in &self.entries {
-            if entry.valid && entry.ino == ino && entry.owner_pid != exclude_pid && entry.lock_type == LOCK_EX {
+            if entry.valid
+                && entry.ino == ino
+                && entry.owner_pid != exclude_pid
+                && entry.lock_type == LOCK_EX
+            {
                 return Some(entry.owner_pid);
             }
         }
@@ -246,7 +250,9 @@ impl FlockTable {
     fn shared_count(&self, ino: u32, exclude_pid: u32) -> usize {
         self.entries
             .iter()
-            .filter(|e| e.valid && e.ino == ino && e.owner_pid != exclude_pid && e.lock_type == LOCK_SH)
+            .filter(|e| {
+                e.valid && e.ino == ino && e.owner_pid != exclude_pid && e.lock_type == LOCK_SH
+            })
             .count()
     }
 }
@@ -277,8 +283,16 @@ impl PosixLockTable {
 
     /// 检查两个范围是否重叠
     fn ranges_overlap(a_start: u64, a_len: u64, b_start: u64, b_len: u64) -> bool {
-        let a_end = if a_len == 0 { u64::MAX } else { a_start.saturating_add(a_len) };
-        let b_end = if b_len == 0 { u64::MAX } else { b_start.saturating_add(b_len) };
+        let a_end = if a_len == 0 {
+            u64::MAX
+        } else {
+            a_start.saturating_add(a_len)
+        };
+        let b_end = if b_len == 0 {
+            u64::MAX
+        } else {
+            b_start.saturating_add(b_len)
+        };
         a_start < b_end && b_start < a_end
     }
 
@@ -309,7 +323,9 @@ impl PosixLockTable {
     /// 查找指定 (pid, ino) 上与指定范围重叠的条目索引
     fn find_overlapping(&self, ino: u32, pid: u32, start: u64, len: u64) -> Option<usize> {
         for (i, entry) in self.entries.iter().enumerate() {
-            if entry.valid && entry.ino == ino && entry.owner_pid == pid
+            if entry.valid
+                && entry.ino == ino
+                && entry.owner_pid == pid
                 && Self::ranges_overlap(start, len, entry.start, entry.len)
             {
                 return Some(i);
@@ -367,7 +383,10 @@ pub fn sys_flock(fd: i32, operation: i32, pid: u32, ino: u32) -> FlockResult {
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 fn flock_lock(fd: i32, pid: u32, ino: u32, lock_type: i32, nonblock: bool) -> FlockResult {
     let mut table = FLOCK_TABLE.lock();
 
@@ -436,7 +455,10 @@ fn flock_lock(fd: i32, pid: u32, ino: u32, lock_type: i32, nonblock: bool) -> Fl
     FlockResult::Ok
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 fn flock_unlock(fd: i32, pid: u32, ino: u32) -> FlockResult {
     let mut table = FLOCK_TABLE.lock();
 
@@ -536,7 +558,10 @@ pub fn sys_posix_lock(
     }
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 fn posix_getlk(
     pid: u32,
     ino: u32,
@@ -552,7 +577,8 @@ fn posix_getlk(
     match table.find_conflict(ino, pid, start, len, lock_type) {
         Some((conflict_pid, conflict_type)) => {
             for entry in &table.entries {
-                if entry.valid && entry.owner_pid == conflict_pid
+                if entry.valid
+                    && entry.owner_pid == conflict_pid
                     && PosixLockTable::ranges_overlap(start, len, entry.start, entry.len)
                 {
                     return Ok(Some(PosixLockConflict {
@@ -574,7 +600,10 @@ fn posix_getlk(
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 fn posix_setlk(
     pid: u32,
     ino: u32,
@@ -590,7 +619,9 @@ fn posix_setlk(
             let mut released = 0u32;
             for i in 0..POSIX_LOCK_TABLE_SIZE {
                 let entry = &table.entries[i];
-                let should_remove = entry.valid && entry.ino == ino && entry.owner_pid == pid
+                let should_remove = entry.valid
+                    && entry.ino == ino
+                    && entry.owner_pid == pid
                     && PosixLockTable::ranges_overlap(start, len, entry.start, entry.len);
                 if should_remove {
                     table.entries[i] = PosixLockEntry::default();
@@ -601,7 +632,9 @@ fn posix_setlk(
             Ok(None)
         }
         F_RDLCK | F_WRLCK => {
-            if let Some((conflict_pid, conflict_type)) = table.find_conflict(ino, pid, start, len, lock_type) {
+            if let Some((conflict_pid, conflict_type)) =
+                table.find_conflict(ino, pid, start, len, lock_type)
+            {
                 return Ok(Some(PosixLockConflict {
                     pid: conflict_pid,
                     lock_type: conflict_type,

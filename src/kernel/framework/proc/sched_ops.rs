@@ -29,7 +29,11 @@ pub fn scheduler_current_cputime() -> u64 {
         return 0;
     }
     // SAFETY: current 是调度器维护的有效线程指针
-    unsafe { (*current).cpu_time.load(core::sync::atomic::Ordering::Acquire) }
+    unsafe {
+        (*current)
+            .cpu_time
+            .load(core::sync::atomic::Ordering::Acquire)
+    }
 }
 
 /// 解除进程阻塞 (加入就绪队列).
@@ -115,9 +119,8 @@ pub extern "C" fn scheduler_init() {
     // D4: 初始化 eBPF 子系统
     crate::kernel::framework::debug::bpf_init();
     // T4-3: 注册标准 BPF 验证器 (Safe Policy Injection)
-    crate::kernel::framework::debug::bpf_subsystem().set_verifier(
-        &crate::kernel::services::debug::ebpf_verifier::STANDARD_VERIFIER,
-    );
+    crate::kernel::framework::debug::bpf_subsystem()
+        .set_verifier(&crate::kernel::services::debug::ebpf_verifier::STANDARD_VERIFIER);
     // D5: 初始化电源管理子系统
     crate::kernel::framework::driver::pm_init(crate::kernel::framework::config::MAX_CPUS as u32);
     // D6: 初始化安全启动 + TPM (移至 credo_init, 消除 proc→credo 依赖)
@@ -275,7 +278,9 @@ pub extern "C" fn sched_get_current() -> Pid {
 #[unsafe(no_mangle)]
 pub extern "C" fn proc_get_exit_code(pid: Pid) -> i32 {
     PROCESS_TABLE
-        .with_process(pid, |p| p.exit_code.load(core::sync::atomic::Ordering::SeqCst) as i32)
+        .with_process(pid, |p| {
+            p.exit_code.load(core::sync::atomic::Ordering::SeqCst) as i32
+        })
         .unwrap_or(-1)
 }
 

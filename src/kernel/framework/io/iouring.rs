@@ -7,8 +7,7 @@
 //! 本文件仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::io::iouring::{
-    IoOpCode, Sqe, Cqe, IoUring, RingBuffer,
-    MAX_URING_INSTANCES, DEFAULT_RING_SIZE,
-    io_uring_setup, io_uring_destroy, io_uring_submit, io_uring_enter, io_uring_reap,
-    sys_io_uring_setup, sys_io_uring_enter, sys_io_uring_register, sys_io_uring_submit_sqe,
+    Cqe, DEFAULT_RING_SIZE, IoOpCode, IoUring, MAX_URING_INSTANCES, RingBuffer, Sqe,
+    io_uring_destroy, io_uring_enter, io_uring_reap, io_uring_setup, io_uring_submit,
+    sys_io_uring_enter, sys_io_uring_register, sys_io_uring_setup, sys_io_uring_submit_sqe,
 };

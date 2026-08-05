@@ -60,7 +60,10 @@ impl RecoveryAction {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 决策是否需要执行硬件级重置 (BHR)
     pub fn is_hardware_reset(&self) -> bool {
         matches!(self, Self::BarrierHardReset)
@@ -92,7 +95,10 @@ impl FaultSignal {
         tick: u64,
     ) -> Self {
         Self {
-            attribution: FaultAttribution::Service { domain_id, recoverable: true },
+            attribution: FaultAttribution::Service {
+                domain_id,
+                recoverable: true,
+            },
             retry_count,
             heartbeat_gap,
             dependents,
@@ -114,7 +120,10 @@ impl FaultSignal {
     /// 构造跨层故障信号
     pub const fn cross_layer(caller: u64, module: TcbModule, tick: u64) -> Self {
         Self {
-            attribution: FaultAttribution::CrossLayer { caller, callee: module },
+            attribution: FaultAttribution::CrossLayer {
+                caller,
+                callee: module,
+            },
             retry_count: 0,
             heartbeat_gap: 0,
             dependents: 0,
@@ -148,7 +157,9 @@ impl RecoveryPolicy {
                     RecoveryAction::BarrierSoftReset
                 }
             }
-            FaultAttribution::Service { recoverable: false, .. } => {
+            FaultAttribution::Service {
+                recoverable: false, ..
+            } => {
                 // 显式标记不可恢复
                 RecoveryAction::Quarantine
             }
@@ -197,7 +208,10 @@ mod tests {
     #[test]
     fn service_no_dep_bbr() {
         let s = FaultSignal::service(2, 1, 0, 0, 100);
-        assert_eq!(RecoveryPolicy::decide(&s), RecoveryAction::BarrierBaseRecovery);
+        assert_eq!(
+            RecoveryPolicy::decide(&s),
+            RecoveryAction::BarrierBaseRecovery
+        );
     }
 
     #[test]
@@ -242,7 +256,10 @@ mod tests {
     #[test]
     fn non_recoverable_service_quarantine() {
         let s = FaultSignal {
-            attribution: FaultAttribution::Service { domain_id: 2, recoverable: false },
+            attribution: FaultAttribution::Service {
+                domain_id: 2,
+                recoverable: false,
+            },
             retry_count: 0,
             heartbeat_gap: 0,
             dependents: 0,
@@ -253,9 +270,18 @@ mod tests {
 
     #[test]
     fn action_to_framework_layer() {
-        assert_eq!(RecoveryAction::BarrierBaseRecovery.to_framework_layer(), Some(1));
-        assert_eq!(RecoveryAction::BarrierSoftReset.to_framework_layer(), Some(2));
-        assert_eq!(RecoveryAction::BarrierHardReset.to_framework_layer(), Some(3));
+        assert_eq!(
+            RecoveryAction::BarrierBaseRecovery.to_framework_layer(),
+            Some(1)
+        );
+        assert_eq!(
+            RecoveryAction::BarrierSoftReset.to_framework_layer(),
+            Some(2)
+        );
+        assert_eq!(
+            RecoveryAction::BarrierHardReset.to_framework_layer(),
+            Some(3)
+        );
         assert_eq!(RecoveryAction::Noop.to_framework_layer(), None);
         assert_eq!(RecoveryAction::Quarantine.to_framework_layer(), None);
     }

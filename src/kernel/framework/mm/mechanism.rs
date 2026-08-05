@@ -18,57 +18,57 @@
 
 // ==================== PMM 机制 ====================
 
-pub use super::api::pmm_init;
-pub use super::api::pmm_init_bitmap;
-pub use super::api::pmm_alloc_page;
-pub use super::api::pmm_free_page;
-pub use super::api::pmm_alloc_pages;
-pub use super::api::pmm_free_pages;
-pub use super::api::pmm_alloc_page_phys;
-pub use super::api::pmm_free_page_phys;
-pub use super::api::pmm_alloc_pages_phys;
-pub use super::api::pmm_free_pages_phys;
 pub use super::api::pmm_alloc_huge_page;
-pub use super::api::pmm_free_huge_page;
 pub use super::api::pmm_alloc_huge_page_phys;
-pub use super::api::pmm_is_aligned_for_huge;
+pub use super::api::pmm_alloc_page;
+pub use super::api::pmm_alloc_page_phys;
+pub use super::api::pmm_alloc_pages;
+pub use super::api::pmm_alloc_pages_phys;
+pub use super::api::pmm_dump_stats;
+pub use super::api::pmm_free_huge_page;
+pub use super::api::pmm_free_page;
+pub use super::api::pmm_free_page_phys;
+pub use super::api::pmm_free_pages;
+pub use super::api::pmm_free_pages_phys;
 pub use super::api::pmm_get_free_pages;
 pub use super::api::pmm_get_total_pages;
 pub use super::api::pmm_get_used_pages;
-pub use super::api::pmm_dump_stats;
+pub use super::api::pmm_init;
+pub use super::api::pmm_init_bitmap;
+pub use super::api::pmm_is_aligned_for_huge;
 
 // ==================== VMM 机制 ====================
 
-pub use super::api::vmm_init;
-pub use super::api::vmm_map_page;
-pub use super::api::vmm_map_huge_page;
-pub use super::api::vmm_unmap_page;
-pub use super::api::vmm_split_2mb_page;
-pub use super::api::vmm_ensure_pml4_user;
-pub use super::api::vmm_ensure_path_user;
-pub use super::api::vmm_get_physical;
-pub use super::api::vmm_get_physical_in_table;
-pub use super::api::vmm_switch_page_table;
-pub use super::api::vmm_create_user_page_table;
-pub use super::api::vmm_map_page_in_table;
 pub use super::api::vmm_clone_user_page_table;
 pub use super::api::vmm_clone_user_page_table_cow;
+pub use super::api::vmm_create_user_page_table;
 pub use super::api::vmm_destroy_page_table;
+pub use super::api::vmm_ensure_path_user;
+pub use super::api::vmm_ensure_pml4_user;
+pub use super::api::vmm_get_physical;
+pub use super::api::vmm_get_physical_in_table;
+pub use super::api::vmm_init;
+pub use super::api::vmm_map_huge_page;
+pub use super::api::vmm_map_page;
+pub use super::api::vmm_map_page_in_table;
+pub use super::api::vmm_split_2mb_page;
+pub use super::api::vmm_switch_page_table;
+pub use super::api::vmm_unmap_page;
 
 // ==================== 内核堆机制 ====================
 
-pub use super::api::k_malloc;
-pub use super::api::k_free;
-pub use super::api::k_realloc;
-pub use super::api::kmalloc_init;
-pub use super::api::kmalloc_dump_stats;
-pub use super::api::kmalloc_validate;
-pub use super::api::kmalloc;
-pub use super::api::kfree;
-pub use super::api::krealloc;
-pub use super::api::kmalloc_stats;
-pub use super::api::kmalloc_dump;
 pub use super::api::KmallocStats;
+pub use super::api::k_free;
+pub use super::api::k_malloc;
+pub use super::api::k_realloc;
+pub use super::api::kfree;
+pub use super::api::kmalloc;
+pub use super::api::kmalloc_dump;
+pub use super::api::kmalloc_dump_stats;
+pub use super::api::kmalloc_init;
+pub use super::api::kmalloc_stats;
+pub use super::api::kmalloc_validate;
+pub use super::api::krealloc;
 
 // ==================== VMA 机制 ====================
 
@@ -78,18 +78,18 @@ pub use super::api::{MmStruct, Vma, VmaType};
 
 // ==================== 用户空间拷贝 ====================
 
-pub use super::api::copy_to_user;
 pub use super::api::copy_from_user;
+pub use super::api::copy_to_user;
 pub use super::api::is_user_buf;
 
 // ==================== 内存压力 ====================
 
-pub use super::api::update_pressure;
 pub use super::api::MemoryPressure;
+pub use super::api::update_pressure;
 
 // ==================== 页错误处理 ====================
 
-pub use super::api::PfResult;
 pub use super::api::PageFaultInfo;
+pub use super::api::PfResult;
 pub use super::api::handle_page_fault;
 pub use super::api::handle_user_page_fault;

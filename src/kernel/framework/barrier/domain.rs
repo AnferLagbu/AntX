@@ -1,8 +1,11 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use super::types::{MAX_DOMAIN_DEPENDENCIES, BarrierSnapshot, MAX_BARRIER_SNAPSHOTS, MAX_ADDR_RANGES, DomainState, DEFAULT_BARRIER_INTERVAL, MAX_CONSECUTIVE_FAILURES, BACKOFF_BASE_TICKS, CAP_FS_WRITE, CAP_NET_SEND, CAP_PROC_CREATE};
+use super::types::{
+    BACKOFF_BASE_TICKS, BarrierSnapshot, CAP_FS_WRITE, CAP_NET_SEND, CAP_PROC_CREATE,
+    DEFAULT_BARRIER_INTERVAL, DomainState, MAX_ADDR_RANGES, MAX_BARRIER_SNAPSHOTS,
+    MAX_CONSECUTIVE_FAILURES, MAX_DOMAIN_DEPENDENCIES,
+};
 use super::undo_log::UndoLog;
-
 
 use crate::kernel::framework::sync::IrqSpinLock;
 pub struct RecoveryDomain {

@@ -1,7 +1,7 @@
 use super::check;
 use crate::kernel::framework::fs::devfs::devfs::{DEVFS_DATA, DEVFS_MAX_DEVICES};
+use crate::kernel::framework::tests::{TestResult, runner};
 use crate::kernel::services::fs::devfs;
-use crate::kernel::framework::tests::{runner, TestResult};
 use crate::register_tests_inner;
 
 fn test_devfs_mount() -> TestResult {
@@ -80,7 +80,10 @@ fn test_devfs_register_duplicate() -> TestResult {
     // I-20: 重复注册从 `== -1` 改为 AlreadyExists (KernelError 变体)
     let result = DEVFS_DATA.register_device("null", 0);
     check!(
-        matches!(result, Err(crate::kernel::framework::fs::vfs::types::KernelError::AlreadyExists)),
+        matches!(
+            result,
+            Err(crate::kernel::framework::fs::vfs::types::KernelError::AlreadyExists)
+        ),
         "registering duplicate should return AlreadyExists"
     );
     TestResult::Pass
@@ -90,7 +93,10 @@ fn test_devfs_unregister_nonexistent() -> TestResult {
     // I-20: 注销不存在从 `== -1` 改为 NotFound
     let result = DEVFS_DATA.unregister_device("nonexistent_dev");
     check!(
-        matches!(result, Err(crate::kernel::framework::fs::vfs::types::KernelError::FileNotFound)),
+        matches!(
+            result,
+            Err(crate::kernel::framework::fs::vfs::types::KernelError::FileNotFound)
+        ),
         "unregistering nonexistent should return NotFound"
     );
     TestResult::Pass

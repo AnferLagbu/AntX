@@ -6,8 +6,6 @@
 //! 本文件仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::mm::mmap::{
-    mmap_syscall, munmap_syscall, mprotect_syscall,
-    fd_to_inode_id, fd_to_mount_idx,
-    MAP_SHARED, MAP_PRIVATE, MAP_ANONYMOUS, MAP_FIXED,
-    SYS_MMAP_FLAGS,
+    MAP_ANONYMOUS, MAP_FIXED, MAP_PRIVATE, MAP_SHARED, SYS_MMAP_FLAGS, fd_to_inode_id,
+    fd_to_mount_idx, mmap_syscall, mprotect_syscall, munmap_syscall,
 };

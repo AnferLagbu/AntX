@@ -119,7 +119,10 @@ pub enum BaudRate {
 }
 
 impl BaudRate {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub(crate) fn to_divisor(&self) -> u16 {
         match self {
             Self::Baud9600 => BAUD_9600,
@@ -141,7 +144,10 @@ pub enum DataBits {
 }
 
 impl DataBits {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::Bits5 => 0x00,
@@ -160,7 +166,10 @@ pub enum StopBits {
 }
 
 impl StopBits {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::One => 0x00,
@@ -180,7 +189,10 @@ pub enum ParityMode {
 }
 
 impl ParityMode {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub(crate) fn to_lcr_value(&self) -> u8 {
         match self {
             Self::None => 0x00,
@@ -468,7 +480,10 @@ impl SerialPort {
         Some(byte)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 处理串口中断
     ///
     /// 应在 IRQ3/IRQ4 中断处理程序中调用。
@@ -517,7 +532,6 @@ impl SerialPort {
         }
         false
     }
-
 }
 
 // ============================================================================
@@ -602,9 +616,7 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
 pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
         SERIAL_PORTS.with(|ports| match &ports[com as usize] {
-            Some(port) => {
-                i32::from(port.has_data())
-            }
+            Some(port) => i32::from(port.has_data()),
             None => 0,
         })
     } else {
@@ -641,13 +653,18 @@ pub extern "C" fn serial_has_data(com: i32) -> bool {
 /// 串口已通过 `serial_init()` 初始化。仅在内核上下文中有效。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { unsafe {
-    let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
-    for &b in bytes {
-        serial_putc(com as u32, i32::from(b));
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) {
+    unsafe {
+        let bytes = core::slice::from_raw_parts(buf as *const u8, count as usize);
+        for &b in bytes {
+            serial_putc(com as u32, i32::from(b));
+        }
     }
-}}
+}
 
 // ============================================================================
 // CharOps 桥接 — 供 Chitin 统一字符设备 I/O
@@ -655,10 +672,18 @@ pub unsafe extern "C" fn serial_write(com: i32, buf: *const u8, count: u64) { un
 
 use crate::kernel::framework::chitin::CharOps;
 
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 extern "C" fn serial_char_write(driver_data: *mut u8, buf: *const u8, len: usize) -> usize {
-    if driver_data.is_null() || buf.is_null() { return 0; }
+    if driver_data.is_null() || buf.is_null() {
+        return 0;
+    }
     // SAFETY: driver_data 由 Chitin CharOps 契约保证有效, buf 在调用期间有效。
     let port = unsafe { &*(driver_data as *const SerialPort) };
     let io = match &port.io {
@@ -678,10 +703,18 @@ extern "C" fn serial_char_write(driver_data: *mut u8, buf: *const u8, len: usize
     slice.len()
 }
 
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 extern "C" fn serial_char_read(driver_data: *mut u8, buf: *mut u8, len: usize) -> usize {
-    if driver_data.is_null() || buf.is_null() { return 0; }
+    if driver_data.is_null() || buf.is_null() {
+        return 0;
+    }
     // SAFETY: driver_data 由 Chitin CharOps 契约保证有效, buf 至少 len 字节可写。
     let port = unsafe { &*(driver_data as *const SerialPort) };
     let io = match &port.io {

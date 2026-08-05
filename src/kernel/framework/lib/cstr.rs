@@ -85,7 +85,10 @@ pub trait CStrExt {
 }
 
 impl CStrExt for *const u8 {
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     fn as_kstr(&self) -> &'static str {
         let ptr = *self;
         if ptr.is_null() {
@@ -113,7 +116,10 @@ impl CStrExt for *const u8 {
         core::str::from_utf8(bytes).unwrap_or("")
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     fn as_kstr_opt(&self) -> Option<&'static str> {
         let ptr = *self;
         if ptr.is_null() {
@@ -129,12 +135,18 @@ impl CStrExt for *const u8 {
 ///
 /// 适用于 FFI 中声明为 `char *`(可写)的参数。语义与 [`CStrExt`] 一致。
 impl CStrExt for *mut u8 {
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_cast_constness,
+        reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+    )]
     fn as_kstr(&self) -> &'static str {
         (*self as *const u8).as_kstr()
     }
 
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_cast_constness,
+        reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+    )]
     fn as_kstr_opt(&self) -> Option<&'static str> {
         (*self as *const u8).as_kstr_opt()
     }

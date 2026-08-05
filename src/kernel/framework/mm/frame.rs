@@ -22,7 +22,7 @@
 //! - Pod 类型不得包含指向内核内存的指针, 防止内核地址意外泄漏到用户空间.
 
 use super::PAGE_SIZE;
-use super::copy_user::{copy_from_user, copy_to_user, is_user_ptr, is_user_buf};
+use super::copy_user::{copy_from_user, copy_to_user, is_user_buf, is_user_ptr};
 
 // ---------------------------------------------------------------------------
 // Pod trait
@@ -117,7 +117,10 @@ impl UFrame {
     #[inline]
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     pub fn read_pod<T: Pod>(&self, offset: usize) -> Result<T, ()> {
         let size = core::mem::size_of::<T>();
         if offset.saturating_add(size) > PAGE_SIZE as usize {
@@ -146,8 +149,14 @@ impl UFrame {
     #[inline]
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
     pub fn write_pod<T: Pod>(&self, offset: usize, val: &T) -> Result<(), ()> {
         let size = core::mem::size_of::<T>();
         if offset.saturating_add(size) > PAGE_SIZE as usize {
@@ -249,7 +258,10 @@ impl USegment {
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     pub fn read_pod<T: Pod>(&self, offset: usize) -> Result<T, ()> {
         let size = core::mem::size_of::<T>();
         if offset.saturating_add(size) > self.len {
@@ -274,8 +286,14 @@ impl USegment {
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。
     #[inline]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
     pub fn write_pod<T: Pod>(&self, offset: usize, val: &T) -> Result<(), ()> {
         let size = core::mem::size_of::<T>();
         if offset.saturating_add(size) > self.len {

@@ -36,15 +36,34 @@ impl IrqLine {
     /// - irq 必须是有效的中断请求号。
     /// - vector 是 IDT 中断向量号。
     pub unsafe fn new(irq: u32, vector: u8) -> Self {
-        Self { vector, irq, registered: false }
+        Self {
+            vector,
+            irq,
+            registered: false,
+        }
     }
 
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    #[inline(always)] pub fn irq(&self) -> u32 { self.irq }
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    #[inline(always)] pub fn vector(&self) -> u8 { self.vector }
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[inline(always)]
+    pub fn irq(&self) -> u32 {
+        self.irq
+    }
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[inline(always)]
+    pub fn vector(&self) -> u8 {
+        self.vector
+    }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 注册 ISR 到全局中断表。
     ///
     /// # 安全约束
@@ -86,8 +105,14 @@ impl IrqLine {
         let _ = self;
     }
 
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    #[inline(always)] pub fn is_registered(&self) -> bool { self.registered }
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[inline(always)]
+    pub fn is_registered(&self) -> bool {
+        self.registered
+    }
 }
 
 // ============================================================================
@@ -98,8 +123,9 @@ const MAX_ISR_VECTORS: usize = 256;
 
 /// 全局 ISR 函数指针表, 由 idt handlers 分发调用。
 /// 使用 `IrqSpinLock` 保护, 中断安全 (`dispatch_irq` 在中断上下文调用).
-static ISR_TABLE: crate::kernel::framework::sync::IrqSpinLock<[Option<InterruptHandler>; MAX_ISR_VECTORS]> =
-    crate::kernel::framework::sync::IrqSpinLock::new([None; MAX_ISR_VECTORS]);
+static ISR_TABLE: crate::kernel::framework::sync::IrqSpinLock<
+    [Option<InterruptHandler>; MAX_ISR_VECTORS],
+> = crate::kernel::framework::sync::IrqSpinLock::new([None; MAX_ISR_VECTORS]);
 
 /// 注册中断向量对应的 ISR 处理器。
 ///

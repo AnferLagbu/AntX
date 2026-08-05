@@ -4,12 +4,16 @@
 //! 以及 MMIO (ioremap) 映射.
 //! 采用 `PhysAddr`/`VirtAddr` 类型安全与无锁原子变量.
 
-use super::{DmaMapping, DmaStats, PAGE_SIZE, get_vmm, KERNEL_BASE, ptr, DmaDirection, DmaCachePolicy, alloc_mmio_virt, DmaScatterList, DMA_MAX_SCATTER_ENTRIES, DmaScatterEntry, DmaPoolStats, CACHE_LINE_SIZE};
-use crate::kernel::framework::mm::{pmm_alloc_pages_phys, pmm_free_pages_phys};
+use super::{
+    CACHE_LINE_SIZE, DMA_MAX_SCATTER_ENTRIES, DmaCachePolicy, DmaDirection, DmaMapping,
+    DmaPoolStats, DmaScatterEntry, DmaScatterList, DmaStats, KERNEL_BASE, PAGE_SIZE,
+    alloc_mmio_virt, get_vmm, ptr,
+};
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
+use crate::kernel::framework::mm::{pmm_alloc_pages_phys, pmm_free_pages_phys};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 pub struct DmaEngine {
     initialized: AtomicBool,
     mappings: Mutex<Vec<DmaMapping>>,
@@ -83,7 +87,10 @@ impl DmaEngine {
     /// 返回 `(cpu_virt_addr, dma_phys_addr)`.
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn alloc_coherent(&self, size: usize) -> Option<(VirtAddr, PhysAddr)> {
         if size == 0 || !self.initialized.load(Ordering::Acquire) {
             return None;
@@ -91,7 +98,9 @@ impl DmaEngine {
 
         let pages = (size as u64).div_ceil(PAGE_SIZE);
 
-        let phys = if let Some(p) = pmm_alloc_pages_phys(pages as usize) { p } else {
+        let phys = if let Some(p) = pmm_alloc_pages_phys(pages as usize) {
+            p
+        } else {
             self.stats.coherence_fails.fetch_add(1, Ordering::Relaxed);
             return None;
         };
@@ -163,7 +172,10 @@ impl DmaEngine {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 获取 CPU 虚拟地址对应的设备 (物理) DMA 地址
     pub fn device_address(&self, cpu_addr: VirtAddr) -> Option<PhysAddr> {
         if cpu_addr.0 == 0 {
@@ -224,7 +236,10 @@ impl DmaEngine {
 
     // =============== 流式 DMA 映射 ===============
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 将已有内核缓冲区映射为 DMA 缓冲区
     pub fn map_single(
         &self,
@@ -305,7 +320,10 @@ impl DmaEngine {
 
     // =============== 缓存同步 ===============
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 为设备访问同步 (CPU → Device)
     pub fn sync_for_device(&self, _mapping: &DmaMapping, _offset: usize, _size: usize) {
         Self::barrier_device();
@@ -328,7 +346,10 @@ impl DmaEngine {
 
     // =============== 散聚表 (Scatter-Gather) ===============
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn sg_init(&self, sglist: &mut DmaScatterList) {
         sglist.entry_count = 0;
         sglist.total_length = 0;
@@ -336,7 +357,10 @@ impl DmaEngine {
 
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn sg_add_entry(&self, sglist: &mut DmaScatterList, addr: VirtAddr, length: usize) -> i32 {
         if addr.0 == 0 || length == 0 {
             return -1;
@@ -359,7 +383,10 @@ impl DmaEngine {
         0
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn sg_total_length(&self, sglist: &DmaScatterList) -> usize {
         sglist.total_length
     }
@@ -380,8 +407,14 @@ impl DmaEngine {
     /// 该函数与架构相关, 对非一致性 DMA 至关重要.
     #[inline(always)]
     #[allow(unused_variables)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn cache_flush(&self, addr: VirtAddr, size: usize) {
         // 架构相关缓存刷新
         #[cfg(target_arch = "x86_64")]
@@ -395,17 +428,24 @@ impl DmaEngine {
                 let cache_line = CACHE_LINE_SIZE;
                 let start = addr.0 & !(cache_line - 1);
                 let end = addr.0 + size as u64;
-                let has_clflushopt = crate::kernel::framework::cpu::get_cpu_info()
-                    .is_some_and(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::CLFLUSHOPT));
+                let has_clflushopt =
+                    crate::kernel::framework::cpu::get_cpu_info().is_some_and(|info| {
+                        info.features
+                            .contains(crate::kernel::framework::cpu::CpuFeatures::CLFLUSHOPT)
+                    });
                 let mut line = start;
                 while line < end {
                     if has_clflushopt {
                         // SAFETY: CLFLUSHOPT 按 cache line 刷写, 不破坏缓存一致性.
                         // 输入地址已对齐到 cache line 边界.
-                        unsafe { core::arch::asm!("clflushopt [{}]", in(reg) line); }
+                        unsafe {
+                            core::arch::asm!("clflushopt [{}]", in(reg) line);
+                        }
                     } else {
                         // SAFETY: CLFLUSH 串行化刷写, 兼容旧 CPU.
-                        unsafe { core::arch::asm!("clflush [{}]", in(reg) line); }
+                        unsafe {
+                            core::arch::asm!("clflush [{}]", in(reg) line);
+                        }
                     }
                     line += cache_line;
                 }
@@ -459,8 +499,14 @@ impl DmaEngine {
     /// aarch64: 按虚拟地址逐行失效 (DC IVAC).
     #[cfg_attr(target_arch = "x86_64", allow(unused_variables))]
     #[inline(always)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn cache_invalidate(&self, addr: VirtAddr, size: usize) {
         #[cfg(target_arch = "x86_64")]
         {
@@ -502,7 +548,10 @@ impl DmaEngine {
     }
 
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn barrier_device() {
         // sfence: 确保所有 store 在 DMA 之前可见
         crate::arch!(fence_w());
@@ -607,7 +656,10 @@ pub fn submit_transfer(
     Some(0)
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 pub fn submit_transfer_async(
     src: PhysAddr,
     dst: PhysAddr,

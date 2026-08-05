@@ -8,9 +8,9 @@
 //! 纯策略代码 (拓扑 + 节点 + 策略 + syscall), 0 unsafe.
 //! 日志使用 framework::klog::serial_write_bytes (safe API).
 
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock;
 use crate::kernel::framework::mm::PAGE_SIZE;
+use crate::kernel::framework::sync::IrqSpinLock;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -75,16 +75,17 @@ impl NumaMempolicy {
         }
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 根据策略选择分配节点
     pub fn preferred_node(&self, current_cpu_node: u32) -> Option<u32> {
         let mode = *self.mode.lock();
         let mask = *self.nodemask.lock();
 
         match mode {
-            NumaPolicy::Default => {
-                Some(current_cpu_node)
-            }
+            NumaPolicy::Default => Some(current_cpu_node),
             NumaPolicy::Bind | NumaPolicy::Preferred => {
                 if mask == 0 {
                     Some(current_cpu_node)
@@ -190,7 +191,10 @@ impl NumaTopology {
         }
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
     /// 用单节点拓扑初始化 (UMA 回退)
     pub fn init_uma(&self, total_memory: u64, num_cpus: u32) {
         let mut nodes = self.nodes.lock();
@@ -199,7 +203,9 @@ impl NumaTopology {
         let mut node0 = NumaNode::new(0);
         node0.memory_start = 0;
         node0.memory_size = total_memory;
-        node0.free_pages.store(total_memory / PAGE_SIZE, Ordering::Release);
+        node0
+            .free_pages
+            .store(total_memory / PAGE_SIZE, Ordering::Release);
 
         for cpu in 0..num_cpus {
             node0.cpus.push(cpu);
@@ -259,7 +265,11 @@ impl NumaTopology {
                 return d;
             }
         }
-        if from == to { LOCAL_DISTANCE } else { REMOTE_DISTANCE }
+        if from == to {
+            LOCAL_DISTANCE
+        } else {
+            REMOTE_DISTANCE
+        }
     }
 
     /// 获取 CPU 所在的 NUMA 节点
@@ -303,7 +313,8 @@ impl NumaTopology {
             return None;
         }
 
-        let mut sorted: Vec<(u8, u32)> = nodes.iter()
+        let mut sorted: Vec<(u8, u32)> = nodes
+            .iter()
             .map(|n| (self.distance(from_node, n.id), n.id))
             .collect();
         sorted.sort_by_key(|(d, _)| *d);
@@ -351,13 +362,12 @@ pub fn numa_is_initialized() -> bool {
 /// `sys_get_mempolicy` — 获取当前 NUMA 内存策略
 pub fn sys_get_mempolicy(_mode_ptr: u64, _nodemask_ptr: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
-    let result = crate::kernel::framework::proc::PROCESS_TABLE
-        .with_process(pid, |p| {
-            let policy = p.numa_policy.lock();
-            let mode = *policy.mode.lock() as u8;
-            let mask = *policy.nodemask.lock();
-            (mode, mask)
-        });
+    let result = crate::kernel::framework::proc::PROCESS_TABLE.with_process(pid, |p| {
+        let policy = p.numa_policy.lock();
+        let mode = *policy.mode.lock() as u8;
+        let mask = *policy.nodemask.lock();
+        (mode, mask)
+    });
 
     match result {
         Some((mode, mask)) => {
@@ -372,19 +382,16 @@ pub fn sys_get_mempolicy(_mode_ptr: u64, _nodemask_ptr: u64) -> i64 {
 pub fn sys_set_mempolicy(mode: u64, nodemask: u64) -> i64 {
     let policy_mode = NumaPolicy::from_u8(mode as u8);
 
-    if (policy_mode == NumaPolicy::Bind || policy_mode == NumaPolicy::Interleave)
-        && nodemask == 0
-    {
+    if (policy_mode == NumaPolicy::Bind || policy_mode == NumaPolicy::Interleave) && nodemask == 0 {
         return -(22i64);
     }
 
     let pid = crate::kernel::framework::proc::process_get_current_pid();
-    let result = crate::kernel::framework::proc::PROCESS_TABLE
-        .with_process(pid, |p| {
-            let policy = p.numa_policy.lock();
-            *policy.mode.lock() = policy_mode;
-            *policy.nodemask.lock() = nodemask;
-        });
+    let result = crate::kernel::framework::proc::PROCESS_TABLE.with_process(pid, |p| {
+        let policy = p.numa_policy.lock();
+        *policy.mode.lock() = policy_mode;
+        *policy.nodemask.lock() = nodemask;
+    });
 
     match result {
         Some(()) => 0,

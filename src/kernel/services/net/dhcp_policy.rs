@@ -33,7 +33,6 @@
 //!
 //! REVAL-W 第 6 组 (W6), 2026-06-25 实装.
 
-
 use crate::kernel::framework::net::iface_trait::{DhcpState, Ipv4Addr, NetConfig};
 
 // ============================================================================
@@ -76,8 +75,8 @@ impl Default for DhcpPolicyConfig {
     fn default() -> Self {
         Self {
             max_retries: 4,
-            renew_t1_ratio: 5000,  // 50.00%
-            renew_t2_ratio: 8750,  // 87.50%
+            renew_t1_ratio: 5000, // 50.00%
+            renew_t2_ratio: 8750, // 87.50%
             fallback_to_static: true,
         }
     }
@@ -103,7 +102,10 @@ impl Default for DhcpPolicyConfig {
 /// - `dhcp_state`: 报告**当前**状态 (观察)
 /// - `dhcp_policy::decide`: 决定**下一步**动作 (策略)
 pub trait DhcpPolicy {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 给定当前状态 + 上下文, 返回下一步 Action.
     ///
     /// ## 参数
@@ -177,8 +179,10 @@ impl DhcpPolicy for DefaultDhcpPolicy {
                     // 0 表示租期未知, 永不续约
                     return DhcpAction::Continue;
                 }
-                let t1_ms = (u128::from(lease_duration_ms) * u128::from(policy_cfg.renew_t1_ratio) / 10_000) as u64;
-                let t2_ms = (u128::from(lease_duration_ms) * u128::from(policy_cfg.renew_t2_ratio) / 10_000) as u64;
+                let t1_ms = (u128::from(lease_duration_ms) * u128::from(policy_cfg.renew_t1_ratio)
+                    / 10_000) as u64;
+                let t2_ms = (u128::from(lease_duration_ms) * u128::from(policy_cfg.renew_t2_ratio)
+                    / 10_000) as u64;
                 if elapsed_ms < t1_ms {
                     DhcpAction::Continue
                 } else if elapsed_ms < t2_ms {

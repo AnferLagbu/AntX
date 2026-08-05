@@ -3,10 +3,10 @@
 //! `fd_read`, `fd_write`, `fd_pread`, `fd_pwrite`, `fd_allocate`, `fd_advise`,
 //! `fd_renumber`, `fd_dup`, `fd_readdir`
 
-use crate::kernel::services::wasm::types::{Value, WasmError};
-use crate::kernel::services::wasm::interpreter::Interpreter;
-use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
 use super::fd_table::{read_iovec_from_memory, write_u32_to_memory};
+use super::{WasiContext, WasiErrno, wasi_errno, wasi_success};
+use crate::kernel::services::wasm::interpreter::Interpreter;
+use crate::kernel::services::wasm::types::{Value, WasmError};
 
 // ============================================================================
 // G4: FD 管理
@@ -57,11 +57,8 @@ pub fn wasi_fd_seek(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
     };
 
     // 调用 VFS seek
-    let result = crate::kernel::framework::fs::vfs::api::vfs_seek(
-        entry.inner_fd as u32,
-        offset,
-        whence,
-    );
+    let result =
+        crate::kernel::framework::fs::vfs::api::vfs_seek(entry.inner_fd as u32, offset, whence);
 
     if result < 0 {
         interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
@@ -141,7 +138,10 @@ pub fn wasi_fd_sync(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
 /// 内部对 `entry.path` 使用 `unwrap`; 若在 `is_none` 检查之后仍出现
 /// 路径被修改为 `None` 的并发情况则会 panic(当前实现中该检查保证
 /// 走到 unwrap 时路径必然存在).
-pub fn wasi_fd_prestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_fd_prestat_get(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let buf_ptr = interp.stack.pop_i32()? as u32;
 
@@ -169,7 +169,10 @@ pub fn wasi_fd_prestat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> R
 /// # Errors
 ///
 /// 当栈弹出参数失败、写入线性内存失败或压栈结果失败时返回对应的 `WasmError`.
-pub fn wasi_fd_prestat_dir_name(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_fd_prestat_dir_name(
+    ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let fd = interp.stack.pop_i32()? as u32;
     let path_ptr = interp.stack.pop_i32()? as u32;
     let path_len = interp.stack.pop_i32()? as u32;
@@ -182,7 +185,9 @@ pub fn wasi_fd_prestat_dir_name(ctx: &mut WasiContext, interp: &mut Interpreter)
         }
     };
 
-    let path = if let Some(p) = &entry.path { p.as_bytes() } else {
+    let path = if let Some(p) = &entry.path {
+        p.as_bytes()
+    } else {
         interp.stack.push(Value::I32(wasi_errno(WasiErrno::Badf)))?;
         return Ok(());
     };
@@ -193,7 +198,10 @@ pub fn wasi_fd_prestat_dir_name(ctx: &mut WasiContext, interp: &mut Interpreter)
     Ok(())
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// WASI `fd_stat_get`: 获取 fd 状态信息
 ///
 /// # Errors
@@ -212,9 +220,11 @@ pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     };
 
     // 调用 VFS fstat 获取文件信息
-    let stat = if let Some(s) = crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(
-        entry.inner_fd as u32, 0,
-    ) { s } else {
+    let stat = if let Some(s) =
+        crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(entry.inner_fd as u32, 0)
+    {
+        s
+    } else {
         interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
         return Ok(());
     };
@@ -225,22 +235,30 @@ pub fn wasi_fd_stat_get(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
         let base = u64::from(buf_ptr);
 
         // 辅助函数: 写入 u64 到线性内存
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
-        fn write_u64_to(mem: &mut crate::kernel::services::wasm::runtime::LinearMemory, base: u64, off: u64, val: u64) {
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
+        fn write_u64_to(
+            mem: &mut crate::kernel::services::wasm::runtime::LinearMemory,
+            base: u64,
+            off: u64,
+            val: u64,
+        ) {
             let bytes = val.to_le_bytes();
             for i in 0..8u64 {
                 let _ = mem.write_u8((base + off + i) as u32, bytes[i as usize]);
             }
         }
 
-        write_u64_to(mem, base, 0, u64::from(stat.node_id));    // dev
-        write_u64_to(mem, base, 8, u64::from(stat.node_id));    // ino
+        write_u64_to(mem, base, 0, u64::from(stat.node_id)); // dev
+        write_u64_to(mem, base, 8, u64::from(stat.node_id)); // ino
         let _ = mem.write_u8((base + 16) as u32, stat.file_type as u8); // filetype
-        write_u64_to(mem, base, 17, 1);                      // nlink (默认 1)
-        write_u64_to(mem, base, 25, u64::from(stat.size));       // size
-        write_u64_to(mem, base, 33, stat.atime);             // atim
-        write_u64_to(mem, base, 41, stat.mtime);             // mtim
-        write_u64_to(mem, base, 49, stat.ctime);             // ctim
+        write_u64_to(mem, base, 17, 1); // nlink (默认 1)
+        write_u64_to(mem, base, 25, u64::from(stat.size)); // size
+        write_u64_to(mem, base, 33, stat.atime); // atim
+        write_u64_to(mem, base, 41, stat.mtime); // mtim
+        write_u64_to(mem, base, 49, stat.ctime); // ctim
     }
 
     interp.stack.push(Value::I32(wasi_success()))?;
@@ -279,16 +297,15 @@ pub fn wasi_fd_read(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(
             continue;
         }
         // 使用 safe 方法获取 WASM 线性内存切片
-        let slice = interp.memory.as_mut()
+        let slice = interp
+            .memory
+            .as_mut()
             .ok_or(WasmError::MemoryOutOfBounds)?
             .get_slice_mut(iov.buf, iov.len)
             .map_err(|_| WasmError::MemoryOutOfBounds)?;
 
         // 使用 safe wrapper 调用 VFS read
-        let n = crate::kernel::framework::fs::vfs::api::vfs_read_safe(
-            entry.inner_fd as u32,
-            slice,
-        );
+        let n = crate::kernel::framework::fs::vfs::api::vfs_read_safe(entry.inner_fd as u32, slice);
 
         if n < 0 {
             interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
@@ -330,16 +347,16 @@ pub fn wasi_fd_write(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
             continue;
         }
         // 使用 safe 方法获取 WASM 线性内存切片
-        let slice = interp.memory.as_ref()
+        let slice = interp
+            .memory
+            .as_ref()
             .ok_or(WasmError::MemoryOutOfBounds)?
             .get_slice(iov.buf, iov.len)
             .map_err(|_| WasmError::MemoryOutOfBounds)?;
 
         // 使用 safe wrapper 调用 VFS write
-        let n = crate::kernel::framework::fs::vfs::api::vfs_write_safe(
-            entry.inner_fd as u32,
-            slice,
-        );
+        let n =
+            crate::kernel::framework::fs::vfs::api::vfs_write_safe(entry.inner_fd as u32, slice);
 
         if n < 0 {
             interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
@@ -375,28 +392,28 @@ pub fn wasi_fd_pread(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
     };
 
     // 保存当前位置，seek 到 offset，读取，再 seek 回原位
-    let saved_pos = crate::kernel::framework::fs::vfs::api::vfs_seek(
-        entry.inner_fd as u32, 0, 1,
-    );
-    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
-        entry.inner_fd as u32, offset, 0,
-    );
+    let saved_pos = crate::kernel::framework::fs::vfs::api::vfs_seek(entry.inner_fd as u32, 0, 1);
+    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(entry.inner_fd as u32, offset, 0);
 
     let iovecs = read_iovec_from_memory(interp, iovs_ptr, iovs_len)?;
     let mut total = 0u32;
 
     for iov in &iovecs {
-        if iov.len == 0 { continue; }
-        let slice = interp.memory.as_mut()
+        if iov.len == 0 {
+            continue;
+        }
+        let slice = interp
+            .memory
+            .as_mut()
             .ok_or(WasmError::MemoryOutOfBounds)?
             .get_slice_mut(iov.buf, iov.len)
             .map_err(|_| WasmError::MemoryOutOfBounds)?;
-        let n = crate::kernel::framework::fs::vfs::api::vfs_read_safe(
-            entry.inner_fd as u32, slice,
-        );
+        let n = crate::kernel::framework::fs::vfs::api::vfs_read_safe(entry.inner_fd as u32, slice);
         if n < 0 {
             let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
-                entry.inner_fd as u32, saved_pos, 0,
+                entry.inner_fd as u32,
+                saved_pos,
+                0,
             );
             interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
             return Ok(());
@@ -405,9 +422,7 @@ pub fn wasi_fd_pread(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<
     }
 
     // 恢复原位置
-    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
-        entry.inner_fd as u32, saved_pos, 0,
-    );
+    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(entry.inner_fd as u32, saved_pos, 0);
 
     write_u32_to_memory(interp, nread_ptr, total);
     interp.stack.push(Value::I32(wasi_success()))?;
@@ -436,28 +451,29 @@ pub fn wasi_fd_pwrite(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     };
 
     // 保存当前位置，seek 到 offset，写入，再 seek 回原位
-    let saved_pos = crate::kernel::framework::fs::vfs::api::vfs_seek(
-        entry.inner_fd as u32, 0, 1,
-    );
-    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
-        entry.inner_fd as u32, offset, 0,
-    );
+    let saved_pos = crate::kernel::framework::fs::vfs::api::vfs_seek(entry.inner_fd as u32, 0, 1);
+    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(entry.inner_fd as u32, offset, 0);
 
     let iovecs = read_iovec_from_memory(interp, iovs_ptr, iovs_len)?;
     let mut total = 0u32;
 
     for iov in &iovecs {
-        if iov.len == 0 { continue; }
-        let slice = interp.memory.as_ref()
+        if iov.len == 0 {
+            continue;
+        }
+        let slice = interp
+            .memory
+            .as_ref()
             .ok_or(WasmError::MemoryOutOfBounds)?
             .get_slice(iov.buf, iov.len)
             .map_err(|_| WasmError::MemoryOutOfBounds)?;
-        let n = crate::kernel::framework::fs::vfs::api::vfs_write_safe(
-            entry.inner_fd as u32, slice,
-        );
+        let n =
+            crate::kernel::framework::fs::vfs::api::vfs_write_safe(entry.inner_fd as u32, slice);
         if n < 0 {
             let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
-                entry.inner_fd as u32, saved_pos, 0,
+                entry.inner_fd as u32,
+                saved_pos,
+                0,
             );
             interp.stack.push(Value::I32(wasi_errno(WasiErrno::Io)))?;
             return Ok(());
@@ -466,9 +482,7 @@ pub fn wasi_fd_pwrite(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     }
 
     // 恢复原位置
-    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(
-        entry.inner_fd as u32, saved_pos, 0,
-    );
+    let _ = crate::kernel::framework::fs::vfs::api::vfs_seek(entry.inner_fd as u32, saved_pos, 0);
 
     write_u32_to_memory(interp, nwritten_ptr, total);
     interp.stack.push(Value::I32(wasi_success()))?;
@@ -501,9 +515,7 @@ pub fn wasi_fd_allocate(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resu
     let target_size = offset.saturating_add(len);
 
     // 获取当前文件大小
-    let stat = crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(
-        entry.inner_fd as u32, 0,
-    );
+    let stat = crate::kernel::framework::fs::vfs::api::vfs_fstat_safe(entry.inner_fd as u32, 0);
 
     let current_size = stat.map_or(0, |s| u64::from(s.size));
     if current_size < target_size {
@@ -603,7 +615,10 @@ pub fn wasi_fd_dup(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<()
     Ok(())
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// WASI `fd_readdir`: 读取目录内容
 ///
 /// # Errors
@@ -640,7 +655,11 @@ pub fn wasi_fd_readdir(ctx: &mut WasiContext, interp: &mut Interpreter) -> Resul
     // 将 VfsDirEntry 转换为 WASI dirent 格式写入缓冲区
     // WASI dirent: { inode: u64, next_cookie: u64, namlen: u16, filetype: u8, name: [u8] }
     // name 是 [u8; VFS_MAX_NAME] 固定数组, 找到 NUL 终止符确定长度
-    let name_len = dir_entry.name.iter().position(|&b| b == 0).unwrap_or(dir_entry.name.len());
+    let name_len = dir_entry
+        .name
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(dir_entry.name.len());
     let copy_len = name_len.min(buf_len as usize - 19) as u16; // 19 = dirent header size
 
     if let Some(ref mut mem) = interp.memory {

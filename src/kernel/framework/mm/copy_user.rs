@@ -33,7 +33,7 @@
 //! - 复制前已校验缓冲区边界
 //! - 异常恢复机制能处理复制过程中的任何缺页
 
-use core::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[cfg(test)]
 use super::PAGE_SIZE;
@@ -61,7 +61,7 @@ static EXCEPTION_TABLE_START: ExceptionTableEntry = ExceptionTableEntry {
 
 /// 每 CPU 异常上下文存储
 /// 使用静态数组而非 `thread_local`!, 以兼容裸机环境
-static PER_CPU_EXCEPTION_CTX: [AtomicU64; crate::kernel::framework::config::MAX_CPUS] = 
+static PER_CPU_EXCEPTION_CTX: [AtomicU64; crate::kernel::framework::config::MAX_CPUS] =
     [const { AtomicU64::new(0) }; crate::kernel::framework::config::MAX_CPUS];
 
 /// 表示尚未设置异常上下文的标记值
@@ -83,17 +83,18 @@ static PER_CPU_EXCEPTION_OCCURRED: [AtomicBool; crate::kernel::framework::config
 fn current_cpu_id() -> usize {
     let cpu = crate::kernel::framework::cpu::arch::cpu_id() as usize;
     let max_cpus = crate::kernel::framework::config::MAX_CPUS;
-    
+
     #[cfg(debug_assertions)]
     {
         // 不可恢复: CPU ID 超过 MAX_CPUS 是配置错误, release 模式下取模降级,
         // debug 模式下必须停机以暴露问题
-        assert!(cpu < max_cpus, 
-                        "CPU ID {cpu} exceeds MAX_CPUS ({max_cpus}). Increase MAX_CPUS or reduce CPU count!"
-                    );
+        assert!(
+            cpu < max_cpus,
+            "CPU ID {cpu} exceeds MAX_CPUS ({max_cpus}). Increase MAX_CPUS or reduce CPU count!"
+        );
         cpu
     }
-    
+
     #[cfg(not(debug_assertions))]
     {
         cpu % max_cpus
@@ -177,7 +178,10 @@ pub fn is_user_ptr(ptr: u64) -> bool {
 
 /// 检查缓冲区 (ptr + len) 是否完全位于用户空间
 #[inline]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn is_user_buf(ptr: u64, len: usize) -> bool {
     if len == 0 {
         return true;
@@ -202,31 +206,33 @@ pub fn is_user_buf(ptr: u64, len: usize) -> bool {
 ///
 // SAFETY: 调用方需保证在异常恢复有意义的上下文中调用 (即即将访问用户内存).
 #[inline(never)]
-unsafe fn setup_recovery() -> (u64, Option<u64>) { unsafe {
-    clear_exception_flag();
+unsafe fn setup_recovery() -> (u64, Option<u64>) {
+    unsafe {
+        clear_exception_flag();
 
-    let recovery_label: u64;
-    // SAFETY: inline asm 仅读取当前指令地址作为恢复点, 无副作用.
-    #[cfg(target_arch = "x86_64")]
-    core::arch::asm!(
-        "9:",
-        "lea {recovery}, [rip + 8f]",
-        "8:",
-        recovery = out(reg) recovery_label,
-        options(nostack, pure, readonly),
-    );
-    // SAFETY: `adr` 是 PC-relative 单指令, 不触发 movz/movk fixup bug.
-    #[cfg(target_arch = "aarch64")]
-    core::arch::asm!(
-        "adr {recovery}, 8f",
-        "8:",
-        recovery = out(reg) recovery_label,
-        options(nostack, pure, readonly),
-    );
+        let recovery_label: u64;
+        // SAFETY: inline asm 仅读取当前指令地址作为恢复点, 无副作用.
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!(
+            "9:",
+            "lea {recovery}, [rip + 8f]",
+            "8:",
+            recovery = out(reg) recovery_label,
+            options(nostack, pure, readonly),
+        );
+        // SAFETY: `adr` 是 PC-relative 单指令, 不触发 movz/movk fixup bug.
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!(
+            "adr {recovery}, 8f",
+            "8:",
+            recovery = out(reg) recovery_label,
+            options(nostack, pure, readonly),
+        );
 
-    let old_recovery = set_exception_recovery(recovery_label as u64);
-    (recovery_label, old_recovery)
-}}
+        let old_recovery = set_exception_recovery(recovery_label as u64);
+        (recovery_label, old_recovery)
+    }
+}
 
 /// 撤销异常恢复点, 若有旧恢复点则还原.
 ///
@@ -291,11 +297,7 @@ pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Resul
 
         let faulted = teardown_recovery(old_recovery);
 
-        if faulted {
-            Err(())
-        } else {
-            Ok(len)
-        }
+        if faulted { Err(()) } else { Ok(len) }
     };
 
     result
@@ -349,11 +351,7 @@ pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usiz
 
         let faulted = teardown_recovery(old_recovery);
 
-        if faulted {
-            Err(())
-        } else {
-            Ok(len)
-        }
+        if faulted { Err(()) } else { Ok(len) }
     };
 
     result
@@ -429,11 +427,7 @@ pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
 
         let faulted = teardown_recovery(old_recovery);
 
-        if faulted {
-            Err(())
-        } else {
-            Ok(len)
-        }
+        if faulted { Err(()) } else { Ok(len) }
     };
 
     result
@@ -521,7 +515,7 @@ mod tests {
         let mut kernel_buf = [0u8; 16];
         let result = copy_from_user(&mut kernel_buf, 0, 16);
         assert!(result.is_err());
-        
+
         let result = copy_from_user(&mut kernel_buf, 0xFFFF_8000_0000_0000, 16);
         assert!(result.is_err());
     }
@@ -545,7 +539,7 @@ mod tests {
         let kernel_buf = [0u8; 16];
         let result = copy_to_user(0, &kernel_buf, 16);
         assert!(result.is_err());
-        
+
         let result = copy_to_user(0xFFFF_8000_0000_0000, &kernel_buf, 16);
         assert!(result.is_err());
     }
@@ -560,7 +554,7 @@ mod tests {
     fn test_clear_user_invalid_ptr() {
         let result = clear_user(0, 16);
         assert!(result.is_err());
-        
+
         let result = clear_user(0xFFFF_8000_0000_0000, 16);
         assert!(result.is_err());
     }
@@ -569,7 +563,7 @@ mod tests {
     fn test_strlen_user_invalid_ptr() {
         let result = strlen_user(0, 256);
         assert!(result.is_err());
-        
+
         let result = strlen_user(0xFFFF_8000_0000_0000, 256);
         assert!(result.is_err());
     }
@@ -578,7 +572,7 @@ mod tests {
     fn test_copy_string_from_user_invalid_ptr() {
         let result = copy_string_from_user(0, 256);
         assert!(result.is_err());
-        
+
         let result = copy_string_from_user(0xFFFF_8000_0000_0000, 256);
         assert!(result.is_err());
     }
@@ -588,8 +582,11 @@ mod tests {
         assert!(is_user_ptr(USER_ADDR_MAX - 1));
         assert!(!is_user_ptr(USER_ADDR_MAX));
         assert!(!is_user_ptr(USER_ADDR_MAX + 1));
-        
-        assert!(is_user_buf(USER_ADDR_MAX - PAGE_SIZE as usize, PAGE_SIZE as usize));
+
+        assert!(is_user_buf(
+            USER_ADDR_MAX - PAGE_SIZE as usize,
+            PAGE_SIZE as usize
+        ));
         assert!(!is_user_buf(USER_ADDR_MAX - 100, 200));
     }
 }

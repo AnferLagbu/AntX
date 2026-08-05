@@ -42,7 +42,7 @@ use super::engine;
 use super::identity;
 use super::session;
 use super::storage;
-use super::types::{PwmEntry, CapDomain, CapBits, AuditAction};
+use super::types::{AuditAction, CapBits, CapDomain, PwmEntry};
 use crate::kernel::framework::lib::CStrExt;
 
 macro_rules! klog_pwm {
@@ -96,12 +96,11 @@ pub extern "C" fn pwm_try_genesis(password: *const u8) -> i64 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-pub extern "C" fn pwm_create(
-    password: *const u8,
-    note: *const u8,
-    creator_pwm: u64,
-) -> i64 {
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+pub extern "C" fn pwm_create(password: *const u8, note: *const u8, creator_pwm: u64) -> i64 {
     let pwd = password.as_kstr();
     let nte = note.as_kstr();
     match identity::get_table().create(pwd, nte, creator_pwm) {
@@ -149,11 +148,7 @@ pub extern "C" fn pwm_verify_password(pwm: u64, password: *const u8) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub extern "C" fn pwm_change_password(
-    pwm: u64,
-    old: *const u8,
-    new: *const u8,
-) -> i32 {
+pub extern "C" fn pwm_change_password(pwm: u64, old: *const u8, new: *const u8) -> i32 {
     let o = old.as_kstr();
     let n = new.as_kstr();
     match identity::get_table().change_password(pwm, o, n) {
@@ -170,7 +165,10 @@ pub extern "C" fn pwm_find(pwm: u64) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 pub extern "C" fn pwm_find_entry(pwm: u64) -> *const PwmEntry {
     match identity::find(pwm) {
         Some(e) => e as *const PwmEntry,
@@ -259,10 +257,7 @@ pub extern "C" fn pwm_check_privilege(operator: u64, target: u64) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub extern "C" fn pwm_login(
-    note: *const u8,
-    password: *const u8,
-) -> i64 {
+pub extern "C" fn pwm_login(note: *const u8, password: *const u8) -> i64 {
     let n = note.as_kstr();
     let p = password.as_kstr();
     match session::login(n, p) {
@@ -345,7 +340,10 @@ pub extern "C" fn pwm_try_setuid(target_uid: u32) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub extern "C" fn pwm_get_uid(pwm: u64) -> u32 {
     match identity::find(pwm) {
         Some(e) => e.get_uid(),
@@ -355,7 +353,10 @@ pub extern "C" fn pwm_get_uid(pwm: u64) -> u32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub extern "C" fn pwm_get_gid(pwm: u64) -> u32 {
     match identity::find(pwm) {
         Some(e) => e.get_gid(),
@@ -416,7 +417,10 @@ pub fn umask_get() -> u32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 pub extern "C" fn pwm_audit_log(pwm: u64, action: u32, target: u64, details: u64) {
     let act = match action {
         1 => AuditAction::Login,
@@ -442,10 +446,7 @@ pub extern "C" fn pwm_audit_dump() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-pub extern "C" fn pwm_recover_first(
-    password: *const u8,
-    note: *const u8,
-) -> i64 {
+pub extern "C" fn pwm_recover_first(password: *const u8, note: *const u8) -> i64 {
     let p = password.as_kstr();
     let n = note.as_kstr();
     match identity::get_table().recover_with_first(p, n) {

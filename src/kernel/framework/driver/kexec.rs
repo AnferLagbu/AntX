@@ -29,10 +29,10 @@
 //! 本模块属于 framework/TCB, 允许 unsafe.
 //! kexec 涉及物理内存操作、设备关闭、直接跳转, 极度危险.
 
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock;
+use alloc::vec::Vec;
 
 // ============================================================================
 // 常量
@@ -135,18 +135,16 @@ impl KexecSubsystem {
         );
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 加载内核段
     ///
     /// `seg_type`: 段类型
     /// `dst_addr`: 目标物理地址
     /// `src_data`: 源数据
-    pub fn load_segment(
-        &self,
-        seg_type: KexecSegType,
-        dst_addr: u64,
-        src_data: &[u8],
-    ) -> bool {
+    pub fn load_segment(&self, seg_type: KexecSegType, dst_addr: u64, src_data: &[u8]) -> bool {
         // 检查状态
         let current = KexecState::from_u32(self.state.load(Ordering::Acquire));
         if current == KexecState::Executing {
@@ -164,7 +162,9 @@ impl KexecSubsystem {
             crate::klog_ffi!(
                 klog_ffi_warn,
                 "[kexec] segment too large: type={} size={} max={}",
-                seg_type as u32, src_data.len(), max_size
+                seg_type as u32,
+                src_data.len(),
+                max_size
             );
             return false;
         }
@@ -204,7 +204,9 @@ impl KexecSubsystem {
         crate::klog_ffi!(
             klog_ffi_info,
             "[kexec] loaded segment: type={} addr={:#x} size={}",
-            seg_type as u32, dst_addr, src_data.len()
+            seg_type as u32,
+            dst_addr,
+            src_data.len()
         );
         true
     }
@@ -231,13 +233,11 @@ impl KexecSubsystem {
             }
         }
 
-        self.state.store(KexecState::Executing as u32, Ordering::Release);
+        self.state
+            .store(KexecState::Executing as u32, Ordering::Release);
         let entry = self.entry_point.load(Ordering::Acquire);
 
-        crate::klog_ffi!(
-            klog_ffi_info,
-            "[kexec] executing: entry={:#x}", entry
-        );
+        crate::klog_ffi!(klog_ffi_info, "[kexec] executing: entry={:#x}", entry);
 
         // 1. 关闭所有设备
         crate::kernel::framework::driver::shutdown_all();
@@ -262,14 +262,12 @@ impl KexecSubsystem {
         let segments = self.segments.lock();
         let has_kernel = segments.iter().any(|s| s.seg_type == KexecSegType::Kernel);
         if !has_kernel {
-            crate::klog_ffi!(
-                klog_ffi_warn,
-                "[kexec] no kernel segment loaded"
-            );
+            crate::klog_ffi!(klog_ffi_warn, "[kexec] no kernel segment loaded");
             return false;
         }
 
-        self.state.store(KexecState::Loaded as u32, Ordering::Release);
+        self.state
+            .store(KexecState::Loaded as u32, Ordering::Release);
         crate::klog_ffi!(
             klog_ffi_info,
             "[kexec] marked as loaded: {} segments, entry={:#x}",
@@ -433,7 +431,10 @@ pub fn kexec_is_initialized() -> bool {
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 pub extern "C" fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
     if !kexec_is_initialized() && cmd != 7 {
         return -(11i64); // EAGAIN
@@ -461,7 +462,9 @@ pub extern "C" fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
             };
             kexec_subsystem().segments.lock().push(seg);
             if seg_type == KexecSegType::Kernel {
-                kexec_subsystem().entry_point.store(dst_addr, Ordering::Release);
+                kexec_subsystem()
+                    .entry_point
+                    .store(dst_addr, Ordering::Release);
             }
             0
         }
@@ -472,7 +475,11 @@ pub extern "C" fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
         }
         2 => {
             // mark_loaded
-            if kexec_subsystem().mark_loaded() { 0 } else { -(22i64) }
+            if kexec_subsystem().mark_loaded() {
+                0
+            } else {
+                -(22i64)
+            }
         }
         3 => {
             // execute — 不会返回
@@ -480,7 +487,11 @@ pub extern "C" fn sys_kexec(cmd: u64, a1: u64, a2: u64, a3: u64) -> i64 {
         }
         4 => {
             // cancel
-            if kexec_subsystem().cancel() { 0 } else { -(22i64) }
+            if kexec_subsystem().cancel() {
+                0
+            } else {
+                -(22i64)
+            }
         }
         5 => {
             // get_state

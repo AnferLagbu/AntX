@@ -56,8 +56,8 @@ macro_rules! lockdep_log {
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
+use crate::kernel::framework::constants::limits::{MAX_HELD_LOCKS, MAX_LOCK_CLASSES};
 use crate::kernel::framework::sync::IrqSpinLock;
-use crate::kernel::framework::constants::limits::{MAX_LOCK_CLASSES, MAX_HELD_LOCKS};
 
 /// 邻接矩阵中 "已验证无环" 的标记位 (避免重复 BFS)
 const DEPENDENCY_VERIFIED: u8 = 1;
@@ -197,7 +197,11 @@ impl LockDepMap {
 
         // 新注册
         if self.class_count >= MAX_LOCK_CLASSES {
-            lockdep_log!("lockdep: MAX_LOCK_CLASSES ({}) exceeded, skipping '{}'", MAX_LOCK_CLASSES, desc.name);
+            lockdep_log!(
+                "lockdep: MAX_LOCK_CLASSES ({}) exceeded, skipping '{}'",
+                MAX_LOCK_CLASSES,
+                desc.name
+            );
             return LockClassId::INVALID;
         }
 
@@ -480,7 +484,8 @@ pub fn acquire(class_id: LockClassId, irq_context: bool) -> bool {
             let name = map.class_name(class_id);
             lockdep_log!(
                 "lockdep VIOLATION: acquiring sleep lock '{}' ({:?}) in IRQ context!",
-                name, k
+                name,
+                k
             );
             map.violation_count.fetch_add(1, Ordering::Relaxed);
             return false;
@@ -525,7 +530,8 @@ pub fn acquire(class_id: LockClassId, irq_context: bool) -> bool {
                 let to_name = map.class_name(class_id);
                 lockdep_log!(
                     "lockdep DEADLOCK: circular dependency detected: {} → {} (AB-BA)",
-                    from_name, to_name
+                    from_name,
+                    to_name
                 );
                 // 不 return, 继续记录但标记违规
             }
@@ -590,7 +596,10 @@ pub fn dump_state() {
     lockdep_log!("=== Lockdep State Dump ===");
     lockdep_log!("Registered classes: {}", map.num_classes());
     lockdep_log!("Violations: {}", map.num_violations());
-    lockdep_log!("Deadlock detected: {}", map.deadlock_detected.load(Ordering::Relaxed));
+    lockdep_log!(
+        "Deadlock detected: {}",
+        map.deadlock_detected.load(Ordering::Relaxed)
+    );
     lockdep_log!("Held locks (depth={}):", stack.len());
 
     for entry in stack.held_classes() {
@@ -603,11 +612,7 @@ pub fn dump_state() {
     for i in 0..map.class_count {
         for j in 0..map.class_count {
             if map.adjacency[i][j] != 0 {
-                lockdep_log!(
-                    "  {} → {}",
-                    map.classes[i].name,
-                    map.classes[j].name,
-                );
+                lockdep_log!("  {} → {}", map.classes[i].name, map.classes[j].name,);
             }
         }
     }
@@ -684,15 +689,24 @@ mod tests {
     #[test]
     fn test_lock_dep_map_register() {
         let mut map = LockDepMap::new();
-        let id_a = map.register(LockClassDesc { name: "lock_a", kind: LockKind::Mutex });
-        let id_b = map.register(LockClassDesc { name: "lock_b", kind: LockKind::SpinLock });
+        let id_a = map.register(LockClassDesc {
+            name: "lock_a",
+            kind: LockKind::Mutex,
+        });
+        let id_b = map.register(LockClassDesc {
+            name: "lock_b",
+            kind: LockKind::SpinLock,
+        });
 
         assert_eq!(id_a, LockClassId(0));
         assert_eq!(id_b, LockClassId(1));
         assert_eq!(map.num_classes(), 2);
 
         // 同名注册应返回相同 ID
-        let id_a2 = map.register(LockClassDesc { name: "lock_a", kind: LockKind::Mutex });
+        let id_a2 = map.register(LockClassDesc {
+            name: "lock_a",
+            kind: LockKind::Mutex,
+        });
         assert_eq!(id_a2, id_a);
         assert_eq!(map.num_classes(), 2);
     }
@@ -700,9 +714,18 @@ mod tests {
     #[test]
     fn test_lock_dep_map_no_cycle() {
         let mut map = LockDepMap::new();
-        let id_a = map.register(LockClassDesc { name: "A", kind: LockKind::Mutex });
-        let id_b = map.register(LockClassDesc { name: "B", kind: LockKind::Mutex });
-        let id_c = map.register(LockClassDesc { name: "C", kind: LockKind::Mutex });
+        let id_a = map.register(LockClassDesc {
+            name: "A",
+            kind: LockKind::Mutex,
+        });
+        let id_b = map.register(LockClassDesc {
+            name: "B",
+            kind: LockKind::Mutex,
+        });
+        let id_c = map.register(LockClassDesc {
+            name: "C",
+            kind: LockKind::Mutex,
+        });
 
         // A → B → C (无环)
         assert!(map.add_dependency(id_a, id_b));
@@ -713,8 +736,14 @@ mod tests {
     #[test]
     fn test_lock_dep_map_cycle_detection() {
         let mut map = LockDepMap::new();
-        let id_a = map.register(LockClassDesc { name: "A", kind: LockKind::Mutex });
-        let id_b = map.register(LockClassDesc { name: "B", kind: LockKind::Mutex });
+        let id_a = map.register(LockClassDesc {
+            name: "A",
+            kind: LockKind::Mutex,
+        });
+        let id_b = map.register(LockClassDesc {
+            name: "B",
+            kind: LockKind::Mutex,
+        });
 
         // A → B
         assert!(map.add_dependency(id_a, id_b));
@@ -727,9 +756,18 @@ mod tests {
     #[test]
     fn test_lock_dep_map_three_node_cycle() {
         let mut map = LockDepMap::new();
-        let id_a = map.register(LockClassDesc { name: "A", kind: LockKind::Mutex });
-        let id_b = map.register(LockClassDesc { name: "B", kind: LockKind::Mutex });
-        let id_c = map.register(LockClassDesc { name: "C", kind: LockKind::Mutex });
+        let id_a = map.register(LockClassDesc {
+            name: "A",
+            kind: LockKind::Mutex,
+        });
+        let id_b = map.register(LockClassDesc {
+            name: "B",
+            kind: LockKind::Mutex,
+        });
+        let id_c = map.register(LockClassDesc {
+            name: "C",
+            kind: LockKind::Mutex,
+        });
 
         // A → B
         assert!(map.add_dependency(id_a, id_b));

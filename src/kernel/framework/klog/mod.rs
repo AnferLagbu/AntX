@@ -153,7 +153,10 @@ mod serial_impl {
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     unsafe fn port_outb(port: u16, value: u8) {
         crate::arch!(outb(port, value));
     }
@@ -254,10 +257,18 @@ pub trait LogSink: Sync {
 pub struct SerialSink;
 
 impl LogSink for SerialSink {
-    fn name(&self) -> &'static str { "serial" }
-    fn putc(&self, c: u8) { serial_putc_chained(c); }
-    fn write_str(&self, s: &str) { serial_write_bytes(s.as_bytes()); }
-    fn write_bytes(&self, b: &[u8]) { serial_write_bytes(b); }
+    fn name(&self) -> &'static str {
+        "serial"
+    }
+    fn putc(&self, c: u8) {
+        serial_putc_chained(c);
+    }
+    fn write_str(&self, s: &str) {
+        serial_write_bytes(s.as_bytes());
+    }
+    fn write_bytes(&self, b: &[u8]) {
+        serial_write_bytes(b);
+    }
 }
 
 /// TD-09: 全局 sink 注册表 (静态数组, 不依赖分配器).
@@ -274,9 +285,16 @@ union SinkPtr {
     raw: usize,
     fat: *const dyn LogSink,
 }
-const fn null_sink_ptr() -> SinkPtr { SinkPtr { raw: 0 } }
+const fn null_sink_ptr() -> SinkPtr {
+    SinkPtr { raw: 0 }
+}
 const fn make_null_sinks() -> [SinkPtr; MAX_LOG_SINKS] {
-    [null_sink_ptr(), null_sink_ptr(), null_sink_ptr(), null_sink_ptr()]
+    [
+        null_sink_ptr(),
+        null_sink_ptr(),
+        null_sink_ptr(),
+        null_sink_ptr(),
+    ]
 }
 // SAFETY: SinkPtr 的 raw/fat 共享存储, 注册时写入 fat 有效; 日志路径由调用方序列化.
 unsafe impl Send for SinkPtr {}
@@ -292,7 +310,10 @@ static LOG_SINK_COUNT: AtomicU8 = AtomicU8::new(0);
 /// `sink` 必须是 `'static` (其内部任何状态都不可被释放).
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 pub unsafe fn klog_register_sink(sink: &'static dyn LogSink) -> Option<usize> {
     let idx = LOG_SINK_COUNT.load(Ordering::SeqCst) as usize;
     if idx >= MAX_LOG_SINKS {
@@ -388,7 +409,10 @@ struct RingBuf {
 }
 
 impl RingBuf {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     const fn new() -> Self {
         Self {
             data: [0; RING_SIZE],
@@ -448,7 +472,7 @@ pub enum LogLevel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-#[allow(clippy::upper_case_acronyms)]  // IPC 子系统名
+#[allow(clippy::upper_case_acronyms)] // IPC 子系统名
 pub enum LogCategory {
     Boot = 0,
     Kernel = 1,
@@ -507,19 +531,21 @@ impl LogCategory {
 // ============================================================================
 
 // SAFETY: `const` 由调用方保证为有效指针; 只读访问
-unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] { unsafe {
-    if ptr.is_null() {
-        return b"(null)";
-    }
-    let mut len = 0usize;
-    while *ptr.add(len) != 0 {
-        len += 1;
-        if len > 1024 {
-            return b"(truncated)";
+unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] {
+    unsafe {
+        if ptr.is_null() {
+            return b"(null)";
         }
+        let mut len = 0usize;
+        while *ptr.add(len) != 0 {
+            len += 1;
+            if len > 1024 {
+                return b"(truncated)";
+            }
+        }
+        core::slice::from_raw_parts(ptr, len)
     }
-    core::slice::from_raw_parts(ptr, len)
-}}
+}
 
 fn rdtsc() -> u64 {
     crate::arch!(timestamp())
@@ -678,8 +704,14 @@ pub unsafe extern "C" fn klog_init() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 ///
 /// # Safety
 ///
@@ -691,50 +723,52 @@ pub unsafe extern "C" fn klog_write(
     _func: *const u8,
     _line: u32,
     fmt: *const u8,
-// SAFETY: 指针操作在有效范围内，调用方保证指针有效性
-) -> i32 { unsafe {
-    if fmt.is_null() {
-        return -1;
+    // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
+) -> i32 {
+    unsafe {
+        if fmt.is_null() {
+            return -1;
+        }
+
+        let lvl = match level {
+            0 => LogLevel::Debug,
+            1 => LogLevel::Info,
+            2 => LogLevel::Note,
+            3 => LogLevel::Warn,
+            4 => LogLevel::Error,
+            5 => LogLevel::Crit,
+            _ => return -1,
+        };
+
+        let category = match cat {
+            0 => LogCategory::Boot,
+            1 => LogCategory::Kernel,
+            2 => LogCategory::Memory,
+            3 => LogCategory::Process,
+            4 => LogCategory::FS,
+            5 => LogCategory::Net,
+            6 => LogCategory::Driver,
+            7 => LogCategory::Syscall,
+            8 => LogCategory::IPC,
+            9 => LogCategory::Security,
+            10 => LogCategory::Test,
+            11 => LogCategory::Sync,
+            12 => LogCategory::Swap,
+            13 => LogCategory::Acpi,
+            14 => LogCategory::Timer,
+            _ => LogCategory::Kernel,
+        };
+
+        let min = MIN_LEVEL.load(Ordering::Relaxed);
+        if i32::from(level) < i32::from(min) {
+            return 0;
+        }
+
+        let msg = cstr_slice(fmt as *const u8);
+        klog_output(lvl, category, msg);
+        0
     }
-
-    let lvl = match level {
-        0 => LogLevel::Debug,
-        1 => LogLevel::Info,
-        2 => LogLevel::Note,
-        3 => LogLevel::Warn,
-        4 => LogLevel::Error,
-        5 => LogLevel::Crit,
-        _ => return -1,
-    };
-
-    let category = match cat {
-        0 => LogCategory::Boot,
-        1 => LogCategory::Kernel,
-        2 => LogCategory::Memory,
-        3 => LogCategory::Process,
-        4 => LogCategory::FS,
-        5 => LogCategory::Net,
-        6 => LogCategory::Driver,
-        7 => LogCategory::Syscall,
-        8 => LogCategory::IPC,
-        9 => LogCategory::Security,
-        10 => LogCategory::Test,
-        11 => LogCategory::Sync,
-        12 => LogCategory::Swap,
-        13 => LogCategory::Acpi,
-        14 => LogCategory::Timer,
-        _ => LogCategory::Kernel,
-    };
-
-    let min = MIN_LEVEL.load(Ordering::Relaxed);
-    if i32::from(level) < i32::from(min) {
-        return 0;
-    }
-
-    let msg = cstr_slice(fmt as *const u8);
-    klog_output(lvl, category, msg);
-    0
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
@@ -742,13 +776,15 @@ pub unsafe extern "C" fn klog_write(
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) { unsafe {
-    if msg.is_null() {
-        return;
+pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) {
+    unsafe {
+        if msg.is_null() {
+            return;
+        }
+        let s = cstr_slice(msg);
+        klog_output(LogLevel::Info, LogCategory::Kernel, s);
     }
-    let s = cstr_slice(msg);
-    klog_output(LogLevel::Info, LogCategory::Kernel, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
@@ -756,13 +792,15 @@ pub unsafe extern "C" fn klog_ffi_info(msg: *const u8) { unsafe {
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) { unsafe {
-    if msg.is_null() {
-        return;
+pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) {
+    unsafe {
+        if msg.is_null() {
+            return;
+        }
+        let s = cstr_slice(msg);
+        klog_output(LogLevel::Warn, LogCategory::Kernel, s);
     }
-    let s = cstr_slice(msg);
-    klog_output(LogLevel::Warn, LogCategory::Kernel, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
@@ -770,100 +808,132 @@ pub unsafe extern "C" fn klog_ffi_warn(msg: *const u8) { unsafe {
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) { unsafe {
-    if msg.is_null() {
-        return;
+pub unsafe extern "C" fn klog_ffi_error(msg: *const u8) {
+    unsafe {
+        if msg.is_null() {
+            return;
+        }
+        let s = cstr_slice(msg);
+        klog_output(LogLevel::Error, LogCategory::Kernel, s);
     }
-    let s = cstr_slice(msg);
-    klog_output(LogLevel::Error, LogCategory::Kernel, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_net(fmt: *const u8) { unsafe {
-    if fmt.is_null() {
-        return;
+pub unsafe extern "C" fn klog_net(fmt: *const u8) {
+    unsafe {
+        if fmt.is_null() {
+            return;
+        }
+        let s = cstr_slice(fmt as *const u8);
+        klog_output(LogLevel::Info, LogCategory::Net, s);
     }
-    let s = cstr_slice(fmt as *const u8);
-    klog_output(LogLevel::Info, LogCategory::Net, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_net_err(fmt: *const u8) { unsafe {
-    if fmt.is_null() {
-        return;
+pub unsafe extern "C" fn klog_net_err(fmt: *const u8) {
+    unsafe {
+        if fmt.is_null() {
+            return;
+        }
+        let s = cstr_slice(fmt as *const u8);
+        klog_output(LogLevel::Error, LogCategory::Net, s);
     }
-    let s = cstr_slice(fmt as *const u8);
-    klog_output(LogLevel::Error, LogCategory::Net, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) { unsafe {
-    if fmt.is_null() {
-        return;
+pub unsafe extern "C" fn klog_init_msg(fmt: *const i8) {
+    unsafe {
+        if fmt.is_null() {
+            return;
+        }
+        let s = cstr_slice(fmt as *const u8);
+        klog_output(LogLevel::Info, LogCategory::Boot, s);
     }
-    let s = cstr_slice(fmt as *const u8);
-    klog_output(LogLevel::Info, LogCategory::Boot, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_kern(fmt: *const i8) { unsafe {
-    if fmt.is_null() {
-        return;
+pub unsafe extern "C" fn klog_kern(fmt: *const i8) {
+    unsafe {
+        if fmt.is_null() {
+            return;
+        }
+        let s = cstr_slice(fmt as *const u8);
+        klog_output(LogLevel::Info, LogCategory::Kernel, s);
     }
-    let s = cstr_slice(fmt as *const u8);
-    klog_output(LogLevel::Info, LogCategory::Kernel, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_syscall(fmt: *const i8) { unsafe {
-    if fmt.is_null() {
-        return;
+pub unsafe extern "C" fn klog_syscall(fmt: *const i8) {
+    unsafe {
+        if fmt.is_null() {
+            return;
+        }
+        let s = cstr_slice(fmt as *const u8);
+        klog_output(LogLevel::Info, LogCategory::Syscall, s);
     }
-    let s = cstr_slice(fmt as *const u8);
-    klog_output(LogLevel::Info, LogCategory::Syscall, s);
-}}
+}
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `msg`/`fmt` 是指向以 NUL 结尾的 C 字符串的有效指针, 所在内存可由内核访问.
-pub unsafe extern "C" fn klog_info(fmt: *const i8) { unsafe {
-    if fmt.is_null() {
-        return;
+pub unsafe extern "C" fn klog_info(fmt: *const i8) {
+    unsafe {
+        if fmt.is_null() {
+            return;
+        }
+        let s = cstr_slice(fmt as *const u8);
+        klog_output(LogLevel::Info, LogCategory::Kernel, s);
     }
-    let s = cstr_slice(fmt as *const u8);
-    klog_output(LogLevel::Info, LogCategory::Kernel, s);
-}}
+}

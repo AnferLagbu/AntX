@@ -24,9 +24,9 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+use crate::kernel::framework::sync::IrqSpinLock;
 use alloc::vec;
 use alloc::vec::Vec;
-use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
 // 常量
@@ -57,14 +57,17 @@ pub struct EfiTime {
     pub minute: u8,
     pub second: u8,
     pub nanosecond: u32,
-    pub timezone: i16,   // 0=UTC, -2047=未指定
-    pub daylight: u8,    // bit0=ADJUST, bit1=DST
+    pub timezone: i16, // 0=UTC, -2047=未指定
+    pub daylight: u8,  // bit0=ADJUST, bit1=DST
 }
 
 impl EfiTime {
     // 有意窄化: 用户内存代理, 指针/长度上下文保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn to_unix_ns(&self) -> u64 {
         // 简化: 转换为秒数
         let days_before_month: [u64; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
@@ -74,7 +77,8 @@ impl EfiTime {
         let leap_years = (y - 1) / 4 - (y - 1) / 100 + (y - 1) / 400;
         let is_leap = y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400));
         let extra = u64::from(is_leap && m > 2);
-        let days = y * 365 + leap_years + days_before_month.get(m as usize - 1).unwrap_or(&0) + d + extra;
+        let days =
+            y * 365 + leap_years + days_before_month.get(m as usize - 1).unwrap_or(&0) + d + extra;
         // 1970-01-01 基准
         let epoch_days = 1970 * 365 + (1970 - 1) / 4 - (1970 - 1) / 100 + (1970 - 1) / 400 + 1;
         let unix_days = days.saturating_sub(epoch_days);
@@ -228,8 +232,10 @@ impl UefiSubsystem {
             return;
         }
 
-        self.system_table_addr.store(system_table_addr, Ordering::Release);
-        self.has_uefi.store(system_table_addr != 0, Ordering::Release);
+        self.system_table_addr
+            .store(system_table_addr, Ordering::Release);
+        self.has_uefi
+            .store(system_table_addr != 0, Ordering::Release);
 
         if system_table_addr != 0 {
             // SAFETY: system_table_addr 由引导加载器传入
@@ -249,7 +255,10 @@ impl UefiSubsystem {
         );
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 解析系统表 (简化)
     fn parse_system_table(&self, _addr: u64) {
         // TODO(TRACK-4D5E78): 实际解析 EFI_SYSTEM_TABLE
@@ -267,7 +276,9 @@ impl UefiSubsystem {
         vars.push(EfiVariable {
             name: b"BootOrder".to_vec(),
             guid: [0x84; 16], // 全局变量 GUID (简化)
-            attributes: EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+            attributes: EFI_VARIABLE_NON_VOLATILE
+                | EFI_VARIABLE_BOOTSERVICE_ACCESS
+                | EFI_VARIABLE_RUNTIME_ACCESS,
             data: vec![0, 0], // Boot0000
         });
 
@@ -275,7 +286,9 @@ impl UefiSubsystem {
         vars.push(EfiVariable {
             name: b"ConOut".to_vec(),
             guid: [0x84; 16],
-            attributes: EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
+            attributes: EFI_VARIABLE_NON_VOLATILE
+                | EFI_VARIABLE_BOOTSERVICE_ACCESS
+                | EFI_VARIABLE_RUNTIME_ACCESS,
             data: vec![],
         });
 
@@ -288,7 +301,10 @@ impl UefiSubsystem {
         });
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取 UEFI 变量
     pub fn get_variable(&self, name: &[u8], guid: &[u8; 16]) -> Option<(u32, Vec<u8>)> {
         let vars = self.variables.lock();
@@ -300,7 +316,10 @@ impl UefiSubsystem {
         None
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 设置 UEFI 变量
     pub fn set_variable(&self, name: &[u8], guid: &[u8; 16], attrs: u32, data: &[u8]) -> bool {
         if name.len() > EFI_MAX_VAR_NAME || data.len() > EFI_MAX_VAR_DATA {
@@ -326,7 +345,10 @@ impl UefiSubsystem {
         true
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 删除 UEFI 变量
     pub fn delete_variable(&self, name: &[u8], guid: &[u8; 16]) -> bool {
         let mut vars = self.variables.lock();
@@ -344,11 +366,14 @@ impl UefiSubsystem {
     /// 获取时间
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn get_time(&self) -> EfiTime {
         // 简化: 从内核时钟转换
         let ns = crate::kernel::framework::timer::ticks_to_ns(
-            crate::kernel::framework::timer::get_ticks()
+            crate::kernel::framework::timer::get_ticks(),
         );
         let secs = ns / 1_000_000_000;
         let nsec = (ns % 1_000_000_000) as u32;
@@ -397,8 +422,14 @@ impl UefiSubsystem {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 设置时间 (软件模拟)
     pub fn set_time(&self, _time: &EfiTime) -> bool {
         // TODO(TRACK-5E6F89): 调用 EFI_RUNTIME_SERVICES.SetTime

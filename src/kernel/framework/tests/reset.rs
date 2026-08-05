@@ -3,7 +3,7 @@
 //! 测试 Barrier Base/Soft/Hard Recovery 功能
 use crate::register_tests_inner;
 
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 
 fn config_recovery_result() -> TestResult {
     use crate::kernel::framework::barrier::reset::config::tests;
@@ -130,7 +130,7 @@ fn rollback_mode_enum() -> TestResult {
 
 fn snapshot_register_api() -> TestResult {
     use crate::kernel::framework::barrier::{
-        snapshot_register_device, snapshot_unregister_device, DeviceType,
+        DeviceType, snapshot_register_device, snapshot_unregister_device,
     };
 
     let registered = snapshot_register_device(999, DeviceType::Timer, "test_dev", 0xF000, 10);

@@ -12,7 +12,7 @@
 //! 域身份 (DID) + 能力矩阵 + 身份条目 + 审计类型.
 //! Credo: 密码决定身份 | 无预设特权 | 能力来自授予
 
-use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
+use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64};
 
 pub const MAX_PWM_ENTRIES: usize = 256;
 pub const PWM_NOTE_LEN: usize = 64;
@@ -28,12 +28,18 @@ pub struct PwmId(pub u64);
 impl PwmId {
     pub const ZERO: PwmId = PwmId(0);
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_valid(&self) -> bool {
         self.0 != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -55,12 +61,18 @@ impl DomainId {
     pub const ROOT: DomainId = DomainId(1000);
     pub const NOBODY: DomainId = DomainId(65534);
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_valid(&self) -> bool {
         self.0 != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -69,7 +81,10 @@ impl DomainId {
         DomainId(u64::from(uid))
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn to_uid(&self) -> u32 {
         self.0 as u32
     }
@@ -118,12 +133,18 @@ impl CapDomain {
     pub const DMA: CapDomain = CapDomain(14);
     pub const RESERVED: CapDomain = CapDomain(15);
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_usize(&self) -> usize {
         (self.0 as usize) % 16
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_u16(&self) -> u16 {
         self.0
     }
@@ -143,12 +164,18 @@ impl CapBits {
     pub const NONE: CapBits = CapBits(0);
     pub const ALL: CapBits = CapBits(0xFFFFFFFFFFFFFFFF);
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn contains(&self, other: CapBits) -> bool {
         (self.0 & other.0) == other.0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
@@ -285,7 +312,10 @@ impl PwmEntry {
         self.get_flags().contains(flag)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// T4-1: 全 Atomic 化后此 API 行为变化.
     /// 原因: [`AtomicU8`; N] 不能直接借用为 &[u8], 返回 owned &str 需要内部静态缓冲.
     /// 当前实现: 返回静态空串占位. 推荐使用 `note_bytes()` 复制 + 自行转换.

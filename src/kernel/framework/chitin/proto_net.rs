@@ -40,11 +40,7 @@ impl NetOps {
     /// - `driver_data` 必须有效, `data` 在调用期间有效, len 字节。
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-    pub fn send(
-        &self,
-        driver_data: *mut u8,
-        data: &[u8],
-    ) -> i32 {
+    pub fn send(&self, driver_data: *mut u8, data: &[u8]) -> i32 {
         // SAFETY: 调用方契约保证 data/len 有效; extern "C" fn 调用本身安全。
         unsafe { (self.send)(driver_data, data.as_ptr(), data.len() as u32) }
     }
@@ -55,11 +51,7 @@ impl NetOps {
     /// - `driver_data` 必须有效, `buf` 至少 `buf.capacity()` 字节。
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-    pub fn try_receive(
-        &self,
-        driver_data: *mut u8,
-        buf: &mut [u8],
-    ) -> i32 {
+    pub fn try_receive(&self, driver_data: *mut u8, buf: &mut [u8]) -> i32 {
         // SAFETY: buf 由调用方提供有效空间。
         unsafe { (self.try_receive)(driver_data, buf.as_mut_ptr(), buf.len() as u32) }
     }
@@ -68,11 +60,7 @@ impl NetOps {
     ///
     /// # Safety (调用方)
     /// - `driver_data` 必须有效。
-    pub fn get_mac(
-        &self,
-        driver_data: *mut u8,
-        mac: &mut [u8; 6],
-    ) {
+    pub fn get_mac(&self, driver_data: *mut u8, mac: &mut [u8; 6]) {
         // SAFETY: mac 6 字节对齐且生命周期内有效。
         unsafe { (self.get_mac)(driver_data, mac) }
     }
@@ -81,10 +69,7 @@ impl NetOps {
     ///
     /// # Safety (调用方)
     /// - `driver_data` 必须有效, 在中断上下文中调用。
-    pub fn handle_irq(
-        &self,
-        driver_data: *mut u8,
-    ) {
+    pub fn handle_irq(&self, driver_data: *mut u8) {
         if let Some(f) = self.handle_irq {
             // SAFETY: driver_data 有效, 中断上下文。
             unsafe { f(driver_data) };

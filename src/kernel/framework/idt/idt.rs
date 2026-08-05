@@ -24,13 +24,15 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::handlers::{create_handler, RecoveryAction};
+use super::handlers::{RecoveryAction, create_handler};
 use super::statistics::DetailedStatistics;
-use super::types::{IdtEntry, IDT_ENTRIES, InterruptFrame, IrqDescriptor, InterruptStatistics, GDT_KERNEL_CODE, IDT_TYPE_INTERRUPT, IRQ_BASE, IDT_TYPE_TRAP, IDT_DPL_USER, IRQ_FLAG_SHARED};
 #[cfg(target_arch = "x86_64")]
 use super::types::IdtPtr;
+use super::types::{
+    GDT_KERNEL_CODE, IDT_DPL_USER, IDT_ENTRIES, IDT_TYPE_INTERRUPT, IDT_TYPE_TRAP, IRQ_BASE,
+    IRQ_FLAG_SHARED, IdtEntry, InterruptFrame, InterruptStatistics, IrqDescriptor,
+};
 use crate::kernel::framework::sync::IrqSpinLock;
-
 
 use crate::kernel::framework::sync::OnceLock;
 use crate::klog_info;
@@ -38,7 +40,10 @@ use crate::klog_info;
 /// 从端口读字节
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 unsafe fn port_inb(port: u16) -> u8 {
     crate::arch!(inb(port))
 }
@@ -52,8 +57,7 @@ unsafe fn port_outb(port: u16, value: u8) {
 
 // I-25: legacy 8259A PIC 假性 IRQ 计数 (仅 x86_64, APIC 路径下不递增).
 #[cfg(target_arch = "x86_64")]
-static SPURIOUS_IRQ_COUNT: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+static SPURIOUS_IRQ_COUNT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 /// 读取 8259A 假性 IRQ 计数 (用于调试/procfs).
 #[cfg(target_arch = "x86_64")]
@@ -98,35 +102,39 @@ unsafe fn read_8259_isr(slave: bool) -> u8 {
 /// I/O 等待
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn io_wait() { unsafe {
-    port_outb(0x80, 0);
-}}
+unsafe fn io_wait() {
+    unsafe {
+        port_outb(0x80, 0);
+    }
+}
 
 /// 重映射 8259A PIC: IRQ0-7→vec32-39, IRQ8-15→vec40-47
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn remap_pic() { unsafe {
-    let m = port_inb(0x21);
-    let s = port_inb(0xA1);
-    port_outb(0x20, 0x11);
-    io_wait();
-    port_outb(0xA0, 0x11);
-    io_wait();
-    port_outb(0x21, 0x20);
-    io_wait();
-    port_outb(0xA1, 0x28);
-    io_wait();
-    port_outb(0x21, 0x04);
-    io_wait();
-    port_outb(0xA1, 0x02);
-    io_wait();
-    port_outb(0x21, 0x01);
-    io_wait();
-    port_outb(0xA1, 0x01);
-    io_wait();
-    port_outb(0x21, 0xFF);
-    port_outb(0xA1, 0xFF);
-    let _ = (m, s);
-}}
+unsafe fn remap_pic() {
+    unsafe {
+        let m = port_inb(0x21);
+        let s = port_inb(0xA1);
+        port_outb(0x20, 0x11);
+        io_wait();
+        port_outb(0xA0, 0x11);
+        io_wait();
+        port_outb(0x21, 0x20);
+        io_wait();
+        port_outb(0xA1, 0x28);
+        io_wait();
+        port_outb(0x21, 0x04);
+        io_wait();
+        port_outb(0xA1, 0x02);
+        io_wait();
+        port_outb(0x21, 0x01);
+        io_wait();
+        port_outb(0xA1, 0x01);
+        io_wait();
+        port_outb(0x21, 0xFF);
+        port_outb(0xA1, 0xFF);
+        let _ = (m, s);
+    }
+}
 
 /// 禁用中断
 #[inline(always)]
@@ -196,7 +204,10 @@ pub struct IdtManager {
 static IDT_MANAGER_INSTANCE: OnceLock<IdtManager> = OnceLock::new();
 
 impl IdtManager {
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 获取全局 IDT 管理器实例
     pub fn instance() -> &'static IdtManager {
         IDT_MANAGER_INSTANCE.get_or_init(|slot| {
@@ -220,7 +231,13 @@ impl IdtManager {
     ///
     /// # Returns
     /// - `Ok(())`: 初始化成功
-    #[cfg_attr(target_arch = "aarch64", expect(clippy::unnecessary_wraps, reason = "aarch64 IDT init 占位函数, 直接返回 Ok"))]
+    #[cfg_attr(
+        target_arch = "aarch64",
+        expect(
+            clippy::unnecessary_wraps,
+            reason = "aarch64 IDT init 占位函数, 直接返回 Ok"
+        )
+    )]
     /// - `Err(msg)`: 初始化失败
     /// # Errors
     /// IDT 初始化失败 (如关键 IST 未配置) 时返回 Err。
@@ -358,7 +375,10 @@ impl IdtManager {
         crate::klog_info!(Kernel, "IDT: MSI vectors 0x40-0x7F programmed");
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 内部函数: 设置门描述符 (需要 &mut state)
     fn set_gate_internal(
         &self,
@@ -377,19 +397,24 @@ impl IdtManager {
     /// # Safety
     /// 必须确保 IDT 表已正确初始化
     #[cfg(target_arch = "x86_64")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-    unsafe fn load_idt(&self) { unsafe {
-        let state = self.state.lock();
-        let base_addr = state.entries.as_ptr() as u64;
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
+    unsafe fn load_idt(&self) {
+        unsafe {
+            let state = self.state.lock();
+            let base_addr = state.entries.as_ptr() as u64;
 
-        let idt_ptr = IdtPtr::new(base_addr);
+            let idt_ptr = IdtPtr::new(base_addr);
 
-        core::arch::asm!(
-            "lidt [{0}]",
-            in(reg) &idt_ptr,
-            options(nostack, preserves_flags)
-        );
-    }}
+            core::arch::asm!(
+                "lidt [{0}]",
+                in(reg) &idt_ptr,
+                options(nostack, preserves_flags)
+            );
+        }
+    }
 
     /// 注册异常处理函数
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
@@ -469,7 +494,10 @@ impl IdtManager {
         Err("Handler not found")
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 启用指定 IRQ
     pub fn enable_irq(&self, irq: u8) {
         // 使用 GSI 路由, 不再限制 irq < 16
@@ -499,7 +527,10 @@ impl IdtManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 禁用指定 IRQ
     pub fn disable_irq(&self, irq: u8) {
         // 使用 GSI 路由, 不再限制 irq < 16
@@ -529,8 +560,14 @@ impl IdtManager {
     /// 处理异常 (从 `exception_handler` FFI 调用)
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn handle_exception(&self, frame: *mut InterruptFrame) {
         if frame.is_null() {
             return;
@@ -541,7 +578,8 @@ impl IdtManager {
             let vector = (*frame).int_no as u8;
 
             let nesting = self.nested_count.fetch_add(1, Ordering::SeqCst);
-            self.current_vector.store(u64::from(vector), Ordering::SeqCst);
+            self.current_vector
+                .store(u64::from(vector), Ordering::SeqCst);
 
             self.stats.record_exception(vector);
             self.detailed_stats.record_exception(vector, &*frame);
@@ -636,7 +674,10 @@ impl IdtManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// Kernel panic (停止系统)
     fn kernel_panic(&self, message: &str) {
         let _ = message;
@@ -716,7 +757,10 @@ impl IdtManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 发送 EOI (End of Interrupt)
     fn send_eoi(&self, irq: u8) {
         // Use Local APIC EOI if available (modern systems); 仅 x86_64 支持 APIC.
@@ -756,8 +800,13 @@ impl IdtManager {
         let current_vec = self.current_vector.load(Ordering::Relaxed);
 
         // TD-12: klog 替代原 let _ = ...
-        klog_info!(Kernel, "IDT dump: nesting={} current_vec={} descriptors={}",
-            nesting, current_vec, state.irq_descriptors.len());
+        klog_info!(
+            Kernel,
+            "IDT dump: nesting={} current_vec={} descriptors={}",
+            nesting,
+            current_vec,
+            state.irq_descriptors.len()
+        );
     }
 
     /// 获取中断计数

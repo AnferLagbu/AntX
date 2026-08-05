@@ -39,12 +39,14 @@
 //! - `page_fault.rs`: VMA 查找 (`find_vma`) → 释放 `VMA_LOCK` → VMM 操作 (`map_page`)
 //! - `MmStruct::remove_range`: 持有 `VMA_LOCK` → 获取 `VMM_LOCK` (反向顺序安全)
 
-use super::{VirtAddr, PhysAddr, PageFlags, PageSize, PageTableEntry, PAGE_PRESENT, PAGE_WRITABLE, PAGE_USER, PAGE_NX, KERNEL_BASE, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SIZE, PAGE_SIZE, get_pmm};
+use super::{
+    HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SIZE, KERNEL_BASE, PAGE_NX, PAGE_PRESENT, PAGE_SIZE, PAGE_USER,
+    PAGE_WRITABLE, PageFlags, PageSize, PageTableEntry, PhysAddr, VirtAddr, get_pmm,
+};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
-use crate::kernel::framework::sync::{disable_interrupts, restore_interrupts, IrqSaveFlags};
-
+use crate::kernel::framework::sync::{IrqSaveFlags, disable_interrupts, restore_interrupts};
 
 use crate::kernel::framework::sync::OnceLock;
 pub(crate) static KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
@@ -104,11 +106,16 @@ impl VirtualMemoryManager {
             && crate::kernel::framework::config::KernelCapabilities::detect().kpti
         {
             // SAFETY: KERNEL_PML4 已初始化, PMM 可用, KPTI 全局状态在 init 独占
-            unsafe { super::kpti::kpti_init(cr3); }
+            unsafe {
+                super::kpti::kpti_init(cr3);
+            }
         }
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     /// 映射单个 4KB 页到内核页表 (`KERNEL_PML4`), 并累加映射计数.
     ///
     /// # Errors
@@ -132,7 +139,10 @@ impl VirtualMemoryManager {
         result
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     /// 映射大页 (2MB/1GB, 或退回 4KB) 到内核页表, 并累加映射计数.
     ///
     /// # Errors
@@ -169,7 +179,10 @@ impl VirtualMemoryManager {
         result
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     pub fn unmap_page(&self, virt: VirtAddr) {
         let _flags = self.acquire_lock();
 
@@ -190,7 +203,8 @@ impl VirtualMemoryManager {
         if virt.pml4_idx() >= 256 {
             crate::klog_boot_info!(
                 "[VMM] unmap_page: skip kernel-half virt={:#X} pml4_idx={}",
-                virt.0, virt.pml4_idx()
+                virt.0,
+                virt.pml4_idx()
             );
             self.release_lock(&_flags);
             return;
@@ -246,7 +260,10 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     /// 修改虚拟页的保护属性 (mprotect 核心实现)
     ///
     /// 遍历四级页表找到 PTE, 修改 R/W/U/NX 位, 然后 flush TLB.
@@ -270,7 +287,8 @@ impl VirtualMemoryManager {
         if virt.pml4_idx() >= 256 {
             crate::klog_boot_info!(
                 "[VMM] protect_page: skip kernel-half virt={:#X} pml4_idx={}",
-                virt.0, virt.pml4_idx()
+                virt.0,
+                virt.pml4_idx()
             );
             self.release_lock(&_flags);
             return;
@@ -344,9 +362,18 @@ impl VirtualMemoryManager {
         self.get_physical_in_pml4(KERNEL_PML4.load(Ordering::Acquire), virt)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     pub fn get_physical_in_pml4(&self, pml4: u64, virt: VirtAddr) -> Option<PhysAddr> {
         if pml4 == 0 {
             return None;
@@ -405,9 +432,18 @@ impl VirtualMemoryManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
-#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
+    #[expect(
+        clippy::similar_names,
+        reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect"
+    )]
     /// 读取 PTE 原始值 (用于 swap entry 检测)
     ///
     /// 返回 4KB 页的 PTE 原始值, 若页表层级不存在则返回 None.
@@ -448,9 +484,18 @@ impl VirtualMemoryManager {
         }
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 直接写入 PTE 原始值 (用于 swap 替换)
     ///
     /// 沿 PML4→PDPT→PD→PT 找到最终 PTE, 写入 `raw_pte` 后 TLB flush.
@@ -514,8 +559,14 @@ impl VirtualMemoryManager {
     /// 该 unwrap 实际不会触发 panic.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
     pub fn create_user_page_table(&self) -> Option<u64> {
         let pmm = get_pmm();
         let pml4_phys = pmm.alloc_page()?;
@@ -576,9 +627,17 @@ impl VirtualMemoryManager {
         if crate::kernel::framework::mm::kpti::kpti_is_active() {
             // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             unsafe {
-                let text_start = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_start) as u64;
-                let text_end = core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_end) as u64;
-                crate::kernel::framework::mm::kpti::map_text_region_in_user_pml4(pml4_virt.0 as *mut u64, text_start, text_end);
+                let text_start =
+                    core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_start)
+                        as u64;
+                let text_end =
+                    core::ptr::addr_of!(crate::kernel::framework::mm::kpti::_kernel_text_end)
+                        as u64;
+                crate::kernel::framework::mm::kpti::map_text_region_in_user_pml4(
+                    pml4_virt.0 as *mut u64,
+                    text_start,
+                    text_end,
+                );
 
                 // 映射 KPTI 入口数据页 (USER_CR3_SAVE, SyscallPerCpu) 到进程用户页表.
                 //
@@ -602,7 +661,8 @@ impl VirtualMemoryManager {
         {
             let sgdt = crate::kernel::framework::arch::gdt::get_gdt_ptr();
             let gdt_start = sgdt.base as u64 & !(PAGE_SIZE as u64 - 1);
-            let gdt_end = (sgdt.base as u64 + u64::from(sgdt.limit) + PAGE_SIZE as u64) & !(PAGE_SIZE as u64 - 1);
+            let gdt_end = (sgdt.base as u64 + u64::from(sgdt.limit) + PAGE_SIZE as u64)
+                & !(PAGE_SIZE as u64 - 1);
 
             // 同时用 sgdt 指令读取实际 GDTR 值进行对比
             let actual_gdt_base: u64;
@@ -614,7 +674,8 @@ impl VirtualMemoryManager {
             }
             crate::klog_boot_info!(
                 "[VMM] GDT ptr base={:#x} vs sgdt base={:#x}",
-                sgdt.base as u64, actual_gdt_base
+                sgdt.base as u64,
+                actual_gdt_base
             );
 
             // 读取 IDT 基地址和限制 (sidt 指令).
@@ -634,29 +695,49 @@ impl VirtualMemoryManager {
             }
             let idt_limit = u16::from_le_bytes([idtr_buf[0], idtr_buf[1]]);
             let idt_base = u64::from_le_bytes([
-                idtr_buf[2], idtr_buf[3], idtr_buf[4], idtr_buf[5],
-                idtr_buf[6], idtr_buf[7], idtr_buf[8], idtr_buf[9],
+                idtr_buf[2],
+                idtr_buf[3],
+                idtr_buf[4],
+                idtr_buf[5],
+                idtr_buf[6],
+                idtr_buf[7],
+                idtr_buf[8],
+                idtr_buf[9],
             ]);
             let idt_start = idt_base & !(PAGE_SIZE as u64 - 1);
-            let idt_end = ((idt_base + u64::from(idt_limit)) & !(PAGE_SIZE as u64 - 1)) + PAGE_SIZE as u64;
+            let idt_end =
+                ((idt_base + u64::from(idt_limit)) & !(PAGE_SIZE as u64 - 1)) + PAGE_SIZE as u64;
             crate::klog_boot_info!(
                 "[VMM] IDT raw: base={:#x} limit={:#x} start={:#x} end={:#x}",
-                idt_base, idt_limit, idt_start, idt_end
+                idt_base,
+                idt_limit,
+                idt_start,
+                idt_end
             );
 
             // 读取 TSS 基地址 (从 GDT TSS 描述符)
-            let tss_start = crate::kernel::framework::arch::gdt::get_tss_base() & !(PAGE_SIZE as u64 - 1);
+            let tss_start =
+                crate::kernel::framework::arch::gdt::get_tss_base() & !(PAGE_SIZE as u64 - 1);
             // TSS 结构约 128 字节, 最多跨 2 页
             let tss_end = tss_start + 2 * PAGE_SIZE as u64;
 
             // 收集需要映射的低半部分页 (去重)
             let mut pages = [0u64; 16];
             let mut count = 0;
-            let ranges: [(u64, u64); 3] = [(gdt_start, gdt_end), (idt_start, idt_end), (tss_start, tss_end)];
+            let ranges: [(u64, u64); 3] = [
+                (gdt_start, gdt_end),
+                (idt_start, idt_end),
+                (tss_start, tss_end),
+            ];
 
             crate::klog_boot_info!(
                 "[VMM] GDT/IDT/TSS mapping: gdt={:#x}-{:#x}, idt={:#x}-{:#x}, tss={:#x}-{:#x}",
-                gdt_start, gdt_end, idt_start, idt_end, tss_start, tss_end
+                gdt_start,
+                gdt_end,
+                idt_start,
+                idt_end,
+                tss_start,
+                tss_end
             );
 
             for &(start, end) in &ranges {
@@ -702,7 +783,10 @@ impl VirtualMemoryManager {
         Some(pml4_phys.as_u64())
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     pub fn map_page_in_table(&self, pml4: u64, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) {
         if pml4 == 0 {
             return;
@@ -717,7 +801,8 @@ impl VirtualMemoryManager {
         if virt.pml4_idx() >= 256 {
             crate::klog_boot_info!(
                 "[VMM] map_page_in_table: skip kernel-half virt={:#X} pml4_idx={}",
-                virt.0, virt.pml4_idx()
+                virt.0,
+                virt.pml4_idx()
             );
             return;
         }
@@ -732,14 +817,14 @@ impl VirtualMemoryManager {
         unsafe {
             let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
 
-
             let pdpt = self.get_or_create_table_entry(pml4_ptr.add(virt.pml4_idx()), true, 0);
             if pdpt.is_null() {
                 self.release_lock(&_flags);
                 return;
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
+            let pd =
+                self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
             if pd.is_null() {
                 self.release_lock(&_flags);
                 return;
@@ -774,7 +859,10 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     /// 映射内核高半区页到用户页表 (绕过 KPTI 安全门)
     ///
     /// 用于映射 RSP0 等内核结构到用户页表,使其在用户态可访问.
@@ -788,7 +876,13 @@ impl VirtualMemoryManager {
     /// - `virt` 是内核高半区虚拟地址 (`pml4_idx` >= 256)
     /// - `phys` 是对应的物理地址
     /// - 仅用于映射内核栈 (RSP0) 等必要内核结构
-    pub fn map_kernel_page_in_table(&self, pml4: u64, virt: VirtAddr, phys: PhysAddr, flags: PageFlags) {
+    pub fn map_kernel_page_in_table(
+        &self,
+        pml4: u64,
+        virt: VirtAddr,
+        phys: PhysAddr,
+        flags: PageFlags,
+    ) {
         if pml4 == 0 {
             return;
         }
@@ -797,7 +891,8 @@ impl VirtualMemoryManager {
         if virt.pml4_idx() < 256 {
             crate::klog_boot_info!(
                 "[VMM] map_kernel_page_in_table: reject user-half virt={:#X} pml4_idx={}",
-                virt.0, virt.pml4_idx()
+                virt.0,
+                virt.pml4_idx()
             );
             return;
         }
@@ -817,7 +912,8 @@ impl VirtualMemoryManager {
                 return;
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
+            let pd =
+                self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
             if pd.is_null() {
                 self.release_lock(&_flags);
                 return;
@@ -850,8 +946,14 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     pub fn unmap_page_in_table(&self, pml4: u64, virt: VirtAddr) {
         if pml4 == 0 {
             return;
@@ -865,7 +967,8 @@ impl VirtualMemoryManager {
         if virt.pml4_idx() >= 256 {
             crate::klog_boot_info!(
                 "[VMM] unmap_page_in_table: skip kernel-half virt={:#X} pml4_idx={}",
-                virt.0, virt.pml4_idx()
+                virt.0,
+                virt.pml4_idx()
             );
             return;
         }
@@ -948,8 +1051,14 @@ impl VirtualMemoryManager {
         self.release_lock(&_flags);
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     pub fn destroy_page_table(&self, pml4: u64) {
         if pml4 == 0 {
             return;
@@ -1035,10 +1144,7 @@ impl VirtualMemoryManager {
         phys: PhysAddr,
         flags: PageFlags,
     ) -> Result<(), &'static str> {
-        crate::klog_boot_info!(
-            "[VMM] map_page: virt={:#X} phys={:#X}",
-            virt.0, phys.0
-        );
+        crate::klog_boot_info!("[VMM] map_page: virt={:#X} phys={:#X}", virt.0, phys.0);
 
         // 安全门: 禁止在 KERNEL_PML4 中修改内核高半区页表.
         // 内核高半区 (PML4[256..511]) 由 boot.asm 建立恒等映射 (1GB),
@@ -1048,7 +1154,8 @@ impl VirtualMemoryManager {
         if virt.pml4_idx() >= 256 {
             crate::klog_boot_info!(
                 "[VMM] map_page_internal: skip kernel-half virt={:#X} pml4_idx={}",
-                virt.0, virt.pml4_idx()
+                virt.0,
+                virt.pml4_idx()
             );
             return Ok(());
         }
@@ -1070,7 +1177,8 @@ impl VirtualMemoryManager {
                 return Err("Failed to allocate PDPT");
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
+            let pd =
+                self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
             if pd.is_null() {
                 return Err("Failed to allocate PD");
             }
@@ -1130,7 +1238,8 @@ impl VirtualMemoryManager {
                 return Ok(());
             }
 
-            let pd = self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
+            let pd =
+                self.get_or_create_table_entry(pdpt.add(virt.pdpt_idx()), true, HUGE_PAGE_2M_SIZE);
             if pd.is_null() {
                 return Err("Failed to allocate PD");
             }
@@ -1204,73 +1313,92 @@ impl VirtualMemoryManager {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     unsafe fn get_or_create_table_entry(
         &self,
         entry: *mut PageTableEntry,
         create: bool,
         huge_step: u64,
-    ) -> *mut PageTableEntry { unsafe {
-        // SAFETY: 调用方保证 `entry` 指向 PMM 分配的页表页内合法 PageTableEntry.
-        // 解引用通过 512 项表大小做边界检查.
-        let e = &*entry;
+    ) -> *mut PageTableEntry {
+        unsafe {
+            // SAFETY: 调用方保证 `entry` 指向 PMM 分配的页表页内合法 PageTableEntry.
+            // 解引用通过 512 项表大小做边界检查.
+            let e = &*entry;
 
-        if e.is_present() && !e.is_huge() {
-            // SAFETY: Present && !huge → frame 位是合法的下一级表物理地址.
-            // phys_to_virt 给出合法内核 VA.
-            e.frame().to_virt().0 as *mut PageTableEntry
-        } else if create {
-            let pmm = get_pmm();
+            if e.is_present() && !e.is_huge() {
+                // SAFETY: Present && !huge → frame 位是合法的下一级表物理地址.
+                // phys_to_virt 给出合法内核 VA.
+                e.frame().to_virt().0 as *mut PageTableEntry
+            } else if create {
+                let pmm = get_pmm();
 
-            if let Some(page) = pmm.alloc_page() {
-                let page_virt = page.to_virt();
-                let pt = page_virt.0 as *mut PageTableEntry;
-                core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
+                if let Some(page) = pmm.alloc_page() {
+                    let page_virt = page.to_virt();
+                    let pt = page_virt.0 as *mut PageTableEntry;
+                    core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
 
-                if e.is_huge() {
-                    // 拆分巨页: 从巨页帧填充 512 个子条目
-                    // step = PAGE_SIZE → PD→PT (2MB→4KB), 新 PT 条目不需要 HUGE_PAGE
-                    // step = HUGE_PAGE_2M_SIZE → PDPT→PD (1GB→2MB), 新 PD 条目需要 HUGE_PAGE
-                    let huge_frame = e.frame();
-                    let huge_flags = e.flags();
-                    let step = if huge_step > 0 { huge_step } else { PAGE_SIZE as u64 };
-                    let mut new_flags = (huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT;
-                    if step == HUGE_PAGE_2M_SIZE {
-                        // PDPT→PD 拆分: 新 PD 条目必须标记为 2MB 巨页,
-                        // 否则 CPU 会将帧地址解释为 PT 指针, 导致页表遍历读取垃圾数据.
-                        new_flags |= PageFlags::HUGE_PAGE;
+                    if e.is_huge() {
+                        // 拆分巨页: 从巨页帧填充 512 个子条目
+                        // step = PAGE_SIZE → PD→PT (2MB→4KB), 新 PT 条目不需要 HUGE_PAGE
+                        // step = HUGE_PAGE_2M_SIZE → PDPT→PD (1GB→2MB), 新 PD 条目需要 HUGE_PAGE
+                        let huge_frame = e.frame();
+                        let huge_flags = e.flags();
+                        let step = if huge_step > 0 {
+                            huge_step
+                        } else {
+                            PAGE_SIZE as u64
+                        };
+                        let mut new_flags =
+                            (huge_flags & !PageFlags::HUGE_PAGE) | PageFlags::PRESENT;
+                        if step == HUGE_PAGE_2M_SIZE {
+                            // PDPT→PD 拆分: 新 PD 条目必须标记为 2MB 巨页,
+                            // 否则 CPU 会将帧地址解释为 PT 指针, 导致页表遍历读取垃圾数据.
+                            new_flags |= PageFlags::HUGE_PAGE;
+                        }
+                        crate::klog_boot_info!(
+                            "[VMM] huge split: entry={:#X} frame={:#X} new_pt={:#X} step={:#X}",
+                            entry as u64,
+                            huge_frame.as_u64(),
+                            page.as_u64(),
+                            step
+                        );
+                        for i in 0..512 {
+                            // SAFETY: pt points to a full 4KB page; add(i) stays within bounds
+                            let pte = &mut *pt.add(i);
+                            pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * step));
+                            pte.set_flags(new_flags);
+                        }
                     }
-                    crate::klog_boot_info!(
-                        "[VMM] huge split: entry={:#X} frame={:#X} new_pt={:#X} step={:#X}",
-                        entry as u64, huge_frame.as_u64(), page.as_u64(), step
-                    );
-                    for i in 0..512 {
-                        // SAFETY: pt points to a full 4KB page; add(i) stays within bounds
-                        let pte = &mut *pt.add(i);
-                        pte.set_frame(PhysAddr(huge_frame.as_u64() + i as u64 * step));
-                        pte.set_flags(new_flags);
-                    }
+
+                    // SAFETY: `entry` 是合法 PDE/PDPTE 指针; 使用 set_value 一次性写入
+                    // 新帧地址 + 标志, 避免 set_frame→set_flags 两步操作中间出现
+                    // "帧=新PT, 标志=旧值(含HUGE)" 的瞬时不一致状态.
+                    // 单次原子 store 保证 CPU 页表遍历器不会观察到中间态.
+                    // M9 修复: 中间页表页添加 NO_EXECUTE 位, 防止用户态执行页表页代码
+                    let new_val = (page.as_u64() & 0x000FFFFFFFFFF000)
+                        | (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::NX).bits();
+                    (*entry).set_value(new_val);
+
+                    page_virt.0 as *mut PageTableEntry
+                } else {
+                    core::ptr::null_mut()
                 }
-
-                // SAFETY: `entry` 是合法 PDE/PDPTE 指针; 使用 set_value 一次性写入
-                // 新帧地址 + 标志, 避免 set_frame→set_flags 两步操作中间出现
-                // "帧=新PT, 标志=旧值(含HUGE)" 的瞬时不一致状态.
-                // 单次原子 store 保证 CPU 页表遍历器不会观察到中间态.
-                // M9 修复: 中间页表页添加 NO_EXECUTE 位, 防止用户态执行页表页代码
-                let new_val = (page.as_u64() & 0x000FFFFFFFFFF000)
-                    | (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::NX).bits();
-                (*entry).set_value(new_val);
-
-                page_virt.0 as *mut PageTableEntry
             } else {
                 core::ptr::null_mut()
             }
-        } else {
-            core::ptr::null_mut()
         }
-    }}
+    }
 
     /// 将内核页表中的 2MB 巨页拆分为 4KB 页.
     ///
@@ -1283,9 +1411,18 @@ impl VirtualMemoryManager {
     /// 当分配新的页表页失败时返回 `Err("Failed to allocate PT")`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn split_2mb_page(&self, virt: u64) -> Result<(), &'static str> {
         let pml4_base = KERNEL_PML4.load(Ordering::Acquire);
         if pml4_base == 0 {
@@ -1299,7 +1436,8 @@ impl VirtualMemoryManager {
         if VirtAddr(virt).pml4_idx() >= 256 {
             crate::klog_boot_info!(
                 "[VMM] split_2mb_page: skip kernel-half virt={:#X} pml4_idx={}",
-                virt, VirtAddr(virt).pml4_idx()
+                virt,
+                VirtAddr(virt).pml4_idx()
             );
             return Err("Cannot split kernel-half 2MB page (KPTI shared)");
         }
@@ -1447,10 +1585,22 @@ impl VirtualMemoryManager {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     pub fn clone_user_page_table(&self, parent_pml4: u64) -> Option<u64> {
         if parent_pml4 == 0 {
             return None;
@@ -1633,8 +1783,14 @@ impl VirtualMemoryManager {
     }
 
     #[inline(always)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     /// 获取 VMM 锁 (关中断 + 自旋), 支持单核可重入.
     ///
     /// # Panics
@@ -1656,15 +1812,27 @@ impl VirtualMemoryManager {
         #[cfg(debug_assertions)]
         {
             // 不可恢复: VMM_LOCK 递归获取意味着死锁, 继续执行只会挂起系统
-            assert!(!VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed), "VMM_LOCK: recursive acquisition detected (deadlock)");
+            assert!(
+                !VMM_LOCK_RECURSIVE.swap(true, Ordering::Relaxed),
+                "VMM_LOCK: recursive acquisition detected (deadlock)"
+            );
         }
         flags
     }
 
     #[inline(always)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn release_lock(&self, flags: &IrqSaveFlags) {
         #[cfg(debug_assertions)]
         {
@@ -1676,16 +1844,28 @@ impl VirtualMemoryManager {
 
     #[inline(always)]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     unsafe fn read_cr3(&self) -> u64 {
         // SAFETY: Reading CR3 is always safe; returns current page table base
         crate::arch!(read_page_table_base())
     }
 
     #[inline(always)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     unsafe fn write_cr3(&self, val: u64) {
         // SAFETY: val must point to a valid PML4 table; caller guarantees this
         crate::arch!(write_page_table_base(val));
@@ -1694,7 +1874,10 @@ impl VirtualMemoryManager {
     #[inline(always)]
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn flush_tlb(&self, addr: u64) {
         crate::arch!(tlb_flush_page(addr as usize));
 
@@ -1707,7 +1890,10 @@ impl VirtualMemoryManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn is_table_empty(&self, table: *mut PageTableEntry) -> bool {
         for i in 0..512usize {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)

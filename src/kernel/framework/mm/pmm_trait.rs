@@ -84,11 +84,7 @@ impl PmmPolicy for FallbackPmmPolicy {
             return 0;
         }
         let order = (usize::BITS - (count - 1).leading_zeros()) as u8;
-        if order > max_order {
-            max_order
-        } else {
-            order
-        }
+        if order > max_order { max_order } else { order }
     }
 
     fn fragmentation_score(&self, ctx: PmmPolicyContext) -> f64 {

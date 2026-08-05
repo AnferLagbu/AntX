@@ -141,7 +141,9 @@ static SWAP_POLICY: crate::kernel::framework::sync::OnceLock<&'static dyn SwapPo
 ///
 /// # Errors
 /// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
-pub fn register_swap_policy(policy: &'static dyn SwapPolicy) -> Result<(), &'static dyn SwapPolicy> {
+pub fn register_swap_policy(
+    policy: &'static dyn SwapPolicy,
+) -> Result<(), &'static dyn SwapPolicy> {
     match SWAP_POLICY.set(policy) {
         Ok(()) => Ok(()),
         Err(existing) => Err(existing),

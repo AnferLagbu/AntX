@@ -77,8 +77,10 @@ pub mod async_ipc;
 // 全局状态
 // ============================================================================
 
-use types::{IpcNamespace, IPC_MAX_PIPES, IPC_MAX_SHM_SEGS, IPC_MAX_MSG_QUEUES, IPC_MAX_SEMAPHORES};
 use crate::kernel::framework::racy_cell::RacyCell;
+use types::{
+    IPC_MAX_MSG_QUEUES, IPC_MAX_PIPES, IPC_MAX_SEMAPHORES, IPC_MAX_SHM_SEGS, IpcNamespace,
+};
 
 /// IPC 命名空间 (全局资源容器)
 ///
@@ -151,7 +153,7 @@ pub use scheduler_integration::{
 // 异步 IPC 功能导出 (需要 async feature)
 #[cfg(feature = "async")]
 pub use async_ipc::{
-    wait_for_condition, AsyncMsgReceiver, AsyncMsgSender, AsyncPipeReader, AsyncPipeWriter,
+    AsyncMsgReceiver, AsyncMsgSender, AsyncPipeReader, AsyncPipeWriter, wait_for_condition,
 };
 
 // ============================================================================
@@ -211,7 +213,13 @@ mod tests {
         let pid: u32 = 200;
 
         // 测试创建共享内存 (T6-1: 委托 services 策略)
-        let id = match crate::kernel::services::ipc::shm::shm_create_safe(&mut ns, &mut next_id, 4096, 0o666, pid) {
+        let id = match crate::kernel::services::ipc::shm::shm_create_safe(
+            &mut ns,
+            &mut next_id,
+            4096,
+            0o666,
+            pid,
+        ) {
             Ok(id) => id,
             Err(e) => panic!("Failed to create SHM: {}", e),
         };
@@ -243,14 +251,29 @@ mod tests {
         let pid: u32 = 300;
 
         // 创建消息队列 (T6-1: 委托 services 策略)
-        let id = match crate::kernel::services::ipc::msgq::msgq_create_safe(&mut ns, &mut next_id, 0o666, pid) {
+        let id = match crate::kernel::services::ipc::msgq::msgq_create_safe(
+            &mut ns,
+            &mut next_id,
+            0o666,
+            pid,
+        ) {
             Ok(id) => id,
             Err(e) => panic!("Failed to create MsgQ: {}", e),
         };
 
         // 发送消息
         let data = b"Hello, IPC!";
-        assert!(crate::kernel::services::ipc::msgq::msgq_send_safe(&mut ns, id, 42, Some(data), data.len(), pid).is_ok());
+        assert!(
+            crate::kernel::services::ipc::msgq::msgq_send_safe(
+                &mut ns,
+                id,
+                42,
+                Some(data),
+                data.len(),
+                pid
+            )
+            .is_ok()
+        );
 
         // 接收消息
         let mut type_out: u64 = 0;

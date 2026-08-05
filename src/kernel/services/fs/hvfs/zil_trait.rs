@@ -20,8 +20,8 @@
 //!
 //! ## 与 LEGACY-5.1-5.5/5.7/5.8 范式一致
 
-use super::zil::{HvZil, HvZilRecord};
 use super::bp::HvBlockPointer;
+use super::zil::{HvZil, HvZilRecord};
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -119,7 +119,9 @@ impl ZilLog for StandardZil {
     }
 
     fn set_enabled(&self, enabled: bool) {
-        self.0.enabled.store(enabled, core::sync::atomic::Ordering::Release);
+        self.0
+            .enabled
+            .store(enabled, core::sync::atomic::Ordering::Release);
     }
 
     fn add_record(&self, record: HvZilRecord) {
@@ -127,11 +129,15 @@ impl ZilLog for StandardZil {
     }
 
     fn current_seq(&self) -> u64 {
-        self.0.current_seq.load(core::sync::atomic::Ordering::Acquire)
+        self.0
+            .current_seq
+            .load(core::sync::atomic::Ordering::Acquire)
     }
 
     fn committed_seq(&self) -> u64 {
-        self.0.committed_seq.load(core::sync::atomic::Ordering::Acquire)
+        self.0
+            .committed_seq
+            .load(core::sync::atomic::Ordering::Acquire)
     }
 
     fn has_uncommitted(&self) -> bool {
@@ -172,7 +178,7 @@ impl ZilLog for StandardZil {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::services::fs::hvfs::zil::{HvZilRecordType, HvZilRecord};
+    use crate::kernel::services::fs::hvfs::zil::{HvZilRecord, HvZilRecordType};
 
     /// 1. new + init
     #[test]
@@ -214,9 +220,9 @@ mod tests {
         let zil = StandardZil::new();
         zil.init();
         // 添加 3 个不同 txg 的记录
-        zil.add_record(HvZilRecord::new_write(1, 100, 0, 4096));  // txg=1
-        zil.add_record(HvZilRecord::new_write(2, 100, 0, 4096));  // txg=2
-        zil.add_record(HvZilRecord::new_write(3, 100, 0, 4096));  // txg=3
+        zil.add_record(HvZilRecord::new_write(1, 100, 0, 4096)); // txg=1
+        zil.add_record(HvZilRecord::new_write(2, 100, 0, 4096)); // txg=2
+        zil.add_record(HvZilRecord::new_write(3, 100, 0, 4096)); // txg=3
         // commit txg=2 → 应清除 txg<=2 的记录, 保留 txg=3
         zil.commit(2);
         assert_eq!(zil.pending_count(), 1);
@@ -278,7 +284,7 @@ mod tests {
         assert_eq!(replayed.len(), 3);
         // 应按 seq 排序
         for i in 1..replayed.len() {
-            assert!(replayed[i].seq > replayed[i-1].seq);
+            assert!(replayed[i].seq > replayed[i - 1].seq);
         }
     }
 
@@ -340,9 +346,9 @@ mod tests {
         let zil = StandardZil::new();
         zil.init();
         // 添加 3 个, commit txg=2
-        zil.add_record(HvZilRecord::new_write(1, 100, 0, 4096));  // seq 1
-        zil.add_record(HvZilRecord::new_write(2, 100, 0, 4096));  // seq 2
-        zil.add_record(HvZilRecord::new_write(3, 100, 0, 4096));  // seq 3
+        zil.add_record(HvZilRecord::new_write(1, 100, 0, 4096)); // seq 1
+        zil.add_record(HvZilRecord::new_write(2, 100, 0, 4096)); // seq 2
+        zil.add_record(HvZilRecord::new_write(3, 100, 0, 4096)); // seq 3
         zil.commit(2);
         // 现在只剩 1 条 (txg=3)
         let replayed = zil.replay();

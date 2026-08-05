@@ -1,22 +1,22 @@
-use crate::kernel::framework::driver::{DeviceInfo, DeviceType, DriverError, DriverResult};
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::driver::Driver;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::driver::keyboard::{
-    get_special_key, KeyboardBuffer, KeyboardDriver, ModifierState, SpecialKey, KB_LED_CAPS_LOCK,
-    KB_LED_NUM_LOCK, SCANCODE_TABLE, SHIFT_TABLE,
+    KB_LED_CAPS_LOCK, KB_LED_NUM_LOCK, KeyboardBuffer, KeyboardDriver, ModifierState,
+    SCANCODE_TABLE, SHIFT_TABLE, SpecialKey, get_special_key,
 };
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::driver::{
-    BaudRate, DataBits, ParityMode, RingBuffer, SerialConfig, SerialPort, StopBits, COM1_BASE,
-    COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE,
+    ATA_PRIMARY_CTRL, ATA_PRIMARY_IO, ATA_SECONDARY_CTRL, ATA_SECONDARY_IO, AtaController,
+    AtaDevice, MAX_ATA_DEVICES, WORDS_PER_SECTOR, get_ctrl_base, get_io_base,
 };
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::driver::{
-    get_ctrl_base, get_io_base, AtaController, AtaDevice, ATA_PRIMARY_CTRL, ATA_PRIMARY_IO,
-    ATA_SECONDARY_CTRL, ATA_SECONDARY_IO, MAX_ATA_DEVICES, WORDS_PER_SECTOR,
+    BaudRate, COM1_BASE, COM2_BASE, DataBits, MAX_COM_PORTS, ParityMode, RingBuffer,
+    SERIAL_BUFFER_SIZE, SerialConfig, SerialPort, StopBits,
 };
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::driver::{DeviceInfo, DeviceType, DriverError, DriverResult};
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 use crate::register_tests_inner;
 
 fn driver_error_codes() -> TestResult {
@@ -123,7 +123,10 @@ fn keyboard_modifier_default() -> TestResult {
 
 #[cfg(target_arch = "x86_64")]
 fn keyboard_modifier_operations() -> TestResult {
-    let mut mods = ModifierState { left_shift: true, ..Default::default() };
+    let mut mods = ModifierState {
+        left_shift: true,
+        ..Default::default()
+    };
     check!(mods.shift_pressed(), "left shift");
     mods.right_shift = true;
     check!(mods.shift_pressed(), "both shift");

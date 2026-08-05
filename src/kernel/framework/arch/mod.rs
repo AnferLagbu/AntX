@@ -59,30 +59,30 @@ pub mod shadow_stack;
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
-pub use x86_64::apic;
-#[cfg(target_arch = "x86_64")]
-pub use x86_64::ioapic;
+pub use x86_64::X8664;
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::acpi;
 #[cfg(target_arch = "x86_64")]
+pub use x86_64::apic;
+#[cfg(target_arch = "x86_64")]
 pub use x86_64::gdt;
 #[cfg(target_arch = "x86_64")]
-pub use x86_64::tss;
+pub use x86_64::ioapic;
 #[cfg(target_arch = "x86_64")]
-pub use x86_64::X8664;
+pub use x86_64::tss;
 
 #[cfg(target_arch = "aarch64")]
-pub use aarch64::uart;
+pub use aarch64::Aarch64;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::exception;
 #[cfg(target_arch = "aarch64")]
-pub use aarch64::mmu;
-#[cfg(target_arch = "aarch64")]
 pub use aarch64::gic;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::mmu;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::timer;
 #[cfg(target_arch = "aarch64")]
-pub use aarch64::Aarch64;
+pub use aarch64::uart;
 
 // shadow_stack 公共接口 re-export — 避免跨子系统直接访问 arch::shadow_stack 内部
 pub use shadow_stack::*;

@@ -56,7 +56,7 @@ fn test_td11_gpf_uses_klog_warn() {
         "GPF 不能保留 let _ = (external, ...) 占位, 应替换为 klog"
     );
     assert!(
-        body.contains("klog_warn!(Kernel,"),
+        body.contains("klog_warn!") && body.contains("Kernel,"),
         "GPF 必须用 klog_warn!(Kernel, ...) 记录 selector/external/idt_flag/index"
     );
 }
@@ -73,7 +73,7 @@ fn test_td11_double_fault_uses_klog_err() {
         "DoubleFault 不能保留 let _ = (count, nesting) 占位"
     );
     assert!(
-        body.contains("klog_err!(Kernel,"),
+        body.contains("klog_err!") && body.contains("Kernel,"),
         "DoubleFault 必须用 klog_err!(Kernel, ...) 记录 count/nesting"
     );
 }
@@ -101,7 +101,7 @@ fn test_td12_dump_state_uses_klog_info() {
         "dump_state 不能保留 let _ = (nesting, current_vec, ...) 占位"
     );
     assert!(
-        body.contains("klog_info!(Kernel,"),
+        body.contains("klog_info!") && body.contains("Kernel,"),
         "dump_state 必须用 klog_info!(Kernel, ...) 输出 nesting/current_vec/descriptors"
     );
 }
@@ -127,7 +127,7 @@ fn test_td12_print_statistics_walks_counters() {
         "print_statistics 必须遍历 irq_counts"
     );
     assert!(
-        body.contains("klog_info!(Kernel,"),
+        body.contains("klog_info!") && body.contains("Kernel,"),
         "print_statistics 每条非零计数都应通过 klog_info! 记录"
     );
 }
@@ -144,7 +144,7 @@ fn test_td13_timer_init_ffi_uses_klog_err() {
         "timer_init_ffi 错误分支不能保留 let _ = msg; 占位"
     );
     assert!(
-        body.contains("klog_err!(Timer,"),
+        body.contains("klog_err!") && body.contains("Timer,"),
         "timer_init_ffi 错误分支必须用 klog_err!(Timer, ...) 记录 msg"
     );
 }

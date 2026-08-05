@@ -30,7 +30,7 @@
 use super::framework::{DeviceInfo, DeviceType, Driver, DriverError, Result};
 use crate::kernel::framework::dma::get_dma;
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::kernel::framework::mm::{PAGE_SIZE, PhysAddr, VirtAddr};
 use crate::klog_info;
 use crate::klog_warn;
 use alloc::vec::Vec;
@@ -74,8 +74,8 @@ const SECTOR_SIZE: usize = 512;
 // AHCI Port 寄存器布局 (AHCI Spec §3.3, port 区域 = 0x100 + n*0x80) —
 // 通过 `AhciPortRegs` repr(C) 直接访问, 不再需要 PORT_CLB / PORT_IS 等 offset 常量.
 
-const GHC_GHC: usize = 0x04;  // u32: Global Host Control
-const GHC_PI: usize = 0x0C;   // u32: Ports Implemented
+const GHC_GHC: usize = 0x04; // u32: Global Host Control
+const GHC_PI: usize = 0x0C; // u32: Ports Implemented
 
 // Port 区域在 ABAR 内的基址
 const PORT_REG_BASE: usize = 0x100;
@@ -440,7 +440,10 @@ impl AhciPort {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 检测设备
     pub fn detect_device(&mut self) -> bool {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -458,7 +461,10 @@ impl AhciPort {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 启动端口 (启用 FIS 接收 + 命令处理)
     /// # Errors
     /// DMA 设置失败或端口寄存器等待确认超时时返回 Err。
@@ -504,7 +510,10 @@ impl AhciPort {
         Ok(())
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 停止端口
     /// # Errors
     /// 端口停止操作失败时返回 Err。
@@ -545,9 +554,18 @@ impl AhciPort {
     /// `buffer` 必须是有效的 DMA-coherent 内存指针
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     unsafe fn submit_dma_command(
         &mut self,
         fis: &H2dFis,
@@ -558,93 +576,94 @@ impl AhciPort {
         // SAFETY: 调用方 (read_dma/write_dma) 保证 self.regs 指向有效 MMIO,
         // buffer_phys 是 dma_engine 分配的 DMA-coherent 物理地址, byte_count 不超过缓冲区大小
         unsafe {
-        let regs = &mut *self.regs;
-        let slot = 0u32; // 使用 slot 0
+            let regs = &mut *self.regs;
+            let slot = 0u32; // 使用 slot 0
 
-        // ── 设置命令表 ──
-        let cmd_table = self.dma.cmd_table_virt.0 as *mut AhciCommandTable;
-        let fis_bytes = core::slice::from_raw_parts(
-            fis as *const _ as *const u8,
-            core::mem::size_of::<H2dFis>(),
-        );
+            // ── 设置命令表 ──
+            let cmd_table = self.dma.cmd_table_virt.0 as *mut AhciCommandTable;
+            let fis_bytes = core::slice::from_raw_parts(
+                fis as *const _ as *const u8,
+                core::mem::size_of::<H2dFis>(),
+            );
 
-        // 复制 FIS 到命令表 (CFIS 位于偏移 0)
-        ptr::copy_nonoverlapping(fis_bytes.as_ptr(), cmd_table as *mut u8, fis_bytes.len());
+            // 复制 FIS 到命令表 (CFIS 位于偏移 0)
+            ptr::copy_nonoverlapping(fis_bytes.as_ptr(), cmd_table as *mut u8, fis_bytes.len());
 
-        // 设置 PRDT entry 0
-        (*cmd_table).prdt[0] = PhysicalRegionDescriptor {
-            dba: buffer_phys.0 as u32,
-            dbau: (buffer_phys.0 >> 32) as u32,
-            rsvd: 0,
-            dbc: (byte_count - 1) | (1 << 31), // IOC (中断完成)
-        };
-        // 清零其余 PRDT
-        for i in 1..8 {
-            (*cmd_table).prdt[i] = PhysicalRegionDescriptor {
-                dba: 0,
-                dbau: 0,
+            // 设置 PRDT entry 0
+            (*cmd_table).prdt[0] = PhysicalRegionDescriptor {
+                dba: buffer_phys.0 as u32,
+                dbau: (buffer_phys.0 >> 32) as u32,
                 rsvd: 0,
-                dbc: 0,
+                dbc: (byte_count - 1) | (1 << 31), // IOC (中断完成)
             };
-        }
+            // 清零其余 PRDT
+            for i in 1..8 {
+                (*cmd_table).prdt[i] = PhysicalRegionDescriptor {
+                    dba: 0,
+                    dbau: 0,
+                    rsvd: 0,
+                    dbc: 0,
+                };
+            }
 
-        // ── 设置命令头 ──
-        let cmd_hdr = self.dma.cmd_list_virt.0 as *mut AhciCommandHeader;
-        let flags: u32 = 5u32 // command FIS length (5 DWORDs = 20 bytes)
+            // ── 设置命令头 ──
+            let cmd_hdr = self.dma.cmd_list_virt.0 as *mut AhciCommandHeader;
+            let flags: u32 = 5u32 // command FIS length (5 DWORDs = 20 bytes)
             | (if is_write { 1 << 6 } else { 0 }); // W bit
-        (*cmd_hdr.add(slot as usize)).dw0 = flags | 1; // PRDTL = 1
-        (*cmd_hdr.add(slot as usize)).prdtl = 0u32;
-        (*cmd_hdr.add(slot as usize)).prdbc = 0;
-        (*cmd_hdr.add(slot as usize)).ctba = self.dma.cmd_table_phys.0 as u32;
-        (*cmd_hdr.add(slot as usize)).ctbau = (self.dma.cmd_table_phys.0 >> 32) as u32;
+            (*cmd_hdr.add(slot as usize)).dw0 = flags | 1; // PRDTL = 1
+            (*cmd_hdr.add(slot as usize)).prdtl = 0u32;
+            (*cmd_hdr.add(slot as usize)).prdbc = 0;
+            (*cmd_hdr.add(slot as usize)).ctba = self.dma.cmd_table_phys.0 as u32;
+            (*cmd_hdr.add(slot as usize)).ctbau = (self.dma.cmd_table_phys.0 >> 32) as u32;
 
-        // ── 等待端口空闲 ──
-        let mut timeout = 1_000_000u64;
-        while regs.tfd & (pxtfd::BSY | pxtfd::DRQ) != 0 && timeout > 0 {
-            timeout -= 1;
-            core::hint::spin_loop();
-        }
-        if timeout == 0 {
-            return Err(DriverError::Timeout);
-        }
-
-        // 清零中断状态
-        regs.is = 0xFFFFFFFF;
-
-        // ── 发布命令 ──
-        // sfence: 确保内存写入对设备可见
-        crate::arch!(fence_w());
-        regs.ci = 1 << slot;
-
-        // ── 等待完成 ──
-        timeout = 5_000_000; // 5M iterations (~1s at 5GHz)
-        while timeout > 0 {
-            // 检查 D2H 寄存器 FIS 中断
-            if regs.is & pxis::DHRS != 0 {
-                break;
+            // ── 等待端口空闲 ──
+            let mut timeout = 1_000_000u64;
+            while regs.tfd & (pxtfd::BSY | pxtfd::DRQ) != 0 && timeout > 0 {
+                timeout -= 1;
+                core::hint::spin_loop();
             }
-            // 检查位 FIS 中断 (由 IOC 标志触发)
-            if regs.is & (pxis::DPS | pxis::PCS) != 0 {
-                break;
+            if timeout == 0 {
+                return Err(DriverError::Timeout);
             }
-            timeout -= 1;
-            core::hint::spin_loop();
-        }
 
-        if timeout == 0 {
-            return Err(DriverError::Timeout);
-        }
+            // 清零中断状态
+            regs.is = 0xFFFFFFFF;
 
-        // ── 检查错误 ──
-        if regs.is & pxis::TFE != 0 {
-            return Err(DriverError::HardwareError);
-        }
-        if regs.tfd & pxtfd::ERR != 0 {
-            return Err(DriverError::HardwareError);
-        }
+            // ── 发布命令 ──
+            // sfence: 确保内存写入对设备可见
+            crate::arch!(fence_w());
+            regs.ci = 1 << slot;
 
-        Ok(())
-    }}
+            // ── 等待完成 ──
+            timeout = 5_000_000; // 5M iterations (~1s at 5GHz)
+            while timeout > 0 {
+                // 检查 D2H 寄存器 FIS 中断
+                if regs.is & pxis::DHRS != 0 {
+                    break;
+                }
+                // 检查位 FIS 中断 (由 IOC 标志触发)
+                if regs.is & (pxis::DPS | pxis::PCS) != 0 {
+                    break;
+                }
+                timeout -= 1;
+                core::hint::spin_loop();
+            }
+
+            if timeout == 0 {
+                return Err(DriverError::Timeout);
+            }
+
+            // ── 检查错误 ──
+            if regs.is & pxis::TFE != 0 {
+                return Err(DriverError::HardwareError);
+            }
+            if regs.tfd & pxtfd::ERR != 0 {
+                return Err(DriverError::HardwareError);
+            }
+
+            Ok(())
+        }
+    }
 
     /// 读取扇区 (DMA)
     /// # Errors
@@ -737,8 +756,8 @@ unsafe impl Sync for AhciController {}
 // ============================================================================
 
 pub struct AhciController {
-    mmio_phys: u64,            // PCI BAR physical address (for external use)
-    iomem: Option<IoMem>,      // MMIO region handle (safe access proxy)
+    mmio_phys: u64,       // PCI BAR physical address (for external use)
+    iomem: Option<IoMem>, // MMIO region handle (safe access proxy)
     ports: Vec<AhciPort>,
     port_bitmap: u32,
     // I-49: 设备元数据 (驱动名/类型), 供 hotplug/procfs 导出.
@@ -768,14 +787,18 @@ impl AhciController {
     /// 获取 MMIO 失败、HBA 复位超时或端口初始化失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     pub fn init_controller(&mut self) -> Result<()> {
         // 初始化 IoMem
         let iomem = IoMem::from_pci_bar(
             PhysAddr(self.mmio_phys),
             8192, // ABAR is typically 8KB
             "ahci-abar",
-        ).map_err(|_| DriverError::HardwareError)?;
+        )
+        .map_err(|_| DriverError::HardwareError)?;
 
         // 确保 AHCI 模式已启用
         let mut ghc_val = iomem.read_u32(GHC_GHC);

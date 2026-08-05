@@ -17,12 +17,11 @@
 //! 每个 FD 直接持有 `Arc<OpenFile>`, dup 通过 `Arc::clone` 共享,
 //! close 通过 `Arc::drop` 减少引用计数.
 
-
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use super::vfs_types::OpenFile;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::Errno;
-use super::vfs_types::OpenFile;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 /// FD 条目 — Plan B: 直接持有 Arc<OpenFile>
 #[derive(Debug)]
@@ -74,7 +73,12 @@ impl ProcessFdTable {
     ///
     /// # Errors
     /// 当 `fd` 超出 FD 表范围时返回 `EBADF`.
-    pub fn alloc_fd_at(&self, fd: u32, open_file: Arc<OpenFile>, cloexec: bool) -> Result<u32, Errno> {
+    pub fn alloc_fd_at(
+        &self,
+        fd: u32,
+        open_file: Arc<OpenFile>,
+        cloexec: bool,
+    ) -> Result<u32, Errno> {
         let fd_usize = fd as usize;
         let mut entries = self.entries.lock();
         if fd_usize >= entries.len() {
@@ -156,7 +160,11 @@ impl ProcessFdTable {
             if old_usize >= entries.len() {
                 return Err(Errno::EBADF);
             }
-            entries[old_usize].as_ref().ok_or(Errno::EBADF)?.open_file.clone()
+            entries[old_usize]
+                .as_ref()
+                .ok_or(Errno::EBADF)?
+                .open_file
+                .clone()
         };
         let cloexec = self.get_cloexec(old_fd);
         self.alloc_fd_at(new_fd, open_file, cloexec)

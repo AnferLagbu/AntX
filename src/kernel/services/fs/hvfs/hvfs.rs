@@ -3,9 +3,8 @@
 //!
 //! 热插拔监听 + 公共类型重导出.
 
-
+use crate::kernel::framework::driver::hotplug::{HotplugEvent, HotplugListener};
 use alloc::boxed::Box;
-use crate::kernel::framework::driver::hotplug::{HotplugListener, HotplugEvent};
 
 // 公共类型重导出 (必须在 HotplugListener 之前, 因为热插拔代码使用 get_hvfs)
 pub use super::hvfs_data::*;
@@ -19,8 +18,13 @@ impl HotplugListener for HvfsHotplugListener {
         if let HotplugEvent::DeviceAdded { location } = event {
             // 使用 slot 作为 drive_id (PCI 热插拔槽位号)
             let drive_id = location.slot;
-            crate::slog_info!(FS, "[HvFS] HOTPLUG: device added (slot={}, bus={}/{}",
-                drive_id, location.bus, location.device);
+            crate::slog_info!(
+                FS,
+                "[HvFS] HOTPLUG: device added (slot={}, bus={}/{}",
+                drive_id,
+                location.bus,
+                location.device
+            );
             get_hvfs().hotplug_add_disk(drive_id)
         } else {
             false

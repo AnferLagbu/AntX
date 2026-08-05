@@ -7,15 +7,15 @@
 //! 原属 framework/proc/seccomp.rs, 2026-06-16 提取到 services.
 //! 纯策略代码 (过滤器 + 规则匹配 + syscall), 0 unsafe.
 
-use core::sync::atomic::{AtomicU8, Ordering};
 use crate::kernel::framework::sync::IrqSpinLock;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use alloc::vec::Vec;
 
-use crate::kernel::framework::proc::process_get_current_pid;
 use crate::kernel::framework::proc::PROCESS_TABLE;
-use crate::kernel::framework::proc::do_signal_send;
 use crate::kernel::framework::proc::Pid;
+use crate::kernel::framework::proc::do_signal_send;
+use crate::kernel::framework::proc::process_get_current_pid;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -59,7 +59,10 @@ pub enum SeccompAction {
 }
 
 impl SeccompAction {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_linux(ret: u32) -> Self {
         match ret & 0xFFFF_0000 {
             0x7FFF_0000 => Self::Allow,
@@ -162,7 +165,10 @@ pub struct SeccompFilter {
 
 impl SeccompFilter {
     pub fn new(rules: Vec<SeccompRule>, default_action: SeccompAction) -> Self {
-        Self { rules, default_action }
+        Self {
+            rules,
+            default_action,
+        }
     }
 
     pub fn check(&self, syscall_nr: u64, args: &[u64; 6]) -> SeccompAction {
@@ -216,7 +222,10 @@ impl SeccompState {
 // ============================================================================
 
 #[inline(never)]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 pub fn seccomp_check(syscall_nr: u64, args: &[u64; 6]) -> Option<i64> {
     let pid = process_get_current_pid();
     let mode = PROCESS_TABLE
@@ -343,13 +352,11 @@ pub fn sys_prctl_prctl(option: i64, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u6
     let pid = process_get_current_pid();
 
     match option {
-        PR_SET_SECCOMP => {
-            match arg2 {
-                1 => sys_seccomp(0, 0, 0),
-                2 => sys_seccomp(1, 0, 0),
-                _ => -(Errno::EINVAL as i64),
-            }
-        }
+        PR_SET_SECCOMP => match arg2 {
+            1 => sys_seccomp(0, 0, 0),
+            2 => sys_seccomp(1, 0, 0),
+            _ => -(Errno::EINVAL as i64),
+        },
         PR_GET_SECCOMP => {
             let mode = PROCESS_TABLE
                 .with_process(pid, |p| p.seccomp.get_mode())
@@ -365,11 +372,9 @@ pub fn sys_prctl_prctl(option: i64, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u6
                 .unwrap_or(());
             0
         }
-        PR_GET_NO_NEW_PRIVS => {
-            PROCESS_TABLE
-                .with_process(pid, |p| i64::from(p.seccomp.is_no_new_privs()))
-                .unwrap_or(0)
-        }
+        PR_GET_NO_NEW_PRIVS => PROCESS_TABLE
+            .with_process(pid, |p| i64::from(p.seccomp.is_no_new_privs()))
+            .unwrap_or(0),
         _ => -(Errno::ENOSYS as i64),
     }
 }
@@ -392,10 +397,7 @@ pub fn add_rule(pid: u64, rule: SeccompRule) -> Result<(), Errno> {
             }
             let mut filters = p.seccomp.filters.lock();
             if filters.is_empty() {
-                filters.push(SeccompFilter::new(
-                    alloc::vec![rule],
-                    DEFAULT_ACTION,
-                ));
+                filters.push(SeccompFilter::new(alloc::vec![rule], DEFAULT_ACTION));
             } else {
                 filters[0].rules.push(rule);
             }

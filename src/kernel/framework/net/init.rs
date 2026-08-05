@@ -1,8 +1,8 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::klog::{klog_net, klog_net_err, klog_init_msg};
+use crate::kernel::framework::klog::{klog_init_msg, klog_net, klog_net_err};
 use crate::kernel::framework::net::{ChitinNetDevice, NetworkStack};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use smoltcp::iface::{SocketHandle, SocketSet, SocketStorage};
 use smoltcp::socket::dhcpv4;
 use smoltcp::socket::{tcp, udp};
@@ -41,14 +41,10 @@ static G_INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
 // 当前网络配置快照 (D1.1/D1.2 高层 API 支撑)
 // 全部为 Atomic, 单字段读写无需 NET_LOCK; 多字段一致性由 NetStatus::capture 原子复制.
 // 未配置时全部 = 0; 0.0.0.0 表示"无".
-static G_MAC: AtomicU64 = AtomicU64::new(0);              // 6 字节大端打包为 u64
-static G_IPV4: AtomicU32 = AtomicU32::new(0);             // 网络字节序
-static G_GATEWAY: AtomicU32 = AtomicU32::new(0);          // 网络字节序
-static G_DNS: [AtomicU32; 3] = [
-    AtomicU32::new(0),
-    AtomicU32::new(0),
-    AtomicU32::new(0),
-];
+static G_MAC: AtomicU64 = AtomicU64::new(0); // 6 字节大端打包为 u64
+static G_IPV4: AtomicU32 = AtomicU32::new(0); // 网络字节序
+static G_GATEWAY: AtomicU32 = AtomicU32::new(0); // 网络字节序
+static G_DNS: [AtomicU32; 3] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
 
 // ============================================================================
 // 全局网络状态 (NetState 统一结构)
@@ -89,7 +85,10 @@ unsafe impl Send for NetState {}
 unsafe impl Sync for NetState {}
 
 impl NetState {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     const fn new() -> Self {
         Self {
             device: None,
@@ -210,33 +209,38 @@ fn set_failed() {
     G_INIT_STATE.store(InitState::Failed as u8, Ordering::Release);
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 /// # Safety
 ///
 /// - 仅在内核启动网络子系统的临界区内调用一次
 /// - `SOCKET_STORAGE` 是 `MaybeUninit<[SocketStorage; MAX_SOCKETS]>` 静态变量, 由本函数独占初始化
 /// - `SOCKET_SET` 是 `UninitCell<SocketSet<'static>>`, 初始化后只读
-unsafe fn init_sockets() { unsafe {
-    if SOCKETS_INITIALIZED.load(Ordering::Acquire) {
-        return;
+unsafe fn init_sockets() {
+    unsafe {
+        if SOCKETS_INITIALIZED.load(Ordering::Acquire) {
+            return;
+        }
+        configure_max_sockets();
+        let ptr = SOCKET_STORAGE.as_mut_ptr() as *mut SocketStorage<'static>;
+        for i in 0..MAX_SOCKETS {
+            core::ptr::write(ptr.add(i), SocketStorage::EMPTY);
+        }
+        let storage = SOCKET_STORAGE.assume_init_mut();
+        SOCKET_SET.write(SocketSet::new(&mut storage[..]));
+        SOCKETS_INITIALIZED.store(true, Ordering::Release);
     }
-    configure_max_sockets();
-    let ptr = SOCKET_STORAGE.as_mut_ptr() as *mut SocketStorage<'static>;
-    for i in 0..MAX_SOCKETS {
-        core::ptr::write(ptr.add(i), SocketStorage::EMPTY);
-    }
-    let storage = SOCKET_STORAGE.assume_init_mut();
-    SOCKET_SET.write(SocketSet::new(&mut storage[..]));
-    SOCKETS_INITIALIZED.store(true, Ordering::Release);
-}}
+}
 
 /// # Safety
 ///
 /// - 调用前必须已执行 `init_sockets` 完成 `SOCKET_SET` 初始化
 /// - 返回的指针仅在同一线程的 socket 调度上下文内使用, 不得跨线程共享
-unsafe fn socket_set() -> *mut SocketSet<'static> { unsafe {
-    SOCKET_SET.as_mut_ptr()
-}}
+unsafe fn socket_set() -> *mut SocketSet<'static> {
+    unsafe { SOCKET_SET.as_mut_ptr() }
+}
 
 /// # Safety
 ///
@@ -309,8 +313,14 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 // try_lock() 在 ISR 上下文中不会阻塞：若锁已被持有则直接返回。
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::items_after_statements,
+    reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect"
+)]
 /// 轮询网络栈 (驱动 TX/RX、定时器、DHCP)。
 ///
 /// 在 timer ISR 或网络任务中调用, 内部 `try_lock` 避免阻塞。
@@ -319,60 +329,62 @@ unsafe fn process_dhcp_events(_sockets: &mut SocketSet<'_>) {
 /// # Safety
 /// - `try_lock` 保证 ISR 安全 (不阻塞)。
 /// - 内部 `raw::device_mut` / `raw::stack_mut` 通过 `NET_LOCK` 互斥保护。
-pub unsafe fn poll_network() { unsafe {
-    let _guard = match NET_STATE.try_lock() {
-        Some(g) => g,
-        None => return,
-    };
+pub unsafe fn poll_network() {
+    unsafe {
+        let _guard = match NET_STATE.try_lock() {
+            Some(g) => g,
+            None => return,
+        };
 
-    let nic = match raw::device_mut() {
-        Some(d) => d,
-        None => return,
-    };
-    let stack = match raw::stack_mut() {
-        Some(s) => s,
-        None => return,
-    };
-    let sockets = &mut *raw::socket_set();
-    crate::kernel::framework::net::poll_stack(nic, stack, sockets);
-    raw::process_dhcp_events(sockets);
+        let nic = match raw::device_mut() {
+            Some(d) => d,
+            None => return,
+        };
+        let stack = match raw::stack_mut() {
+            Some(s) => s,
+            None => return,
+        };
+        let sockets = &mut *raw::socket_set();
+        crate::kernel::framework::net::poll_stack(nic, stack, sockets);
+        raw::process_dhcp_events(sockets);
 
-    // P2-I-41: poll 完毕后通知所有 fd 的等待者, 让 sm_send/sm_recv
-    // (未来阻塞扩展点) 重新检查 socket 状态. try_wake 持锁时间 O(1).
-    use crate::kernel::framework::net::{WakeReason, SOCKET_WAIT_QUEUES};
-    for fd in 0..MAX_SM_FD {
-        if raw::fd_type(fd) == 0 {
-            continue;
-        }
-        // 用 smoltcp can_send / can_recv 推断 wake 原因. socket_set 访问
-        // 仍在 NET_STATE 锁保护下 (try_wake 内部 lock 仅保护自身 pending 标记,
-        // 与 smoltcp 状态机无关).
-        let reason = if let Some(handle) = raw::socket_handle(fd) {
-            let can_read = match raw::fd_type(fd) {
-                1 => sockets.get::<tcp::Socket>(handle).can_recv(),
-                2 => sockets.get::<udp::Socket>(handle).can_recv(),
-                _ => false,
-            };
-            let can_write = match raw::fd_type(fd) {
-                1 => sockets.get::<tcp::Socket>(handle).can_send(),
-                2 => sockets.get::<udp::Socket>(handle).can_send(),
-                _ => false,
-            };
-            if can_read {
-                WakeReason::Readable
-            } else if can_write {
-                WakeReason::Writable
-            } else {
+        // P2-I-41: poll 完毕后通知所有 fd 的等待者, 让 sm_send/sm_recv
+        // (未来阻塞扩展点) 重新检查 socket 状态. try_wake 持锁时间 O(1).
+        use crate::kernel::framework::net::{SOCKET_WAIT_QUEUES, WakeReason};
+        for fd in 0..MAX_SM_FD {
+            if raw::fd_type(fd) == 0 {
                 continue;
             }
-        } else {
-            continue;
-        };
-        if let Some(q) = SOCKET_WAIT_QUEUES.get(fd) {
-            q.try_wake(reason);
+            // 用 smoltcp can_send / can_recv 推断 wake 原因. socket_set 访问
+            // 仍在 NET_STATE 锁保护下 (try_wake 内部 lock 仅保护自身 pending 标记,
+            // 与 smoltcp 状态机无关).
+            let reason = if let Some(handle) = raw::socket_handle(fd) {
+                let can_read = match raw::fd_type(fd) {
+                    1 => sockets.get::<tcp::Socket>(handle).can_recv(),
+                    2 => sockets.get::<udp::Socket>(handle).can_recv(),
+                    _ => false,
+                };
+                let can_write = match raw::fd_type(fd) {
+                    1 => sockets.get::<tcp::Socket>(handle).can_send(),
+                    2 => sockets.get::<udp::Socket>(handle).can_send(),
+                    _ => false,
+                };
+                if can_read {
+                    WakeReason::Readable
+                } else if can_write {
+                    WakeReason::Writable
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            };
+            if let Some(q) = SOCKET_WAIT_QUEUES.get(fd) {
+                q.try_wake(reason);
+            }
         }
     }
-}}
+}
 
 // ============================================================================
 // 多网卡探测 (按优先级依次尝试)
@@ -383,50 +395,55 @@ pub unsafe fn poll_network() { unsafe {
 /// - 在网络子系统初始化入口被调用, 期间无其他并发探测
 /// - 依赖的 chitin/driver 框架 (`Driver::init`) 自身保证设备独占
 #[cfg(not(feature = "kernel_test"))]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-unsafe fn nic_probe_all() -> Option<ChitinNetDevice> { unsafe {
-    // I-53 修复: 去除编译时架构互斥, 双架构二进制按运行时探测顺序
-    // 尝试 e1000 (PCI 设备) 与 virtio-net (MMIO 设备). 两者驱动代码
-    // 均架构无关, 仅依赖 IoMem / PCI 抽象. QEMU 配置决定哪一个会成功.
-    //
-    // 探测顺序固定: e1000 -> virtio-net. 真实硬件 (e.g. PC 上) e1000
-    // 优先; QEMU virt 上 e1000 探测返回非 0 走 fallthrough 到 virtio.
-    //
-    // 失败: 全部探测返回非 0 / Box::into_raw 失败 / Driver::init 失败.
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
+    unsafe {
+        // I-53 修复: 去除编译时架构互斥, 双架构二进制按运行时探测顺序
+        // 尝试 e1000 (PCI 设备) 与 virtio-net (MMIO 设备). 两者驱动代码
+        // 均架构无关, 仅依赖 IoMem / PCI 抽象. QEMU 配置决定哪一个会成功.
+        //
+        // 探测顺序固定: e1000 -> virtio-net. 真实硬件 (e.g. PC 上) e1000
+        // 优先; QEMU virt 上 e1000 探测返回非 0 走 fallthrough 到 virtio.
+        //
+        // 失败: 全部探测返回非 0 / Box::into_raw 失败 / Driver::init 失败.
 
-    // 1) e1000 探测 (PCI 设备, 走 PCI 总线)
-    // aarch64: e1000_probe() 内部安全返回 -1 (无 PCI ECAM)
-    {
-        let probe_result = crate::kernel::framework::driver::e1000_probe();
-        if probe_result == 0 {
-            let mut dev = crate::kernel::framework::driver::e1000_take_device()?;
-            if crate::kernel::framework::driver::Driver::init(&mut *dev).is_err() {
-                raw::klog_err("e1000: hardware init failed");
-                return None;
+        // 1) e1000 探测 (PCI 设备, 走 PCI 总线)
+        // aarch64: e1000_probe() 内部安全返回 -1 (无 PCI ECAM)
+        {
+            let probe_result = crate::kernel::framework::driver::e1000_probe();
+            if probe_result == 0 {
+                let mut dev = crate::kernel::framework::driver::e1000_take_device()?;
+                if crate::kernel::framework::driver::Driver::init(&mut *dev).is_err() {
+                    raw::klog_err("e1000: hardware init failed");
+                    return None;
+                }
+                let mac = dev.mac();
+                let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
+                let nic = ChitinNetDevice::new(&E1000_NET_OPS_STATIC, raw_ptr, mac);
+                raw::klog_msg("e1000: probed successfully");
+                return Some(nic);
             }
-            let mac = dev.mac();
-            let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
-            let nic = ChitinNetDevice::new(&E1000_NET_OPS_STATIC, raw_ptr, mac);
-            raw::klog_msg("e1000: probed successfully");
-            return Some(nic);
         }
-    }
 
-    // 2) virtio-net 探测 (MMIO 设备, 走 virtio 总线, 架构无关)
-    {
-        let probe_result = crate::kernel::framework::driver::virtio_net_probe();
-        if probe_result == 0 {
-            let dev = crate::kernel::framework::driver::virtio_net_take_device()?;
-            let mac = dev.mac;
-            let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
-            let nic = ChitinNetDevice::new(&VIRTIO_NET_OPS_STATIC, raw_ptr, mac);
-            raw::klog_msg("virtio-net: probed successfully");
-            return Some(nic);
+        // 2) virtio-net 探测 (MMIO 设备, 走 virtio 总线, 架构无关)
+        {
+            let probe_result = crate::kernel::framework::driver::virtio_net_probe();
+            if probe_result == 0 {
+                let dev = crate::kernel::framework::driver::virtio_net_take_device()?;
+                let mac = dev.mac;
+                let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
+                let nic = ChitinNetDevice::new(&VIRTIO_NET_OPS_STATIC, raw_ptr, mac);
+                raw::klog_msg("virtio-net: probed successfully");
+                return Some(nic);
+            }
         }
-    }
 
-    None
-}}
+        None
+    }
+}
 
 #[cfg(not(feature = "kernel_test"))]
 static E1000_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
@@ -460,51 +477,54 @@ static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
 /// - 必须在关中断上下文执行, `NET_LOCK` 由本函数获取
 ///
 /// SAFETY: 见上方 # Safety 章节, 调用方保证单线程 + 关中断; `NET_LOCK` 由本函数内部获取
-unsafe fn net_save() { unsafe {
-    use core::sync::atomic::Ordering;
-    use crate::kernel::framework::net::save as snap;
+unsafe fn net_save() {
+    unsafe {
+        use crate::kernel::framework::net::save as snap;
+        use core::sync::atomic::Ordering;
 
-    let _guard = NET_STATE.lock();
+        let _guard = NET_STATE.lock();
 
-    snap::save(|s| {
-        // MAC: 从当前 NIC 读取 (mut 访问因 NET_LOCK 持有而安全)
-        if let Some(dev) = raw::device_mut() {
-            s.mac = dev.mac;
-        }
+        snap::save(|s| {
+            // MAC: 从当前 NIC 读取 (mut 访问因 NET_LOCK 持有而安全)
+            if let Some(dev) = raw::device_mut() {
+                s.mac = dev.mac;
+            }
 
-        // IP / GW / prefix: 从 stack iface 读取
-        if let Some(stack) = raw::stack_mut() {
-            if let Some(cidr) = stack.iface.ip_addrs().first() {
-                if let smoltcp::wire::IpCidr::Ipv4(v4) = cidr {
-                    s.ip = v4.address().octets();
-                    s.prefix_len = v4.prefix_len();
+            // IP / GW / prefix: 从 stack iface 读取
+            if let Some(stack) = raw::stack_mut() {
+                if let Some(cidr) = stack.iface.ip_addrs().first() {
+                    if let smoltcp::wire::IpCidr::Ipv4(v4) = cidr {
+                        s.ip = v4.address().octets();
+                        s.prefix_len = v4.prefix_len();
+                    }
+                }
+                // smoltcp 0.13 路由 API: get_default_ipv4_route 返回 Option<Route>
+                if let Some(route) = stack.iface.routes().get_default_ipv4_route() {
+                    if let smoltcp::wire::IpAddress::Ipv4(gw) = route.via_router {
+                        let oct = gw.octets();
+                        s.gateway = oct;
+                    }
                 }
             }
-            // smoltcp 0.13 路由 API: get_default_ipv4_route 返回 Option<Route>
-            if let Some(route) = stack.iface.routes().get_default_ipv4_route() {
-                if let smoltcp::wire::IpAddress::Ipv4(gw) = route.via_router {
-                    let oct = gw.octets();
-                    s.gateway = oct;
-                }
+
+            // FD 表
+            for i in 0..MAX_SM_FD {
+                s.fd_types[i] = raw::fd_type(i);
+                s.fd_handles[i] = match raw::socket_handle(i) {
+                    Some(h) => as_u32_handle(h),
+                    None => u32::MAX,
+                };
             }
-        }
 
-        // FD 表
-        for i in 0..MAX_SM_FD {
-            s.fd_types[i] = raw::fd_type(i);
-            s.fd_handles[i] = match raw::socket_handle(i) {
-                Some(h) => as_u32_handle(h),
-                None => u32::MAX,
-            };
-        }
-
-        // 状态
-        s.net_ready = crate::kernel::framework::net::NET_READY.load(Ordering::Acquire);
-        s.net_configured = crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire);
-        s.sockets_initialized = SOCKETS_INITIALIZED.load(Ordering::Acquire);
-        s.init_state = G_INIT_STATE.load(Ordering::Acquire);
-    });
-}}
+            // 状态
+            s.net_ready = crate::kernel::framework::net::NET_READY.load(Ordering::Acquire);
+            s.net_configured =
+                crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire);
+            s.sockets_initialized = SOCKETS_INITIALIZED.load(Ordering::Acquire);
+            s.init_state = G_INIT_STATE.load(Ordering::Acquire);
+        });
+    }
+}
 
 /// `SocketHandle` → u32 (smoltcp `SocketHandle` 是 `pub struct SocketHandle(usize)` 单字段
 /// Copy newtype, 用 `transmute_copy` 替代 transmute: 编译期强制 size 匹配, 不依赖
@@ -540,75 +560,83 @@ unsafe fn smol_handle_from_u32(raw: u32) -> smoltcp::iface::SocketHandle {
 /// - 必须在关中断上下文执行, `NET_LOCK` 由本函数获取
 ///
 /// SAFETY: 见上方 # Safety 章节, 调用方保证 socket fd 已无人持有 + 关中断; `NET_LOCK` 由本函数内部获取
-unsafe fn net_restore() { unsafe {
-    use core::sync::atomic::Ordering;
-    use crate::kernel::framework::net::save as snap;
+unsafe fn net_restore() {
+    unsafe {
+        use crate::kernel::framework::net::save as snap;
+        use core::sync::atomic::Ordering;
 
-    // 1. 复位状态机
-    {
-        let _guard = NET_STATE.lock();
-        crate::kernel::framework::net::NET_READY.store(false, Ordering::Release);
-        crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
-        raw::clear_all();
-        SOCKETS_INITIALIZED.store(false, Ordering::Release);
-        G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
-    }
-
-    // 2. 重新初始化 NIC + stack
-    qx_net_init();
-
-    // 3. 读取快照, 跳过 DHCP 重配, 直接把 IP/GW 重新绑回
-    let saved = snap::load();
-    if saved.is_valid() {
-        if saved.net_configured
-            && saved.ip != [0, 0, 0, 0]
-            && saved.prefix_len > 0
-            && saved.prefix_len <= 32
+        // 1. 复位状态机
         {
             let _guard = NET_STATE.lock();
-            if let Some(stack) = raw::stack_mut() {
-                let ip = smoltcp::wire::Ipv4Address::new(
-                    saved.ip[0], saved.ip[1], saved.ip[2], saved.ip[3],
-                );
-                let cidr = smoltcp::wire::IpCidr::Ipv4(
-                    smoltcp::wire::Ipv4Cidr::new(ip, saved.prefix_len),
-                );
-                stack.iface.update_ip_addrs(|addrs| {
-                    let _ = addrs.push(cidr);
-                });
-                if saved.gateway != [0, 0, 0, 0] {
-                    let gw = smoltcp::wire::Ipv4Address::new(
-                        saved.gateway[0], saved.gateway[1],
-                        saved.gateway[2], saved.gateway[3],
-                    );
-                    let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
-                }
-                crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
-            }
+            crate::kernel::framework::net::NET_READY.store(false, Ordering::Release);
+            crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
+            raw::clear_all();
+            SOCKETS_INITIALIZED.store(false, Ordering::Release);
+            G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
         }
-        // FD 表恢复: 仅恢复 (type, handle) 元组; smoltcp socket 内部状态
-        // 不可序列化, 已连接 socket 在 restore 后等同于未初始化, 业务
-        // 层需自行重新 connect / accept.
-        let _guard = NET_STATE.lock();
-        for i in 0..MAX_SM_FD {
-            raw::set_fd_type(i, saved.fd_types[i]);
-            let handle = if saved.fd_handles[i] == u32::MAX {
-                None
-            } else {
-                let raw_handle = saved.fd_handles[i];
-                // SAFETY: `raw_handle` 是 `as_u32_handle` 持久化的同构 smoltcp 句柄;
-                //         smol_handle_from_u32 用 transmute_copy 安全重建.
-                Some(unsafe { smol_handle_from_u32(raw_handle) })
-            };
-            raw::set_socket_handle(i, handle);
-        }
-        SOCKETS_INITIALIZED.store(saved.sockets_initialized, Ordering::Release);
-    }
 
-    crate::arch!(interrupt_enable());
-    raw::klog_msg("--- Network Recovered ---");
-    snap::clear();
-}}
+        // 2. 重新初始化 NIC + stack
+        qx_net_init();
+
+        // 3. 读取快照, 跳过 DHCP 重配, 直接把 IP/GW 重新绑回
+        let saved = snap::load();
+        if saved.is_valid() {
+            if saved.net_configured
+                && saved.ip != [0, 0, 0, 0]
+                && saved.prefix_len > 0
+                && saved.prefix_len <= 32
+            {
+                let _guard = NET_STATE.lock();
+                if let Some(stack) = raw::stack_mut() {
+                    let ip = smoltcp::wire::Ipv4Address::new(
+                        saved.ip[0],
+                        saved.ip[1],
+                        saved.ip[2],
+                        saved.ip[3],
+                    );
+                    let cidr = smoltcp::wire::IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
+                        ip,
+                        saved.prefix_len,
+                    ));
+                    stack.iface.update_ip_addrs(|addrs| {
+                        let _ = addrs.push(cidr);
+                    });
+                    if saved.gateway != [0, 0, 0, 0] {
+                        let gw = smoltcp::wire::Ipv4Address::new(
+                            saved.gateway[0],
+                            saved.gateway[1],
+                            saved.gateway[2],
+                            saved.gateway[3],
+                        );
+                        let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
+                    }
+                    crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
+                }
+            }
+            // FD 表恢复: 仅恢复 (type, handle) 元组; smoltcp socket 内部状态
+            // 不可序列化, 已连接 socket 在 restore 后等同于未初始化, 业务
+            // 层需自行重新 connect / accept.
+            let _guard = NET_STATE.lock();
+            for i in 0..MAX_SM_FD {
+                raw::set_fd_type(i, saved.fd_types[i]);
+                let handle = if saved.fd_handles[i] == u32::MAX {
+                    None
+                } else {
+                    let raw_handle = saved.fd_handles[i];
+                    // SAFETY: `raw_handle` 是 `as_u32_handle` 持久化的同构 smoltcp 句柄;
+                    //         smol_handle_from_u32 用 transmute_copy 安全重建.
+                    Some(unsafe { smol_handle_from_u32(raw_handle) })
+                };
+                raw::set_socket_handle(i, handle);
+            }
+            SOCKETS_INITIALIZED.store(saved.sockets_initialized, Ordering::Release);
+        }
+
+        crate::arch!(interrupt_enable());
+        raw::klog_msg("--- Network Recovered ---");
+        snap::clear();
+    }
+}
 
 /// # Safety
 ///
@@ -636,8 +664,14 @@ unsafe fn net_reset() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn qx_net_init() {
     // SAFETY: 网络初始化由启动流程串行调用, 无并发访问全局状态。
     unsafe {
@@ -662,7 +696,9 @@ pub extern "C" fn qx_net_init() {
 
         raw::klog_msg("Step1: hardware probe");
 
-        let mut nic = if let Some(n) = nic_probe_all() { n } else {
+        let mut nic = if let Some(n) = nic_probe_all() {
+            n
+        } else {
             let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
             raw::klog_msg("No NIC found, running without network");
             raw::klog_init("--- Network Subsystem Ready (No Network) ---");
@@ -719,15 +755,23 @@ pub extern "C" fn qx_net_init() {
 
         if !crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire) {
             // I-46: 引用 net::types 中的集中常量, 不再硬编码 10.0.2.15/24/10.0.2.2.
-            use crate::kernel::framework::net::types::{FALLBACK_GATEWAY, FALLBACK_IPV4, FALLBACK_PREFIX};
+            use crate::kernel::framework::net::types::{
+                FALLBACK_GATEWAY, FALLBACK_IPV4, FALLBACK_PREFIX,
+            };
             let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
                 smoltcp::wire::Ipv4Address::new(
-                    FALLBACK_IPV4[0], FALLBACK_IPV4[1], FALLBACK_IPV4[2], FALLBACK_IPV4[3],
+                    FALLBACK_IPV4[0],
+                    FALLBACK_IPV4[1],
+                    FALLBACK_IPV4[2],
+                    FALLBACK_IPV4[3],
                 ),
                 FALLBACK_PREFIX,
             ));
             let gw = smoltcp::wire::Ipv4Address::new(
-                FALLBACK_GATEWAY[0], FALLBACK_GATEWAY[1], FALLBACK_GATEWAY[2], FALLBACK_GATEWAY[3],
+                FALLBACK_GATEWAY[0],
+                FALLBACK_GATEWAY[1],
+                FALLBACK_GATEWAY[2],
+                FALLBACK_GATEWAY[3],
             );
             let _guard = NET_STATE.lock();
             if let Some(stack) = raw::stack_mut() {
@@ -800,13 +844,15 @@ fn net_tx_softirq_handler() {
 /// 调用方保证 NET 已初始化 (通过 `qx_net_init` 注册)，
 /// `NET_READY` 由网络栈在链路就绪后置位。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 { unsafe {
-    if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
-        return -1;
+pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
+    unsafe {
+        if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
+            return -1;
+        }
+        poll_network();
+        0
     }
-    poll_network();
-    0
-}}
+}
 
 /// 设置静态 IP (x.x.x.x/prefix, gateway)
 ///
@@ -820,95 +866,107 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 { unsafe {
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 { unsafe {
-    if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
-        return -1;
-    }
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 {
+    unsafe {
+        if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
+            return -1;
+        }
 
-    let _guard = NET_STATE.lock();
+        let _guard = NET_STATE.lock();
 
-    let stack = match raw::stack_mut() {
-        Some(s) => s,
-        None => return -1,
-    };
+        let stack = match raw::stack_mut() {
+            Some(s) => s,
+            None => return -1,
+        };
 
-    // 解析 CIDR 字符串 "a.b.c.d/prefix"
-    let mut octets = [0u8; 4];
-    let mut prefix = 24u8;
-    let mut parsing_prefix = false;
-    let mut octet_idx = 0usize;
-    let mut current = 0u32;
+        // 解析 CIDR 字符串 "a.b.c.d/prefix"
+        let mut octets = [0u8; 4];
+        let mut prefix = 24u8;
+        let mut parsing_prefix = false;
+        let mut octet_idx = 0usize;
+        let mut current = 0u32;
 
-    let mut ptr = cidr_str;
-    loop {
-        let b = *ptr;
-        if b == 0 {
-            if parsing_prefix {
-                prefix = current as u8;
-            } else {
-                octets[octet_idx] = current as u8;
+        let mut ptr = cidr_str;
+        loop {
+            let b = *ptr;
+            if b == 0 {
+                if parsing_prefix {
+                    prefix = current as u8;
+                } else {
+                    octets[octet_idx] = current as u8;
+                }
+                break;
             }
-            break;
+            if b == b'/' {
+                octets[octet_idx] = current as u8;
+                parsing_prefix = true;
+                current = 0;
+            } else if b == b'.' && !parsing_prefix {
+                octets[octet_idx] = current as u8;
+                octet_idx += 1;
+                if octet_idx >= 4 {
+                    return -1;
+                }
+                current = 0;
+            } else if b.is_ascii_digit() {
+                current = current * 10 + u32::from(b - b'0');
+            } else {
+                return -1;
+            }
+            ptr = ptr.add(1);
         }
-        if b == b'/' {
-            octets[octet_idx] = current as u8;
-            parsing_prefix = true;
-            current = 0;
-        } else if b == b'.' && !parsing_prefix {
-            octets[octet_idx] = current as u8;
-            octet_idx += 1;
-            if octet_idx >= 4 { return -1; }
-            current = 0;
-        } else if b.is_ascii_digit() {
-            current = current * 10 + u32::from(b - b'0');
-        } else {
-            return -1;
+
+        let ip = smoltcp::wire::Ipv4Address::new(octets[0], octets[1], octets[2], octets[3]);
+
+        // 解析网关
+        let mut gw_octets = [0u8; 4];
+        let mut gw_idx = 0usize;
+        let mut gw_current = 0u32;
+        let mut gw_ptr = gw_str;
+        loop {
+            let b = *gw_ptr;
+            if b == 0 {
+                gw_octets[gw_idx] = gw_current as u8;
+                break;
+            }
+            if b == b'.' {
+                gw_octets[gw_idx] = gw_current as u8;
+                gw_idx += 1;
+                if gw_idx >= 4 {
+                    return -1;
+                }
+                gw_current = 0;
+            } else if b.is_ascii_digit() {
+                gw_current = gw_current * 10 + u32::from(b - b'0');
+            } else {
+                return -1;
+            }
+            gw_ptr = gw_ptr.add(1);
         }
-        ptr = ptr.add(1);
+        let gw =
+            smoltcp::wire::Ipv4Address::new(gw_octets[0], gw_octets[1], gw_octets[2], gw_octets[3]);
+
+        let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(ip, prefix));
+        stack.iface.update_ip_addrs(|addrs| {
+            addrs.clear();
+            let _ = addrs.push(cidr);
+        });
+        let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
+
+        crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
+
+        raw::klog_msg("Static IP configured");
+        0
     }
-
-    let ip = smoltcp::wire::Ipv4Address::new(octets[0], octets[1], octets[2], octets[3]);
-
-    // 解析网关
-    let mut gw_octets = [0u8; 4];
-    let mut gw_idx = 0usize;
-    let mut gw_current = 0u32;
-    let mut gw_ptr = gw_str;
-    loop {
-        let b = *gw_ptr;
-        if b == 0 {
-            gw_octets[gw_idx] = gw_current as u8;
-            break;
-        }
-        if b == b'.' {
-            gw_octets[gw_idx] = gw_current as u8;
-            gw_idx += 1;
-            if gw_idx >= 4 { return -1; }
-            gw_current = 0;
-        } else if b.is_ascii_digit() {
-            gw_current = gw_current * 10 + u32::from(b - b'0');
-        } else {
-            return -1;
-        }
-        gw_ptr = gw_ptr.add(1);
-    }
-    let gw = smoltcp::wire::Ipv4Address::new(gw_octets[0], gw_octets[1], gw_octets[2], gw_octets[3]);
-
-    let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(ip, prefix));
-    stack.iface.update_ip_addrs(|addrs| {
-        addrs.clear();
-        let _ = addrs.push(cidr);
-    });
-    let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
-
-    crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
-
-    raw::klog_msg("Static IP configured");
-    0
-}}
-
+}
 
 // ============================================================================
 // 公共 API
@@ -986,21 +1044,19 @@ impl NetStatus {
             ipv4,
             gateway,
             dns,
-            dhcp_configured: crate::kernel::framework::net::NET_CONFIGURED
-                .load(Ordering::Acquire),
+            dhcp_configured: crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire),
         }
     }
 }
 
 fn ipv4_from_atomic(v: u32) -> Option<[u8; 4]> {
-    if v == 0 {
-        None
-    } else {
-        Some(v.to_be_bytes())
-    }
+    if v == 0 { None } else { Some(v.to_be_bytes()) }
 }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 /// 主动触发网络初始化 (非阻塞; 失败返回 false)
 ///
 /// # 行为
@@ -1059,11 +1115,26 @@ struct HostEntry {
 /// 内置静态 hosts (D1.2 起步, D 阶段后续可换 smoltcp wire/dns 升级)
 // I-46: hosts 表里 10.0.2.x 引用集中常量, 避免散落硬编码
 const STATIC_HOSTS: &[HostEntry] = &[
-    HostEntry { name: "localhost",       ip: [127, 0, 0, 1] },
-    HostEntry { name: "router",          ip: types::FALLBACK_GATEWAY },
-    HostEntry { name: "host",            ip: types::FALLBACK_IPV4 },
-    HostEntry { name: "qemu-gateway",    ip: types::FALLBACK_GATEWAY },
-    HostEntry { name: "queenx-gateway",    ip: types::FALLBACK_GATEWAY },
+    HostEntry {
+        name: "localhost",
+        ip: [127, 0, 0, 1],
+    },
+    HostEntry {
+        name: "router",
+        ip: types::FALLBACK_GATEWAY,
+    },
+    HostEntry {
+        name: "host",
+        ip: types::FALLBACK_IPV4,
+    },
+    HostEntry {
+        name: "qemu-gateway",
+        ip: types::FALLBACK_GATEWAY,
+    },
+    HostEntry {
+        name: "queenx-gateway",
+        ip: types::FALLBACK_GATEWAY,
+    },
 ];
 
 /// 简单 DNS 解析 (静态 hosts 表)
@@ -1211,7 +1282,11 @@ pub fn smoltcp_net_stack_close(slot_idx: usize) {
 // ============================================================================
 
 pub(crate) mod raw {
-    use super::{NetState, NET_STATE, NetworkStack, ChitinNetDevice, SocketHandle, udp, UDP_META_COUNT, SocketSet, SOCKET_SET, TOTAL_SLOTS, TCP_BUF_SIZE, UDP_BUF_SIZE, dhcpv4, MAX_SM_FD, tcp, klog_net, klog_init_msg, klog_net_err};
+    use super::{
+        ChitinNetDevice, MAX_SM_FD, NET_STATE, NetState, NetworkStack, SOCKET_SET, SocketHandle,
+        SocketSet, TCP_BUF_SIZE, TOTAL_SLOTS, UDP_BUF_SIZE, UDP_META_COUNT, dhcpv4, klog_init_msg,
+        klog_net, klog_net_err, tcp, udp,
+    };
 
     /// 获取 `NetState` 可变引用 (调用方必须持有 `NET_STATE` 锁).
     ///
@@ -1242,13 +1317,17 @@ pub(crate) mod raw {
     /// 安全设置 device
     pub fn set_device(d: Option<ChitinNetDevice>) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().device = d; }
+        unsafe {
+            state().device = d;
+        }
     }
 
     /// 安全设置 stack
     pub fn set_stack(s: Option<NetworkStack>) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().stack = s; }
+        unsafe {
+            state().stack = s;
+        }
     }
 
     /// 安全读取 `dhcp_handle`
@@ -1260,7 +1339,9 @@ pub(crate) mod raw {
     /// 安全设置 `dhcp_handle`
     pub fn set_dhcp_handle(h: Option<SocketHandle>) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().dhcp_handle = h; }
+        unsafe {
+            state().dhcp_handle = h;
+        }
     }
 
     /// 安全清空网络全局状态
@@ -1288,7 +1369,9 @@ pub(crate) mod raw {
     /// 写入 fd 类型
     pub fn set_fd_type(fd: usize, val: u8) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().fd_types[fd] = val; }
+        unsafe {
+            state().fd_types[fd] = val;
+        }
     }
 
     /// 读取 socket handle
@@ -1300,7 +1383,9 @@ pub(crate) mod raw {
     /// 写入 socket handle
     pub fn set_socket_handle(fd: usize, val: Option<SocketHandle>) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().socket_table[fd] = val; }
+        unsafe {
+            state().socket_table[fd] = val;
+        }
     }
 
     /// 读取 TCP RX buffer 指针
@@ -1312,7 +1397,9 @@ pub(crate) mod raw {
     /// 写入 TCP RX buffer 指针
     pub fn set_tcp_rx_buf(fd: usize, val: *mut u8) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().tcp_rx_bufs[fd] = val; }
+        unsafe {
+            state().tcp_rx_bufs[fd] = val;
+        }
     }
 
     /// 读取 TCP TX buffer 指针
@@ -1324,7 +1411,9 @@ pub(crate) mod raw {
     /// 写入 TCP TX buffer 指针
     pub fn set_tcp_tx_buf(fd: usize, val: *mut u8) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().tcp_tx_bufs[fd] = val; }
+        unsafe {
+            state().tcp_tx_bufs[fd] = val;
+        }
     }
 
     /// 读取 UDP RX buffer 指针
@@ -1336,7 +1425,9 @@ pub(crate) mod raw {
     /// 写入 UDP RX buffer 指针
     pub fn set_udp_rx_buf(fd: usize, val: *mut u8) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().udp_rx_bufs[fd] = val; }
+        unsafe {
+            state().udp_rx_bufs[fd] = val;
+        }
     }
 
     /// 读取 UDP TX buffer 指针
@@ -1348,7 +1439,9 @@ pub(crate) mod raw {
     /// 写入 UDP TX buffer 指针
     pub fn set_udp_tx_buf(fd: usize, val: *mut u8) {
         // SAFETY: 调用方持有 NET_STATE 锁.
-        unsafe { state().udp_tx_bufs[fd] = val; }
+        unsafe {
+            state().udp_tx_bufs[fd] = val;
+        }
     }
 
     /// 读取 UDP RX metadata 数组 (可变借用, 用于 `PacketBuffer` 构造)
@@ -1436,7 +1529,6 @@ pub(crate) mod raw {
         core::sync::atomic::AtomicU8::new(0),
     ];
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
     /// 实际打开一个 socket (W4.2.3.2 实装).
     ///
     /// 根据 `kind` 构造 smoltcp socket (Tcp/Udp), 加入 `sockets`, 记录 buffer
@@ -1503,10 +1595,8 @@ pub(crate) mod raw {
                     }
                     // SAFETY: rx_ptr/tx_ptr 来自 k_malloc(TCP_BUF_SIZE), 长度合法, 唯一别名.
                     //         'static 借用基于: slab 进程级 + 索引化生命周期管理.
-                    let rx_slice =
-                        core::slice::from_raw_parts_mut(rx_ptr, TCP_BUF_SIZE);
-                    let tx_slice =
-                        core::slice::from_raw_parts_mut(tx_ptr, TCP_BUF_SIZE);
+                    let rx_slice = core::slice::from_raw_parts_mut(rx_ptr, TCP_BUF_SIZE);
+                    let tx_slice = core::slice::from_raw_parts_mut(tx_ptr, TCP_BUF_SIZE);
                     let tcp_sock = smoltcp::socket::tcp::Socket::new(
                         smoltcp::socket::tcp::SocketBuffer::new(rx_slice),
                         smoltcp::socket::tcp::SocketBuffer::new(tx_slice),
@@ -1530,21 +1620,13 @@ pub(crate) mod raw {
                         return None;
                     }
                     // SAFETY: 同 TCP 注释, 'static 借用基于 slab 进程级 + 索引化管理.
-                    let rx_slice =
-                        core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE);
-                    let tx_slice =
-                        core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE);
+                    let rx_slice = core::slice::from_raw_parts_mut(rx_ptr, UDP_BUF_SIZE);
+                    let tx_slice = core::slice::from_raw_parts_mut(tx_ptr, UDP_BUF_SIZE);
                     let rx_meta = udp_rx_meta(slot_idx);
                     let tx_meta = udp_tx_meta(slot_idx);
                     let udp_sock = smoltcp::socket::udp::Socket::new(
-                        smoltcp::socket::udp::PacketBuffer::new(
-                            &mut rx_meta[..],
-                            rx_slice,
-                        ),
-                        smoltcp::socket::udp::PacketBuffer::new(
-                            &mut tx_meta[..],
-                            tx_slice,
-                        ),
+                        smoltcp::socket::udp::PacketBuffer::new(&mut rx_meta[..], rx_slice),
+                        smoltcp::socket::udp::PacketBuffer::new(&mut tx_meta[..], tx_slice),
                     );
                     let handle = sockets.add(udp_sock);
                     set_socket_handle(slot_idx, Some(handle));
@@ -1570,14 +1652,8 @@ pub(crate) mod raw {
                     let rx_meta = udp_rx_meta(slot_idx);
                     let tx_meta = udp_tx_meta(slot_idx);
                     let udp_sock = smoltcp::socket::udp::Socket::new(
-                        smoltcp::socket::udp::PacketBuffer::new(
-                            &mut rx_meta[..],
-                            rx_slice,
-                        ),
-                        smoltcp::socket::udp::PacketBuffer::new(
-                            &mut tx_meta[..],
-                            tx_slice,
-                        ),
+                        smoltcp::socket::udp::PacketBuffer::new(&mut rx_meta[..], rx_slice),
+                        smoltcp::socket::udp::PacketBuffer::new(&mut tx_meta[..], tx_slice),
                     );
                     let handle = sockets.add(udp_sock);
                     set_socket_handle(slot_idx, Some(handle));
@@ -1619,8 +1695,8 @@ pub(crate) mod raw {
         sockets: &mut SocketSet<'_>,
         dhcp_handle: Option<smoltcp::iface::SocketHandle>,
     ) -> crate::kernel::framework::net::iface_trait::DhcpState {
-        use core::sync::atomic::Ordering;
         use crate::kernel::framework::net::iface_trait::DhcpState;
+        use core::sync::atomic::Ordering;
 
         // 读取 prev tag (Acquire 同步)
         let prev_tag = PREV_DHCP_TAG.load(Ordering::Acquire);
@@ -1723,7 +1799,10 @@ pub(crate) mod raw {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// `SmoltcpNetStack::poll` 的 safe wrapper (W4.2.3.4).
     ///
     /// 驱动 smoltcp 协议栈轮询 (TX/RX + 定时器 + DHCP), 返回 `PollOutcome`.
@@ -1760,7 +1839,10 @@ pub(crate) mod raw {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// `DhcpState` tag → `DhcpState` 翻译.
     ///
     /// tag 值 (来自 `PREV_DHCP_TAG)`:
@@ -1771,8 +1853,8 @@ pub(crate) mod raw {
     /// - 4: Renewing
     /// - 5: Failed
     fn tag_to_dhcp_state(tag: u8) -> crate::kernel::framework::net::iface_trait::DhcpState {
-        use core::sync::atomic::Ordering;
         use crate::kernel::framework::net::iface_trait::DhcpState;
+        use core::sync::atomic::Ordering;
         match tag {
             0 => DhcpState::Idle,
             1 => DhcpState::Discovering,
@@ -1784,7 +1866,10 @@ pub(crate) mod raw {
                     PREV_DHCP_IPV4[2].load(Ordering::Acquire),
                     PREV_DHCP_IPV4[3].load(Ordering::Acquire),
                 ];
-                DhcpState::Bound { ipv4, lease_expires_at: u64::MAX }
+                DhcpState::Bound {
+                    ipv4,
+                    lease_expires_at: u64::MAX,
+                }
             }
             4 => {
                 let ipv4 = [
@@ -1900,7 +1985,10 @@ mod tests {
     fn test_parse_ipv4_literal_valid() {
         assert_eq!(parse_ipv4_literal("0.0.0.0"), Some([0, 0, 0, 0]));
         assert_eq!(parse_ipv4_literal("10.0.2.15"), Some([10, 0, 2, 15]));
-        assert_eq!(parse_ipv4_literal("255.255.255.255"), Some([255, 255, 255, 255]));
+        assert_eq!(
+            parse_ipv4_literal("255.255.255.255"),
+            Some([255, 255, 255, 255])
+        );
         assert_eq!(parse_ipv4_literal("127.0.0.1"), Some([127, 0, 0, 1]));
     }
 
@@ -1911,18 +1999,18 @@ mod tests {
         assert_eq!(parse_ipv4_literal("10.0"), None);
         assert_eq!(parse_ipv4_literal("10.0.2"), None);
         assert_eq!(parse_ipv4_literal("10.0.2.15.1"), None);
-        assert_eq!(parse_ipv4_literal("10.0.2.256"), None);   // 越界
+        assert_eq!(parse_ipv4_literal("10.0.2.256"), None); // 越界
         assert_eq!(parse_ipv4_literal("10.0..15"), None);
         assert_eq!(parse_ipv4_literal("a.b.c.d"), None);
         assert_eq!(parse_ipv4_literal("10.0.2."), None);
         assert_eq!(parse_ipv4_literal(".10.0.2.15"), None);
-        assert_eq!(parse_ipv4_literal("10.0.2.15 "), None);   // 尾随空格
+        assert_eq!(parse_ipv4_literal("10.0.2.15 "), None); // 尾随空格
     }
 
     #[test]
     fn test_dns_resolve_static_hosts() {
         assert_eq!(dns_resolve("localhost"), Some([127, 0, 0, 1]));
-        assert_eq!(dns_resolve("LOCALHOST"), Some([127, 0, 0, 1]));   // 大小写不敏感
+        assert_eq!(dns_resolve("LOCALHOST"), Some([127, 0, 0, 1])); // 大小写不敏感
         assert_eq!(dns_resolve("Router"), Some([10, 0, 2, 2]));
         assert_eq!(dns_resolve("qemu-gateway"), Some([10, 0, 2, 2]));
         assert_eq!(dns_resolve("queenx-gateway"), Some([10, 0, 2, 2]));
@@ -1952,7 +2040,9 @@ mod tests {
     #[test]
     fn test_net_status_capture_initial_state() {
         // SAFETY: 单线程测试, reset 仅修改状态原子变量
-        unsafe { reset_network_state(); }
+        unsafe {
+            reset_network_state();
+        }
         let s = NetStatus::capture();
         assert_eq!(s.state, InitState::Uninitialized);
         assert_eq!(s.ipv4, None);
@@ -1964,7 +2054,9 @@ mod tests {
     #[test]
     fn test_dns_servers_default_empty() {
         // SAFETY: 单线程测试, reset 仅修改状态原子变量
-        unsafe { reset_network_state(); }
+        unsafe {
+            reset_network_state();
+        }
         let dns = get_dns_servers();
         assert_eq!(dns, [None, None, None]);
     }

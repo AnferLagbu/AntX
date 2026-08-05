@@ -18,14 +18,11 @@
 //!
 //! 评估日期: 2026-06-04
 
-
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use crate::kernel::framework::chitin;
-pub use crate::kernel::framework::chitin::{
-    ChitinNode, NodeId, Property, PropertyValue,
-};
+pub use crate::kernel::framework::chitin::{ChitinNode, NodeId, Property, PropertyValue};
 
 // ============================================================================
 // 强类型 ID
@@ -98,14 +95,12 @@ pub fn root_id() -> DevTreeNodeId {
 
 /// 按 compatible 字符串查找节点
 pub fn find_compatible(compat: &str) -> Option<DevTreeNodeId> {
-    chitin::devtree::devtree_find_compatible(compat)
-        .map(DevTreeNodeId)
+    chitin::devtree::devtree_find_compatible(compat).map(DevTreeNodeId)
 }
 
 /// 按名称查找节点
 pub fn find_by_name(name: &str) -> Option<DevTreeNodeId> {
-    chitin::devtree::devtree_find_by_name(name)
-        .map(DevTreeNodeId)
+    chitin::devtree::devtree_find_by_name(name).map(DevTreeNodeId)
 }
 
 /// 获取节点完整快照
@@ -169,13 +164,16 @@ pub fn set_compatible(id: DevTreeNodeId, compat: Vec<&'static str>) {
 
 /// 设置设备状态
 pub fn set_state(id: DevTreeNodeId, state: super::DeviceState) {
-    chitin::devtree::devtree_set_state(id.0, match state {
-        super::DeviceState::Uninit => chitin::DeviceState::Uninit,
-        super::DeviceState::Probing => chitin::DeviceState::Probing,
-        super::DeviceState::Ready => chitin::DeviceState::Ready,
-        super::DeviceState::Failed => chitin::DeviceState::Failed,
-        super::DeviceState::Removed => chitin::DeviceState::Removed,
-    });
+    chitin::devtree::devtree_set_state(
+        id.0,
+        match state {
+            super::DeviceState::Uninit => chitin::DeviceState::Uninit,
+            super::DeviceState::Probing => chitin::DeviceState::Probing,
+            super::DeviceState::Ready => chitin::DeviceState::Ready,
+            super::DeviceState::Failed => chitin::DeviceState::Failed,
+            super::DeviceState::Removed => chitin::DeviceState::Removed,
+        },
+    );
 }
 
 // ============================================================================
@@ -228,7 +226,9 @@ pub fn bind_device(
 ) -> DevTreeResult<u32> {
     match chitin::devtree::devtree_bind_device(id.0, io_base, irq, driver_data) {
         Some(dev_id) => Ok(dev_id),
-        None => Err(DevTreeError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
+        None => Err(DevTreeError::Kernel(
+            crate::kernel::services::error::KernelError::FileNotFound,
+        )),
     }
 }
 

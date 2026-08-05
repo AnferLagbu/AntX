@@ -18,9 +18,9 @@
 //!
 //! ## 与 LEGACY-5.1-5.5/5.7/5.8/5.10 范式一致
 
-use alloc::vec::Vec;
 use super::zil::HvZilRecord;
 use super::zil_persist::HvZilPersist;
+use alloc::vec::Vec;
 
 // ============================================================================
 // ZilPersist trait — 持久化接口
@@ -109,8 +109,8 @@ impl ZilPersist for StandardZilPersist {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
     use crate::kernel::services::fs::hvfs::zil::{HvZil, HvZilRecordType};
+    use alloc::vec;
 
     /// 1. serialize 记录为空 → None
     #[test]
@@ -207,7 +207,8 @@ mod tests {
     /// 8. trait 对象分发 (dyn ZilPersist)
     #[test]
     fn test_zil_persist_trait_object() {
-        let persist: alloc::boxed::Box<dyn ZilPersist> = alloc::boxed::Box::new(StandardZilPersist::new());
+        let persist: alloc::boxed::Box<dyn ZilPersist> =
+            alloc::boxed::Box::new(StandardZilPersist::new());
         persist.mark_written();
         // 反序列化空块
         let records = persist.deserialize_zil_from_block(&[]);

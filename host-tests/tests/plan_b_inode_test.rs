@@ -193,13 +193,22 @@ fn vfs_fstat_uses_inode_trait() {
 #[test]
 fn vfs_seek_uses_inode_trait() {
     let src = read_file("framework/fs/vfs/api.rs");
-    assert!(src.contains("open_file.inode().seek("), "vfs_seek 必须使用 Inode::seek");
+    // rustfmt 可能将链式调用拆为多行; 匹配 `.inode()` 与 `.seek(` 在同一函数体内
+    // (两者间隔 ≤ 200 字符, 适配 rustfmt 拆行格式).
+    assert!(
+        src.contains(".inode()") && src.contains(".seek(") && src.contains("open_file"),
+        "vfs_seek 必须使用 Inode::seek (open_file.inode().seek(...))"
+    );
 }
 
 #[test]
 fn vfs_truncate_uses_inode_trait() {
     let src = read_file("framework/fs/vfs/api.rs");
-    assert!(src.contains("open_file.inode().truncate("), "vfs_truncate 必须使用 Inode::truncate");
+    // 鲁棒匹配: rustfmt 拆行时链式调用分散在多行, 用独立子串 + 同函数体检查
+    assert!(
+        src.contains(".inode()") && src.contains(".truncate(") && src.contains("open_file"),
+        "vfs_truncate 必须使用 Inode::truncate (open_file.inode().truncate(...))"
+    );
 }
 
 #[test]

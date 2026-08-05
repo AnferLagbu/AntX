@@ -4,5 +4,5 @@
 //! 保留向后兼容性, 使 framework 中引用 `RamFsData/RAMFS_DATA` 的代码无需修改.
 
 pub use crate::kernel::services::fs::ramfs_core::{
-    RamFsNode, RamFsDirEntry, RamFsACE, RamFsData, RAMFS_DATA, init,
+    RAMFS_DATA, RamFsACE, RamFsData, RamFsDirEntry, RamFsNode, init,
 };

@@ -12,8 +12,14 @@
 
 use crate::kernel::framework::syscall::Errno;
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::comparison_chain, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::comparison_chain,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// `sched_setaffinity(pid`, cpusetsize, mask) 策略
 ///
 /// Linux 兼容 ABI:
@@ -58,7 +64,10 @@ pub fn sched_setaffinity_syscall(pid: i32, cpusetsize: u32, mask_ptr: u64) -> i6
     0
 }
 
-#[expect(clippy::comparison_chain, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::comparison_chain,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// `sched_getaffinity(pid`, cpusetsize, mask) 策略
 ///
 /// Linux 兼容 ABI:

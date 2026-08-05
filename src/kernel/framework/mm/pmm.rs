@@ -19,11 +19,10 @@ macro_rules! klog_pmm {
     };
 }
 
-use super::{PAGE_SIZE, KERNEL_BASE, NonNull, MemoryInfo, PhysAddr, PageSize};
-use crate::kernel::framework::sync::{disable_interrupts, restore_interrupts, IrqSaveFlags};
+use super::{KERNEL_BASE, MemoryInfo, NonNull, PAGE_SIZE, PageSize, PhysAddr};
+use crate::kernel::framework::sync::{IrqSaveFlags, disable_interrupts, restore_interrupts};
 use core::cell::{Cell, UnsafeCell};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
-
 
 use crate::kernel::framework::sync::IrqSpinLock;
 
@@ -44,13 +43,19 @@ const RAM_BASE: u64 = 0;
 const RAM_BASE: u64 = 0x40000000;
 
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 fn phys_to_page(phys: u64) -> u64 {
     (phys - RAM_BASE) / PAGE_SIZE
 }
 
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 fn page_to_phys(page: u64) -> u64 {
     RAM_BASE + page * PAGE_SIZE
 }
@@ -96,7 +101,7 @@ pub(crate) struct FreeNode {
 // 封装在这里.  外层 `PhysicalMemoryManager` 方法只调用
 // safe 包装器, 使 buddy 分配算法本身保持 safe Rust.
 pub(crate) mod raw {
-    use super::{FreeNode, NonNull, AtomicU32, Ordering, MAX_BUDDY_ORDER};
+    use super::{AtomicU32, FreeNode, MAX_BUDDY_ORDER, NonNull, Ordering};
 
     // ---- FreeNode safe 包装器 ----
     // SAFETY 不变式: 指针指向物理 RAM 内空闲页中的合法 FreeNode,
@@ -109,37 +114,56 @@ pub(crate) mod raw {
         /// - `ptr` 必须指向空闲页内合法的 `FreeNode`
         /// - 使用期间必须持有 PMM 锁
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub unsafe fn new_unchecked(ptr: *mut FreeNode) -> Self {
             Self(ptr)
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn prev(&self) -> *mut FreeNode {
             // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 读 prev 链指针 (PMM 锁持有)
             unsafe { (*self.0).prev }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn next(&self) -> *mut FreeNode {
             // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 读 next 链指针 (PMM 锁持有)
             unsafe { (*self.0).next }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_prev(&self, p: *mut FreeNode) {
             // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 写 prev 链指针 (PMM 锁持有)
-            unsafe { (*self.0).prev = p; }
+            unsafe {
+                (*self.0).prev = p;
+            }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_next(&self, p: *mut FreeNode) {
             // SAFETY: FreeNodeRef 由 new_unchecked 保证指针有效, 写 next 链指针 (PMM 锁持有)
-            unsafe { (*self.0).next = p; }
+            unsafe {
+                (*self.0).next = p;
+            }
         }
     }
 
@@ -154,23 +178,34 @@ pub(crate) mod raw {
         /// - `ptr` 必须指向合法的 buddy 元数据数组
         /// - 使用期间必须持有 PMM 锁
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub unsafe fn new_unchecked(ptr: *mut u8) -> Self {
             Self { ptr }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn read(&self, idx: usize) -> u8 {
             // SAFETY: 调用方保证 idx < total_pages, ptr 合法
             unsafe { *self.ptr.add(idx) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn write(&self, idx: usize, val: u8) {
             // SAFETY: 调用方保证 idx < total_pages, ptr 合法
-            unsafe { *self.ptr.add(idx) = val; }
+            unsafe {
+                *self.ptr.add(idx) = val;
+            }
         }
     }
 
@@ -182,13 +217,19 @@ pub(crate) mod raw {
 
     impl BitmapRef {
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn new(ptr: NonNull<u32>) -> Self {
             Self { ptr }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_bit(&self, bit: usize, bitmap_size: usize) {
             let word = bit / 32;
             if word < bitmap_size {
@@ -201,7 +242,10 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn clear_bit(&self, bit: usize, bitmap_size: usize) {
             let word = bit / 32;
             if word < bitmap_size {
@@ -214,7 +258,10 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn test_bit(&self, bit: usize, bitmap_size: usize) -> bool {
             let word = bit / 32;
             if word < bitmap_size {
@@ -229,7 +276,10 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn count_free(&self, bitmap_size: usize) -> u64 {
             let mut free: u64 = 0;
             for w in 0..bitmap_size {
@@ -254,7 +304,10 @@ pub(crate) mod raw {
         /// - `ptr` 必须指向合法的 `buddy_heads` 数组
         /// - 使用期间必须持有 PMM 锁
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub unsafe fn new_unchecked(
             ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1],
         ) -> Self {
@@ -262,17 +315,25 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn head(&self, order: u8) -> *mut FreeNode {
             // SAFETY: order <= MAX_BUDDY_ORDER, ptr valid under lock
             unsafe { (*self.ptr)[order as usize] }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_head(&self, order: u8, node: *mut FreeNode) {
             // SAFETY: order <= MAX_BUDDY_ORDER, ptr 持锁时合法
-            unsafe { (*self.ptr)[order as usize] = node; }
+            unsafe {
+                (*self.ptr)[order as usize] = node;
+            }
         }
     }
 
@@ -281,22 +342,29 @@ pub(crate) mod raw {
     /// # Safety
     /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) { unsafe {
-        core::ptr::write_bytes(ptr, 0, len);
-    }}
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+        unsafe {
+            core::ptr::write_bytes(ptr, 0, len);
+        }
+    }
 
     /// 用指定字节值填充一段内存.
     ///
     /// # Safety
     /// - `ptr` 必须指向 `len` 字节的合法可写区
     #[inline(always)]
-    pub unsafe fn fill_memory(ptr: *mut u8, val: u8, len: usize) { unsafe {
-        core::ptr::write_bytes(ptr, val, len);
-    }}
+    pub unsafe fn fill_memory(ptr: *mut u8, val: u8, len: usize) {
+        unsafe {
+            core::ptr::write_bytes(ptr, val, len);
+        }
+    }
 }
 
-use raw::{FreeNodeRef, MetaRef, BitmapRef, HeadsRef};
+use raw::{BitmapRef, FreeNodeRef, HeadsRef, MetaRef};
 
 /// 物理内存管理器 — Buddy 分配器
 ///
@@ -387,8 +455,14 @@ impl PhysicalMemoryManager {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     pub fn init_bitmap(&self, reserved_after_kernel: u64) {
         if self.initialized.load(Ordering::Acquire) {
             return;
@@ -417,7 +491,9 @@ impl PhysicalMemoryManager {
         }
 
         self.bitmap
-            .set(if let Some(ptr) = NonNull::new(bitmap_virt as *mut u32) { Some(ptr) } else {
+            .set(if let Some(ptr) = NonNull::new(bitmap_virt as *mut u32) {
+                Some(ptr)
+            } else {
                 klog_pmm!("[PMM] FATAL: bitmap null (0x{:X})", bitmap_virt);
                 return;
             });
@@ -635,7 +711,10 @@ impl PhysicalMemoryManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn is_aligned_for_huge(&self, addr: PhysAddr, size_type: PageSize) -> bool {
         size_type.is_aligned(addr.0)
     }
@@ -680,7 +759,10 @@ impl PhysicalMemoryManager {
     /// 禁用中断是为了避免当运行在同一 CPU 的中断处理程序
     /// 尝试分配内存时形成死锁.
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn acquire_lock(&self) -> IrqSaveFlags {
         let flags = disable_interrupts();
         while self
@@ -694,7 +776,10 @@ impl PhysicalMemoryManager {
     }
 
     #[inline(always)]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     fn release_lock(&self, flags: &IrqSaveFlags) {
         self.lock.store(false, Ordering::Release);
         restore_interrupts(flags);
@@ -712,8 +797,14 @@ impl PhysicalMemoryManager {
     //
     // 修复: 通过 raw pointer 直接读 self.bitmap_size, 强制 LTO 看到
     // 真实字段偏移, 不可错位. volatile read 防止任何 caching.
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: bitmap 已 init 时 self.bitmap_size 也是已 set 的有效值.
@@ -728,8 +819,14 @@ impl PhysicalMemoryManager {
     }
 
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
     fn clear_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
@@ -742,8 +839,14 @@ impl PhysicalMemoryManager {
     }
 
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
     fn test_bit(&self, bit: usize) -> bool {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
@@ -760,8 +863,14 @@ impl PhysicalMemoryManager {
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
         // SAFETY: bitmap 已 init 时 self.bitmap_size 有效
@@ -816,7 +925,10 @@ impl PhysicalMemoryManager {
     // ==================== Buddy 分配器核心 ====================
 
     #[inline]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     fn buddy_meta_ref(&self) -> Option<MetaRef> {
         // 2026-07-02: turn 28 排查. LTO 错位 buddy_meta 字段访问.
         // 用 core::ptr::addr_of! 获取真实字段地址, 防 LTO 错位.
@@ -834,15 +946,20 @@ impl PhysicalMemoryManager {
     }
 
     #[inline]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     fn buddy_heads_ref(&self) -> HeadsRef {
         // 2026-07-02: turn 28 排查. LTO 错位 buddy_heads 字段访问.
         // 用 core::ptr::addr_of! 获取真实字段地址, 防 LTO 错位.
         // UnsafeCell<T> 是 repr(transparent), 地址 = T 地址.
         let field_addr = core::ptr::addr_of!(self.buddy_heads) as *const u8;
-        let heads_ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1] =
-            field_addr as *mut _;
+        let heads_ptr: *mut [*mut FreeNode; MAX_BUDDY_ORDER as usize + 1] = field_addr as *mut _;
         // SAFETY: buddy_heads 在 PMM 锁保护下访问; init_bitmap 之后稳定.
         unsafe { HeadsRef::new_unchecked(heads_ptr) }
     }
@@ -851,7 +968,10 @@ impl PhysicalMemoryManager {
     /// 返回 (`merged_pfn`, `final_order`).
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
@@ -867,7 +987,7 @@ impl PhysicalMemoryManager {
 
             // M2: 显式验证伙伴块的 order
             let buddy_state = meta.read(buddy_pfn as usize);
-            
+
             // 检查 buddy_state 是否为有效的 order 值 (0..=MAX_BUDDY_ORDER)
             // 如果 buddy_state == BUDDY_ALLOCATED (0xFF)，说明已分配，不能合并
             // 如果 buddy_state > MAX_BUDDY_ORDER 且 != BUDDY_ALLOCATED，说明元数据损坏
@@ -875,7 +995,7 @@ impl PhysicalMemoryManager {
                 // 已分配或元数据损坏，停止合并
                 break;
             }
-            
+
             // M2: 验证伙伴块的 order 必须等于当前 order 才能合并
             // 这防止跨阶合并 (例如 order=3 的块与 order=5 的块合并)
             if buddy_state != order {
@@ -894,8 +1014,14 @@ impl PhysicalMemoryManager {
         (pfn, order)
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 从双向链表中移除一个空闲块.
     fn buddy_list_remove(&self, pfn: u64, order: u8) {
         let heads = self.buddy_heads_ref();
@@ -931,8 +1057,14 @@ impl PhysicalMemoryManager {
         }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐); 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐); 当前优先 expect"
+    )]
     /// 将一个块压入空闲链表头.
     fn buddy_list_push(&self, pfn: u64, order: u8) {
         let heads = self.buddy_heads_ref();
@@ -982,7 +1114,10 @@ impl PhysicalMemoryManager {
     /// 指定阶数执行核心分配.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     fn buddy_alloc(&self, order: u8) -> Option<(u64, u8)> {
         if order > MAX_BUDDY_ORDER {
             return None;
@@ -1069,7 +1204,11 @@ impl PhysicalMemoryManager {
         // M1 修复: 在 buddy_ready 前后都检测 double-free
         // 位图约定: 1 = 已分配, 0 = 空闲
         if !self.test_bit(pfn as usize) {
-            klog_pmm!("[PMM] Warn: double free at pfn {} (addr=0x{:X})", pfn, addr.0);
+            klog_pmm!(
+                "[PMM] Warn: double free at pfn {} (addr=0x{:X})",
+                pfn,
+                addr.0
+            );
             return;
         }
 
@@ -1097,7 +1236,10 @@ impl PhysicalMemoryManager {
     /// 扫描所有空闲页 (位未置位), 合并为最大阶的 buddy 块.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     fn buddy_init_free_lists(&self, total_pages: usize) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
@@ -1321,7 +1463,10 @@ fn pmm_barrier_rollback_cb() -> bool {
 
 pub fn pmm_register_barrier_domain() {
     crate::kernel::framework::barrier::recovery_domain_register(3);
-    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER.lock().find(3) {
+    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER
+        .lock()
+        .find(3)
+    {
         *dom.capture_cb.lock() = Some(pmm_barrier_capture_cb);
         *dom.rollback_cb.lock() = Some(pmm_barrier_rollback_cb);
     }

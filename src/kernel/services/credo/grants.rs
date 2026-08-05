@@ -106,7 +106,9 @@ impl GrantTable {
 
     /// 按 generation 查找
     pub fn get(&self, r#gen: u32) -> Option<&GrantRecord> {
-        if r#gen == 0 { return None; }
+        if r#gen == 0 {
+            return None;
+        }
         for r in &self.records {
             if r.generation == r#gen {
                 return Some(r);
@@ -162,7 +164,9 @@ impl GrantTable {
             g
         };
         for &r#gen in &gens {
-            if r#gen == 0 { break; }
+            if r#gen == 0 {
+                break;
+            }
             if self.mark_revoked(r#gen) {
                 count += 1;
             }
@@ -254,11 +258,7 @@ impl<'a> DelegationEngine<'a> {
     }
 
     /// 撤销指定 gen 的委托
-    pub fn revoke<M: CapabilityMatrix>(
-        &mut self,
-        matrix: &mut M,
-        r#gen: u32,
-    ) -> bool {
+    pub fn revoke<M: CapabilityMatrix>(&mut self, matrix: &mut M, r#gen: u32) -> bool {
         if let Some(rec) = self.table.get(r#gen).copied() {
             if rec.flags.contains(GrantFlags::REVOKED) {
                 return false;
@@ -274,8 +274,8 @@ impl<'a> DelegationEngine<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::policy::InMemoryMatrix;
+    use super::*;
 
     fn make_matrix() -> InMemoryMatrix {
         InMemoryMatrix::new()
@@ -321,10 +321,15 @@ mod tests {
             assert!(t.add(rec).is_some(), "should add {}", i);
         }
         let rec = GrantRecord {
-            from_pwm: 1, to_pwm: 999,
-            domain: CapDomain::FS, bits: CapBits(0x01),
-            created_tick: 0, expires_tick: 0,
-            generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
+            from_pwm: 1,
+            to_pwm: 999,
+            domain: CapDomain::FS,
+            bits: CapBits(0x01),
+            created_tick: 0,
+            expires_tick: 0,
+            generation: 0,
+            parent_gen: 0,
+            flags: GrantFlags::NONE,
         };
         assert_eq!(t.add(rec), None);
     }
@@ -333,10 +338,15 @@ mod tests {
     fn grant_table_revoke_frees_slot() {
         let mut t = GrantTable::new();
         let rec = GrantRecord {
-            from_pwm: 1, to_pwm: 2,
-            domain: CapDomain::FS, bits: CapBits(0x01),
-            created_tick: 0, expires_tick: 0,
-            generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
+            from_pwm: 1,
+            to_pwm: 2,
+            domain: CapDomain::FS,
+            bits: CapBits(0x01),
+            created_tick: 0,
+            expires_tick: 0,
+            generation: 0,
+            parent_gen: 0,
+            flags: GrantFlags::NONE,
         };
         let r#gen = t.add(rec).unwrap();
         assert_eq!(t.len(), 1);
@@ -344,10 +354,15 @@ mod tests {
         assert_eq!(t.len(), 0);
 
         let rec2 = GrantRecord {
-            from_pwm: 1, to_pwm: 3,
-            domain: CapDomain::FS, bits: CapBits(0x02),
-            created_tick: 0, expires_tick: 0,
-            generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
+            from_pwm: 1,
+            to_pwm: 3,
+            domain: CapDomain::FS,
+            bits: CapBits(0x02),
+            created_tick: 0,
+            expires_tick: 0,
+            generation: 0,
+            parent_gen: 0,
+            flags: GrantFlags::NONE,
         };
         assert!(t.add(rec2).is_some());
     }
@@ -356,10 +371,15 @@ mod tests {
     fn grant_expiry() {
         let mut t = GrantTable::new();
         let rec = GrantRecord {
-            from_pwm: 1, to_pwm: 2,
-            domain: CapDomain::FS, bits: CapBits(0x01),
-            created_tick: 100, expires_tick: 200,
-            generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
+            from_pwm: 1,
+            to_pwm: 2,
+            domain: CapDomain::FS,
+            bits: CapBits(0x01),
+            created_tick: 100,
+            expires_tick: 200,
+            generation: 0,
+            parent_gen: 0,
+            flags: GrantFlags::NONE,
         };
         let r#gen = t.add(rec).unwrap();
         assert!(t.is_valid(r#gen, 150));
@@ -371,10 +391,15 @@ mod tests {
     fn grant_permanent_never_expires() {
         let mut t = GrantTable::new();
         let rec = GrantRecord {
-            from_pwm: 1, to_pwm: 2,
-            domain: CapDomain::FS, bits: CapBits(0x01),
-            created_tick: 0, expires_tick: 0,
-            generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
+            from_pwm: 1,
+            to_pwm: 2,
+            domain: CapDomain::FS,
+            bits: CapBits(0x01),
+            created_tick: 0,
+            expires_tick: 0,
+            generation: 0,
+            parent_gen: 0,
+            flags: GrantFlags::NONE,
         };
         let r#gen = t.add(rec).unwrap();
         assert!(t.is_valid(r#gen, u64::MAX));
@@ -386,19 +411,29 @@ mod tests {
         // 来自 pwm=1 的 3 个委托
         for i in 0..3 {
             let rec = GrantRecord {
-                from_pwm: 1, to_pwm: 10 + i,
-                domain: CapDomain::FS, bits: CapBits(0x01),
-                created_tick: 0, expires_tick: 0,
-                generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
+                from_pwm: 1,
+                to_pwm: 10 + i,
+                domain: CapDomain::FS,
+                bits: CapBits(0x01),
+                created_tick: 0,
+                expires_tick: 0,
+                generation: 0,
+                parent_gen: 0,
+                flags: GrantFlags::NONE,
             };
             t.add(rec).unwrap();
         }
         // 来自 pwm=2 的 1 个委托
         let rec = GrantRecord {
-            from_pwm: 2, to_pwm: 100,
-            domain: CapDomain::FS, bits: CapBits(0x01),
-            created_tick: 0, expires_tick: 0,
-            generation: 0, parent_gen: 0, flags: GrantFlags::NONE,
+            from_pwm: 2,
+            to_pwm: 100,
+            domain: CapDomain::FS,
+            bits: CapBits(0x01),
+            created_tick: 0,
+            expires_tick: 0,
+            generation: 0,
+            parent_gen: 0,
+            flags: GrantFlags::NONE,
         };
         t.add(rec).unwrap();
 
@@ -417,7 +452,17 @@ mod tests {
         from.set(CapDomain::FS, CapBits(0xFF)).unwrap();
 
         let mut eng = DelegationEngine::new(&mut table, &policy);
-        let r = eng.delegate(&from, &mut to, 1, 2, CapDomain::FS, CapBits(0b1000), 100, 0, false);
+        let r = eng.delegate(
+            &from,
+            &mut to,
+            1,
+            2,
+            CapDomain::FS,
+            CapBits(0b1000),
+            100,
+            0,
+            false,
+        );
         assert!(matches!(r, DelegationResult::Granted { .. }));
         assert_eq!(to.get(CapDomain::FS), Some(CapBits(0b1000)));
     }
@@ -430,7 +475,17 @@ mod tests {
         let mut to = make_matrix();
         from.set(CapDomain::FS, CapBits(0xFF)).unwrap();
         let mut eng = DelegationEngine::new(&mut table, &policy);
-        let r = eng.delegate(&from, &mut to, 1, 1, CapDomain::FS, CapBits(0b1000), 100, 0, false);
+        let r = eng.delegate(
+            &from,
+            &mut to,
+            1,
+            1,
+            CapDomain::FS,
+            CapBits(0b1000),
+            100,
+            0,
+            false,
+        );
         assert_eq!(r, DelegationResult::Denied(DelegationDeny::SamePwm));
     }
 
@@ -443,7 +498,17 @@ mod tests {
         from.set(CapDomain::FS, CapBits(0xFF)).unwrap();
         let mut eng = DelegationEngine::new(&mut table, &policy);
         // 过期刻度 (50) <= 当前刻度 (100)
-        let r = eng.delegate(&from, &mut to, 1, 2, CapDomain::FS, CapBits(0b1000), 100, 50, false);
+        let r = eng.delegate(
+            &from,
+            &mut to,
+            1,
+            2,
+            CapDomain::FS,
+            CapBits(0b1000),
+            100,
+            50,
+            false,
+        );
         assert_eq!(r, DelegationResult::Denied(DelegationDeny::InvalidExpiry));
     }
 
@@ -454,8 +519,21 @@ mod tests {
         let from = make_matrix();
         let mut to = make_matrix();
         let mut eng = DelegationEngine::new(&mut table, &policy);
-        let r = eng.delegate(&from, &mut to, 1, 2, CapDomain::FS, CapBits(0b1000), 100, 0, false);
-        assert!(matches!(r, DelegationResult::Denied(DelegationDeny::Policy(_))));
+        let r = eng.delegate(
+            &from,
+            &mut to,
+            1,
+            2,
+            CapDomain::FS,
+            CapBits(0b1000),
+            100,
+            0,
+            false,
+        );
+        assert!(matches!(
+            r,
+            DelegationResult::Denied(DelegationDeny::Policy(_))
+        ));
     }
 
     #[test]
@@ -466,7 +544,17 @@ mod tests {
         let mut to = make_matrix();
         from.set(CapDomain::FS, CapBits(0xFF)).unwrap();
         let mut eng = DelegationEngine::new(&mut table, &policy);
-        let r = eng.delegate(&from, &mut to, 1, 2, CapDomain::FS, CapBits(0b1000), 100, 0, false);
+        let r = eng.delegate(
+            &from,
+            &mut to,
+            1,
+            2,
+            CapDomain::FS,
+            CapBits(0b1000),
+            100,
+            0,
+            false,
+        );
         let r#gen = match r {
             DelegationResult::Granted { r#gen } => r#gen,
             _ => panic!("expected Granted"),

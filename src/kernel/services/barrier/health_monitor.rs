@@ -105,9 +105,13 @@ impl<'a> HealthMonitor<'a> {
                 break;
             }
             let domain_id = rec.domain_id;
-            let failures = rec.consecutive_failures.load(core::sync::atomic::Ordering::Acquire);
+            let failures = rec
+                .consecutive_failures
+                .load(core::sync::atomic::Ordering::Acquire);
             let tier = rec.current_tier.load(core::sync::atomic::Ordering::Acquire);
-            let last_fail = rec.last_failure_tick.load(core::sync::atomic::Ordering::Acquire);
+            let last_fail = rec
+                .last_failure_tick
+                .load(core::sync::atomic::Ordering::Acquire);
             let heartbeat_gap = current_tick.saturating_sub(last_fail);
 
             self.snapshots[i] = DomainHealth {

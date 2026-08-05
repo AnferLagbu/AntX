@@ -10,8 +10,8 @@
 //! - framework 提供默认回退策略 (`FallbackSignalPolicy`), 早期启动阶段使用
 //! - services 在 `init()` 中通过 `register_signal_decision()` 注册自己的策略实现
 
-use crate::kernel::framework::sync::OnceLock;
 pub use super::signal::SignalDefaultAction;
+use crate::kernel::framework::sync::OnceLock;
 
 /// 信号决策接口 — services 实现, framework 调用
 ///
@@ -97,5 +97,8 @@ pub fn register_signal_decision(
 ///
 /// 若 services 尚未注册, 返回默认回退策略.
 pub fn current_signal_decision() -> &'static dyn SignalDecision {
-    SIGNAL_DECISION.get().copied().unwrap_or(&FallbackSignalPolicy)
+    SIGNAL_DECISION
+        .get()
+        .copied()
+        .unwrap_or(&FallbackSignalPolicy)
 }

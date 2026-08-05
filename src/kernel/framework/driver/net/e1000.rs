@@ -6,11 +6,13 @@ use crate::kernel::framework::driver::DriverError;
 use crate::kernel::framework::driver::{DeviceType, Driver, DriverResult};
 #[cfg(test)]
 use crate::kernel::framework::mm::KERNEL_BASE;
-use crate::kernel::framework::mm::virt_to_phys;
-#[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::mm::PhysAddr;
+use crate::kernel::framework::mm::virt_to_phys;
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 #[cfg(not(feature = "kernel_test"))]
 use crate::klog_debug;
 #[cfg(not(feature = "kernel_test"))]
@@ -21,8 +23,6 @@ use crate::klog_info;
 use crate::klog_warn;
 #[cfg(not(feature = "kernel_test"))]
 use alloc::boxed::Box;
-#[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 #[cfg(not(feature = "kernel_test"))]
 // 网络性能统计: 接收包计数
@@ -33,14 +33,10 @@ static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 // ============================================================================
 
 pub use crate::kernel::services::driver::net::e1000::{
-    E1000TxDesc, E1000RxDesc,
-    E1000_TX_RING_SIZE, E1000_RX_RING_SIZE, E1000_RX_BUFFER_SIZE,
-    E1000_TXD_CMD_EOP, E1000_TXD_CMD_IFCS, E1000_TXD_CMD_RS,
-    E1000_TXD_STAT_DD,
-    E1000_RXD_STAT_DD,
-    E1000_RXD_ERR_CE, E1000_RXD_ERR_SE, E1000_RXD_ERR_SEQ, E1000_RXD_ERR_RXE,
-    E1000_ICR_LSC, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_ICR_RXDMT0,
-    E1000_RDT,
+    E1000_ICR_LSC, E1000_ICR_RXDMT0, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_RDT,
+    E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_RXD_ERR_CE, E1000_RXD_ERR_RXE,
+    E1000_RXD_ERR_SE, E1000_RXD_ERR_SEQ, E1000_RXD_STAT_DD, E1000_TX_RING_SIZE, E1000_TXD_CMD_EOP,
+    E1000_TXD_CMD_IFCS, E1000_TXD_CMD_RS, E1000_TXD_STAT_DD, E1000RxDesc, E1000TxDesc,
 };
 
 // 从 services 层导入安全驱动逻辑
@@ -76,8 +72,14 @@ pub struct TxRing {
 impl TxRing {
     /// 分配并初始化 TX 描述符环
     #[cfg(not(feature = "kernel_test"))]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     pub fn alloc(count: usize) -> Option<Self> {
         let size = core::mem::size_of::<E1000TxDesc>() * count;
         // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器; size > 0, align = 16 (2^4)。
@@ -167,8 +169,14 @@ pub struct RxRing {
 impl RxRing {
     /// 分配并初始化 RX 描述符环及接收缓冲区
     #[cfg(not(feature = "kernel_test"))]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     pub fn alloc(count: usize, buf_size: usize) -> Option<Self> {
         let size = core::mem::size_of::<E1000RxDesc>() * count;
         // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器。
@@ -233,11 +241,7 @@ impl RxRing {
     /// 检查描述符是否有接收错误
     pub fn has_errors(&self, idx: usize) -> bool {
         let desc = unsafe { &*self.ptr.add(idx) };
-        desc.errors
-            & (E1000_RXD_ERR_CE
-                | E1000_RXD_ERR_SE
-                | E1000_RXD_ERR_SEQ
-                | E1000_RXD_ERR_RXE)
+        desc.errors & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE | E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE)
             != 0
     }
 
@@ -435,7 +439,8 @@ fn setup_descriptor_rings(dev: &mut E1000Device) -> DriverResult<()> {
     dev.driver_ref().set_rx_base(rx_ring.phys_addr());
     dev.driver_ref().set_rx_len(rx_ring.len_bytes() as u32);
     dev.driver_ref().set_rx_head(0);
-    dev.driver_ref().set_rx_tail((E1000_RX_RING_SIZE - 1) as u32);
+    dev.driver_ref()
+        .set_rx_tail((E1000_RX_RING_SIZE - 1) as u32);
     dev.rx_ring = Some(rx_ring);
 
     Ok(())
@@ -601,12 +606,7 @@ impl E1000Device {
                         // 创建安全驱动实例
                         self.driver = Some(E1000Driver::new(io, mac, irq));
 
-                        klog_info!(
-                            Net,
-                            "e1000: MMIO phys=0x{:x} IRQ={}",
-                            self.mmio_phys,
-                            irq
-                        );
+                        klog_info!(Net, "e1000: MMIO phys=0x{:x} IRQ={}", self.mmio_phys, irq);
 
                         return Ok(());
                     }
@@ -738,8 +738,14 @@ pub fn take_device() -> Option<Box<E1000Device>> {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
     if driver_data.is_null() || data.is_null() {
         return -1;
@@ -757,8 +763,14 @@ pub extern "C" fn e1000_net_send(driver_data: *mut u8, data: *const u8, len: u32
 #[cfg(not(feature = "kernel_test"))]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
     if driver_data.is_null() || buf.is_null() {
         return -1;
@@ -773,7 +785,10 @@ pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u3
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn e1000_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
     if driver_data.is_null() {
         return;
@@ -786,8 +801,14 @@ pub extern "C" fn e1000_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
 }
 
 #[cfg(not(feature = "kernel_test"))]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn e1000_net_irq(driver_data: *mut u8) {
     if driver_data.is_null() {
         return;
@@ -832,7 +853,10 @@ pub extern "C" fn e1000_probe() -> i32 {
             match dev.probe() {
                 Ok(()) => {
                     let raw_ptr: *mut E1000Device = &raw mut *dev;
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+                    #[expect(
+                        clippy::items_after_statements,
+                        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+                    )]
                     static E1000_NET_OPS: crate::kernel::framework::chitin::NetOps =
                         crate::kernel::framework::chitin::NetOps {
                             send: e1000_net_send,
@@ -866,8 +890,14 @@ pub extern "C" fn e1000_probe() -> i32 {
 #[cfg(not(feature = "kernel_test"))]
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 pub extern "C" fn get_e1000_instance() -> *mut u8 {
     match &mut *E1000_DEVICE.lock() {
         Some(dev) => dev as *mut _ as *mut u8,
@@ -976,7 +1006,10 @@ static KALLOC_OFF: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicU
 /// `reg` 是 BAR0 区域内的有效 MMIO 寄存器偏移。设备已探测且 MMIO 区域已映射。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub unsafe extern "C" fn kmalloc_align(size: u64, align: u64) -> *mut u8 {
     let s = size as usize;
     let a = if align == 0 { 1 } else { align as usize };

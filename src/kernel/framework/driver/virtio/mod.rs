@@ -118,7 +118,10 @@ pub struct VirtioMmioDevice {
 impl VirtioMmioDevice {
     /// 从设备的 MMIO 空间读取 32 位寄存器.
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn read32(&self, offset: usize) -> u32 {
         self.iomem.read_u32(offset)
     }
@@ -142,7 +145,10 @@ impl VirtioMmioDevice {
         self.write32(high_off, (val >> 32) as u32);
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 探测给定 MMIO 基址的设备是否为合法的 virtio 设备.
     pub fn probe(mmio_base: u64) -> Option<Self> {
         // 为 MMIO 区域创建 IoMem (每个设备 0x200 字节)
@@ -262,7 +268,10 @@ impl VirtioMmioDevice {
         );
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 在此设备上配置 virtqueue.
     /// # Errors
     /// 队列配置失败时返回 Err。
@@ -312,7 +321,10 @@ impl VirtioMmioDevice {
     /// 队列配置失败时返回 Err。
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     pub fn setup_vq_legacy(&self, vq_index: u16, vq: &queue::VirtQueue) -> Result<(), ()> {
         self.write32(QUEUE_SEL, u32::from(vq_index));
 

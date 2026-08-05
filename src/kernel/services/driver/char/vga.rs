@@ -127,17 +127,27 @@ pub struct TextAttribute {
 impl TextAttribute {
     /// 创建新属性
     pub const fn new(foreground: Color, background: Color) -> Self {
-        Self { foreground, background, blink: false }
+        Self {
+            foreground,
+            background,
+            blink: false,
+        }
     }
 
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     /// 设置闪烁位
     pub const fn with_blink(mut self) -> Self {
         self.blink = true;
         self
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 编码为 u8 (VGA 显存格式)
     pub const fn as_u8(&self) -> u8 {
         let fg = self.foreground as u8;
@@ -163,12 +173,18 @@ pub struct VgaCell {
 impl VgaCell {
     /// 创建新单元
     pub const fn new(ch: u8, attr: u8) -> Self {
-        Self { character: ch, attribute: attr }
+        Self {
+            character: ch,
+            attribute: attr,
+        }
     }
 
     /// 从 `TextAttribute` 创建
     pub const fn from_attr(ch: u8, attr: TextAttribute) -> Self {
-        Self { character: ch, attribute: attr.as_u8() }
+        Self {
+            character: ch,
+            attribute: attr.as_u8(),
+        }
     }
 
     /// 编码为 u16 (VGA 显存格式: 高字节属性, 低字节字符)
@@ -197,7 +213,10 @@ pub struct CursorPos {
 }
 
 impl CursorPos {
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     /// 钳制到屏幕范围内
     pub fn clamp(self) -> Self {
         Self {
@@ -262,9 +281,13 @@ impl VgaConsole {
         let _ = crt;
 
         #[cfg(target_arch = "x86_64")]
-        { Some(Self { buffer, crt: crt? }) }
+        {
+            Some(Self { buffer, crt: crt? })
+        }
         #[cfg(target_arch = "aarch64")]
-        { Some(Self { buffer }) }
+        {
+            Some(Self { buffer })
+        }
     }
 
     // ── 显存操作 ──
@@ -399,13 +422,19 @@ impl VgaConsole {
         self.crt.write_u8(1, 0x20);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 获取屏幕宽度
     pub const fn width(&self) -> usize {
         SCREEN_WIDTH
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 获取屏幕高度
     pub const fn height(&self) -> usize {
         SCREEN_HEIGHT

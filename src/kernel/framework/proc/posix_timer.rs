@@ -48,10 +48,10 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use crate::kernel::framework::proc::{do_signal_send, Pid};
+use crate::kernel::framework::proc::{Pid, do_signal_send};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::timer::{
-    hrtimer_cancel, hrtimer_clock_read, hrtimer_start, HrTimer, HrTimerRestart,
+    HrTimer, HrTimerRestart, hrtimer_cancel, hrtimer_clock_read, hrtimer_start,
 };
 
 // ============================================================================
@@ -254,8 +254,14 @@ fn id_to_idx(timer_id: i32) -> Option<usize> {
     Some(idx)
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 /// POSIX Timer 回调
 ///
 /// 在中断上下文执行:
@@ -363,7 +369,12 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
             }
 
             TIMER_COUNT.fetch_add(1, Ordering::Relaxed);
-            crate::klog_debug!(Sync, "[posix_timer] create id={} clockid={}", timer_id, clockid);
+            crate::klog_debug!(
+                Sync,
+                "[posix_timer] create id={} clockid={}",
+                timer_id,
+                clockid
+            );
             return 0;
         }
     }
@@ -371,21 +382,19 @@ pub fn sys_timer_create(clockid: i32, sigev_ptr: u64, timer_id_ptr: u64) -> i64 
     Errno::EAGAIN.as_ret()
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `timer_settime` — 启动 / 重置 timer
 ///
 /// `timer_id`: 创建时返回的 ID
 /// `flags`: 0 = 相对时间, `TFD_TIMER_ABSTIME` = 绝对时间
 /// `new_value_ptr`: 新 itimerspec (可为 null → disarm)
 /// `old_value_ptr`: 输出旧 itimerspec (可为 null)
-pub fn sys_timer_settime(
-    timer_id: i32,
-    flags: i32,
-    new_value_ptr: u64,
-    old_value_ptr: u64,
-) -> i64 {
-    use crate::kernel::framework::userptr;
+pub fn sys_timer_settime(timer_id: i32, flags: i32, new_value_ptr: u64, old_value_ptr: u64) -> i64 {
     use crate::kernel::framework::errno::Errno;
+    use crate::kernel::framework::userptr;
 
     let idx = match id_to_idx(timer_id) {
         Some(i) => i,
@@ -479,11 +488,14 @@ pub fn sys_timer_settime(
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `timer_gettime` — 获取 timer 状态 (剩余时间 + interval)
 pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
-    use crate::kernel::framework::userptr;
     use crate::kernel::framework::errno::Errno;
+    use crate::kernel::framework::userptr;
 
     let idx = match id_to_idx(timer_id) {
         Some(i) => i,
@@ -519,7 +531,10 @@ pub fn sys_timer_gettime(timer_id: i32, curr_value_ptr: u64) -> i64 {
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `timer_delete` — 释放 timer
 pub fn sys_timer_delete(timer_id: i32) -> i64 {
     use crate::kernel::framework::errno::Errno;
@@ -551,7 +566,10 @@ pub fn sys_timer_delete(timer_id: i32) -> i64 {
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `timer_getoverrun` — 返回上次 read 之后补打的次数
 ///
 /// POSIX 语义: overrun = (实际到期次数) - 1 (正常情况下一次)。
@@ -579,8 +597,8 @@ pub fn sys_timer_getoverrun(timer_id: i32) -> i64 {
 /// `QueenX` 内置两种时钟: `CLOCK_REALTIME` (TICK 精度) / `CLOCK_MONOTONIC` (TICK 精度)
 /// 分辨率 = 1 tick = 1ms (hrtimer 配置, 暂以 1ms 作为标称分辨率)。
 pub fn sys_clock_getres(clockid: i32, res_ptr: u64) -> i64 {
-    use crate::kernel::framework::userptr;
     use crate::kernel::framework::errno::Errno;
+    use crate::kernel::framework::userptr;
 
     if clockid != CLOCK_REALTIME && clockid != CLOCK_MONOTONIC {
         return Errno::EINVAL.as_ret();

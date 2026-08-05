@@ -122,7 +122,12 @@ pub fn is_initialized() -> bool {
 /// 返回所有已注册 IOAPIC 中最大的 `max_irq` 值
 pub fn get_max_irq() -> u8 {
     let ioapics = IOAPICS.lock();
-    ioapics.iter().flatten().map(|s| s.max_irq).max().unwrap_or(0)
+    ioapics
+        .iter()
+        .flatten()
+        .map(|s| s.max_irq)
+        .max()
+        .unwrap_or(0)
 }
 
 // ============================================================================
@@ -139,7 +144,14 @@ pub fn set_irq_gsi(gsi: u32, vector: u8, apic_id: u8, masked: bool) {
 /// 按 IOAPIC 索引 + 本地 IRQ 设置
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-pub fn set_irq_on(ioapic_idx: usize, local_irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
+pub fn set_irq_on(
+    ioapic_idx: usize,
+    local_irq: u8,
+    vector: u8,
+    apic_id: u8,
+    masked: bool,
+    mode: u64,
+) {
     let ioapics = IOAPICS.lock();
     if let Some(ref state) = ioapics[ioapic_idx] {
         if !state.initialized {
@@ -149,7 +161,11 @@ pub fn set_irq_on(ioapic_idx: usize, local_irq: u8, vector: u8, apic_id: u8, mas
         if masked {
             entry |= REDTBL_MASK;
         }
-        ioapic_write_on(state.base_addr, IOREDTBL_BASE + u32::from(local_irq) * 2, entry as u32);
+        ioapic_write_on(
+            state.base_addr,
+            IOREDTBL_BASE + u32::from(local_irq) * 2,
+            entry as u32,
+        );
         ioapic_write_on(
             state.base_addr,
             IOREDTBL_BASE + u32::from(local_irq) * 2 + 1,
@@ -228,7 +244,9 @@ pub fn set_irq(irq: u8, vector: u8, apic_id: u8, masked: bool) {
 
 /// 向后兼容: 按 IRQ 设置投递模式
 pub fn set_irq_with_mode(irq: u8, vector: u8, apic_id: u8, masked: bool, mode: u64) {
-    if let Some((idx, local_irq)) = crate::kernel::framework::arch::acpi::gsi_to_ioapic(u32::from(irq)) {
+    if let Some((idx, local_irq)) =
+        crate::kernel::framework::arch::acpi::gsi_to_ioapic(u32::from(irq))
+    {
         set_irq_on(idx, local_irq, vector, apic_id, masked, mode);
     }
 }

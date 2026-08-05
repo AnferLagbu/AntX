@@ -19,7 +19,7 @@
 // 我们提供一个同名 `init` 桩模块, 让现有函数体零改动, 公共 API 表面保持稳定
 // (services 调用方不需要 cfg 化).
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::net::init as init;
+use crate::kernel::framework::net::init;
 
 // kernel_test 桩: 签名与真实 `unsafe extern "C" fn` 对齐, 但 no-op.
 // 提供与 `init::*` 19 个函数同名的桩, 让 `init::xxx()` 路径在两种 build 下都有效.
@@ -55,24 +55,10 @@ mod init {
     pub fn sm_recv(_fd: i32, _b: *mut u8, _l: u32, _f: i32) -> i32 {
         0
     }
-    pub fn sm_sendto(
-        _fd: i32,
-        _b: *const u8,
-        _l: u32,
-        _f: i32,
-        _d: *const u8,
-        _a: u32,
-    ) -> i32 {
+    pub fn sm_sendto(_fd: i32, _b: *const u8, _l: u32, _f: i32, _d: *const u8, _a: u32) -> i32 {
         0
     }
-    pub fn sm_recvfrom(
-        _fd: i32,
-        _b: *mut u8,
-        _l: u32,
-        _f: i32,
-        _s: *mut u8,
-        _a: *mut u32,
-    ) -> i32 {
+    pub fn sm_recvfrom(_fd: i32, _b: *mut u8, _l: u32, _f: i32, _s: *mut u8, _a: *mut u32) -> i32 {
         0
     }
     pub fn sm_close(_fd: i32) -> i32 {

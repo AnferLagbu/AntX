@@ -2,7 +2,7 @@ use crate::kernel::framework::lib::string::{
     memchr, memcpy, memmove, memset, safe_memcmp, safe_memcpy, safe_memset, secure_zero, strcat,
     strchr, strcmp, strcpy, strlen, strncmp, strncpy, strrchr, strstr,
 };
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 use crate::register_tests_inner;
 
 fn strlen_basic() -> TestResult {
@@ -10,7 +10,11 @@ fn strlen_basic() -> TestResult {
     unsafe {
         assert_eq_test!(strlen(c"Hello".as_ptr() as *const i8), 5, "strlen Hello");
         assert_eq_test!(strlen(c"".as_ptr() as *const i8), 0, "strlen empty");
-        assert_eq_test!(strlen(c"A longer test string".as_ptr() as *const i8), 20, "strlen long");
+        assert_eq_test!(
+            strlen(c"A longer test string".as_ptr() as *const i8),
+            20,
+            "strlen long"
+        );
     }
     TestResult::Pass
 }
@@ -18,9 +22,19 @@ fn strlen_basic() -> TestResult {
 fn strcmp_operations() -> TestResult {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
-        assert_eq_test!(strcmp(c"test".as_ptr() as *const i8, c"test".as_ptr() as *const i8), 0, "equal");
-        check!(strcmp(c"abc".as_ptr() as *const i8, c"abd".as_ptr() as *const i8) < 0, "less than");
-        check!(strcmp(c"xyz".as_ptr() as *const i8, c"xya".as_ptr() as *const i8) > 0, "greater than");
+        assert_eq_test!(
+            strcmp(c"test".as_ptr() as *const i8, c"test".as_ptr() as *const i8),
+            0,
+            "equal"
+        );
+        check!(
+            strcmp(c"abc".as_ptr() as *const i8, c"abd".as_ptr() as *const i8) < 0,
+            "less than"
+        );
+        check!(
+            strcmp(c"xyz".as_ptr() as *const i8, c"xya".as_ptr() as *const i8) > 0,
+            "greater than"
+        );
     }
     TestResult::Pass
 }
@@ -29,12 +43,20 @@ fn strncmp_limit() -> TestResult {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         assert_eq_test!(
-            strncmp(c"abcdef".as_ptr() as *const i8, c"abcxyz".as_ptr() as *const i8, 3),
+            strncmp(
+                c"abcdef".as_ptr() as *const i8,
+                c"abcxyz".as_ptr() as *const i8,
+                3
+            ),
             0,
             "first 3 equal"
         );
         check!(
-            strncmp(c"abcdef".as_ptr() as *const i8, c"abcxyz".as_ptr() as *const i8, 4) < 0,
+            strncmp(
+                c"abcdef".as_ptr() as *const i8,
+                c"abcxyz".as_ptr() as *const i8,
+                4
+            ) < 0,
             "first 4 differ"
         );
     }
@@ -84,7 +106,10 @@ fn strstr_basic() -> TestResult {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let haystack = b"The quick brown fox jumps over the lazy dog\0";
-        let result = strstr(haystack.as_ptr() as *const i8, c"brown fox".as_ptr() as *const i8);
+        let result = strstr(
+            haystack.as_ptr() as *const i8,
+            c"brown fox".as_ptr() as *const i8,
+        );
         check!(!result.is_null(), "strstr found");
         let result = strstr(haystack.as_ptr() as *const i8, c"cat".as_ptr() as *const i8);
         check!(result.is_null(), "strstr not found");
@@ -99,18 +124,10 @@ fn memcpy_and_memmove() -> TestResult {
     unsafe {
         let mut dest = [0u8; 10];
         let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        memcpy(
-            dest.as_mut_ptr(),
-            src.as_ptr(),
-            10,
-        );
+        memcpy(dest.as_mut_ptr(), src.as_ptr(), 10);
         assert_eq_test!(dest, src, "memcpy result");
         let mut overlap = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        memmove(
-            overlap.as_mut_ptr(),
-            overlap.as_ptr().add(2),
-            8,
-        );
+        memmove(overlap.as_mut_ptr(), overlap.as_ptr().add(2), 8);
         assert_eq_test!(
             overlap,
             [3u8, 4, 5, 6, 7, 8, 9, 10, 9, 10],

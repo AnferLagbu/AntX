@@ -16,9 +16,9 @@
 use core::fmt;
 use core::ptr::NonNull;
 
+use crate::kernel::framework::constants::limits::MAX_MMIO_MAPPINGS;
 use crate::kernel::framework::mm::{PhysAddr, phys_to_virt};
 use crate::kernel::framework::sync::IrqSpinLock;
-use crate::kernel::framework::constants::limits::MAX_MMIO_MAPPINGS;
 use crate::klog_warn;
 /// MMIO 别名注册表, 防止同一物理区域被多次映射。
 /// 使用 `spin::Mutex` (已在内核中广泛使用) 保证线程安全。
@@ -92,7 +92,11 @@ impl IoMem {
     /// - 同一物理区域不重复创建 (由别名检测保证)。
     /// # Errors
     /// 长度为 0、物理地址未 4 字节对齐、虚拟地址映射为 null 或与已有 MMIO 区域别名冲突时返回 Err。
-    pub unsafe fn new(phys: PhysAddr, len: usize, name: &'static str) -> Result<Self, &'static str> {
+    pub unsafe fn new(
+        phys: PhysAddr,
+        len: usize,
+        name: &'static str,
+    ) -> Result<Self, &'static str> {
         if len == 0 {
             return Err("IoMem: zero-length MMIO region");
         }
@@ -109,7 +113,12 @@ impl IoMem {
         let virt_addr = phys_to_virt(phys.as_u64()) as *mut u8;
         let virt = NonNull::new(virt_addr).ok_or("IoMem: null virtual address")?;
 
-        Ok(Self { phys_base: phys, len, virt, name })
+        Ok(Self {
+            phys_base: phys,
+            len,
+            virt,
+            name,
+        })
     }
 
     /// 从 PCI BAR 地址创建 MMIO 句柄 (安全包装)。
@@ -123,7 +132,11 @@ impl IoMem {
     /// - `name`: 设备名称 (用于调试和别名检测)
     /// # Errors
     /// PCI BAR 基地址为 0 (设备未配置) 或底层 `IoMem::new` 校验失败时返回 Err。
-    pub fn from_pci_bar(bar_phys: PhysAddr, len: usize, name: &'static str) -> Result<Self, &'static str> {
+    pub fn from_pci_bar(
+        bar_phys: PhysAddr,
+        len: usize,
+        name: &'static str,
+    ) -> Result<Self, &'static str> {
         if bar_phys.as_u64() == 0 {
             return Err("IoMem: PCI BAR is zero (device not configured)");
         }
@@ -138,13 +151,16 @@ impl IoMem {
         unsafe { Self::new(bar_phys, len, name) }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 确保 MMIO 物理地址范围在内核页表中有映射.
     /// 使用 2MB 大页映射, 覆盖 [phys, phys + len) 所在的所有 2MB 页.
     /// 如果映射已存在 (同一 2MB 页), `map_huge_page` 会安全地跳过或覆盖.
     fn ensure_mmio_mapped(phys: u64, len: usize) {
         use crate::kernel::framework::mm::get_vmm;
-        use crate::kernel::framework::mm::{VirtAddr, PageFlags, PageSize};
+        use crate::kernel::framework::mm::{PageFlags, PageSize, VirtAddr};
 
         let vmm = get_vmm();
         let page_2m: u64 = 0x200000;
@@ -158,20 +174,50 @@ impl IoMem {
         while pa < end_page {
             let va = phys_to_virt(pa);
             if let Err(e) = vmm.map_huge_page(VirtAddr(va), PhysAddr(pa), flags, PageSize::Size2M) {
-                klog_warn!(Driver, "IoMem: failed to map MMIO 2MB page va={:#x} pa={:#x}: {}", va, pa, e);
+                klog_warn!(
+                    Driver,
+                    "IoMem: failed to map MMIO 2MB page va={:#x} pa={:#x}: {}",
+                    va,
+                    pa,
+                    e
+                );
             }
             pa += page_2m;
         }
     }
 
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    #[inline(always)] pub fn phys(&self) -> PhysAddr { self.phys_base }
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    #[inline(always)] pub fn len(&self) -> usize { self.len }
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    #[inline(always)] pub fn is_empty(&self) -> bool { self.len == 0 }
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    #[inline(always)] pub fn name(&self) -> &'static str { self.name }
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[inline(always)]
+    pub fn phys(&self) -> PhysAddr {
+        self.phys_base
+    }
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[inline(always)]
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
 
     /// 获取 `IoMem` 内部虚拟地址指针 (供上层安全访问结构体 MMIO)。
     ///
@@ -202,45 +248,82 @@ impl IoMem {
     /// # Panics
     /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发, 便于单元测试与 early detection.
-    #[inline] pub fn read_u8(&self, offset: usize) -> u8 {
-        debug_assert!(self.check_offset(offset, 1).is_ok(), "IoMem: read_u8 offset+1 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 1).expect("IoMem: read_u8 offset+1 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn read_u8(&self, offset: usize) -> u8 {
+        debug_assert!(
+            self.check_offset(offset, 1).is_ok(),
+            "IoMem: read_u8 offset+1 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 1)
+            .expect("IoMem: read_u8 offset+1 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset` 已验证 `offset + 1 <= self.len`, 指针 `self.virt + offset`
         // 落在 IoMem 持有的 MMIO 区域内, 不会越界; `read_volatile` 防止编译器重排。
         unsafe { self.virt.as_ptr().add(offset).read_volatile() }
     }
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 从 MMIO 区域读取一个 u16 (小端)。
     /// # Panics
     /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发.
-    #[inline] pub fn read_u16(&self, offset: usize) -> u16 {
-        debug_assert!(self.check_offset(offset, 2).is_ok(), "IoMem: read_u16 offset+2 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 2).expect("IoMem: read_u16 offset+2 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn read_u16(&self, offset: usize) -> u16 {
+        debug_assert!(
+            self.check_offset(offset, 2).is_ok(),
+            "IoMem: read_u16 offset+2 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 2)
+            .expect("IoMem: read_u16 offset+2 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 2)` 已验证 2 字节访问不越界; u16 转换要求
         // 2 字节对齐 (PCI BAR MMIO 由 BIOS/UEFI 建立时保证自然对齐)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u16).read_volatile() }
     }
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 从 MMIO 区域读取一个 u32 (小端)。
     /// # Panics
     /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发.
-    #[inline] pub fn read_u32(&self, offset: usize) -> u32 {
-        debug_assert!(self.check_offset(offset, 4).is_ok(), "IoMem: read_u32 offset+4 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 4).expect("IoMem: read_u32 offset+4 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn read_u32(&self, offset: usize) -> u32 {
+        debug_assert!(
+            self.check_offset(offset, 4).is_ok(),
+            "IoMem: read_u32 offset+4 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 4)
+            .expect("IoMem: read_u32 offset+4 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 4)` 已验证 4 字节访问不越界; 4 字节自然对齐
         // 由 MMIO 基地址的页对齐保证 (PAGE_SIZE=4096, 任何 4 字节偏移都对其)。
         unsafe { (self.virt.as_ptr().add(offset) as *const u32).read_volatile() }
     }
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 从 MMIO 区域读取一个 u64 (小端)。
     /// # Panics
     /// 读取范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发.
-    #[inline] pub fn read_u64(&self, offset: usize) -> u64 {
-        debug_assert!(self.check_offset(offset, 8).is_ok(), "IoMem: read_u64 offset+8 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 8).expect("IoMem: read_u64 offset+8 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn read_u64(&self, offset: usize) -> u64 {
+        debug_assert!(
+            self.check_offset(offset, 8).is_ok(),
+            "IoMem: read_u64 offset+8 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 8)
+            .expect("IoMem: read_u64 offset+8 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 8)` 已验证 8 字节访问不越界; 8 字节自然对齐
         // 由 MMIO 基地址的页对齐保证。
         unsafe { (self.virt.as_ptr().add(offset) as *const u64).read_volatile() }
@@ -249,47 +332,101 @@ impl IoMem {
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发.
-    #[inline] pub fn write_u8(&self, offset: usize, val: u8) {
-        debug_assert!(self.check_offset(offset, 1).is_ok(), "IoMem: write_u8 offset+1 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 1).expect("IoMem: write_u8 offset+1 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn write_u8(&self, offset: usize, val: u8) {
+        debug_assert!(
+            self.check_offset(offset, 1).is_ok(),
+            "IoMem: write_u8 offset+1 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 1)
+            .expect("IoMem: write_u8 offset+1 越界 (构造函数保证合法范围)");
         // SAFETY: 与 `read_u8` 对称, 写 1 字节不会越界; volatile 写保证设备立即可见。
-        unsafe { self.virt.as_ptr().add(offset).write_volatile(val); }
+        unsafe {
+            self.virt.as_ptr().add(offset).write_volatile(val);
+        }
     }
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 向 MMIO 区域写入一个 u16 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发.
-    #[inline] pub fn write_u16(&self, offset: usize, val: u16) {
-        debug_assert!(self.check_offset(offset, 2).is_ok(), "IoMem: write_u16 offset+2 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 2).expect("IoMem: write_u16 offset+2 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn write_u16(&self, offset: usize, val: u16) {
+        debug_assert!(
+            self.check_offset(offset, 2).is_ok(),
+            "IoMem: write_u16 offset+2 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 2)
+            .expect("IoMem: write_u16 offset+2 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 2)` 已验证 2 字节写不越界; 2 字节对齐由 MMIO 基地址页对齐保证。
-        unsafe { (self.virt.as_ptr().add(offset) as *mut u16).write_volatile(val); }
+        unsafe {
+            (self.virt.as_ptr().add(offset) as *mut u16).write_volatile(val);
+        }
     }
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 向 MMIO 区域写入一个 u32 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发.
-    #[inline] pub fn write_u32(&self, offset: usize, val: u32) {
-        debug_assert!(self.check_offset(offset, 4).is_ok(), "IoMem: write_u32 offset+4 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 4).expect("IoMem: write_u32 offset+4 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn write_u32(&self, offset: usize, val: u32) {
+        debug_assert!(
+            self.check_offset(offset, 4).is_ok(),
+            "IoMem: write_u32 offset+4 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 4)
+            .expect("IoMem: write_u32 offset+4 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 4)` 已验证 4 字节写不越界; 4 字节自然对齐由页对齐保证。
-        unsafe { (self.virt.as_ptr().add(offset) as *mut u32).write_volatile(val); }
+        unsafe {
+            (self.virt.as_ptr().add(offset) as *mut u32).write_volatile(val);
+        }
     }
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 向 MMIO 区域写入一个 u64 (小端)。
     /// # Panics
     /// 写入范围超出 MMIO 区域大小时 panic (生产路径).
     /// 调试构建下 `debug_assert!` 提前触发.
-    #[inline] pub fn write_u64(&self, offset: usize, val: u64) {
-        debug_assert!(self.check_offset(offset, 8).is_ok(), "IoMem: write_u64 offset+8 越界 (offset={}, len={})", offset, self.len);
-        self.check_offset(offset, 8).expect("IoMem: write_u64 offset+8 越界 (构造函数保证合法范围)");
+    #[inline]
+    pub fn write_u64(&self, offset: usize, val: u64) {
+        debug_assert!(
+            self.check_offset(offset, 8).is_ok(),
+            "IoMem: write_u64 offset+8 越界 (offset={}, len={})",
+            offset,
+            self.len
+        );
+        self.check_offset(offset, 8)
+            .expect("IoMem: write_u64 offset+8 越界 (构造函数保证合法范围)");
         // SAFETY: `check_offset(offset, 8)` 已验证 8 字节写不越界; 8 字节自然对齐由页对齐保证。
-        unsafe { (self.virt.as_ptr().add(offset) as *mut u64).write_volatile(val); }
+        unsafe {
+            (self.virt.as_ptr().add(offset) as *mut u64).write_volatile(val);
+        }
     }
 }
 
@@ -302,7 +439,13 @@ impl Drop for IoMem {
 
 impl fmt::Display for IoMem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "IoMem({}, phys=0x{:x}, len=0x{:x})", self.name, self.phys_base.as_u64(), self.len)
+        write!(
+            f,
+            "IoMem({}, phys=0x{:x}, len=0x{:x})",
+            self.name,
+            self.phys_base.as_u64(),
+            self.len
+        )
     }
 }
 

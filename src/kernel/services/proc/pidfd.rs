@@ -45,8 +45,7 @@ pub fn pidfd_send_signal(pidfd: u32, sig: i32, _siginfo: u64, _flags: u32) -> Re
         return Err(Errno::ESRCH);
     }
 
-    crate::kernel::services::proc::signal::kill(pid)
-        .map_err(|_| Errno::EINVAL)?;
+    crate::kernel::services::proc::signal::kill(pid).map_err(|_| Errno::EINVAL)?;
 
     Ok(0)
 }

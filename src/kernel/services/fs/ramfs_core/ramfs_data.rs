@@ -1,15 +1,17 @@
 #![deny(unsafe_code)]
 
-
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use super::ramfs_node::{RamFsACE, RamFsDirEntry, RamFsNode};
+use super::{
+    DIRECT_BLOCKS, FS_CAP_CREATE, FS_CAP_READ, FS_CAP_WRITE, INDIRECT_BLOCKS_PER_BLOCK,
+    RAMFS_BLOCK_SIZE, RAMFS_MAX_ACES, RAMFS_MAX_BLOCKS, RAMFS_MAX_NODES, SENSITIVITY_PUBLIC,
+};
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::fs::{VfsFileType, VFS_MAX_NAME, VfsStat, VfsSeekWhence};
+use crate::kernel::framework::fs::{VFS_MAX_NAME, VfsFileType, VfsSeekWhence, VfsStat};
 use crate::kernel::services::fs::dcache;
-use super::ramfs_node::{RamFsNode, RamFsACE, RamFsDirEntry};
-use super::{DIRECT_BLOCKS, INDIRECT_BLOCKS_PER_BLOCK, RAMFS_BLOCK_SIZE, RAMFS_MAX_NODES, RAMFS_MAX_BLOCKS, RAMFS_MAX_ACES, SENSITIVITY_PUBLIC, FS_CAP_READ, FS_CAP_WRITE, FS_CAP_CREATE};
 
 pub struct RamFsData {
     pub nodes: [RamFsNode; RAMFS_MAX_NODES],
@@ -27,7 +29,10 @@ pub struct RamFsData {
 // RamFsData 全部字段自动实现 Send + Sync, 无需手动 impl.
 
 impl RamFsData {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     pub const fn new() -> Self {
         Self {
             nodes: [RamFsNode::new(); RAMFS_MAX_NODES],
@@ -294,7 +299,10 @@ impl RamFsData {
         self.block_set_free(double_indirect_block);
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     fn check_permission(&self, node: &RamFsNode, pwm: u64, cap: u64) -> bool {
         let level = pwm_api::pwm_get_privilege_level(pwm);
 
@@ -398,9 +406,7 @@ impl RamFsData {
                     if name == component {
                         current = entry.node;
                         found = true;
-                        dcache::dcache_insert(
-                            node.node_id, component, entry.node, entry.file_type,
-                        );
+                        dcache::dcache_insert(node.node_id, component, entry.node, entry.file_type);
                         break;
                     }
                 }
@@ -468,7 +474,10 @@ impl RamFsData {
         0
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn open(&mut self, path: &str, _flags: u32, pwm: u64) -> Option<(u32, u64, u8)> {
         if path.is_empty() {
             return None;
@@ -631,7 +640,13 @@ impl RamFsData {
     /// 读取文件数据 (offset-by-value 版本, 供 Inode adapter 使用)
     ///
     /// 返回 (实际读取字节数, 新偏移).
-    pub fn read_at_offset(&mut self, node_id: u32, offset: u64, buf: &mut [u8], pwm: u64) -> (usize, u64) {
+    pub fn read_at_offset(
+        &mut self,
+        node_id: u32,
+        offset: u64,
+        buf: &mut [u8],
+        pwm: u64,
+    ) -> (usize, u64) {
         let node = &self.nodes[node_id as usize];
 
         if !self.check_permission(node, pwm, FS_CAP_READ) {
@@ -682,7 +697,13 @@ impl RamFsData {
     /// 写入文件数据 (offset-by-value 版本, 供 Inode adapter 使用)
     ///
     /// 返回 (实际写入字节数, 新偏移).
-    pub fn write_at_offset(&mut self, node_id: u32, offset: u64, buf: &[u8], pwm: u64) -> (usize, u64) {
+    pub fn write_at_offset(
+        &mut self,
+        node_id: u32,
+        offset: u64,
+        buf: &[u8],
+        pwm: u64,
+    ) -> (usize, u64) {
         if !self.check_permission(&self.nodes[node_id as usize], pwm, FS_CAP_CREATE) {
             return (0, offset);
         }
@@ -738,7 +759,11 @@ impl RamFsData {
     /// # Errors
     /// 当 `node_id` 超出节点表范围时返回 `InvalidArgument`;
     /// 当节点未使用 (不存在) 时返回 `FileNotFound`.
-    pub fn get_stat(&self, node_id: u32, _pwm: u64) -> crate::kernel::services::fs::vfs_types::KernelResult<VfsStat> {
+    pub fn get_stat(
+        &self,
+        node_id: u32,
+        _pwm: u64,
+    ) -> crate::kernel::services::fs::vfs_types::KernelResult<VfsStat> {
         use crate::kernel::services::fs::vfs_types::KernelError as KE;
         if node_id as usize >= RAMFS_MAX_NODES {
             return Err(KE::InvalidArgument);
@@ -764,7 +789,10 @@ impl RamFsData {
         })
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
     pub fn truncate(&mut self, node_id: u32, new_size: u64, pwm: u64) -> i32 {
         if node_id as usize >= RAMFS_MAX_NODES {
             return KernelError::InvalidArgument.as_i32();
@@ -921,7 +949,10 @@ impl RamFsData {
         0
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn unlink(&mut self, path: &str, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
@@ -984,7 +1015,10 @@ impl RamFsData {
         0
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn create_file(&mut self, parent_path: &str, name: &str, pwm: u64) -> Option<u32> {
         if name.is_empty() || name.contains('/') {
             return None;
@@ -1055,7 +1089,10 @@ impl RamFsData {
         Some(new_node_id)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn mkdir(&mut self, parent_path: &str, name: &str, pwm: u64) -> i32 {
         if name.is_empty() || name.contains('/') {
             return KernelError::InvalidArgument.as_i32();
@@ -1183,7 +1220,10 @@ impl RamFsData {
         })
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn chmod(&mut self, path: &str, mode: u16, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
@@ -1211,7 +1251,10 @@ impl RamFsData {
         self.chown_ext(path, owner_pwm, 0, pwm)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn chown_ext(&mut self, path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
         let node_id = match self.resolve_path(path) {
             Some(n) => n,
@@ -1345,14 +1388,11 @@ impl RamFsData {
         0
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-    pub fn symlink(
-        &mut self,
-        target: &str,
-        parent_path: &str,
-        name: &str,
-        pwm: u64,
-    ) -> i32 {
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
+    pub fn symlink(&mut self, target: &str, parent_path: &str, name: &str, pwm: u64) -> i32 {
         if name.is_empty() || name.contains('/') {
             return KernelError::InvalidArgument.as_i32();
         }
@@ -1383,7 +1423,11 @@ impl RamFsData {
             let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + i * dirent_size;
             let entry = RamFsDirEntry::read_at(&self.data_area, offset);
             if entry.node != 0 {
-                let end = entry.name.iter().position(|&b| b == 0).unwrap_or(VFS_MAX_NAME);
+                let end = entry
+                    .name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(VFS_MAX_NAME);
                 let existing = core::str::from_utf8(&entry.name[..end]).unwrap_or("");
                 if existing == name {
                     return KernelError::AlreadyExists.as_i32();
@@ -1410,8 +1454,7 @@ impl RamFsData {
             node.ctime = now;
             node.used = true;
         }
-        self.symlink_targets[new_id as usize][..target_len]
-            .copy_from_slice(target_bytes);
+        self.symlink_targets[new_id as usize][..target_len].copy_from_slice(target_bytes);
         self.symlink_lens[new_id as usize] = target_len as u8;
 
         let offset = (parent_block as usize) * RAMFS_BLOCK_SIZE + num_entries * dirent_size;

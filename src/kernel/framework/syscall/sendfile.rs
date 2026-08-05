@@ -22,13 +22,13 @@
 //! - 所有 fd 验证在操作前完成
 //! - offset 更新在传输成功后
 
-use crate::kernel::framework::fs::vfs as vfs_api;
-use crate::kernel::framework::fs::VFS_MAX_FDS;
 use crate::kernel::framework::fs::VFS_MANAGER;
-use crate::kernel::framework::ipc::pipe as ipc_pipe;
-use crate::kernel::services::ipc::pipe as svc_pipe;
+use crate::kernel::framework::fs::VFS_MAX_FDS;
+use crate::kernel::framework::fs::vfs as vfs_api;
 use crate::kernel::framework::ipc::IPC_NAMESPACE;
+use crate::kernel::framework::ipc::pipe as ipc_pipe;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::services::ipc::pipe as svc_pipe;
 
 /// sendfile 传输的 bounce buffer 大小 (8KB)
 const BOUNCE_SIZE: usize = 8192;
@@ -114,9 +114,7 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset_ptr: u64, count: usize) -> i
             return Errno::EFAULT.as_ret();
         }
         // SAFETY: offset_ptr 已验证可读, 8 字节对齐
-        let bytes: [u8; 8] = unsafe {
-            core::ptr::read(offset_ptr as *const [u8; 8])
-        };
+        let bytes: [u8; 8] = unsafe { core::ptr::read(offset_ptr as *const [u8; 8]) };
         u64::from_ne_bytes(bytes)
     } else {
         // 使用 fd 当前偏移
@@ -306,7 +304,7 @@ pub fn sys_splice(
 
 #[cfg(feature = "kernel_test")]
 pub(crate) mod tests {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     pub(crate) fn test_sendfile_ebadf() -> TestResult {
         // in_fd 不是 VFS 文件 → EBADF
@@ -330,7 +328,7 @@ pub(crate) mod tests {
     }
 
     pub fn register_sendfile_tests() {
-        use crate::kernel::framework::tests::{runner, TestFn};
+        use crate::kernel::framework::tests::{TestFn, runner};
         let r = runner();
         r.register("syscall::sendfile", "ebadf", test_sendfile_ebadf as TestFn);
         r.register(

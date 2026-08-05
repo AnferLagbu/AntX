@@ -106,7 +106,9 @@ impl DmuManager for StandardDmu {
     }
 
     fn is_initialized(&self) -> bool {
-        self.0.initialized.load(core::sync::atomic::Ordering::Acquire)
+        self.0
+            .initialized
+            .load(core::sync::atomic::Ordering::Acquire)
     }
 
     fn alloc_obj(&self, obj_type: HvObjType, owner_pwm: u64) -> Option<u64> {
@@ -138,7 +140,9 @@ impl DmuManager for StandardDmu {
     }
 
     fn next_obj_id(&self) -> u64 {
-        self.0.next_obj_id.load(core::sync::atomic::Ordering::Acquire)
+        self.0
+            .next_obj_id
+            .load(core::sync::atomic::Ordering::Acquire)
     }
 }
 
@@ -183,7 +187,7 @@ mod tests {
         dmu.init(0x100);
         // alloc File
         let f = dmu.alloc_obj(HvObjType::File, 0x100).unwrap();
-        assert_eq!(f, 3);  // next_obj_id 在 init 后 = HV_DMU_OBJ_ROOT + 2 = 4, 递增后给的是旧值
+        assert_eq!(f, 3); // next_obj_id 在 init 后 = HV_DMU_OBJ_ROOT + 2 = 4, 递增后给的是旧值
         // 实际 next_obj_id 在 alloc 前是 4, alloc 后是 5
         // 修正: 初始 next_obj_id=HV_DMU_OBJ_ROOT+1=3, init 后 =HV_DMU_OBJ_ROOT+2=4
         // alloc 后 =5, 分配给第一个 obj 的 id 是 fetch_add 的旧值 = 4
@@ -267,7 +271,7 @@ mod tests {
         // free 1 个 → 4
         let f = dmu.alloc_obj(HvObjType::File, 0x100).unwrap();
         dmu.free_obj(f);
-        assert_eq!(dmu.obj_count(), 5);  // alloc 1 + free 1 = 0 净变化
+        assert_eq!(dmu.obj_count(), 5); // alloc 1 + free 1 = 0 净变化
     }
 
     /// 9. trait 对象分发 (dyn DmuManager)
@@ -291,7 +295,7 @@ mod tests {
         // 写文件大小
         let mut fobj = dmu.get_obj(file).unwrap();
         fobj.size = 8192;
-        fobj.link_count = 2;  // 模拟有 2 个 hard link
+        fobj.link_count = 2; // 模拟有 2 个 hard link
         dmu.update_obj(&fobj);
         // 验证
         let fobj2 = dmu.get_obj(file).unwrap();

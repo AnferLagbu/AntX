@@ -13,15 +13,13 @@ macro_rules! serial_println {
     ($($arg:tt)*) => {};
 }
 
-use super::{VirtAddr, PAGE_SIZE, get_vmm, get_pmm, PhysAddr, PageFlags};
+use super::{PAGE_SIZE, PageFlags, PhysAddr, VirtAddr, get_pmm, get_vmm};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 // P1-I-28 修复: kmalloc 自旋锁在中断上下文会死锁 (同 CPU ISR 持锁 + 主线 spin)
 // 仿 pmm.rs 模式, acquire_lock 时 disable_interrupts, release_lock 时 restore.
 // 导入 framework/sync/spinlock 的 arch 无关原语, 避免直接 crate::arch!().
-use crate::kernel::framework::sync::{
-    disable_interrupts, restore_interrupts, IrqSaveFlags,
-};
+use crate::kernel::framework::sync::{IrqSaveFlags, disable_interrupts, restore_interrupts};
 
 /// 堆头校验魔数
 const HEAP_MAGIC: u32 = 0xDEADBEEF;
@@ -84,7 +82,10 @@ impl HeapHeader {
         }
     }
 
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
     /// 获取本头部之后的数据区指针
     pub fn data_ptr(&self) -> *mut u8 {
         // SAFETY: self 是对 HeapHeader 的有效引用; 加上 size_of::<Self>()
@@ -92,15 +93,21 @@ impl HeapHeader {
         unsafe { (self as *const Self as *mut u8).add(core::mem::size_of::<Self>()) }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 由数据指针取回头部
     ///
     /// # Safety
     /// 调用方须保证 `data` 由某次合法分配返回
-    pub unsafe fn from_data_ptr(data: *mut u8) -> *mut Self { unsafe {
-        data.sub(core::mem::size_of::<Self>()) as *mut Self
-    }}
+    pub unsafe fn from_data_ptr(data: *mut u8) -> *mut Self {
+        unsafe { data.sub(core::mem::size_of::<Self>()) as *mut Self }
+    }
 }
 
 // === E4: unsafe 集中 — 原始子模块 ===
@@ -121,7 +128,10 @@ pub(crate) mod raw {
         /// - `ptr` 必须指向堆中合法的 `HeapHeader`
         /// - 使用期间必须持有堆锁
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub unsafe fn new_unchecked(ptr: *mut HeapHeader) -> Self {
             Self(ptr)
         }
@@ -132,82 +142,126 @@ pub(crate) mod raw {
         /// - `data` 必须由先前的分配返回
         /// - 必须持有堆锁
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-        pub unsafe fn from_data_ptr(data: *mut u8) -> Self { unsafe {
-            Self(HeapHeader::from_data_ptr(data))
-        }}
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
+        pub unsafe fn from_data_ptr(data: *mut u8) -> Self {
+            unsafe { Self(HeapHeader::from_data_ptr(data)) }
+        }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn as_ptr(self) -> *mut HeapHeader {
             self.0
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn size(&self) -> u64 {
             // SAFETY: caller guarantees valid pointer under heap lock
             unsafe { (*self.0).size }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_size(&self, val: u64) {
             // SAFETY: caller guarantees valid pointer under heap lock
-            unsafe { (*self.0).size = val; }
+            unsafe {
+                (*self.0).size = val;
+            }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn is_free(&self) -> bool {
             // SAFETY: caller guarantees valid pointer under heap lock
             unsafe { (*self.0).free }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_free(&self, val: bool) {
             // SAFETY: caller guarantees valid pointer under heap lock
-            unsafe { (*self.0).free = val; }
+            unsafe {
+                (*self.0).free = val;
+            }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn magic(&self) -> u32 {
             // SAFETY: caller guarantees valid pointer under heap lock
             unsafe { (*self.0).magic }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn next(&self) -> *mut HeapHeader {
             // SAFETY: caller guarantees valid pointer under heap lock
             unsafe { (*self.0).next }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_next(&self, p: *mut HeapHeader) {
             // SAFETY: caller guarantees valid pointer under heap lock
-            unsafe { (*self.0).next = p; }
+            unsafe {
+                (*self.0).next = p;
+            }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn prev(&self) -> *mut HeapHeader {
             // SAFETY: caller guarantees valid pointer under heap lock
             unsafe { (*self.0).prev }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_prev(&self, p: *mut HeapHeader) {
             // SAFETY: caller guarantees valid pointer under heap lock
-            unsafe { (*self.0).prev = p; }
+            unsafe {
+                (*self.0).prev = p;
+            }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn data_ptr(&self) -> *mut u8 {
             // SAFETY: caller guarantees valid pointer under heap lock
             unsafe { (*self.0).data_ptr() }
@@ -215,24 +269,41 @@ pub(crate) mod raw {
 
         /// 在本地址写入新的 `HeapHeader` 值.
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn write(&self, val: HeapHeader) {
             // SAFETY: 调用方保证指针合法, 且持锁
-            unsafe { *self.0 = val; }
+            unsafe {
+                *self.0 = val;
+            }
         }
 
         /// 取得本头部的字节地址.
         #[inline(always)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::ptr_as_ptr,
+            reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+        )]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn byte_ptr(self) -> *mut u8 {
             self.0 as *mut u8
         }
 
         /// 通过字节偏移计算相邻的下一个头部.
         #[inline(always)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+        #[expect(
+            clippy::ptr_as_ptr,
+            reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+        )]
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+        )]
         pub fn adjacent_next(&self, offset: usize) -> Self {
             // SAFETY: 调用方保证偏移仍在堆区范围内
             unsafe { Self::new_unchecked(self.byte_ptr().add(offset) as *mut HeapHeader) }
@@ -252,7 +323,10 @@ pub(crate) mod raw {
             Self { ptr }
         }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+        #[expect(
+            clippy::ptr_as_ptr,
+            reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+        )]
         pub fn get(&self) -> *mut HeapHeader {
             // SAFETY: 持有堆锁; UnsafeCell 是 repr(transparent).
             // 用 read_volatile 强制 LTO 不可 cache/错位.
@@ -279,7 +353,10 @@ pub(crate) mod raw {
             Self { ptr }
         }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+        #[expect(
+            clippy::ptr_as_ptr,
+            reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+        )]
         pub fn get(&self) -> VirtAddr {
             // SAFETY: 持有堆锁; UnsafeCell 是 repr(transparent).
             // 用 read_volatile 强制 LTO 不可 cache/错位.
@@ -297,10 +374,15 @@ pub(crate) mod raw {
     /// # Safety
     /// - `ptr` 必须指向 `len` 字节的合法可写区域
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) { unsafe {
-        core::ptr::write_bytes(ptr, 0, len);
-    }}
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    pub unsafe fn zero_memory(ptr: *mut u8, len: usize) {
+        unsafe {
+            core::ptr::write_bytes(ptr, 0, len);
+        }
+    }
 
     /// 不重叠内存复制.
     ///
@@ -309,12 +391,14 @@ pub(crate) mod raw {
     /// - dst 必须可写 `len` 字节
     /// - 两区不得重叠
     #[inline(always)]
-    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) { unsafe {
-        core::ptr::copy_nonoverlapping(src, dst, len);
-    }}
+    pub unsafe fn copy_nonoverlapping(src: *const u8, dst: *mut u8, len: usize) {
+        unsafe {
+            core::ptr::copy_nonoverlapping(src, dst, len);
+        }
+    }
 }
 
-use raw::{HeaderRef, FreeListHeadRef, HeapEndRef};
+use raw::{FreeListHeadRef, HeaderRef, HeapEndRef};
 
 /// 内核堆分配器状态
 ///
@@ -396,8 +480,7 @@ impl KernelHeap {
     pub fn init(&mut self, start: VirtAddr, initial_size: u64) {
         self.heap_start = start;
         // SAFETY: init 独占调用, 无并发访问
-        HeapEndRef::new(core::ptr::addr_of!(self.heap_end))
-            .set(VirtAddr(start.0 + initial_size));
+        HeapEndRef::new(core::ptr::addr_of!(self.heap_end)).set(VirtAddr(start.0 + initial_size));
 
         // SAFETY: 调用方 (kmem_init) 提供的堆区已映射, 长度 >= sizeof(HeapHeader);
         // 起始地址页对齐, 且在持锁状态下独占访问.
@@ -442,8 +525,7 @@ impl KernelHeap {
             self.alloc_count.fetch_add(1, Ordering::Relaxed);
             self.total_allocated
                 .fetch_add(actual_size, Ordering::Relaxed);
-            let usage =
-                self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
+            let usage = self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
 
             let mut peak = self.peak_usage.load(Ordering::Relaxed);
             while usage > peak {
@@ -550,8 +632,7 @@ impl KernelHeap {
             self.alloc_count.fetch_add(1, Ordering::Relaxed);
             self.total_allocated
                 .fetch_add(actual_size, Ordering::Relaxed);
-            let usage =
-                self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
+            let usage = self.current_usage.fetch_add(actual_size, Ordering::Relaxed) + actual_size;
             let mut peak = self.peak_usage.load(Ordering::Relaxed);
             while usage > peak {
                 match self.peak_usage.compare_exchange_weak(
@@ -695,9 +776,7 @@ impl KernelHeap {
             let block_size = cur.size();
 
             if block_size >= size {
-                if block_size
-                    >= size + MIN_BLOCK_SIZE + core::mem::size_of::<HeapHeader>() as u64
-                {
+                if block_size >= size + MIN_BLOCK_SIZE + core::mem::size_of::<HeapHeader>() as u64 {
                     self.split_block(cur, size);
                 }
 
@@ -716,7 +795,10 @@ impl KernelHeap {
     /// 将一个块拆分为两个
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn split_block(&self, header: HeaderRef, size: u64) {
         let original_size = header.size();
         let remaining = original_size - size;
@@ -879,8 +961,14 @@ impl KernelHeap {
         self.allocate_first_fit(size)
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ptr_cast_constness,
+        reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+    )]
     /// 早期分配 (堆初始化前)
     fn early_allocate(&self, size: usize) -> Option<*mut u8> {
         let current = self.early_pos.fetch_add(size, Ordering::Relaxed);
@@ -925,7 +1013,10 @@ impl KernelHeap {
     }
 
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn acquire_lock(&self) -> IrqSaveFlags {
         let flags = disable_interrupts();
         while self
@@ -939,7 +1030,10 @@ impl KernelHeap {
     }
 
     #[inline(always)]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     fn release_lock(&self, flags: &IrqSaveFlags) {
         self.lock.store(false, Ordering::Release);
         restore_interrupts(flags);
@@ -978,7 +1072,10 @@ pub fn get_kmalloc_mut() -> crate::kernel::framework::sync::IrqSpinLockGuard<'st
 
 /// 将值向上对齐到指定对齐 (必须为 2 的幂)
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub const fn align_up(value: u64, alignment: u64) -> u64 {
     (value + alignment - 1) & !(alignment - 1)
 }

@@ -400,10 +400,19 @@ mod tests {
 
     #[test]
     fn storage_error_translation() {
-        assert_eq!(StorageError::from_i32(-1), StorageError::Kernel(crate::kernel::services::error::KernelError::Other(-1)));
-        assert_eq!(StorageError::from_i32(-3), StorageError::Kernel(crate::kernel::services::error::KernelError::Fault));
+        assert_eq!(
+            StorageError::from_i32(-1),
+            StorageError::Kernel(crate::kernel::services::error::KernelError::Other(-1))
+        );
+        assert_eq!(
+            StorageError::from_i32(-3),
+            StorageError::Kernel(crate::kernel::services::error::KernelError::Fault)
+        );
         assert_eq!(StorageError::from_i32(-4), StorageError::BadMagic);
-        assert_eq!(StorageError::from_i32(0), StorageError::Kernel(crate::kernel::services::error::KernelError::Other(0)));
+        assert_eq!(
+            StorageError::from_i32(0),
+            StorageError::Kernel(crate::kernel::services::error::KernelError::Other(0))
+        );
     }
 
     #[test]

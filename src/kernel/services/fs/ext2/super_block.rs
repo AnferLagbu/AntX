@@ -117,16 +117,44 @@ impl Ext2SuperBlock {
             s_rev_level: rev_level,
             s_def_resuid: u16::from_le_bytes([data[80], data[81]]),
             s_def_resgid: u16::from_le_bytes([data[82], data[83]]),
-            s_first_ino: if rev_level >= 1 { u32::from_le_bytes([data[84], data[85], data[86], data[87]]) } else { 1 },
-            s_inode_size: if rev_level >= 1 { u16::from_le_bytes([data[88], data[89]]) } else { 128 },
-            s_block_group_nr: if rev_level >= 1 { u16::from_le_bytes([data[90], data[91]]) } else { 0 },
-            s_feature_compat: if rev_level >= 1 { u32::from_le_bytes([data[92], data[93], data[94], data[95]]) } else { 0 },
-            s_feature_incompat: if rev_level >= 1 { u32::from_le_bytes([data[96], data[97], data[98], data[99]]) } else { 0 },
-            s_feature_ro_compat: if rev_level >= 1 { u32::from_le_bytes([data[100], data[101], data[102], data[103]]) } else { 0 },
+            s_first_ino: if rev_level >= 1 {
+                u32::from_le_bytes([data[84], data[85], data[86], data[87]])
+            } else {
+                1
+            },
+            s_inode_size: if rev_level >= 1 {
+                u16::from_le_bytes([data[88], data[89]])
+            } else {
+                128
+            },
+            s_block_group_nr: if rev_level >= 1 {
+                u16::from_le_bytes([data[90], data[91]])
+            } else {
+                0
+            },
+            s_feature_compat: if rev_level >= 1 {
+                u32::from_le_bytes([data[92], data[93], data[94], data[95]])
+            } else {
+                0
+            },
+            s_feature_incompat: if rev_level >= 1 {
+                u32::from_le_bytes([data[96], data[97], data[98], data[99]])
+            } else {
+                0
+            },
+            s_feature_ro_compat: if rev_level >= 1 {
+                u32::from_le_bytes([data[100], data[101], data[102], data[103]])
+            } else {
+                0
+            },
             s_uuid: uuid,
             s_volume_name: volume_name,
             s_last_mounted: last_mounted,
-            s_algo_bitmap: if rev_level >= 1 { u32::from_le_bytes([data[200], data[201], data[202], data[203]]) } else { 0 },
+            s_algo_bitmap: if rev_level >= 1 {
+                u32::from_le_bytes([data[200], data[201], data[202], data[203]])
+            } else {
+                0
+            },
             s_prealloc_blocks: 0,
             s_prealloc_dir_blocks: 0,
             _padding: [0; 2],

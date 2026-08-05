@@ -7,14 +7,17 @@
 //! 本文件仅 re-export 保持调用方兼容, 并保留 `init()` 中的 barrier 回调注册.
 
 pub use crate::kernel::services::fs::vfs_manager::{
-    VfsMount, VfsFile, ResolvedMount, VfsManager, VFS_MANAGER,
+    ResolvedMount, VFS_MANAGER, VfsFile, VfsManager, VfsMount,
 };
 
 pub fn init() {
     VFS_MANAGER.init();
 
     // barrier 回调注册 (必须在 framework 层, 因为引用 framework::barrier)
-    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER.lock().find(2) {
+    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER
+        .lock()
+        .find(2)
+    {
         *dom.capture_cb.lock() = Some(vfs_barrier_capture_cb);
         *dom.rollback_cb.lock() = Some(vfs_barrier_rollback_cb);
     }

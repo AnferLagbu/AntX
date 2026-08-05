@@ -1,7 +1,7 @@
 use super::check;
-use crate::kernel::framework::fs::vfs::types::{FsType, VfsFileType, VfsSeekWhence, VfsDirEntry};
+use crate::kernel::framework::fs::vfs::types::{FsType, VfsDirEntry, VfsFileType, VfsSeekWhence};
 use crate::kernel::framework::fs::vfs::vfs::VfsManager;
-use crate::kernel::framework::tests::{runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, runner};
 use crate::register_tests_inner;
 
 fn test_fstype_from_name() -> TestResult {

@@ -1,4 +1,4 @@
-use super::types::{GrantRecord, MAX_GRANT_RECORDS, PwmError, CapDomain, CapBits};
+use super::types::{CapBits, CapDomain, GrantRecord, MAX_GRANT_RECORDS, PwmError};
 use crate::kernel::framework::sync::IrqSpinLock;
 
 /// Grant 记录表 — 替代 static mut, 由 `IrqSpinLock` 保护并发访问
@@ -10,9 +10,13 @@ static GRANT_RECORDS: IrqSpinLock<[GrantRecord; MAX_GRANT_RECORDS]> =
 /// 授权记录表已满时返回 Err。
 pub fn add_record(record: GrantRecord) -> Result<(), PwmError> {
     let mut guard = GRANT_RECORDS.lock();
-    guard.iter_mut()
+    guard
+        .iter_mut()
         .find(|r| r.is_empty())
-        .map_or(Err(PwmError::TableFull), |slot| { *slot = record; Ok(()) })
+        .map_or(Err(PwmError::TableFull), |slot| {
+            *slot = record;
+            Ok(())
+        })
 }
 
 pub fn is_grantor(grantor_pwm: u64, grantee_pwm: u64, domain: CapDomain, caps: CapBits) -> bool {

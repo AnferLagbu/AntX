@@ -127,5 +127,7 @@ use crate::kernel::framework::sync::OnceLock;
 static DEFAULT_FONT: OnceLock<Font> = OnceLock::new();
 
 pub fn default_font() -> &'static Font {
-    DEFAULT_FONT.get_or_init(|slot| { slot.write(Font::builtin_8x16()); })
+    DEFAULT_FONT.get_or_init(|slot| {
+        slot.write(Font::builtin_8x16());
+    })
 }

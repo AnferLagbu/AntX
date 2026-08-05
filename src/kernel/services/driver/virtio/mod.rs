@@ -21,6 +21,6 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.1.2/2.1.3 任务
 
-pub mod transport;
 pub mod blk;
 pub mod net;
+pub mod transport;

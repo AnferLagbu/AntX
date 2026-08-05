@@ -5,7 +5,10 @@ use super::undo_log::UndoLog;
 use crate::kernel::framework::sync::{IrqSpinLock, IrqSpinLockGuard};
 
 pub trait Snapshot: Copy + Sized {
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     fn snapshot(&self) -> Self {
         *self
     }
@@ -46,8 +49,14 @@ impl<T: Snapshot + 'static> RecoverableMutex<T> {
         }
     }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
+    #[expect(
+        clippy::ptr_cast_constness,
+        reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+    )]
     pub fn lock(&self) -> IrqSpinLockGuard<'_, T> {
         let guard = self.inner.lock();
         if self.domain_id != 0 {

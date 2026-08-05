@@ -185,8 +185,14 @@ impl PageFaultHandler {
 }
 
 impl ExceptionHandler for PageFaultHandler {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
-#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect"
+    )]
     fn handle(&self, frame: *mut InterruptFrame) -> RecoveryAction {
         // SAFETY: `frame` 由调用方保证为有效指针; 只读访问
         let fault_addr = unsafe { (*frame).fault_address() };
@@ -202,12 +208,11 @@ impl ExceptionHandler for PageFaultHandler {
             // P0-I-26 修复: 栈扩展未命中时, 分发到 demand paging 完整路径
             // (COW fork 写共享页 / mmap 文件缺页 / swap 换入 / 匿名页 demand),
             // 此前 trait 路径直接 SIGKILL, 等于绕过了内核核心功能
-            let pf_info =
-                crate::kernel::framework::mm::PageFaultInfo::from_error_code(
-                    fault_addr,
-                    // SAFETY: 调用方保证指针/类型有效
-                    unsafe { (*frame).err_code },
-                );
+            let pf_info = crate::kernel::framework::mm::PageFaultInfo::from_error_code(
+                fault_addr,
+                // SAFETY: 调用方保证指针/类型有效
+                unsafe { (*frame).err_code },
+            );
             use crate::kernel::framework::mm::PfResult;
             let pid = crate::kernel::framework::proc::process_get_current_pid();
             match crate::kernel::framework::mm::handle_user_page_fault(pf_info) {
@@ -313,11 +318,7 @@ impl ExceptionHandler for InvalidOpcodeHandler {
             RecoveryAction::Recovered
         } else {
             // 内核态 #UD = 内核代码非法指令, 立即 panic 留现场.
-            RecoveryAction::Panic(PanicInfo::new(
-                "Invalid Opcode in kernel mode",
-                6,
-                rip,
-            ))
+            RecoveryAction::Panic(PanicInfo::new("Invalid Opcode in kernel mode", 6, rip))
         }
     }
 
@@ -414,8 +415,14 @@ impl ExceptionHandler for GeneralProtectionFaultHandler {
 impl GeneralProtectionFaultHandler {
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     fn print_detailed_gpf_info(&self, frame: &InterruptFrame) {
         let selector = frame.err_code as u16;
 
@@ -434,8 +441,14 @@ impl GeneralProtectionFaultHandler {
         };
 
         // TD-11: klog 替代原 let _ = ...
-        klog_warn!(Kernel, "GPF external={} idt_flag={} table={} index={}",
-            external, idt_flag, table_name, index);
+        klog_warn!(
+            Kernel,
+            "GPF external={} idt_flag={} table={} index={}",
+            external,
+            idt_flag,
+            table_name,
+            index
+        );
     }
 }
 
@@ -479,7 +492,10 @@ impl ExceptionHandler for DoubleFaultHandler {
 }
 
 impl DoubleFaultHandler {
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn print_double_fault_context(&self, _frame: &InterruptFrame) {
         let count = DOUBLE_FAULT_COUNT.load(Ordering::Relaxed);
         let nesting = IdtManager::instance().nested_count.load(Ordering::Relaxed);

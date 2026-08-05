@@ -148,7 +148,12 @@ fn usages_all_use_kernel_wrapper() {
     // 至少 10 处用 FsError::Kernel(KernelError::...) 包装
     // (7×NotFound + 1×NotADirectory + 3×InvalidArgument + 1×NameTooLong = 12,
     //  减去 doc 注释中 1 行 引用 = 11 实际, 取保守下界 10)
-    let kernel_count = src.matches("FsError::Kernel(crate::kernel::services::error::KernelError::").count();
+    // rustfmt 拆 FsError::Kernel(crate::...::KernelError::Xxx) 为多行; 鲁棒匹配
+    // 拆行后: "FsError::Kernel(" 在前, "KernelError::" 在后, ")" 闭合.
+    // 改为独立子串 count (klog 风格).
+    // rustfmt 把 FsError::Kernel(crate::...::KernelError::Xxx) 拆为多行 (前缀和后缀各占一行).
+    // 鲁棒计数: FsError::Kernel(\n (跨行) ...KernelError::\n 模式; 用前缀 (FsError::Kernel( 单 token) + 后缀 (KernelError:: 单 token) 最小值.
+    let kernel_count = src.matches("FsError::Kernel(").count().min(src.matches("KernelError::").count());
     assert!(
         kernel_count >= 10,
         "FsError 至少应有 10 处用 Kernel(KernelError::...) 包装, 实际: {}",

@@ -40,16 +40,16 @@ impl AuditEventKind {
     /// 数字标签 (用于哈希)
     pub const fn tag(self) -> u8 {
         match self {
-            Self::LoginSuccess      => 0x01,
-            Self::LoginFailed       => 0x02,
-            Self::Logout            => 0x03,
+            Self::LoginSuccess => 0x01,
+            Self::LoginFailed => 0x02,
+            Self::Logout => 0x03,
             Self::CapabilityGranted => 0x04,
             Self::CapabilityRevoked => 0x05,
-            Self::SessionKilled     => 0x06,
-            Self::PolicyViolation   => 0x07,
-            Self::BarrierRecovery   => 0x08,
-            Self::BarrierReset      => 0x09,
-            Self::Custom(v)         => v,
+            Self::SessionKilled => 0x06,
+            Self::PolicyViolation => 0x07,
+            Self::BarrierRecovery => 0x08,
+            Self::BarrierReset => 0x09,
+            Self::Custom(v) => v,
         }
     }
 }
@@ -93,7 +93,10 @@ pub struct AuditLog {
 pub const AUDIT_BUFFER_SIZE: usize = 1024;
 
 impl AuditLog {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     pub const fn new() -> Self {
         const EMPTY_NODE: HashChainNode = HashChainNode {
             index: 0,
@@ -119,7 +122,10 @@ impl AuditLog {
         }
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 追加事件
     ///
     /// # Errors
@@ -144,7 +150,8 @@ impl AuditLog {
             hash,
         };
         self.buffer[pos] = node;
-        self.write_pos.store(((pos + 1) % AUDIT_BUFFER_SIZE) as u32, Ordering::Release);
+        self.write_pos
+            .store(((pos + 1) % AUDIT_BUFFER_SIZE) as u32, Ordering::Release);
         self.last_hash.store(hash, Ordering::Release);
         self.total.fetch_add(1, Ordering::AcqRel);
         Ok(idx)
@@ -163,7 +170,10 @@ impl AuditLog {
         None
     }
 
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     /// 验证哈希链完整性
     ///
     /// 返回: (ok, 第一个被破坏的 index)
@@ -179,7 +189,9 @@ impl AuditLog {
             }
         }
         for i in 0..next as usize {
-            if i >= AUDIT_BUFFER_SIZE { break; }
+            if i >= AUDIT_BUFFER_SIZE {
+                break;
+            }
             if let Some(n) = nodes[i] {
                 if n.prev_hash != prev {
                     return (false, Some(n.index));
@@ -199,7 +211,9 @@ impl AuditLog {
         let mut out: [Option<HashChainNode>; 32] = [None; 32];
         let mut idx = 0;
         for n in &self.buffer {
-            if idx >= 32 { break; }
+            if idx >= 32 {
+                break;
+            }
             if n.event.pwm == pwm {
                 out[idx] = Some(*n);
                 idx += 1;
@@ -213,7 +227,9 @@ impl AuditLog {
         let mut out: [Option<HashChainNode>; 32] = [None; 32];
         let mut idx = 0;
         for n in &self.buffer {
-            if idx >= 32 { break; }
+            if idx >= 32 {
+                break;
+            }
             if n.event.kind == kind {
                 out[idx] = Some(*n);
                 idx += 1;
@@ -257,7 +273,10 @@ impl AuditError {
 
 use crate::kernel::framework::syscall::Errno;
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// FNV-1a 64 位哈希 (services 层, 用于审计链)
 fn compute_hash(prev: u64, event: &AuditEvent) -> u64 {
     const OFFSET: u64 = 0xcbf29ce484222325;
@@ -314,7 +333,12 @@ mod tests {
     fn hash_changes_with_event() {
         let e1 = AuditEvent {
             kind: AuditEventKind::LoginSuccess,
-            tick: 100, pwm: 1, session_id: 42, domain_id: 0, bits: 0, result: 0,
+            tick: 100,
+            pwm: 1,
+            session_id: 42,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
         };
         let e2 = AuditEvent {
             kind: AuditEventKind::LoginFailed,
@@ -328,7 +352,12 @@ mod tests {
         let mut log = AuditLog::new();
         let e = AuditEvent {
             kind: AuditEventKind::LoginSuccess,
-            tick: 100, pwm: 1, session_id: 42, domain_id: 0, bits: 0, result: 0,
+            tick: 100,
+            pwm: 1,
+            session_id: 42,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
         };
         let idx = log.append(e).unwrap();
         let got = log.get(idx).unwrap();
@@ -344,8 +373,14 @@ mod tests {
         for i in 0..10 {
             log.append(AuditEvent {
                 kind: AuditEventKind::LoginSuccess,
-                tick: i, pwm: i, session_id: 0, domain_id: 0, bits: 0, result: 0,
-            }).unwrap();
+                tick: i,
+                pwm: i,
+                session_id: 0,
+                domain_id: 0,
+                bits: 0,
+                result: 0,
+            })
+            .unwrap();
         }
         let (ok, bad) = log.verify();
         assert!(ok, "expected ok, got bad={:?}", bad);
@@ -357,8 +392,14 @@ mod tests {
         for i in 0..5 {
             log.append(AuditEvent {
                 kind: AuditEventKind::LoginSuccess,
-                tick: i, pwm: i, session_id: 0, domain_id: 0, bits: 0, result: 0,
-            }).unwrap();
+                tick: i,
+                pwm: i,
+                session_id: 0,
+                domain_id: 0,
+                bits: 0,
+                result: 0,
+            })
+            .unwrap();
         }
         // 篡改: 直接修改 buffer 中第 2 个节点
         log.buffer[2].event.bits = 0xDEADBEEF;
@@ -371,16 +412,34 @@ mod tests {
         let mut log = AuditLog::new();
         log.append(AuditEvent {
             kind: AuditEventKind::LoginSuccess,
-            tick: 1, pwm: 7, session_id: 0, domain_id: 0, bits: 0, result: 0,
-        }).unwrap();
+            tick: 1,
+            pwm: 7,
+            session_id: 0,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
+        })
+        .unwrap();
         log.append(AuditEvent {
             kind: AuditEventKind::LoginFailed,
-            tick: 2, pwm: 8, session_id: 0, domain_id: 0, bits: 0, result: 0,
-        }).unwrap();
+            tick: 2,
+            pwm: 8,
+            session_id: 0,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
+        })
+        .unwrap();
         log.append(AuditEvent {
             kind: AuditEventKind::Logout,
-            tick: 3, pwm: 7, session_id: 0, domain_id: 0, bits: 0, result: 0,
-        }).unwrap();
+            tick: 3,
+            pwm: 7,
+            session_id: 0,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
+        })
+        .unwrap();
         let q = log.query_pwm(7);
         // 前两个应是 pwm=7 的事件
         assert!(q[0].is_some());
@@ -393,12 +452,24 @@ mod tests {
         let mut log = AuditLog::new();
         log.append(AuditEvent {
             kind: AuditEventKind::LoginSuccess,
-            tick: 1, pwm: 1, session_id: 0, domain_id: 0, bits: 0, result: 0,
-        }).unwrap();
+            tick: 1,
+            pwm: 1,
+            session_id: 0,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
+        })
+        .unwrap();
         log.append(AuditEvent {
             kind: AuditEventKind::LoginFailed,
-            tick: 2, pwm: 2, session_id: 0, domain_id: 0, bits: 0, result: 0,
-        }).unwrap();
+            tick: 2,
+            pwm: 2,
+            session_id: 0,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
+        })
+        .unwrap();
         let q = log.query_kind(AuditEventKind::LoginSuccess);
         assert!(q[0].is_some());
         assert_eq!(q[0].unwrap().event.pwm, 1);
@@ -410,12 +481,24 @@ mod tests {
         assert_eq!(log.total(), 0);
         log.append(AuditEvent {
             kind: AuditEventKind::LoginSuccess,
-            tick: 1, pwm: 1, session_id: 0, domain_id: 0, bits: 0, result: 0,
-        }).unwrap();
+            tick: 1,
+            pwm: 1,
+            session_id: 0,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
+        })
+        .unwrap();
         log.append(AuditEvent {
             kind: AuditEventKind::Logout,
-            tick: 2, pwm: 1, session_id: 0, domain_id: 0, bits: 0, result: 0,
-        }).unwrap();
+            tick: 2,
+            pwm: 1,
+            session_id: 0,
+            domain_id: 0,
+            bits: 0,
+            result: 0,
+        })
+        .unwrap();
         assert_eq!(log.total(), 2);
     }
 }

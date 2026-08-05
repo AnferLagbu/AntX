@@ -25,10 +25,10 @@
 //! - T5-3 (REVAL-6): epoll 策略迁移 (2026-06-22)
 //! - 互补: LEGACY-4 (`BlockDevice` trait 化) - 类似的机制/策略分离范式
 
-use crate::kernel::framework::fs::vfs_poll_trait::{
-    VfsPollPolicy, EPOLLIN, EPOLLOUT, EPOLLHUP, EPOLLERR,
-};
 use crate::kernel::framework::fs::VfsFileType;
+use crate::kernel::framework::fs::vfs_poll_trait::{
+    EPOLLERR, EPOLLHUP, EPOLLIN, EPOLLOUT, VfsPollPolicy,
+};
 
 // ============================================================================
 // StandardVfsPollPolicy — 标准 VFS 轮询策略
@@ -93,7 +93,7 @@ pub fn register_default_vfs_poll_policy() -> Result<(), ()> {
 mod tests {
     use super::*;
     use crate::kernel::framework::fs::vfs_poll_trait::{
-        VfsPollContext, current_vfs_poll_policy, VfsPollPolicyRef,
+        VfsPollContext, VfsPollPolicyRef, current_vfs_poll_policy,
     };
 
     /// 1. events_for_file_type: 4 种 file_type 正确映射
@@ -101,13 +101,19 @@ mod tests {
     fn test_vfs_poll_file_type_mapping() {
         let policy = StandardVfsPollPolicy;
         // File → IN|OUT
-        assert_eq!(policy.events_for_file_type(VfsFileType::File), EPOLLIN | EPOLLOUT);
+        assert_eq!(
+            policy.events_for_file_type(VfsFileType::File),
+            EPOLLIN | EPOLLOUT
+        );
         // Dir → IN
         assert_eq!(policy.events_for_file_type(VfsFileType::Dir), EPOLLIN);
         // Dev → HUP
         assert_eq!(policy.events_for_file_type(VfsFileType::Dev), EPOLLHUP);
         // Symlink → IN|HUP
-        assert_eq!(policy.events_for_file_type(VfsFileType::Symlink), EPOLLIN | EPOLLHUP);
+        assert_eq!(
+            policy.events_for_file_type(VfsFileType::Symlink),
+            EPOLLIN | EPOLLHUP
+        );
     }
 
     /// 2. events_for_invalid_fd: ERR|HUP
@@ -130,7 +136,10 @@ mod tests {
             }
             VfsPollPolicyRef::Registered(p) => {
                 // 已注册 → 走注册策略
-                let ctx = VfsPollContext { valid: true, file_type: VfsFileType::File };
+                let ctx = VfsPollContext {
+                    valid: true,
+                    file_type: VfsFileType::File,
+                };
                 let ev = policy.events_for(ctx);
                 assert_eq!(ev, EPOLLIN | EPOLLOUT);
                 // 注册策略应等价于 StandardVfsPollPolicy
@@ -145,7 +154,12 @@ mod tests {
         // 手工模拟 fallback 行为 (与 VfsPollPolicyRef::Fallback 一致)
         // 验证两种路径在标准输入下产生相同输出
         let policy = StandardVfsPollPolicy;
-        for ft in [VfsFileType::File, VfsFileType::Dir, VfsFileType::Dev, VfsFileType::Symlink] {
+        for ft in [
+            VfsFileType::File,
+            VfsFileType::Dir,
+            VfsFileType::Dev,
+            VfsFileType::Symlink,
+        ] {
             let policy_result = policy.events_for_file_type(ft);
             // fallback 是私有函数, 通过 current_vfs_poll_policy 间接验证
             // 至少验证策略不是 None
@@ -159,7 +173,7 @@ mod tests {
         // 注意: 此测试不实际调用 register, 避免污染全局状态
         // 验证 register 函数签名正确 (返回 bool)
         // 真实幂等性测试需要 host-test 环境 (kernel 全局 Mutex 难测试)
-        let _ = register_default_vfs_poll_policy;  // 确保函数符号存在
+        let _ = register_default_vfs_poll_policy; // 确保函数符号存在
     }
 
     /// 6. 集成: 完整 epoll 决策路径
@@ -168,16 +182,37 @@ mod tests {
         let policy = StandardVfsPollPolicy;
         // 模拟 epoll::check_fd_ready 决策
         // (framework 实现: VfsPollContext → VfsPollPolicyRef → events_for)
-        let ctx_valid_file = VfsPollContext { valid: true, file_type: VfsFileType::File };
-        let ctx_valid_dir = VfsPollContext { valid: true, file_type: VfsFileType::Dir };
-        let ctx_valid_dev = VfsPollContext { valid: true, file_type: VfsFileType::Dev };
-        let ctx_invalid = VfsPollContext { valid: false, file_type: VfsFileType::File };
+        let ctx_valid_file = VfsPollContext {
+            valid: true,
+            file_type: VfsFileType::File,
+        };
+        let ctx_valid_dir = VfsPollContext {
+            valid: true,
+            file_type: VfsFileType::Dir,
+        };
+        let ctx_valid_dev = VfsPollContext {
+            valid: true,
+            file_type: VfsFileType::Dev,
+        };
+        let ctx_invalid = VfsPollContext {
+            valid: false,
+            file_type: VfsFileType::File,
+        };
 
         // 通过 policy 决策
-        assert_eq!(policy.events_for_file_type(ctx_valid_file.file_type), EPOLLIN | EPOLLOUT);
-        assert_eq!(policy.events_for_file_type(ctx_valid_dir.file_type), EPOLLIN);
-        assert_eq!(policy.events_for_file_type(ctx_valid_dev.file_type), EPOLLHUP);
+        assert_eq!(
+            policy.events_for_file_type(ctx_valid_file.file_type),
+            EPOLLIN | EPOLLOUT
+        );
+        assert_eq!(
+            policy.events_for_file_type(ctx_valid_dir.file_type),
+            EPOLLIN
+        );
+        assert_eq!(
+            policy.events_for_file_type(ctx_valid_dev.file_type),
+            EPOLLHUP
+        );
         assert_eq!(policy.events_for_invalid_fd(), EPOLLERR | EPOLLHUP);
-        let _ = ctx_invalid;  // 标记使用
+        let _ = ctx_invalid; // 标记使用
     }
 }

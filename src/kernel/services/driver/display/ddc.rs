@@ -86,11 +86,7 @@ fn set_sda_scl(iomem: &IoMem, ctrl_reg: usize, sda_high: bool, scl_high: bool) {
 }
 
 /// I2C START 条件: SDA 在 SCL 高电平时由高变低
-fn i2c_start(
-    iomem: &IoMem,
-    ctrl_reg: usize,
-    elapsed: &mut usize,
-) -> Result<(), DdcError> {
+fn i2c_start(iomem: &IoMem, ctrl_reg: usize, elapsed: &mut usize) -> Result<(), DdcError> {
     if *elapsed + DDC_DELAY_ITERS * 2 > TRANSACTION_TIMEOUT_ITERS {
         return Err(DdcError::Timeout);
     }
@@ -102,11 +98,7 @@ fn i2c_start(
 }
 
 /// I2C STOP 条件: SDA 在 SCL 高电平时由低变高
-fn i2c_stop(
-    iomem: &IoMem,
-    ctrl_reg: usize,
-    elapsed: &mut usize,
-) -> Result<(), DdcError> {
+fn i2c_stop(iomem: &IoMem, ctrl_reg: usize, elapsed: &mut usize) -> Result<(), DdcError> {
     if *elapsed + DDC_DELAY_ITERS * 2 > TRANSACTION_TIMEOUT_ITERS {
         return Err(DdcError::Timeout);
     }

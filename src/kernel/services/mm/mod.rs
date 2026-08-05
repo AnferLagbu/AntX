@@ -11,22 +11,22 @@
 //! - mmap: 文件映射的安全参数验证与 VFS 交互
 //! - PMM 策略: 阶数选择/碎片化评估/回收阈值/水位线
 
-pub mod pcache;
-pub mod swap;
-pub mod mmap;
-pub mod mremap;
 pub mod brk;
-pub mod mprotect;
 /// madvise / mlock / mincore 系统调用策略
 pub mod madvise_mlock;
-/// D3: NUMA 安全封装
-pub mod numa;
 /// D9: 内存压力策略 (阈值/分级/判定) — services 层
 pub mod memory_pressure;
+pub mod mmap;
+pub mod mprotect;
+pub mod mremap;
+/// D3: NUMA 安全封装
+pub mod numa;
+pub mod pcache;
 /// T2-2: PMM 策略 (阶数选择/碎片化/回收阈值/水位线) — services 层
 pub mod pmm_policy;
 /// T2-3: Slab 策略 (缓存大小选择/对象数计算/分配优先级/大小限制) — services 层
 pub mod slab_policy;
+pub mod swap;
 /// T2-4: Swap 策略 (LRU 管理/回收决策/kswapd 触发) — services 层
 pub mod swap_policy;
 

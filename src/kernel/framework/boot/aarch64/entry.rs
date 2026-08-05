@@ -25,58 +25,60 @@ use crate::kernel::framework::arch::uart;
 /// - 栈指针 (SP) 已设置
 /// - BSS 段可写
 /// - 运行在 EL1（内核特权级）
-pub unsafe extern "C" fn entry() -> ! { unsafe {
-    // 0. 启用 FP/SIMD (编译器会生成 NEON 指令如 movi v0.2d)
-    //    CPACR_EL1.FPEN[21:20] = 0b11 → 不 trap FP/SIMD
-    core::arch::asm!("mrs x0, cpacr_el1", "orr x0, x0, #(0x3 << 20)", "msr cpacr_el1, x0", out("x0") _);
+pub unsafe extern "C" fn entry() -> ! {
+    unsafe {
+        // 0. 启用 FP/SIMD (编译器会生成 NEON 指令如 movi v0.2d)
+        //    CPACR_EL1.FPEN[21:20] = 0b11 → 不 trap FP/SIMD
+        core::arch::asm!("mrs x0, cpacr_el1", "orr x0, x0, #(0x3 << 20)", "msr cpacr_el1, x0", out("x0") _);
 
-    // 1. BSS 清零
-    clear_bss();
+        // 1. BSS 清零
+        clear_bss();
 
-    // 1.1 写入 boot 栈 canary 到 stack_bottom (栈溢出检测)
-    // 与 x86_64 boot.asm trampoline64_high 对齐
-    // 必须在 clear_bss 之后, 否则 canary 会被清零覆盖
-    crate::kernel::framework::proc::write_boot_stack_canary();
+        // 1.1 写入 boot 栈 canary 到 stack_bottom (栈溢出检测)
+        // 与 x86_64 boot.asm trampoline64_high 对齐
+        // 必须在 clear_bss 之后, 否则 canary 会被清零覆盖
+        crate::kernel::framework::proc::write_boot_stack_canary();
 
-    // 2. 初始化 MMU (identity mapping + TTBR1)
-    //    必须在 UART 之前, 因为 UART 使用 TTBR1 高半区地址 (0xFFFF_0000_0900_0000),
-    //    在 MMU 启用前该地址为无效物理地址, 会导致立即崩溃.
-    crate::kernel::framework::arch::mmu::init();
+        // 2. 初始化 MMU (identity mapping + TTBR1)
+        //    必须在 UART 之前, 因为 UART 使用 TTBR1 高半区地址 (0xFFFF_0000_0900_0000),
+        //    在 MMU 启用前该地址为无效物理地址, 会导致立即崩溃.
+        crate::kernel::framework::arch::mmu::init();
 
-    // 3. 初始化 UART (使用 TTBR1 高半区地址, 依赖 MMU)
-    uart::init();
-    uart::puts("[BOOT] QueenX starting...");
+        // 3. 初始化 UART (使用 TTBR1 高半区地址, 依赖 MMU)
+        uart::init();
+        uart::puts("[BOOT] QueenX starting...");
 
-    // 3.1 验证 canary (UART 已可用, 异常向量表尚未设置, 崩了就是真崩)
-    let canary_ok = crate::kernel::framework::proc::check_boot_stack_canary();
-    if !canary_ok {
-        uart::puts("[BOOT] FATAL: canary lost between write and kernel_init!");
-        loop {}
+        // 3.1 验证 canary (UART 已可用, 异常向量表尚未设置, 崩了就是真崩)
+        let canary_ok = crate::kernel::framework::proc::check_boot_stack_canary();
+        if !canary_ok {
+            uart::puts("[BOOT] FATAL: canary lost between write and kernel_init!");
+            loop {}
+        }
+
+        // 4. 初始化异常向量表
+        uart::puts("[BOOT] Setting up exception vectors...");
+        crate::kernel::framework::arch::exception::init();
+
+        // 5. 初始化 GICv3 (使用 TTBR1 高半区地址, 依赖 MMU)
+        uart::puts("[BOOT] Initializing GICv3...");
+        crate::kernel::framework::arch::gic::init();
+
+        // 6. 初始化定时器 (仅配置, 不启用 — 稍后在 kernel_init 中启用)
+        uart::puts("[BOOT] Initializing timer...");
+        let (_freq, interval) = crate::kernel::framework::arch::timer::init_deferred();
+        crate::kernel::framework::arch::exception::TIMER_INTERVAL_TICKS
+            .store(interval, core::sync::atomic::Ordering::Relaxed);
+
+        // 7. 跳转统一内核入口
+        uart::puts("[BOOT] Booting kernel...");
+        crate::kernel_init();
+
+        // 不应该到达这里
+        loop {
+            crate::arch!(halt());
+        }
     }
-
-    // 4. 初始化异常向量表
-    uart::puts("[BOOT] Setting up exception vectors...");
-    crate::kernel::framework::arch::exception::init();
-
-    // 5. 初始化 GICv3 (使用 TTBR1 高半区地址, 依赖 MMU)
-    uart::puts("[BOOT] Initializing GICv3...");
-    crate::kernel::framework::arch::gic::init();
-
-    // 6. 初始化定时器 (仅配置, 不启用 — 稍后在 kernel_init 中启用)
-    uart::puts("[BOOT] Initializing timer...");
-    let (_freq, interval) = crate::kernel::framework::arch::timer::init_deferred();
-    crate::kernel::framework::arch::exception::TIMER_INTERVAL_TICKS
-        .store(interval, core::sync::atomic::Ordering::Relaxed);
-
-    // 7. 跳转统一内核入口
-    uart::puts("[BOOT] Booting kernel...");
-    crate::kernel_init();
-
-    // 不应该到达这里
-    loop {
-        crate::arch!(halt());
-    }
-}}
+}
 
 // ============================================================================
 // BSS 清零
@@ -89,15 +91,20 @@ unsafe extern "C" {
 }
 
 // SAFETY: `clear_bss` 是有效的 C ABI 函数指针; 参数列表与声明一致
-#[expect(clippy::borrow_as_ptr, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-unsafe fn clear_bss() { unsafe {
-    let bss_start = &mut __bss_start as *mut u8;
-    let bss_end = &_kernel_end as *const u8 as usize;
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
+unsafe fn clear_bss() {
+    unsafe {
+        let bss_start = &mut __bss_start as *mut u8;
+        let bss_end = &_kernel_end as *const u8 as usize;
 
-    if bss_start as usize >= bss_end {
-        return;
+        if bss_start as usize >= bss_end {
+            return;
+        }
+
+        let size = bss_end - bss_start as usize;
+        core::ptr::write_bytes(bss_start, 0, size);
     }
-
-    let size = bss_end - bss_start as usize;
-    core::ptr::write_bytes(bss_start, 0, size);
-}}
+}

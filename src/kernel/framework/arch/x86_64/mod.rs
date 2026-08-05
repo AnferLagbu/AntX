@@ -53,7 +53,10 @@ impl CoreArch for X8664 {
 
     /// 获取高精度时间戳 (rdtsc)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn timestamp() -> u64 {
         let lo: u32;
         let hi: u32;
@@ -72,7 +75,10 @@ impl CoreArch for X8664 {
 
     /// CPU 暂停等待中断 (hlt)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn halt() {
         // SAFETY: hlt 暂停 CPU 至下一次中断; 不触及 Rust 可见的内存或寄存器.
         // nomem/nostack 标注正确.
@@ -83,7 +89,10 @@ impl CoreArch for X8664 {
 
     /// 全内存屏障 (mfence)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn fence() {
         // SAFETY: mfence 排序所有 load/store; 未声明寄存器 clobber, preserves_flags 正确.
         unsafe {
@@ -93,7 +102,10 @@ impl CoreArch for X8664 {
 
     /// 写内存屏障 (sfence)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn fence_w() {
         // SAFETY: sfence orders stores; no memory reads, no stack use.
         unsafe {
@@ -103,7 +115,10 @@ impl CoreArch for X8664 {
 
     /// 读内存屏障 (lfence)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn fence_r() {
         // SAFETY: lfence orders loads; correct memory model barrier.
         unsafe {
@@ -119,7 +134,10 @@ impl InterruptArch for X8664 {
     #[inline(always)]
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn interrupt_disable() -> usize {
         let flags: u64;
         // SAFETY: pushfq 压入 RFLAGS, pop 弹出到通用寄存器, 然后 cli 关中断.
@@ -138,7 +156,10 @@ impl InterruptArch for X8664 {
 
     /// 恢复中断状态，仅当 flags 中 IF 位为 1 时才启用。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn interrupt_restore(flags: usize) {
         if (flags as u64) & (1 << 9) != 0 {
             // SAFETY: sti 启用中断; nomem/nostack 成立, 对内存无可观察副作用.
@@ -150,7 +171,10 @@ impl InterruptArch for X8664 {
 
     /// 启用中断 (sti)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn interrupt_enable() {
         // SAFETY: sti enables interrupts; no memory access, no stack use.
         unsafe {
@@ -195,7 +219,10 @@ impl InterruptArch for X8664 {
         crate::kernel::framework::idt::idt_init();
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     fn interrupt_late_init() {
         // cpu_init 必须在 gdt_init 之前调用:
         // kpti_init 依赖 has_invpcid() → get_cpu_info() → cpu_init
@@ -227,13 +254,19 @@ impl InterruptArch for X8664 {
                 // 链接脚本定义: _kernel_text_vma = 0xFFFF800001000000 + _kernel_text_lma
                 // 因此偏移量 = 0xFFFF800001000000 (不是 KERNEL_BASE)
                 // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
-                unsafe extern "C" { fn syscall_entry(); }
+                #[expect(
+                    clippy::items_after_statements,
+                    reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+                )]
+                unsafe extern "C" {
+                    fn syscall_entry();
+                }
                 let entry_lma = syscall_entry as *const () as u64;
                 let entry_hi = entry_lma + 0xFFFF800001000000u64;
                 crate::klog_boot_info!(
                     "[SYSCALL] syscall_entry LMA={:#X}, LSTAR VMA={:#X}",
-                    entry_lma, entry_hi
+                    entry_lma,
+                    entry_hi
                 );
                 crate::kernel::framework::cpu::msr::write_msr(IA32_LSTAR, entry_hi);
 
@@ -254,7 +287,10 @@ impl InterruptArch for X8664 {
 impl MmuArch for X8664 {
     /// 刷新单个虚拟地址的 TLB (invlpg)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn tlb_flush_page(vaddr: usize) {
         // SAFETY: invlpg takes the virtual address in a register and
         // invalidates the TLB entry; the address is a kernel VA.
@@ -269,7 +305,10 @@ impl MmuArch for X8664 {
 
     /// 刷新全部 TLB (重载 CR3)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn tlb_flush_all() {
         // SAFETY: 读再写 CR3 触发完整 TLB 刷新; 中间寄存器使用是 GPR 与 CR3 间的直接搬运.
         unsafe {
@@ -284,7 +323,10 @@ impl MmuArch for X8664 {
 
     /// 读取当前页表基地址 (mov rax, cr3)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn read_page_table_base() -> u64 {
         let cr3: u64;
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -300,7 +342,10 @@ impl MmuArch for X8664 {
 
     /// 切换页表 (mov to cr3)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn write_page_table_base(paddr: u64) {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -360,7 +405,13 @@ impl MmuArch for X8664 {
         // 通过 FFI 调用汇编实现的 enter_user_asm。
         unsafe {
             unsafe extern "C" {
-                fn enter_user_asm(entry: usize, stack: usize, arg: usize, user_cr3: u64, kstack: u64) -> !;
+                fn enter_user_asm(
+                    entry: usize,
+                    stack: usize,
+                    arg: usize,
+                    user_cr3: u64,
+                    kstack: u64,
+                ) -> !;
             }
             enter_user_asm(entry, stack, arg, user_cr3, kstack)
         }
@@ -368,7 +419,10 @@ impl MmuArch for X8664 {
 
     /// 返回用户态 (iretq)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn return_to_user() {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -401,7 +455,8 @@ impl MmuArch for X8664 {
 // 4. 切换 CR3 到用户页表 (CPL=0, 高半区 trampoline 可执行)
 // 5. 加载用户段寄存器 (CPL→3)
 // 6. iretq (从用户栈读取帧)
-core::arch::global_asm!(r#"
+core::arch::global_asm!(
+    r#"
     .section .kpti_trampoline
     .global enter_user_asm
     .type enter_user_asm, @function
@@ -765,14 +820,18 @@ enter_user_asm:
     // swapgs 已在段寄存器加载前执行, IA32_KERNEL_GS_BASE = per_cpu_addr
     iretq
     .size enter_user_asm, . - enter_user_asm
-"#);
+"#
+);
 
 // ── SystemArch: 端口 IO + 电源管理 ───────────────────────────────────
 
 impl SystemArch for X8664 {
     /// 向 I/O 端口写入字节 (out dx, al)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn outb(port: u16, value: u8) {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
@@ -787,7 +846,10 @@ impl SystemArch for X8664 {
 
     /// 从 I/O 端口读取字节 (in al, dx)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn inb(port: u16) -> u8 {
         let value: u8;
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -804,7 +866,10 @@ impl SystemArch for X8664 {
 
     /// 向 I/O 端口写入双字 (out dx, eax)。
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     fn outl(port: u16, value: u32) {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {

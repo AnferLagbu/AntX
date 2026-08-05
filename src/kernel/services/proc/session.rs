@@ -15,12 +15,12 @@
 //! - **进程组 (process group)**: 一组进程的集合, 用于信号广播
 //! - **控制终端 (controlling terminal)**: 每个会话最多一个, 前台进程组接收终端信号
 
-use core::sync::atomic::Ordering;
 use crate::kernel::framework::config::MAX_SESSIONS;
-use crate::kernel::framework::proc::process_get_current_pid;
-use crate::kernel::framework::proc::PROCESS_TABLE;
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::klog::serial_write_bytes;
+use crate::kernel::framework::proc::PROCESS_TABLE;
+use crate::kernel::framework::proc::process_get_current_pid;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use core::sync::atomic::Ordering;
 
 fn log(s: &str) {
     serial_write_bytes(s.as_bytes());
@@ -105,7 +105,10 @@ impl SessionManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn init(&self) {
         log("Session manager initialized\n");
     }
@@ -134,7 +137,9 @@ impl SessionManager {
         session.terminal.store(0, Ordering::SeqCst);
         session.foreground_pgid.store(0, Ordering::SeqCst);
         session.create_time.store(0, Ordering::SeqCst);
-        session.state.store(SessionState::Active as u32, Ordering::SeqCst);
+        session
+            .state
+            .store(SessionState::Active as u32, Ordering::SeqCst);
         session.process_list.store(0, Ordering::SeqCst);
         session.process_count.store(0, Ordering::SeqCst);
         session.next.store(0, Ordering::SeqCst);
@@ -160,7 +165,9 @@ impl SessionManager {
         session.terminal.store(0, Ordering::SeqCst);
         session.foreground_pgid.store(leader_pid, Ordering::SeqCst);
         session.create_time.store(0, Ordering::SeqCst);
-        session.state.store(SessionState::Active as u32, Ordering::SeqCst);
+        session
+            .state
+            .store(SessionState::Active as u32, Ordering::SeqCst);
         session.process_list.store(0, Ordering::SeqCst);
         session.process_count.store(0, Ordering::SeqCst);
         session.next.store(0, Ordering::SeqCst);
@@ -174,7 +181,9 @@ impl SessionManager {
             let session = &mut table[idx];
 
             session.session_id.store(0, Ordering::SeqCst);
-            session.state.store(SessionState::Zombie as u32, Ordering::SeqCst);
+            session
+                .state
+                .store(SessionState::Zombie as u32, Ordering::SeqCst);
             session.process_list.store(0, Ordering::SeqCst);
             session.process_count.store(0, Ordering::SeqCst);
             session.terminal.store(0, Ordering::SeqCst);
@@ -215,11 +224,10 @@ impl SessionManager {
 
     /// 获取会话的控制终端
     pub fn get_controlling_terminal(&self, session_id: u64) -> u64 {
-        self.find_session(session_id)
-            .map_or(0, |idx| {
-                let table = self.session_table.lock();
-                table[idx].terminal.load(Ordering::SeqCst)
-            })
+        self.find_session(session_id).map_or(0, |idx| {
+            let table = self.session_table.lock();
+            table[idx].terminal.load(Ordering::SeqCst)
+        })
     }
 
     /// 释放会话的控制终端
@@ -243,11 +251,10 @@ impl SessionManager {
 
     /// 获取前台进程组
     pub fn get_foreground_pgid(&self, session_id: u64) -> u32 {
-        self.find_session(session_id)
-            .map_or(0, |idx| {
-                let table = self.session_table.lock();
-                table[idx].foreground_pgid.load(Ordering::SeqCst)
-            })
+        self.find_session(session_id).map_or(0, |idx| {
+            let table = self.session_table.lock();
+            table[idx].foreground_pgid.load(Ordering::SeqCst)
+        })
     }
 }
 
@@ -261,7 +268,10 @@ pub fn init() {
 // 系统调用策略
 // ============================================================================
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 /// setsid — 创建新会话
 pub fn proc_setsid() -> i64 {
     let pid = process_get_current_pid();
@@ -320,7 +330,10 @@ pub fn proc_getsid(pid: i32) -> i64 {
         .unwrap_or(-3)
 }
 
-#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
+#[expect(
+    clippy::similar_names,
+    reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect"
+)]
 /// setpgid(pid, pgid) — 设置进程组
 pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
     if pid < 0 || pgid < 0 {
@@ -353,10 +366,12 @@ pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
         }
 
         if new_pgid != target_pid && new_pgid != 0 {
-            let group_in_session = PROCESS_TABLE.with_process(new_pgid, |leader| {
-                let leader_sid = leader.session_id.load(Ordering::SeqCst);
-                leader_sid == current_sid
-            }).unwrap_or(false);
+            let group_in_session = PROCESS_TABLE
+                .with_process(new_pgid, |leader| {
+                    let leader_sid = leader.session_id.load(Ordering::SeqCst);
+                    leader_sid == current_sid
+                })
+                .unwrap_or(false);
 
             if !group_in_session {
                 let mut found = false;
@@ -381,7 +396,10 @@ pub fn proc_setpgid(pid: i32, pgid: i32) -> i64 {
     result.unwrap_or(-3)
 }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 /// getpgid(pid) — 取进程组 ID
 pub fn proc_getpgid(pid: i32) -> i64 {
     if pid < 0 {
@@ -479,7 +497,10 @@ pub fn get_foreground_pgid() -> u32 {
     SESSION_MANAGER.get_foreground_pgid(sid)
 }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 /// tcsetpgrp — 设置前台进程组
 pub fn sys_tcsetpgrp(_fd: i32, pgid: i32) -> i64 {
     if pgid <= 0 {

@@ -1,15 +1,14 @@
-
 use crate::kernel::framework::driver::block;
 use crate::kernel::framework::fs::KernelError;
 use crate::kernel::services::fs::hvfs::arc::HvArc;
-use crate::kernel::services::fs::hvfs::bp::{HvBlockPointer, HvCksumType, HvCompType, HV_DVA_MAX};
+use crate::kernel::services::fs::hvfs::bp::{HV_DVA_MAX, HvBlockPointer, HvCksumType, HvCompType};
 use crate::kernel::services::fs::hvfs::checksum::HvChecksum;
 use crate::kernel::services::fs::hvfs::dva::HvDva;
 use crate::kernel::services::fs::hvfs::metaslab::HvMetaslab;
 use crate::kernel::services::fs::hvfs::vdev::{HvVdev, HvVdevConfig, HvVdevState};
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 pub const HV_SPA_MAGIC: u32 = 0x48564653;
 pub const HV_UBERBLOCK_COUNT: usize = 128;
@@ -207,7 +206,10 @@ impl HvSpa {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     fn generate_guid() -> u64 {
         let t = crate::arch!(timestamp());
         let mut h: u64 = 14695981039346656037;
@@ -225,7 +227,6 @@ impl HvSpa {
             .first()
             .map_or(0, |v| v.config.vdev_id as u8)
     }
-
 
     fn read_sector(&self, sector: u32, buf: &mut [u8]) -> i32 {
         if buf.len() < 512 {
@@ -408,7 +409,10 @@ impl HvSpa {
             .store(crate::arch!(timestamp()), Ordering::Relaxed);
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn read_uberblock_from_disk(&self) -> Option<HvUberblock> {
         for i in (0..HV_UBERBLOCK_COUNT as u32).rev() {
             let sector = HV_UBERBLOCK_SECTOR + i;

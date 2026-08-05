@@ -64,18 +64,32 @@ pub fn epoll_ctl_syscall(
     // DEL 操作允许 event 为 null
     if op == EPOLL_CTL_DEL && event == 0 {
         let ret = crate::kernel::framework::syscall::epoll::sys_epoll_ctl(
-            epfd, op, fd, core::ptr::null(),
+            epfd,
+            op,
+            fd,
+            core::ptr::null(),
         );
-        return if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(0) };
+        return if ret < 0 {
+            Err(Errno::from_ret(ret))
+        } else {
+            Ok(0)
+        };
     }
     // ADD/MOD: event 必须非 null
     if event == 0 {
         return Err(Errno::EFAULT);
     }
     let ret = crate::kernel::framework::syscall::epoll::sys_epoll_ctl(
-        epfd, op, fd, event as *const crate::kernel::framework::syscall::epoll::EpollEvent,
+        epfd,
+        op,
+        fd,
+        event as *const crate::kernel::framework::syscall::epoll::EpollEvent,
     );
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// `epoll_wait` 安全代理
@@ -89,7 +103,7 @@ pub fn epoll_ctl_syscall(
 /// - 底层 `sys_epoll_wait` 返回负值时转换为对应的 `Errno`
 pub fn epoll_wait_syscall(
     epfd: i64,
-    events: u64,    // 原始指针, 委托 framework 处理
+    events: u64, // 原始指针, 委托 framework 处理
     maxevents: i32,
     timeout: i32,
 ) -> Result<usize, Errno> {
@@ -105,5 +119,9 @@ pub fn epoll_wait_syscall(
         maxevents,
         timeout,
     );
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }

@@ -25,7 +25,7 @@ pub mod pl011;
 pub use serial::{BaudRate, DataBits, ParityMode, SerialConfig, SerialPort, StopBits};
 
 #[cfg(target_arch = "x86_64")]
-pub use vga::{Color, TextAttribute, VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH};
+pub use vga::{Color, SCREEN_HEIGHT, SCREEN_WIDTH, TextAttribute, VgaChar, VgaDriver};
 
 // ============================================================================
 // 初始化函数

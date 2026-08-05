@@ -8,57 +8,56 @@
 //! 历史: 2026-06 之前 v2.11 状态评估已过时, 当前已远超当时范围.
 //! 详细进度见 docs/plan/progress-active-tasks.md.
 
-
+/// CPU 亲和性策略 — sched_setaffinity / sched_getaffinity
+pub mod affinity;
 pub mod canary;
-pub mod elf;
-pub mod execve;
-pub mod clone;
-pub mod coredump;
-/// D8: FD Table 分配策略 (first-fit, 上限 64)
-pub mod fd_table;
-/// TD-02: 全局统一 FD 分配器 (范围规划 + 分配/释放/反查)
-pub mod fd_alloc;
-pub mod info;
-pub mod madvise_mlock;
-/// D1: Namespace 安全封装
-pub mod namespace;
 /// D2: cgroup 安全封装
 pub mod cgroup;
+pub mod clone;
+pub mod coredump;
+pub mod elf;
+pub mod execve;
+/// TD-02: 全局统一 FD 分配器 (范围规划 + 分配/释放/反查)
+pub mod fd_alloc;
+/// D8: FD Table 分配策略 (first-fit, 上限 64)
+pub mod fd_table;
+pub mod info;
+/// 进程生命周期策略 — fork / exit / sched_yield
+pub mod lifecycle;
+pub mod madvise_mlock;
+/// memfd_create — 匿名内存文件
+pub mod memfd;
+/// D1: Namespace 安全封装
+pub mod namespace;
+/// OOMD — 内存不足守护进程策略
+pub mod oomd;
+/// pidfd 系统调用 — pidfd_open / pidfd_send_signal / pidfd_getfd
+pub mod pidfd;
+/// 进程优先级策略 — nice / getpriority / setpriority
+pub mod priority;
+/// 进程管理策略 — proc_list / proc_setpri / credo_proc_cputime
+pub mod proc_mgmt;
 pub mod rlimit;
 pub mod sched;
 /// D3: CFS 调度策略 (权重表 + vruntime + 时间片 + CFS/DL 运行队列)
 pub mod sched_policy;
 pub mod seccomp;
 pub mod session;
+/// D7: Shadow Stack (CET) 安全封装
+pub mod shadow_stack;
 pub mod signal;
+/// 系统信息策略 — getrusage / sysinfo / getrlimit / hostname / boot_check
+pub mod sysinfo;
 pub mod table;
 pub mod types;
 pub mod wait4;
-/// D7: Shadow Stack (CET) 安全封装
-pub mod shadow_stack;
-/// OOMD — 内存不足守护进程策略
-pub mod oomd;
-/// 进程优先级策略 — nice / getpriority / setpriority
-pub mod priority;
-/// CPU 亲和性策略 — sched_setaffinity / sched_getaffinity
-pub mod affinity;
-/// 系统信息策略 — getrusage / sysinfo / getrlimit / hostname / boot_check
-pub mod sysinfo;
-/// 进程管理策略 — proc_list / proc_setpri / credo_proc_cputime
-pub mod proc_mgmt;
-/// 进程生命周期策略 — fork / exit / sched_yield
-pub mod lifecycle;
-/// pidfd 系统调用 — pidfd_open / pidfd_send_signal / pidfd_getfd
-pub mod pidfd;
-/// memfd_create — 匿名内存文件
-pub mod memfd;
 
 // ============================================================================
 // ID 与状态 (直接 re-export 本地 types 模块)
 // ============================================================================
 
 /// 进程 ID (新类型, 替代裸 `u32`)
-pub use types::{Pid, Tid, ProcessId, ThreadId};
+pub use types::{Pid, ProcessId, ThreadId, Tid};
 
 /// 进程状态 (七状态模型)
 pub use types::ProcessState;

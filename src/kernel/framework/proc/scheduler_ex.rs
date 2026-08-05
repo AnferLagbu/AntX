@@ -2,8 +2,8 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use super::thread::Thread;
 pub use super::types::{
-    ThreadPriority, ThreadState, SCHED_BOOST_INTERVAL, SCHED_LEVEL_0_QUANTUM,
-    SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM, SCHED_RT_WATCHDOG_TICKS,
+    SCHED_BOOST_INTERVAL, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM,
+    SCHED_LEVEL_3_QUANTUM, SCHED_RT_WATCHDOG_TICKS, ThreadPriority, ThreadState,
 };
 
 // === 特权层: 线程裸指针安全访问封装 ===
@@ -15,7 +15,7 @@ pub use super::types::{
 // 这等价于 framework 特权层模式: unsafe 集中在 inner module,
 // 外层接口是 100% safe Rust。
 pub(crate) mod raw {
-    use super::{Thread, Ordering, ThreadState};
+    use super::{Ordering, Thread, ThreadState};
 
     // === 线程安全访问封装 (Framekernel privilege wrapper) ===
     //
@@ -35,47 +35,68 @@ pub(crate) mod raw {
         /// - `ptr` 必须为非空, 指向有效 `Thread` 分配
         /// - 在 `ThreadRef` 存活期间, 不会被释放
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub unsafe fn new_unchecked(ptr: *mut Thread) -> Self {
             Self(ptr)
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn as_ptr(self) -> *mut Thread {
             self.0
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn is_null(self) -> bool {
             self.0.is_null()
         }
 
         /// 获取/设置 next 链指针
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn next(&self) -> *mut Thread {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读 next 链指针 (Acquire 同步后续访问)
             unsafe { (*self.0).next.load(Ordering::Acquire) as *mut Thread }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_next(&self, p: *mut Thread) {
             // SAFETY: `self` 由 new_unchecked 保证有效, 写 next 链指针 (Release 同步可见性)
             unsafe { (*self.0).next.store(p as u64, Ordering::Release) };
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn prev(&self) -> *mut Thread {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读 prev 链指针 (Acquire 同步后续访问)
             unsafe { (*self.0).prev.load(Ordering::Acquire) as *mut Thread }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_prev(&self, p: *mut Thread) {
             // SAFETY: `self` 由 new_unchecked 保证有效, 写 prev 链指针 (Release 同步可见性)
             unsafe { (*self.0).prev.store(p as u64, Ordering::Release) };
@@ -83,107 +104,153 @@ pub(crate) mod raw {
 
         /// 加载/存储/修改 调度状态字段
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn get_state(&self) -> ThreadState {
             // SAFETY: `self` 由 new_unchecked 保证有效, get_state 内部原子加载 state
             unsafe { (*self.0).get_state() }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_state(&self, s: ThreadState) -> Result<(), &'static str> {
             // SAFETY: `self` 由 new_unchecked 保证有效, set_state_safe 内部校验合法转换
             unsafe { (*self.0).set_state_safe(s) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn load_state_raw(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 原子读 state.u32 表示
             unsafe { (*self.0).state.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_state(&self, v: u32) {
             // SAFETY: `self` 由 new_unchecked 保证有效, 原子写 state (调试/测试路径)
             unsafe { (*self.0).state.store(v, Ordering::SeqCst) };
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn priority_raw(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读 priority (Acquire 同步优先级变化)
             unsafe { (*self.0).priority.load(Ordering::Acquire) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_priority(&self, v: u32) {
             // SAFETY: `self` 由 new_unchecked 保证有效, 写 priority (SeqCst 跨 CPU 强一致)
             unsafe { (*self.0).priority.store(v, Ordering::SeqCst) };
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn time_slice(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读时间片剩余
             unsafe { (*self.0).time_slice.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn fetch_sub_time_slice(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, RMW 减少时间片 (SeqCst 保证全局一致)
             unsafe { (*self.0).time_slice.fetch_sub(1, Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_time_slice(&self, v: u32) {
             // SAFETY: `self` 由 new_unchecked 保证有效, 重置时间片 (用于线程唤醒/优先级提升)
             unsafe { (*self.0).time_slice.store(v, Ordering::SeqCst) };
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn fetch_add_cpu_time(&self) -> u64 {
             // SAFETY: `self` 由 new_unchecked 保证有效, RMW 累计 CPU 时间 (调度统计)
             unsafe { (*self.0).cpu_time.fetch_add(1, Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn load_sleep_until(&self) -> u64 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读 sleep_until 截止时间戳
             unsafe { (*self.0).sleep_until.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_sleep_until(&self, v: u64) {
             // SAFETY: `self` 由 new_unchecked 保证有效, 写 sleep_until (用于睡眠/唤醒)
             unsafe { (*self.0).sleep_until.store(v, Ordering::SeqCst) };
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn kernel_stack(&self) -> u64 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读内核栈顶 (上下文切换关键)
             unsafe { (*self.0).kernel_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn context_ptr(&self) -> *mut super::super::types::ProcessContext {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读 context_ptr (上下文切换关键)
             unsafe {
-                (*self.0).context_ptr.load(Ordering::SeqCst) as *mut super::super::types::ProcessContext
+                (*self.0).context_ptr.load(Ordering::SeqCst)
+                    as *mut super::super::types::ProcessContext
             }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn tid(&self) -> u32 {
             // SAFETY: `self` 由 new_unchecked 保证有效, 读 tid 不可变字段 (alloc 时已固化)
             unsafe { (*self.0).tid }
@@ -191,7 +258,10 @@ pub(crate) mod raw {
 
         /// 检查线程是否可冻结 (不在 Running/Zombie 状态)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn can_freeze(&self) -> bool {
             // SAFETY: `self` 由 new_unchecked 保证有效, can_freeze 内部读 state
             unsafe { (*self.0).can_freeze() }
@@ -348,7 +418,10 @@ impl RunQueue {
         false
     }
 
-#[expect(clippy::iter_without_into_iter, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::iter_without_into_iter,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn iter(&self) -> RunQueueIter {
         RunQueueIter {
             head: self.head.load(Ordering::Acquire) as *mut Thread,
@@ -465,8 +538,14 @@ impl SchedulerEx {
         priority as usize
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     pub fn init(&self) {
         // SAFETY: 分配 0 号 (idle) Thread, 立即写入有效值
         let idle = unsafe {
@@ -569,8 +648,14 @@ impl SchedulerEx {
         self.schedule();
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 线程级调度
     pub fn schedule(&self) {
         self.stats.total_switches.fetch_add(1, Ordering::SeqCst);
@@ -582,11 +667,7 @@ impl SchedulerEx {
 
         let next = self.pop_highest().or_else(|| {
             let idle = self.idle_thread.load(Ordering::SeqCst) as *mut Thread;
-            if idle.is_null() {
-                None
-            } else {
-                Some(idle)
-            }
+            if idle.is_null() { None } else { Some(idle) }
         });
 
         let next = match next {
@@ -821,7 +902,10 @@ pub fn init() {
     SCHEDULER_EX.init();
 }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
 /// 打印线程调试信息 (诊断用途)
 pub fn thread_dump_info(thread: ThreadRef) {
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
@@ -1102,7 +1186,7 @@ mod tests {
         // SAFETY: t 由 make_test_thread 分配, 立即构造 ThreadRef
         let tr = unsafe { ThreadRef::new_unchecked(t) };
         assert!(tr.set_state(ThreadState::Ready).is_err()); // Created → Ready
-                                                            // 重置为 Created 以进行新的测试
+        // 重置为 Created 以进行新的测试
         tr.store_state(ThreadState::Created as u32);
         assert!(tr.set_state(ThreadState::Ready).is_err()); // 其实 Created → Ready 应该是 OK
 

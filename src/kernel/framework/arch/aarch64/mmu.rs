@@ -101,37 +101,38 @@ static mut TTBR1_L1: AlignedPageTable = AlignedPageTable([0; 512]);
 /// - 运行在 EL1 或更高特权级
 /// - 页表所在物理内存 (BSS) 可访问
 /// - 在设置 TTBR0/TTBR1 前已确保旧映射一致性
-pub unsafe fn init() { unsafe {
-    // 清零页表
-    ptr::write_bytes(L0_TABLE.0.as_mut_ptr(), 0, 512);
-    ptr::write_bytes(L1_IDMAP.0.as_mut_ptr(), 0, 512);
-    ptr::write_bytes(L2_DEVICE.0.as_mut_ptr(), 0, 512);
+pub unsafe fn init() {
+    unsafe {
+        // 清零页表
+        ptr::write_bytes(L0_TABLE.0.as_mut_ptr(), 0, 512);
+        ptr::write_bytes(L1_IDMAP.0.as_mut_ptr(), 0, 512);
+        ptr::write_bytes(L2_DEVICE.0.as_mut_ptr(), 0, 512);
 
-    // L0[0] → L1_IDMAP (L0 每项覆盖 512GB, 这里只需一个)
-    L0_TABLE.0[0] = (L1_IDMAP.0.as_ptr() as u64) | PT_TYPE_TABLE;
+        // L0[0] → L1_IDMAP (L0 每项覆盖 512GB, 这里只需一个)
+        L0_TABLE.0[0] = (L1_IDMAP.0.as_ptr() as u64) | PT_TYPE_TABLE;
 
-    // L1[0] → L2_DEVICE: 0-1GB 用 L2 2MB 块映射, Device memory 属性
-    //   因为 QEMU virt 低 1GB 无 DRAM (只有 GIC@0x08000000, UART@0x09000000),
-    //   以 Normal cacheable 属性访问 MMIO 会导致数据异常/挂死。
-    L1_IDMAP.0[0] = (L2_DEVICE.0.as_ptr() as u64) | PT_TYPE_TABLE;
+        // L1[0] → L2_DEVICE: 0-1GB 用 L2 2MB 块映射, Device memory 属性
+        //   因为 QEMU virt 低 1GB 无 DRAM (只有 GIC@0x08000000, UART@0x09000000),
+        //   以 Normal cacheable 属性访问 MMIO 会导致数据异常/挂死。
+        L1_IDMAP.0[0] = (L2_DEVICE.0.as_ptr() as u64) | PT_TYPE_TABLE;
 
-    // L2_DEVICE: 512 个 2MB Device 块, 覆盖 0x00000000 - 0x40000000
-    for i in 0..512 {
-        let pa = (i as u64) * L2_BLOCK_SIZE;
-        L2_DEVICE.0[i] = pa | PT_TYPE_BLOCK | PT_AF | PT_ATTR_DEVICE | PT_AP_EL1_RW;
-    }
+        // L2_DEVICE: 512 个 2MB Device 块, 覆盖 0x00000000 - 0x40000000
+        for i in 0..512 {
+            let pa = (i as u64) * L2_BLOCK_SIZE;
+            L2_DEVICE.0[i] = pa | PT_TYPE_BLOCK | PT_AF | PT_ATTR_DEVICE | PT_AP_EL1_RW;
+        }
 
-    // L1[1]: VA 1-2GB → PA 1-2GB (DRAM, kernel @ 0x40080000, Normal 内存)
-    L1_IDMAP.0[1] = 0x40000000 | PT_TYPE_BLOCK | PT_AF | PT_ATTR_NORMAL | PT_AP_EL1_RW;
+        // L1[1]: VA 1-2GB → PA 1-2GB (DRAM, kernel @ 0x40080000, Normal 内存)
+        L1_IDMAP.0[1] = 0x40000000 | PT_TYPE_BLOCK | PT_AF | PT_ATTR_NORMAL | PT_AP_EL1_RW;
 
-    // 设置 TTBR0_EL1
-    set_ttbr0(L0_TABLE.0.as_ptr() as u64);
+        // 设置 TTBR0_EL1
+        set_ttbr0(L0_TABLE.0.as_ptr() as u64);
 
-    // 设置 TCR_EL1 (Translation Control Register)
-    // T0SZ=16 (TTBR0 用 48-bit IPA), T1SZ=16 (TTBR1 用 48-bit IPA)
-    // 4KB 颗粒 (TG0=00, TG1=10), 内部共享, Normal 可缓存
-    #[allow(clippy::identity_op)]
-    let tcr: u64 = 16u64 // T0SZ: 64 - 48 = 16
+        // 设置 TCR_EL1 (Translation Control Register)
+        // T0SZ=16 (TTBR0 用 48-bit IPA), T1SZ=16 (TTBR1 用 48-bit IPA)
+        // 4KB 颗粒 (TG0=00, TG1=10), 内部共享, Normal 可缓存
+        #[allow(clippy::identity_op)]
+        let tcr: u64 = 16u64 // T0SZ: 64 - 48 = 16
                   | (16u64 << 16)   // T1SZ: 64 - 48 = 16
                   | (0b00 << 14)    // TG0: 4KB
                   | (0b10 << 30)    // TG1: 4KB
@@ -141,32 +142,33 @@ pub unsafe fn init() { unsafe {
                   | (0b01 << 26)    // ORGN1: Normal, WB, RA, WA
                   | (0b01 << 8)     // IRGN0: Normal, WB, RA, WA
                   | (0b01 << 24); // IRGN1: Normal, WB, RA, WA
-    set_tcr(tcr);
+        set_tcr(tcr);
 
-    // 设置 MAIR_EL1 (Memory Attribute Indirection Register)
-    // 定义: PT_ATTR_NORMAL = (0b0100<<2)|(0b0100<<8) → AttrIndx=4
-    // 定义: PT_ATTR_DEVICE = (0b0000<<2)|(0b0000<<8) → AttrIndx=0
-    // MAIR[0] = 0x44 (Device-nGnRnE, 对应 PT_ATTR_DEVICE)
-    // MAIR[4] = 0xFF (Normal IWBWA OWBWA, 对应 PT_ATTR_NORMAL)
-    let mair: u64 = 0x44                     // Attr0: Device
+        // 设置 MAIR_EL1 (Memory Attribute Indirection Register)
+        // 定义: PT_ATTR_NORMAL = (0b0100<<2)|(0b0100<<8) → AttrIndx=4
+        // 定义: PT_ATTR_DEVICE = (0b0000<<2)|(0b0000<<8) → AttrIndx=0
+        // MAIR[0] = 0x44 (Device-nGnRnE, 对应 PT_ATTR_DEVICE)
+        // MAIR[4] = 0xFF (Normal IWBWA OWBWA, 对应 PT_ATTR_NORMAL)
+        let mair: u64 = 0x44                     // Attr0: Device
                    | (0xFFu64 << 32); // Attr4: Normal
-    set_mair(mair);
+        set_mair(mair);
 
-    // 使之前的所有页表写入和系统寄存器设置可见
-    core::arch::asm!("dsb sy");
-    core::arch::asm!("isb");
+        // 使之前的所有页表写入和系统寄存器设置可见
+        core::arch::asm!("dsb sy");
+        core::arch::asm!("isb");
 
-    // 清空 TLB (确保旧映射不影响新表)
-    core::arch::asm!("tlbi vmalle1");
-    core::arch::asm!("dsb sy");
-    core::arch::asm!("isb");
+        // 清空 TLB (确保旧映射不影响新表)
+        core::arch::asm!("tlbi vmalle1");
+        core::arch::asm!("dsb sy");
+        core::arch::asm!("isb");
 
-    // 启用 MMU
-    enable_mmu();
+        // 启用 MMU
+        enable_mmu();
 
-    // 设置 TTBR1 内核页表 (映射高地址 → 物理地址)
-    init_kernel_ttbr1();
-}}
+        // 设置 TTBR1 内核页表 (映射高地址 → 物理地址)
+        init_kernel_ttbr1();
+    }
+}
 
 /// 初始化 TTBR1_EL1 内核页表。
 ///
@@ -179,31 +181,31 @@ pub unsafe fn init() { unsafe {
 ///   TTBR1_L1[1] → 1GB 块 (1-2GB, Normal memory)
 #[allow(clippy::identity_op)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn init_kernel_ttbr1() { unsafe {
-    ptr::write_bytes(TTBR1_L1.0.as_mut_ptr(), 0, 512);
+unsafe fn init_kernel_ttbr1() {
+    unsafe {
+        ptr::write_bytes(TTBR1_L1.0.as_mut_ptr(), 0, 512);
 
-    // L1 块映射 (每项 1GB, 4KB 粒度):
-    // L1[0]: VA 0xFFFF_0000_0000_0000 → 指向 L2_DEVICE 表 (2MB 粒度, Device memory)
-    //   QEMU virt 0-1GB 全为 MMIO (GIC, UART 等), 无 DRAM,
-    //   必须以 Device-nGnRnE 属性访问, 否则 Normal cacheable 会导致数据异常/挂死.
-    // L1[1]: VA 0xFFFF_0000_4000_0000 → PA 0x40000000 (1-2GB, kernel @ 0x40080000)
-    TTBR1_L1.0[0] = (L2_DEVICE.0.as_ptr() as u64) | PT_TYPE_TABLE;
-    TTBR1_L1.0[1] = 0x40000000 | PT_TYPE_BLOCK | PT_AF | PT_ATTR_NORMAL | PT_AP_EL1_RW;
+        // L1 块映射 (每项 1GB, 4KB 粒度):
+        // L1[0]: VA 0xFFFF_0000_0000_0000 → 指向 L2_DEVICE 表 (2MB 粒度, Device memory)
+        //   QEMU virt 0-1GB 全为 MMIO (GIC, UART 等), 无 DRAM,
+        //   必须以 Device-nGnRnE 属性访问, 否则 Normal cacheable 会导致数据异常/挂死.
+        // L1[1]: VA 0xFFFF_0000_4000_0000 → PA 0x40000000 (1-2GB, kernel @ 0x40080000)
+        TTBR1_L1.0[0] = (L2_DEVICE.0.as_ptr() as u64) | PT_TYPE_TABLE;
+        TTBR1_L1.0[1] = 0x40000000 | PT_TYPE_BLOCK | PT_AF | PT_ATTR_NORMAL | PT_AP_EL1_RW;
 
-    // 设置 TTBR1_EL1
-    // T1SZ=16 时, 硬件从 level 1 开始遍历 (跳过 level 0).
-    // 因此 TTBR1_EL1 必须直接指向 L1 表 (TTBR1_L1).
-    set_ttbr1(TTBR1_L1.0.as_ptr() as u64);
+        // 设置 TTBR1_EL1
+        // T1SZ=16 时, 硬件从 level 1 开始遍历 (跳过 level 0).
+        // 因此 TTBR1_EL1 必须直接指向 L1 表 (TTBR1_L1).
+        set_ttbr1(TTBR1_L1.0.as_ptr() as u64);
 
-    // 刷新 TLB: MMU 启用后到 TTBR1_EL1 设置前的窗口期,
-    // CPU 可能投机翻译 TTBR1 地址 (TTBR1_EL1 旧值为 0),
-    // 缓存翻译失败条目。后续访问 TTBR1 地址会命中这些过期条目
-    // 导致 Translation fault。
-    // DSB 在 TLBI 前确保页表写入对 MMU walker 可见.
-    core::arch::asm!("dsb sy", "tlbi vmalle1", "dsb sy", "isb");
-}}
-
-
+        // 刷新 TLB: MMU 启用后到 TTBR1_EL1 设置前的窗口期,
+        // CPU 可能投机翻译 TTBR1 地址 (TTBR1_EL1 旧值为 0),
+        // 缓存翻译失败条目。后续访问 TTBR1 地址会命中这些过期条目
+        // 导致 Translation fault。
+        // DSB 在 TLBI 前确保页表写入对 MMU walker 可见.
+        core::arch::asm!("dsb sy", "tlbi vmalle1", "dsb sy", "isb");
+    }
+}
 
 /// 分配用户空间页表 (返回 TTBR0 值)。
 ///
@@ -222,48 +224,58 @@ pub fn alloc_user_page_table() -> u64 {
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_ttbr0(val: u64) { unsafe {
-    core::arch::asm!("msr ttbr0_el1, {}", in(reg) val);
-    core::arch::asm!("isb");
-}}
+unsafe fn set_ttbr0(val: u64) {
+    unsafe {
+        core::arch::asm!("msr ttbr0_el1, {}", in(reg) val);
+        core::arch::asm!("isb");
+    }
+}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_ttbr1(val: u64) { unsafe {
-    core::arch::asm!("msr ttbr1_el1, {}", in(reg) val);
-    core::arch::asm!("isb");
-}}
+unsafe fn set_ttbr1(val: u64) {
+    unsafe {
+        core::arch::asm!("msr ttbr1_el1, {}", in(reg) val);
+        core::arch::asm!("isb");
+    }
+}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_tcr(val: u64) { unsafe {
-    core::arch::asm!("msr tcr_el1, {}", in(reg) val);
-    core::arch::asm!("isb");
-}}
+unsafe fn set_tcr(val: u64) {
+    unsafe {
+        core::arch::asm!("msr tcr_el1, {}", in(reg) val);
+        core::arch::asm!("isb");
+    }
+}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn set_mair(val: u64) { unsafe {
-    core::arch::asm!("msr mair_el1, {}", in(reg) val);
-    core::arch::asm!("isb");
-}}
+unsafe fn set_mair(val: u64) {
+    unsafe {
+        core::arch::asm!("msr mair_el1, {}", in(reg) val);
+        core::arch::asm!("isb");
+    }
+}
 
 /// 启用 MMU: 设置 SCTLR_EL1.M (bit 0)
 /// 暂不启用缓存 (C bit 2, I bit 12), 后续单独处理
 #[inline(never)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn enable_mmu() { unsafe {
-    // ARM ARM D5.10.2: 启用 MMU 前需要 DSB 确保所有之前操作可见,
-    // 启用后需要 ISB 使 MMU 对后续指令生效.
-    core::arch::asm!(
-        "dsb sy",
-        "mrs x0, sctlr_el1",
-        "orr x0, x0, #1",    // Set M bit
-        "msr sctlr_el1, x0",
-        "isb",
-        out("x0") _,
-    );
-}}
+unsafe fn enable_mmu() {
+    unsafe {
+        // ARM ARM D5.10.2: 启用 MMU 前需要 DSB 确保所有之前操作可见,
+        // 启用后需要 ISB 使 MMU 对后续指令生效.
+        core::arch::asm!(
+            "dsb sy",
+            "mrs x0, sctlr_el1",
+            "orr x0, x0, #1",    // Set M bit
+            "msr sctlr_el1, x0",
+            "isb",
+            out("x0") _,
+        );
+    }
+}
 
 // ============================================================================
 // Arch trait 辅助函数 (供 Arch impl 调用)
@@ -370,6 +382,11 @@ pub fn diagnose_permission(descriptor: u64, label: &str) {
     crate::klog_ffi!(
         klog_ffi_info,
         "[MMU] {} desc=0x{:016x}: ap={} af={} xn={} ({})",
-        label, descriptor, ap, af, xn, describe_ap(descriptor)
+        label,
+        descriptor,
+        ap,
+        af,
+        xn,
+        describe_ap(descriptor)
     );
 }

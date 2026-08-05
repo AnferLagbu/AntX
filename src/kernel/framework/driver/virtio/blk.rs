@@ -7,7 +7,7 @@
 //! 性能上可扩展为多扇区请求与多 outstanding I/O.
 
 use super::queue::VirtQueue;
-use super::{VirtioMmioDevice, VIRTIO_ID_BLOCK};
+use super::{VIRTIO_ID_BLOCK, VirtioMmioDevice};
 use crate::kernel::framework::driver::BlockDevice;
 use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
 use crate::klog_info;
@@ -42,7 +42,9 @@ unsafe impl Send for VirtioBlkRegistryEntry {}
 /// I-42: 全局设备注册表, IRQ 号 → 设备实例映射.
 /// `enable_irq()` 注册, ISR 查表. 替代原先的单静态指针.
 #[cfg(target_arch = "x86_64")]
-static VIRTIO_BLK_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<[Option<VirtioBlkRegistryEntry>; MAX_VIRTIO_BLK_IRQS]> = {
+static VIRTIO_BLK_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<
+    [Option<VirtioBlkRegistryEntry>; MAX_VIRTIO_BLK_IRQS],
+> = {
     const NONE: Option<VirtioBlkRegistryEntry> = None;
     crate::kernel::framework::sync::IrqSpinLock::new([NONE; MAX_VIRTIO_BLK_IRQS])
 };
@@ -192,7 +194,10 @@ impl VirtioBlk {
         let buf_size = 512 + core::mem::size_of::<BlkRequest>() + 1;
         let buf_pages = buf_size.div_ceil(PAGE_SIZE as usize);
         // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         unsafe extern "C" {
             fn pmm_alloc_pages(count: u64) -> *mut u8;
         }
@@ -279,8 +284,14 @@ impl VirtioBlk {
 
     /// I-42: aarch64 平台 virtio-blk 暂未实现 IRQ 路径, 直接报错.
     #[cfg(target_arch = "aarch64")]
-#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
+    #[expect(
+        clippy::missing_errors_doc,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
     pub fn enable_irq(&mut self) -> Result<(), &'static str> {
         Err("virtio-blk IRQ not implemented for aarch64")
     }
@@ -293,9 +304,18 @@ impl VirtioBlk {
     ///   desc[2] = 状态字节 (设备写)
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ptr_cast_constness,
+        reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     fn do_io(&mut self, lba: u64, req_type: u32, buf: &[u8]) -> Result<(), ()> {
         // ── 在 DMA 缓冲区构造请求 ──
         let req_size = core::mem::size_of::<BlkRequest>();
@@ -404,7 +424,12 @@ impl VirtioBlk {
                     return Err(());
                 }
                 if status != VIRTIO_BLK_S_OK {
-                    klog_warn!(Driver, "virtio-blk: unknown status {} at sector {}", status, lba);
+                    klog_warn!(
+                        Driver,
+                        "virtio-blk: unknown status {} at sector {}",
+                        status,
+                        lba
+                    );
                     return Err(());
                 }
 
@@ -447,13 +472,17 @@ pub extern "C" fn virtio_blk_irq_handler(frame: *mut InterruptFrame) {
             if !entry.completion.is_null() {
                 // SAFETY: entry.completion 由 register_virtio_blk_device 在启动时写入,
                 //         指向有效的 IoCompletionArray
-                unsafe { (*entry.completion).signal_all(); }
+                unsafe {
+                    (*entry.completion).signal_all();
+                }
             }
             // ACK 设备中断 (VirtIO MMIO 规范要求)
             if !entry.device.is_null() {
                 // SAFETY: entry.device 由 register_virtio_blk_device 在启动时写入,
                 //         指向有效的 VirtioBlk 实例
-                unsafe { (*entry.device).device.ack_interrupt(); }
+                unsafe {
+                    (*entry.device).device.ack_interrupt();
+                }
             }
             return;
         }
@@ -466,7 +495,10 @@ pub extern "C" fn virtio_blk_irq_handler(frame: *mut InterruptFrame) {
 // I-42: 注册设备到全局注册表 (IRQ → completion + device).
 // enable_irq() 调用, ISR 查表使用.
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 pub fn register_virtio_blk_device(irq: usize, completion: &IoCompletionArray, device: &VirtioBlk) {
     let mut registry = VIRTIO_BLK_REGISTRY.lock();
     if irq < MAX_VIRTIO_BLK_IRQS {

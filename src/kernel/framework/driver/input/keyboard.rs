@@ -18,10 +18,10 @@
 //! # Safety
 //! 此模块直接操作 PS/2 控制器硬件。
 
-use crate::kernel::framework::ioport::IoPort;
 use crate::kernel::framework::driver::{DeviceInfo, DeviceType, Driver, DriverError, DriverResult};
-use alloc::boxed::Box;
+use crate::kernel::framework::ioport::IoPort;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use alloc::boxed::Box;
 // ============================================================================
 // 硬件常量定义
 // ============================================================================
@@ -197,26 +197,38 @@ impl Default for ModifierState {
 impl ModifierState {
     /// 检查是否有 Shift 键按下
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn shift_pressed(&self) -> bool {
         self.left_shift || self.right_shift
     }
 
     /// 检查是否有 Ctrl 键按下
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn ctrl_pressed(&self) -> bool {
         self.left_ctrl || self.right_ctrl
     }
 
     /// 检查是否有 Alt 键按下
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn alt_pressed(&self) -> bool {
         self.left_alt || self.right_alt
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 计算 LED 状态字节
     pub fn to_led_byte(&self) -> u8 {
         let mut led: u8 = 0;
@@ -317,7 +329,10 @@ fn wait_input_buffer_empty(cmd_port: &IoPort) {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 等待输出缓冲区满
 fn wait_output_buffer_full(cmd_port: &IoPort) -> bool {
     let mut timeout: u32 = 100000;
@@ -333,7 +348,10 @@ fn wait_output_buffer_full(cmd_port: &IoPort) -> bool {
     false
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 向 PS/2 控制器发送命令
 fn ps2_send_command(cmd_port: &IoPort, cmd: u8) -> DriverResult<()> {
     wait_input_buffer_empty(cmd_port);
@@ -363,7 +381,10 @@ fn keyboard_reset(cmd_port: &IoPort, data_port: &IoPort) -> DriverResult<()> {
     }
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 向键盘发送数据
 fn keyboard_send_data(cmd_port: &IoPort, data_port: &IoPort, data: u8) -> DriverResult<()> {
     wait_input_buffer_empty(cmd_port);
@@ -379,7 +400,10 @@ fn keyboard_read_data(cmd_port: &IoPort, data_port: &IoPort) -> Option<u8> {
     Some(data_port.read_u8(0))
 }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+)]
 /// 更新键盘 LED 状态
 fn update_leds(cmd_port: &IoPort, data_port: &IoPort, modifiers: &ModifierState) {
     let _ = keyboard_send_data(cmd_port, data_port, KB_CMD_SET_LED);
@@ -430,7 +454,10 @@ fn negotiate_scancode_set(cmd_port: &IoPort, data_port: &IoPort) {
                 if switch_scancode_set(cmd_port, data_port, 1) {
                     // 切换成功
                 } else {
-                    crate::klog_warn!(Driver, "keyboard: Set 2→1 切换失败, 使用 Set 1 映射 (可能产生错误字符)");
+                    crate::klog_warn!(
+                        Driver,
+                        "keyboard: Set 2→1 切换失败, 使用 Set 1 映射 (可能产生错误字符)"
+                    );
                 }
             }
             3 => {
@@ -523,8 +550,8 @@ impl KeyboardDriver {
         // 由 PC 枚举确定, 不与其他 IoPort 实例重叠.
         let data_port = unsafe { IoPort::new(PS2_DATA_PORT, 1, "ps2-data") }
             .expect("ps2-data port init failed");
-        let cmd_port = unsafe { IoPort::new(PS2_CMD_PORT, 1, "ps2-cmd") }
-            .expect("ps2-cmd port init failed");
+        let cmd_port =
+            unsafe { IoPort::new(PS2_CMD_PORT, 1, "ps2-cmd") }.expect("ps2-cmd port init failed");
         Self {
             modifiers: ModifierState::default(),
             buffer: KeyboardBuffer::default(),
@@ -535,7 +562,10 @@ impl KeyboardDriver {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 处理 IRQ1 键盘中断
     ///
     /// 从 PS/2 数据端口读取 scancode 并转换后存入缓冲区。
@@ -653,7 +683,10 @@ impl KeyboardDriver {
         self.buffer.pop()
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 读取一行文本 (阻塞直到遇到 Enter)
     ///
     /// # Arguments
@@ -736,8 +769,14 @@ static KEYBOARD_DEVICE: Mutex<Option<Box<KeyboardDriver>>> = Mutex::new(None);
 /// 初始化键盘 (C 兼容接口)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 pub extern "C" fn keyboard_init() {
     let mut driver = Box::new(KeyboardDriver::new());
     let _ = driver.init();
@@ -914,11 +953,22 @@ mod tests {
 
 use crate::kernel::framework::chitin::InputOps;
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
-    if driver_data.is_null() { return core::ptr::null(); }
+    if driver_data.is_null() {
+        return core::ptr::null();
+    }
     // SAFETY: driver_data 由 Chitin InputOps 契约保证有效。
     let kb = unsafe { &mut *(driver_data as *mut KeyboardDriver) };
     match kb.read_char() {
@@ -935,18 +985,31 @@ extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
 use core::sync::atomic::{AtomicU8, Ordering};
 static KB_READ_SLOT: AtomicU8 = AtomicU8::new(0);
 
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 extern "C" fn kb_input_has(driver_data: *mut u8) -> bool {
-    if driver_data.is_null() { return false; }
+    if driver_data.is_null() {
+        return false;
+    }
     // SAFETY: 同上。
     let kb = unsafe { &*(driver_data as *const KeyboardDriver) };
     !kb.is_buffer_empty()
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 extern "C" fn kb_input_irq(driver_data: *mut u8) {
-    if driver_data.is_null() { return; }
+    if driver_data.is_null() {
+        return;
+    }
     // SAFETY: driver_data 由 Chitin InputOps 契约保证有效。
     let kb = unsafe { &mut *(driver_data as *mut KeyboardDriver) };
     kb.handle_interrupt();

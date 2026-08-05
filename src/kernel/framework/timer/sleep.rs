@@ -49,7 +49,10 @@ pub fn busy_wait_ns(ns: u64) {
     let start = read_tsc();
 
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     unsafe extern "C" {
         fn cpu_get_tsc_frequency() -> u64;
     }
@@ -78,7 +81,10 @@ pub fn busy_wait_ns(ns: u64) {
 /// # Arguments
 /// * `us` - 等待时间 (微秒)
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn busy_wait_us(us: u64) {
     if us == 0 {
         return;
@@ -225,7 +231,9 @@ pub fn timer_sleep(ms: u64) -> Result<(), i32> {
 static SLEEP_WAKE_PID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 /// hrtimer 回调: 唤醒被 `timer_sleep` 阻塞的进程
-fn sleep_timer_callback(_timer: &crate::kernel::framework::timer::HrTimer) -> crate::kernel::framework::timer::HrTimerRestart {
+fn sleep_timer_callback(
+    _timer: &crate::kernel::framework::timer::HrTimer,
+) -> crate::kernel::framework::timer::HrTimerRestart {
     let pid = SLEEP_WAKE_PID.load(core::sync::atomic::Ordering::Relaxed);
     if pid != 0 {
         crate::kernel::framework::proc::scheduler_unblock(pid);
@@ -241,7 +249,10 @@ fn timer_sleep_yield(ms: u64) -> Result<(), i32> {
         let start_tick = get_ticks();
         let target_ticks = ms_to_ticks(ms);
 
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         unsafe extern "C" {
             fn scheduler_yield_ex();
         }
@@ -338,7 +349,10 @@ pub fn adaptive_sleep(ms: u64) {
     }
 
     // 阈值: 1 毫秒
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const BUSY_WAIT_THRESHOLD_MS: u64 = 1;
 
     if ms < BUSY_WAIT_THRESHOLD_MS {
@@ -519,7 +533,7 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_timer_sleep_tests() {
-    use crate::kernel::framework::tests::{runner, TestFn, TestResult};
+    use crate::kernel::framework::tests::{TestFn, TestResult, runner};
     let r = runner();
 
     fn busy_wait_zero_duration() -> TestResult {

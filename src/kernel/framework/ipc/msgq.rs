@@ -9,9 +9,9 @@
 //! - `raw::MessageRef` 集中所有 `NonNull<Message>` 的 unsafe 操作.
 //! - FFI 函数通过 `UserReadPtr/WritePtr/RefMut` 安全访问用户空间内存.
 
-use super::types::{Message, IpcId, MSG_MAX_SIZE};
-use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
+use super::types::{IpcId, MSG_MAX_SIZE, Message};
 use crate::kernel::framework::proc::process_get_current_pid;
+use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 
 /// === 消息原始指针特权封装 (Framekernel 模式) ===
 ///
@@ -51,14 +51,20 @@ pub mod raw {
 
         /// 获取底层 `NonNull`
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn as_non_null(self) -> NonNull<Message> {
             self.0
         }
 
         /// 读 `next` 字段 (侵入式链表)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn next(&self) -> Option<NonNull<Message>> {
             // SAFETY: 调用方保证 self 指向有效 Message。
             unsafe { (*self.0.as_ptr()).next }
@@ -66,7 +72,10 @@ pub mod raw {
 
         /// 写 `next` 字段
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_next(&self, next: Option<NonNull<Message>>) {
             // SAFETY: 同上, self 必须是有效 Message。
             unsafe { (*self.0.as_ptr()).next = next }
@@ -74,7 +83,10 @@ pub mod raw {
 
         /// 获取 &Message 引用
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn get(&self) -> &Message {
             // SAFETY: self 指向有效 Message。
             unsafe { &*self.0.as_ptr() }
@@ -142,9 +154,18 @@ pub unsafe extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, s
     };
 
     // 将 `UserReadPtr` 转换为 `Option<&[u8]>` 以适配 safe API
-    let data_slice = slice.as_ref().map(super::super::userptr::UserReadPtr::as_slice);
+    let data_slice = slice
+        .as_ref()
+        .map(super::super::userptr::UserReadPtr::as_slice);
 
-    match crate::kernel::services::ipc::msgq::msgq_send_safe(ns, id, type_, data_slice, size as usize, pid) {
+    match crate::kernel::services::ipc::msgq::msgq_send_safe(
+        ns,
+        id,
+        type_,
+        data_slice,
+        size as usize,
+        pid,
+    ) {
         Ok(()) => 0,
         Err(_) => -1,
     }
@@ -156,7 +177,10 @@ pub unsafe extern "C" fn ipc_msgq_send(id: IpcId, type_: u64, data: *const u8, s
 /// `data` 必须是有效可写指针, 至少 `size` 字节; `type_out` 用于返回消息类型。
 /// 由 `sys_msgrcv` 分发, cred 校验已通过。
 #[unsafe(no_mangle)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 pub unsafe extern "C" fn ipc_msgq_recv(
     id: IpcId,
     type_out: *mut u64,
@@ -190,9 +214,15 @@ pub unsafe extern "C" fn ipc_msgq_recv(
     };
 
     // 将 framework 包装器转换为安全 Rust 类型
-    let type_ref = type_opt.as_mut().map(super::super::userptr::UserRefMut::as_mut);
-    let data_ref = data_opt.as_mut().map(super::super::userptr::UserWritePtr::as_mut_slice);
-    let size_ref = size_opt.as_mut().map(super::super::userptr::UserRefMut::as_mut);
+    let type_ref = type_opt
+        .as_mut()
+        .map(super::super::userptr::UserRefMut::as_mut);
+    let data_ref = data_opt
+        .as_mut()
+        .map(super::super::userptr::UserWritePtr::as_mut_slice);
+    let size_ref = size_opt
+        .as_mut()
+        .map(super::super::userptr::UserRefMut::as_mut);
 
     match crate::kernel::services::ipc::msgq::msgq_recv_safe(ns, id, type_ref, data_ref, size_ref) {
         Ok(n) => n as i64,

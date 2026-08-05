@@ -19,21 +19,30 @@ use crate::kernel::framework::arch::Arch;
 
 /// 刷新单个虚拟地址的 TLB 条目 (invlpg / tlbi vaae1)。
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn tlb_flush_page(vaddr: usize) {
     <crate::kernel::framework::arch::CurrentArch as Arch>::tlb_flush_page(vaddr);
 }
 
 /// 刷新整个 TLB (写 CR3 / tlbi vmalle1)。
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn tlb_flush_all() {
     <crate::kernel::framework::arch::CurrentArch as Arch>::tlb_flush_all();
 }
 
 /// 读取当前页表基地址 (CR3 / `TTBR0_EL1`)。
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn read_page_table_base() -> u64 {
     <crate::kernel::framework::arch::CurrentArch as Arch>::read_page_table_base()
 }
@@ -44,7 +53,10 @@ pub fn read_page_table_base() -> u64 {
 ///
 /// `paddr` 必须指向有效的页表结构。
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn write_page_table_base(paddr: u64) {
     <crate::kernel::framework::arch::CurrentArch as Arch>::write_page_table_base(paddr);
 }

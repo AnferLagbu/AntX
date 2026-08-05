@@ -18,8 +18,8 @@
 //! - `uaddr` 必须是合法的用户空间指针, 在 syscall 入口已通过 `check_user_ptr` 验证
 //! - 原子比较使用 `AtomicU32` 访问用户空间, 需确保页表映射有效
 
-use core::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 // ============================================================================
 // Futex 操作码 (与 Linux 兼容)
@@ -118,14 +118,22 @@ impl FutexBucket {
     const fn new() -> Self {
         FutexBucket {
             waiters: [
-                FutexWaiter::empty(), FutexWaiter::empty(),
-                FutexWaiter::empty(), FutexWaiter::empty(),
-                FutexWaiter::empty(), FutexWaiter::empty(),
-                FutexWaiter::empty(), FutexWaiter::empty(),
-                FutexWaiter::empty(), FutexWaiter::empty(),
-                FutexWaiter::empty(), FutexWaiter::empty(),
-                FutexWaiter::empty(), FutexWaiter::empty(),
-                FutexWaiter::empty(), FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
+                FutexWaiter::empty(),
             ],
             count: 0,
         }
@@ -238,7 +246,10 @@ static FUTEX_TABLE: FutexHashTable = FutexHashTable {
     },
 };
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 计算哈希桶索引
 fn hash_uaddr(uaddr: u64) -> usize {
     let hash = (uaddr.wrapping_mul(0x9E3779B97F4A7C15)) >> 58;
@@ -250,13 +261,7 @@ fn hash_uaddr(uaddr: u64) -> usize {
 // ============================================================================
 
 /// futex 系统调用入口
-pub fn sys_futex(
-    uaddr: u64,
-    op: i32,
-    val: i32,
-    timeout_or_uaddr2: u64,
-    val2: u32,
-) -> i64 {
+pub fn sys_futex(uaddr: u64, op: i32, val: i32, timeout_or_uaddr2: u64, val2: u32) -> i64 {
     let base_op = futex_op(op);
 
     match base_op {
@@ -367,7 +372,7 @@ fn futex_requeue(uaddr: u64, max_wake: u32, uaddr2: u64, max_requeue: u32) -> i6
 
 #[cfg(feature = "kernel_test")]
 fn test_futex_op_mask() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     assert_eq_test!(futex_op(0), 0, "FUTEX_WAIT");
     assert_eq_test!(futex_op(1), 1, "FUTEX_WAKE");
     assert_eq_test!(futex_op(128), 0, "FUTEX_WAIT_PRIVATE");
@@ -379,27 +384,37 @@ fn test_futex_op_mask() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_futex_hash() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     for &addr in &[0x1000u64, 0x2000, 0x7FFF00000000, 0xDEADBEEF] {
         let idx = hash_uaddr(addr);
         check!(idx < FUTEX_HASH_BUCKETS, "hash in range");
     }
-    check!(hash_uaddr(0x1000) != hash_uaddr(0x2000) || hash_uaddr(0x1000) != hash_uaddr(0x3000),
-           "hashes differ");
+    check!(
+        hash_uaddr(0x1000) != hash_uaddr(0x2000) || hash_uaddr(0x1000) != hash_uaddr(0x3000),
+        "hashes differ"
+    );
     TestResult::Pass
 }
 
 #[cfg(feature = "kernel_test")]
 fn test_futex_bucket_push_remove() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     let mut bucket = FutexBucket::new();
     check!(bucket.count == 0, "empty bucket");
 
-    let ok = bucket.push(FutexWaiter { uaddr: 0x1000, pid: 1, woken: false });
+    let ok = bucket.push(FutexWaiter {
+        uaddr: 0x1000,
+        pid: 1,
+        woken: false,
+    });
     check!(ok, "push succeeds");
     check!(bucket.count == 1, "count after push");
 
-    let ok2 = bucket.push(FutexWaiter { uaddr: 0x1000, pid: 2, woken: false });
+    let ok2 = bucket.push(FutexWaiter {
+        uaddr: 0x1000,
+        pid: 2,
+        woken: false,
+    });
     check!(ok2, "push 2 succeeds");
     check!(bucket.count == 2, "count after push 2");
 

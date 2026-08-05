@@ -29,9 +29,7 @@
 #![deny(unsafe_code)]
 
 // Re-export 类型
-pub use crate::kernel::framework::sync::{
-    LockClassId, LockClassDesc, LockKind,
-};
+pub use crate::kernel::framework::sync::{LockClassDesc, LockClassId, LockKind};
 
 /// 注册锁类
 ///

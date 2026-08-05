@@ -3,10 +3,10 @@
 //! Socket 函数桥接到 `services::net` 层。WASI fd 通过 `WasiFdTable` 映射到
 //! 内部 POSIX fd，再调用 `services::net` 的安全 API。
 
-use crate::kernel::services::wasm::types::{Value, WasmError};
+use super::fd_table::{read_iovec_from_memory, write_i32_to_memory, write_u32_to_memory};
+use super::{WasiContext, WasiErrno, wasi_errno, wasi_success};
 use crate::kernel::services::wasm::interpreter::Interpreter;
-use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
-use super::fd_table::{read_iovec_from_memory, write_u32_to_memory, write_i32_to_memory};
+use crate::kernel::services::wasm::types::{Value, WasmError};
 
 /// WASI `sock_accept`: 接受连接
 ///
@@ -98,7 +98,9 @@ pub fn wasi_sock_connect(ctx: &mut WasiContext, interp: &mut Interpreter) -> Res
             interp.stack.push(Value::I32(wasi_success()))?;
         }
         Err(_) => {
-            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Connrefused)))?;
+            interp
+                .stack
+                .push(Value::I32(wasi_errno(WasiErrno::Connrefused)))?;
         }
     }
     Ok(())
@@ -129,7 +131,9 @@ pub fn wasi_sock_recv(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     let mut total = 0u32;
 
     for iov in &iovecs {
-        if iov.len == 0 { continue; }
+        if iov.len == 0 {
+            continue;
+        }
         // 分配临时缓冲区接收数据
         let mut buf = alloc::vec![0u8; iov.len as usize];
         if let Ok(n) = crate::kernel::services::net::socket::recv(entry.inner_fd, &mut buf) {
@@ -177,7 +181,9 @@ pub fn wasi_sock_send(ctx: &mut WasiContext, interp: &mut Interpreter) -> Result
     // 收集所有 iovec 数据到一个连续缓冲区
     let mut send_buf = alloc::vec::Vec::new();
     for iov in &iovecs {
-        if iov.len == 0 { continue; }
+        if iov.len == 0 {
+            continue;
+        }
         if let Some(ref mem) = interp.memory {
             for i in 0..iov.len {
                 let byte = mem.read_u8(iov.buf + i).unwrap_or(0);

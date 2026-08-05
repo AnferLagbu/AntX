@@ -52,15 +52,17 @@ const UARTLCR_8N1: u32 = 0b11 << 5;
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn read(offset: u64) -> u32 { unsafe {
-    read_volatile((base() + offset) as *const u32)
-}}
+unsafe fn read(offset: u64) -> u32 {
+    unsafe { read_volatile((base() + offset) as *const u32) }
+}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn write(offset: u64, val: u32) { unsafe {
-    write_volatile((base() + offset) as *mut u32, val);
-}}
+unsafe fn write(offset: u64, val: u32) {
+    unsafe {
+        write_volatile((base() + offset) as *mut u32, val);
+    }
+}
 
 // ============================================================================
 // UART 初始化
@@ -71,26 +73,28 @@ unsafe fn write(offset: u64, val: u32) { unsafe {
 /// # Safety
 ///
 /// 调用者必须确保在初始化 MMU 之后调用，且 PL011_BASE (0x09000000) 已映射。
-pub unsafe fn init() { unsafe {
-    // 1. 禁用 UART
-    write(UARTCR, 0);
+pub unsafe fn init() {
+    unsafe {
+        // 1. 禁用 UART
+        write(UARTCR, 0);
 
-    // 2. 设置波特率 (115200 @ 24MHz 或 62.5MHz 时钟)
-    // QEMU virt 的 PL011 时钟频率取决于具体配置, 默认 ~24MHz
-    // 波特率除数 = UARTCLK / (16 * BaudRate)
-    // 以 24MHz 为例: 24000000 / (16 * 115200) ≈ 13.02 → IBRD=13, FBRD≈0
-    write(UARTIBRD, 13); // 整数部分
-    write(UARTFBRD, 0); // 小数部分 (0.02 * 64 ≈ 1, 但 QEMU 不严格要求)
+        // 2. 设置波特率 (115200 @ 24MHz 或 62.5MHz 时钟)
+        // QEMU virt 的 PL011 时钟频率取决于具体配置, 默认 ~24MHz
+        // 波特率除数 = UARTCLK / (16 * BaudRate)
+        // 以 24MHz 为例: 24000000 / (16 * 115200) ≈ 13.02 → IBRD=13, FBRD≈0
+        write(UARTIBRD, 13); // 整数部分
+        write(UARTFBRD, 0); // 小数部分 (0.02 * 64 ≈ 1, 但 QEMU 不严格要求)
 
-    // 3. 设置数据格式: 8N1, FIFO enable
-    write(UARTLCR_H, UARTLCR_8N1 | (1 << 4)); // 8N1 + FIFO enable
+        // 3. 设置数据格式: 8N1, FIFO enable
+        write(UARTLCR_H, UARTLCR_8N1 | (1 << 4)); // 8N1 + FIFO enable
 
-    // 4. 禁用中断 (Polling 模式)
-    write(UARTIMSC, 0);
+        // 4. 禁用中断 (Polling 模式)
+        write(UARTIMSC, 0);
 
-    // 5. 启用 UART: TX + RX + UART
-    write(UARTCR, UARTCR_UARTEN | UARTCR_TXE | UARTCR_RXE);
-}}
+        // 5. 启用 UART: TX + RX + UART
+        write(UARTCR, UARTCR_UARTEN | UARTCR_TXE | UARTCR_RXE);
+    }
+}
 
 // ============================================================================
 // 数据收发
@@ -102,14 +106,19 @@ pub unsafe fn init() { unsafe {
 ///
 /// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-pub unsafe fn putc(c: u8) { unsafe {
-    // 等待 TX FIFO 非满
-    while read(UARTFR) & UARTFR_TXFF != 0 {
-        core::hint::spin_loop();
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
+pub unsafe fn putc(c: u8) {
+    unsafe {
+        // 等待 TX FIFO 非满
+        while read(UARTFR) & UARTFR_TXFF != 0 {
+            core::hint::spin_loop();
+        }
+        write(UARTDR, c as u32);
     }
-    write(UARTDR, c as u32);
-}}
+}
 
 /// 接收单字节 (阻塞)
 ///
@@ -117,13 +126,15 @@ pub unsafe fn putc(c: u8) { unsafe {
 ///
 /// 调用者必须确保 UART 已初始化且 PL011_BASE MMIO 区域已映射。
 #[inline(always)]
-pub unsafe fn getc() -> u8 { unsafe {
-    // 等待 RX FIFO 非空
-    while read(UARTFR) & UARTFR_RXFE != 0 {
-        core::hint::spin_loop();
+pub unsafe fn getc() -> u8 {
+    unsafe {
+        // 等待 RX FIFO 非空
+        while read(UARTFR) & UARTFR_RXFE != 0 {
+            core::hint::spin_loop();
+        }
+        read(UARTDR) as u8
     }
-    read(UARTDR) as u8
-}}
+}
 
 /// 发送字符串
 pub fn puts(s: &str) {

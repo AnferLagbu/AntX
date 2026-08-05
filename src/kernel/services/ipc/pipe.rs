@@ -4,7 +4,7 @@
 //! 纯策略逻辑: 槽位查找、环形缓冲区读写、fd 管理、读者/写者计数.
 //! 自旋锁操作通过 `framework::sync::IrqSpinLock` 机制完成.
 
-use crate::kernel::framework::ipc::types::{IpcNamespace, IPC_MAX_PIPES, IpcId, PIPE_BUFFER_SIZE};
+use crate::kernel::framework::ipc::types::{IPC_MAX_PIPES, IpcId, IpcNamespace, PIPE_BUFFER_SIZE};
 use crate::kernel::framework::sync::IrqSpinLock;
 
 /// 管道全局自旋锁 (framework 机制, 短临界区)
@@ -35,7 +35,10 @@ pub fn is_pipe_fd(fd: i32) -> bool {
     pipe_find_by_fd_index(ns, fd).is_some()
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 创建管道, 返回 (读 fd, 写 fd) 对.
 ///
 /// # Errors
@@ -78,7 +81,10 @@ pub fn pipe_create_safe(
     Ok((pipe.read_fd, pipe.write_fd))
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 从管道读取数据到 `buf`.
 ///
 /// # Errors
@@ -133,7 +139,10 @@ pub fn pipe_read_safe(
     Ok(read_count)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 将 `buf` 中的数据写入管道.
 ///
 /// # Errors
@@ -186,7 +195,10 @@ pub fn pipe_write_safe(
     Ok(written)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 关闭管道的一个端点 fd.
 ///
 /// # Errors

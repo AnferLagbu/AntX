@@ -203,6 +203,12 @@ jobs:
           fi
           echo "✅ clippy aarch64 -D pedantic 通过 (cast_* 已豁免, 见 DECISION-041)"
 
+      - name: cargo fmt --check 风格统一阻断
+        working-directory: src/rust
+        run: |
+          cargo fmt -- --check
+          echo "✅ cargo fmt --check 通过 (rustfmt 风格统一)"
+
       - name: 上传 clippy 报告
         if: always()
         uses: actions/upload-artifact@v4

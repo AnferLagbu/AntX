@@ -20,11 +20,11 @@
 //!
 //! - **TRACK-832FCE**: 设备枚举 (本文件消除).
 
+use super::framework::{DeviceInfo, DeviceType, DriverError, Result};
 use super::usb_core::{
     ConfigurationDescriptor, DeviceDescriptor, DeviceState, EndpointDescriptor,
     InterfaceDescriptor, StandardRequest, UsbDevice, UsbSetupPacket, UsbSpeed,
 };
-use super::framework::{DeviceInfo, DeviceType, DriverError, Result};
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -124,7 +124,11 @@ pub fn parse_device_descriptor(data: &[u8]) -> Result<DeviceDescriptor> {
 /// data 长度不足或描述符结构非法时返回 Err。
 pub fn parse_configuration_descriptor(
     data: &[u8],
-) -> Result<(ConfigurationDescriptor, Vec<InterfaceDescriptor>, Vec<EndpointDescriptor>)> {
+) -> Result<(
+    ConfigurationDescriptor,
+    Vec<InterfaceDescriptor>,
+    Vec<EndpointDescriptor>,
+)> {
     if data.len() < 9 {
         return Err(DriverError::InvalidParameter);
     }
@@ -209,20 +213,20 @@ pub fn parse_configuration_descriptor(
 /// 注: 真实硬件集成时, 此函数应被替换为 Setup/Data/Status TRB 序列.
 fn mock_get_device_descriptor_response() -> [u8; 18] {
     [
-        18,     // length
-        1,      // descriptor_type = DEVICE
+        18, // length
+        1,  // descriptor_type = DEVICE
         0x10, 0x01, // usb_version = 0x0110 (USB 1.1)
-        0x00,   // device_class = 0 (由 Interface 决定)
-        0x00,   // device_subclass
-        0x00,   // device_protocol
-        0x40,   // max_packet_size0 = 64
+        0x00, // device_class = 0 (由 Interface 决定)
+        0x00, // device_subclass
+        0x00, // device_protocol
+        0x40, // max_packet_size0 = 64
         0xAB, 0x12, // vendor_id = 0x12AB (mock)
         0xCD, 0x34, // product_id = 0x34CD (mock)
         0x00, 0x01, // device_version = 0x0100
-        1,      // manufacturer_index
-        2,      // product_index
-        0,      // serial_number_index
-        1,      // num_configurations = 1
+        1,    // manufacturer_index
+        2,    // product_index
+        0,    // serial_number_index
+        1,    // num_configurations = 1
     ]
 }
 
@@ -236,35 +240,35 @@ fn mock_get_configuration_descriptor_response() -> Vec<u8> {
     let mut data = Vec::new();
     // Configuration Descriptor (9 字节)
     data.extend_from_slice(&[
-        9,      // length
-        2,      // descriptor_type = CONFIGURATION
-        25, 0,  // total_length = 25 (9 + 9 + 7)
-        1,      // num_interfaces
-        1,      // configuration_value
-        0,      // configuration_index
-        0x80,   // attributes (bus-powered)
-        50,     // max_power (100 mA)
+        9, // length
+        2, // descriptor_type = CONFIGURATION
+        25, 0,    // total_length = 25 (9 + 9 + 7)
+        1,    // num_interfaces
+        1,    // configuration_value
+        0,    // configuration_index
+        0x80, // attributes (bus-powered)
+        50,   // max_power (100 mA)
     ]);
     // Interface Descriptor (9 字节)
     data.extend_from_slice(&[
-        9,      // length
-        4,      // descriptor_type = INTERFACE
-        0,      // interface_number
-        0,      // alternate_setting
-        1,      // num_endpoints
-        0x03,   // interface_class = HID
-        0x01,   // interface_subclass = Boot Interface Subclass
-        0x01,   // interface_protocol = Keyboard
-        0,      // interface_index
+        9,    // length
+        4,    // descriptor_type = INTERFACE
+        0,    // interface_number
+        0,    // alternate_setting
+        1,    // num_endpoints
+        0x03, // interface_class = HID
+        0x01, // interface_subclass = Boot Interface Subclass
+        0x01, // interface_protocol = Keyboard
+        0,    // interface_index
     ]);
     // Endpoint Descriptor (7 字节, IN interrupt endpoint)
     data.extend_from_slice(&[
-        7,      // length
-        5,      // descriptor_type = ENDPOINT
-        0x81,   // endpoint_address (IN, EP1)
-        0x03,   // attributes (Interrupt)
+        7,    // length
+        5,    // descriptor_type = ENDPOINT
+        0x81, // endpoint_address (IN, EP1)
+        0x03, // attributes (Interrupt)
         0x08, 0x00, // max_packet_size = 8
-        0x0A,   // interval = 10 ms
+        0x0A, // interval = 10 ms
     ]);
     data
 }
@@ -358,8 +362,8 @@ mod tests {
     #[test]
     fn test_parse_device_descriptor_valid() {
         let data = [
-            18, 1, 0x10, 0x01, 0x00, 0x00, 0x00, 0x40, 0xAB, 0x12, 0xCD, 0x34, 0x00, 0x01, 1, 2,
-            0, 1,
+            18, 1, 0x10, 0x01, 0x00, 0x00, 0x00, 0x40, 0xAB, 0x12, 0xCD, 0x34, 0x00, 0x01, 1, 2, 0,
+            1,
         ];
         let desc = parse_device_descriptor(&data).unwrap();
         assert_eq!(desc.length, 18);

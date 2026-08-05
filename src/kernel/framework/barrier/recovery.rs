@@ -22,7 +22,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-
 use crate::kernel::framework::sync::IrqSpinLock;
 pub type DomainId = u64;
 
@@ -194,12 +193,7 @@ pub fn cascade_recover(domain_id: DomainId) -> usize {
     for &id in &order {
         for r in &reg.registered {
             if r.id == id {
-                crate::klog_info!(
-                    Kernel,
-                    "barrier: recovering domain {} (id={})",
-                    r.name,
-                    id
-                );
+                crate::klog_info!(Kernel, "barrier: recovering domain {} (id={})", r.name, id);
                 raw::invoke_restore(r.restore_fn);
                 recovered += 1;
                 break;

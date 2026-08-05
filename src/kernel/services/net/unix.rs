@@ -173,7 +173,10 @@ pub struct UdsState {
 }
 
 impl UdsState {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     pub const fn new() -> Self {
         Self {
             sockets: [const { UnixSocket::empty() }; MAX_UDS_FD],
@@ -248,9 +251,7 @@ fn alloc_socket_id() -> u32 {
 #[inline]
 fn fd_to_idx(fd: i32) -> Result<u8, UdsError> {
     match crate::kernel::framework::proc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::FdSubsystem::Uds, slot)) => {
-            Ok(slot as u8)
-        }
+        Some((crate::kernel::framework::proc::FdSubsystem::Uds, slot)) => Ok(slot as u8),
         _ => Err(UdsError::BadFd),
     }
 }
@@ -286,10 +287,11 @@ pub fn uds_create(sock_type: UnixSockType) -> Result<i32, UdsError> {
         // V2: 使用集中分配器获取 FD, 再通过 idx_of 获取槽位索引
         let fd = crate::kernel::services::proc::fd_alloc::alloc_fd(
             crate::kernel::services::proc::fd_alloc::FdSubsystem::Uds,
-        ).ok_or(UdsError::NoMem)?;
+        )
+        .ok_or(UdsError::NoMem)?;
 
-        let (_sub, slot) = crate::kernel::services::proc::fd_alloc::idx_of(fd)
-            .ok_or(UdsError::BadFd)?;
+        let (_sub, slot) =
+            crate::kernel::services::proc::fd_alloc::idx_of(fd).ok_or(UdsError::BadFd)?;
 
         let idx = slot as u8;
         let id = alloc_socket_id();
@@ -380,10 +382,11 @@ pub fn uds_accept(fd: i32) -> Result<i32, UdsError> {
     // V2: 使用集中分配器获取新 FD
     let new_fd = crate::kernel::services::proc::fd_alloc::alloc_fd(
         crate::kernel::services::proc::fd_alloc::FdSubsystem::Uds,
-    ).ok_or(UdsError::NoMem)?;
+    )
+    .ok_or(UdsError::NoMem)?;
 
-    let (_sub, new_slot) = crate::kernel::services::proc::fd_alloc::idx_of(new_fd)
-        .ok_or(UdsError::BadFd)?;
+    let (_sub, new_slot) =
+        crate::kernel::services::proc::fd_alloc::idx_of(new_fd).ok_or(UdsError::BadFd)?;
 
     UDS_STATE.with_mut(|state| {
         let listen_idx = fd_to_idx(fd)? as usize;
@@ -474,7 +477,10 @@ pub fn uds_connect(fd: i32, path: &[u8]) -> Result<(), UdsError> {
     })
 }
 
-#[expect(clippy::many_single_char_names, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::many_single_char_names,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// 通过流式 UDS 连接发送数据
 ///
 /// # Errors
@@ -509,7 +515,11 @@ pub fn uds_send(fd: i32, data: &[u8]) -> Result<usize, UdsError> {
         // 简化方案: 凭据追加到 stream_buf 末尾 (POSIX 兼容凭据含 pid/uid/gid).
         if peer.passcred && peer.stream_len as usize + 12 <= UNIX_STREAM_BUF {
             // 序列化 ScmCredentials 到 12 字节 (safe: 字段都是 Copy u32)
-            let cred = ScmCredentials { pid: 1, uid: 0, gid: 0 };
+            let cred = ScmCredentials {
+                pid: 1,
+                uid: 0,
+                gid: 0,
+            };
             let off = peer.stream_len as usize;
             let p = cred.pid.to_ne_bytes();
             let u = cred.uid.to_ne_bytes();
@@ -525,7 +535,10 @@ pub fn uds_send(fd: i32, data: &[u8]) -> Result<usize, UdsError> {
     })
 }
 
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+#[expect(
+    clippy::no_effect_underscore_binding,
+    reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+)]
 /// v2: 接收 stream 消息并提取凭据 (若对端发送时附加了 `SCM_CREDENTIALS`).
 /// 返回 (字节数, 凭据或 None). 调用方分别处理数据和凭据.
 ///
@@ -559,7 +572,14 @@ pub fn uds_recv_with_creds(
             // 凭据字段由调用方按需解析 (见 ScmCredentials 定义)
             let _cred_off = total - cred_size;
             // 占位 cred: 用一个 bool 标记"有凭据", 数据由调用方解析
-            (total - cred_size, Some(ScmCredentials { pid: 0, uid: 0, gid: 0 }))
+            (
+                total - cred_size,
+                Some(ScmCredentials {
+                    pid: 0,
+                    uid: 0,
+                    gid: 0,
+                }),
+            )
         } else {
             (total, None)
         };
@@ -623,7 +643,11 @@ pub fn uds_sendto(_fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsE
         // v2 SO_PASSCRED: 目标 socket 启用时附加 SCM_CREDENTIALS 12 字节
         if target.passcred && target.dgram_len as usize + 12 <= UNIX_DGRAM_MAX {
             // 序列化 ScmCredentials (safe u32 字段拼装)
-            let cred = ScmCredentials { pid: 1, uid: 0, gid: 0 };
+            let cred = ScmCredentials {
+                pid: 1,
+                uid: 0,
+                gid: 0,
+            };
             let off = target.dgram_len as usize;
             let p = cred.pid.to_ne_bytes();
             let u = cred.uid.to_ne_bytes();
@@ -639,7 +663,10 @@ pub fn uds_sendto(_fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsE
     })
 }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(
+    clippy::used_underscore_binding,
+    reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+)]
 /// 从 UDS 数据报套接字接收数据
 ///
 /// # Errors
@@ -674,7 +701,14 @@ pub fn uds_recvfrom_with_creds(
         let (data_len, cred) = if s.passcred && total >= cred_size {
             // 凭据占最后 12 字节, 数据是前面的部分
             // (不反序列化 ScmCredentials, 由调用方按需解析)
-            (total - cred_size, Some(ScmCredentials { pid: 0, uid: 0, gid: 0 }))
+            (
+                total - cred_size,
+                Some(ScmCredentials {
+                    pid: 0,
+                    uid: 0,
+                    gid: 0,
+                }),
+            )
         } else {
             (total, None)
         };
@@ -691,7 +725,8 @@ pub fn uds_recvfrom_with_creds(
 /// # Errors
 ///
 /// 当 `fd` 无效 (非 UDS 或槽位已释放) 时返回 `Err(UdsError::BadFd)`。
-pub fn uds_close(fd: i32) -> Result<(), UdsError> {    UDS_STATE.with_mut(|state| {
+pub fn uds_close(fd: i32) -> Result<(), UdsError> {
+    UDS_STATE.with_mut(|state| {
         let idx = fd_to_idx(fd)? as usize;
         if state.sockets[idx].id == 0 {
             return Err(UdsError::BadFd);
@@ -778,7 +813,10 @@ pub fn uds_setsockopt(fd: i32, enable: bool) -> i32 {
         if state.sockets[idx].id == 0 {
             return -9; // EBADF
         }
-        if !matches!(state.sockets[idx].sock_type, UnixSockType::Stream | UnixSockType::Dgram) {
+        if !matches!(
+            state.sockets[idx].sock_type,
+            UnixSockType::Stream | UnixSockType::Dgram
+        ) {
             return -92; // ENOPROTOOPT
         }
         state.sockets[idx].passcred = enable;

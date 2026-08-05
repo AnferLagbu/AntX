@@ -1,4 +1,4 @@
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 use crate::register_tests_inner;
 use core::sync::atomic::Ordering;
 
@@ -87,7 +87,10 @@ fn test_sched_policy_discriminant() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_sched_quota_operations() -> TestResult {
     use crate::kernel::framework::proc::SCHEDULER;
     let test_pwm: u64 = 0xDEAD0000;
@@ -96,7 +99,10 @@ fn test_sched_quota_operations() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_sched_limit_init() -> TestResult {
     use crate::kernel::framework::proc::SCHEDULER;
     SCHEDULER.set_limit(0x100001, 5);
@@ -109,8 +115,8 @@ fn test_sched_limit_init() -> TestResult {
 // ============================================================
 
 fn test_rt_policy_switching_self() -> TestResult {
-    use crate::kernel::framework::proc::SchedPolicy;
     use crate::kernel::framework::proc::SCHEDULER;
+    use crate::kernel::framework::proc::SchedPolicy;
 
     let pid = SCHEDULER.current().unwrap_or(0);
     if pid == 0 {
@@ -128,10 +134,13 @@ fn test_rt_policy_switching_self() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_rt_invalid_pid() -> TestResult {
-    use crate::kernel::framework::proc::SchedPolicy;
     use crate::kernel::framework::proc::SCHEDULER;
+    use crate::kernel::framework::proc::SchedPolicy;
 
     let result = SCHEDULER.set_sched_policy(0xFFFFFFFF, SchedPolicy::Fifo, 50);
     check!(!result, "invalid PID must fail");

@@ -17,12 +17,12 @@
 //!
 //! ❌ 不适合长时间持有 (浪费 CPU)
 
-use core::sync::atomic::{fence, Ordering};
+use core::sync::atomic::{Ordering, fence};
 
-pub use super::types::IrqSaveFlags;
-use super::types::{SpinLockInner, TryLockResult, SpinLockGuard};
 #[cfg(debug_assertions)]
-use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
+use super::lockdep::{self, LockClassDesc, LockClassId, LockKind};
+pub use super::types::IrqSaveFlags;
+use super::types::{SpinLockGuard, SpinLockInner, TryLockResult};
 
 /// 自旋锁 (`SpinLock`)
 ///
@@ -246,7 +246,10 @@ impl SpinLock {
         flags
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 释放锁并恢复中断标志
     ///
     /// # Arguments
@@ -315,7 +318,10 @@ pub fn disable_interrupts() -> IrqSaveFlags {
     IrqSaveFlags(crate::arch!(interrupt_disable()) as u64)
 }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+)]
 /// 恢复中断标志
 ///
 /// 通过 Arch trait 的 `interrupt_restore` 实现，架构无关。
@@ -330,7 +336,10 @@ pub fn restore_interrupts(flags: &IrqSaveFlags) {
 /// 写内存屏障 (Store barrier)
 /// 确保所有写操作对其他 CPU 可见
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn smp_wmb() {
     fence(Ordering::Release);
 }
@@ -338,7 +347,10 @@ pub fn smp_wmb() {
 /// 读内存屏障 (Load barrier)
 /// 确保读取到最新值
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn smp_rmb() {
     fence(Ordering::Acquire);
 }

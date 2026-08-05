@@ -5,15 +5,12 @@
 
 // 重导出强类型
 pub use crate::kernel::framework::driver::{
-    EfiTime, EfiMemoryType, EfiMemoryDescriptor, EfiPixelFormat, EfiGopModeInfo, EfiVariable,
-    UefiSubsystem,
-    EFI_MAX_VAR_NAME, EFI_MAX_VAR_DATA,
-    EFI_VARIABLE_NON_VOLATILE, EFI_VARIABLE_BOOTSERVICE_ACCESS, EFI_VARIABLE_RUNTIME_ACCESS,
+    EFI_MAX_VAR_DATA, EFI_MAX_VAR_NAME, EFI_VARIABLE_BOOTSERVICE_ACCESS, EFI_VARIABLE_NON_VOLATILE,
+    EFI_VARIABLE_RUNTIME_ACCESS, EfiGopModeInfo, EfiMemoryDescriptor, EfiMemoryType,
+    EfiPixelFormat, EfiTime, EfiVariable, UefiSubsystem,
 };
 
-use crate::kernel::framework::driver::{
-    uefi_init, uefi_is_initialized, uefi_subsystem, sys_uefi,
-};
+use crate::kernel::framework::driver::{sys_uefi, uefi_init, uefi_is_initialized, uefi_subsystem};
 
 /// 初始化 UEFI
 pub fn init(system_table_addr: u64) {

@@ -1,6 +1,9 @@
-use super::types::{UndoEntry, MAX_UNDO_ENTRIES};
+use super::types::{MAX_UNDO_ENTRIES, UndoEntry};
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub fn fnv1a_32(data: &[u8]) -> u32 {
     let mut h: u32 = 2166136261;
     for &b in data {

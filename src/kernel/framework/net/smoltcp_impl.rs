@@ -20,8 +20,8 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, HardwareAddress};
 
 use crate::kernel::framework::chitin::NetOps;
-use crate::kernel::framework::timer::hrtimer_clock_read;
 use crate::kernel::framework::timer::get_uptime_ms;
+use crate::kernel::framework::timer::hrtimer_clock_read;
 
 const RX_BUF_SIZE: usize = 2048;
 const TX_BUF_SIZE: usize = 2048;
@@ -83,15 +83,23 @@ unsafe impl Send for ChitinNetDevice {}
 unsafe impl Sync for ChitinNetDevice {}
 
 impl Device for ChitinNetDevice {
-    type RxToken<'a> = ChitinRxToken<'a> where Self: 'a;
-    type TxToken<'a> = ChitinTxToken<'a> where Self: 'a;
+    type RxToken<'a>
+        = ChitinRxToken<'a>
+    where
+        Self: 'a;
+    type TxToken<'a>
+        = ChitinTxToken<'a>
+    where
+        Self: 'a;
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-    fn receive(
-        &mut self,
-        _timestamp: Instant,
-    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        let n = self.ops.try_receive(self.driver_data as *mut u8, &mut self.rx_buf);
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let n = self
+            .ops
+            .try_receive(self.driver_data as *mut u8, &mut self.rx_buf);
         if n <= 0 {
             return None;
         }
@@ -139,7 +147,8 @@ impl TxToken for ChitinTxToken<'_> {
         F: FnOnce(&mut [u8]) -> R,
     {
         let result = f(&mut self.tx_buf[..len]);
-        self.ops.send(self.driver_data as *mut u8, &self.tx_buf[..len]);
+        self.ops
+            .send(self.driver_data as *mut u8, &self.tx_buf[..len]);
         result
     }
 }
@@ -165,9 +174,7 @@ impl NetworkStack {
 // ============================================================================
 
 pub fn init_stack(device: &mut ChitinNetDevice, mac: [u8; 6]) -> NetworkStack {
-    let config = Config::new(HardwareAddress::Ethernet(EthernetAddress::from_bytes(
-        &mac,
-    )));
+    let config = Config::new(HardwareAddress::Ethernet(EthernetAddress::from_bytes(&mac)));
     let iface = Interface::new(config, device, smoltcp_now());
     NetworkStack {
         iface,
@@ -176,6 +183,10 @@ pub fn init_stack(device: &mut ChitinNetDevice, mac: [u8; 6]) -> NetworkStack {
     }
 }
 
-pub fn poll_stack(nic: &mut ChitinNetDevice, stack: &mut NetworkStack, sockets: &mut SocketSet<'_>) {
+pub fn poll_stack(
+    nic: &mut ChitinNetDevice,
+    stack: &mut NetworkStack,
+    sockets: &mut SocketSet<'_>,
+) {
     stack.poll(nic, sockets);
 }

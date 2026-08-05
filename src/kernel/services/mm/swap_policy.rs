@@ -21,9 +21,7 @@
 //! - T2-4: Swap 策略完整迁移 (2026-06-19)
 //! - 互补: pmm_trait::PmmPolicy (物理页分配策略)
 
-use crate::kernel::framework::mm::swap_trait::{
-    SwapPolicy, SwapPolicyContext, LruPageInfo,
-};
+use crate::kernel::framework::mm::swap_trait::{LruPageInfo, SwapPolicy, SwapPolicyContext};
 
 // ============================================================================
 // 默认 Swap 策略 — 标准 swap 行为
@@ -103,11 +101,16 @@ pub fn register_default_swap_policy() -> Result<(), ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::framework::mm::swap_trait::{LruPageInfo, SwapPolicyContext};
     use alloc::vec;
-    use crate::kernel::framework::mm::swap_trait::{SwapPolicyContext, LruPageInfo};
     use alloc::vec::Vec;
 
-    fn make_ctx(free_pages: u64, total_pages: u64, used_slots: u64, total_slots: u64) -> SwapPolicyContext {
+    fn make_ctx(
+        free_pages: u64,
+        total_pages: u64,
+        used_slots: u64,
+        total_slots: u64,
+    ) -> SwapPolicyContext {
         SwapPolicyContext {
             total_slots,
             used_slots,
@@ -119,7 +122,13 @@ mod tests {
     }
 
     fn make_entry(pml4: u64, locked: bool) -> Option<LruPageInfo> {
-        Some(LruPageInfo { pml4, virt_addr: 0x1000, phys_addr: 0x2000, dirty: false, locked })
+        Some(LruPageInfo {
+            pml4,
+            virt_addr: 0x1000,
+            phys_addr: 0x2000,
+            dirty: false,
+            locked,
+        })
     }
 
     /// 1. reclaim_batch_size: 固定 8
@@ -190,16 +199,34 @@ mod tests {
         let entries: Vec<Option<LruPageInfo>> = vec![None, None, None];
         assert_eq!(policy.select_victim(&entries), None);
         // 首个 unlocked → 0
-        let entries = vec![make_entry(1, false), make_entry(2, true), make_entry(3, true)];
+        let entries = vec![
+            make_entry(1, false),
+            make_entry(2, true),
+            make_entry(3, true),
+        ];
         assert_eq!(policy.select_victim(&entries), Some(0));
         // 首个 locked, 第二个 unlocked → 1
-        let entries = vec![make_entry(1, true), make_entry(2, false), make_entry(3, true)];
+        let entries = vec![
+            make_entry(1, true),
+            make_entry(2, false),
+            make_entry(3, true),
+        ];
         assert_eq!(policy.select_victim(&entries), Some(1));
         // 全 locked → None
-        let entries = vec![make_entry(1, true), make_entry(2, true), make_entry(3, true)];
+        let entries = vec![
+            make_entry(1, true),
+            make_entry(2, true),
+            make_entry(3, true),
+        ];
         assert_eq!(policy.select_victim(&entries), None);
         // 混合 None + locked + unlocked
-        let entries = vec![None, make_entry(1, true), None, make_entry(2, false), make_entry(3, true)];
+        let entries = vec![
+            None,
+            make_entry(1, true),
+            None,
+            make_entry(2, false),
+            make_entry(3, true),
+        ];
         assert_eq!(policy.select_victim(&entries), Some(3));
     }
 
@@ -209,7 +236,10 @@ mod tests {
         let policy = DefaultSwapPolicy;
         // 模拟 OOM: 0 空闲页, 0 总页 (除零保护)
         let ctx = make_ctx(0, 0, 0, 0);
-        assert!(!policy.should_wakeup_kswapd(ctx), "total=0 时不应唤醒 (除零保护)");
+        assert!(
+            !policy.should_wakeup_kswapd(ctx),
+            "total=0 时不应唤醒 (除零保护)"
+        );
 
         // 模拟内存不足: 1% 空闲
         let ctx = make_ctx(10, 1000, 0, 1000);

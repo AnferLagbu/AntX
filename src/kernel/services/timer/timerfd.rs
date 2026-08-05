@@ -90,7 +90,10 @@ pub fn timerfd_settime_syscall(
     }
 
     let ret = crate::kernel::framework::syscall::timerfd::sys_timerfd_settime(
-        fd, flags, new_value_ptr, old_value_ptr,
+        fd,
+        flags,
+        new_value_ptr,
+        old_value_ptr,
     );
     if ret < 0 {
         Err(Errno::from_ret(ret))

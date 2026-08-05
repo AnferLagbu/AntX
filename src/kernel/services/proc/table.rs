@@ -23,9 +23,9 @@
 //!
 //! 评估日期: 2026-06-04, v2.17 更新: 2026-06-12
 
-use crate::kernel::framework::proc::{Process, PROCESS_TABLE};
-use crate::kernel::framework::proc::ProcessState;
 use crate::kernel::framework::proc::ProcessPriority;
+use crate::kernel::framework::proc::ProcessState;
+use crate::kernel::framework::proc::{PROCESS_TABLE, Process};
 
 // ============================================================================
 // 强类型 re-export
@@ -78,14 +78,17 @@ pub enum TableError {
 }
 
 impl TableError {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 映射为 POSIX errno
     pub fn to_errno(self) -> crate::kernel::framework::syscall::Errno {
         use crate::kernel::framework::syscall::Errno as E;
         match self {
-            Self::TableFull => E::EAGAIN,                // 表满, 资源暂时不可用
-            Self::RefCountUnderflow => E::EINVAL,        // 内部状态错误
-            Self::InvalidStateTransition => E::EINVAL,   // 非法状态转换
+            Self::TableFull => E::EAGAIN,              // 表满, 资源暂时不可用
+            Self::RefCountUnderflow => E::EINVAL,      // 内部状态错误
+            Self::InvalidStateTransition => E::EINVAL, // 非法状态转换
             Self::Kernel(e) => e.as_errno(),
         }
     }
@@ -111,9 +114,7 @@ pub type TableResult<T> = Result<T, TableError>;
 ///
 /// 当进程表已满无法分配新 PID 时返回 `TableError::TableFull`.
 pub fn allocate_pid() -> TableResult<crate::kernel::framework::proc::Pid> {
-    PROCESS_TABLE
-        .allocate_pid()
-        .ok_or(TableError::TableFull)
+    PROCESS_TABLE.allocate_pid().ok_or(TableError::TableFull)
 }
 
 // ============================================================================
@@ -171,7 +172,10 @@ where
 
 /// 获取进程状态
 pub fn get_state(pid: crate::kernel::framework::proc::Pid) -> Option<ProcessState> {
-    with(pid, crate::kernel::framework::proc::process::Process::get_state)
+    with(
+        pid,
+        crate::kernel::framework::proc::process::Process::get_state,
+    )
 }
 
 /// 设置进程状态 (安全版本, 自动检查状态转换合法性)
@@ -188,26 +192,41 @@ pub fn set_state(pid: crate::kernel::framework::proc::Pid, state: ProcessState) 
 
 /// 获取进程优先级
 pub fn get_priority(pid: crate::kernel::framework::proc::Pid) -> Option<ProcessPriority> {
-    with(pid, crate::kernel::framework::proc::process::Process::get_priority)
+    with(
+        pid,
+        crate::kernel::framework::proc::process::Process::get_priority,
+    )
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 设置进程优先级
 ///
 /// # Errors
 ///
 /// 本函数始终返回 `Ok(())`; 若进程不存在则静默忽略.
-pub fn set_priority(pid: crate::kernel::framework::proc::Pid, priority: ProcessPriority) -> TableResult<()> {
+pub fn set_priority(
+    pid: crate::kernel::framework::proc::Pid,
+    priority: ProcessPriority,
+) -> TableResult<()> {
     with_mut(pid, |p| p.set_priority(priority));
     Ok(())
 }
 
 /// 是否内核进程
 pub fn is_kernel(pid: crate::kernel::framework::proc::Pid) -> Option<bool> {
-    with(pid, crate::kernel::framework::proc::process::Process::is_kernel)
+    with(
+        pid,
+        crate::kernel::framework::proc::process::Process::is_kernel,
+    )
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 设置内核/用户标志
 ///
 /// # Errors
@@ -220,26 +239,41 @@ pub fn set_kernel(pid: crate::kernel::framework::proc::Pid, is_kernel: bool) -> 
 
 /// 获取调度策略
 pub fn get_sched_policy(pid: crate::kernel::framework::proc::Pid) -> Option<SchedPolicy> {
-    with(pid, crate::kernel::framework::proc::process::Process::get_sched_policy)
+    with(
+        pid,
+        crate::kernel::framework::proc::process::Process::get_sched_policy,
+    )
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 设置调度策略
 ///
 /// # Errors
 ///
 /// 本函数始终返回 `Ok(())`; 若进程不存在则静默忽略.
-pub fn set_sched_policy(pid: crate::kernel::framework::proc::Pid, policy: SchedPolicy) -> TableResult<()> {
+pub fn set_sched_policy(
+    pid: crate::kernel::framework::proc::Pid,
+    policy: SchedPolicy,
+) -> TableResult<()> {
     with_mut(pid, |p| p.set_sched_policy(policy));
     Ok(())
 }
 
 /// 获取 RT 优先级 (0-99)
 pub fn get_rt_priority(pid: crate::kernel::framework::proc::Pid) -> Option<u8> {
-    with(pid, crate::kernel::framework::proc::process::Process::get_rt_priority)
+    with(
+        pid,
+        crate::kernel::framework::proc::process::Process::get_rt_priority,
+    )
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 设置 RT 优先级
 ///
 /// # Errors
@@ -252,10 +286,16 @@ pub fn set_rt_priority(pid: crate::kernel::framework::proc::Pid, priority: u8) -
 
 /// 获取进程 PMM (Per-Memory Mapping) 字节数
 pub fn get_pwm(pid: crate::kernel::framework::proc::Pid) -> Option<u64> {
-    with(pid, crate::kernel::framework::proc::process::Process::get_pwm)
+    with(
+        pid,
+        crate::kernel::framework::proc::process::Process::get_pwm,
+    )
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 设置 PMM
 ///
 /// # Errors
@@ -270,7 +310,10 @@ pub fn set_pwm(pid: crate::kernel::framework::proc::Pid, pwm: u64) -> TableResul
 // 信号
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 设置待处理信号位
 ///
 /// # Errors
@@ -283,10 +326,16 @@ pub fn signal_set(pid: crate::kernel::framework::proc::Pid, sig: u32) -> TableRe
 
 /// 获取待处理信号位图
 pub fn signal_get(pid: crate::kernel::framework::proc::Pid) -> Option<u64> {
-    with(pid, crate::kernel::framework::proc::process::Process::signal_pending_get)
+    with(
+        pid,
+        crate::kernel::framework::proc::process::Process::signal_pending_get,
+    )
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 清除待处理信号位
 ///
 /// # Errors

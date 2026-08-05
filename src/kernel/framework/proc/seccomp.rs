@@ -7,9 +7,6 @@
 //! 本文件仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::proc::seccomp::{
-    SeccompMode, SeccompAction, SeccompRule, SeccompFilter,
-    ArgComparator, CmpOp, SeccompState,
-    seccomp_check,
-    sys_seccomp, sys_prctl_prctl,
-    add_rule,
+    ArgComparator, CmpOp, SeccompAction, SeccompFilter, SeccompMode, SeccompRule, SeccompState,
+    add_rule, seccomp_check, sys_prctl_prctl, sys_seccomp,
 };

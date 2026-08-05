@@ -42,17 +42,22 @@ use crate::kernel::framework::syscall::Errno;
 // ============================================================================
 
 /// `CLONE_NEW`* 标志位 (与 Linux 一致)
-pub const CLONE_NEWNS: u64 = 0x00020000;      // Mount namespace
-pub const CLONE_NEWUTS: u64 = 0x04000000;     // UTS namespace
-pub const CLONE_NEWIPC: u64 = 0x08000000;     // IPC namespace
-pub const CLONE_NEWUSER: u64 = 0x10000000;    // User namespace
-pub const CLONE_NEWPID: u64 = 0x20000000;     // PID namespace
-pub const CLONE_NEWNET: u64 = 0x40000000;     // Network namespace
-pub const CLONE_NEWCGROUP: u64 = 0x02000000;  // Cgroup namespace
+pub const CLONE_NEWNS: u64 = 0x00020000; // Mount namespace
+pub const CLONE_NEWUTS: u64 = 0x04000000; // UTS namespace
+pub const CLONE_NEWIPC: u64 = 0x08000000; // IPC namespace
+pub const CLONE_NEWUSER: u64 = 0x10000000; // User namespace
+pub const CLONE_NEWPID: u64 = 0x20000000; // PID namespace
+pub const CLONE_NEWNET: u64 = 0x40000000; // Network namespace
+pub const CLONE_NEWCGROUP: u64 = 0x02000000; // Cgroup namespace
 
 /// 所有 `CLONE_NEW`* 掩码
-pub const CLONE_NEW_ALL: u64 =
-    CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP;
+pub const CLONE_NEW_ALL: u64 = CLONE_NEWNS
+    | CLONE_NEWUTS
+    | CLONE_NEWIPC
+    | CLONE_NEWUSER
+    | CLONE_NEWPID
+    | CLONE_NEWNET
+    | CLONE_NEWCGROUP;
 
 // ============================================================================
 // 命名空间类型枚举
@@ -620,7 +625,10 @@ impl NamespaceSet {
         Ok(())
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// setns: 切换到目标 namespace
     ///
     /// # Errors
@@ -635,25 +643,39 @@ impl NamespaceSet {
 
         match ns_type {
             NsType::Uts => {
-                if let Some(ref ns) = entry.uts { self.uts = Arc::clone(ns); }
+                if let Some(ref ns) = entry.uts {
+                    self.uts = Arc::clone(ns);
+                }
             }
             NsType::Ipc => {
-                if let Some(ref ns) = entry.ipc { self.ipc = Arc::clone(ns); }
+                if let Some(ref ns) = entry.ipc {
+                    self.ipc = Arc::clone(ns);
+                }
             }
             NsType::Pid => {
-                if let Some(ref ns) = entry.pid { self.pid = Arc::clone(ns); }
+                if let Some(ref ns) = entry.pid {
+                    self.pid = Arc::clone(ns);
+                }
             }
             NsType::Mount => {
-                if let Some(ref ns) = entry.mount { self.mount = Arc::clone(ns); }
+                if let Some(ref ns) = entry.mount {
+                    self.mount = Arc::clone(ns);
+                }
             }
             NsType::User => {
-                if let Some(ref ns) = entry.user { self.user = Arc::clone(ns); }
+                if let Some(ref ns) = entry.user {
+                    self.user = Arc::clone(ns);
+                }
             }
             NsType::Net => {
-                if let Some(ref ns) = entry.net { self.net = Arc::clone(ns); }
+                if let Some(ref ns) = entry.net {
+                    self.net = Arc::clone(ns);
+                }
             }
             NsType::Cgroup => {
-                if let Some(ref ns) = entry.cgroup { self.cgroup = Arc::clone(ns); }
+                if let Some(ref ns) = entry.cgroup {
+                    self.cgroup = Arc::clone(ns);
+                }
             }
         }
 
@@ -726,9 +748,7 @@ pub fn sys_unshare(flags: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
 
     let result = crate::kernel::framework::proc::PROCESS_TABLE
-        .with_process_mut(pid, |p| {
-            p.namespaces.lock().unshare(flags)
-        });
+        .with_process_mut(pid, |p| p.namespaces.lock().unshare(flags));
 
     match result {
         Some(Ok(())) => 0,
@@ -741,26 +761,23 @@ pub fn sys_unshare(flags: u64) -> i64 {
 pub fn sys_setns(ns_type: u64, target_ns_id: u64) -> i64 {
     let ns_t = match NsType::from_clone_flag(1 << (ns_type + 8)) {
         Some(t) => t,
-        None => {
-            match ns_type {
-                0 => NsType::Mount,
-                1 => NsType::Uts,
-                2 => NsType::Ipc,
-                3 => NsType::User,
-                4 => NsType::Pid,
-                5 => NsType::Net,
-                6 => NsType::Cgroup,
-                _ => return -(Errno::EINVAL as i64),
-            }
-        }
+        None => match ns_type {
+            0 => NsType::Mount,
+            1 => NsType::Uts,
+            2 => NsType::Ipc,
+            3 => NsType::User,
+            4 => NsType::Pid,
+            5 => NsType::Net,
+            6 => NsType::Cgroup,
+            _ => return -(Errno::EINVAL as i64),
+        },
     };
 
     let pid = crate::kernel::framework::proc::process_get_current_pid();
 
-    let result = crate::kernel::framework::proc::PROCESS_TABLE
-        .with_process_mut(pid, |p| {
-            p.namespaces.lock().setns_by_type(ns_t, target_ns_id)
-        });
+    let result = crate::kernel::framework::proc::PROCESS_TABLE.with_process_mut(pid, |p| {
+        p.namespaces.lock().setns_by_type(ns_t, target_ns_id)
+    });
 
     match result {
         Some(Ok(())) => 0,

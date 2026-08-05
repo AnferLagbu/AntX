@@ -1,12 +1,12 @@
-use super::process::{FdTable, Process, PROCESS_TABLE};
+use super::process::{FdTable, PROCESS_TABLE, Process};
 use super::types::{ProcessContext, ProcessId, ProcessPriority, ProcessState};
+use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::klog_error;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::mm::KERNEL_BASE;
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::klog_error;
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
@@ -37,13 +37,10 @@ unsafe extern "C" {
 /// 全部进程规模/栈/调度参数已在 `types.rs` 集中 re-export, 本文件仅 `use` 它们,
 /// 避免分散定义与影子覆盖问题。
 pub use super::types::{
-    PAGE_SIZE,
-    MAX_PROCESSES, MAX_OPEN_FILES,
-    KERNEL_STACK_SIZE, USER_KSTACK_SIZE,
-    USER_STACK_SIZE, USER_STACK_GUARD, USER_STACK_TOP, USER_STACK_MAX_SIZE, USER_CODE_BASE,
-    SCHED_BOOST_INTERVAL,
+    KERNEL_STACK_SIZE, MAX_OPEN_FILES, MAX_PROCESSES, PAGE_SIZE, SCHED_BOOST_INTERVAL,
     SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
-    SCHED_RT_WATCHDOG_TICKS,
+    SCHED_RT_WATCHDOG_TICKS, USER_CODE_BASE, USER_KSTACK_SIZE, USER_STACK_GUARD,
+    USER_STACK_MAX_SIZE, USER_STACK_SIZE, USER_STACK_TOP,
 };
 
 /// 派生常量: 用户栈自动扩展的下界 (`USER_STACK_TOP` - `USER_STACK_MAX_SIZE`)
@@ -91,7 +88,13 @@ pub struct UserProcInfo {
 // `unsafe impl Send/Sync` 在本子模块中声明, 因为类型定义本身需要这些 trait
 // 才能被 `static USER_PROC_MANAGER` 使用。
 pub(crate) mod raw {
-    use super::{UserProcess, ProcessId, Ordering, NonNull, pmm_free_page, vmm_destroy_page_table, vmm_get_physical_in_table, vmm_create_user_page_table, pmm_alloc_pages, raw, PAGE_SIZE, pmm_alloc_page, vmm_map_page_in_table, vmm_map_page, vmm_ensure_path_user, KERNEL_BASE, memset, memcpy, PageFlags, kmalloc, Process, AtomicU64, AtomicU32, ProcessState, ProcessPriority, Mutex, String, Vec, ProcessContext, FdTable};
+    use super::{
+        AtomicU32, AtomicU64, FdTable, KERNEL_BASE, Mutex, NonNull, Ordering, PAGE_SIZE, PageFlags,
+        Process, ProcessContext, ProcessId, ProcessPriority, ProcessState, String, UserProcess,
+        Vec, kmalloc, memcpy, memset, pmm_alloc_page, pmm_alloc_pages, pmm_free_page, raw,
+        vmm_create_user_page_table, vmm_destroy_page_table, vmm_ensure_path_user,
+        vmm_get_physical_in_table, vmm_map_page, vmm_map_page_in_table,
+    };
 
     // === UserProcess 安全访问封装 (Framekernel privilege wrapper) ===
     //
@@ -111,22 +114,34 @@ pub(crate) mod raw {
         /// - `ptr` 必须为非空, 指向有效 `UserProcess` 分配
         /// - 在 `UserProcRef` 存活期间, 不会被释放
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub unsafe fn new_unchecked(ptr: *mut UserProcess) -> Self {
             Self(ptr)
         }
 
         /// 访问 pid 字段 (委托到 Process)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn pid(&self) -> u32 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().pid.0 }
         }
 
         #[inline(always)]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::borrow_as_ptr,
+            reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+        )]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_pid(&self, v: u32) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             // 注意: Process::pid 是 ProcessId (newtype), 需要通过 ptr::write 更新
@@ -138,14 +153,20 @@ pub(crate) mod raw {
 
         /// 访问 entry 字段 (读写)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn entry(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).entry }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_entry(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
@@ -154,7 +175,10 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn set_create_time(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
@@ -164,14 +188,20 @@ pub(crate) mod raw {
 
         /// 访问 pwm (委托到 Process)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn load_pwm(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().pwm.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_pwm(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -181,14 +211,20 @@ pub(crate) mod raw {
 
         /// 访问 cr3 (委托到 Process)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn load_cr3(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().cr3.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_cr3(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -198,14 +234,20 @@ pub(crate) mod raw {
 
         /// 访问 `kernel_stack` (委托到 Process)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn load_kernel_stack(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().kernel_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_kernel_stack(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -215,14 +257,20 @@ pub(crate) mod raw {
 
         /// 访问 `user_stack` (委托到 Process)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn load_user_stack(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 通过 process() 访问权威 Process
             unsafe { (*self.0).process().user_stack.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_user_stack(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -231,14 +279,20 @@ pub(crate) mod raw {
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn load_stack_bottom(&self) -> u64 {
             // SAFETY: `self` 由调用方保证为有效指针; 只读访问
             unsafe { (*self.0).stack_bottom.load(Ordering::SeqCst) }
         }
 
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_stack_bottom(&self, v: u64) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
@@ -248,7 +302,10 @@ pub(crate) mod raw {
 
         /// 访问 state (委托到 Process)
         #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+        #[expect(
+            clippy::inline_always,
+            reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+        )]
         pub fn store_state(&self, v: u32) {
             // SAFETY: 调用方保证指针/类型有效; 写入权威 Process
             unsafe {
@@ -263,14 +320,20 @@ pub(crate) mod raw {
             unsafe { (*self.0).process().state.load(Ordering::SeqCst) }
         }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+        #[expect(
+            clippy::trivially_copy_pass_by_ref,
+            reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+        )]
         /// 检查进程是否在运行状态 (Running = 2)
         pub fn is_running(&self) -> bool {
             use crate::kernel::services::proc::types::ProcessState;
             ProcessState::from_u32(self.load_state()).is_alive()
         }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+        #[expect(
+            clippy::trivially_copy_pass_by_ref,
+            reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+        )]
         /// 检查进程是否已退出 (Zombie = 4 或 Terminated = 5)
         pub fn is_exited(&self) -> bool {
             use crate::kernel::services::proc::types::ProcessState;
@@ -459,7 +522,10 @@ pub(crate) mod raw {
         unsafe { elf_data.add(off) }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     /// 分配内存并清零 (类似 calloc)。
     pub fn alloc_zeroed(size: u64) -> *mut u8 {
         // SAFETY: kmalloc 由 kernel allocator 提供, 调用方负责释放。
@@ -471,9 +537,18 @@ pub(crate) mod raw {
         ptr
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 分配并构造一个 `UserProcess` 内存, 清零后返回。
     ///
     /// # Arguments
@@ -498,20 +573,25 @@ pub(crate) mod raw {
         }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 分配并清零一个 `Process` (用于 process table)。
     pub fn alloc_kernel_process() -> Option<*mut Process> {
         let size = core::mem::size_of::<Process>() as u64;
         let ptr = raw::alloc_zeroed(size) as *mut Process;
-        if ptr.is_null() {
-            None
-        } else {
-            Some(ptr)
-        }
+        if ptr.is_null() { None } else { Some(ptr) }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     /// 释放 `alloc_kernel_process` 分配的 `Process` 内存 (回滚路径专用).
     ///
     /// # Safety (内部)
@@ -530,7 +610,10 @@ pub(crate) mod raw {
         }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     /// 释放 `alloc_user_process` 分配的 `UserProcess` 镜像内存 (回滚路径专用).
     ///
     /// # Safety (内部)
@@ -562,8 +645,14 @@ pub(crate) mod raw {
     /// # Safety (内部)
     /// - `kproc_ptr` 必须为 `alloc_kernel_process` 返回的合法指针, 已被清零。
     #[allow(clippy::too_many_arguments)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     pub fn init_kernel_process_fields(
         kproc_ptr: *mut Process,
         pid: u32,
@@ -588,14 +677,8 @@ pub(crate) mod raw {
             core::ptr::write(&mut (*kproc_ptr).flags, AtomicU32::new(0));
             core::ptr::write(&mut (*kproc_ptr).parent, None);
             core::ptr::write(&mut (*kproc_ptr).cr3, AtomicU64::new(cr3));
-            core::ptr::write(
-                &mut (*kproc_ptr).kernel_stack,
-                AtomicU64::new(kstack),
-            );
-            core::ptr::write(
-                &mut (*kproc_ptr).user_stack,
-                AtomicU64::new(ustack),
-            );
+            core::ptr::write(&mut (*kproc_ptr).kernel_stack, AtomicU64::new(kstack));
+            core::ptr::write(&mut (*kproc_ptr).user_stack, AtomicU64::new(ustack));
             core::ptr::write(&mut (*kproc_ptr).exit_code, AtomicU32::new(0));
             core::ptr::write(&mut (*kproc_ptr).cpu_time, AtomicU64::new(0));
             core::ptr::write(&mut (*kproc_ptr).block_reason, AtomicU32::new(0));
@@ -709,7 +792,6 @@ impl UserProcess {
         // 保证其指向的 Process 在 UserProcess 存活期间有效.
         unsafe { self.process.as_ref() }
     }
-
 }
 
 pub struct UserProcManager {
@@ -735,7 +817,10 @@ impl UserProcManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn init(&self) {}
 
     fn destroy(&self, proc: NonNull<UserProcess>, keep_kstack: bool) {
@@ -825,7 +910,10 @@ impl UserProcManager {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 替换进程的用户地址空间 (execve 路径).
     ///
     /// 销毁旧页表和用户栈物理页, 然后将 `CR3/entry/user_stack/stack_bottom`
@@ -915,7 +1003,10 @@ impl UserProcManager {
 
         crate::klog_boot_info!(
             "[USER] create: mapping user stack: aslr_top={:#X} stack_virt={:#X} stack_phys={:#X} pages={}",
-            aslr_stack_top, stack_virt, stack_phys, USER_STACK_SIZE / PAGE_SIZE
+            aslr_stack_top,
+            stack_virt,
+            stack_phys,
+            USER_STACK_SIZE / PAGE_SIZE
         );
 
         for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
@@ -928,7 +1019,6 @@ impl UserProcManager {
                 sphys,
                 (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER).bits(),
             );
-
         }
 
         // 验证用户栈映射是否成功
@@ -936,7 +1026,9 @@ impl UserProcManager {
         let check_phys = raw::virt_to_phys(cr3_val, check_virt);
         crate::klog_boot_info!(
             "[USER] create: verify stack mapping: virt={:#X} -> phys={:#X} {}",
-            check_virt, check_phys, if check_phys != 0 { "✓" } else { "✗ FAILED" }
+            check_virt,
+            check_phys,
+            if check_phys != 0 { "✓" } else { "✗ FAILED" }
         );
 
         // 关键修复: user_stack 必须指向栈顶的**已映射地址**，而非 guard page 边界。
@@ -960,7 +1052,9 @@ impl UserProcManager {
         let kstack_top = kstack as u64 + KERNEL_BASE + USER_KSTACK_SIZE;
         crate::klog_boot_info!(
             "[USER] create: kstack_phys={:#X} kstack_top={:#X} (KERNEL_BASE={:#X})",
-            kstack as u64, kstack_top, KERNEL_BASE
+            kstack as u64,
+            kstack_top,
+            KERNEL_BASE
         );
         crate::kernel::framework::proc::kernel_stack_write_canary(kstack_top);
 
@@ -971,14 +1065,7 @@ impl UserProcManager {
         let pid = PROCESS_TABLE.allocate_pid()?;
 
         // 在权威 Process 上批量初始化基本字段 (通过 init_kernel_process_fields)
-        raw::init_kernel_process_fields(
-            kproc_ptr,
-            pid,
-            pwm,
-            cr3_val,
-            kstack_top,
-            initial_rsp,
-        );
+        raw::init_kernel_process_fields(kproc_ptr, pid, pwm, cr3_val, kstack_top, initial_rsp);
 
         // 通过 UserProcRef 设置 UserProcess 独占字段
         proc.set_pid(pid);
@@ -991,9 +1078,7 @@ impl UserProcManager {
         proc.store_stack_bottom(initial_stack_bottom);
         proc.set_create_time(crate::kernel::framework::timer::get_ticks());
 
-        self.processes
-            .lock()
-            .insert(pid, NonNull::new(proc_ptr)?);
+        self.processes.lock().insert(pid, NonNull::new(proc_ptr)?);
 
         // 插入 PROCESS_TABLE 完成权威注册.
         PROCESS_TABLE.insert(kproc_ptr);
@@ -1001,9 +1086,18 @@ impl UserProcManager {
         Some(proc_ptr)
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::no_effect_underscore_binding,
+        reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+    )]
     pub fn enter(&self, proc: *mut UserProcess) {
         crate::klog_boot_info!("[USER] enter() called with proc={:#X}", proc as u64);
         if proc.is_null() {
@@ -1024,7 +1118,10 @@ impl UserProcManager {
         // 调试日志: 追踪 kstack 值
         crate::klog_boot_info!(
             "[USER] enter: kstack={:#X} rip={:#X} rsp={:#X} cr3={:#X}",
-            kstack, rip_val, rsp_val, cr3
+            kstack,
+            rip_val,
+            rsp_val,
+            cr3
         );
         let _ss_val = GDT_USER_DATA | 0x03;
         let _cs_val = GDT_USER_CODE | 0x03;
@@ -1056,19 +1153,23 @@ impl UserProcManager {
 
             // 检测 iretq_frame_addr 是物理地址还是虚拟地址
             // 物理地址 < KERNEL_BASE，虚拟地址 >= KERNEL_BASE
-            let (rsp0_virt, rsp0_phys) = if iretq_frame_addr < crate::kernel::framework::mm::KERNEL_BASE as u64 {
-                // iretq_frame_addr 是物理地址，转换为虚拟地址
-                let virt = iretq_frame_addr + crate::kernel::framework::mm::KERNEL_BASE as u64;
-                (virt & !(PAGE_SIZE - 1), iretq_frame_addr & !(PAGE_SIZE - 1))
-            } else {
-                // iretq_frame_addr 是虚拟地址，转换为物理地址
-                let phys = iretq_frame_addr - crate::kernel::framework::mm::KERNEL_BASE as u64;
-                (iretq_frame_addr & !(PAGE_SIZE - 1), phys & !(PAGE_SIZE - 1))
-            };
+            let (rsp0_virt, rsp0_phys) =
+                if iretq_frame_addr < crate::kernel::framework::mm::KERNEL_BASE as u64 {
+                    // iretq_frame_addr 是物理地址，转换为虚拟地址
+                    let virt = iretq_frame_addr + crate::kernel::framework::mm::KERNEL_BASE as u64;
+                    (virt & !(PAGE_SIZE - 1), iretq_frame_addr & !(PAGE_SIZE - 1))
+                } else {
+                    // iretq_frame_addr 是虚拟地址，转换为物理地址
+                    let phys = iretq_frame_addr - crate::kernel::framework::mm::KERNEL_BASE as u64;
+                    (iretq_frame_addr & !(PAGE_SIZE - 1), phys & !(PAGE_SIZE - 1))
+                };
 
             crate::klog_boot_info!(
                 "[USER] RSP0 mapping: kstack={:#X} iretq_frame={:#X} rsp0_virt={:#X} rsp0_phys={:#X}",
-                kstack, iretq_frame_addr, rsp0_virt, rsp0_phys
+                kstack,
+                iretq_frame_addr,
+                rsp0_virt,
+                rsp0_phys
             );
 
             crate::kernel::framework::mm::get_vmm().map_kernel_page_in_table(
@@ -1089,24 +1190,32 @@ impl UserProcManager {
         #[cfg(target_arch = "x86_64")]
         {
             let vmm = crate::kernel::framework::mm::get_vmm();
-            
+
             // 检查用户代码页 (0x400000) — 含 PTE 权限位自检
             let code_page_virt = rip_val & !(PAGE_SIZE - 1);
-            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt)) {
+            if let Some(phys) = vmm
+                .get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt))
+            {
                 crate::klog_boot_info!(
                     "[USER] SELF-CHECK: user_code virt={:#X} -> phys={:#X} ✓",
                     code_page_virt,
                     phys.0
                 );
                 // 检查 PTE 原始值: 验证 PRESENT/USER/NX 位
-                if let Some(pte_raw) = vmm.get_pte_value(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt)) {
+                if let Some(pte_raw) =
+                    vmm.get_pte_value(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt))
+                {
                     let present = (pte_raw & 0x001) != 0;
                     let writable = (pte_raw & 0x002) != 0;
                     let user = (pte_raw & 0x004) != 0;
                     let nx = (pte_raw & (1u64 << 63)) != 0;
                     crate::klog_boot_info!(
                         "[USER] SELF-CHECK: user_code PTE={:#018X} P={} W={} U={} NX={} (NX must be 0 for exec)",
-                        pte_raw, u8::from(present), u8::from(writable), u8::from(user), u8::from(nx)
+                        pte_raw,
+                        u8::from(present),
+                        u8::from(writable),
+                        u8::from(user),
+                        u8::from(nx)
                     );
                     if nx {
                         crate::klog_boot_info!(
@@ -1129,27 +1238,36 @@ impl UserProcManager {
                     code_page_virt
                 );
             }
-            
+
             // 检查用户栈页 (第一次压栈将访问 rsp - 8 所在页)
             let first_access_virt = (rsp_val - 8) & !(PAGE_SIZE - 1);
-            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(first_access_virt)) {
+            if let Some(phys) = vmm.get_physical_in_pml4(
+                cr3,
+                crate::kernel::framework::mm::VirtAddr(first_access_virt),
+            ) {
                 crate::klog_boot_info!(
                     "[USER] SELF-CHECK: user_stack_first_access virt={:#X} (rsp-8={:#X}) -> phys={:#X} ✓",
-                    first_access_virt, rsp_val - 8, phys.0
+                    first_access_virt,
+                    rsp_val - 8,
+                    phys.0
                 );
             } else {
                 crate::klog_boot_info!(
                     "[USER] SELF-CHECK: user_stack_first_access virt={:#X} (rsp-8={:#X}) NOT MAPPED ✗",
-                    first_access_virt, rsp_val - 8
+                    first_access_virt,
+                    rsp_val - 8
                 );
             }
-            
+
             // 检查 RSP 指向的地址本身 (应该是 guard page 或未映射)
             let rsp_page = rsp_val & !(PAGE_SIZE - 1);
-            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(rsp_page)) {
+            if let Some(phys) =
+                vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(rsp_page))
+            {
                 crate::klog_boot_info!(
                     "[USER] SELF-CHECK: user_stack_rsp_page virt={:#X} -> phys={:#X} (unexpected: should be guard/unmapped)",
-                    rsp_page, phys.0
+                    rsp_page,
+                    phys.0
                 );
             } else {
                 crate::klog_boot_info!(
@@ -1157,10 +1275,12 @@ impl UserProcManager {
                     rsp_page
                 );
             }
-            
+
             // 检查内核栈页 (RSP0, iretq 帧所在页)
             let rsp0_check_virt = (kstack - 40) & !(PAGE_SIZE - 1);
-            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(rsp0_check_virt)) {
+            if let Some(phys) = vmm
+                .get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(rsp0_check_virt))
+            {
                 crate::klog_boot_info!(
                     "[USER] SELF-CHECK: rsp0_stack virt={:#X} -> phys={:#X} ✓",
                     rsp0_check_virt,
@@ -1172,36 +1292,45 @@ impl UserProcManager {
                     rsp0_check_virt
                 );
             }
-            
+
             crate::klog_boot_info!(
                 "[USER] SELF-CHECK: entering user mode with rip={:#X} rsp={:#X} cr3={:#X}",
-                rip_val, rsp_val, cr3
+                rip_val,
+                rsp_val,
+                cr3
             );
-            
+
             // 扩展自检: 验证 GDT 段描述符
             // 用户代码段 CS = 0x23 (GDT_USER_CODE | 0x03)
             // 用户数据段 SS = 0x1B (GDT_USER_DATA | 0x03)
             crate::klog_boot_info!(
                 "[USER] SELF-CHECK: GDT segments: CS={:#X} (expect 0x23) SS={:#X} (expect 0x1B)",
-                GDT_USER_CODE | 0x03, GDT_USER_DATA | 0x03
+                GDT_USER_CODE | 0x03,
+                GDT_USER_DATA | 0x03
             );
-            
+
             // 扩展自检: 验证 iretq 帧参数
             // iretq 从栈上恢复: RIP, CS, RFLAGS, RSP, SS
             crate::klog_boot_info!(
                 "[USER] SELF-CHECK: iretq frame: RIP={:#X} CS={:#X} RFLAGS={:#X} RSP={:#X} SS={:#X}",
-                rip_val, GDT_USER_CODE | 0x03, 0x202, rsp_val, GDT_USER_DATA | 0x03
+                rip_val,
+                GDT_USER_CODE | 0x03,
+                0x202,
+                rsp_val,
+                GDT_USER_DATA | 0x03
             );
-            
+
             // 扩展自检: 验证内核栈指针
             crate::klog_boot_info!(
                 "[USER] SELF-CHECK: kstack={:#X} (high-half, will be used as RSP0)",
                 kstack
             );
-            
+
             // 扩展自检: 验证用户代码页内容 (检查是否有有效指令)
             let code_page_virt = rip_val & !(PAGE_SIZE - 1);
-            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt)) {
+            if let Some(phys) = vmm
+                .get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page_virt))
+            {
                 // 通过内核映射读取用户代码页内容
                 let kernel_virt = phys.0 + crate::kernel::framework::mm::KERNEL_BASE as u64;
                 let code_ptr = kernel_virt as *const u8;
@@ -1215,195 +1344,251 @@ impl UserProcManager {
                 }
                 crate::klog_boot_info!(
                     "[USER] SELF-CHECK: user_code first 16 bytes: {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}",
-                    instr_sample[0], instr_sample[1], instr_sample[2], instr_sample[3],
-                    instr_sample[4], instr_sample[5], instr_sample[6], instr_sample[7],
-                    instr_sample[8], instr_sample[9], instr_sample[10], instr_sample[11],
-                    instr_sample[12], instr_sample[13], instr_sample[14], instr_sample[15]
+                    instr_sample[0],
+                    instr_sample[1],
+                    instr_sample[2],
+                    instr_sample[3],
+                    instr_sample[4],
+                    instr_sample[5],
+                    instr_sample[6],
+                    instr_sample[7],
+                    instr_sample[8],
+                    instr_sample[9],
+                    instr_sample[10],
+                    instr_sample[11],
+                    instr_sample[12],
+                    instr_sample[13],
+                    instr_sample[14],
+                    instr_sample[15]
                 );
             }
         }
 
-            // ═══ 自检式调试: SYSCALL/SYSRET 配置验证 ═══
-            #[cfg(target_arch = "x86_64")]
-            {
-                const IA32_EFER: u32 = 0xC0000080;
-                const IA32_STAR: u32 = 0xC0000081;
-                const IA32_LSTAR: u32 = 0xC0000082;
-                const IA32_SFMASK: u32 = 0xC0000084;
-                const IA32_GS_BASE: u32 = 0xC0000101;
-                const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
+        // ═══ 自检式调试: SYSCALL/SYSRET 配置验证 ═══
+        #[cfg(target_arch = "x86_64")]
+        {
+            const IA32_EFER: u32 = 0xC0000080;
+            const IA32_STAR: u32 = 0xC0000081;
+            const IA32_LSTAR: u32 = 0xC0000082;
+            const IA32_SFMASK: u32 = 0xC0000084;
+            const IA32_GS_BASE: u32 = 0xC0000101;
+            const IA32_KERNEL_GS_BASE: u32 = 0xC0000102;
 
-                // SAFETY: 仅读取 MSR, 无副作用, boot 阶段单线程
-                unsafe {
-                    let efer = crate::kernel::framework::cpu::msr::read_msr(IA32_EFER);
-                    let star = crate::kernel::framework::cpu::msr::read_msr(IA32_STAR);
-                    let lstar = crate::kernel::framework::cpu::msr::read_msr(IA32_LSTAR);
-                    let sfmask = crate::kernel::framework::cpu::msr::read_msr(IA32_SFMASK);
-                    let gs_base = crate::kernel::framework::cpu::msr::read_msr(IA32_GS_BASE);
-                    let kernel_gs_base = crate::kernel::framework::cpu::msr::read_msr(IA32_KERNEL_GS_BASE);
+            // SAFETY: 仅读取 MSR, 无副作用, boot 阶段单线程
+            unsafe {
+                let efer = crate::kernel::framework::cpu::msr::read_msr(IA32_EFER);
+                let star = crate::kernel::framework::cpu::msr::read_msr(IA32_STAR);
+                let lstar = crate::kernel::framework::cpu::msr::read_msr(IA32_LSTAR);
+                let sfmask = crate::kernel::framework::cpu::msr::read_msr(IA32_SFMASK);
+                let gs_base = crate::kernel::framework::cpu::msr::read_msr(IA32_GS_BASE);
+                let kernel_gs_base =
+                    crate::kernel::framework::cpu::msr::read_msr(IA32_KERNEL_GS_BASE);
 
-                    let sce = (efer & 1) != 0;
+                let sce = (efer & 1) != 0;
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK SYSCALL: EFER={:#x} SCE={} STAR={:#x} LSTAR={:#x} SFMASK={:#x}",
+                    efer,
+                    sce,
+                    star,
+                    lstar,
+                    sfmask
+                );
+                if !sce {
                     crate::klog_boot_info!(
-                        "[USER] SELF-CHECK SYSCALL: EFER={:#x} SCE={} STAR={:#x} LSTAR={:#x} SFMASK={:#x}",
-                        efer, sce, star, lstar, sfmask
+                        "[USER] SELF-CHECK: *** BUG: EFER.SCE=0! syscall instruction will #UD! ***"
                     );
-                    if !sce {
-                        crate::klog_boot_info!(
-                            "[USER] SELF-CHECK: *** BUG: EFER.SCE=0! syscall instruction will #UD! ***"
-                        );
-                    }
+                }
 
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK GS (before enter_user_asm): IA32_GS_BASE={:#x} IA32_KERNEL_GS_BASE={:#x}",
+                    gs_base,
+                    kernel_gs_base
+                );
+                if gs_base == 0 && kernel_gs_base == 0 {
                     crate::klog_boot_info!(
-                        "[USER] SELF-CHECK GS (before enter_user_asm): IA32_GS_BASE={:#x} IA32_KERNEL_GS_BASE={:#x}",
-                        gs_base, kernel_gs_base
+                        "[USER] SELF-CHECK: *** BUG: Both GS MSRs are 0! swapgs in enter_user_asm will produce GS_BASE=0, syscall_entry [gs:0] will access NULL → #PF → Triple Fault! ***"
                     );
-                    if gs_base == 0 && kernel_gs_base == 0 {
-                        crate::klog_boot_info!(
-                            "[USER] SELF-CHECK: *** BUG: Both GS MSRs are 0! swapgs in enter_user_asm will produce GS_BASE=0, syscall_entry [gs:0] will access NULL → #PF → Triple Fault! ***"
-                        );
-                        crate::klog_boot_info!(
-                            "[USER] SELF-CHECK: *** ROOT CAUSE: gdt_init write_msr may have been overwritten, or &gdt.syscall returns 0 ***"
-                        );
-                    }
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK: *** ROOT CAUSE: gdt_init write_msr may have been overwritten, or &gdt.syscall returns 0 ***"
+                    );
+                }
 
-                    // 验证 LSTAR 页面在用户页表中映射且可执行
-                    let lstar_page = lstar & !(PAGE_SIZE - 1);
-                    let vmm = crate::kernel::framework::mm::get_vmm();
-                    if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(lstar_page)) {
-                        if let Some(pte_raw) = vmm.get_pte_value(cr3, crate::kernel::framework::mm::VirtAddr(lstar_page)) {
-                            let present = (pte_raw & 0x001) != 0;
-                            let user = (pte_raw & 0x004) != 0;
-                            let nx = (pte_raw & (1u64 << 63)) != 0;
+                // 验证 LSTAR 页面在用户页表中映射且可执行
+                let lstar_page = lstar & !(PAGE_SIZE - 1);
+                let vmm = crate::kernel::framework::mm::get_vmm();
+                if let Some(phys) = vmm
+                    .get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(lstar_page))
+                {
+                    if let Some(pte_raw) =
+                        vmm.get_pte_value(cr3, crate::kernel::framework::mm::VirtAddr(lstar_page))
+                    {
+                        let present = (pte_raw & 0x001) != 0;
+                        let user = (pte_raw & 0x004) != 0;
+                        let nx = (pte_raw & (1u64 << 63)) != 0;
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK LSTAR page: virt={:#x} -> phys={:#x} PTE={:#x} P={} U={} NX={}",
+                            lstar_page,
+                            phys.0,
+                            pte_raw,
+                            u8::from(present),
+                            u8::from(user),
+                            u8::from(nx)
+                        );
+                        // syscall 指令在取指之前已将 CPL 切换到 0,
+                        // 因此 LSTAR 页面 U=0 是正确行为 (内核页面不需要 USER 位).
+                        // 仅当 P=0 或 NX=1 时才是真正的 bug.
+                        if !user {
                             crate::klog_boot_info!(
-                                "[USER] SELF-CHECK LSTAR page: virt={:#x} -> phys={:#x} PTE={:#x} P={} U={} NX={}",
-                                lstar_page, phys.0, pte_raw, u8::from(present), u8::from(user), u8::from(nx)
+                                "[USER] SELF-CHECK LSTAR page U=0 (expected: syscall switches CPL→0 before instruction fetch)"
                             );
-                            // syscall 指令在取指之前已将 CPL 切换到 0,
-                            // 因此 LSTAR 页面 U=0 是正确行为 (内核页面不需要 USER 位).
-                            // 仅当 P=0 或 NX=1 时才是真正的 bug.
-                            if !user {
+                        }
+                        if nx {
+                            crate::klog_boot_info!(
+                                "[USER] SELF-CHECK: *** BUG: LSTAR page NX=1! syscall_entry cannot execute! ***"
+                            );
+                        }
+                    }
+                } else {
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK: *** BUG: LSTAR page {:#x} NOT MAPPED in user page table! syscall from Ring 3 will #PF! ***",
+                        lstar_page
+                    );
+                }
+            }
+        }
+
+        // ═══ 自检式调试: 用户代码页完整页表路径遍历 (检查中间层级 USER 位) ═══
+        // x86_64 页表遍历要求: PML4E→PDPTE→PDE→PTE 每一级都必须有 USER 位,
+        // 否则 Ring 3 访问该页面时触发 #PF, 即使最终 PTE 有 USER 位.
+        #[cfg(target_arch = "x86_64")]
+        {
+            let vaddr = rip_val;
+            let pml4_idx = (vaddr >> 39) & 0x1FF;
+            let pdpt_idx = (vaddr >> 30) & 0x1FF;
+            let pd_idx = (vaddr >> 21) & 0x1FF;
+            let pt_idx = (vaddr >> 12) & 0x1FF;
+
+            // SAFETY: 使用物理地址 + KERNEL_BASE 访问页表, 只读操作
+            unsafe {
+                let pml4_virt =
+                    (cr3 + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
+                let pml4e = pml4_virt.add(pml4_idx as usize).read_volatile();
+                let pml4e_present = (pml4e & 1) != 0;
+                let pml4e_user = (pml4e & 4) != 0;
+                let pml4e_frame = pml4e & 0x000FFFFFFFFFF000;
+                crate::klog_boot_info!(
+                    "[USER] SELF-CHECK PT-WALK user_code {:#x}: PML4E[{}]={:#x} P={} U={} frame={:#x}",
+                    vaddr,
+                    pml4_idx,
+                    pml4e,
+                    u8::from(pml4e_present),
+                    u8::from(pml4e_user),
+                    pml4e_frame
+                );
+                if pml4e_present && !pml4e_user {
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK: *** BUG: PML4E[{}] U=0! Ring 3 cannot traverse to PDPT! ***",
+                        pml4_idx
+                    );
+                }
+
+                if pml4e_present {
+                    let pdpt_virt = (pml4e_frame + crate::kernel::framework::mm::KERNEL_BASE as u64)
+                        as *const u64;
+                    let pdpte = pdpt_virt.add(pdpt_idx as usize).read_volatile();
+                    let pdpte_present = (pdpte & 1) != 0;
+                    let pdpte_user = (pdpte & 4) != 0;
+                    let pdpte_huge = (pdpte & 0x80) != 0;
+                    let pdpte_frame = pdpte & 0x000FFFFFFFFFF000;
+                    crate::klog_boot_info!(
+                        "[USER] SELF-CHECK PT-WALK: PDPTE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
+                        pdpt_idx,
+                        pdpte,
+                        u8::from(pdpte_present),
+                        u8::from(pdpte_user),
+                        u8::from(pdpte_huge),
+                        pdpte_frame
+                    );
+                    if pdpte_present && !pdpte_user {
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK: *** BUG: PDPTE[{}] U=0! Ring 3 cannot traverse to PD! ***",
+                            pdpt_idx
+                        );
+                    }
+
+                    if pdpte_present && !pdpte_huge {
+                        let pd_virt = (pdpte_frame
+                            + crate::kernel::framework::mm::KERNEL_BASE as u64)
+                            as *const u64;
+                        let pde = pd_virt.add(pd_idx as usize).read_volatile();
+                        let pde_present = (pde & 1) != 0;
+                        let pde_user = (pde & 4) != 0;
+                        let pde_huge = (pde & 0x80) != 0;
+                        let pde_frame = pde & 0x000FFFFFFFFFF000;
+                        crate::klog_boot_info!(
+                            "[USER] SELF-CHECK PT-WALK: PDE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
+                            pd_idx,
+                            pde,
+                            u8::from(pde_present),
+                            u8::from(pde_user),
+                            u8::from(pde_huge),
+                            pde_frame
+                        );
+                        if pde_present && !pde_user {
+                            crate::klog_boot_info!(
+                                "[USER] SELF-CHECK: *** BUG: PDE[{}] U=0! Ring 3 cannot traverse to PT! ***",
+                                pd_idx
+                            );
+                        }
+
+                        if pde_present && !pde_huge {
+                            let pt_virt = (pde_frame
+                                + crate::kernel::framework::mm::KERNEL_BASE as u64)
+                                as *const u64;
+                            let pte = pt_virt.add(pt_idx as usize).read_volatile();
+                            let pte_present = (pte & 1) != 0;
+                            let pte_user = (pte & 4) != 0;
+                            let pte_nx = (pte & (1u64 << 63)) != 0;
+                            let pte_frame = pte & 0x000FFFFFFFFFF000;
+                            crate::klog_boot_info!(
+                                "[USER] SELF-CHECK PT-WALK: PTE[{}]={:#x} P={} U={} NX={} frame={:#x}",
+                                pt_idx,
+                                pte,
+                                u8::from(pte_present),
+                                u8::from(pte_user),
+                                u8::from(pte_nx),
+                                pte_frame
+                            );
+                            if pte_present && !pte_user {
                                 crate::klog_boot_info!(
-                                    "[USER] SELF-CHECK LSTAR page U=0 (expected: syscall switches CPL→0 before instruction fetch)"
+                                    "[USER] SELF-CHECK: *** BUG: PTE[{}] U=0! Ring 3 cannot access this page! ***",
+                                    pt_idx
                                 );
                             }
-                            if nx {
+                            if pte_present && pte_nx {
                                 crate::klog_boot_info!(
-                                    "[USER] SELF-CHECK: *** BUG: LSTAR page NX=1! syscall_entry cannot execute! ***"
+                                    "[USER] SELF-CHECK: *** BUG: PTE[{}] NX=1! Ring 3 cannot execute this page! ***",
+                                    pt_idx
                                 );
                             }
                         }
-                    } else {
-                        crate::klog_boot_info!(
-                            "[USER] SELF-CHECK: *** BUG: LSTAR page {:#x} NOT MAPPED in user page table! syscall from Ring 3 will #PF! ***",
-                            lstar_page
-                        );
                     }
                 }
             }
-
-            // ═══ 自检式调试: 用户代码页完整页表路径遍历 (检查中间层级 USER 位) ═══
-            // x86_64 页表遍历要求: PML4E→PDPTE→PDE→PTE 每一级都必须有 USER 位,
-            // 否则 Ring 3 访问该页面时触发 #PF, 即使最终 PTE 有 USER 位.
-            #[cfg(target_arch = "x86_64")]
-            {
-                let vaddr = rip_val;
-                let pml4_idx = (vaddr >> 39) & 0x1FF;
-                let pdpt_idx = (vaddr >> 30) & 0x1FF;
-                let pd_idx = (vaddr >> 21) & 0x1FF;
-                let pt_idx = (vaddr >> 12) & 0x1FF;
-
-                // SAFETY: 使用物理地址 + KERNEL_BASE 访问页表, 只读操作
-                unsafe {
-                    let pml4_virt = (cr3 + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
-                    let pml4e = pml4_virt.add(pml4_idx as usize).read_volatile();
-                    let pml4e_present = (pml4e & 1) != 0;
-                    let pml4e_user = (pml4e & 4) != 0;
-                    let pml4e_frame = pml4e & 0x000FFFFFFFFFF000;
-                    crate::klog_boot_info!(
-                        "[USER] SELF-CHECK PT-WALK user_code {:#x}: PML4E[{}]={:#x} P={} U={} frame={:#x}",
-                        vaddr, pml4_idx, pml4e, u8::from(pml4e_present), u8::from(pml4e_user), pml4e_frame
-                    );
-                    if pml4e_present && !pml4e_user {
-                        crate::klog_boot_info!(
-                            "[USER] SELF-CHECK: *** BUG: PML4E[{}] U=0! Ring 3 cannot traverse to PDPT! ***",
-                            pml4_idx
-                        );
-                    }
-
-                    if pml4e_present {
-                        let pdpt_virt = (pml4e_frame + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
-                        let pdpte = pdpt_virt.add(pdpt_idx as usize).read_volatile();
-                        let pdpte_present = (pdpte & 1) != 0;
-                        let pdpte_user = (pdpte & 4) != 0;
-                        let pdpte_huge = (pdpte & 0x80) != 0;
-                        let pdpte_frame = pdpte & 0x000FFFFFFFFFF000;
-                        crate::klog_boot_info!(
-                            "[USER] SELF-CHECK PT-WALK: PDPTE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
-                            pdpt_idx, pdpte, u8::from(pdpte_present), u8::from(pdpte_user), u8::from(pdpte_huge), pdpte_frame
-                        );
-                        if pdpte_present && !pdpte_user {
-                            crate::klog_boot_info!(
-                                "[USER] SELF-CHECK: *** BUG: PDPTE[{}] U=0! Ring 3 cannot traverse to PD! ***",
-                                pdpt_idx
-                            );
-                        }
-
-                        if pdpte_present && !pdpte_huge {
-                            let pd_virt = (pdpte_frame + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
-                            let pde = pd_virt.add(pd_idx as usize).read_volatile();
-                            let pde_present = (pde & 1) != 0;
-                            let pde_user = (pde & 4) != 0;
-                            let pde_huge = (pde & 0x80) != 0;
-                            let pde_frame = pde & 0x000FFFFFFFFFF000;
-                            crate::klog_boot_info!(
-                                "[USER] SELF-CHECK PT-WALK: PDE[{}]={:#x} P={} U={} HUGE={} frame={:#x}",
-                                pd_idx, pde, u8::from(pde_present), u8::from(pde_user), u8::from(pde_huge), pde_frame
-                            );
-                            if pde_present && !pde_user {
-                                crate::klog_boot_info!(
-                                    "[USER] SELF-CHECK: *** BUG: PDE[{}] U=0! Ring 3 cannot traverse to PT! ***",
-                                    pd_idx
-                                );
-                            }
-
-                            if pde_present && !pde_huge {
-                                let pt_virt = (pde_frame + crate::kernel::framework::mm::KERNEL_BASE as u64) as *const u64;
-                                let pte = pt_virt.add(pt_idx as usize).read_volatile();
-                                let pte_present = (pte & 1) != 0;
-                                let pte_user = (pte & 4) != 0;
-                                let pte_nx = (pte & (1u64 << 63)) != 0;
-                                let pte_frame = pte & 0x000FFFFFFFFFF000;
-                                crate::klog_boot_info!(
-                                    "[USER] SELF-CHECK PT-WALK: PTE[{}]={:#x} P={} U={} NX={} frame={:#x}",
-                                    pt_idx, pte, u8::from(pte_present), u8::from(pte_user), u8::from(pte_nx), pte_frame
-                                );
-                                if pte_present && !pte_user {
-                                    crate::klog_boot_info!(
-                                        "[USER] SELF-CHECK: *** BUG: PTE[{}] U=0! Ring 3 cannot access this page! ***",
-                                        pt_idx
-                                    );
-                                }
-                                if pte_present && pte_nx {
-                                    crate::klog_boot_info!(
-                                        "[USER] SELF-CHECK: *** BUG: PTE[{}] NX=1! Ring 3 cannot execute this page! ***",
-                                        pt_idx
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        }
 
         // aarch64 页表诊断: 验证用户代码页和栈页的映射
         #[cfg(target_arch = "aarch64")]
         {
             let vmm = crate::kernel::framework::mm::get_vmm();
             let code_page = rip_val & !(PAGE_SIZE - 1);
-            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page)) {
+            if let Some(phys) =
+                vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(code_page))
+            {
                 crate::klog_boot_info!(
                     "[USER] A64-SELF-CHECK: code_page virt={:#X} -> phys={:#X} ✓",
-                    code_page, phys.0
+                    code_page,
+                    phys.0
                 );
             } else {
                 crate::klog_boot_info!(
@@ -1412,10 +1597,13 @@ impl UserProcManager {
                 );
             }
             let stack_page = (rsp_val - 8) & !(PAGE_SIZE - 1);
-            if let Some(phys) = vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(stack_page)) {
+            if let Some(phys) =
+                vmm.get_physical_in_pml4(cr3, crate::kernel::framework::mm::VirtAddr(stack_page))
+            {
                 crate::klog_boot_info!(
                     "[USER] A64-SELF-CHECK: stack_page virt={:#X} -> phys={:#X} ✓",
-                    stack_page, phys.0
+                    stack_page,
+                    phys.0
                 );
             } else {
                 crate::klog_boot_info!(
@@ -1426,16 +1614,28 @@ impl UserProcManager {
         }
 
         crate::klog_boot_info!("[USER] SELF-CHECK: calling enter_user_asm...");
-        
+
         // SAFETY: enter_user 是平台特定的 arch 入口, 不会返回, 由调用方保证上下文有效。
         // user_cr3 传入用户页表物理地址, 由 enter_user 汇编在 iretq 前切换.
         unsafe {
-            crate::arch!(enter_user(rip_val as usize, rsp_val as usize, 0, cr3, kstack));
+            crate::arch!(enter_user(
+                rip_val as usize,
+                rsp_val as usize,
+                0,
+                cr3,
+                kstack
+            ));
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
     /// 将 argc/argv/envp 写入用户进程栈
     /// 返回设置后的新栈指针 (RSP)
     ///
@@ -1543,10 +1743,22 @@ impl UserProcManager {
         new_sp
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn load_elf_from_memory(&self, elf_data: *const u8, elf_size: u64, pwm: u64) -> i32 {
         crate::klog_boot_info!("[ELF] load_elf_from_memory: entry");
         if elf_data.is_null() || elf_size < core::mem::size_of::<ElfHeader>() as u64 {
@@ -1558,7 +1770,10 @@ impl UserProcManager {
         //
         // SAFETY: elf_data 区间已校验 (非空 + size >= header), verify_elf 内部仅读借用。
         crate::klog_boot_info!("[ELF] calling verify_elf...");
-        let verified = if let Ok(v) = unsafe { super::elf::verify::verify_elf(elf_data, elf_size) } { v } else {
+        let verified = if let Ok(v) = unsafe { super::elf::verify::verify_elf(elf_data, elf_size) }
+        {
+            v
+        } else {
             crate::klog_boot_info!("[ELF] verify_elf failed");
             return -1;
         };
@@ -1627,7 +1842,8 @@ impl UserProcManager {
                 }
 
                 let vaddr_start = ((*phdr).p_vaddr + load_bias) & !(PAGE_SIZE - 1);
-                let vaddr_end = ((*phdr).p_vaddr + (*phdr).p_memsz + load_bias + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1);
+                let vaddr_end = ((*phdr).p_vaddr + (*phdr).p_memsz + load_bias + (PAGE_SIZE - 1))
+                    & !(PAGE_SIZE - 1);
                 let num_pages = (vaddr_end - vaddr_start) / PAGE_SIZE;
 
                 for j in 0..num_pages {
@@ -1710,8 +1926,14 @@ impl UserProcManager {
         }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn create_from_binary(&self, code: *const u8, code_size: u64, pwm: u64) -> i32 {
         let info = UserProcInfo {
             entry: USER_CODE_BASE,
@@ -1801,7 +2023,10 @@ pub extern "C" fn proc_alloc_pid() -> u32 {
 /// 子进程的 CR3 和内核栈已在 `sys_fork` 中分配好，此处仅创建 `UserProcess` 记录
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
     let parent_proc = match USER_PROC_MANAGER.get(parent_pid) {
         Some(p) => p,
@@ -1831,7 +2056,9 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         child_ref.store_pwm(parent_ref.load_pwm());
         child_ref.store_cr3((*child_kernel_proc.as_ptr()).cr3.load(Ordering::SeqCst));
         child_ref.store_kernel_stack(
-            (*child_kernel_proc.as_ptr()).kernel_stack.load(Ordering::SeqCst),
+            (*child_kernel_proc.as_ptr())
+                .kernel_stack
+                .load(Ordering::SeqCst),
         );
         child_ref.store_user_stack(parent_ref.load_user_stack());
         child_ref.store_stack_bottom(parent_ref.load_stack_bottom());
@@ -1839,19 +2066,24 @@ pub extern "C" fn user_proc_clone(parent_pid: u32, child_pid: u32) -> i32 {
         child_ref.store_state(1);
         child_ref.set_create_time(crate::kernel::framework::timer::get_ticks());
 
-        USER_PROC_MANAGER
-            .processes
-            .lock()
-            .insert(child_pid, if let Some(nn) = NonNull::new(child_up) { nn } else {
+        USER_PROC_MANAGER.processes.lock().insert(
+            child_pid,
+            if let Some(nn) = NonNull::new(child_up) {
+                nn
+            } else {
                 klog_error!("user_proc_clone: 子进程指针为空");
                 return -1;
-            });
+            },
+        );
     }
 
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn try_expand_user_stack(fault_addr: u64) -> bool {
     if fault_addr >= USER_STACK_TOP {
         return false;
