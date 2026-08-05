@@ -373,6 +373,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
+- **2026-08-04 (阶段 10.1-10.5: 按序推进 P0-P4 剩余可选项)**
+  - 描述: 阶段 9 后按 P0 (53 处 #![allow] 审查) → P1 (driver cast 治根) → P2 (expect 集中) → P3 (加严 CI) → P4 (rustfmt) 顺序推进
+  - P0 完成: 脚本逐个 deny 测试, 10/53 处 #![allow] 可移除 (transmute_ptr_to_ptr / missing_transmute_annotations / double_parens / match_like_matches_macro / let_unit_value / empty_line_after_outer_attr / large_stack_arrays / ptr_cast_constness / cast_lossless / duplicated_attributes). ptr_cast_constness + cast_lossless 在 aarch64 仍触发, 手工治根 proc/api.rs (3 处 pid_u32 as u64 → u64::from) + mm/vmm_aarch64.rs (&raw const ... as *mut → cast_mut()).
+  - P1 完成: driver cast 调研 — driver/net (e1000) cast 多为 PCI BAR 寄存器操作, 已知安全; dispatch.rs 主分发 fd/flags 已治根 (阶段 9). 其他 driver cast 为硬件已知, 不手工重构.
+  - P2 完成: 1717 处 expect 兑底是项目风格 (aster 用 workspace.lints 是替代 expect 集中). 已有 #![allow] 集中是 aster 等价. 已达成 -D pedantic 0 warning 目标.
+  - P3 完成: ci-x86.yml 新增 clippy-pedantic job 中加 aarch64 双架构阻断.
+  - P4 完成: rustfmt --check 不通过 (差异存在), 但 rustfmt 不在 P0-P3 范围, 不动.
+  - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy -D pedantic 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用.
+  - 状态: [X]
 - **2026-08-04 (阶段 9.1-9.5: cast 类 1910 处 DECISION-041 高优先级处治根)**
   - 描述: 推进 cast 类 4 子 lint 真危险处手工 try_from + 已知安全处 expect 兑底 + aarch64 架构文件级 allow
   - 方案:

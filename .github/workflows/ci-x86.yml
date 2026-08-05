@@ -186,6 +186,23 @@ jobs:
           fi
           echo "✅ clippy -D pedantic 通过 (cast_* 已豁免, 见 DECISION-041)"
 
+      - name: clippy aarch64 -D pedantic (排除 cast_*)
+        working-directory: src/rust
+        run: |
+          mkdir -p build/log
+          cargo clippy --release --target aarch64-unknown-none --lib -- \
+            -D clippy::pedantic \
+            -A clippy::cast_possible_truncation \
+            -A clippy::cast_sign_loss \
+            -A clippy::cast_possible_wrap \
+            -A clippy::cast_precision_loss \
+            2>&1 | tee build/log/clippy_pedantic_aarch64.txt | tail -20
+          if grep -qE "^error\[|^error:" build/log/clippy_pedantic_aarch64.txt; then
+            echo "::error::clippy aarch64 -D pedantic 失败"
+            exit 1
+          fi
+          echo "✅ clippy aarch64 -D pedantic 通过 (cast_* 已豁免, 见 DECISION-041)"
+
       - name: 上传 clippy 报告
         if: always()
         uses: actions/upload-artifact@v4
