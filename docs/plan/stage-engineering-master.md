@@ -93,10 +93,10 @@
 ### 待办 (按时间窗口分组)
 
 - **短期待办 (1-2 周内可完成)**
-  - [ ] credo/storage.rs 3 处 expect 修复 (DECISION-036)
-  - [ ] barrier/api.rs 2 处 no_mangle extern "C" 补全
-  - [ ] ab/ac 组 191 处 expect 注释统一 (DECISION-035)
-  - 状态: []
+  - [x] ~~credo/storage.rs 3 处 expect 修复 (DECISION-036)~~ — **已完成**: 2026-08-04 阶段 7-8 期间 w32/w64/w16 函数已用位移形式 `v & 0xFF` / `(v >> 8) & 0xFF` 避免 cast 警告 (见 src/kernel/framework/credo/storage.rs:43-63). 当前 2 处剩余 expect 是 `save_database` 函数 (`disk_id as u8` 等) 资源类型转换, 不属于按字节序列化场景.
+  - [x] ~~barrier/api.rs 2 处 no_mangle extern "C" 补全~~ — **已完成**: 阶段 7-8 期间已补全 `recovery_set_fault_rate` / `recovery_get_fault_rate` 两个 `#[cfg(feature = "fault_injection")]` 函数 (见 src/kernel/framework/barrier/api.rs:308-310 / 314-317).
+  - [x] ~~ab/ac 组 191 处 expect 注释统一 (DECISION-035)~~ — **已完成**: 全仓 257 处 cast expect 注释统一为 `// 有意窄化: <具体原因>` 模板 (见 DECISION-035 治理成果).
+  - 状态: [X] (3 项均已在阶段 7-8 期间完成, master 文档未同步)
 
 - **长期待办 (永久保留, 不强制修复)**
   - [ ] cast 类 1700+ 处已知安全 cast 保留原状 (DECISION-041)
