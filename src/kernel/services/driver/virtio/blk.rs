@@ -87,9 +87,9 @@ pub const BLK_CONFIG_BLK_SIZE: usize = 0x14;
 /// `VirtIO` 块请求头 (小端, 与设备 DMA 格式一致).
 ///
 /// 描述符链布局:
-///   desc[0]: `BlkRequest` (8 字节, 设备读)
-///   desc[1]: 数据缓冲区 (IN 时设备写, OUT 时设备读)
-///   desc[2]: 状态字节 (1 字节, 设备写)
+///   desc`[0]`: `BlkRequest` (8 字节, 设备读)
+///   desc`[1]`: 数据缓冲区 (IN 时设备写, OUT 时设备读)
+///   desc`[2]`: 状态字节 (1 字节, 设备写)
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct BlkRequest {

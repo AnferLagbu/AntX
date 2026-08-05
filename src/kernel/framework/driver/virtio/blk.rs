@@ -299,9 +299,9 @@ impl VirtioBlk {
     /// 执行单扇区 I/O 请求 (经 virtqueue).
     ///
     /// 使用链式描述符:
-    ///   desc[0] = `BlkRequest` 头 (设备读)
-    ///   desc[1] = 数据缓冲区 (IN 时设备写, OUT 时设备读)
-    ///   desc[2] = 状态字节 (设备写)
+    ///   desc`[0]` = `BlkRequest` 头 (设备读)
+    ///   desc`[1]` = 数据缓冲区 (IN 时设备写, OUT 时设备读)
+    ///   desc`[2]` = 状态字节 (设备写)
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
     #[expect(

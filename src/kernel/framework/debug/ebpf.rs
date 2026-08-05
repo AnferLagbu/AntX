@@ -543,7 +543,7 @@ impl BpfHelper {
     /// - `id`: helper 函数 ID
     /// - `r1`-`r5`: eBPF 寄存器值
     /// - `ctx`: 程序上下文
-    /// - `maps`: Map FD → Arc<BpfMap> 映射
+    /// - `maps`: Map FD → `Arc<BpfMap>` 映射
     ///
     /// 返回: R0 的值
     // 有意窄化: 显式收窄, 调用方保证值域
@@ -661,7 +661,7 @@ impl BpfHelper {
 pub struct BpfCtx<'a> {
     /// 输入数据 (如 socket buffer / tracepoint 数据)
     pub data: &'a [u8],
-    /// Map FD → Arc<BpfMap> 映射
+    /// Map FD → `Arc<BpfMap>` 映射
     pub maps: &'a BTreeMap<u32, Arc<BpfMap>>,
 }
 

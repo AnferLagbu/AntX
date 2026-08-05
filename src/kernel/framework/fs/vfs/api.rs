@@ -1021,7 +1021,7 @@ pub extern "C" fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
 /// Safe 包装: services 层用, 返回 `VfsStat` 而非 raw pointer.
 ///
 /// 内部复用 `vfs_stat_internal`, 在 stack 上接收结果, 然后转为 Option 返回.
-/// 服务层拿到 Option<VfsStat> 后可安全地用 `write_struct_to_user` 写回 user.
+/// 服务层拿到 `Option<VfsStat>` 后可安全地用 `write_struct_to_user` 写回 user.
 pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
     if path.is_null() {
         return None;

@@ -88,10 +88,10 @@ static mut TTBR1_L1: AlignedPageTable = AlignedPageTable([0; 512]);
 /// 同时设置 TTBR1_EL1 覆盖内核高地址空间 (2GB)。
 ///
 /// 页表层级 (4KB 粒度, 48-bit VA, 4-level):
-///   L0[0] → L1_IDMAP
+///   L0`[0]` → L1_IDMAP
 ///   
-/// L1[0] → L2_DEVICE (2MB 粒度, 全部 Device memory — QEMU virt 低 1GB 无 DRAM)
-/// L1[1] → 1GB 块: PA 0x40000000 (DRAM, kernel @ 0x40080000, Normal 内存)
+/// L1`[0]` → L2_DEVICE (2MB 粒度, 全部 Device memory — QEMU virt 低 1GB 无 DRAM)
+/// L1`[1]` → 1GB 块: PA 0x40000000 (DRAM, kernel @ 0x40080000, Normal 内存)
 ///
 /// 所有映射均为 EL1 RW。
 ///
@@ -177,8 +177,8 @@ pub unsafe fn init() {
 ///
 /// T1SZ=16 时硬件从 level 1 开始遍历，TTBR1_EL1 直接指向 TTBR1_L1。
 /// 页表层级:
-///   TTBR1_L1[0] → L2_DEVICE (0-1GB, Device memory, 2MB 粒度)
-///   TTBR1_L1[1] → 1GB 块 (1-2GB, Normal memory)
+///   TTBR1_L1`[0]` → L2_DEVICE (0-1GB, Device memory, 2MB 粒度)
+///   TTBR1_L1`[1]` → 1GB 块 (1-2GB, Normal memory)
 #[allow(clippy::identity_op)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn init_kernel_ttbr1() {

@@ -28,7 +28,7 @@
 //! - ✅ **内存安全**: Ownership + Borrow Checker 消除缓冲区溢出
 //! - ✅ **并发安全**: `AtomicU64` / Mutex 保护全局状态
 //! - ✅ **类型安全**: Trait 系统替代 void* 函数指针
-//! - ✅ **空指针安全**: Option<T> 编译期排除 null deref
+//! - ✅ **空指针安全**: `Option<T>` 编译期排除 null deref
 //!
 //! ## 使用示例
 //!

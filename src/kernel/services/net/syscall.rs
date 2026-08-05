@@ -6,9 +6,9 @@
 //! - 0 unsafe,纯类型安全
 //! - 委托 framework/net/syscall.rs 完成用户空间数据搬运 + smoltcp 协议栈调用
 //!
-//! ## 与 [`super::socket`] 区别
+//! ## 与 [`mod@super::socket`] 区别
 //!
-//! - [`super::socket`] 强类型 API (Domain, `SockType`, `SockAddrIn`, &[u8])
+//! - [`mod@super::socket`] 强类型 API (Domain, `SockType`, `SockAddrIn`, `&[u8]`)
 //! - 本模块 syscall 入口 API (i32, u64 用户指针, u32 长度)
 
 use super::unix as uds;

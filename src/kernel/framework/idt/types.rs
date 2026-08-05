@@ -192,14 +192,14 @@ bitflags::bitflags! {
 ///
 /// 布局完全匹配 Intel SDM Vol. 3A Figure 6-5:
 /// ```text
-/// +0  Offset[15:0]   | Selector
-/// +8  IST            | Type/Attr | Offset[31:16]
-/// +16 Offset[63:32]  | Reserved
+/// +0  Offset`[15:0]`   | Selector
+/// +8  IST            | Type/Attr | Offset`[31:16]`
+/// +16 Offset`[63:32]`  | Reserved
 /// ```
 #[repr(C, packed)]
 #[derive(Clone, Copy, Default, Debug)]
 pub struct IdtEntry {
-    /// Handler 偏移 [15:0]
+    /// Handler 偏移 `[15:0]`
     pub offset_low: u16,
     /// 代码段选择子
     pub selector: u16,
@@ -207,9 +207,9 @@ pub struct IdtEntry {
     pub ist: u8,
     /// 类型属性 (P/DPL/Type)
     pub type_attr: u8,
-    /// Handler 偏移 [31:16]
+    /// Handler 偏移 `[31:16]`
     pub offset_mid: u16,
-    /// Handler 偏移 [63:32]
+    /// Handler 偏移 `[63:32]`
     pub offset_high: u32,
     /// 保留 (必须为 0)
     pub reserved: u32,

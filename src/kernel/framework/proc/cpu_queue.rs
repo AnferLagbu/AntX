@@ -10,7 +10,7 @@
 //! ```text
 //! CPU 0                     CPU 1
 //! schedule()               schedule()
-//!   ├─ CpuQueue[0]          ├─ CpuQueue[1]
+//!   ├─ CpuQueue`[0]`          ├─ CpuQueue`[1]`
 //!   │  current/need_resched  │  current/need_resched
 //!   └─ SCHEDULER (global)   └─ SCHEDULER (global)
 //!                                ↑

@@ -7,9 +7,9 @@
 //! ```text
 //! IdtManager (全局单例)
 //!   ├── inner: IrqSpinLock<IdtState>   (中断安全, 锁内自动 cli)
-//!   │     ├── entries[256]    (IDT 门描述符)
-//!   │     ├── handlers[256]   (异常/IRQ 处理函数)
-//!   │     └── irq_desc[16]    (IRQ 扩展信息)
+//!   │     ├── entries`[256]`    (IDT 门描述符)
+//!   │     ├── handlers`[256]`   (异常/IRQ 处理函数)
+//!   │     └── irq_desc`[16]`    (IRQ 扩展信息)
 //!   ├── stats: InterruptStatistics (无锁统计)  ← Phase 1
 //!   ├── detailed_stats: DetailedStatistics      ← Phase 3
 //!   └── exception_handlers: Trait objects       ← Phase 3

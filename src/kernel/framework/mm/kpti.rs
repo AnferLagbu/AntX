@@ -207,7 +207,7 @@ pub fn kpti_kernel_pml4() -> u64 {
     LAST_KERNEL_PML4.load(Ordering::Acquire)
 }
 
-/// 将 `KERNEL_PML4`[`pml4_idx`] 同步到 `USER_PML4`[`pml4_idx`].
+/// 将 `KERNEL_PML4` `[`pml4_idx`]` 同步到 `USER_PML4` `[`pml4_idx`]`.
 ///
 /// 当 VMM 在内核高半区创建新的 PML4 条目 (如帧缓冲 MMIO 映射) 时,
 /// 必须同步到 `USER_PML4`, 否则 KPTI 模式下 CPU 使用 user CR3 时

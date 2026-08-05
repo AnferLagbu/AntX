@@ -402,7 +402,7 @@ pub extern "C" fn timer_sleep_busy_compat(ms: u64) {
 /// * `func` - 要执行的闭包
 ///
 /// # Returns
-/// * `(T, u64)` - (返回值, 执行时间 [纳秒])
+/// * `(T, u64)` - (返回值, 执行时间 `[纳秒]`)
 ///
 /// # Example
 /// ```rust,no_run
@@ -433,7 +433,7 @@ where
 /// * `F` - 要测量的代码块
 ///
 /// # Returns
-/// * `(T, u64)` - (返回值, 执行时间 [ticks])
+/// * `(T, u64)` - (返回值, 执行时间 `[ticks]`)
 pub fn measure_time_ticks<T, F>(func: F) -> (T, u64)
 where
     F: FnOnce() -> T,

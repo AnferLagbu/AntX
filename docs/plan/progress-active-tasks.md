@@ -373,7 +373,17 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
-- **2026-08-04 (阶段 11.1-11.3: clippy --lib --bins --examples 加严覆盖)**
+- **2026-08-04 (阶段 14.1-14.4: clippy.toml + rustdoc 评估)**
+  - 描述: clippy.toml 增强评估 + rustdoc 文档生成验证.
+  - 方案:
+    - clippy.toml 已存在 (cognitive-complexity=25, type-complexity=250, too-many-lines=100, missing-docs-in-crate-items, standard-macro-braces).
+    - 评估加 `check-private-items = true` → 触发 162 errors (missing_safety_doc 在 lib.rs 已 allow 之后未生效). **回退**.
+    - 结论: clippy.toml 是最优状态, 不再迁移 lib.rs 52 处 `#![allow]` (DECISION-043 手工审查, 含 aarch64 差异化 allow).
+    - rustdoc --no-deps 可生成 (74 warnings 主要为 unresolved link + unclosed HTML tag, 不阻断 CI).
+    - rustdoc --document-private-items 107 warnings (暴露 private API doc 问题).
+  - 决策: clippy.toml 保持现状; rustdoc 不开 CI 阻断 (intra-doc link 修复是渐进工作, 中期任务).
+  - 状态: [X]
+- **2026-08-04 (阶段 13.1-13.3: clippy --lib --bins --examples 加严覆盖)**
   - 描述: 扩展 CI clippy 覆盖到 lib + bins + examples (排除 tests 因 no_std kernel 不支持 #\[test\])
   - 方案:
     - x86_64 --all-targets 测试发现 5 处 unfulfilled expect (shadow_stack.rs × 2 / idt/idt.rs / config/validate.rs / display/mod.rs)

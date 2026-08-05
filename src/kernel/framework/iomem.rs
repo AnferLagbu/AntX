@@ -225,7 +225,7 @@ impl IoMem {
     /// 调用方必须保证:
     /// - 返回的指针类型与 MMIO 寄存器布局一致 (大小/对齐)。
     /// - 仅通过 volatile 访问 (无编译器重排)。
-    /// - 不会写出 `IoMem` 自身的字节范围 (offset + `size_of::`<T>() <= self.len)。
+    /// - 不会写出 `IoMem` 自身的字节范围 (offset + `size_of::<T>()` <= self.len)。
     #[inline(always)]
     pub unsafe fn virt_ptr(&self) -> *mut u8 {
         // SAFETY: `self.virt` 是 `IoMem::from_*` 构造时由 `NonNull::new_unchecked`

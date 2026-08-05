@@ -110,7 +110,7 @@ impl UFrame {
 
     /// 从帧内指定偏移读取一个 POD 值.
     ///
-    /// offset + `size_of::`<T>() 不得超过 `PAGE_SIZE`.
+    /// offset + `size_of::<T>()` 不得超过 `PAGE_SIZE`.
     /// 页错误或偏移非法时返回 `Err(())`.
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。
@@ -142,7 +142,7 @@ impl UFrame {
 
     /// 将一个 POD 值写入帧内指定偏移.
     ///
-    /// offset + `size_of::`<T>() 不得超过 `PAGE_SIZE`.
+    /// offset + `size_of::<T>()` 不得超过 `PAGE_SIZE`.
     /// 页错误或偏移非法时返回 `Err(())`.
     /// # Errors
     /// 偏移越界或访问用户内存时发生页错误时返回 Err。

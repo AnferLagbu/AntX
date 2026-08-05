@@ -159,12 +159,12 @@ mod usb_sts {
 /// - `PORT_POWER`             (bit 9): 端口供电
 ///
 /// 规范定义的其余位 (未实现部分供参考):
-/// - `PORT_LINK_STATE` [5:8], `PORT_SPEED` [10:13], `PORT_INDICATOR` [14:15],
+/// - `PORT_LINK_STATE` `[5:8]`, `PORT_SPEED` `[10:13]`, `PORT_INDICATOR` `[14:15]`,
 /// - `CONNECT_STATUS_CHANGE` (bit 16), `PORT_ENABLED_DISABLED_CHANGE` (bit 17),
 /// - `OVER_CURRENT_CHANGE` (bit 19), `RESET_CHANGE` (bit 21),
 /// - `WAKE_ON`_{`CONNECT,DISCONNECT,OVER_CURRENT`} (bits 20-22),
 /// - `DEVICE_REMOVABLE` (bit 23), `PORT_LINK_STATE_STROBE` (bit 26),
-/// - `PORT_TEST` [28:31]
+/// - `PORT_TEST` `[28:31]`
 mod portsc {
     pub const CURRENT_CONNECT_STATUS: u32 = 1 << 0;
     pub const PORT_RESET: u32 = 1 << 4;
