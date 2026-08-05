@@ -279,7 +279,7 @@ pub struct CondVar {
 
 impl CondVar {
     pub const fn new() -> Self {
-        CondVar {
+        Self {
             waiters: core::sync::atomic::AtomicU32::new(0),
         }
     }

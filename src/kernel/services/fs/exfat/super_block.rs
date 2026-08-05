@@ -55,7 +55,7 @@ impl ExfatSuperBlock {
         }
 
         // 手动解析超级块字段
-        let sb = ExfatSuperBlock {
+        let sb = Self {
             jump_boot: [data[0], data[1], data[2]],
             fs_name: [
                 data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10],

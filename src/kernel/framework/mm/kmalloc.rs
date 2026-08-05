@@ -65,10 +65,10 @@ pub struct HeapHeader {
     magic: u32,
 
     /// 下一个空闲块指针 (仅在 free 时有效)
-    next: *mut HeapHeader,
+    next: *mut Self,
 
     /// 上一个空闲块指针 (仅在 free 时有效)
-    prev: *mut HeapHeader,
+    prev: *mut Self,
 }
 
 impl HeapHeader {

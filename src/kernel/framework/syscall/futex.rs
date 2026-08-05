@@ -85,7 +85,7 @@ struct FutexWaiter {
 
 impl FutexWaiter {
     const fn empty() -> Self {
-        FutexWaiter {
+        Self {
             uaddr: 0,
             pid: 0,
             woken: false,

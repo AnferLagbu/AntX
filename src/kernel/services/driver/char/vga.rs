@@ -112,7 +112,7 @@ impl Color {
 
 impl Default for Color {
     fn default() -> Self {
-        Color::LightGrey
+        Self::LightGrey
     }
 }
 

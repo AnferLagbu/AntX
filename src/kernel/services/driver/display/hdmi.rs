@@ -957,6 +957,6 @@ pub enum HdmiError {
 
 impl From<EdidError> for HdmiError {
     fn from(e: EdidError) -> Self {
-        HdmiError::EdidParse(e)
+        Self::EdidParse(e)
     }
 }

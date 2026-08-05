@@ -52,8 +52,8 @@ impl WasiErrno {
     /// 从 `QueenX` `KernelError` 映射到 WASI errno
     pub fn from_kernel_error(err: crate::kernel::services::wasm::types::WasmError) -> Self {
         match err {
-            crate::kernel::services::wasm::types::WasmError::MemoryOutOfBounds => WasiErrno::Fault,
-            _ => WasiErrno::Io,
+            crate::kernel::services::wasm::types::WasmError::MemoryOutOfBounds => Self::Fault,
+            _ => Self::Io,
         }
     }
 }
@@ -71,10 +71,10 @@ pub fn wasi_errno(e: WasiErrno) -> i32 {
 impl From<WasiErrno> for crate::kernel::services::wasm::types::WasmError {
     fn from(e: WasiErrno) -> Self {
         match e {
-            WasiErrno::Fault => crate::kernel::services::wasm::types::WasmError::MemoryOutOfBounds,
-            WasiErrno::Inval => crate::kernel::services::wasm::types::WasmError::TypeMismatch,
-            WasiErrno::Badf => crate::kernel::services::wasm::types::WasmError::BadExport,
-            _ => crate::kernel::services::wasm::types::WasmError::InternalError,
+            WasiErrno::Fault => Self::MemoryOutOfBounds,
+            WasiErrno::Inval => Self::TypeMismatch,
+            WasiErrno::Badf => Self::BadExport,
+            _ => Self::InternalError,
         }
     }
 }

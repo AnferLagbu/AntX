@@ -91,8 +91,8 @@ impl EarlyAlloc {
 // 存储空间, 我们用前 16 字节存放 prev/next 指针.
 #[repr(C)]
 pub(crate) struct FreeNode {
-    prev: *mut FreeNode,
-    next: *mut FreeNode,
+    prev: *mut Self,
+    next: *mut Self,
 }
 
 // === E3: unsafe 集中化 — 裸指针子模块 ===

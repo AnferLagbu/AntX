@@ -34,7 +34,7 @@ impl Ext2DirEntry {
             name[..name_end].copy_from_slice(&data[8..8 + name_end]);
         }
 
-        Some(Ext2DirEntry {
+        Some(Self {
             inode,
             rec_len,
             name_len,

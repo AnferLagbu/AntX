@@ -29,10 +29,10 @@ impl RecoveryLayer {
     )]
     pub fn from_u32(v: u32) -> Self {
         match v {
-            1 => RecoveryLayer::Layer1,
-            2 => RecoveryLayer::Layer2,
-            3 => RecoveryLayer::Layer3,
-            _ => RecoveryLayer::Layer1,
+            1 => Self::Layer1,
+            2 => Self::Layer2,
+            3 => Self::Layer3,
+            _ => Self::Layer1,
         }
     }
 }
@@ -51,7 +51,7 @@ impl RecoveryResult {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     pub fn is_success(&self) -> bool {
-        matches!(self, RecoveryResult::Success)
+        matches!(self, Self::Success)
     }
 
     #[expect(
@@ -59,7 +59,7 @@ impl RecoveryResult {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     pub fn should_escalate(&self) -> bool {
-        matches!(self, RecoveryResult::Escalate)
+        matches!(self, Self::Escalate)
     }
 }
 
@@ -85,7 +85,7 @@ pub struct RecoveryConfig {
 
 impl RecoveryConfig {
     pub const fn default() -> Self {
-        RecoveryConfig {
+        Self {
             enable_layer1: true,
             enable_layer2: true,
             enable_layer3: true,

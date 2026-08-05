@@ -59,7 +59,7 @@ impl Value {
     )]
     pub fn as_i32(&self) -> Option<i32> {
         match self {
-            Value::I32(v) => Some(*v),
+            Self::I32(v) => Some(*v),
             _ => None,
         }
     }
@@ -69,7 +69,7 @@ impl Value {
     )]
     pub fn as_u32(&self) -> Option<u32> {
         match self {
-            Value::I32(v) => Some(*v as u32),
+            Self::I32(v) => Some(*v as u32),
             _ => None,
         }
     }
@@ -79,17 +79,17 @@ impl Value {
     )]
     pub fn as_i64(&self) -> Option<i64> {
         match self {
-            Value::I64(v) => Some(*v),
+            Self::I64(v) => Some(*v),
             _ => None,
         }
     }
 
     pub fn default_for(ty: ValueType) -> Self {
         match ty {
-            ValueType::I32 => Value::I32(0),
-            ValueType::I64 => Value::I64(0),
-            ValueType::F32 => Value::F32(0),
-            ValueType::F64 => Value::F64(0),
+            ValueType::I32 => Self::I32(0),
+            ValueType::I64 => Self::I64(0),
+            ValueType::F32 => Self::F32(0),
+            ValueType::F64 => Self::F64(0),
         }
     }
 }

@@ -26,7 +26,7 @@ pub struct SwapSlot(u64);
 impl SwapSlot {
     /// 从 slot 索引创建
     pub fn new(slot: u64) -> Self {
-        SwapSlot(slot)
+        Self(slot)
     }
 
     #[expect(

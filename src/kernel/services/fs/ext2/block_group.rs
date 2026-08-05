@@ -23,7 +23,7 @@ impl Ext2BlockGroupDescriptor {
             return None;
         }
 
-        let mut desc = Ext2BlockGroupDescriptor {
+        let mut desc = Self {
             bg_block_bitmap: 0,
             bg_inode_bitmap: 0,
             bg_inode_table: 0,

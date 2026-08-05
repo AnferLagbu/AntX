@@ -26,7 +26,7 @@ pub const MAX_GRANT_RECORDS: usize = 1024;
 pub struct PwmId(pub u64);
 
 impl PwmId {
-    pub const ZERO: PwmId = PwmId(0);
+    pub const ZERO: Self = Self(0);
 
     #[expect(
         clippy::trivially_copy_pass_by_ref,
@@ -56,10 +56,10 @@ impl Default for PwmId {
 pub struct DomainId(pub u64);
 
 impl DomainId {
-    pub const ZERO: DomainId = DomainId(0);
-    pub const KERNEL: DomainId = DomainId(1);
-    pub const ROOT: DomainId = DomainId(1000);
-    pub const NOBODY: DomainId = DomainId(65534);
+    pub const ZERO: Self = Self(0);
+    pub const KERNEL: Self = Self(1);
+    pub const ROOT: Self = Self(1000);
+    pub const NOBODY: Self = Self(65534);
 
     #[expect(
         clippy::trivially_copy_pass_by_ref,
@@ -78,7 +78,7 @@ impl DomainId {
     }
 
     pub fn from_uid(uid: u32) -> Self {
-        DomainId(u64::from(uid))
+        Self(u64::from(uid))
     }
 
     #[expect(
@@ -116,22 +116,22 @@ bitflags::bitflags! {
 pub struct CapDomain(pub u16);
 
 impl CapDomain {
-    pub const SYSTEM: CapDomain = CapDomain(0);
-    pub const FS: CapDomain = CapDomain(1);
-    pub const NET: CapDomain = CapDomain(2);
-    pub const PROC: CapDomain = CapDomain(3);
-    pub const DEVICE: CapDomain = CapDomain(4);
-    pub const USER_MGMT: CapDomain = CapDomain(5);
-    pub const IPC: CapDomain = CapDomain(6);
-    pub const MEM: CapDomain = CapDomain(7);
-    pub const TIME: CapDomain = CapDomain(8);
-    pub const BARRIER: CapDomain = CapDomain(9);
-    pub const SIGNAL: CapDomain = CapDomain(10);
-    pub const SHM: CapDomain = CapDomain(11);
-    pub const SEM: CapDomain = CapDomain(12);
-    pub const MSGQ: CapDomain = CapDomain(13);
-    pub const DMA: CapDomain = CapDomain(14);
-    pub const RESERVED: CapDomain = CapDomain(15);
+    pub const SYSTEM: Self = Self(0);
+    pub const FS: Self = Self(1);
+    pub const NET: Self = Self(2);
+    pub const PROC: Self = Self(3);
+    pub const DEVICE: Self = Self(4);
+    pub const USER_MGMT: Self = Self(5);
+    pub const IPC: Self = Self(6);
+    pub const MEM: Self = Self(7);
+    pub const TIME: Self = Self(8);
+    pub const BARRIER: Self = Self(9);
+    pub const SIGNAL: Self = Self(10);
+    pub const SHM: Self = Self(11);
+    pub const SEM: Self = Self(12);
+    pub const MSGQ: Self = Self(13);
+    pub const DMA: Self = Self(14);
+    pub const RESERVED: Self = Self(15);
 
     #[expect(
         clippy::trivially_copy_pass_by_ref,
@@ -152,7 +152,7 @@ impl CapDomain {
 
 impl From<u16> for CapDomain {
     fn from(v: u16) -> Self {
-        CapDomain(v)
+        Self(v)
     }
 }
 
@@ -161,14 +161,14 @@ impl From<u16> for CapDomain {
 pub struct CapBits(pub u64);
 
 impl CapBits {
-    pub const NONE: CapBits = CapBits(0);
-    pub const ALL: CapBits = CapBits(0xFFFFFFFFFFFFFFFF);
+    pub const NONE: Self = Self(0);
+    pub const ALL: Self = Self(0xFFFFFFFFFFFFFFFF);
 
     #[expect(
         clippy::trivially_copy_pass_by_ref,
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
-    pub fn contains(&self, other: CapBits) -> bool {
+    pub fn contains(&self, other: Self) -> bool {
         (self.0 & other.0) == other.0
     }
 
@@ -184,14 +184,14 @@ impl CapBits {
 impl core::ops::BitOr for CapBits {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self {
-        CapBits(self.0 | rhs.0)
+        Self(self.0 | rhs.0)
     }
 }
 
 impl core::ops::BitAnd for CapBits {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self {
-        CapBits(self.0 & rhs.0)
+        Self(self.0 & rhs.0)
     }
 }
 
@@ -210,7 +210,7 @@ impl core::ops::BitAndAssign for CapBits {
 impl core::ops::Not for CapBits {
     type Output = Self;
     fn not(self) -> Self {
-        CapBits(!self.0)
+        Self(!self.0)
     }
 }
 

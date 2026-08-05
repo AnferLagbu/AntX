@@ -259,9 +259,9 @@ impl PageSize {
     )]
     pub fn size(&self) -> u64 {
         match self {
-            PageSize::Size4K => PAGE_SIZE,
-            PageSize::Size2M => HUGE_PAGE_2M_SIZE,
-            PageSize::Size1G => HUGE_PAGE_1G_SIZE,
+            Self::Size4K => PAGE_SIZE,
+            Self::Size2M => HUGE_PAGE_2M_SIZE,
+            Self::Size1G => HUGE_PAGE_1G_SIZE,
         }
     }
 
@@ -271,9 +271,9 @@ impl PageSize {
     )]
     pub fn shift(&self) -> u64 {
         match self {
-            PageSize::Size4K => PAGE_SHIFT,
-            PageSize::Size2M => HUGE_PAGE_2M_SHIFT,
-            PageSize::Size1G => HUGE_PAGE_1G_SHIFT,
+            Self::Size4K => PAGE_SHIFT,
+            Self::Size2M => HUGE_PAGE_2M_SHIFT,
+            Self::Size1G => HUGE_PAGE_1G_SHIFT,
         }
     }
 

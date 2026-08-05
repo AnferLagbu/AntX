@@ -221,7 +221,7 @@ impl VirtioBlk {
             (capacity * 512) as f64 / (1024.0 * 1024.0)
         );
 
-        Some(VirtioBlk {
+        Some(Self {
             device,
             vq,
             capacity_sectors: capacity,

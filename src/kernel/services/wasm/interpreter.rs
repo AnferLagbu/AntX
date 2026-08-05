@@ -43,7 +43,7 @@ pub struct Interpreter {
     pub gas_used: u64,
     pub exit_code: i32,
     module: WasmModule,
-    host_functions: Vec<Box<dyn Fn(&mut Interpreter) -> Result<(), WasmError>>>,
+    host_functions: Vec<Box<dyn Fn(&mut Self) -> Result<(), WasmError>>>,
     import_func_count: u32,
     globals: Vec<Value>,
     tables: Vec<Vec<u32>>,
@@ -204,7 +204,7 @@ impl Interpreter {
 
     pub fn register_host_function(
         &mut self,
-        f: Box<dyn Fn(&mut Interpreter) -> Result<(), WasmError>>,
+        f: Box<dyn Fn(&mut Self) -> Result<(), WasmError>>,
     ) {
         self.host_functions.push(f);
     }
@@ -217,7 +217,7 @@ impl Interpreter {
         &mut self,
         module: &str,
         name: &str,
-        f: Box<dyn Fn(&mut Interpreter) -> Result<(), WasmError>>,
+        f: Box<dyn Fn(&mut Self) -> Result<(), WasmError>>,
     ) {
         let idx = self.host_functions.len();
         self.host_functions.push(f);

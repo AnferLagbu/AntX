@@ -331,7 +331,7 @@ pub struct Urb {
     pub actual_length: usize,
     pub status: UrbStatus,
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    pub callback: Option<unsafe fn(&Urb)>,
+    pub callback: Option<unsafe fn(&Self)>,
 }
 
 // ============================================================================

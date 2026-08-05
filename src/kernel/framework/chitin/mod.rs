@@ -120,12 +120,12 @@ impl ChitinProto {
     )]
     pub fn as_str(&self) -> &'static str {
         match self {
-            ChitinProto::Block => "block",
-            ChitinProto::Char => "char",
-            ChitinProto::Net => "net",
-            ChitinProto::Input => "input",
-            ChitinProto::Bus => "bus",
-            ChitinProto::Other => "other",
+            Self::Block => "block",
+            Self::Char => "char",
+            Self::Net => "net",
+            Self::Input => "input",
+            Self::Bus => "bus",
+            Self::Other => "other",
         }
     }
 }
@@ -133,12 +133,12 @@ impl ChitinProto {
 impl From<super::driver::DeviceType> for ChitinProto {
     fn from(dt: super::driver::DeviceType) -> Self {
         match dt {
-            super::driver::DeviceType::Block => ChitinProto::Block,
-            super::driver::DeviceType::Char => ChitinProto::Char,
-            super::driver::DeviceType::Network => ChitinProto::Net,
-            super::driver::DeviceType::Input => ChitinProto::Input,
-            super::driver::DeviceType::Bus => ChitinProto::Bus,
-            super::driver::DeviceType::Other => ChitinProto::Other,
+            super::driver::DeviceType::Block => Self::Block,
+            super::driver::DeviceType::Char => Self::Char,
+            super::driver::DeviceType::Network => Self::Net,
+            super::driver::DeviceType::Input => Self::Input,
+            super::driver::DeviceType::Bus => Self::Bus,
+            super::driver::DeviceType::Other => Self::Other,
         }
     }
 }

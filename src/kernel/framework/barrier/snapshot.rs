@@ -23,13 +23,13 @@ pub enum DeviceType {
 impl DeviceType {
     pub fn from_u32(v: u32) -> Self {
         match v {
-            1 => DeviceType::Keyboard,
-            2 => DeviceType::Serial,
-            3 => DeviceType::Timer,
-            4 => DeviceType::Network,
-            5 => DeviceType::Storage,
-            6 => DeviceType::Display,
-            _ => DeviceType::Unknown,
+            1 => Self::Keyboard,
+            2 => Self::Serial,
+            3 => Self::Timer,
+            4 => Self::Network,
+            5 => Self::Storage,
+            6 => Self::Display,
+            _ => Self::Unknown,
         }
     }
 }
@@ -42,7 +42,7 @@ pub struct RegisterState {
 
 impl Default for RegisterState {
     fn default() -> Self {
-        RegisterState {
+        Self {
             offset: 0,
             value: 0,
         }
@@ -73,7 +73,7 @@ impl DeviceSnapshot {
             offset: 0,
             value: 0,
         };
-        DeviceSnapshot {
+        Self {
             device_id,
             device_type,
             name,
@@ -135,7 +135,7 @@ pub struct DeviceSnapshotRegistry {
 impl DeviceSnapshotRegistry {
     pub const fn new() -> Self {
         const NONE: Option<DeviceSnapshot> = None;
-        DeviceSnapshotRegistry {
+        Self {
             snapshots: [NONE; MAX_DEVICE_SNAPSHOTS],
             count: 0,
             init_captured: AtomicU32::new(0),

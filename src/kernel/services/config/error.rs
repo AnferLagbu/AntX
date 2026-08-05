@@ -42,26 +42,26 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConfigError::CpuCountExceedsMax { actual, max } => {
+            Self::CpuCountExceedsMax { actual, max } => {
                 write!(f, "CPU count {actual} exceeds MAX_CPUS {max}")
             }
-            ConfigError::MemoryLayoutInvalid => write!(f, "memory layout invalid"),
-            ConfigError::IrqControllerUnavailable => {
+            Self::MemoryLayoutInvalid => write!(f, "memory layout invalid"),
+            Self::IrqControllerUnavailable => {
                 write!(f, "no interrupt controller initialized")
             }
-            ConfigError::InconsistentConstant { name, lhs, rhs } => {
+            Self::InconsistentConstant { name, lhs, rhs } => {
                 write!(
                     f,
                     "constant {name} mismatch: config.rs={lhs} vs submodule={rhs}"
                 )
             }
-            ConfigError::DriverConfigInvalid(name) => {
+            Self::DriverConfigInvalid(name) => {
                 write!(f, "driver {name} misconfigured")
             }
-            ConfigError::SlabNotPowerOfTwo => write!(f, "slab default size is not power of two"),
-            ConfigError::SlabMisaligned => write!(f, "slab default size is not page-aligned"),
-            ConfigError::SlabTooLarge => write!(f, "slab default size exceeds upper bound"),
-            ConfigError::StackMisaligned => write!(f, "stack size is not a multiple of page size"),
+            Self::SlabNotPowerOfTwo => write!(f, "slab default size is not power of two"),
+            Self::SlabMisaligned => write!(f, "slab default size is not page-aligned"),
+            Self::SlabTooLarge => write!(f, "slab default size exceeds upper bound"),
+            Self::StackMisaligned => write!(f, "stack size is not a multiple of page size"),
         }
     }
 }
