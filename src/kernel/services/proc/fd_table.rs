@@ -8,8 +8,8 @@
 //!
 //! ## 与旧实现的差异
 //!
-//! 旧: entries[i] = global_fd (i32)
-//! 新: entries[i] = handle_id (u32) → OpenFile (共享 offset)
+//! 旧: entries`[`i`]` = global_fd (i32)
+//! 新: entries`[`i`]` = handle_id (u32) → OpenFile (共享 offset)
 
 use crate::kernel::framework::sync::IrqSpinLock;
 
