@@ -65,9 +65,9 @@ pub fn validate_memory_config() -> Result<(), ConfigError> {
 /// 校验中断配置.
 ///
 /// # Errors
+#[cfg_attr(target_arch = "aarch64", expect(clippy::unnecessary_wraps, reason = "aarch64 上 APIC/IOAPIC 检查已禁用, 返回 Ok; x86_64 才真正检查"))]
 /// 在 `x86_64` 上, 当 APIC 与 IOAPIC 均未初始化时返回
 /// `Err(ConfigError::IrqControllerUnavailable)`.
-#[expect(clippy::unnecessary_wraps, reason = "保留 Result 返回以与 arch 无关接口一致 (aarch64 可能返回错误)")]
 pub fn validate_interrupt_config() -> Result<(), ConfigError> {
     #[cfg(target_arch = "x86_64")]
     {

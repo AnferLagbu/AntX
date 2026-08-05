@@ -373,6 +373,15 @@
     - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用 (纯 expect attribute).
   - 状态: [X]
   - 后续阶段 8.9-8.10: cast (2092) / ptr (795) / manual_let_else (307) — 难类手工重构 (中期 4-6 周); DECISION-034 CI 升级 -D warnings.
+- **2026-08-04 (阶段 11.1-11.3: clippy --lib --bins --examples 加严覆盖)**
+  - 描述: 扩展 CI clippy 覆盖到 lib + bins + examples (排除 tests 因 no_std kernel 不支持 #\[test\])
+  - 方案:
+    - x86_64 --all-targets 测试发现 5 处 unfulfilled expect (shadow_stack.rs × 2 / idt/idt.rs / config/validate.rs / display/mod.rs)
+    - 删未触发的 expect 后 aarch64 触发, 修复路径用 `#[cfg_attr(target_arch = "aarch64", expect(...))]`
+    - 全部 fn 双架构编译保留 + 跨架构 expect lint
+  - CI: clippy-pedantic job 中加 `--bins --examples`, 双架构 0 warning
+  - 验证: §2.4 #1-#4 全过 (双架构 0w0e + clippy -D pedantic 0 warning + 三审计全过 + host-tests 838 passed/0 failed). #5 QEMU 不适用.
+  - 状态: [X]
 - **2026-08-04 (阶段 10.1-10.5: 按序推进 P0-P4 剩余可选项)**
   - 描述: 阶段 9 后按 P0 (53 处 #![allow] 审查) → P1 (driver cast 治根) → P2 (expect 集中) → P3 (加严 CI) → P4 (rustfmt) 顺序推进
   - P0 完成: 脚本逐个 deny 测试, 10/53 处 #![allow] 可移除 (transmute_ptr_to_ptr / missing_transmute_annotations / double_parens / match_like_matches_macro / let_unit_value / empty_line_after_outer_attr / large_stack_arrays / ptr_cast_constness / cast_lossless / duplicated_attributes). ptr_cast_constness + cast_lossless 在 aarch64 仍触发, 手工治根 proc/api.rs (3 处 pid_u32 as u64 → u64::from) + mm/vmm_aarch64.rs (&raw const ... as *mut → cast_mut()).

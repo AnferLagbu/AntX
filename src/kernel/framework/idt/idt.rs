@@ -220,10 +220,10 @@ impl IdtManager {
     ///
     /// # Returns
     /// - `Ok(())`: 初始化成功
+    #[cfg_attr(target_arch = "aarch64", expect(clippy::unnecessary_wraps, reason = "aarch64 IDT init 占位函数, 直接返回 Ok"))]
     /// - `Err(msg)`: 初始化失败
     /// # Errors
     /// IDT 初始化失败 (如关键 IST 未配置) 时返回 Err。
-    #[expect(clippy::unnecessary_wraps, reason = "保留 Result 返回以与 arch 无关接口一致 (aarch64 可能返回错误)")]
     pub fn init(
         &self,
         isr_table: &[u64; 32],
