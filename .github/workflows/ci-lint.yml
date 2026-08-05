@@ -184,3 +184,49 @@ jobs:
             echo "::error::有 services 模块绕过 OnceCell 抽象"
             exit 1
           fi
+
+  # ========================================================================
+  # Job 7: rustdoc 文档质量检查 (P1-I-30)
+  # ========================================================================
+  rustdoc-check:
+    name: rustdoc 0 warnings 阻断
+    runs-on: ubuntu-latest
+    needs: audit-unsafe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust nightly 工具链安装
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: 添加 rust-src + rustfmt 组件
+        run: rustup component add rust-src rustfmt
+
+      - name: 双架构 rustdoc --no-deps 阻断 (0 源码 warnings)
+        run: |
+          set -e
+          echo "=== rustdoc --no-deps 阻断检查 ==="
+          echo "策略: 阻断 broken_intra_doc_links (源码级 link 错误),"
+          echo "      不阻断 rustdoc 内部 HTML tag 自动生成警告 (无源码位置)."
+          cd src/rust
+          # x86_64
+          RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc --release \
+            --target x86_64-unknown-none \
+            --lib --bins --examples --no-deps 2>&1 | tee /tmp/rustdoc-x86.log | tail -5
+          DOC_EXIT_X86=${PIPESTATUS[0]}
+          # aarch64
+          RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc --release \
+            --target aarch64-unknown-none \
+            --lib --bins --examples --no-deps 2>&1 | tee /tmp/rustdoc-aarch64.log | tail -5
+          DOC_EXIT_ARM=${PIPESTATUS[0]}
+          echo ""
+          echo "x86_64 rustdoc exit: $DOC_EXIT_X86"
+          echo "aarch64 rustdoc exit: $DOC_EXIT_ARM"
+          if [ "$DOC_EXIT_X86" -ne 0 ] || [ "$DOC_EXIT_ARM" -ne 0 ]; then
+            echo "::error::rustdoc broken_intra_doc_links 已变为非 0, 修复后再提交"
+            echo "--- x86_64 ---"
+            tail -30 /tmp/rustdoc-x86.log
+            echo "--- aarch64 ---"
+            tail -30 /tmp/rustdoc-aarch64.log
+            exit 1
+          fi
+          echo "✅ rustdoc --no-deps 源码级 link 0 错误 (x86_64 + aarch64)"
