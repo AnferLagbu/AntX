@@ -6,16 +6,14 @@
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::driver::{DeviceType, Driver};
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::mm::KERNEL_BASE;
-#[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::{
-    driver::{
-        virt_to_phys, E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE,
-        E1000_RX_RING_SIZE, E1000_TX_RING_SIZE,
-    },
+use crate::kernel::framework::driver::{
+    E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_TX_RING_SIZE, E1000Device, E1000RxDesc,
+    E1000TxDesc, virt_to_phys,
 };
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::mm::KERNEL_BASE;
+#[cfg(not(feature = "kernel_test"))]
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 #[cfg(not(feature = "kernel_test"))]
 use crate::register_tests_inner;
 

@@ -59,7 +59,10 @@ impl<const CAP: usize> RingBuffer<{ CAP }> {
 
     /// 容量
     #[inline]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub const fn capacity(&self) -> usize {
         CAP
     }
@@ -110,7 +113,10 @@ impl<const CAP: usize> RingBuffer<{ CAP }> {
         len
     }
 
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_cast_constness,
+        reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+    )]
     /// 把 src 写入到以 `abs_off` 起始的环形位置
     fn write_into(&self, src: &[u8], abs_off: usize) {
         let cap_mask = CAP - 1;

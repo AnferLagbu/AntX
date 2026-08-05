@@ -8,14 +8,17 @@
 //! - 关闭 listener 同步取消 pending client
 //!
 //! 所有测试在 UDS TCB 的全局表上操作, 顺序执行 (单核 + 启动期)
-use super::{runner, TestResult};
+use super::{TestResult, runner};
 use crate::kernel::services::net::unix as uds;
 use crate::register_tests_inner;
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// STREAM 完整生命周期
 fn test_uds_stream_echo() -> TestResult {
-    use uds::{UnixSockType, UdsError};
+    use uds::{UdsError, UnixSockType};
     uds::uds_reset_for_test();
 
     let srv = match uds::uds_create(UnixSockType::Stream) {

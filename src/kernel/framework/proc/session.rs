@@ -8,10 +8,8 @@
 
 // Re-export services 层的策略主体 — 保持调用方路径兼容
 pub use crate::kernel::services::proc::session::{
-    SessionState, Session, SessionManager, SESSION_MANAGER,
-    init,
-    proc_setsid, proc_getsid, proc_setpgid, proc_getpgid, proc_init_pgid,
-    sys_tiocsctty, sys_tcsetpgrp, sys_tcgetpgrp,
-    get_controlling_terminal, get_foreground_pgid,
-    signal_foreground_pgid, session_leader_exit,
+    SESSION_MANAGER, Session, SessionManager, SessionState, get_controlling_terminal,
+    get_foreground_pgid, init, proc_getpgid, proc_getsid, proc_init_pgid, proc_setpgid,
+    proc_setsid, session_leader_exit, signal_foreground_pgid, sys_tcgetpgrp, sys_tcsetpgrp,
+    sys_tiocsctty,
 };

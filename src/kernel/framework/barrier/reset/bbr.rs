@@ -13,7 +13,10 @@ use super::config::{self, RecoveryLayer, RecoveryResult};
 use crate::kernel::framework::barrier::DomainState;
 use crate::kernel::framework::barrier::RECOVERY_MANAGER;
 
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 pub fn locate_domain_from_panic(panic_location: &core::panic::PanicInfo<'_>) -> Option<u64> {
     let manager = RECOVERY_MANAGER.lock();
 
@@ -39,7 +42,10 @@ pub fn locate_domain_from_panic(panic_location: &core::panic::PanicInfo<'_>) -> 
     None
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn try_rollback_single(domain_id: u64, tick: u64, fingerprint: u64) -> RecoveryResult {
     let manager = RECOVERY_MANAGER.lock();
 
@@ -95,7 +101,10 @@ pub fn execute(panic_info: &core::panic::PanicInfo<'_>) -> RecoveryResult {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub fn compute_fingerprint(panic_info: &core::panic::PanicInfo<'_>) -> u64 {
     let mut hash = 0u64;
 

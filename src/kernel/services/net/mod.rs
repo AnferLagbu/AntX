@@ -43,7 +43,7 @@ pub enum InitState {
 // I-预存 (kernel_test build): 同 net_socket.rs 处理 — 用 cfg-gate `use` 别名
 // + 桩模块, 让函数体保持 `init::*` 调用, 不扩散 cfg 到 fn body.
 #[cfg(not(feature = "kernel_test"))]
-use crate::kernel::framework::net::init as init;
+use crate::kernel::framework::net::init;
 
 // kernel_test 桩: 对齐真实 `net::init` 暴露的类型与函数签名.
 // 同时为 smoltcp_impl.rs 的 `fw_init::` 调用提供 kernel_test no-op stub.
@@ -76,37 +76,33 @@ mod init {
     pub fn smoltcp_net_stack_close(_slot_idx: usize) {}
 }
 
+/// REVAL-W 第 6 组 W6 (2026-06-25): DHCP 策略 trait 抽象
+/// (何时重试/续约/fallback), 机制与策略分离.
+pub mod dhcp_policy;
 pub mod netfilter;
 pub mod route;
+/// REVAL-W 第 6 组 W3.2 (2026-06-24): NetStack trait 的 smoltcp 实现
+/// 设计: docs/plan/smoltcp-framekernel-wrapper.md §3.2
+pub mod smoltcp_impl;
 pub mod socket;
 pub mod syscall;
 /// T6-9: 网络子系统公共类型 (原 framework/net/types.rs)
 pub mod types;
-/// REVAL-W 第 6 组 W3.2 (2026-06-24): NetStack trait 的 smoltcp 实现
-/// 设计: docs/plan/smoltcp-framekernel-wrapper.md §3.2
-pub mod smoltcp_impl;
-/// REVAL-W 第 6 组 W6 (2026-06-25): DHCP 策略 trait 抽象
-/// (何时重试/续约/fallback), 机制与策略分离.
-pub mod dhcp_policy;
+pub mod unix;
 /// T6-9: Socket 等待队列 (原 `framework/net/wait_queue.rs`)
 pub mod wait_queue;
-pub mod unix;
 
 pub use socket::{
-    Domain, SockAddrIn, SockType, SocketError, SocketResult,
-    socket, bind, listen, accept, connect,
-    send, recv, sendto, recvfrom, close,
-    setsockopt, getsockopt, poll_all,
-    parse_ipv4, endpoint_from_str,
+    Domain, SockAddrIn, SockType, SocketError, SocketResult, accept, bind, close, connect,
+    endpoint_from_str, getsockopt, listen, parse_ipv4, poll_all, recv, recvfrom, send, sendto,
+    setsockopt, socket,
 };
 
 pub use unix::{
-    SockAddrUn, UnixSocketError, UnixResult,
-    socket as unix_socket, bind as unix_bind, listen as unix_listen,
-    accept as unix_accept, connect as unix_connect, send as unix_send, recv as unix_recv,
-    sendto as unix_sendto, recvfrom as unix_recvfrom,
-    close as unix_close, unlink as unix_unlink,
-    is_uds_fd, FD_BASE as UNIX_FD_BASE, PATH_MAX as UNIX_PATH_MAX,
+    FD_BASE as UNIX_FD_BASE, PATH_MAX as UNIX_PATH_MAX, SockAddrUn, UnixResult, UnixSocketError,
+    accept as unix_accept, bind as unix_bind, close as unix_close, connect as unix_connect,
+    is_uds_fd, listen as unix_listen, recv as unix_recv, recvfrom as unix_recvfrom,
+    send as unix_send, sendto as unix_sendto, socket as unix_socket, unlink as unix_unlink,
 };
 
 // ============================================================================
@@ -210,7 +206,11 @@ pub fn poll() {
 /// 当底层 DHCP 启动失败时返回 `Err(NetError)`, 例如网络栈尚未初始化或网卡不支持 DHCP。
 pub fn start_dhcp() -> NetResult<()> {
     let rc = fw_net_socket::qx_net_start_dhcp();
-    if rc == 0 { Ok(()) } else { Err(NetError::from_i32(rc)) }
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(NetError::from_i32(rc))
+    }
 }
 
 /// 设置静态 IP (格式: "10.0.2.15/24,10.0.2.2")
@@ -236,7 +236,11 @@ pub fn static_ip(cidr_str: &str, gw_str: &str) -> NetResult<()> {
     gw_c.push(0);
 
     let rc = fw_net_socket::qx_net_static_ip(cidr_c.as_ptr(), gw_c.as_ptr());
-    if rc == 0 { Ok(()) } else { Err(NetError::from_i32(rc)) }
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(NetError::from_i32(rc))
+    }
 }
 
 // ============================================================================

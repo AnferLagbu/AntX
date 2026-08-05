@@ -23,10 +23,12 @@
 //! - 本模块属于 framework (TCB), 允许 unsafe
 //! - 内存读取通过物理页映射, 需确保 CR3 有效
 
-use core::sync::atomic::Ordering;
-use crate::kernel::framework::proc::{process_get_current_pid, process_with, RLIMIT_CORE, RLIM_INFINITY};
 use crate::kernel::framework::mm;
-use crate::kernel::framework::mm::{PageFlags, PAGE_SIZE};
+use crate::kernel::framework::mm::{PAGE_SIZE, PageFlags};
+use crate::kernel::framework::proc::{
+    RLIM_INFINITY, RLIMIT_CORE, process_get_current_pid, process_with,
+};
+use core::sync::atomic::Ordering;
 
 // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
@@ -35,11 +37,16 @@ unsafe extern "C" {
 
 fn log(s: &str) {
     // SAFETY: klog_ffi_info 接受有效 *const u8 指针
-    unsafe { klog_ffi_info(s.as_ptr()); }
+    unsafe {
+        klog_ffi_info(s.as_ptr());
+    }
 }
 
 fn log_num(n: u64) {
-    if n == 0 { log("0"); return; }
+    if n == 0 {
+        log("0");
+        return;
+    }
     let mut buf = [0u8; 20];
     let mut num = n;
     let mut i = 19;
@@ -197,7 +204,7 @@ fn note_size(namesz: u32, descsz: u32) -> u64 {
 struct CoreSegment {
     start: u64,
     end: u64,
-    flags: u32, // PF_R | PF_W | PF_X
+    flags: u32,     // PF_R | PF_W | PF_X
     file_size: u64, // 实际写入大小 (可能截断)
 }
 
@@ -216,10 +223,10 @@ struct CoreSegment {
 pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
     // 1. 检查 RLIMIT_CORE
     let core_limit = process_with(pid, |p| {
-            let table = p.rlimit_table.lock();
-            table.get(RLIMIT_CORE).map_or(0, |r| r.cur)
-        })
-        .unwrap_or(0);
+        let table = p.rlimit_table.lock();
+        table.get(RLIMIT_CORE).map_or(0, |r| r.cur)
+    })
+    .unwrap_or(0);
 
     if core_limit == 0 {
         log("coredump: RLIMIT_CORE=0, skipped\n");
@@ -356,8 +363,7 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
     let mut segments = alloc::vec::Vec::new();
 
     // 获取进程的 CR3 (页表基址)
-    let cr3 = process_with(pid, |p| p.cr3.load(Ordering::SeqCst))
-        .unwrap_or(0);
+    let cr3 = process_with(pid, |p| p.cr3.load(Ordering::SeqCst)).unwrap_or(0);
 
     if cr3 == 0 {
         return segments;
@@ -375,9 +381,21 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
 
             // 只转储可读 VMA
             let flags = vma.flags;
-            let pf_r: u32 = if flags.contains(PageFlags::PRESENT) { PF_R } else { 0u32 };
-            let pf_w: u32 = if flags.contains(PageFlags::WRITABLE) { PF_W } else { 0u32 };
-            let pf_x: u32 = if flags.contains(PageFlags::NX) { 0u32 } else { PF_X };
+            let pf_r: u32 = if flags.contains(PageFlags::PRESENT) {
+                PF_R
+            } else {
+                0u32
+            };
+            let pf_w: u32 = if flags.contains(PageFlags::WRITABLE) {
+                PF_W
+            } else {
+                0u32
+            };
+            let pf_x: u32 = if flags.contains(PageFlags::NX) {
+                0u32
+            } else {
+                PF_X
+            };
 
             // 跳过不可读段
             if pf_r == 0 {
@@ -454,8 +472,14 @@ fn build_load_phdr(seg: &CoreSegment, offset: u64) -> Elf64Phdr {
     }
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// 写入 `NT_PRSTATUS` note
 fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut u64) {
     let prstatus_size = core::mem::size_of::<PrStatus>() as u32;
@@ -470,11 +494,7 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
 
     // Note name (对齐到 4 字节)
     let name_aligned = (NOTE_NAME.len() as u64 + 3) & !3;
-    crate::kernel::framework::fs::vfs_write(
-        fd,
-        NOTE_NAME.as_ptr(),
-        name_aligned as u32,
-    );
+    crate::kernel::framework::fs::vfs_write(fd, NOTE_NAME.as_ptr(), name_aligned as u32);
     *offset += name_aligned;
 
     // 构建 PrStatus
@@ -510,8 +530,14 @@ fn write_note_prstatus(fd: u32, pid: u32, sig: u8, frame_addr: u64, offset: &mut
     *offset += desc_aligned;
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// 写入 `NT_SIGINFO` note
 fn write_note_siginfo(fd: u32, sig: u8, offset: &mut u64) {
     let siginfo_size = core::mem::size_of::<CoreSiginfo>() as u32;
@@ -524,11 +550,7 @@ fn write_note_siginfo(fd: u32, sig: u8, offset: &mut u64) {
     write_bytes(fd, &note, offset);
 
     let name_aligned = (NOTE_NAME.len() as u64 + 3) & !3;
-    crate::kernel::framework::fs::vfs_write(
-        fd,
-        NOTE_NAME.as_ptr(),
-        name_aligned as u32,
-    );
+    crate::kernel::framework::fs::vfs_write(fd, NOTE_NAME.as_ptr(), name_aligned as u32);
     *offset += name_aligned;
 
     let si = CoreSiginfo {
@@ -598,7 +620,9 @@ fn fill_regs_from_frame(prstatus: &mut PrStatus, frame_addr: u64) {
         return;
     }
     // SAFETY: frame_addr 由调用方保证为有效的 ExceptionFrame 指针
-    let frame = unsafe { &*(frame_addr as *const crate::kernel::framework::arch::exception::ExceptionFrame) };
+    let frame = unsafe {
+        &*(frame_addr as *const crate::kernel::framework::arch::exception::ExceptionFrame)
+    };
 
     let regs = &mut prstatus.regs;
     regs[0] = frame.x0;
@@ -638,13 +662,7 @@ fn fill_regs_from_frame(prstatus: &mut PrStatus, frame_addr: u64) {
 }
 
 /// 写入内存段数据
-fn write_segment_data(
-    fd: u32,
-    _pid: u32,
-    seg: &CoreSegment,
-    offset: &mut u64,
-    core_limit: u64,
-) {
+fn write_segment_data(fd: u32, _pid: u32, seg: &CoreSegment, offset: &mut u64, core_limit: u64) {
     let size = seg.file_size;
     let mut written = 0u64;
 
@@ -666,19 +684,11 @@ fn write_segment_data(
         let readable = copy_from_user_safe(src, chunk_size as usize, &mut buf);
 
         if readable > 0 {
-            crate::kernel::framework::fs::vfs_write(
-                fd,
-                buf.as_ptr(),
-                readable as u32,
-            );
+            crate::kernel::framework::fs::vfs_write(fd, buf.as_ptr(), readable as u32);
         } else {
             // 页不存在, 写零
             let zeros = [0u8; PAGE_SIZE as usize];
-            crate::kernel::framework::fs::vfs_write(
-                fd,
-                zeros.as_ptr(),
-                chunk_size as u32,
-            );
+            crate::kernel::framework::fs::vfs_write(fd, zeros.as_ptr(), chunk_size as u32);
         }
 
         written += chunk_size;
@@ -730,10 +740,10 @@ pub fn coredump_allowed() -> bool {
         return false;
     }
     process_with(pid, |p| {
-            let table = p.rlimit_table.lock();
-            table.get(RLIMIT_CORE).is_some_and(|r| r.cur > 0)
-        })
-        .unwrap_or(false)
+        let table = p.rlimit_table.lock();
+        table.get(RLIMIT_CORE).is_some_and(|r| r.cur > 0)
+    })
+    .unwrap_or(false)
 }
 
 /// 获取 core dump 大小限制
@@ -743,8 +753,8 @@ pub fn coredump_limit() -> u64 {
         return 0;
     }
     process_with(pid, |p| {
-            let table = p.rlimit_table.lock();
-            table.get(RLIMIT_CORE).map_or(0, |r| r.cur)
-        })
-        .unwrap_or(0)
+        let table = p.rlimit_table.lock();
+        table.get(RLIMIT_CORE).map_or(0, |r| r.cur)
+    })
+    .unwrap_or(0)
 }

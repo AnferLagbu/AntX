@@ -25,7 +25,11 @@ pub fn pipe_syscall(fds: u64) -> Result<usize, Errno> {
         return Err(Errno::EFAULT);
     }
     let ret = crate::kernel::framework::syscall::io::sys_pipe(fds);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// dup 安全代理
@@ -37,7 +41,11 @@ pub fn dup_syscall(oldfd: i32) -> Result<usize, Errno> {
         return Err(Errno::EBADF);
     }
     let ret = crate::kernel::framework::syscall::io::sys_dup(oldfd);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// dup2 安全代理
@@ -49,7 +57,11 @@ pub fn dup2_syscall(oldfd: i32, newfd: i32) -> Result<usize, Errno> {
         return Err(Errno::EBADF);
     }
     let ret = crate::kernel::framework::syscall::io::sys_dup2(oldfd, newfd);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// fcntl 安全代理
@@ -61,7 +73,11 @@ pub fn fcntl_syscall(fd: i32, cmd: i32, arg: u64) -> Result<usize, Errno> {
         return Err(Errno::EBADF);
     }
     let ret = crate::kernel::framework::syscall::io::sys_fcntl(fd, cmd, arg);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// `copy_file_range` — 在两个文件描述符之间复制数据

@@ -35,7 +35,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::kernel::framework::mm::pmm_alloc_page;
-use crate::kernel::framework::mm::{PhysAddr, KERNEL_BASE, PAGE_SIZE};
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE, PhysAddr};
 
 // ── PCID 常量 ─────────────────────────────────────────────────────
 // PCID (Process-Context Identifier) 占 CR3 低 12 位, 用于 TLB 标记.
@@ -59,7 +59,10 @@ const INVPCID_TYPE_ALL_INCL_GLOBAL: u64 = 2;
 ///
 /// 调用方保证 CPU 支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认).
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub unsafe fn invpcid(pcid: u64, addr: u64, typ: u64) {
     // INVPCID 描述符: 16 字节, [0:7] PCID, [8:15] 线性地址
     // 在栈上构造描述符, 通过内存操作数传递给 INVPCID.
@@ -82,10 +85,15 @@ pub unsafe fn invpcid(pcid: u64, addr: u64, typ: u64) {
 ///
 /// 调用方保证 CPU 支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认).
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub unsafe fn invpcid_flush_all() {
     // SAFETY: 调用方保证 CPU 支持 INVPCID; type 2 刷新所有 TLB 条目是安全操作.
-    unsafe { invpcid(0, 0, INVPCID_TYPE_ALL_INCL_GLOBAL); }
+    unsafe {
+        invpcid(0, 0, INVPCID_TYPE_ALL_INCL_GLOBAL);
+    }
 }
 
 /// 按 PCID + 虚拟地址刷新单条 TLB 条目.
@@ -99,18 +107,26 @@ pub unsafe fn invpcid_flush_all() {
 /// - 调用方保证 vaddr 属于当前地址空间或已通过 CR3 切换访问
 /// - CPU 必须支持 INVPCID (通过 CPUID.07H:EBX.IVPCID 确认)
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub unsafe fn invpcid_flush_single(pcid: u16, vaddr: u64) {
     // SAFETY: INVPCID type 0 (by individual address + PCID).
     // 前提: pcid 有效 (0-4095), vaddr 页对齐.
     // 调用方保证: vaddr 属于调用方地址空间.
     // 硬件契约: INVPCID 指令在支持的 CPU 上原子刷新单条 TLB.
-    unsafe { invpcid(u64::from(pcid), vaddr, INVPCID_TYPE_SINGLE); }
+    unsafe {
+        invpcid(u64::from(pcid), vaddr, INVPCID_TYPE_SINGLE);
+    }
 }
 
 /// CR3 值中嵌入 PCID: PML4 物理地址 | PCID.
 #[inline(always)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub const fn cr3_with_pcid(pml4_phys: u64, pcid: u64) -> u64 {
     (pml4_phys & 0x000FFFFFFFFFF000) | (pcid & 0xFFF)
 }
@@ -118,8 +134,10 @@ pub const fn cr3_with_pcid(pml4_phys: u64, pcid: u64) -> u64 {
 /// 检查 CPU 是否支持 INVPCID.
 #[inline]
 pub fn has_invpcid() -> bool {
-    crate::kernel::framework::cpu::get_cpu_info()
-        .is_some_and(|info| info.features.contains(crate::kernel::framework::cpu::CpuFeatures::INVPCID))
+    crate::kernel::framework::cpu::get_cpu_info().is_some_and(|info| {
+        info.features
+            .contains(crate::kernel::framework::cpu::CpuFeatures::INVPCID)
+    })
 }
 
 /// 检查 PCID 是否已启用 (CR4.PCIDE = 1).
@@ -165,14 +183,20 @@ static LAST_KERNEL_PML4: AtomicU64 = AtomicU64::new(0);
 
 /// 返回 KPTI 是否已就绪 (init 调用完成)。
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn kpti_is_active() -> bool {
     KPTI_READY.load(Ordering::Acquire)
 }
 
 /// 返回 `USER_PML4` 物理地址 (供 COW fork 等路径构造子进程用户页表)。
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub fn kpti_user_pml4() -> u64 {
     USER_PML4.load(Ordering::Acquire)
 }
@@ -204,9 +228,14 @@ pub unsafe fn kpti_sync_pml4_entry(pml4_idx: usize) {
     // SAFETY: KERNEL_PML4 和 USER_PML4 均已初始化, phys_to_virt 产生有效内核 VA.
     // VMM_LOCK 由调用方持有, 防止并发修改页表.
     unsafe {
-        let kernel_pml4_phys = crate::kernel::framework::mm::vmm::KERNEL_PML4.load(Ordering::Acquire);
-        let src = crate::kernel::framework::mm::PhysAddr(kernel_pml4_phys).to_virt().0 as *const u64;
-        let dst = crate::kernel::framework::mm::PhysAddr(user_pml4_phys).to_virt().0 as *mut u64;
+        let kernel_pml4_phys =
+            crate::kernel::framework::mm::vmm::KERNEL_PML4.load(Ordering::Acquire);
+        let src = crate::kernel::framework::mm::PhysAddr(kernel_pml4_phys)
+            .to_virt()
+            .0 as *const u64;
+        let dst = crate::kernel::framework::mm::PhysAddr(user_pml4_phys)
+            .to_virt()
+            .0 as *mut u64;
         let entry = core::ptr::read_volatile(src.add(pml4_idx));
         core::ptr::write_volatile(dst.add(pml4_idx), entry);
     }
@@ -276,7 +305,10 @@ pub unsafe fn kpti_exit_to_user() {
 /// 分配 `USER_PML4` 页失败时 panic。
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::verbose_bit_mask, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::verbose_bit_mask,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 pub unsafe fn kpti_init(kernel_pml4: u64) {
     if KPTI_READY.load(Ordering::Acquire) {
         return;
@@ -286,7 +318,10 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     let user_pml4_phys = pmm_alloc_page() as u64;
     // 不可恢复: KPTI 初始化需要 USER_PML4 页, 分配失败意味着内存耗尽,
     // 内核无法安全进入用户态, 只能停机
-    assert!(user_pml4_phys != 0, "[KPTI] failed to allocate USER_PML4 page");
+    assert!(
+        user_pml4_phys != 0,
+        "[KPTI] failed to allocate USER_PML4 page"
+    );
     let user_pml4_virt = PhysAddr(user_pml4_phys).to_virt();
 
     // 2. 清零
@@ -335,7 +370,8 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
         // 诊断: 打印 .text 地址范围 (LMA)
         crate::klog_boot_info!(
             "[KPTI] text region: start={:#X} end={:#X} ({} pages)",
-            text_start, text_end,
+            text_start,
+            text_end,
             (text_end - text_start + PAGE_SIZE as u64 - 1) / PAGE_SIZE as u64
         );
 
@@ -361,7 +397,9 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     let pcid_enabled = if has_invpcid() {
         // SAFETY: 读取 CR3 判断低 12 位是否为 0 (PCIDE 启用前提).
         let cur_cr3: u64;
-        unsafe { core::arch::asm!("mov {0}, cr3", out(reg) cur_cr3, options(nostack, nomem)); }
+        unsafe {
+            core::arch::asm!("mov {0}, cr3", out(reg) cur_cr3, options(nostack, nomem));
+        }
         if cur_cr3 & 0xFFF == 0 {
             // SAFETY: CR4 写入仅在 boot 阶段, 设置 PCIDE 位.
             unsafe {
@@ -376,7 +414,9 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
             // 启用 PCIDE 后, mov cr3 不再隐式刷新 TLB.
             // 做一次全局 TLB 刷新确保一致性, 然后重新加载 CR3 (带 PCID_KERNEL).
             // SAFETY: INVPCID type 2 刷新所有 TLB 条目 (含 global 页).
-            unsafe { invpcid_flush_all(); }
+            unsafe {
+                invpcid_flush_all();
+            }
             // 重新加载 CR3 带 PCID_KERNEL
             // SAFETY: kernel_pml4 来自 init 阶段的可信来源; PCIDE 已启用, CR3 低 12 位为 PCID.
             let new_cr3 = cr3_with_pcid(kernel_pml4, PCID_KERNEL);
@@ -399,12 +439,24 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
     //    汇编 entry/exit 从 [gs:KERNEL_PML4_OFF] / [gs:USER_PML4_OFF] 读取.
     //    PCID 启用时, 值为 PML4_PHYS | PCID; 未启用时为纯 PML4 物理地址.
     // SAFETY: boot 阶段独占写入, cpu_index 0..256 合法.
-    let kernel_cr3 = if pcid_enabled { cr3_with_pcid(kernel_pml4, PCID_KERNEL) } else { kernel_pml4 };
-    let user_cr3 = if pcid_enabled { cr3_with_pcid(user_pml4_phys, PCID_USER) } else { user_pml4_phys };
+    let kernel_cr3 = if pcid_enabled {
+        cr3_with_pcid(kernel_pml4, PCID_KERNEL)
+    } else {
+        kernel_pml4
+    };
+    let user_cr3 = if pcid_enabled {
+        cr3_with_pcid(user_pml4_phys, PCID_USER)
+    } else {
+        user_pml4_phys
+    };
 
     crate::klog_boot_info!(
         "[KPTI] kpti_init: kernel_pml4={:#x}, user_pml4_phys={:#x}, pcid={}, kernel_cr3={:#x}, user_cr3={:#x}",
-        kernel_pml4, user_pml4_phys, pcid_enabled, kernel_cr3, user_cr3
+        kernel_pml4,
+        user_pml4_phys,
+        pcid_enabled,
+        kernel_cr3,
+        user_cr3
     );
 
     // SAFETY: boot 阶段单 CPU 执行, kernel_cr3/user_cr3 是合法 PML4 物理地址,
@@ -423,7 +475,10 @@ pub unsafe fn kpti_init(kernel_pml4: u64) {
 
 // ── .text 区域映射 ──────────────────────────────────────────────
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 在 `USER_PML4` 中映射整个 .text 区域 (PRESENT only, SMEP-safe).
 ///
 /// 映射 _`kernel_text_start` ~ _`kernel_text_end` 的所有页面到用户页表,
@@ -471,7 +526,10 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
     // USER 标志会导致 #PF (instruction fetch).
     // 不设置 WRITABLE (bit 1) → 只读
     // 不设置 NX (bit 63) → 可执行
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const FLAGS: u64 = 0x1; // PRESENT only (SMEP-safe)
 
     // SAFETY: 调用方保证 user_pml4 有效; text_start/text_end 是合法地址范围;
@@ -500,15 +558,15 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
 /// boot 阶段单线程执行, 无并发修改页表.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
-unsafe fn map_text_page(
-    user_pml4: *mut u64,
-    vma: u64,
-    phys: u64,
-    flags: u64,
-    _desc: &str,
-) {
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
+unsafe fn map_text_page(user_pml4: *mut u64, vma: u64, phys: u64, flags: u64, _desc: &str) {
     // SAFETY: 调用方保证 user_pml4 有效; vma/phys 是合法地址;
     // boot 阶段单线程执行, 无并发修改页表. PMM 分配的页已对齐且属于内核.
     unsafe {
@@ -566,7 +624,7 @@ unsafe fn map_text_page(
                 // PS=1: 2MB 大页 → 直接拆分
                 const PS_BIT: u64 = 1 << 7;
                 let huge_base = pde & 0x000FFFFFFFE00000; // bits 51:21
-                let pde_flags = pde & 0xFFF & !PS_BIT;     // 保留权限, 清 PS
+                let pde_flags = pde & 0xFFF & !PS_BIT; // 保留权限, 清 PS
 
                 let new_pt = pmm_alloc_page() as u64;
                 assert!(new_pt != 0, "[KPTI] map_text_page: alloc PT (split) failed");
@@ -585,7 +643,9 @@ unsafe fn map_text_page(
 
                 crate::klog_boot_info!(
                     "[KPTI] split_2mb: PDE[{}]={:#X} → new PT={:#X}",
-                    pd_idx, pde, new_pt
+                    pd_idx,
+                    pde,
+                    new_pt
                 );
                 new_pt
             } else {
@@ -610,8 +670,14 @@ unsafe fn map_text_page(
 
 // ── KPTI 入口数据页映射 ──────────────────────────────────────────
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// KPTI 中断/系统调用入口代码在 CR3 切换前需要访问的数据页面。
 ///
 /// 当 CPU 在用户态触发中断/异常时, `isr_common/irq_common/syscall_entry`
@@ -650,16 +716,21 @@ pub(super) unsafe fn map_kpti_data_pages(user_pml4: *mut u64) {
     //    USER_CR3_SAVE 位于 .bss 段, isr.asm 使用绝对寻址 mov [USER_CR3_SAVE], rax
     //    访问的虚拟地址是 LMA (低半区物理地址), 需要恒等映射
     // SAFETY: USER_CR3_SAVE 是链接器符号, 地址有效 (只读引用)
-    let user_cr3_save_lma = unsafe {
-        core::ptr::addr_of!(super::super::mm::USER_CR3_SAVE_ASM) as u64
-    };
+    let user_cr3_save_lma =
+        unsafe { core::ptr::addr_of!(super::super::mm::USER_CR3_SAVE_ASM) as u64 };
     let user_cr3_page = user_cr3_save_lma & !(PAGE_SIZE as u64 - 1);
     let vma_offset = 0xFFFF800001000000u64;
 
     // SAFETY: user_pml4 有效; USER_CR3_SAVE 地址来自链接器符号, 合法;
     // boot 阶段单线程执行, 无并发修改.
     unsafe {
-        map_text_page(user_pml4, user_cr3_page, user_cr3_page, FLAGS, "USER_CR3_SAVE LMA");
+        map_text_page(
+            user_pml4,
+            user_cr3_page,
+            user_cr3_page,
+            FLAGS,
+            "USER_CR3_SAVE LMA",
+        );
         map_text_page(
             user_pml4,
             user_cr3_page + vma_offset,
@@ -687,7 +758,13 @@ pub(super) unsafe fn map_kpti_data_pages(user_pml4: *mut u64) {
     // boot 阶段单线程执行, 无并发修改.
     unsafe {
         // LMA 恒等映射: 这是 swapgs 后 CPU 实际访问的地址 (GS_BASE = LMA)
-        map_text_page(user_pml4, per_cpu_gdt_lma, per_cpu_gdt_lma, FLAGS, "SyscallPerCpu LMA");
+        map_text_page(
+            user_pml4,
+            per_cpu_gdt_lma,
+            per_cpu_gdt_lma,
+            FLAGS,
+            "SyscallPerCpu LMA",
+        );
         // VMA 映射: 高半区访问路径
         map_text_page(
             user_pml4,
@@ -700,7 +777,9 @@ pub(super) unsafe fn map_kpti_data_pages(user_pml4: *mut u64) {
 
     crate::klog_boot_info!(
         "[KPTI] data pages mapped: USER_CR3_SAVE={:#X}, SyscallPerCpu LMA={:#X} VMA={:#X}",
-        user_cr3_page, per_cpu_gdt_lma, per_cpu_gdt_vma
+        user_cr3_page,
+        per_cpu_gdt_lma,
+        per_cpu_gdt_vma
     );
 }
 

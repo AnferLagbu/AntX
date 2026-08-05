@@ -7,12 +7,14 @@
 //!
 //! services 层通过 framework 层接口访问,本模块是 services/net/syscall.rs 的 TCB 后端.
 
+use crate::kernel::framework::errno::Errno;
+use crate::kernel::framework::mm::{
+    copy_from_user as safe_copy_from_user, copy_to_user as safe_copy_to_user,
+};
 use crate::kernel::framework::net_socket;
 use crate::kernel::framework::userptr;
-use crate::kernel::framework::errno::Errno;
-use crate::kernel::framework::mm::{copy_from_user as safe_copy_from_user, copy_to_user as safe_copy_to_user};
 
-use crate::kernel::services::net::socket::{SockAddrIn, SockType, Domain};
+use crate::kernel::services::net::socket::{Domain, SockAddrIn, SockType};
 
 // ============================================================================
 // 用户空间数据搬运 (TCB)
@@ -128,7 +130,9 @@ pub fn raw_write_u32(ptr: u64, v: u32) -> Result<(), Errno> {
         return Err(Errno::EFAULT);
     }
     // SAFETY: ptr 由 check_user_buf 验证为可写
-    unsafe { core::ptr::write_unaligned(ptr as *mut u32, v); }
+    unsafe {
+        core::ptr::write_unaligned(ptr as *mut u32, v);
+    }
     Ok(())
 }
 
@@ -160,7 +164,10 @@ pub fn raw_read_sun_family(ptr: u64) -> Result<u16, Errno> {
 /// 当路径以 NUL 开头 (空路径) 时返回 `Errno::EINVAL`.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-pub fn raw_read_sockaddr_un(ptr: u64, addrlen: u32) -> Result<crate::kernel::services::net::unix::SockAddrUn, Errno> {
+pub fn raw_read_sockaddr_un(
+    ptr: u64,
+    addrlen: u32,
+) -> Result<crate::kernel::services::net::unix::SockAddrUn, Errno> {
     if ptr == 0 || addrlen < 2 {
         return Err(Errno::EFAULT);
     }
@@ -180,7 +187,10 @@ pub fn raw_read_sockaddr_un(ptr: u64, addrlen: u32) -> Result<crate::kernel::ser
     }
     // 路径从 offset 2 开始, 到第一个 NUL 或末尾
     let path_bytes = &buf[2..copy_len];
-    let nul_pos = path_bytes.iter().position(|&b| b == 0).unwrap_or(path_bytes.len());
+    let nul_pos = path_bytes
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(path_bytes.len());
     if nul_pos == 0 {
         return Err(Errno::EINVAL);
     }
@@ -233,7 +243,10 @@ pub fn raw_write_sockaddr_un(
 // Socket 12 Syscall TCB 实现
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// socket — 创建 socket
 pub fn socket_syscall(domain: i32, sock_type: i32, _protocol: i32) -> i64 {
     let d = match Domain::from_i32(domain) {
@@ -245,12 +258,18 @@ pub fn socket_syscall(domain: i32, sock_type: i32, _protocol: i32) -> i64 {
         None => return Errno::EINVAL.as_ret(),
     };
     let fd = net_socket::sm_socket(d as i32, t as i32, 0);
-    if fd < 0 { Errno::EINVAL.as_ret() } else { i64::from(fd) }
+    if fd < 0 {
+        Errno::EINVAL.as_ret()
+    } else {
+        i64::from(fd)
+    }
 }
 
 /// bind
 pub fn bind_syscall(fd: i32, addr_ptr: u64, _addrlen: u32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     // 双栈 (DECISION-032): 按 sockaddr 族分流 — 2 = AF_INET, 10 = AF_INET6
     let family = match raw_read_sun_family(addr_ptr) {
         Ok(f) => f,
@@ -285,22 +304,34 @@ pub fn bind_syscall(fd: i32, addr_ptr: u64, _addrlen: u32) -> i64 {
 
 /// listen
 pub fn listen_syscall(fd: i32, backlog: i32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
-    if backlog < 0 { return Errno::EINVAL.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
+    if backlog < 0 {
+        return Errno::EINVAL.as_ret();
+    }
     let rc = net_socket::sm_listen(fd, backlog);
     if rc == 0 { 0 } else { Errno::EINVAL.as_ret() }
 }
 
 /// accept — 当前简化:不写对端地址
 pub fn accept_syscall(fd: i32, _addr_ptr: u64, _addrlen_ptr: u64) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     let new_fd = net_socket::sm_accept(fd, core::ptr::null_mut(), core::ptr::null_mut());
-    if new_fd < 0 { Errno::EBADF.as_ret() } else { i64::from(new_fd) }
+    if new_fd < 0 {
+        Errno::EBADF.as_ret()
+    } else {
+        i64::from(new_fd)
+    }
 }
 
 /// connect
 pub fn connect_syscall(fd: i32, addr_ptr: u64, _addrlen: u32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     // 双栈 (DECISION-032): 按 sockaddr 族分流 — 2 = AF_INET, 10 = AF_INET6
     let family = match raw_read_sun_family(addr_ptr) {
         Ok(f) => f,
@@ -328,7 +359,11 @@ pub fn connect_syscall(fd: i32, addr_ptr: u64, _addrlen: u32) -> i64 {
         }
         _ => return Errno::EAFNOSUPPORT.as_ret(),
     };
-    if rc == 0 { 0 } else { Errno::ECONNREFUSED.as_ret() }
+    if rc == 0 {
+        0
+    } else {
+        Errno::ECONNREFUSED.as_ret()
+    }
 }
 
 /// sendto / send
@@ -342,7 +377,9 @@ pub fn sendto_syscall(
     dest_ptr: u64,
     _dest_len: u32,
 ) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     let data = match raw_copy_in(buf_ptr, len) {
         Ok(v) => v,
         Err(e) => return e.as_ret(),
@@ -378,7 +415,11 @@ pub fn sendto_syscall(
             _ => return Errno::EAFNOSUPPORT.as_ret(),
         }
     };
-    if rc < 0 { Errno::EINVAL.as_ret() } else { i64::from(rc) }
+    if rc < 0 {
+        Errno::EINVAL.as_ret()
+    } else {
+        i64::from(rc)
+    }
 }
 
 /// recvfrom / recv
@@ -392,11 +433,20 @@ pub fn recvfrom_syscall(
     _src_ptr: u64,
     _src_len_ptr: u64,
 ) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
-    if buf_ptr == 0 || len == 0 { return Errno::EFAULT.as_ret(); }
-    if !userptr::validate_user_buf(buf_ptr, u64::from(len)) { return Errno::EFAULT.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
+    if buf_ptr == 0 || len == 0 {
+        return Errno::EFAULT.as_ret();
+    }
+    if !userptr::validate_user_buf(buf_ptr, u64::from(len)) {
+        return Errno::EFAULT.as_ret();
+    }
     // 在栈上准备临时缓冲
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const MAX: usize = 4096;
     let want = (len as usize).min(MAX);
     let mut stack_buf = [0u8; MAX];
@@ -414,44 +464,52 @@ pub fn recvfrom_syscall(
 /// setsockopt
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-pub fn setsockopt_syscall(
-    fd: i32,
-    level: i32,
-    optname: i32,
-    val_ptr: u64,
-    _valen: u32,
-) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+pub fn setsockopt_syscall(fd: i32, level: i32, optname: i32, val_ptr: u64, _valen: u32) -> i64 {
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     let v = match raw_read_u32(val_ptr) {
         Ok(x) => x,
         Err(e) => return e.as_ret(),
     };
     let val_bytes = v.to_ne_bytes();
-    let rc = net_socket::sm_setsockopt(fd, level, optname, val_bytes.as_ptr(), val_bytes.len() as u32);
+    let rc = net_socket::sm_setsockopt(
+        fd,
+        level,
+        optname,
+        val_bytes.as_ptr(),
+        val_bytes.len() as u32,
+    );
     if rc == 0 { 0 } else { Errno::ENOSYS.as_ret() }
 }
 
 /// getsockopt
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-pub fn getsockopt_syscall(
-    fd: i32,
-    level: i32,
-    optname: i32,
-    val_ptr: u64,
-    _valen_ptr: u64,
-) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+pub fn getsockopt_syscall(fd: i32, level: i32, optname: i32, val_ptr: u64, _valen_ptr: u64) -> i64 {
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     let mut out = 0u32;
     let mut out_len = core::mem::size_of::<u32>() as u32;
     let rc = net_socket::sm_getsockopt(
-        fd, level, optname,
+        fd,
+        level,
+        optname,
         &mut out as *mut u32 as *mut u8,
         &mut out_len,
     );
-    if rc != 0 { return Errno::ENOSYS.as_ret(); }
+    if rc != 0 {
+        return Errno::ENOSYS.as_ret();
+    }
     if let Err(e) = raw_write_u32(val_ptr, out) {
         return e.as_ret();
     }
@@ -460,44 +518,45 @@ pub fn getsockopt_syscall(
 
 /// shutdown — 简化等同 close
 pub fn shutdown_syscall(fd: i32, _how: i32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     let rc = net_socket::sm_close(fd);
     if rc == 0 { 0 } else { Errno::EBADF.as_ret() }
 }
 
 /// sendmsg(fd, msg, flags) — services 层入口
 pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, _flags: i32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     let rc = net_socket::sm_sendmsg(fd, msg_ptr as *const u8, 0);
     i64::from(rc)
 }
 
 /// recvmsg(fd, msg, flags) — services 层入口
 pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, _flags: i32) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
     let rc = net_socket::sm_recvmsg(fd, msg_ptr as *mut u8, 0);
     i64::from(rc)
 }
 
 /// getsockname(fd, addr, addrlen) — 获取本端地址
 pub fn getsockname_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
-    let rc = net_socket::sm_getsockname(
-        fd,
-        addr_ptr as *mut u8,
-        addrlen_ptr as *mut u32,
-    );
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
+    let rc = net_socket::sm_getsockname(fd, addr_ptr as *mut u8, addrlen_ptr as *mut u32);
     i64::from(rc)
 }
 
 /// getpeername(fd, addr, addrlen) — 获取对端地址
 pub fn getpeername_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> i64 {
-    if fd < 0 { return Errno::EBADF.as_ret(); }
-    let rc = net_socket::sm_getpeername(
-        fd,
-        addr_ptr as *mut u8,
-        addrlen_ptr as *mut u32,
-    );
+    if fd < 0 {
+        return Errno::EBADF.as_ret();
+    }
+    let rc = net_socket::sm_getpeername(fd, addr_ptr as *mut u8, addrlen_ptr as *mut u32);
     i64::from(rc)
 }
-

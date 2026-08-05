@@ -68,11 +68,7 @@ impl FdTable {
         let entries = self.entries.lock();
         if local_fd < MAX_FDS_PER_PROCESS {
             let hid = entries[local_fd];
-            if hid == u32::MAX {
-                None
-            } else {
-                Some(hid)
-            }
+            if hid == u32::MAX { None } else { Some(hid) }
         } else {
             None
         }
@@ -116,7 +112,8 @@ impl FdTable {
     /// 获取所有已分配的 FD 列表
     pub fn get_all_fds(&self) -> alloc::vec::Vec<(usize, u32)> {
         let entries = self.entries.lock();
-        entries.iter()
+        entries
+            .iter()
             .enumerate()
             .filter(|&(_, &hid)| hid != u32::MAX)
             .map(|(local, &handle)| (local, handle))

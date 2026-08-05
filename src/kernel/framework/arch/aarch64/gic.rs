@@ -58,37 +58,45 @@ const TIMER_PPI: u32 = 30; // CNTPNSIRQ
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicd_read(offset: u64) -> u32 { unsafe {
-    core::arch::asm!("dsb sy");
-    let val = read_volatile((GICD_BASE + offset) as *const u32);
-    core::arch::asm!("dsb sy");
-    val
-}}
+unsafe fn gicd_read(offset: u64) -> u32 {
+    unsafe {
+        core::arch::asm!("dsb sy");
+        let val = read_volatile((GICD_BASE + offset) as *const u32);
+        core::arch::asm!("dsb sy");
+        val
+    }
+}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicd_write(offset: u64, val: u32) { unsafe {
-    core::arch::asm!("dsb sy");
-    write_volatile((GICD_BASE + offset) as *mut u32, val);
-    core::arch::asm!("dsb sy");
-}}
+unsafe fn gicd_write(offset: u64, val: u32) {
+    unsafe {
+        core::arch::asm!("dsb sy");
+        write_volatile((GICD_BASE + offset) as *mut u32, val);
+        core::arch::asm!("dsb sy");
+    }
+}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicr_read(offset: u64) -> u32 { unsafe {
-    core::arch::asm!("dsb sy");
-    let val = read_volatile((GICR_BASE + offset) as *const u32);
-    core::arch::asm!("dsb sy");
-    val
-}}
+unsafe fn gicr_read(offset: u64) -> u32 {
+    unsafe {
+        core::arch::asm!("dsb sy");
+        let val = read_volatile((GICR_BASE + offset) as *const u32);
+        core::arch::asm!("dsb sy");
+        val
+    }
+}
 
 #[inline(always)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-unsafe fn gicr_write(offset: u64, val: u32) { unsafe {
-    core::arch::asm!("dsb sy");
-    write_volatile((GICR_BASE + offset) as *mut u32, val);
-    core::arch::asm!("dsb sy");
-}}
+unsafe fn gicr_write(offset: u64, val: u32) {
+    unsafe {
+        core::arch::asm!("dsb sy");
+        write_volatile((GICR_BASE + offset) as *mut u32, val);
+        core::arch::asm!("dsb sy");
+    }
+}
 
 #[inline(always)]
 /// 读取 GICv3 Redistributor SGI 帧寄存器。
@@ -96,12 +104,14 @@ unsafe fn gicr_write(offset: u64, val: u32) { unsafe {
 /// # Safety
 ///
 /// 调用者需确保 GICR_SGI_BASE (0x080B_0000) 已映射且 Redistributor 已唤醒。
-pub unsafe fn gicr_sgi_read(offset: u64) -> u32 { unsafe {
-    core::arch::asm!("dsb sy");
-    let val = read_volatile((GICR_SGI_BASE + offset) as *const u32);
-    core::arch::asm!("dsb sy");
-    val
-}}
+pub unsafe fn gicr_sgi_read(offset: u64) -> u32 {
+    unsafe {
+        core::arch::asm!("dsb sy");
+        let val = read_volatile((GICR_SGI_BASE + offset) as *const u32);
+        core::arch::asm!("dsb sy");
+        val
+    }
+}
 
 #[inline(always)]
 /// 写入 GICv3 Redistributor SGI 帧寄存器。
@@ -109,11 +119,13 @@ pub unsafe fn gicr_sgi_read(offset: u64) -> u32 { unsafe {
 /// # Safety
 ///
 /// 调用者需确保 GICR_SGI_BASE (0x080B_0000) 已映射且 Redistributor 已唤醒。
-pub unsafe fn gicr_sgi_write(offset: u64, val: u32) { unsafe {
-    core::arch::asm!("dsb sy");
-    write_volatile((GICR_SGI_BASE + offset) as *mut u32, val);
-    core::arch::asm!("dsb sy");
-}}
+pub unsafe fn gicr_sgi_write(offset: u64, val: u32) {
+    unsafe {
+        core::arch::asm!("dsb sy");
+        write_volatile((GICR_SGI_BASE + offset) as *mut u32, val);
+        core::arch::asm!("dsb sy");
+    }
+}
 
 // ============================================================================
 // GICv3 初始化
@@ -129,42 +141,50 @@ pub unsafe fn gicr_sgi_write(offset: u64, val: u32) { unsafe {
 /// # Safety
 ///
 /// 调用前需确保 GICD_BASE (0x08000000) 已正确映射，MMU 已启用。
-pub unsafe fn init_distributor() { unsafe {
-    // 0. 读取 GIC 诊断信息
-    let typer = gicd_read(GICD_TYPER);
-    let iidr = gicd_read(GICD_IIDR);
-    let num_spi = ((typer >> 5) & 0x1F) as u32 + 1; // ITLinesNumber: bits [5:0]
-    let num_cpus = ((typer >> 8) & 0x07) as u32 + 1; // CPUNumber: bits [10:8]
-    crate::klog_ffi!(
-        klog_ffi_info,
-        "[GIC] typer=0x{:08x} iidr=0x{:08x} spi={} cpus={}",
-        typer, iidr, num_spi, num_cpus
-    );
+pub unsafe fn init_distributor() {
+    unsafe {
+        // 0. 读取 GIC 诊断信息
+        let typer = gicd_read(GICD_TYPER);
+        let iidr = gicd_read(GICD_IIDR);
+        let num_spi = ((typer >> 5) & 0x1F) as u32 + 1; // ITLinesNumber: bits [5:0]
+        let num_cpus = ((typer >> 8) & 0x07) as u32 + 1; // CPUNumber: bits [10:8]
+        crate::klog_ffi!(
+            klog_ffi_info,
+            "[GIC] typer=0x{:08x} iidr=0x{:08x} spi={} cpus={}",
+            typer,
+            iidr,
+            num_spi,
+            num_cpus
+        );
 
-    // 1. 禁用 Distributor
-    gicd_write(GICD_CTLR, 0);
+        // 1. 禁用 Distributor
+        gicd_write(GICD_CTLR, 0);
 
-    // 2. 设置所有 SPIs 为 Group 1 (Non-secure, IRQ 信号).
-    //    Group 0 会触发 FIQ, 但 FIQ handler 仅为 unexpected_exception 桩.
-    //    使用 Group 1 使中断走 handle_el1h_irq 正常处理路径.
-    for i in 0..2 {
-        gicd_write(GICD_IGROUPR + (i as u64 * 4), 0xFFFF_FFFF);
+        // 2. 设置所有 SPIs 为 Group 1 (Non-secure, IRQ 信号).
+        //    Group 0 会触发 FIQ, 但 FIQ handler 仅为 unexpected_exception 桩.
+        //    使用 Group 1 使中断走 handle_el1h_irq 正常处理路径.
+        for i in 0..2 {
+            gicd_write(GICD_IGROUPR + (i as u64 * 4), 0xFFFF_FFFF);
+        }
+
+        // 3. 设置中断优先级
+        for i in 0..32 {
+            gicd_write(GICD_IPRIORITYR + (i as u64 * 4), 0xA0A0_A0A0);
+        }
+
+        // 4. 使能 Distributor (Group0 + Group1)
+        gicd_write(GICD_CTLR, 0x3);
+
+        // 5. 设置 CPU interface target: PPIs to CPU0
+        gicd_write(GICD_ITARGETSR, 0x0101_0101);
+        gicd_write(GICD_ITARGETSR + 4, 0x0101_0101);
     }
+}
 
-    // 3. 设置中断优先级
-    for i in 0..32 {
-        gicd_write(GICD_IPRIORITYR + (i as u64 * 4), 0xA0A0_A0A0);
-    }
-
-    // 4. 使能 Distributor (Group0 + Group1)
-    gicd_write(GICD_CTLR, 0x3);
-
-    // 5. 设置 CPU interface target: PPIs to CPU0
-    gicd_write(GICD_ITARGETSR, 0x0101_0101);
-    gicd_write(GICD_ITARGETSR + 4, 0x0101_0101);
-}}
-
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 初始化 GICv3 Redistributor (当前 CPU):
 /// 1. 唤醒 redistributor
 /// 2. 配置 SGI/PPI 分组
@@ -174,82 +194,88 @@ pub unsafe fn init_distributor() { unsafe {
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化，GICR_BASE 已映射。
-pub unsafe fn init_redistributor() { unsafe {
-    // 1. 唤醒 redistributor
-    let waker = gicr_read(GICR_WAKER);
+pub unsafe fn init_redistributor() {
+    unsafe {
+        // 1. 唤醒 redistributor
+        let waker = gicr_read(GICR_WAKER);
 
-    gicr_write(GICR_WAKER, waker & !(1 << 1)); // 清除 ProcessorSleep (bit 1)
+        gicr_write(GICR_WAKER, waker & !(1 << 1)); // 清除 ProcessorSleep (bit 1)
 
-    // 等待 ChildrenAsleep == 0
-    let mut wait_count = 0;
-    while gicr_read(GICR_WAKER) & (1 << 2) != 0 {
-        wait_count += 1;
-        if wait_count > 1000000 {
-            break;
+        // 等待 ChildrenAsleep == 0
+        let mut wait_count = 0;
+        while gicr_read(GICR_WAKER) & (1 << 2) != 0 {
+            wait_count += 1;
+            if wait_count > 1000000 {
+                break;
+            }
+            core::hint::spin_loop();
         }
-        core::hint::spin_loop();
+
+        // 2. 设置 PPI 优先级 (SGI frame)
+        gicr_sgi_write(GICR_IPRIORITYR, 0xA0A0_A0A0);
+        gicr_sgi_write(GICR_IPRIORITYR + 4, 0xA0A0_A0A0);
+        gicr_sgi_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0);
+
+        // 3. 配置 SGI/PPI 分组: 全部设为 Group 1 (Non-secure, IRQ 信号).
+        //    Group 0 会触发 FIQ, 但 FIQ handler 仅为 unexpected_exception 桩.
+        //    使用 Group 1 使 Timer PPI (30) 等中断走 handle_el1h_irq 正常路径.
+        gicr_sgi_write(GICR_IGROUPR0, 0xFFFF_FFFF);
+
+        // 4. 配置 PPI 触发模式: Timer PPI 为 level-triggered
+        let icfgr1_val = gicr_sgi_read(GICR_ICFGR1);
+        // Timer PPI = 30, 在 ICFGR1 中 (PPI 16-31)
+        // bit[31:30] 对应 PPI 31, bit[29:28] 对应 PPI 30
+        // level-triggered = 0b00
+        let ppi30_shift = ((30 - 16) * 2) as u64;
+        gicr_sgi_write(GICR_ICFGR1, icfgr1_val & !(0x3 << ppi30_shift));
+
+        // 5. Timer PPI 低优先级
+        let prio_addr = GICR_IPRIORITYR + ((TIMER_PPI as u64 / 4) * 4);
+        let prio = gicr_sgi_read(prio_addr);
+        let shift = ((TIMER_PPI % 4) * 8) as u64;
+        gicr_sgi_write(prio_addr, (prio & !(0xFF << shift)) | (0x40 << shift));
+
+        // 6. Enable redistributor
+        gicr_write(GICR_CTLR, 0x1); // Enable
     }
-
-    // 2. 设置 PPI 优先级 (SGI frame)
-    gicr_sgi_write(GICR_IPRIORITYR, 0xA0A0_A0A0);
-    gicr_sgi_write(GICR_IPRIORITYR + 4, 0xA0A0_A0A0);
-    gicr_sgi_write(GICR_IPRIORITYR + 8, 0xA0A0_A0A0);
-
-    // 3. 配置 SGI/PPI 分组: 全部设为 Group 1 (Non-secure, IRQ 信号).
-    //    Group 0 会触发 FIQ, 但 FIQ handler 仅为 unexpected_exception 桩.
-    //    使用 Group 1 使 Timer PPI (30) 等中断走 handle_el1h_irq 正常路径.
-    gicr_sgi_write(GICR_IGROUPR0, 0xFFFF_FFFF);
-
-    // 4. 配置 PPI 触发模式: Timer PPI 为 level-triggered
-    let icfgr1_val = gicr_sgi_read(GICR_ICFGR1);
-    // Timer PPI = 30, 在 ICFGR1 中 (PPI 16-31)
-    // bit[31:30] 对应 PPI 31, bit[29:28] 对应 PPI 30
-    // level-triggered = 0b00
-    let ppi30_shift = ((30 - 16) * 2) as u64;
-    gicr_sgi_write(GICR_ICFGR1, icfgr1_val & !(0x3 << ppi30_shift));
-
-    // 5. Timer PPI 低优先级
-    let prio_addr = GICR_IPRIORITYR + ((TIMER_PPI as u64 / 4) * 4);
-    let prio = gicr_sgi_read(prio_addr);
-    let shift = ((TIMER_PPI % 4) * 8) as u64;
-    gicr_sgi_write(prio_addr, (prio & !(0xFF << shift)) | (0x40 << shift));
-
-    // 6. Enable redistributor
-    gicr_write(GICR_CTLR, 0x1); // Enable
-}}
+}
 
 /// 使能 CPU Interface (ICC_* 系统寄存器)
 ///
 /// # Safety
 ///
 /// 仅在 EL1 或更高特权级调用，需确保 Redistributor 已初始化。
-pub unsafe fn init_cpu_interface() { unsafe {
-    // 设置中断优先级掩码 (PMR): 允许所有优先级
-    core::arch::asm!("msr icc_pmr_el1, {}", in(reg) 0xFFu64);
+pub unsafe fn init_cpu_interface() {
+    unsafe {
+        // 设置中断优先级掩码 (PMR): 允许所有优先级
+        core::arch::asm!("msr icc_pmr_el1, {}", in(reg) 0xFFu64);
 
-    // 设置 Binary Point (BPR1): 无优先级分组
-    core::arch::asm!("msr icc_bpr1_el1, {}", in(reg) 0u64);
+        // 设置 Binary Point (BPR1): 无优先级分组
+        core::arch::asm!("msr icc_bpr1_el1, {}", in(reg) 0u64);
 
-    // 启用 Group 0 + Group 1 中断
-    core::arch::asm!("msr icc_igrpen0_el1, {}", in(reg) 1u64);
-    core::arch::asm!("msr icc_igrpen1_el1, {}", in(reg) 1u64);
+        // 启用 Group 0 + Group 1 中断
+        core::arch::asm!("msr icc_igrpen0_el1, {}", in(reg) 1u64);
+        core::arch::asm!("msr icc_igrpen1_el1, {}", in(reg) 1u64);
 
-    // EOI 模式: 直接降优先级 (ICC_CTLR_EL1.EOImode = 0)
-    let ctlr: u64;
-    core::arch::asm!("mrs {}, icc_ctlr_el1", out(reg) ctlr);
-    core::arch::asm!("msr icc_ctlr_el1, {}", in(reg) ctlr & !(1 << 1));
-}}
+        // EOI 模式: 直接降优先级 (ICC_CTLR_EL1.EOImode = 0)
+        let ctlr: u64;
+        core::arch::asm!("mrs {}, icc_ctlr_el1", out(reg) ctlr);
+        core::arch::asm!("msr icc_ctlr_el1, {}", in(reg) ctlr & !(1 << 1));
+    }
+}
 
 /// 使能 Timer PPI 中断
 ///
 /// # Safety
 ///
 /// 调用前需确保 CPU Interface 已初始化。
-pub unsafe fn enable_timer_ppi() { unsafe {
-    let enable_offset = GICR_ISENABLER0;
-    let bit = 1u32 << (TIMER_PPI % 32);
-    gicr_sgi_write(enable_offset, bit);
-}}
+pub unsafe fn enable_timer_ppi() {
+    unsafe {
+        let enable_offset = GICR_ISENABLER0;
+        let bit = 1u32 << (TIMER_PPI % 32);
+        gicr_sgi_write(enable_offset, bit);
+    }
+}
 
 /// 获取中断 ID (IAR) — 用于 IRQ handler
 pub fn acknowledge() -> u32 {
@@ -261,7 +287,10 @@ pub fn acknowledge() -> u32 {
     iar as u32
 }
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 中断完成 (EOI)
 pub fn end_of_interrupt(intid: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -270,7 +299,10 @@ pub fn end_of_interrupt(intid: u32) {
     }
 }
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 发送 EOI 并解除优先级 (drop priority)
 pub fn deactivate(intid: u32) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -284,12 +316,14 @@ pub fn deactivate(intid: u32) {
 /// # Safety
 ///
 /// 仅在启动阶段调用，需确保 MMU 已启用且 GIC MMIO 区域已映射。
-pub unsafe fn init() { unsafe {
-    init_distributor();
-    init_redistributor();
-    init_cpu_interface();
-    enable_timer_ppi();
-}}
+pub unsafe fn init() {
+    unsafe {
+        init_distributor();
+        init_redistributor();
+        init_cpu_interface();
+        enable_timer_ppi();
+    }
+}
 
 // ============================================================================
 // 中断管理 API
@@ -310,87 +344,115 @@ pub fn is_valid_irq(irq: u32) -> bool {
     irq < SPI_BASE + 960 // GICv3 最多支持 1024 个中断
 }
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 使能 SPI 中断
 ///
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化。
-pub unsafe fn enable_spi(irq: u32) { unsafe {
-    if !is_spi(irq) {
-        return;
+pub unsafe fn enable_spi(irq: u32) {
+    unsafe {
+        if !is_spi(irq) {
+            return;
+        }
+        let reg_offset = GICD_ISENABLER + ((irq / 32) as u64 * 4);
+        let bit = 1u32 << (irq % 32);
+        gicd_write(reg_offset, bit);
     }
-    let reg_offset = GICD_ISENABLER + ((irq / 32) as u64 * 4);
-    let bit = 1u32 << (irq % 32);
-    gicd_write(reg_offset, bit);
-}}
+}
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 禁用 SPI 中断
 ///
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化。
-pub unsafe fn disable_spi(irq: u32) { unsafe {
-    if !is_spi(irq) {
-        return;
+pub unsafe fn disable_spi(irq: u32) {
+    unsafe {
+        if !is_spi(irq) {
+            return;
+        }
+        let reg_offset = GICD_ISENABLER + ((irq / 32) as u64 * 4);
+        let bit = 1u32 << (irq % 32);
+        // GICD_ICENABLER 与 ISENABLER 偏移相同, 写 1 禁用
+        gicd_write(reg_offset + 0x80, bit);
     }
-    let reg_offset = GICD_ISENABLER + ((irq / 32) as u64 * 4);
-    let bit = 1u32 << (irq % 32);
-    // GICD_ICENABLER 与 ISENABLER 偏移相同, 写 1 禁用
-    gicd_write(reg_offset + 0x80, bit);
-}}
+}
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 设置 SPI 中断为 pending
 ///
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化。
-pub unsafe fn set_spi_pending(irq: u32) { unsafe {
-    if !is_spi(irq) {
-        return;
+pub unsafe fn set_spi_pending(irq: u32) {
+    unsafe {
+        if !is_spi(irq) {
+            return;
+        }
+        let reg_offset = GICD_ISPENDR + ((irq / 32) as u64 * 4);
+        let bit = 1u32 << (irq % 32);
+        gicd_write(reg_offset, bit);
     }
-    let reg_offset = GICD_ISPENDR + ((irq / 32) as u64 * 4);
-    let bit = 1u32 << (irq % 32);
-    gicd_write(reg_offset, bit);
-}}
+}
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 配置 SPI 中断为 level-triggered
 ///
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化。
-pub unsafe fn configure_spi_level(irq: u32) { unsafe {
-    if !is_spi(irq) {
-        return;
+pub unsafe fn configure_spi_level(irq: u32) {
+    unsafe {
+        if !is_spi(irq) {
+            return;
+        }
+        let reg_offset = GICD_ICFGR + ((irq / 16) as u64 * 4);
+        let shift = ((irq % 16) * 2) as u64;
+        let val = gicd_read(reg_offset);
+        // bit 0 = 0 for level-triggered, bit 1 = 0 for inactive
+        gicd_write(reg_offset, val & !(3 << shift));
     }
-    let reg_offset = GICD_ICFGR + ((irq / 16) as u64 * 4);
-    let shift = ((irq % 16) * 2) as u64;
-    let val = gicd_read(reg_offset);
-    // bit 0 = 0 for level-triggered, bit 1 = 0 for inactive
-    gicd_write(reg_offset, val & !(3 << shift));
-}}
+}
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 配置 SPI 中断为 edge-triggered
 ///
 /// # Safety
 ///
 /// 调用前需确保 Distributor 已初始化。
-pub unsafe fn configure_spi_edge(irq: u32) { unsafe {
-    if !is_spi(irq) {
-        return;
+pub unsafe fn configure_spi_edge(irq: u32) {
+    unsafe {
+        if !is_spi(irq) {
+            return;
+        }
+        let reg_offset = GICD_ICFGR + ((irq / 16) as u64 * 4);
+        let shift = ((irq % 16) * 2) as u64;
+        let val = gicd_read(reg_offset);
+        // bit 0 = 1 for edge-triggered
+        gicd_write(reg_offset, val | (1 << shift));
     }
-    let reg_offset = GICD_ICFGR + ((irq / 16) as u64 * 4);
-    let shift = ((irq % 16) * 2) as u64;
-    let val = gicd_read(reg_offset);
-    // bit 0 = 1 for edge-triggered
-    gicd_write(reg_offset, val | (1 << shift));
-}}
+}
 
-#[expect(clippy::cast_lossless, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::cast_lossless,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 读取 SPI 中断状态 (是否 pending)
 pub fn is_spi_pending(irq: u32) -> bool {
     if !is_spi(irq) {

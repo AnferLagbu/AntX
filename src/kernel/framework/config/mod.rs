@@ -54,18 +54,18 @@ mod kaslr;
 // I-预存: `framework::config::memory` 需要从外部测试模块访问, 之前设为私有导致
 // `tests::mod` 在 kernel_test build 下编译失败 (E0603). 改 `pub` 暴露给 `framework` 内的
 // 跨模块访问, 外部边界 (services) 通过 `framework::config::*` 公共 API 间接使用.
+pub mod boot_image;
 pub mod memory;
 pub mod procfs;
 mod sched;
 mod slab;
-pub mod boot_image;
 mod validate;
 
 // ============================================================================
 // 重新导出: 子模块 (便于测试与外部使用)
 // ============================================================================
 
-pub use caps::{get_config_summary, ConfigSummary, KernelCapabilities};
+pub use caps::{ConfigSummary, KernelCapabilities, get_config_summary};
 pub use error::ConfigError;
 
 // ============================================================================
@@ -77,12 +77,11 @@ pub use capacity::{
     MAX_THREADS_PER_PROCESS,
 };
 pub use memory::{
-    ASLR_HEAP_BITS, ASLR_MMAP_BITS, ASLR_PIE_BITS, ASLR_STACK_BITS,
-    HUGE_PAGE_1G_SHIFT, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT, HUGE_PAGE_2M_SIZE, KERNEL_STACK_SIZE,
-    PAGE_SHIFT, PAGE_SIZE, USER_CODE_BASE, USER_HEAP_BASE, USER_KSTACK_SIZE,
-    USER_MMAP_BASE, USER_PIE_BASE, USER_STACK_GUARD, USER_STACK_MAX_SIZE,
-    USER_STACK_SIZE, USER_STACK_TOP,
-    aslr_heap_base, aslr_mmap_base, aslr_pie_base, aslr_random_offset, aslr_stack_top,
+    ASLR_HEAP_BITS, ASLR_MMAP_BITS, ASLR_PIE_BITS, ASLR_STACK_BITS, HUGE_PAGE_1G_SHIFT,
+    HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT, HUGE_PAGE_2M_SIZE, KERNEL_STACK_SIZE, PAGE_SHIFT,
+    PAGE_SIZE, USER_CODE_BASE, USER_HEAP_BASE, USER_KSTACK_SIZE, USER_MMAP_BASE, USER_PIE_BASE,
+    USER_STACK_GUARD, USER_STACK_MAX_SIZE, USER_STACK_SIZE, USER_STACK_TOP, aslr_heap_base,
+    aslr_mmap_base, aslr_pie_base, aslr_random_offset, aslr_stack_top,
 };
 pub use sched::{
     CFS_BOOST_INTERVAL, CFS_DL_MAX_UTILIZATION_PCT, CFS_DL_MIN_PERIOD, CFS_DL_MIN_RUNTIME,
@@ -90,7 +89,9 @@ pub use sched::{
     SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
     SCHED_RT_WATCHDOG_TICKS,
 };
-pub use slab::{SLAB_DEFAULT_SIZE, SLAB_GENERAL_CACHE_NUM, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE};
+pub use slab::{
+    SLAB_DEFAULT_SIZE, SLAB_GENERAL_CACHE_NUM, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE,
+};
 
 // ============================================================================
 // 重新导出: 验证函数
@@ -104,9 +105,8 @@ pub use validate::{
 
 // 演进 9: KASLR 配置接入
 pub use kaslr::{
-    get_kaslr_offset, is_aligned as is_kaslr_aligned, set_kaslr_offset,
-    validate_kaslr_offset, KASLR_ALIGN, KASLR_BASE_OFFSET, KASLR_DEFAULT_OFFSET, KASLR_ENABLED,
-    KASLR_MAX_OFFSET,
+    KASLR_ALIGN, KASLR_BASE_OFFSET, KASLR_DEFAULT_OFFSET, KASLR_ENABLED, KASLR_MAX_OFFSET,
+    get_kaslr_offset, is_aligned as is_kaslr_aligned, set_kaslr_offset, validate_kaslr_offset,
 };
 
 // ============================================================================
@@ -123,20 +123,25 @@ pub fn print_config_table() {
     let s = get_config_summary();
     let caps = s.capabilities;
 
-    klog_info!(Boot, "+----------------------------------------------------+");
-    klog_info!(Boot, "|          QueenX Configuration                      |");
-    klog_info!(Boot, "+-------------------------+--------------------------+");
+    klog_info!(
+        Boot,
+        "+----------------------------------------------------+"
+    );
+    klog_info!(
+        Boot,
+        "|          QueenX Configuration                      |"
+    );
+    klog_info!(
+        Boot,
+        "+-------------------------+--------------------------+"
+    );
     klog_info!(
         Boot,
         "| max_cpus / actual       | {:>8} / {:<8}    |",
         s.max_cpus,
         s.actual_cpus
     );
-    klog_info!(
-        Boot,
-        "| max_irqs                | {:>22}    |",
-        s.max_irqs
-    );
+    klog_info!(Boot, "| max_irqs                | {:>22}    |", s.max_irqs);
     klog_info!(
         Boot,
         "| max_processes           | {:>22}    |",
@@ -147,26 +152,31 @@ pub fn print_config_table() {
         "| max_threads             | {:>22}    |",
         s.max_threads
     );
+    klog_info!(Boot, "| page_size (bytes)       | {:>22}    |", s.page_size);
     klog_info!(
         Boot,
-        "| page_size (bytes)       | {:>22}    |",
-        s.page_size
+        "+-------------------------+--------------------------+"
     );
-    klog_info!(Boot, "+-------------------------+--------------------------+");
     klog_info!(
         Boot,
         "| APIC / IOAPIC           | {:>10} / {:<10}|",
         if s.apic_enabled { "on" } else { "off" },
         if s.ioapic_enabled { "on" } else { "off" }
     );
-    klog_info!(Boot, "+-------------------------+--------------------------+");
+    klog_info!(
+        Boot,
+        "+-------------------------+--------------------------+"
+    );
     // 演进 9: 运行时 KASLR 偏移
     klog_info!(
         Boot,
         "| KASLR offset (hex)      |                  0x{:>8X} |",
         s.kaslr_offset
     );
-    klog_info!(Boot, "+-------------------------+--------------------------+");
+    klog_info!(
+        Boot,
+        "+-------------------------+--------------------------+"
+    );
     klog_info!(Boot, "| capabilities                                     |");
     klog_info!(
         Boot,
@@ -177,16 +187,15 @@ pub fn print_config_table() {
         on_off(caps.kpti),
         on_off(caps.barrier)
     );
-    klog_info!(Boot, "+----------------------------------------------------+");
+    klog_info!(
+        Boot,
+        "+----------------------------------------------------+"
+    );
 }
 
 #[inline]
 fn on_off(b: bool) -> &'static str {
-    if b {
-        "on"
-    } else {
-        "off"
-    }
+    if b { "on" } else { "off" }
 }
 
 // ============================================================================
@@ -240,7 +249,11 @@ pub fn init() {
     if errors == 0 {
         klog_info!(Boot, "==== Configuration OK ====");
     } else {
-        klog_info!(Boot, "==== Configuration: {} error(s) (see above) ====", errors);
+        klog_info!(
+            Boot,
+            "==== Configuration: {} error(s) (see above) ====",
+            errors
+        );
     }
 
     // 演进 6: 软校验子系统初始化状态 (PCI/网络/...)

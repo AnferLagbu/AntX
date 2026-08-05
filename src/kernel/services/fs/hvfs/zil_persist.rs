@@ -27,8 +27,8 @@
 //! └──────────────────────┘
 //! ```
 
-use super::zil::{HvZil, HvZilRecord};
 use super::spa::HV_POOL_BLOCK_SIZE;
+use super::zil::{HvZil, HvZilRecord};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -38,15 +38,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HvZilPersistError {
     /// 缓冲区长度不足, 不可能通过外部 `assert!(buf.len() >= 256)` 触发
-    BufferTooShort {
-        need: usize,
-        got: usize,
-    },
+    BufferTooShort { need: usize, got: usize },
     /// CRC32 校验失败 — 物理 bit rot 或上层写入错误
-    CrcMismatch {
-        expected: u32,
-        computed: u32,
-    },
+    CrcMismatch { expected: u32, computed: u32 },
     /// record 类型字段不在 enum 范围内 (1..=13)
     UnknownRecordType(u8),
     /// header / trailer magic 或 version 异常
@@ -104,11 +98,17 @@ pub struct ZilBlockTrailer {
 }
 
 const _ASSERT_HEADER_SIZE: () = {
-    assert!(core::mem::size_of::<ZilBlockHeader>() == ZIL_HEADER_SIZE, "ZilBlockHeader size mismatch");
+    assert!(
+        core::mem::size_of::<ZilBlockHeader>() == ZIL_HEADER_SIZE,
+        "ZilBlockHeader size mismatch"
+    );
 };
 
 const _ASSERT_TRAILER_SIZE: () = {
-    assert!(core::mem::size_of::<ZilBlockTrailer>() == ZIL_TRAILER_SIZE, "ZilBlockTrailer size mismatch");
+    assert!(
+        core::mem::size_of::<ZilBlockTrailer>() == ZIL_TRAILER_SIZE,
+        "ZilBlockTrailer size mismatch"
+    );
 };
 
 impl ZilBlockHeader {
@@ -184,7 +184,10 @@ impl ZilBlockTrailer {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn is_valid(&self) -> bool {
         self.tail_magic == ZIL_TAIL_MAGIC
     }
@@ -195,7 +198,10 @@ impl ZilBlockTrailer {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn crc32_checksum(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFFFFFF;
     for &byte in data {
@@ -236,7 +242,6 @@ fn serialize_record(record: &HvZilRecord, buf: &mut [u8]) {
     buf[payload_end..payload_end + 4].copy_from_slice(&rec_crc.to_le_bytes());
 }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
 fn try_deserialize_record(buf: &[u8]) -> Result<HvZilRecord, HvZilPersistError> {
     let actual_size = 173 + 32 + 4;
     if buf.len() < actual_size {
@@ -245,14 +250,13 @@ fn try_deserialize_record(buf: &[u8]) -> Result<HvZilRecord, HvZilPersistError> 
             got: buf.len(),
         });
     }
-    let rec_crc = u32::from_le_bytes(
-        buf[actual_size - 4..actual_size]
-            .try_into()
-            .map_err(|_| HvZilPersistError::BufferTooShort {
+    let rec_crc =
+        u32::from_le_bytes(buf[actual_size - 4..actual_size].try_into().map_err(|_| {
+            HvZilPersistError::BufferTooShort {
                 need: 4,
                 got: actual_size - 4,
-            })?,
-    );
+            }
+        })?);
     let computed = crc32_checksum(&buf[..actual_size - 4]);
     if rec_crc != computed {
         return Err(HvZilPersistError::CrcMismatch {
@@ -265,50 +269,32 @@ fn try_deserialize_record(buf: &[u8]) -> Result<HvZilRecord, HvZilPersistError> 
     let txg = u64::from_le_bytes(
         buf[1..9]
             .try_into()
-            .map_err(|_| HvZilPersistError::BufferTooShort {
-                need: 8,
-                got: 8,
-            })?,
+            .map_err(|_| HvZilPersistError::BufferTooShort { need: 8, got: 8 })?,
     );
     let obj_id = u64::from_le_bytes(
         buf[9..17]
             .try_into()
-            .map_err(|_| HvZilPersistError::BufferTooShort {
-                need: 8,
-                got: 8,
-            })?,
+            .map_err(|_| HvZilPersistError::BufferTooShort { need: 8, got: 8 })?,
     );
     let parent_obj = u64::from_le_bytes(
         buf[17..25]
             .try_into()
-            .map_err(|_| HvZilPersistError::BufferTooShort {
-                need: 8,
-                got: 8,
-            })?,
+            .map_err(|_| HvZilPersistError::BufferTooShort { need: 8, got: 8 })?,
     );
     let offset = u64::from_le_bytes(
         buf[25..33]
             .try_into()
-            .map_err(|_| HvZilPersistError::BufferTooShort {
-                need: 8,
-                got: 8,
-            })?,
+            .map_err(|_| HvZilPersistError::BufferTooShort { need: 8, got: 8 })?,
     );
     let size = u32::from_le_bytes(
         buf[33..37]
             .try_into()
-            .map_err(|_| HvZilPersistError::BufferTooShort {
-                need: 4,
-                got: 4,
-            })?,
+            .map_err(|_| HvZilPersistError::BufferTooShort { need: 4, got: 4 })?,
     );
     let seq = u64::from_le_bytes(
         buf[37..45]
             .try_into()
-            .map_err(|_| HvZilPersistError::BufferTooShort {
-                need: 8,
-                got: 8,
-            })?,
+            .map_err(|_| HvZilPersistError::BufferTooShort { need: 8, got: 8 })?,
     );
 
     let mut name = [0u8; 128];
@@ -320,10 +306,7 @@ fn try_deserialize_record(buf: &[u8]) -> Result<HvZilRecord, HvZilPersistError> 
         *val = u64::from_le_bytes(
             buf[off..off + 8]
                 .try_into()
-                .map_err(|_| HvZilPersistError::BufferTooShort {
-                    need: 8,
-                    got: 8,
-                })?,
+                .map_err(|_| HvZilPersistError::BufferTooShort { need: 8, got: 8 })?,
         );
     }
 
@@ -411,7 +394,10 @@ impl HvZilPersist {
         Some(block)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn deserialize_zil_from_block(block: &[u8]) -> Vec<HvZilRecord> {
         let mut records = Vec::new();
 
@@ -472,7 +458,12 @@ impl HvZilPersist {
                     // 可观测性: debug 构建下输出日志, release 构建静默跳过 (性能优先).
                     #[cfg(debug_assertions)]
                     {
-                        crate::slog_warn!(FS, "ZIL 回放: 跳过损坏 record (index={}, err={:?})", i, e);
+                        crate::slog_warn!(
+                            FS,
+                            "ZIL 回放: 跳过损坏 record (index={}, err={:?})",
+                            i,
+                            e
+                        );
                     }
                     let _ = e;
                 }

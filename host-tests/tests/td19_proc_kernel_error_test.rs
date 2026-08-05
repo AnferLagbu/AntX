@@ -202,8 +202,12 @@ fn mlock_error_from_errno_uses_kernel_wrapper() {
 #[test]
 fn mlock_error_mincore_uses_kernel_wrapper() {
     let src = read(MLOCK_RS);
+    // rustfmt 拆 MlockError::Kernel(crate::...::KernelError::InvalidArgument) 为多行;
+// contains() 不跨行, 用 normalized 字符串 (删除空白) 匹配.
+// 注意: rustfmt 在 InvalidArgument, 后再加 ), 所以匹配片段为 InvalidArgument,
+    let normalized: String = src.split_whitespace().collect::<Vec<_>>().join("");
     assert!(
-        src.contains("MlockError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument)"),
+        normalized.contains("MlockError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument,"),
         "mincore 函数中的 MlockError 使用点应改走 Kernel(K::InvalidArgument) 包装"
     );
 }

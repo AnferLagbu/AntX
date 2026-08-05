@@ -7,8 +7,8 @@
 
 use crate::kernel::framework::config::ConfigError;
 use crate::kernel::framework::config::{
-    HUGE_PAGE_2M_SIZE, KERNEL_STACK_SIZE, PAGE_SIZE, USER_CODE_BASE, USER_STACK_GUARD,
-    USER_STACK_SIZE, USER_STACK_TOP, SLAB_DEFAULT_SIZE, MAX_CPUS,
+    HUGE_PAGE_2M_SIZE, KERNEL_STACK_SIZE, MAX_CPUS, PAGE_SIZE, SLAB_DEFAULT_SIZE, USER_CODE_BASE,
+    USER_STACK_GUARD, USER_STACK_SIZE, USER_STACK_TOP,
 };
 use crate::slog_err;
 
@@ -65,7 +65,13 @@ pub fn validate_memory_config() -> Result<(), ConfigError> {
 /// 校验中断配置.
 ///
 /// # Errors
-#[cfg_attr(target_arch = "aarch64", expect(clippy::unnecessary_wraps, reason = "aarch64 上 APIC/IOAPIC 检查已禁用, 返回 Ok; x86_64 才真正检查"))]
+#[cfg_attr(
+    target_arch = "aarch64",
+    expect(
+        clippy::unnecessary_wraps,
+        reason = "aarch64 上 APIC/IOAPIC 检查已禁用, 返回 Ok; x86_64 才真正检查"
+    )
+)]
 /// 在 `x86_64` 上, 当 APIC 与 IOAPIC 均未初始化时返回
 /// `Err(ConfigError::IrqControllerUnavailable)`.
 pub fn validate_interrupt_config() -> Result<(), ConfigError> {
@@ -86,7 +92,10 @@ pub fn validate_interrupt_config() -> Result<(), ConfigError> {
     Ok(())
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 跨模块一致性校验.
 ///
 /// # Errors
@@ -106,7 +115,10 @@ pub fn validate_pci_subsystem() -> Result<(), ConfigError> {
     Ok(())
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 验证网络子系统配置一致性.
 ///
 /// # Errors

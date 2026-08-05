@@ -15,10 +15,10 @@
 //! `MmStruct` 内部保护由 `spin::Mutex` 提供。
 //! `Vma` 中的物理页映射感知与 PMM 协作。
 
+use super::{PAGE_SIZE, PageFlags, VirtAddr};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use super::{PageFlags, VirtAddr, PAGE_SIZE};
 
 /// VMA 行为属性标志 (与 `PageFlags` 区分: `PageFlags` 是硬件页表属性, `VmFlags` 是内核策略)
 ///
@@ -58,7 +58,10 @@ impl VmFlags {
     pub const MADV_WILLNEED: Self = Self(1 << 9);
 
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn bits(&self) -> u32 {
         self.0
     }
@@ -71,12 +74,18 @@ impl VmFlags {
         (self.0 & other.0) == other.0
     }
     #[inline]
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     pub const fn insert(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
     #[inline]
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     pub const fn remove(self, other: Self) -> Self {
         Self(self.0 & !other.0)
     }
@@ -88,17 +97,25 @@ impl VmFlags {
 
 impl core::ops::BitOr for VmFlags {
     type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { self.insert(rhs) }
+    fn bitor(self, rhs: Self) -> Self {
+        self.insert(rhs)
+    }
 }
 impl core::ops::BitOrAssign for VmFlags {
-    fn bitor_assign(&mut self, rhs: Self) { self.0 |= rhs.0; }
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
 }
 impl core::ops::BitAnd for VmFlags {
     type Output = Self;
-    fn bitand(self, rhs: Self) -> Self { Self(self.0 & rhs.0) }
+    fn bitand(self, rhs: Self) -> Self {
+        Self(self.0 & rhs.0)
+    }
 }
 impl core::ops::BitAndAssign for VmFlags {
-    fn bitand_assign(&mut self, rhs: Self) { self.0 &= rhs.0; }
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,7 +132,10 @@ pub enum VmaType {
 }
 
 impl VmaType {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_u8(v: u8) -> Self {
         match v {
             0 => Self::Anonymous,
@@ -375,7 +395,10 @@ impl MmStruct {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn unmap_vma_pages(&self, vma: &Vma) {
         // 锁序: 调用者持有 VMA_LOCK, 此处获取 VMM_LOCK
         // 这是唯一合法的嵌套方向 (VMA → VMM).
@@ -421,7 +444,12 @@ impl MmStruct {
     /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出, 或范围内没有任何已映射的 VMA 时返回 `ENOMEM`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-    pub fn mprotect(&self, start: usize, len: usize, new_flags: PageFlags) -> Result<(), crate::kernel::framework::syscall::Errno> {
+    pub fn mprotect(
+        &self,
+        start: usize,
+        len: usize,
+        new_flags: PageFlags,
+    ) -> Result<(), crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         if len == 0 {
@@ -434,7 +462,8 @@ impl MmStruct {
         let mut vmas = self.vmas.lock();
 
         // 收集需要修改的 VMA 索引
-        let mut to_modify: alloc::vec::Vec<(usize, usize, usize, PageFlags, VmaType)> = alloc::vec::Vec::new();
+        let mut to_modify: alloc::vec::Vec<(usize, usize, usize, PageFlags, VmaType)> =
+            alloc::vec::Vec::new();
 
         for vma in vmas.iter() {
             if vma.end <= start {
@@ -446,7 +475,13 @@ impl MmStruct {
             // 有重叠
             let overlap_start = vma.start.max(start);
             let overlap_end = vma.end.min(end);
-            to_modify.push((overlap_start, overlap_end, vma.start, vma.flags, vma.vma_type));
+            to_modify.push((
+                overlap_start,
+                overlap_end,
+                vma.start,
+                vma.flags,
+                vma.vma_type,
+            ));
         }
 
         if to_modify.is_empty() {
@@ -635,7 +670,9 @@ impl MmStruct {
         }
 
         // MAYMOVE: 找新空区
-        let new_start = self.find_free_range(new_size_aligned).ok_or(Errno::ENOMEM)?;
+        let new_start = self
+            .find_free_range(new_size_aligned)
+            .ok_or(Errno::ENOMEM)?;
 
         // 删除旧 vma
         self.remove_range(old_addr, old_addr + old_size_aligned);
@@ -702,8 +739,16 @@ impl MmStruct {
     /// 当 PAGEOUT/DONTNEED 目标区域被 `mlock` 锁定而无法回收时返回 `EAGAIN`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-    pub fn madvise_range(&self, start: usize, len: usize, advice: u32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    pub fn madvise_range(
+        &self,
+        start: usize,
+        len: usize,
+        advice: u32,
+    ) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         if len == 0 {
@@ -846,7 +891,12 @@ impl MmStruct {
     /// madvise 触发的页面回收 (PAGEOUT 走 swap, DONTNEED 走 free)
     ///
     /// 仅回收 locked=false 的页 (受 VmFlags.MLOCKED 保护).
-    fn madvise_evict_range(&self, start: usize, end: usize, _dontneed: bool) -> Result<(), crate::kernel::framework::syscall::Errno> {
+    fn madvise_evict_range(
+        &self,
+        start: usize,
+        end: usize,
+        _dontneed: bool,
+    ) -> Result<(), crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
         use crate::kernel::framework::mm::swap;
 
@@ -876,7 +926,11 @@ impl MmStruct {
     /// 或累计锁定字节数超过 `RLIMIT_MEMLOCK` 上限时返回 `ENOMEM`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-    pub fn mlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
+    pub fn mlock_range(
+        &self,
+        start: usize,
+        len: usize,
+    ) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
         use crate::kernel::framework::rlimit_query;
 
@@ -939,7 +993,11 @@ impl MmStruct {
     /// 当 `len` 为 0 时返回 `EINVAL`; 当 `start + len` 溢出时返回 `ENOMEM`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-    pub fn munlock_range(&self, start: usize, len: usize) -> Result<usize, crate::kernel::framework::syscall::Errno> {
+    pub fn munlock_range(
+        &self,
+        start: usize,
+        len: usize,
+    ) -> Result<usize, crate::kernel::framework::syscall::Errno> {
         use crate::kernel::framework::errno::Errno;
 
         if len == 0 {
@@ -960,9 +1018,11 @@ impl MmStruct {
             let ovl_end = v.end.min(end_addr);
             total += ovl_end - ovl_start;
         }
-        let _ = self.locked_vm.fetch_update(Ordering::AcqRel, Ordering::Acquire, |cur| {
-            Some(cur.saturating_sub(total))
-        });
+        let _ = self
+            .locked_vm
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |cur| {
+                Some(cur.saturating_sub(total))
+            });
         drop(vmas);
 
         let page_size = PAGE_SIZE as usize;
@@ -1029,7 +1089,10 @@ impl MmStruct {
         Ok(applied)
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// munlockall: 解除所有 mlock
     ///
     /// # Errors
@@ -1037,7 +1100,8 @@ impl MmStruct {
     pub fn munlock_all(&self) -> Result<(), crate::kernel::framework::syscall::Errno> {
         let mut vmas = self.vmas.lock();
         for v in vmas.iter_mut() {
-            v.vm_flags = v.vm_flags
+            v.vm_flags = v
+                .vm_flags
                 .remove(VmFlags::MLOCKED)
                 .remove(VmFlags::LOCKED_FUTURE)
                 .remove(VmFlags::LOCKED_ONFAULT);
@@ -1057,7 +1121,10 @@ impl MmStruct {
     /// (`out_vec.len() < n_pages`) 时返回 `ENOMEM`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn mincore_range(
         &self,
         start: usize,
@@ -1107,9 +1174,13 @@ unsafe impl Send for MmStruct {}
 // SAFETY: 同上, 原子操作与锁保证并发安全.
 unsafe impl Sync for MmStruct {}
 
-static CURRENT_MM: core::sync::atomic::AtomicPtr<MmStruct> = core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+static CURRENT_MM: core::sync::atomic::AtomicPtr<MmStruct> =
+    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
 
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 pub fn set_current_mm(mm: *const MmStruct) {
     // SAFETY: CURRENT_MM 是当前 CPU 的 per-CPU 状态指针，
     // 仅在进程切换时由调度器写入，调用者保证无并发写入。

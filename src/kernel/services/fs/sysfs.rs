@@ -86,14 +86,17 @@ pub fn has_node(name: &str) -> bool {
 // 节点值格式化
 // ============================================================================
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 把节点值写到 buffer, 返写入字节数
 ///
 /// # Errors
 /// 当节点不存在时返回 `ENOENT`; 当缓冲区过小 (装不下格式化结果) 时返回 `EINVAL`.
 pub fn write_node_value(name: &str, buf: &mut [u8]) -> Result<usize, Errno> {
     let val = match name {
-        "cpu_count" => SysfsValue::Integer(1), // 简化: BSP=1
+        "cpu_count" => SysfsValue::Integer(1),          // 简化: BSP=1
         "mem_total" => SysfsValue::Integer(0x10000000), // 256 MiB
         "mem_free" => SysfsValue::Integer(0x08000000),  // 128 MiB
         "uptime_secs" => SysfsValue::Integer(0),
@@ -175,7 +178,10 @@ pub fn mount_sysfs() -> Result<(), Errno> {
     Ok(())
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 卸载 /sys
 ///
 /// # Errors

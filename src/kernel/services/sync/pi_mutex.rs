@@ -52,7 +52,10 @@ pub type PiMutexResult<T> = Result<T, PiMutexError>;
 // 安全 API
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 获取锁 (阻塞 + 优先级继承)
 ///
 /// # 参数
@@ -65,7 +68,11 @@ pub type PiMutexResult<T> = Result<T, PiMutexError>;
 /// # Errors
 ///
 /// 当前实现中 `lock()` 内部自旋直到获取成功, 不会返回 `Err`.
-pub fn lock<T>(mutex: &PiMutex<T>, my_pid: u32, my_base_priority: u32) -> PiMutexResult<fw::PiMutexGuard<'_, T>> {
+pub fn lock<T>(
+    mutex: &PiMutex<T>,
+    my_pid: u32,
+    my_base_priority: u32,
+) -> PiMutexResult<fw::PiMutexGuard<'_, T>> {
     // PI Mutex 的 lock 永不返回 WouldBlock, 内部自旋直到获取
     // 但若要区分错误, 可包装一层
     let _ = my_pid;
@@ -80,11 +87,17 @@ pub fn lock<T>(mutex: &PiMutex<T>, my_pid: u32, my_base_priority: u32) -> PiMute
 /// # Errors
 ///
 /// 当锁被其他线程持有时返回 `PiMutexError::Kernel(WouldBlock)`.
-pub fn try_lock<T>(mutex: &PiMutex<T>, my_pid: u32, my_base_priority: u32) -> PiMutexResult<fw::PiMutexGuard<'_, T>> {
+pub fn try_lock<T>(
+    mutex: &PiMutex<T>,
+    my_pid: u32,
+    my_base_priority: u32,
+) -> PiMutexResult<fw::PiMutexGuard<'_, T>> {
     if mutex.try_lock(my_pid, my_base_priority) {
         Ok(mutex.lock(my_pid, my_base_priority))
     } else {
-        Err(PiMutexError::Kernel(crate::kernel::services::error::KernelError::WouldBlock))
+        Err(PiMutexError::Kernel(
+            crate::kernel::services::error::KernelError::WouldBlock,
+        ))
     }
 }
 

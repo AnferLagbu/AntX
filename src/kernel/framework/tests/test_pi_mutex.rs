@@ -9,7 +9,7 @@
 //! - 无等待者时完全释放
 //! - 重复 lock 同一线程不重复 push
 //! - 回调注册
-use super::{runner, TestResult};
+use super::{TestResult, runner};
 use crate::kernel::framework::sync::pi_mutex as pi;
 use crate::register_tests_inner;
 

@@ -8,16 +8,16 @@
 
 use super::{assert_eq_test, check};
 use crate::kernel::framework::config::{
-    get_config_summary, print_config_table, validate_cross_module_consistency,
-    validate_memory_config, ConfigError, CFS_BOOST_INTERVAL, CFS_MIN_GRANULARITY, CFS_NICE0_WEIGHT,
-    CFS_TARGET_LATENCY, HUGE_PAGE_1G_SHIFT, HUGE_PAGE_2M_SHIFT, KERNEL_STACK_SIZE, MAX_CPUS,
+    CFS_BOOST_INTERVAL, CFS_MIN_GRANULARITY, CFS_NICE0_WEIGHT, CFS_TARGET_LATENCY, ConfigError,
+    HUGE_PAGE_1G_SHIFT, HUGE_PAGE_2M_SHIFT, KERNEL_STACK_SIZE, KernelCapabilities, MAX_CPUS,
     MAX_IRQS, MAX_OPEN_FILES, MAX_PROCESSES, MAX_SESSIONS, MAX_THREADS, MAX_THREADS_PER_PROCESS,
     PAGE_SHIFT, PAGE_SIZE, SCHED_BOOST_INTERVAL, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_3_QUANTUM,
     SCHED_RT_WATCHDOG_TICKS, SLAB_DEFAULT_SIZE, SLAB_GENERAL_CACHE_NUM, SLAB_MAX_OBJECT_SIZE,
     SLAB_MIN_OBJECT_SIZE, USER_CODE_BASE, USER_STACK_GUARD, USER_STACK_SIZE, USER_STACK_TOP,
-    KernelCapabilities,
+    get_config_summary, print_config_table, validate_cross_module_consistency,
+    validate_memory_config,
 };
-use crate::kernel::framework::tests::{runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, runner};
 use crate::register_tests_inner;
 
 // ============================================================================
@@ -45,10 +45,7 @@ fn test_capacity_thread_relationship() -> TestResult {
 
 fn test_memory_page_size_power_of_two() -> TestResult {
     check!(PAGE_SIZE > 0, "PAGE_SIZE > 0");
-    check!(
-        PAGE_SIZE.is_power_of_two(),
-        "PAGE_SIZE must be power of 2"
-    );
+    check!(PAGE_SIZE.is_power_of_two(), "PAGE_SIZE must be power of 2");
     assert_eq_test!(PAGE_SIZE, 1u64 << PAGE_SHIFT, "PAGE_SIZE == 1<<PAGE_SHIFT");
     TestResult::Pass
 }
@@ -96,10 +93,7 @@ fn test_sched_quantum_ordering() -> TestResult {
 }
 
 fn test_slab_object_size_bounds() -> TestResult {
-    check!(
-        SLAB_MIN_OBJECT_SIZE > 0,
-        "SLAB_MIN_OBJECT_SIZE > 0"
-    );
+    check!(SLAB_MIN_OBJECT_SIZE > 0, "SLAB_MIN_OBJECT_SIZE > 0");
     check!(
         SLAB_MAX_OBJECT_SIZE >= SLAB_MIN_OBJECT_SIZE,
         "SLAB_MAX >= SLAB_MIN"
@@ -236,7 +230,10 @@ fn test_config_error_display_cpu_count() -> TestResult {
     });
     check!(s.contains("2048"), "should embed actual value");
     check!(s.contains("1024"), "should embed max value");
-    check!(s.contains("CPU") || s.contains("MAX_CPUS"), "should describe CPU");
+    check!(
+        s.contains("CPU") || s.contains("MAX_CPUS"),
+        "should describe CPU"
+    );
     TestResult::Pass
 }
 
@@ -248,7 +245,10 @@ fn test_config_error_display_memory_layout() -> TestResult {
 
 fn test_config_error_display_irq_unavailable() -> TestResult {
     let s = format_error(ConfigError::IrqControllerUnavailable);
-    check!(s.contains("interrupt") || s.contains("IRQ"), "should mention IRQ");
+    check!(
+        s.contains("interrupt") || s.contains("IRQ"),
+        "should mention IRQ"
+    );
     TestResult::Pass
 }
 

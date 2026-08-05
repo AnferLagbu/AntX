@@ -9,8 +9,8 @@
 use super::types::*;
 use super::*;
 // T6-1: pipe/shm/msgq 策略函数已迁移到 services
-use crate::kernel::services::ipc::{pipe, shm, msgq};
 use crate::kernel::services::ipc::types::PIPE_BUFFER_SIZE;
+use crate::kernel::services::ipc::{msgq, pipe, shm};
 
 // ============================================================================
 // 压力测试
@@ -50,13 +50,7 @@ mod stress_tests {
             let mut buf = [0u8; 64];
 
             assert!(
-                pipe::pipe_read_safe(
-                    &mut ns,
-                    rfd,
-                    &mut buf,
-                    data.len() as u32
-                )
-                .is_ok(),
+                pipe::pipe_read_safe(&mut ns, rfd, &mut buf, data.len() as u32).is_ok(),
                 "Read failed at iteration {}",
                 i
             );
@@ -185,13 +179,7 @@ mod stress_tests {
 
         // 读取并验证
         let mut buf = [0u8; PIPE_BUFFER_SIZE];
-        let nread = pipe::pipe_read_safe(
-            &mut ns,
-            rfd,
-            &mut buf,
-            large_data.len() as u32,
-        )
-        .unwrap();
+        let nread = pipe::pipe_read_safe(&mut ns, rfd, &mut buf, large_data.len() as u32).unwrap();
 
         assert_eq!(nread as usize, large_data.len());
         assert_eq!(&buf[..large_data.len()], large_data.as_slice());

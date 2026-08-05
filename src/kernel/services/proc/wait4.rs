@@ -31,11 +31,20 @@ pub fn wait4_syscall(pid: i32, wstatus_ptr: u64, options: i32) -> Result<usize, 
     }
 
     // options 标志验证
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const WNOHANG: i32 = 0x1;
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const WUNTRACED: i32 = 0x2;
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const WCONTINUED: i32 = 0x8;
     let valid_opts = WNOHANG | WUNTRACED | WCONTINUED;
     if options & !valid_opts != 0 {
@@ -46,5 +55,9 @@ pub fn wait4_syscall(pid: i32, wstatus_ptr: u64, options: i32) -> Result<usize, 
     // 否则由 framework 内部 check_user_ptr 验证
 
     let ret = crate::kernel::framework::syscall::wait4::sys_wait4(pid, wstatus_ptr, options);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }

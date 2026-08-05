@@ -27,7 +27,6 @@
 
 use super::PciDevice;
 
-
 use crate::kernel::framework::sync::IrqSpinLock;
 // ============================================================================
 // 契约常量

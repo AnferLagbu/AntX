@@ -13,8 +13,8 @@
 //!
 //! - Linux configfs 文档: Documentation/filesystems/configfs.rst
 
-use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -203,11 +203,7 @@ impl ConfigDir {
                 break;
             }
         }
-        if found {
-            Ok(())
-        } else {
-            Err(Errno::ENOENT)
-        }
+        if found { Ok(()) } else { Err(Errno::ENOENT) }
     }
 }
 
@@ -224,7 +220,10 @@ pub struct ConfigFs {
 }
 
 impl ConfigFs {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     pub const fn new() -> Self {
         Self {
             dirs: [const { ConfigDir::new() }; MAX_DIRS],
@@ -271,11 +270,7 @@ impl ConfigFs {
                 break;
             }
         }
-        if found {
-            Ok(())
-        } else {
-            Err(Errno::ENOENT)
-        }
+        if found { Ok(()) } else { Err(Errno::ENOENT) }
     }
 
     /// 查找目录
@@ -302,12 +297,7 @@ impl ConfigFs {
     ///
     /// # Errors
     /// 当目录或节点不存在时返回 `ENOENT`; 当 `buf` 过小时返回 `EINVAL`.
-    pub fn read_node(
-        &self,
-        dir: &str,
-        node: &str,
-        buf: &mut [u8],
-    ) -> Result<usize, Errno> {
+    pub fn read_node(&self, dir: &str, node: &str, buf: &mut [u8]) -> Result<usize, Errno> {
         let d = self.find_dir(dir).ok_or(Errno::ENOENT)?;
         let n = d.find_node(node).ok_or(Errno::ENOENT)?;
         n.read(buf)
@@ -317,12 +307,7 @@ impl ConfigFs {
     ///
     /// # Errors
     /// 当目录或节点不存在时返回 `ENOENT`; 当节点不可写或 `data` 非法时返回 `EPERM`/`EINVAL`.
-    pub fn write_node(
-        &mut self,
-        dir: &str,
-        node: &str,
-        data: &[u8],
-    ) -> Result<(), Errno> {
+    pub fn write_node(&mut self, dir: &str, node: &str, data: &[u8]) -> Result<(), Errno> {
         let d = self.find_dir_mut(dir).ok_or(Errno::ENOENT)?;
         let n = d.find_node_mut(node).ok_or(Errno::ENOENT)?;
         n.write(data)
@@ -347,7 +332,10 @@ pub fn get_config_fs() -> &'static Mutex<ConfigFs> {
 // safe API
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 挂载 configfs
 ///
 /// # Errors
@@ -362,7 +350,10 @@ pub fn mount_configfs() -> Result<(), Errno> {
     Ok(())
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 卸载 configfs
 ///
 /// # Errors

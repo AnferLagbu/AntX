@@ -32,7 +32,7 @@ use super::proc_ops;
 use super::sched_ops;
 use super::scheduler::SCHEDULER;
 use super::user_proc::USER_PROC_MANAGER;
-use crate::kernel::framework::mm::{pmm_alloc_pages, pmm_free_pages, PAGE_SIZE};
+use crate::kernel::framework::mm::{PAGE_SIZE, pmm_alloc_pages, pmm_free_pages};
 
 // 向后兼容 re-export: 将已拆分至 proc_ops / sched_ops 的函数重新导出
 // 使外部代码仍可通过 `proc::api::*` 路径访问
@@ -100,9 +100,18 @@ const ELF_MAX_SIZE: usize = 1024 * 1024;
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 pub extern "C" fn user_proc_load_elf(path: *const u8, pwm: u64) -> i32 {
     if path.is_null() {
         return -1;
@@ -171,8 +180,14 @@ pub extern "C" fn user_proc_load_elf_from_memory(
 /// 在 ELF 加载完成后, 在用户栈上建立 argv/envp (供 exec 系统调用使用)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::similar_names,
+    reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect"
+)]
 ///
 /// # Safety
 ///
@@ -191,14 +206,9 @@ pub unsafe extern "C" fn user_proc_setup_argv(
             None => return -1,
         };
 
-        let sp =
-            USER_PROC_MANAGER.setup_user_stack(proc, argv, argc as usize, envp, envc as usize);
+        let sp = USER_PROC_MANAGER.setup_user_stack(proc, argv, argc as usize, envp, envc as usize);
 
-        if sp == 0 {
-            -1
-        } else {
-            0
-        }
+        if sp == 0 { -1 } else { 0 }
     }
 }
 
@@ -217,7 +227,12 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
         })
         .unwrap_or((0, 0, 0));
 
-    crate::klog_boot_info!("[USER] with_process result: pid_val={:#X} pwm_val={:#X} state_val={}", pid_val, pwm_val, state_val);
+    crate::klog_boot_info!(
+        "[USER] with_process result: pid_val={:#X} pwm_val={:#X} state_val={}",
+        pid_val,
+        pwm_val,
+        state_val
+    );
 
     if pid_val == 0 {
         crate::klog_boot_info!("[USER] pid_val is 0, returning -1");
@@ -237,10 +252,16 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
         // 诊断：打印从 Process 读取的 kernel_stack 值
         // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
-        let p_kstack = unsafe { (*proc).process().kernel_stack.load(core::sync::atomic::Ordering::SeqCst) };
+        let p_kstack = unsafe {
+            (*proc)
+                .process()
+                .kernel_stack
+                .load(core::sync::atomic::Ordering::SeqCst)
+        };
         crate::klog_boot_info!(
             "[USER] got proc={:#X}, Process.kstack={:#X}",
-            proc as u64, p_kstack
+            proc as u64,
+            p_kstack
         );
         crate::klog_boot_info!("[USER] calling enter()");
         USER_PROC_MANAGER.enter(proc);
@@ -253,23 +274,21 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
 pub extern "C" fn launch_first_user_process() -> ! {
     crate::klog_boot_info!("[USER] Launching init process...");
 
     // 1. 挂载 ramfs 为根文件系统
     crate::klog_boot_info!("[USER] Mounting ramfs...");
-    let mount_result = crate::kernel::framework::fs::vfs_mount(
-        b"/\0".as_ptr(),
-        b"ramfs\0".as_ptr(),
-    );
+    let mount_result =
+        crate::kernel::framework::fs::vfs_mount(b"/\0".as_ptr(), b"ramfs\0".as_ptr());
     crate::klog_boot_info!("[USER] ramfs mount result={}", mount_result);
 
     if mount_result < 0 {
-        crate::klog_boot_info!(
-            "[USER] Warning: ramfs mount on / failed ({})",
-            mount_result
-        );
+        crate::klog_boot_info!("[USER] Warning: ramfs mount on / failed ({})", mount_result);
     }
 
     crate::klog_boot_info!("[USER] ramfs mount done, entering aarch64 path...");
@@ -386,13 +405,13 @@ pub extern "C" fn launch_first_user_process() -> ! {
         // 进程自行启用中断, 此处无需恢复.
         let _saved = crate::arch!(interrupt_disable());
         crate::klog_boot_info!("[USER] aarch64: starting init ELF load...");
-        
+
         let bin = include_bytes!("../../../../build/user/init.bin");
-        
+
         let bin_ptr = bin.as_ptr();
-        
+
         let bin_size = bin.len() as u64;
-        
+
         crate::klog_boot_info!("[USER] aarch64: init ELF size={}", bin_size);
 
         if bin_size == 0 {

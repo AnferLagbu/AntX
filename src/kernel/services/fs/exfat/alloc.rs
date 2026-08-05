@@ -2,10 +2,10 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! exFAT 块分配器
 
-use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::driver::block::{read_sectors, with_device};
-use super::super_block::ExfatSuperBlock;
 use super::fat::FAT_END;
+use super::super_block::ExfatSuperBlock;
+use crate::kernel::framework::driver::block::{read_sectors, with_device};
+use crate::kernel::framework::fs::KernelError;
 use alloc::vec;
 
 /// 分配一个空闲簇
@@ -13,10 +13,7 @@ use alloc::vec;
 /// # Errors
 /// 当 FAT 表条目写入失败时返回底层 `KernelError`;
 /// 当扫描完所有簇仍找不到空闲簇时返回 `NoSpace`.
-pub fn alloc_cluster(
-    device_idx: u8,
-    super_block: &ExfatSuperBlock,
-) -> Result<u32, KernelError> {
+pub fn alloc_cluster(device_idx: u8, super_block: &ExfatSuperBlock) -> Result<u32, KernelError> {
     let bytes_per_sector = super_block.bytes_per_sector() as usize;
 
     // 读取 FAT 表扫描空闲簇
@@ -136,7 +133,12 @@ pub fn read_cluster(
     for i in 0..sectors_per_cluster {
         let offset = i * bytes_per_sector;
         let result = with_device(device_idx as usize, |dev| {
-            read_sectors(dev, u64::from(sector + i as u32), 1, &mut temp_buf[offset..offset + bytes_per_sector])
+            read_sectors(
+                dev,
+                u64::from(sector + i as u32),
+                1,
+                &mut temp_buf[offset..offset + bytes_per_sector],
+            )
         });
 
         if !matches!(result, Some(Ok(()))) {

@@ -13,8 +13,7 @@ const HEADER_MAGIC: u32 = 0xC0FFEE01;
 const TAIL_MAGIC: [u8; 8] = [0xEE, 0xFF, 0xC0, 0x01, 0x00, 0x00, 0x00, 0x00];
 
 /// 全局 "启动镜像" —— 由 `init()` 一次性填充.
-pub static BOOT_IMAGE: IrqSpinLock<[u8; ENCODED_LEN]> =
-    IrqSpinLock::new([0u8; ENCODED_LEN]);
+pub static BOOT_IMAGE: IrqSpinLock<[u8; ENCODED_LEN]> = IrqSpinLock::new([0u8; ENCODED_LEN]);
 
 #[inline]
 fn pack_u32(buf: &mut [u8], offset: usize, v: u32) {
@@ -76,20 +75,40 @@ pub fn encode_boot_image() {
     pack_u32(buf, 40, (s.kaslr_offset >> 32) as u32);
 
     let mut flags = 0u8;
-    if caps.smp { flags |= 1 << 0; }
-    if caps.kaslr { flags |= 1 << 1; }
-    if caps.preempt { flags |= 1 << 2; }
-    if caps.kpti { flags |= 1 << 3; }
-    if caps.barrier { flags |= 1 << 4; }
+    if caps.smp {
+        flags |= 1 << 0;
+    }
+    if caps.kaslr {
+        flags |= 1 << 1;
+    }
+    if caps.preempt {
+        flags |= 1 << 2;
+    }
+    if caps.kpti {
+        flags |= 1 << 3;
+    }
+    if caps.barrier {
+        flags |= 1 << 4;
+    }
     pack_u8(buf, 44, flags);
     pack_u8(buf, 45, 0);
 
     let mut feature_id: u16 = 0;
-    if caps.smp { feature_id |= 1 << 0; }
-    if caps.preempt { feature_id |= 1 << 1; }
-    if caps.kaslr { feature_id |= 1 << 2; }
-    if caps.kpti { feature_id |= 1 << 3; }
-    if caps.barrier { feature_id |= 1 << 4; }
+    if caps.smp {
+        feature_id |= 1 << 0;
+    }
+    if caps.preempt {
+        feature_id |= 1 << 1;
+    }
+    if caps.kaslr {
+        feature_id |= 1 << 2;
+    }
+    if caps.kpti {
+        feature_id |= 1 << 3;
+    }
+    if caps.barrier {
+        feature_id |= 1 << 4;
+    }
     pack_u16(buf, 46, feature_id);
 
     let mut xor = 0u64;

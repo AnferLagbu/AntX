@@ -28,11 +28,11 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.1.2 任务: `VirtIO` 传输层迁移
 
+use crate::kernel::framework::driver::virtio::{
+    VIRTIO_MMIO_BASE, VIRTIO_MMIO_MAX_DEVICES, VIRTIO_MMIO_STRIDE,
+};
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
-use crate::kernel::framework::driver::virtio::{
-    VIRTIO_MMIO_BASE, VIRTIO_MMIO_STRIDE, VIRTIO_MMIO_MAX_DEVICES,
-};
 
 // ── MMIO 寄存器偏移 (与 VirtIO 1.0 规范一致) ──
 
@@ -152,13 +152,16 @@ impl VirtioDeviceKind {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 该设备类型期望的 virtqueue 数量
     pub fn expected_queue_count(self) -> u32 {
         match self {
-            Self::Net => 2,    // RX + TX
-            Self::Block => 1,  // 单请求队列
-            Self::Gpu => 0,    // 不在本迁移范围
+            Self::Net => 2,   // RX + TX
+            Self::Block => 1, // 单请求队列
+            Self::Gpu => 0,   // 不在本迁移范围
             Self::Unknown(_) => 0,
         }
     }
@@ -229,49 +232,70 @@ impl VirtioDevice {
 
     /// 设备 ID (1=net, 2=blk, ...)
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn device_id(&self) -> u32 {
         self.device_id
     }
 
     /// 厂商 ID
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn vendor_id(&self) -> u32 {
         self.vendor_id
     }
 
     /// `VirtIO` 版本 (1=legacy, 2=modern)
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn version(&self) -> u32 {
         self.version
     }
 
     /// 是否为 legacy 模式 (version == 1)
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn is_legacy(&self) -> bool {
         self.version == 1
     }
 
     /// 设备类型
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn kind(&self) -> VirtioDeviceKind {
         self.kind
     }
 
     /// MMIO 基地址
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn mmio_base(&self) -> u64 {
         self.iomem.phys().as_u64()
     }
 
     /// 期望的 virtqueue 数量 (按设备类型)
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn expected_queue_count(&self) -> u32 {
         self.queue_count
     }
@@ -280,7 +304,10 @@ impl VirtioDevice {
 
     /// 读 32 位 MMIO 寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn read32(&self, offset: usize) -> u32 {
         self.iomem.read_u32(offset)
     }
@@ -308,7 +335,10 @@ impl VirtioDevice {
 
     /// 读 Status 寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn status(&self) -> u32 {
         self.read32(STATUS)
     }

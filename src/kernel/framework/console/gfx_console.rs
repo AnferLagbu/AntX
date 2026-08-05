@@ -1,4 +1,4 @@
-use crate::kernel::framework::driver::{Font, colors, Color, Framebuffer, Rect};
+use crate::kernel::framework::driver::{Color, Font, Framebuffer, Rect, colors};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 /// 全局紧急/panic 标记 — 当为 true 时，GfxConsole 输出使用 panic 专用配色
@@ -53,9 +53,9 @@ impl GfxConsole {
 
     #[inline]
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-    unsafe fn fb_mut(&self) -> &mut Framebuffer { unsafe {
-        &mut *self.fb
-    }}
+    unsafe fn fb_mut(&self) -> &mut Framebuffer {
+        unsafe { &mut *self.fb }
+    }
 
     pub fn set_margin(&mut self, top: u32) {
         self.top_margin = top.min(self.rows);
@@ -255,13 +255,20 @@ impl GfxConsole {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             let src = fb.iomem().virt_ptr().add((scroll_start * pitch) as usize);
-            let dst = fb.iomem().virt_ptr().add(margin_px as usize * pitch as usize);
+            let dst = fb
+                .iomem()
+                .virt_ptr()
+                .add(margin_px as usize * pitch as usize);
             let count = ((scroll_end - scroll_start) * pitch) as usize;
             core::ptr::copy(src, dst, count);
 
             let clear_start = (scroll_end - scroll_h) * pitch;
             let clear_size = (scroll_h * pitch) as usize;
-            core::ptr::write_bytes(fb.iomem().virt_ptr().add(clear_start as usize), 0u8, clear_size);
+            core::ptr::write_bytes(
+                fb.iomem().virt_ptr().add(clear_start as usize),
+                0u8,
+                clear_size,
+            );
         }
 
         self.cursor_y -= lines;

@@ -13,8 +13,8 @@
 //!
 //! - Linux cgroup 文档: Documentation/admin-guide/cgroup-v2.rst
 
-use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -62,7 +62,10 @@ impl CgroupController {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取控制器名称
     pub fn name(&self) -> &'static str {
         match self {
@@ -234,11 +237,7 @@ impl CgroupFs {
     /// # Errors
     /// 当组数量已达上限 (`MAX_GROUPS`) 时返回 `ENOMEM`;
     /// 当已存在同名组时返回 `EEXIST`.
-    pub fn create_group(
-        &mut self,
-        name: &str,
-        controller: CgroupController,
-    ) -> Result<(), Errno> {
+    pub fn create_group(&mut self, name: &str, controller: CgroupController) -> Result<(), Errno> {
         if self.group_count as usize >= MAX_GROUPS {
             return Err(Errno::ENOMEM);
         }
@@ -287,11 +286,7 @@ impl CgroupFs {
                 break;
             }
         }
-        if found {
-            Ok(())
-        } else {
-            Err(Errno::ENOENT)
-        }
+        if found { Ok(()) } else { Err(Errno::ENOENT) }
     }
 
     /// 查找组
@@ -309,12 +304,7 @@ impl CgroupFs {
     /// # Errors
     /// 当组为空或不存在指定组/节点时返回 `ENOENT`;
     /// 当 `buf` 长度小于节点值长度时返回 `EINVAL`.
-    pub fn read_node(
-        &self,
-        group: &str,
-        node: &str,
-        buf: &mut [u8],
-    ) -> Result<usize, Errno> {
+    pub fn read_node(&self, group: &str, node: &str, buf: &mut [u8]) -> Result<usize, Errno> {
         let g = if group.is_empty() {
             // 根组不存在, 返回错误
             return Err(Errno::ENOENT);
@@ -336,12 +326,7 @@ impl CgroupFs {
     /// # Errors
     /// 当组为空或不存在指定组/节点时返回 `ENOENT`;
     /// 当 `data` 不是合法 UTF-8 时返回 `EINVAL`.
-    pub fn write_node(
-        &mut self,
-        group: &str,
-        node: &str,
-        data: &[u8],
-    ) -> Result<(), Errno> {
+    pub fn write_node(&mut self, group: &str, node: &str, data: &[u8]) -> Result<(), Errno> {
         let g = if group.is_empty() {
             return Err(Errno::ENOENT);
         } else {
@@ -374,7 +359,10 @@ pub fn get_cgroup_fs() -> &'static Mutex<CgroupFs> {
 // safe API
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 挂载 cgroupfs
 ///
 /// # Errors
@@ -390,7 +378,10 @@ pub fn mount_cgroupfs() -> Result<(), Errno> {
     Ok(())
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 卸载 cgroupfs
 ///
 /// # Errors

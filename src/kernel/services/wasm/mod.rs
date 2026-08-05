@@ -12,15 +12,15 @@
 //!
 //! `framework/wasm/` 仅保留 re-export shim, 保持向后兼容.
 
-/// T6-9: WASM 类型定义 (原 framework/wasm/types.rs)
-pub mod types;
-/// T6-9: 运行时数据结构 (原 framework/wasm/runtime.rs)
-pub mod runtime;
+/// T6-9: WASM 解释器 (原 framework/wasm/interpreter.rs)
+pub mod interpreter;
 /// T6-9: LEB128 编解码器 (原 framework/wasm/leb128.rs)
 pub mod leb128;
 /// T6-9: WASM 二进制格式解析器 (原 framework/wasm/module.rs)
 pub mod module;
-/// T6-9: WASM 解释器 (原 framework/wasm/interpreter.rs)
-pub mod interpreter;
+/// T6-9: 运行时数据结构 (原 framework/wasm/runtime.rs)
+pub mod runtime;
+/// T6-9: WASM 类型定义 (原 framework/wasm/types.rs)
+pub mod types;
 /// WASI snapshot_preview1 适配层
 pub mod wasi;

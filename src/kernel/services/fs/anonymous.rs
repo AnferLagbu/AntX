@@ -6,8 +6,8 @@
 //! - 进程间共享内存
 //! - 临时文件 (不依赖 tmpfs)
 
-use crate::kernel::framework::sync::IrqSpinLock;
 use super::ramfs_core::RamFsData;
+use crate::kernel::framework::sync::IrqSpinLock;
 
 /// 匿名文件系统
 ///

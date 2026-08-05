@@ -58,23 +58,23 @@ pub const SIGNALFD_SIGINFO_SIZE: usize = 128;
 /// 布局与 Linux `struct signalfd_siginfo` 兼容 (128 字节)
 #[repr(C)]
 pub struct SignalFdSigInfo {
-    pub ssi_signo: u32,       // 0: 信号编号
-    pub ssi_errno: i32,       // 4: 错误码 (通常 0)
-    pub ssi_code: i32,        // 8: 信号来源码
-    pub ssi_pid: u32,         // 12: 发送者 PID
-    pub ssi_uid: u32,         // 16: 发送者 UID
-    pub ssi_fd: i32,          // 20: 文件描述符 (SIGIO)
-    pub ssi_band: u32,        // 24: 带宽事件 (SIGIO)
-    pub ssi_tid: u32,         // 28: 定时器 ID (SIGEV_THREAD_ID)
-    pub ssi_overrun: u32,     // 32: 定时器溢出计数
-    pub ssi_trapno: u32,      // 36: 陷阱号
-    pub ssi_status: i32,      // 40: 退出状态 / 信号码
-    pub ssi_int: i32,         // 44: POSIX.1b 信号值 (int)
-    pub ssi_ptr: u64,         // 48: POSIX.1b 信号值 (ptr)
-    pub ssi_utime: u64,       // 56: 用户 CPU 时间
-    pub ssi_stime: u64,       // 64: 系统 CPU 时间
-    pub ssi_addr: u64,        // 72: 触发地址
-    pub _pad: [u8; 48],       // 80-127: 填充到 128 字节
+    pub ssi_signo: u32,   // 0: 信号编号
+    pub ssi_errno: i32,   // 4: 错误码 (通常 0)
+    pub ssi_code: i32,    // 8: 信号来源码
+    pub ssi_pid: u32,     // 12: 发送者 PID
+    pub ssi_uid: u32,     // 16: 发送者 UID
+    pub ssi_fd: i32,      // 20: 文件描述符 (SIGIO)
+    pub ssi_band: u32,    // 24: 带宽事件 (SIGIO)
+    pub ssi_tid: u32,     // 28: 定时器 ID (SIGEV_THREAD_ID)
+    pub ssi_overrun: u32, // 32: 定时器溢出计数
+    pub ssi_trapno: u32,  // 36: 陷阱号
+    pub ssi_status: i32,  // 40: 退出状态 / 信号码
+    pub ssi_int: i32,     // 44: POSIX.1b 信号值 (int)
+    pub ssi_ptr: u64,     // 48: POSIX.1b 信号值 (ptr)
+    pub ssi_utime: u64,   // 56: 用户 CPU 时间
+    pub ssi_stime: u64,   // 64: 系统 CPU 时间
+    pub ssi_addr: u64,    // 72: 触发地址
+    pub _pad: [u8; 48],   // 80-127: 填充到 128 字节
 }
 
 impl SignalFdSigInfo {
@@ -149,7 +149,10 @@ static SFD_COUNT: AtomicU32 = AtomicU32::new(0);
 // 系统调用实现
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// signalfd — 创建/修改 signalfd 实例
 ///
 /// `fd`: -1 创建新实例, ≥ `SFD_FD_BASE` 修改已有实例的掩码
@@ -221,7 +224,10 @@ pub fn sys_signalfd(fd: i32, mask_ptr: u64, flags: i32) -> i64 {
     i64::from(new_fd)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// signalfd read — 读取一个待处理信号
 ///
 /// 检查当前进程 pending & sigmask, 取最低编号信号,
@@ -269,7 +275,7 @@ pub fn sys_signalfd_read(fd: i32, buf: u64) -> i64 {
     let mut info = SignalFdSigInfo::zeroed();
     info.ssi_signo = signo;
     info.ssi_code = 0; // SI_KERNEL 简化
-    info.ssi_pid = 0;  // 发送者 PID (简化, 暂不追踪)
+    info.ssi_pid = 0; // 发送者 PID (简化, 暂不追踪)
 
     // 写入用户空间
     if buf == 0 {
@@ -284,7 +290,10 @@ pub fn sys_signalfd_read(fd: i32, buf: u64) -> i64 {
     SIGNALFD_SIGINFO_SIZE as i64
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// signalfd close — 关闭 signalfd
 pub fn sys_signalfd_close(fd: i32) -> i64 {
     let idx = match fd_to_idx(fd) {
@@ -318,12 +327,15 @@ pub fn sys_signalfd_close(fd: i32) -> i64 {
 // epoll 集成
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 检查 signalfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (有待处理信号) 或 0
 pub fn signalfd_poll_events(fd: i32) -> u32 {
-    use crate::kernel::framework::syscall::{EPOLLIN, EPOLLERR};
+    use crate::kernel::framework::syscall::{EPOLLERR, EPOLLIN};
 
     let idx = match fd_to_idx(fd) {
         Some(i) => i,
@@ -375,9 +387,7 @@ fn clear_process_pending(pid: u32, signo: u32) {
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
     match crate::kernel::framework::proc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::FdSubsystem::SignalFd, slot)) => {
-            Some(slot)
-        }
+        Some((crate::kernel::framework::proc::FdSubsystem::SignalFd, slot)) => Some(slot),
         _ => None,
     }
 }
@@ -398,7 +408,7 @@ pub fn is_signalfd_fd(fd: i32) -> bool {
 
 #[cfg(feature = "kernel_test")]
 fn test_signalfd_create() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     // 创建 signalfd, 掩码 = SIGUSR1 (bit 9) | SIGUSR2 (bit 30)
     let mask: u128 = (1u128 << 9) | (1u128 << 30);
@@ -414,7 +424,7 @@ fn test_signalfd_create() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_signalfd_mask_update() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     let mask1: u128 = 1u128 << 9; // SIGUSR1
     let fd = sys_signalfd(-1, &mask1 as *const u128 as u64, 0);
@@ -431,7 +441,7 @@ fn test_signalfd_mask_update() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_signalfd_sigkill_filtered() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     // 尝试注册 SIGKILL (bit 8) + SIGUSR1 (bit 9)
     let mask: u128 = (1u128 << 8) | (1u128 << 9);
@@ -460,5 +470,9 @@ pub fn register_signalfd_tests() {
     let r = runner();
     r.register("signalfd", "create", test_signalfd_create);
     r.register("signalfd", "mask_update", test_signalfd_mask_update);
-    r.register("signalfd", "sigkill_filtered", test_signalfd_sigkill_filtered);
+    r.register(
+        "signalfd",
+        "sigkill_filtered",
+        test_signalfd_sigkill_filtered,
+    );
 }

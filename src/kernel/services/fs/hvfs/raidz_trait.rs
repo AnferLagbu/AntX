@@ -20,8 +20,8 @@
 //!
 //! ## 与 LEGACY-5.1-5.5 范式一致
 
-use alloc::vec::Vec;
 use super::raidz::{HvRaidzEngine, HvRaidzLevel, HvRaidzMap, HvScrubResult};
+use alloc::vec::Vec;
 
 // ============================================================================
 // RaidzEngine trait — RAID-Z 条带管理接口
@@ -83,7 +83,11 @@ pub struct StandardRaidz {
 impl StandardRaidz {
     /// 构造新实例
     pub fn new(level: HvRaidzLevel, ncols: usize, ashift: u8) -> Self {
-        Self { level, ncols, ashift }
+        Self {
+            level,
+            ncols,
+            ashift,
+        }
     }
 
     /// 生成奇偶校验 (委托 `HvRaidzMap`)
@@ -93,7 +97,11 @@ impl StandardRaidz {
     }
 
     /// 重建数据 (委托 `HvRaidzMap`)
-    pub fn reconstruct_data(&self, parity_data: &[Vec<u8>], failed_cols: &[usize]) -> Option<Vec<u8>> {
+    pub fn reconstruct_data(
+        &self,
+        parity_data: &[Vec<u8>],
+        failed_cols: &[usize],
+    ) -> Option<Vec<u8>> {
         let map = HvRaidzMap::new(self.level, self.ncols, self.ashift);
         map.reconstruct_data(parity_data, failed_cols)
     }
@@ -112,14 +120,30 @@ impl StandardRaidz {
 }
 
 impl RaidzEngine for StandardRaidz {
-    fn level(&self) -> HvRaidzLevel { self.level }
-    fn ncols(&self) -> usize { self.ncols }
-    fn data_cols(&self) -> usize { self.ncols - self.level.parity_cols() }
-    fn parity_cols(&self) -> usize { self.level.parity_cols() }
-    fn max_failures(&self) -> usize { self.level.max_failures() }
-    fn ashift(&self) -> u8 { self.ashift }
-    fn is_single(&self) -> bool { self.level == HvRaidzLevel::Single }
-    fn is_mirror(&self) -> bool { self.level == HvRaidzLevel::Mirror }
+    fn level(&self) -> HvRaidzLevel {
+        self.level
+    }
+    fn ncols(&self) -> usize {
+        self.ncols
+    }
+    fn data_cols(&self) -> usize {
+        self.ncols - self.level.parity_cols()
+    }
+    fn parity_cols(&self) -> usize {
+        self.level.parity_cols()
+    }
+    fn max_failures(&self) -> usize {
+        self.level.max_failures()
+    }
+    fn ashift(&self) -> u8 {
+        self.ashift
+    }
+    fn is_single(&self) -> bool {
+        self.level == HvRaidzLevel::Single
+    }
+    fn is_mirror(&self) -> bool {
+        self.level == HvRaidzLevel::Mirror
+    }
 }
 
 // ============================================================================
@@ -192,9 +216,8 @@ mod tests {
     /// 4. trait 对象分发 (dyn RaidzEngine)
     #[test]
     fn test_raidz_trait_object() {
-        let r: alloc::boxed::Box<dyn RaidzEngine> = alloc::boxed::Box::new(
-            StandardRaidz::new(HvRaidzLevel::RaidZ2, 4, 9)
-        );
+        let r: alloc::boxed::Box<dyn RaidzEngine> =
+            alloc::boxed::Box::new(StandardRaidz::new(HvRaidzLevel::RaidZ2, 4, 9));
         assert_eq!(r.ncols(), 4);
         assert_eq!(r.parity_cols(), 2);
         assert_eq!(r.max_failures(), 2);
@@ -215,11 +238,11 @@ mod tests {
     /// 6. ashift 配置
     #[test]
     fn test_raidz_ashift() {
-        let r1 = StandardRaidz::new(HvRaidzLevel::RaidZ1, 3, 9);   // 512B
+        let r1 = StandardRaidz::new(HvRaidzLevel::RaidZ1, 3, 9); // 512B
         assert_eq!(r1.ashift(), 9);
-        let r2 = StandardRaidz::new(HvRaidzLevel::RaidZ1, 3, 12);  // 4KB
+        let r2 = StandardRaidz::new(HvRaidzLevel::RaidZ1, 3, 12); // 4KB
         assert_eq!(r2.ashift(), 12);
-        let r3 = StandardRaidz::new(HvRaidzLevel::RaidZ1, 3, 13);  // 8KB
+        let r3 = StandardRaidz::new(HvRaidzLevel::RaidZ1, 3, 13); // 8KB
         assert_eq!(r3.ashift(), 13);
     }
 
@@ -247,12 +270,20 @@ mod tests {
     /// 9. integration: parity 列数对应
     #[test]
     fn test_raidz_parity_count() {
-        for level in [HvRaidzLevel::RaidZ1, HvRaidzLevel::RaidZ2, HvRaidzLevel::RaidZ3] {
+        for level in [
+            HvRaidzLevel::RaidZ1,
+            HvRaidzLevel::RaidZ2,
+            HvRaidzLevel::RaidZ3,
+        ] {
             let r = StandardRaidz::new(level, 5, 9);
             let data = vec![0xBB; 128];
             let parity = r.generate_parity(&data);
-            assert_eq!(parity.len(), r.parity_cols(),
-                "level {:?} parity 数量不符", level);
+            assert_eq!(
+                parity.len(),
+                r.parity_cols(),
+                "level {:?} parity 数量不符",
+                level
+            );
         }
     }
 

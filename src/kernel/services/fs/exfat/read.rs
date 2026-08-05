@@ -2,12 +2,12 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! exFAT 读取核心逻辑
 
+use super::dir::ExfatDirEntry;
+use super::super_block::ExfatSuperBlock;
+use crate::kernel::framework::driver::block::{read_sectors, with_device};
+use crate::kernel::framework::fs::KernelError;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::driver::block::{read_sectors, with_device};
-use super::super_block::ExfatSuperBlock;
-use super::dir::ExfatDirEntry;
 
 /// exFAT 文件系统实例
 pub struct ExfatFs {
@@ -33,8 +33,8 @@ impl ExfatFs {
         }
 
         // 解析超级块
-        let super_block = ExfatSuperBlock::from_bytes(&boot_data)
-            .ok_or(KernelError::InvalidArgument)?;
+        let super_block =
+            ExfatSuperBlock::from_bytes(&boot_data).ok_or(KernelError::InvalidArgument)?;
 
         Ok(ExfatFs {
             super_block,
@@ -46,10 +46,7 @@ impl ExfatFs {
     ///
     /// # Errors
     /// 错误条件与 [`ExfatDirEntry::from_cluster`] 相同, 参见其 `# Errors` 段.
-    pub fn read_dir_entries(
-        &self,
-        start_cluster: u32,
-    ) -> Result<Vec<ExfatDirEntry>, KernelError> {
+    pub fn read_dir_entries(&self, start_cluster: u32) -> Result<Vec<ExfatDirEntry>, KernelError> {
         ExfatDirEntry::from_cluster(self.device_idx, &self.super_block, start_cluster)
     }
 
@@ -107,10 +104,8 @@ impl ExfatFs {
                 for i in 0..name_length {
                     let offset = 2 + i * 2;
                     if offset + 2 <= entry.data.len() {
-                        let code_unit = u16::from_le_bytes([
-                            entry.data[offset],
-                            entry.data[offset + 1],
-                        ]);
+                        let code_unit =
+                            u16::from_le_bytes([entry.data[offset], entry.data[offset + 1]]);
                         if let Some(ch) = char::from_u32(u32::from(code_unit)) {
                             name.push(ch);
                         }

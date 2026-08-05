@@ -35,8 +35,14 @@ pub fn bus_init() -> framework::Result<()> {
 
 /// AArch64 总线初始化 stub — ARM 平台通过设备树/FDT 发现设备，无需 PCI 枚举。
 #[cfg(not(target_arch = "x86_64"))]
-#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-#[expect(clippy::unnecessary_wraps, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 pub fn bus_init() -> framework::Result<()> {
     // ARM 平台使用 FDT (Flattened Device Tree) 或 ACPI 发现设备
     // PCIe 在 ARM 上存在但通过 ECAM 而非 legacy PCI 访问

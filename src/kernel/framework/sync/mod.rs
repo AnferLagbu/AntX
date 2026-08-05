@@ -83,20 +83,29 @@ pub use types::{MutexInner, RwLockInner, SpinLockInner};
 // ============================================================================
 // 公共 API 导出 (便捷访问)
 // ============================================================================
+pub use atomic::{
+    AtomicBool, atomic_add, atomic_cmpxchg, atomic_dec, atomic_inc, atomic_read, atomic_set,
+    atomic_sub,
+};
 pub use irq_spinlock::IrqSpinLock;
 pub use irq_spinlock::IrqSpinLockGuard;
-pub use once_lock::OnceLock;
-pub use spinlock::{SpinLock, disable_interrupts, restore_interrupts, smp_wmb, smp_rmb, smp_mb};
 pub use mutex::Mutex;
+pub use once_lock::OnceLock;
+pub use rcu::{
+    call_rcu, rcu_assign_pointer, rcu_dereference, rcu_read_lock, rcu_read_unlock, synchronize_rcu,
+};
 pub use rwlock::RwLock;
 pub use seqlock::SeqLock;
-pub use atomic::{atomic_add, atomic_cmpxchg, atomic_dec, atomic_inc, atomic_read, atomic_set, atomic_sub, AtomicBool};
-pub use rcu::{rcu_read_lock, rcu_read_unlock, rcu_dereference, rcu_assign_pointer, synchronize_rcu, call_rcu};
-pub use types::{IrqSaveFlags, MutexGuard, SpinLockGuard, RwLockReadGuard, RwLockWriteGuard, TryLockResult};
+pub use spinlock::{SpinLock, disable_interrupts, restore_interrupts, smp_mb, smp_rmb, smp_wmb};
+pub use types::{
+    IrqSaveFlags, MutexGuard, RwLockReadGuard, RwLockWriteGuard, SpinLockGuard, TryLockResult,
+};
 
 // lockdep 公共接口 re-export — 避免跨子系统直接访问 sync::lockdep 内部
-pub use lockdep::{LockClassId, LockClassDesc, LockKind, register_class, acquire, release, irq_enter, irq_exit,
-    in_irq_context, held_depth, num_classes, num_violations, deadlock_detected, dump_state};
+pub use lockdep::{
+    LockClassDesc, LockClassId, LockKind, acquire, deadlock_detected, dump_state, held_depth,
+    in_irq_context, irq_enter, irq_exit, num_classes, num_violations, register_class, release,
+};
 
 // ============================================================================
 // FFI 接口层 (C ↔ Rust 桥接)
@@ -127,8 +136,8 @@ pub extern "C" fn spin_lock_raw(lock: *const SpinLockInner) {
 
         // Slow path: 自旋等待
         loop {
-            let result = raw::spin_locked(lock)
-                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed);
+            let result =
+                raw::spin_locked(lock).compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed);
 
             if result.is_ok() {
                 break;
@@ -157,9 +166,7 @@ pub extern "C" fn spin_trylock(lock: *const SpinLockInner) -> i32 {
         return 0; // 失败
     }
 
-    match raw::spin_locked(lock)
-        .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-    {
+    match raw::spin_locked(lock).compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed) {
         Ok(_) => 1,  // 成功
         Err(_) => 0, // 已被锁定
     }
@@ -179,7 +186,10 @@ pub extern "C" fn spin_is_locked(lock: *const SpinLockInner) -> i32 {
 /// 初始化互斥锁
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 pub extern "C" fn mutex_init(m: *mut MutexInner) {
     if !m.is_null() {
         raw::mutex_locked(m as *const MutexInner).store(0, Ordering::Relaxed);
@@ -307,8 +317,14 @@ pub extern "C" fn mutex_is_locked(m: *const MutexInner) -> i32 {
 /// 初始化读写锁
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 pub extern "C" fn rwlock_init(rw: *mut RwLockInner) {
     if !rw.is_null() {
         raw::rwlock_readers(rw as *const RwLockInner).store(0, Ordering::Relaxed);
@@ -316,8 +332,7 @@ pub extern "C" fn rwlock_init(rw: *mut RwLockInner) {
         raw::rwlock_pending_writers(rw as *const RwLockInner).store(0, Ordering::Relaxed);
 
         // 初始化内部自旋锁 (获取可写指针)
-        let inner_lock_ptr =
-            raw::rwlock_inner_lock_mut(rw) as *mut SpinLockInner;
+        let inner_lock_ptr = raw::rwlock_inner_lock_mut(rw) as *mut SpinLockInner;
         spin_init(inner_lock_ptr);
     }
 }
@@ -590,7 +605,7 @@ unsafe extern "C" {
 //             调用方 (FFI 函数) 已做 `is_null()` 检查。
 
 pub(crate) mod raw {
-    use super::{SpinLockInner, MutexInner, RwLockInner};
+    use super::{MutexInner, RwLockInner, SpinLockInner};
 
     // ============ SpinLockInner ============
 
@@ -650,7 +665,9 @@ pub(crate) mod raw {
         unsafe { &(*ptr).writer }
     }
 
-    pub fn rwlock_pending_writers<'a>(ptr: *const RwLockInner) -> &'a core::sync::atomic::AtomicU32 {
+    pub fn rwlock_pending_writers<'a>(
+        ptr: *const RwLockInner,
+    ) -> &'a core::sync::atomic::AtomicU32 {
         // SAFETY: 同上。
         unsafe { &(*ptr).pending_writers }
     }

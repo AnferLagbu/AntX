@@ -102,11 +102,21 @@ pub struct Trb {
 impl Trb {
     /// 创建新 TRB
     pub fn new(parameter: u64, status: u32, control: u32) -> Self {
-        Self { parameter, status, control }
+        Self {
+            parameter,
+            status,
+            control,
+        }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 提取 TRB 类型 (control[15:10])
     pub fn trb_type(&self) -> TrbType {
         let ty = (self.control >> 10) & 0x3F;
@@ -135,7 +145,10 @@ impl Trb {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取 cycle bit (control[0])
     pub fn cycle_bit(&self) -> bool {
         self.control & 1 != 0
@@ -610,7 +623,10 @@ impl XhciController {
 
     // ── 初始化序列 (xHCI 规范 §4.3) ──
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 完整初始化控制器 (reset → start).
     ///
     /// 执行 xHCI 规范 §4.3 初始化序列:
@@ -708,7 +724,10 @@ impl XhciController {
         self.set_crcr(val);
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 提交命令 TRB 到 Command Ring 并触发 Doorbell.
     ///
     /// # 参数
@@ -821,8 +840,14 @@ impl TransferRing {
         self.cycle
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 写入一个 TRB 到 enqueue 位置, 自动设置 cycle bit.
     ///
     /// 到达末尾时写入 Link TRB 并翻转 cycle, 回绕到起点.
@@ -869,7 +894,10 @@ impl TransferRing {
         true
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 提交控制传输 (Setup → Data → Status, xHCI 规范 §4.11.2.3).
     ///
     /// # 参数

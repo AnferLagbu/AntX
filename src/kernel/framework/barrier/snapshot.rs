@@ -4,7 +4,6 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-
 use crate::kernel::framework::sync::IrqSpinLock;
 pub const MAX_DEVICE_SNAPSHOTS: usize = 16;
 pub const MAX_REGISTERS_PER_DEVICE: usize = 32;
@@ -250,7 +249,10 @@ impl DeviceSnapshotRegistry {
         self.init_captured.load(Ordering::SeqCst) == 1
     }
 
-#[expect(clippy::iter_without_into_iter, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::iter_without_into_iter,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn iter(&self) -> DeviceSnapshotIter<'_> {
         DeviceSnapshotIter {
             registry: self,

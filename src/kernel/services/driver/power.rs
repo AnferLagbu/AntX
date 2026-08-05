@@ -54,7 +54,10 @@ impl CpuIdleState {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 进入该 C-state 的预期延迟 (微秒)
     pub fn latency_us(&self) -> u32 {
         match self {
@@ -65,7 +68,10 @@ impl CpuIdleState {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 该 C-state 的功耗节省比例 (0-100)
     pub fn power_saving(&self) -> u32 {
         match self {
@@ -97,12 +103,16 @@ impl CpuIdleStats {
         Self {
             current_state: AtomicU32::new(CpuIdleState::C0Running as u32),
             time_per_state: [
-                AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
             entry_count: [
-                AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
             last_idle_entry: AtomicU64::new(0),
             max_cstate: AtomicU32::new(CpuIdleState::C2DeepHalt as u32),
@@ -117,7 +127,8 @@ impl CpuIdleStats {
         } else {
             state
         };
-        self.current_state.store(effective as u32, Ordering::Release);
+        self.current_state
+            .store(effective as u32, Ordering::Release);
         self.entry_count[effective as usize].fetch_add(1, Ordering::Relaxed);
         // 时间戳由 framework 的 read_timestamp() 设置
     }
@@ -129,7 +140,9 @@ impl CpuIdleStats {
 
     /// 退出空闲状态 (策略部分: 更新统计)
     pub fn exit_idle(&self, elapsed_ms: u64) {
-        let prev = self.current_state.swap(CpuIdleState::C0Running as u32, Ordering::AcqRel);
+        let prev = self
+            .current_state
+            .swap(CpuIdleState::C0Running as u32, Ordering::AcqRel);
         self.time_per_state[prev as usize].fetch_add(elapsed_ms, Ordering::Relaxed);
     }
 }
@@ -159,8 +172,14 @@ impl CpuIdleDriver {
         self.enabled.store(true, Ordering::Release);
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 选择最优 C-state (策略部分, 不执行 halt)
     pub fn select_cstate(&self, cpu_id: u32) -> Option<CpuIdleState> {
         if !self.enabled.load(Ordering::Acquire) {
@@ -180,13 +199,20 @@ impl CpuIdleDriver {
         let stats = self.per_cpu_stats.lock();
         stats.get(cpu_id as usize).map(|s| {
             let copy = CpuIdleStats::new();
-            copy.current_state.store(s.current_state.load(Ordering::Acquire), Ordering::Release);
+            copy.current_state
+                .store(s.current_state.load(Ordering::Acquire), Ordering::Release);
             for i in 0..MAX_CSTATES {
-                copy.time_per_state[i].store(s.time_per_state[i].load(Ordering::Acquire), Ordering::Release);
-                copy.entry_count[i].store(s.entry_count[i].load(Ordering::Acquire), Ordering::Release);
+                copy.time_per_state[i].store(
+                    s.time_per_state[i].load(Ordering::Acquire),
+                    Ordering::Release,
+                );
+                copy.entry_count[i]
+                    .store(s.entry_count[i].load(Ordering::Acquire), Ordering::Release);
             }
-            copy.last_idle_entry.store(s.last_idle_entry.load(Ordering::Acquire), Ordering::Release);
-            copy.max_cstate.store(s.max_cstate.load(Ordering::Acquire), Ordering::Release);
+            copy.last_idle_entry
+                .store(s.last_idle_entry.load(Ordering::Acquire), Ordering::Release);
+            copy.max_cstate
+                .store(s.max_cstate.load(Ordering::Acquire), Ordering::Release);
             copy
         })
     }
@@ -195,7 +221,9 @@ impl CpuIdleDriver {
     pub fn set_max_cstate(&self, cpu_id: u32, max: CpuIdleState) {
         let stats = self.per_cpu_stats.lock();
         if (cpu_id as usize) < stats.len() {
-            stats[cpu_id as usize].max_cstate.store(max as u32, Ordering::Release);
+            stats[cpu_id as usize]
+                .max_cstate
+                .store(max as u32, Ordering::Release);
         }
     }
 }
@@ -217,7 +245,10 @@ pub enum FreqGovernor {
 }
 
 impl FreqGovernor {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_u32(v: u32) -> Self {
         match v {
             0 => Self::Performance,
@@ -277,9 +308,10 @@ impl CpuFreqDriver {
 
     /// 用默认频率表初始化 (单频点)
     pub fn init_default(&self, base_freq_mhz: u32, num_cpus: u32) {
-        let table = vec![
-            FreqLevel { freq_mhz: base_freq_mhz, voltage_mv: 1000 },
-        ];
+        let table = vec![FreqLevel {
+            freq_mhz: base_freq_mhz,
+            voltage_mv: 1000,
+        }];
         self.init(table, num_cpus);
     }
 
@@ -502,7 +534,8 @@ impl PmSubsystem {
 
     /// 挂起恢复后通知
     pub fn suspend_resume_notify(&self) {
-        self.state.store(SystemPowerState::S0Working as u32, Ordering::Release);
+        self.state
+            .store(SystemPowerState::S0Working as u32, Ordering::Release);
         let notifiers = self.notifiers.lock();
         for n in notifiers.iter() {
             (n.resume)();
@@ -534,26 +567,20 @@ pub fn sys_pm_dispatch(pm: &PmSubsystem, cmd: u64, a1: u64, a2: u64) -> i64 {
             // 挂起需要硬件操作, 委托 framework
             crate::kernel::framework::driver::power::pm_suspend(target)
         }
-        1 => {
-            pm.get_state() as i64
-        }
+        1 => pm.get_state() as i64,
         2 => {
             let gov = FreqGovernor::from_u32(a1 as u32);
             pm.cpufreq.set_governor(gov);
             0
         }
-        3 => {
-            pm.cpufreq.get_governor() as i64
-        }
+        3 => pm.cpufreq.get_governor() as i64,
         4 => {
             let cpu = a1 as u32;
             let max = CpuIdleState::from_u32(a2 as u32);
             pm.cpuidle.set_max_cstate(cpu, max);
             0
         }
-        5 => {
-            i64::from(pm.cpufreq.get_freq(a1 as u32))
-        }
+        5 => i64::from(pm.cpufreq.get_freq(a1 as u32)),
         6 => {
             if pm.cpufreq.set_freq(a1 as u32, a2 as u32) {
                 0

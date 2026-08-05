@@ -78,7 +78,10 @@ const _: () = assert!(
 impl InterruptFrame {
     /// 创建新的中断帧 (用于测试)
     #[cfg(any(test, feature = "kernel_test"))]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn new_test_frame(int_no: u64, rip: u64, cs: u64) -> Self {
         Self {
             r15: 0,
@@ -127,7 +130,10 @@ impl InterruptFrame {
     /// # Safety
     /// 仅在 Page Fault (#PF) 异常中调用此方法
     #[inline]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub unsafe fn fault_address(&self) -> u64 {
         crate::arch!(read_fault_address()) as u64
     }
@@ -210,7 +216,10 @@ pub struct IdtEntry {
 }
 
 impl IdtEntry {
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 创建新的 IDT 门描述符
     pub fn new(handler: u64, selector: u16, type_attr: u8) -> Self {
         Self {
@@ -224,7 +233,10 @@ impl IdtEntry {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 创建带 IST 索引的 IDT 门描述符
     pub fn new_with_ist(handler: u64, selector: u16, type_attr: u8, ist_index: u8) -> Self {
         Self {
@@ -238,7 +250,10 @@ impl IdtEntry {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 设置 handler 地址
     pub fn set_handler(&mut self, handler: u64) {
         self.offset_low = (handler & 0xFFFF) as u16;
@@ -246,16 +261,24 @@ impl IdtEntry {
         self.offset_high = ((handler >> 32) & 0xFFFFFFFF) as u32;
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 判断门是否有效 (Present bit set)
     pub fn is_present(&self) -> bool {
         (self.type_attr & 0x80) != 0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取完整的 handler 地址
     pub fn handler_address(&self) -> u64 {
-        u64::from(self.offset_high) << 32 | u64::from(self.offset_mid) << 16 | u64::from(self.offset_low)
+        u64::from(self.offset_high) << 32
+            | u64::from(self.offset_mid) << 16
+            | u64::from(self.offset_low)
     }
 }
 

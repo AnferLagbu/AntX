@@ -5,9 +5,8 @@
 
 // 重导出强类型
 pub use crate::kernel::framework::driver::{
-    KexecSegment, KexecSegType, KexecState, KexecSubsystem,
-    KEXEC_MAX_KERNEL_SIZE, KEXEC_MAX_INITRD_SIZE, KEXEC_MAX_CMDLINE,
-    KEXEC_DEFAULT_LOAD_ADDR, KEXEC_DEFAULT_INITRD_ADDR,
+    KEXEC_DEFAULT_INITRD_ADDR, KEXEC_DEFAULT_LOAD_ADDR, KEXEC_MAX_CMDLINE, KEXEC_MAX_INITRD_SIZE,
+    KEXEC_MAX_KERNEL_SIZE, KexecSegType, KexecSegment, KexecState, KexecSubsystem,
 };
 
 use crate::kernel::framework::driver::{

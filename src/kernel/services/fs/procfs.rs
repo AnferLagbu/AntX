@@ -17,7 +17,7 @@
 //! Phase 2.2.3 任务: 进程文件系统迁移
 
 use crate::kernel::services::error::KernelError;
-use crate::kernel::services::fs::procfs_core::{ProcfsData, PROCFS_MAX_NAME};
+use crate::kernel::services::fs::procfs_core::{PROCFS_MAX_NAME, ProcfsData};
 
 // ============================================================================
 // 条目类型
@@ -140,7 +140,10 @@ impl SafeProcFs {
     pub fn readdir(&self, index: usize) -> Option<ProcEntry> {
         let (raw_name, pid, raw_kind) = self.inner.readdir(index)?;
         let kind = ProcEntryKind::from_u8(raw_kind)?;
-        let end = raw_name.iter().position(|&b| b == 0).unwrap_or(raw_name.len());
+        let end = raw_name
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(raw_name.len());
         let name = alloc::string::String::from_utf8_lossy(&raw_name[..end]).into_owned();
         Some(ProcEntry { name, pid, kind })
     }
@@ -167,7 +170,9 @@ static GLOBAL_PROCFS: OnceCell<SafeProcFs> = OnceCell::new();
 
 /// 初始化全局 `ProcFS`
 pub fn init_global() {
-    let _ = GLOBAL_PROCFS.get_or_init(|slot| { slot.write(SafeProcFs::new()); });
+    let _ = GLOBAL_PROCFS.get_or_init(|slot| {
+        slot.write(SafeProcFs::new());
+    });
 }
 
 /// 获取全局 `ProcFS` 引用

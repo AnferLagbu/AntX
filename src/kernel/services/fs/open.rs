@@ -15,8 +15,8 @@
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // open flags
@@ -47,7 +47,10 @@ pub const O_CLOEXEC: i32 = 0o2_000_000;
 // 内部辅助
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 取当前进程凭证,无会话时直接返回 EACCES。
 ///
 /// 历史警告: 此前在 `pwm == 0` 时替换为硬编码 `TEST_PWM` (魔法值),

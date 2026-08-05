@@ -19,7 +19,12 @@ use crate::kernel::framework::syscall::Errno;
 /// getrusage(who, rusage) 策略
 pub fn getrusage_syscall(who: i32, rusage_ptr: u64) -> i64 {
     let pid = crate::kernel::framework::proc::process_get_current_pid();
-    i64::from(crate::kernel::framework::proc::proc_get_rusage(pid, who, rusage_ptr as *mut u8, 144))
+    i64::from(crate::kernel::framework::proc::proc_get_rusage(
+        pid,
+        who,
+        rusage_ptr as *mut u8,
+        144,
+    ))
 }
 
 /// sysinfo(info) 策略
@@ -30,7 +35,10 @@ pub fn sysinfo_syscall(info_ptr: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     struct SysInfo {
         uptime: i64,
         loads: [u64; 3],
@@ -78,7 +86,10 @@ pub fn getrlimit_syscall(_resource: i32, rlim_ptr: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     struct Rlimit {
         rlim_cur: u64,
         rlim_max: u64,
@@ -108,7 +119,8 @@ pub fn gethostname_syscall(buf_ptr: u64, size: u64) -> i64 {
     let copy_len = hostname.len().min(size as usize);
     // 使用 write_struct_to_user 逐字节写入
     for (i, &byte) in hostname.iter().enumerate().take(copy_len) {
-        if !crate::kernel::framework::syscall::api::write_struct_to_user(buf_ptr + i as u64, &byte) {
+        if !crate::kernel::framework::syscall::api::write_struct_to_user(buf_ptr + i as u64, &byte)
+        {
             return Errno::EFAULT.as_ret();
         }
     }
@@ -130,9 +142,7 @@ pub fn sethostname_syscall(name_ptr: u64, len: u64) -> i64 {
 /// `boot_check(check_type)` 策略
 pub fn boot_check_syscall(check_type: i32) -> i64 {
     match check_type {
-        0 => {
-            i64::from(crate::kernel::framework::credo::pwm_any_identity_exists())
-        }
+        0 => i64::from(crate::kernel::framework::credo::pwm_any_identity_exists()),
         _ => -1,
     }
 }

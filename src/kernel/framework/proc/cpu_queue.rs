@@ -44,11 +44,7 @@ impl CpuQueue {
     #[inline]
     pub fn get_current(&self) -> Option<Pid> {
         let pid = self.current.load(Ordering::Acquire);
-        if pid == 0 {
-            None
-        } else {
-            Some(pid)
-        }
+        if pid == 0 { None } else { Some(pid) }
     }
 
     #[inline]
@@ -77,7 +73,9 @@ struct CpuQueues {
 unsafe impl Sync for CpuQueues {}
 
 static CPU_QUEUES: CpuQueues = CpuQueues {
-    queues: UnsafeCell::new([const { CpuQueue::new() }; crate::kernel::framework::config::MAX_CPUS]),
+    queues: UnsafeCell::new(
+        [const { CpuQueue::new() }; crate::kernel::framework::config::MAX_CPUS],
+    ),
 };
 
 pub fn cpu_queue(cpu_id: u32) -> &'static CpuQueue {
@@ -124,7 +122,10 @@ pub extern "C" fn resched_ipi_handler() {
 
 /// 注册 softirq Sched handler (在 scheduler init 时调用)
 pub fn register_sched_softirq() {
-    crate::kernel::framework::irq::open_softirq(crate::kernel::framework::irq::SoftirqVec::Sched, sched_softirq_handler);
+    crate::kernel::framework::irq::open_softirq(
+        crate::kernel::framework::irq::SoftirqVec::Sched,
+        sched_softirq_handler,
+    );
 }
 
 fn sched_softirq_handler() {

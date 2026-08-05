@@ -8,12 +8,8 @@
 
 // Re-export services 层的策略主体 — 保持调用方路径兼容
 pub use crate::kernel::services::proc::namespace::{
-    NsType, NamespaceSet,
-    UtsNamespace, IpcNamespace, PidNamespace, MountNamespace,
-    UserNamespace, NetNamespace, CgroupNamespace,
-    NsRegistryEntry, NsRegistry,
-    CLONE_NEWNS, CLONE_NEWUTS, CLONE_NEWIPC, CLONE_NEWUSER,
-    CLONE_NEWPID, CLONE_NEWNET, CLONE_NEWCGROUP, CLONE_NEW_ALL,
-    ns_register,
-    sys_unshare, sys_setns,
+    CLONE_NEW_ALL, CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET, CLONE_NEWNS, CLONE_NEWPID,
+    CLONE_NEWUSER, CLONE_NEWUTS, CgroupNamespace, IpcNamespace, MountNamespace, NamespaceSet,
+    NetNamespace, NsRegistry, NsRegistryEntry, NsType, PidNamespace, UserNamespace, UtsNamespace,
+    ns_register, sys_setns, sys_unshare,
 };

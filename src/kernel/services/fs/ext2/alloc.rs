@@ -2,11 +2,11 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! ext2 块分配器
 
-use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::driver::block::{read_sectors, write_sectors, with_device};
-use super::super_block::Ext2SuperBlock;
 use super::block_group::Ext2BlockGroupDescriptor;
 use super::inode::Ext2Inode;
+use super::super_block::Ext2SuperBlock;
+use crate::kernel::framework::driver::block::{read_sectors, with_device, write_sectors};
+use crate::kernel::framework::fs::KernelError;
 
 /// 在指定块组中分配一个空闲块
 ///

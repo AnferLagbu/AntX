@@ -4,7 +4,7 @@ use crate::kernel::services::fs::hvfs::zap::HvZap;
 use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 pub const HV_DS_MAX_NAME: usize = 128;
 pub const HV_DS_MAX_DATASETS: usize = 16;
@@ -37,7 +37,10 @@ pub struct HvDsProps {
 
 impl HvDsProps {
     #[allow(clippy::should_implement_trait)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     pub fn default() -> Self {
         Self {
             record_size: 131072,

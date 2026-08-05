@@ -22,7 +22,7 @@
 
 use core::cell::UnsafeCell;
 use core::ptr;
-use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering, fence};
 
 pub struct RcuHead {
     pub next: *mut RcuHead,
@@ -96,7 +96,10 @@ fn current_rcu() -> &'static PerCpuRcu {
 }
 
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 fn rcu_read_lock_impl() {
     let data = current_rcu();
     let nesting = data.nesting.fetch_add(1, Ordering::Acquire);
@@ -106,7 +109,10 @@ fn rcu_read_lock_impl() {
 }
 
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 fn rcu_read_unlock_impl() {
     let data = current_rcu();
     fence(Ordering::Release);
@@ -121,22 +127,32 @@ fn rcu_read_unlock_impl() {
 /// # Safety
 /// 调用者必须在 RCU 读临界区内
 #[inline(always)]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-pub unsafe fn rcu_dereference<T>(ptr: *const T) -> *const T { unsafe {
-    fence(Ordering::Acquire);
-    ptr::read_volatile(&ptr)
-}}
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
+pub unsafe fn rcu_dereference<T>(ptr: *const T) -> *const T {
+    unsafe {
+        fence(Ordering::Acquire);
+        ptr::read_volatile(&ptr)
+    }
+}
 
 /// 安全更新 RCU 保护的指针
 ///
 /// # Safety
 /// 调用者确保旧值在所有 RCU 读者退出前不被释放
 #[inline(always)]
-pub unsafe fn rcu_assign_pointer<T>(slot: *mut *const T, new_val: *const T) { unsafe {
-    fence(Ordering::Release);
-    ptr::write_volatile(slot, new_val);
-}}
+pub unsafe fn rcu_assign_pointer<T>(slot: *mut *const T, new_val: *const T) {
+    unsafe {
+        fence(Ordering::Release);
+        ptr::write_volatile(slot, new_val);
+    }
+}
 
 /// 阻塞直到所有 CPU 上已有 RCU 读者退出
 ///
@@ -175,7 +191,10 @@ fn synchronize_rcu_impl() {
         }
     }
 
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const SYNC_TIMEOUT_SPINS: u32 = 50_000_000;
     for i in 0..cpu_count {
         if i == current_cpu {

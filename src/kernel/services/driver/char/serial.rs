@@ -379,9 +379,12 @@ impl SerialPort {
     /// 应用当前配置到硬件 (分频值/数据格式/FIFO)
     fn apply_config(&mut self) {
         // 1. 启用 DLAB 写入分频值
-        self.write_lcr(LCR_DLAB | self.config.data_bits.lcr_bits()
-            | self.config.stop_bits.lcr_bit()
-            | self.config.parity.lcr_bits());
+        self.write_lcr(
+            LCR_DLAB
+                | self.config.data_bits.lcr_bits()
+                | self.config.stop_bits.lcr_bit()
+                | self.config.parity.lcr_bits(),
+        );
 
         // 2. 写分频值
         let div = self.config.baud_rate.divisor();
@@ -389,9 +392,11 @@ impl SerialPort {
         self.port.write_u8(UART_DLM, ((div >> 8) & 0xFF) as u8);
 
         // 3. 关闭 DLAB, 写入数据格式
-        self.write_lcr(self.config.data_bits.lcr_bits()
-            | self.config.stop_bits.lcr_bit()
-            | self.config.parity.lcr_bits());
+        self.write_lcr(
+            self.config.data_bits.lcr_bits()
+                | self.config.stop_bits.lcr_bit()
+                | self.config.parity.lcr_bits(),
+        );
 
         // 4. 启用 FIFO
         self.port.write_u8(UART_FCR, FCR_ENABLE_FIFO);

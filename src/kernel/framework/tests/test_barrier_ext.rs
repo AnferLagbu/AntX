@@ -2,7 +2,7 @@ use super::check;
 use crate::kernel::framework::barrier::domain::RecoveryDomain;
 use crate::kernel::framework::barrier::manager::RecoveryManager;
 use crate::kernel::framework::barrier::types::{DomainState, MAX_CONSECUTIVE_FAILURES};
-use crate::kernel::framework::tests::{runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, runner};
 use crate::register_tests_inner;
 
 fn test_domain_state_semantic() -> TestResult {

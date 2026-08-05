@@ -4,8 +4,10 @@
 //! 纯策略逻辑: 参数校验、资源查找、状态管理、链表操作.
 //! 所有 unsafe 操作通过 `framework::ipc::msgq::raw` (`MessageRef`) 安全方法完成.
 
-use crate::kernel::framework::ipc::types::{IpcNamespace, MsgQueue, IpcId, MSG_QUEUE_MAX_MSGS, MSG_MAX_SIZE};
 use crate::kernel::framework::ipc::msgq::raw::{self, MessageRef};
+use crate::kernel::framework::ipc::types::{
+    IpcId, IpcNamespace, MSG_MAX_SIZE, MSG_QUEUE_MAX_MSGS, MsgQueue,
+};
 
 /// 查找空闲消息队列槽位
 pub fn msgq_find_free(namespace: &mut IpcNamespace) -> Option<&mut MsgQueue> {
@@ -17,7 +19,10 @@ pub fn msgq_find_by_id(namespace: &mut IpcNamespace, id: IpcId) -> Option<&mut M
     namespace.msg_queues.iter_mut().find(|q| q.id == id)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 创建消息队列 (策略: 槽位分配 + 初始化)
 ///
 /// # Errors
@@ -52,7 +57,10 @@ pub fn msgq_create_safe(
     Ok(mq.id)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 向消息队列发送消息 (策略: 参数校验 + 容量检查 + 入队 + 唤醒)
 ///
 /// # Errors
@@ -126,7 +134,10 @@ pub fn msgq_send_safe(
     Ok(())
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 从消息队列接收消息 (策略: 出队 + 数据拷贝 + 释放 + 唤醒)
 ///
 /// # Errors
@@ -194,7 +205,10 @@ pub fn msgq_recv_safe(
     Ok(read_size)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 销毁消息队列 (策略: 释放所有消息 + 清理结构体)
 ///
 /// # Errors

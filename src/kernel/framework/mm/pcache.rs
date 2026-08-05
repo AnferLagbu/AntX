@@ -20,7 +20,7 @@
 //! - 脏页写回由文件系统负责 (当前阶段仅标记)
 //! - 仅 `pcache_copy_to_user` 保留 unsafe (用户态指针操作)
 
-use crate::kernel::framework::mm::{PhysAddr, PAGE_SIZE, pmm};
+use crate::kernel::framework::mm::{PAGE_SIZE, PhysAddr, pmm};
 use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
@@ -122,14 +122,22 @@ impl PageCacheBucket {
     const fn new() -> Self {
         PageCacheBucket {
             entries: [
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
-                PageCacheEntry::empty(), PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
+                PageCacheEntry::empty(),
             ],
             count: 0,
         }
@@ -258,14 +266,16 @@ impl PageCacheBucket {
 
 /// 每桶独立 `IrqSpinLock`, 持锁期间关中断, 避免与中断上下文死锁.
 /// `IrqSpinLock`<T> 自动实现 Send+Sync, 无需手写 unsafe impl.
-static PAGE_CACHE: [IrqSpinLock<PageCacheBucket>; PCACHE_HASH_BUCKETS] = {
-    [const { IrqSpinLock::new(PageCacheBucket::new()) }; PCACHE_HASH_BUCKETS]
-};
+static PAGE_CACHE: [IrqSpinLock<PageCacheBucket>; PCACHE_HASH_BUCKETS] =
+    [const { IrqSpinLock::new(PageCacheBucket::new()) }; PCACHE_HASH_BUCKETS];
 
 /// 计算哈希桶索引
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn pcache_hash(inode_id: u32, page_index: u64) -> usize {
     let h = u64::from(inode_id)
         .wrapping_mul(0x9E3779B97F4A7C15)
@@ -324,15 +334,17 @@ pub fn pcache_invalidate_inode(inode_id: u32) {
 /// - `phys` 必须是 Page Cache 中的有效物理页
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) { unsafe {
-    let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
-    // SAFETY: 调用方保证 dest_virt 指向有效用户空间页, phys 为有效物理页.
-    core::ptr::copy_nonoverlapping(
-        src_virt as *const u8,
-        dest_virt as *mut u8,
-        PAGE_SIZE as usize,
-    );
-}}
+pub unsafe fn pcache_copy_to_user(phys: u64, dest_virt: u64) {
+    unsafe {
+        let src_virt = crate::kernel::framework::mm::phys_to_virt(phys);
+        // SAFETY: 调用方保证 dest_virt 指向有效用户空间页, phys 为有效物理页.
+        core::ptr::copy_nonoverlapping(
+            src_virt as *const u8,
+            dest_virt as *mut u8,
+            PAGE_SIZE as usize,
+        );
+    }
+}
 
 /// 填充指定缓存页内容 (解决 TRACK-A7DE25)
 ///
@@ -347,7 +359,10 @@ pub fn pcache_fill(inode_id: u32, page_index: u64, src: &[u8]) -> bool {
     guard.fill(inode_id, page_index, src)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 读取缓存页内容到目标缓冲区
 ///
 /// 用于把 pcache 物理页的数据复制到用户缓冲 / 其他位置.
@@ -367,7 +382,7 @@ pub fn pcache_read_to_slice(inode_id: u32, page_index: u64, dst: &mut [u8]) -> b
 
 #[cfg(feature = "kernel_test")]
 fn test_pcache_hash_range() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     for &inode in &[1u32, 42, 1000, 0xFFFF] {
         for &pg in &[0u64, 1, 100, 0xFFFFFFFF] {
             let idx = pcache_hash(inode, pg);
@@ -379,7 +394,7 @@ fn test_pcache_hash_range() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_pcache_bucket_insert_lookup() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     let bucket = PageCacheBucket::new();
     check!(bucket.count == 0, "empty bucket");
 
@@ -391,7 +406,7 @@ fn test_pcache_bucket_insert_lookup() -> crate::kernel::framework::tests::TestRe
 
 #[cfg(feature = "kernel_test")]
 fn test_pcache_fill_requires_existing_entry() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // 在空桶上 fill 应返回 false (entry 不存在)
     let mut bucket = PageCacheBucket::new();
     let data = [0xABu8; 16];
@@ -402,7 +417,7 @@ fn test_pcache_fill_requires_existing_entry() -> crate::kernel::framework::tests
 
 #[cfg(feature = "kernel_test")]
 fn test_pcache_fill_len_clamped() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // fill 的 copy_len 应取 min(src.len(), PAGE_SIZE)
     // 我们通过计算期望 copy_len 验证 (不实际触发 PMM 分配)
     let src_short = [0u8; 100];
@@ -410,7 +425,10 @@ fn test_pcache_fill_len_clamped() -> crate::kernel::framework::tests::TestResult
     check!(expected == 100, "short src copies full");
     let src_long = [0u8; (PAGE_SIZE as usize) + 1024];
     let expected2 = core::cmp::min(src_long.len(), PAGE_SIZE as usize);
-    check!(expected2 == PAGE_SIZE as usize, "long src clamped to PAGE_SIZE");
+    check!(
+        expected2 == PAGE_SIZE as usize,
+        "long src clamped to PAGE_SIZE"
+    );
     TestResult::Pass
 }
 
@@ -419,7 +437,15 @@ pub fn register_pcache_tests() {
     use crate::kernel::framework::tests::runner;
     let r = runner();
     r.register("pcache", "hash_range", test_pcache_hash_range);
-    r.register("pcache", "bucket_insert_lookup", test_pcache_bucket_insert_lookup);
-    r.register("pcache", "fill_requires_existing_entry", test_pcache_fill_requires_existing_entry);
+    r.register(
+        "pcache",
+        "bucket_insert_lookup",
+        test_pcache_bucket_insert_lookup,
+    );
+    r.register(
+        "pcache",
+        "fill_requires_existing_entry",
+        test_pcache_fill_requires_existing_entry,
+    );
     r.register("pcache", "fill_len_clamped", test_pcache_fill_len_clamped);
 }

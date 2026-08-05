@@ -15,8 +15,8 @@
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // mount
@@ -31,11 +31,7 @@ use crate::kernel::framework::syscall::Errno;
 /// # Errors
 /// 当 `target_ptr` 为空/越界、`fstype_ptr` 为空或越界、`source_ptr` 越界时返回 `EFAULT` 或 `EINVAL`;
 /// 当缺少 `CAP_SYS_ADMIN` 能力时返回 `EACCES`; 其余错误以对应的 `Errno` 返回.
-pub fn mount_syscall(
-    source_ptr: u64,
-    target_ptr: u64,
-    fstype_ptr: u64,
-) -> Result<usize, Errno> {
+pub fn mount_syscall(source_ptr: u64, target_ptr: u64, fstype_ptr: u64) -> Result<usize, Errno> {
     if target_ptr == 0 {
         return Err(Errno::EFAULT);
     }
@@ -103,7 +99,10 @@ pub fn umount2_syscall(target_ptr: u64, flags: i32) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 ///
 /// mount/umount2 在调用前还需 `pwm_has_capability(..., CAP_SYS_ADMIN)` 检查,

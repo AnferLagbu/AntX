@@ -9,17 +9,17 @@
 //!   - 0x00: mac[6] (MAC 地址, 当 `VIRTIO_NET_F_MAC` 被设置时)
 //!   - 0x06: status (u16, 当 `VIRTIO_NET_F_STATUS` 被设置时)
 
-use super::queue::{VirtQueue, VQ_SIZE};
-use super::{VirtioMmioDevice, VIRTIO_ID_NET};
-use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
-use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
+use super::queue::{VQ_SIZE, VirtQueue};
+use super::{VIRTIO_ID_NET, VirtioMmioDevice};
 use crate::kernel::framework::fs::KernelError;
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr};
 use crate::klog_err;
 use crate::klog_error;
 use crate::klog_info;
 use crate::klog_warn;
 use alloc::boxed::Box;
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ── Feature bits ──
 
 const VIRTIO_NET_F_MAC: u64 = 1 << 5;
@@ -92,7 +92,10 @@ impl VirtioNet {
     /// 调用者必须保证 `device` 的 `device_id` == `VIRTIO_ID_NET`.
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
     pub fn new(device: VirtioMmioDevice) -> Option<Self> {
         if device.device_id != VIRTIO_ID_NET {
             return None;
@@ -277,7 +280,10 @@ impl VirtioNet {
             // 为该 RX 槽位分配缓冲区
             let pages = RX_BUFFER_SIZE.div_ceil(PAGE_SIZE as usize);
             // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+            #[expect(
+                clippy::items_after_statements,
+                reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+            )]
             unsafe extern "C" {
                 fn pmm_alloc_pages(count: u64) -> *mut u8;
             }
@@ -306,7 +312,10 @@ impl VirtioNet {
         self.device.notify(0);
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 通过 TX virtqueue 发送一个包.
     ///
     /// `data` 指向包缓冲区 (物理连续).
@@ -417,11 +426,9 @@ impl VirtioNet {
 
         if len <= self.hdr_size as u32 || len > RX_BUFFER_SIZE as u32 {
             self.rx_vq.reclaim_desc(desc_idx);
-            let new_desc = self.rx_vq.prepare_desc(
-                self.rx_buffers_phys[buf_idx],
-                RX_BUFFER_SIZE as u32,
-                true,
-            );
+            let new_desc =
+                self.rx_vq
+                    .prepare_desc(self.rx_buffers_phys[buf_idx], RX_BUFFER_SIZE as u32, true);
             self.rx_vq.submit(new_desc);
             self.rx_vq.commit_and_kick();
             core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
@@ -441,11 +448,9 @@ impl VirtioNet {
         self.rx_count += 1;
 
         self.rx_vq.reclaim_desc(desc_idx);
-        let new_desc = self.rx_vq.prepare_desc(
-            self.rx_buffers_phys[buf_idx],
-            RX_BUFFER_SIZE as u32,
-            true,
-        );
+        let new_desc =
+            self.rx_vq
+                .prepare_desc(self.rx_buffers_phys[buf_idx], RX_BUFFER_SIZE as u32, true);
         self.rx_vq.submit(new_desc);
         self.rx_vq.commit_and_kick();
         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
@@ -458,7 +463,10 @@ impl VirtioNet {
     /// 用于中断驱动轮询.
     pub fn handle_interrupt(&self) {
         // 读取并清除中断状态
-        self.device.write32(super::INTERRUPT_ACK, self.device.read32(super::INTERRUPT_STATUS));
+        self.device.write32(
+            super::INTERRUPT_ACK,
+            self.device.read32(super::INTERRUPT_STATUS),
+        );
     }
 }
 
@@ -483,8 +491,14 @@ pub unsafe extern "C" fn virtio_net_probe() -> i32 {
     probe()
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// 探测 virtio-net 设备并创建全局实例.
 ///
 /// 成功返回 0, 失败返回 -1.
@@ -525,10 +539,18 @@ pub fn probe() -> i32 {
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u32) -> i32 {
-    if driver_data.is_null() || data.is_null() || len == 0 { return KernelError::InvalidArgument.as_i32(); }
+    if driver_data.is_null() || data.is_null() || len == 0 {
+        return KernelError::InvalidArgument.as_i32();
+    }
     // SAFETY: driver_data 由 Chitin 注册时设置, data 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut VirtioNet) };
     let hdr = dev.hdr_size;
@@ -546,7 +568,11 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
     // SAFETY: aarch64 上 KERNEL_BASE=0, `phys >= 0` 对 u64 恒真, clippy
     // absurd_extreme_comparisons 可安全抑制 — 语义等价于直接取 phys.
     #[allow(clippy::absurd_extreme_comparisons)]
-    let dma_phys = if phys >= KERNEL_BASE { phys - KERNEL_BASE } else { phys };
+    let dma_phys = if phys >= KERNEL_BASE {
+        phys - KERNEL_BASE
+    } else {
+        phys
+    };
     match dev.send_packet(dma_phys, total as u32) {
         Ok(()) => 0,
         Err(()) => KernelError::Io.as_i32(),
@@ -555,10 +581,18 @@ pub extern "C" fn virtio_net_send(driver_data: *mut u8, data: *const u8, len: u3
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u32) -> i32 {
-    if driver_data.is_null() || buf.is_null() { return KernelError::InvalidArgument.as_i32(); }
+    if driver_data.is_null() || buf.is_null() {
+        return KernelError::InvalidArgument.as_i32();
+    }
     // SAFETY: driver_data 由 Chitin 注册时设置, buf 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut VirtioNet) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
@@ -568,17 +602,29 @@ pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u
     }
 }
 
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn virtio_net_get_mac(driver_data: *mut u8, mac: *mut [u8; 6]) {
-    if driver_data.is_null() { return; }
+    if driver_data.is_null() {
+        return;
+    }
     // SAFETY: driver_data 由 Chitin 注册时设置, mac 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &*(driver_data as *const VirtioNet) };
-    unsafe { *mac = dev.mac; }
+    unsafe {
+        *mac = dev.mac;
+    }
 }
 
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn virtio_net_irq(driver_data: *mut u8) {
-    if driver_data.is_null() { return; }
+    if driver_data.is_null() {
+        return;
+    }
     // SAFETY: driver_data 由 Chitin 注册时设置。
     let dev = unsafe { &*(driver_data as *const VirtioNet) };
     dev.handle_interrupt();

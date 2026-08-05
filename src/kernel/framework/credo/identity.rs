@@ -4,10 +4,11 @@ use super::capability::VIABLE_FLOOR;
 use super::csprng;
 use super::grant;
 use super::sha256;
-use super::types::{PWM_SALT_LEN, PwmEntry, MAX_PWM_ENTRIES, PWM_DIGEST_LEN, PwmError, PWM_NOTE_LEN, AuditAction, CapDomain, CapBits, PwmFlags, GrantRecord, PwmId};
-use core::sync::atomic::{
-    AtomicBool, AtomicU32, AtomicUsize, Ordering,
+use super::types::{
+    AuditAction, CapBits, CapDomain, GrantRecord, MAX_PWM_ENTRIES, PWM_DIGEST_LEN, PWM_NOTE_LEN,
+    PWM_SALT_LEN, PwmEntry, PwmError, PwmFlags, PwmId,
 };
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
@@ -20,7 +21,10 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+)]
 pub(crate) fn hash_with_salt(password: &str, salt: &[u8; PWM_SALT_LEN]) -> [u8; 32] {
     const STRETCH_ROUNDS: usize = 32768;
     let mut input = [0u8; 256];
@@ -112,7 +116,10 @@ impl IdentityTable {
         self.release();
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn generate_pwm(&self, password: &str, note: &str) -> u64 {
         let mut input = [0u8; 256];
         let mut pos = 0;
@@ -173,7 +180,10 @@ impl IdentityTable {
         None
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn verify_password(&self, pwm: u64, password: &str) -> bool {
         let entry = match self.find(pwm) {
             Some(e) => e,
@@ -193,7 +203,10 @@ impl IdentityTable {
         constant_time_eq(&computed, &stored_digest)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// T4-1: 全 Atomic 化后, create 改用 &self (替代 &mut self)
     /// 注: 调用方必须保证并发安全 (create 内已有 self.acquire/release 锁)
     /// # Errors
@@ -231,7 +244,9 @@ impl IdentityTable {
             s
         };
 
-        let slot = if let Some(s) = slot { s } else {
+        let slot = if let Some(s) = slot {
+            s
+        } else {
             self.release();
             return Err(PwmError::TableFull);
         };
@@ -572,12 +587,18 @@ impl IdentityTable {
 
     /// pwm → uid (stat 填充 `st_uid` 用)
     pub fn uid_of(&self, pwm: u64) -> u32 {
-        self.find(pwm).map_or(0xFFFF_FFFF, crate::kernel::services::credo::types::PwmEntry::get_uid)
+        self.find(pwm).map_or(
+            0xFFFF_FFFF,
+            crate::kernel::services::credo::types::PwmEntry::get_uid,
+        )
     }
 
     /// pwm → gid (stat 填充 `st_gid` 用)
     pub fn gid_of(&self, pwm: u64) -> u32 {
-        self.find(pwm).map_or(0xFFFF_FFFF, crate::kernel::services::credo::types::PwmEntry::get_gid)
+        self.find(pwm).map_or(
+            0xFFFF_FFFF,
+            crate::kernel::services::credo::types::PwmEntry::get_gid,
+        )
     }
 }
 
@@ -594,7 +615,9 @@ static GLOBAL_TABLE: crate::kernel::framework::sync::OnceLock<IdentityTable> =
 
 /// 获取全局身份表 (T4-1: `OnceLock` 包装, 自动初始化, 0 unsafe)
 pub fn get_table() -> &'static IdentityTable {
-    GLOBAL_TABLE.get_or_init(|slot| { slot.write(IdentityTable::new()); })
+    GLOBAL_TABLE.get_or_init(|slot| {
+        slot.write(IdentityTable::new());
+    })
 }
 
 ///

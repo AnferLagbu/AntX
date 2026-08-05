@@ -6,5 +6,5 @@
 //! framework 层仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::config::boot_image::{
-    BOOT_IMAGE, encode_boot_image, read_boot_image, encoded_len,
+    BOOT_IMAGE, encode_boot_image, encoded_len, read_boot_image,
 };

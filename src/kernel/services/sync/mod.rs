@@ -23,7 +23,6 @@
 //!
 //! 评估日期: 2026-06-04
 
-
 // ============================================================================
 // 强类型 re-export
 // ============================================================================
@@ -38,7 +37,7 @@ pub use types::LockState;
 pub use types::TryLockResult;
 
 /// 自旋锁内核表示 (FFI 桥接用, 一般不直接访问)
-pub use types::{SpinLockInner, MutexInner, RwLockInner, CondVarInner};
+pub use types::{CondVarInner, MutexInner, RwLockInner, SpinLockInner};
 
 /// 中断保存标志
 pub use types::IrqSaveFlags;
@@ -67,8 +66,7 @@ pub use types::RwLockWriteGuard;
 pub mod pi_mutex;
 
 pub use pi_mutex::{
-    PiMutex, PiMutexError, PiMutexResult,
-    lock as pi_lock, try_lock as pi_try_lock,
+    PiMutex, PiMutexError, PiMutexResult, lock as pi_lock, try_lock as pi_try_lock,
 };
 
 // ============================================================================
@@ -82,7 +80,10 @@ pub fn disable_interrupts() -> IrqSaveFlags {
     crate::kernel::framework::sync::disable_interrupts()
 }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+)]
 /// 恢复中断到指定 flags
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
     crate::kernel::framework::sync::restore_interrupts(flags);
@@ -191,9 +192,9 @@ use crate::kernel::framework::syscall::Errno;
 // Futex — 用户态同步原语
 // ============================================================================
 
-pub mod futex;
 pub mod epoll;
 pub mod eventfd;
+pub mod futex;
 pub mod signalfd;
 
 pub mod irq_lock;

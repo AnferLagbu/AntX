@@ -20,17 +20,17 @@
 //! `schedule()` 严格按 DL → RT → CFS 顺序回退, 每个层级内部找不到可运行任务时
 //! 立即降级到下一层级, 与 Linux `pick_next_task` 行为一致.
 
+use crate::kernel::framework::sync::{IrqSpinLock as Mutex, OnceLock};
 use alloc::collections::VecDeque;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::sync::{IrqSpinLock as Mutex, OnceLock};
 
 use super::cfs::{
-    calc_vruntime_delta, cfs_should_preempt, nice_to_weight, CfsRunQueue,
-    DeadlineParams, DlRunQueue, CFS_BOOST_INTERVAL_TICKS, DL_MAX_UTILIZATION_PCT,
-    LOAD_BALANCE_THRESHOLD, NICE0_WEIGHT, TARGET_LATENCY_TICKS,
+    CFS_BOOST_INTERVAL_TICKS, CfsRunQueue, DL_MAX_UTILIZATION_PCT, DeadlineParams, DlRunQueue,
+    LOAD_BALANCE_THRESHOLD, NICE0_WEIGHT, TARGET_LATENCY_TICKS, calc_vruntime_delta,
+    cfs_should_preempt, nice_to_weight,
 };
-use super::process::{Process, PROCESS_TABLE};
-use super::types::{Pid, ProcessState, ProcessPriority, ProcessId, ProcessContext, BlockReason};
+use super::process::{PROCESS_TABLE, Process};
+use super::types::{BlockReason, Pid, ProcessContext, ProcessId, ProcessPriority, ProcessState};
 
 // === E2: unsafe 集中化 — 裸子模块 ===
 //
@@ -42,12 +42,14 @@ pub(crate) mod raw {
     /// # Safety
     /// - `ptr` 必须是合法的 `*const Process` 或 0
     #[inline(always)]
-    pub unsafe fn update_current_process_ptr(ptr: u64) { unsafe {
-        unsafe extern "C" {
-            fn update_current_process_ptr(ptr: u64);
+    pub unsafe fn update_current_process_ptr(ptr: u64) {
+        unsafe {
+            unsafe extern "C" {
+                fn update_current_process_ptr(ptr: u64);
+            }
+            update_current_process_ptr(ptr);
         }
-        update_current_process_ptr(ptr);
-    }}
+    }
 }
 
 use raw::update_current_process_ptr;
@@ -117,7 +119,10 @@ pub enum SchedPolicy {
 }
 
 impl SchedPolicy {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_u32(value: u32) -> Self {
         match value {
             0 => SchedPolicy::Normal,
@@ -241,7 +246,10 @@ impl Scheduler {
         }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     pub fn create_process(&self, name: &str, parent: Option<Pid>, pwm: u64) -> Option<Pid> {
         let pid = PROCESS_TABLE.allocate_pid()?;
 
@@ -286,7 +294,10 @@ impl Scheduler {
         self.cfs_enqueue(pid);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 设置 nice 值并更新进程的 CFS 权重.
     pub fn set_nice(&self, pid: Pid, nice: i8) {
         PROCESS_TABLE.with_process(pid, |proc| {
@@ -297,7 +308,10 @@ impl Scheduler {
         });
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 将进程入队 CFS 运行队列.
     fn cfs_enqueue(&self, pid: Pid) {
         let per_cpu = per_cpu();
@@ -314,7 +328,10 @@ impl Scheduler {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 为进程设置 `SCHED_DEADLINE` 参数.
     pub fn set_deadline_params(&self, pid: Pid, params: DeadlineParams) -> bool {
         if !params.is_valid() {
@@ -336,7 +353,10 @@ impl Scheduler {
         true
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn add_rt_task(&self, pid: Pid, rt_priority: u8, policy: SchedPolicy) {
         let priority = rt_priority.min(RT_PRIORITY_MAX);
 
@@ -369,7 +389,10 @@ impl Scheduler {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 选取一个 deadline 任务 (EDF —— 绝对 deadline 最早者优先).
     fn pick_deadline_task(&self) -> Option<Pid> {
         let per_cpu = per_cpu();
@@ -402,7 +425,10 @@ impl Scheduler {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 选取一个 CFS 任务 (vruntime 最小者).
     fn pick_cfs_task(&self) -> Option<Pid> {
         let per_cpu = per_cpu();
@@ -437,10 +463,22 @@ impl Scheduler {
         }
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn schedule(&self) -> Option<Pid> {
         let saved_flags = crate::arch!(interrupt_disable()) as u64;
 
@@ -456,7 +494,9 @@ impl Scheduler {
             let mut rt_queue = per_cpu.rt_queue.lock();
 
             while !rt_queue.is_empty() {
-                let rt_task = if let Some(task) = rt_queue.pop_front() { task } else {
+                let rt_task = if let Some(task) = rt_queue.pop_front() {
+                    task
+                } else {
                     klog_sched_warn!("[SCHEDULER] RT queue race condition detected");
                     break;
                 };
@@ -511,7 +551,9 @@ impl Scheduler {
             next_pid = self.pick_cfs_task();
         }
 
-        let next = if let Some(pid) = next_pid { pid } else {
+        let next = if let Some(pid) = next_pid {
+            pid
+        } else {
             if saved_flags & 0x200 != 0 {
                 crate::arch!(interrupt_enable());
             }
@@ -670,17 +712,19 @@ impl Scheduler {
         Some(next)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn current(&self) -> Option<Pid> {
         let pid = per_cpu().current.load(Ordering::SeqCst);
-        if pid == 0 {
-            None
-        } else {
-            Some(pid)
-        }
+        if pid == 0 { None } else { Some(pid) }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn get_current_process(&self) -> Option<*mut Process> {
         let pid = per_cpu().current.load(Ordering::SeqCst);
         if pid == 0 {
@@ -701,7 +745,10 @@ impl Scheduler {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn unblock(&self, pid: Pid) {
         let sched_policy = PROCESS_TABLE
             .with_process(pid, |proc| {
@@ -843,12 +890,18 @@ impl Scheduler {
         self.schedule();
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn set_need_reschedule(&self) {
         per_cpu().need_reschedule.store(true, Ordering::SeqCst);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn should_reschedule(&self) -> bool {
         per_cpu().need_reschedule.swap(false, Ordering::SeqCst)
     }
@@ -860,7 +913,10 @@ impl Scheduler {
         self.cfs_enqueue(pid);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn set_current(&self, pid: Pid) {
         per_cpu().current.store(pid, Ordering::SeqCst);
 
@@ -876,7 +932,10 @@ impl Scheduler {
         self.initialized.load(Ordering::SeqCst)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn has_runnable(&self) -> bool {
         let per_cpu = per_cpu();
         if !per_cpu.dl_rq.lock().is_empty() {
@@ -896,7 +955,10 @@ impl Scheduler {
         self.has_runnable()
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
     pub fn tick(&self, cpu_id: usize) {
         // SMP: 禁用中断保护整个 tick 临界区
         // 防止非中断上下文的 schedule() 调用与 timer ISR 的 tick() 并发修改 per-CPU 状态
@@ -1014,7 +1076,8 @@ impl Scheduler {
                             p.cfs_vruntime.store(new_vr, Ordering::Release);
                             let sum = p.cfs_sum_exec_runtime.load(Ordering::Acquire);
                             // L2 修复: 使用 saturating_add 防止 sum_exec_runtime 溢出
-                            p.cfs_sum_exec_runtime.store(sum.saturating_add(1), Ordering::Release);
+                            p.cfs_sum_exec_runtime
+                                .store(sum.saturating_add(1), Ordering::Release);
                             new_vr
                         })
                         .unwrap_or(0);
@@ -1081,19 +1144,24 @@ impl Scheduler {
                     break;
                 }
                 if let Some(_proc) = PROCESS_TABLE.get(pid) {
-                    let is_zombie = PROCESS_TABLE.with_process(pid, |p| {
-                        if p.get_state() == ProcessState::Zombie {
-                            let parent_alive = p.parent.map_or(true, |ppid| {
-                                PROCESS_TABLE.with_process(ppid.0, |pp| {
-                                    let s = pp.get_state();
-                                    s != ProcessState::Zombie && s != ProcessState::Terminated
-                                }).unwrap_or(false)
-                            });
-                            !parent_alive || p.parent == Some(ProcessId(1))
-                        } else {
-                            false
-                        }
-                    }).unwrap_or(false);
+                    let is_zombie = PROCESS_TABLE
+                        .with_process(pid, |p| {
+                            if p.get_state() == ProcessState::Zombie {
+                                let parent_alive = p.parent.map_or(true, |ppid| {
+                                    PROCESS_TABLE
+                                        .with_process(ppid.0, |pp| {
+                                            let s = pp.get_state();
+                                            s != ProcessState::Zombie
+                                                && s != ProcessState::Terminated
+                                        })
+                                        .unwrap_or(false)
+                                });
+                                !parent_alive || p.parent == Some(ProcessId(1))
+                            } else {
+                                false
+                            }
+                        })
+                        .unwrap_or(false);
                     if is_zombie {
                         to_reap[reap_count] = pid;
                         reap_count += 1;
@@ -1110,7 +1178,8 @@ impl Scheduler {
 
         // 周期性负载均衡
         if new_tick.is_multiple_of(64) {
-            let local_load = self.total_runnable_for(crate::kernel::framework::smp::get_current_cpu());
+            let local_load =
+                self.total_runnable_for(crate::kernel::framework::smp::get_current_cpu());
             if local_load < 2 {
                 self.load_balance();
             }
@@ -1123,20 +1192,31 @@ impl Scheduler {
         crate::kernel::framework::sync::restore_interrupts(&flags);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn set_sched_policy(&self, pid: Pid, policy: SchedPolicy, rt_priority: u8) -> bool {
-        PROCESS_TABLE.with_process(pid, |proc| {
-            proc.set_sched_policy(policy);
-            proc.set_rt_priority(rt_priority.min(RT_PRIORITY_MAX));
-        }).is_some()
+        PROCESS_TABLE
+            .with_process(pid, |proc| {
+                proc.set_sched_policy(policy);
+                proc.set_rt_priority(rt_priority.min(RT_PRIORITY_MAX));
+            })
+            .is_some()
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn get_rt_count(&self) -> usize {
         per_cpu().rt_queue.lock().len()
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// C2: 检查目标 CPU 是否在进程的 allowed cpuset 中
     ///
     /// 调度器选 CPU / 负载均衡迁移时调用, 约束进程 CPU 亲和性.
@@ -1191,7 +1271,10 @@ impl Scheduler {
         best_cpu
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn total_runnable_for(&self, cpu_id: u32) -> usize {
         let sched = per_cpu_for(cpu_id);
         let mut count = sched.cfs_rq.lock().nr_running as usize;
@@ -1272,7 +1355,10 @@ impl Scheduler {
                     .with_process(pid, |p| p.cfs_weight.load(Ordering::Acquire))
                     .unwrap_or(NICE0_WEIGHT);
                 drop(dst_rq);
-                per_cpu_for(busiest_cpu).cfs_rq.lock().enqueue(pid, vr, weight);
+                per_cpu_for(busiest_cpu)
+                    .cfs_rq
+                    .lock()
+                    .enqueue(pid, vr, weight);
                 dst_rq = per_cpu_for(this_cpu).cfs_rq.lock();
                 continue;
             }

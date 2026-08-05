@@ -45,7 +45,6 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-
 use crate::kernel::framework::sync::IrqSpinLock;
 pub mod api;
 pub mod domain;
@@ -60,20 +59,20 @@ pub mod undo_log;
 
 pub use domain::RecoveryDomain;
 pub use fault_inject::maybe_inject_fault;
-pub use manager::{RecoveryManager, ROLLBACK_LOG};
+pub use manager::{ROLLBACK_LOG, RecoveryManager};
 pub use recoverable::{Recoverable, RecoverableMutex, Snapshot};
 pub use reset::{
+    BBR_ATTEMPT_COUNT, BHR_ATTEMPT_COUNT, BSR_ATTEMPT_COUNT, CURRENT_LAYER, DependencyLayer,
+    DependencyLayers, RECOVERY_CONFIG, RESET_AUDIT_LOG, RESET_IN_PROGRESS, RecoveryConfig,
+    RecoveryLayer, RecoveryResult, RecoveryStatus, ResetAuditEntry, ResetAuditLog, RollbackMode,
     bbr_execute, bhr_execute, bhr_execute_fallback, bsr_execute, compute_dependency_layers,
     execute_from_panic, get_current_layer, get_parallel_stats, get_recovery_status, get_stats,
-    recovery_execute_layered, reset_stats, rollback_all, rollback_all_parallel, DependencyLayer,
-    DependencyLayers, RecoveryConfig, RecoveryLayer, RecoveryResult, RecoveryStatus,
-    ResetAuditEntry, ResetAuditLog, RollbackMode, BBR_ATTEMPT_COUNT, BHR_ATTEMPT_COUNT,
-    BSR_ATTEMPT_COUNT, CURRENT_LAYER, RECOVERY_CONFIG, RESET_AUDIT_LOG, RESET_IN_PROGRESS,
+    recovery_execute_layered, reset_stats, rollback_all, rollback_all_parallel,
 };
 pub use snapshot::{
-    snapshot_capture_init, snapshot_is_init_captured, snapshot_register_device,
-    snapshot_restore_all, snapshot_unregister_device, DeviceSnapshot, DeviceSnapshotRegistry,
-    DeviceType, DEVICE_SNAPSHOTS,
+    DEVICE_SNAPSHOTS, DeviceSnapshot, DeviceSnapshotRegistry, DeviceType, snapshot_capture_init,
+    snapshot_is_init_captured, snapshot_register_device, snapshot_restore_all,
+    snapshot_unregister_device,
 };
 pub use types::*;
 pub use undo_log::UndoLog;

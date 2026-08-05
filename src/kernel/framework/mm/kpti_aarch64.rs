@@ -23,8 +23,8 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use crate::kernel::framework::mm::pmm_alloc_page;
 use crate::kernel::framework::mm::PAGE_SIZE;
+use crate::kernel::framework::mm::pmm_alloc_page;
 
 // ── 公共状态 ──────────────────────────────────────────────────────
 
@@ -119,8 +119,14 @@ pub unsafe fn kpti_exit_to_user() {
 
 // ── 初始化 ────────────────────────────────────────────────────────
 
-#[expect(clippy::missing_panics_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-#[expect(clippy::manual_assert, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
+#[expect(
+    clippy::manual_assert,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 /// 初始化 KPTI: 创建 trampoline TTBR1 页表.
 ///
 /// trampoline 页表仅复制异常入口代码所需的 L0 条目,

@@ -24,7 +24,7 @@
 pub mod verify;
 
 use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
-use crate::kernel::framework::mm::{PageFlags, VirtAddr, PAGE_SIZE};
+use crate::kernel::framework::mm::{PAGE_SIZE, PageFlags, VirtAddr};
 
 #[repr(C)]
 pub struct Elf64Header {
@@ -89,8 +89,14 @@ impl ElfLoadResult {
 }
 
 // P1-I-33: 委托给 `verify::verify_elf` 单一来源
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub fn elf_validate(elf_data: *const u8, elf_size: u64) -> Option<&'static Elf64Header> {
     // SAFETY: 调用方保证 elf_data 有效, verify_elf 内部仅读借用
     let _ = unsafe { verify::verify_elf(elf_data, elf_size) }.ok()?;
@@ -114,10 +120,22 @@ pub fn elf_load(
     elf_load_with_bias(mm, elf_data, elf_size, 0)
 }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 /// 加载 ELF 文件到指定地址空间, 支持可选加载偏移 (PIE/ASLR).
 ///
 /// `load_bias` = 0 表示 `ET_EXEC` (固定地址加载).
@@ -237,7 +255,8 @@ pub fn elf_load_with_bias(
         let mut cur = vaddr_start;
 
         while cur < vaddr_end as u64 {
-            let phys = crate::kernel::framework::mm::pmm_alloc_page_phys().ok_or("OOM loading ELF")?;
+            let phys =
+                crate::kernel::framework::mm::pmm_alloc_page_phys().ok_or("OOM loading ELF")?;
 
             let page_virt = phys.to_virt();
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -294,9 +313,18 @@ const LINUX_INTERP_PREFIXES: &[&[u8]] = &[
     b"/lib/ld-musl-aarch64.so.1",
 ];
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 扫描 ELF program headers, 检测 `PT_INTERP` 是否为 Linux 动态链接器.
 ///
 /// 返回 true 表示需要改写 `PT_INTERP` (Linux 二进制).
@@ -330,9 +358,8 @@ pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
             continue;
         }
         // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
-        let interp_path = unsafe {
-            core::slice::from_raw_parts(elf_data.add(interp_offset), interp_len)
-        };
+        let interp_path =
+            unsafe { core::slice::from_raw_parts(elf_data.add(interp_offset), interp_len) };
 
         // 检查是否为 Linux 动态链接器
         for prefix in LINUX_INTERP_PREFIXES {
@@ -345,52 +372,64 @@ pub fn needs_interp_rewrite(elf_data: *const u8, elf_size: u64) -> bool {
     false
 }
 
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 改写 ELF 数据中的 `PT_INTERP` 路径为 queenx 动态链接器.
 ///
 /// # Safety
 /// `elf_data` 必须指向可写的有效 ELF 数据 (内核拷贝缓冲区).
-pub unsafe fn rewrite_interp_path(elf_data: *mut u8, elf_size: u64) { unsafe {
-    let header = match elf_validate(elf_data as *const u8, elf_size) {
-        Some(h) => h,
-        None => return,
-    };
+pub unsafe fn rewrite_interp_path(elf_data: *mut u8, elf_size: u64) {
+    unsafe {
+        let header = match elf_validate(elf_data as *const u8, elf_size) {
+            Some(h) => h,
+            None => return,
+        };
 
-    if header.e_phoff == 0 || header.e_phnum == 0 {
-        return;
+        if header.e_phoff == 0 || header.e_phnum == 0 {
+            return;
+        }
+
+        let phdr_base = elf_data.add(header.e_phoff as usize);
+
+        for i in 0..header.e_phnum {
+            let phdr = &*(phdr_base.add(i as usize * core::mem::size_of::<Elf64Phdr>())
+                as *const Elf64Phdr);
+
+            if phdr.p_type != PT_INTERP || phdr.p_filesz == 0 {
+                continue;
+            }
+
+            let interp_offset = phdr.p_offset as usize;
+            let interp_len = phdr.p_filesz as usize;
+            if interp_offset + interp_len > elf_size as usize {
+                continue;
+            }
+
+            let interp_dst = elf_data.add(interp_offset);
+
+            // 计算可写入长度 (不超过原 interp 段大小)
+            let write_len = QUEENX_INTERP.len().min(interp_len);
+
+            // SAFETY: elf_data 是内核拷贝缓冲区, interp_offset+interp_len 在 ELF 范围内
+            core::ptr::copy_nonoverlapping(QUEENX_INTERP.as_ptr(), interp_dst, write_len);
+
+            // 如果 queenx interp 比原 interp 短, 用 null 填充剩余空间
+            if write_len < interp_len {
+                core::ptr::write_bytes(interp_dst.add(write_len), 0, interp_len - write_len);
+            }
+        }
     }
-
-    let phdr_base = elf_data.add(header.e_phoff as usize);
-
-    for i in 0..header.e_phnum {
-        let phdr = &*(phdr_base.add(i as usize * core::mem::size_of::<Elf64Phdr>()) as *const Elf64Phdr);
-
-        if phdr.p_type != PT_INTERP || phdr.p_filesz == 0 {
-            continue;
-        }
-
-        let interp_offset = phdr.p_offset as usize;
-        let interp_len = phdr.p_filesz as usize;
-        if interp_offset + interp_len > elf_size as usize {
-            continue;
-        }
-
-        let interp_dst = elf_data.add(interp_offset);
-
-        // 计算可写入长度 (不超过原 interp 段大小)
-        let write_len = QUEENX_INTERP.len().min(interp_len);
-
-        // SAFETY: elf_data 是内核拷贝缓冲区, interp_offset+interp_len 在 ELF 范围内
-        core::ptr::copy_nonoverlapping(QUEENX_INTERP.as_ptr(), interp_dst, write_len);
-
-        // 如果 queenx interp 比原 interp 短, 用 null 填充剩余空间
-        if write_len < interp_len {
-            core::ptr::write_bytes(interp_dst.add(write_len), 0, interp_len - write_len);
-        }
-    }
-}}
+}
 
 #[cfg(test)]
 mod tests {

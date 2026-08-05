@@ -18,18 +18,21 @@
 //! ## 性能特征
 //! - 静态分发,无 vtable 开销
 //! - 字符串路径解析纯栈上,无堆分配 (除路径 split 时 `alloc::string`)
-use super::types::{KernelResult, FsType, IntoI32, KernelError, FileSystem, VfsOpenFlags, VFS_MAX_FDS, VfsStat, VfsDirEntry, VFS_MAX_MOUNTS, VfsSeekWhence};
+use super::types::{
+    FileSystem, FsType, IntoI32, KernelError, KernelResult, VFS_MAX_FDS, VFS_MAX_MOUNTS,
+    VfsDirEntry, VfsOpenFlags, VfsSeekWhence, VfsStat,
+};
 use super::vfs::VFS_MANAGER;
+use crate::kernel::framework::fd_notify;
+use crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA;
 use crate::kernel::framework::fs::hvfs::hvfs::get_hvfs;
 use crate::kernel::framework::fs::ramfs::ramfs::{RAMFS_DATA, RamFsData};
-use crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA;
+use crate::kernel::framework::lib::CStrExt;
+use crate::kernel::framework::mm::{PAGE_SIZE, pcache};
+use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
 use crate::kernel::services::fs::devfs::DevfsData;
-use crate::kernel::framework::mm::{pcache, PAGE_SIZE};
-use crate::kernel::framework::userptr::{UserReadPtr, UserWritePtr, UserRefMut};
 use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
 use crate::kernel::services::fs::vfs_types::OpenFile;
-use crate::kernel::framework::lib::CStrExt;
-use crate::kernel::framework::fd_notify;
 
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)
 const PCACHE_FAST_MAX_BYTES: usize = 64 * 1024;
@@ -93,8 +96,14 @@ pub extern "C" fn vfs_init_internal() {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 pub extern "C" fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
     let path = ptr_to_str(path);
     let fs_name = ptr_to_str(fs_name);
@@ -106,7 +115,9 @@ pub extern "C" fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32
                 crate::klog_boot_info!("[VFS] vfs_mount_internal: before RAMFS_DATA.lock() #1");
                 {
                     let mut ramfs = RAMFS_DATA.lock();
-                    crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #1 acquired");
+                    crate::klog_boot_info!(
+                        "[VFS] vfs_mount_internal: RAMFS_DATA.lock() #1 acquired"
+                    );
                     if ramfs.mount(path) != 0 {
                         return KernelError::Io.as_i32();
                     }
@@ -179,7 +190,10 @@ pub extern "C" fn vfs_unmount_internal(path: *const u8) -> i32 {
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
 
@@ -195,12 +209,7 @@ pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i3
             Ok(inode) => {
                 // Plan B: fs_open 直接返回 Inode trait object
                 let file_type = inode.stat(pwm).map_or(0, |s| s.file_type);
-                let open_file = OpenFile::new(
-                    inode,
-                    flags,
-                    pwm,
-                    file_type,
-                );
+                let open_file = OpenFile::new(inode, flags, pwm, file_type);
 
                 // 插入全局 OpenFile 表
                 let handle_id = match OPEN_FILE_TABLE.alloc(open_file) {
@@ -210,7 +219,9 @@ pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i3
 
                 // 在进程 fd 表中分配 fd (TODO: 使用 per-process fd 表)
                 // 当前简化: 使用全局 fd 索引
-                let fd_idx = if let Some(i) = VFS_MANAGER.alloc_fd() { i } else {
+                let fd_idx = if let Some(i) = VFS_MANAGER.alloc_fd() {
+                    i
+                } else {
                     OPEN_FILE_TABLE.close(handle_id);
                     return -1;
                 };
@@ -227,19 +238,16 @@ pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i3
                     Ok(inode) => {
                         let file_type = inode.stat(pwm).map_or(0, |s| s.file_type);
                         let inode_id = inode.node_id();
-                        let open_file = OpenFile::new(
-                            inode,
-                            flags,
-                            pwm,
-                            file_type,
-                        );
+                        let open_file = OpenFile::new(inode, flags, pwm, file_type);
 
                         let handle_id = match OPEN_FILE_TABLE.alloc(open_file) {
                             Some(id) => id,
                             None => return -1,
                         };
 
-                        let fd_idx = if let Some(i) = VFS_MANAGER.alloc_fd() { i } else {
+                        let fd_idx = if let Some(i) = VFS_MANAGER.alloc_fd() {
+                            i
+                        } else {
                             OPEN_FILE_TABLE.close(handle_id);
                             return -1;
                         };
@@ -248,18 +256,24 @@ pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i3
 
                         // inotify: 父目录 IN_CREATE + 新文件 IN_OPEN
                         let parent_ino = fs.fs_resolve_path(parent_path).unwrap_or(0);
-                        super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, false);
-                        super::inotify::inotify_notify(inode_id, super::inotify::IN_OPEN, "", false);
+                        super::inotify::inotify_notify(
+                            parent_ino,
+                            super::inotify::IN_CREATE,
+                            name,
+                            false,
+                        );
+                        super::inotify::inotify_notify(
+                            inode_id,
+                            super::inotify::IN_OPEN,
+                            "",
+                            false,
+                        );
                         fd_idx as i32
                     }
-                    Err(_) => {
-                        -1
-                    }
+                    Err(_) => -1,
                 }
             }
-            Err(e) => {
-                e.as_i32()
-            }
+            Err(e) => e.as_i32(),
         }
     } else {
         // E6-5: fallback 已移除, 所有文件系统均通过 trait object 分发
@@ -272,7 +286,10 @@ pub extern "C" fn vfs_open_internal(path: *const u8, flags: u32, pwm: u64) -> i3
 //        TD-03 契约测试按 Rust ABI 签名匹配该函数体.
 #[unsafe(no_mangle)]
 #[expect(clippy::no_mangle_with_rust_abi)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     let fd_idx_us = fd_idx as usize;
     if fd_idx_us >= VFS_MAX_FDS {
@@ -312,13 +329,12 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
     // B2: 释放该 fd 关联 inode 的全部 pcache 缓存页, 避免内存泄漏
     pcache::pcache_invalidate_inode(node_id);
     // inotify: 文件关闭通知
-    let close_mask = if (flags & VfsOpenFlags::WRONLY.bits()) != 0
-        || (flags & VfsOpenFlags::RDWR.bits()) != 0
-    {
-        super::inotify::IN_CLOSE_WRITE
-    } else {
-        super::inotify::IN_CLOSE_NOWRITE
-    };
+    let close_mask =
+        if (flags & VfsOpenFlags::WRONLY.bits()) != 0 || (flags & VfsOpenFlags::RDWR.bits()) != 0 {
+            super::inotify::IN_CLOSE_WRITE
+        } else {
+            super::inotify::IN_CLOSE_NOWRITE
+        };
     super::inotify::inotify_notify(node_id, close_mask, "", false);
     // C1: fd 关闭 → 唤醒该 fd 注册的所有 epoll 等待者 (EPOLLHUP|EPOLLERR)
     fd_notify::notify_fd_close(fd_idx as i32);
@@ -329,7 +345,10 @@ pub fn vfs_close_internal(fd_idx: u32) -> i32 {
 #[unsafe(no_mangle)]
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
@@ -424,8 +443,17 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
 #[expect(clippy::no_mangle_with_rust_abi)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64, dst: &mut [u8], pwm: u64) -> i32 {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub fn vfs_pread_inode(
+    mount_idx: Option<usize>,
+    node_id: u32,
+    file_offset: u64,
+    dst: &mut [u8],
+    pwm: u64,
+) -> i32 {
     // SAFETY: 调用方保证 dst 在生命周期内有效; 长度由调用方控制.
     let mut user_buf = unsafe { UserWritePtr::new(dst.as_mut_ptr(), dst.len()) };
 
@@ -456,7 +484,10 @@ pub fn vfs_pread_inode(mount_idx: Option<usize>, node_id: u32, file_offset: u64,
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -508,7 +539,10 @@ pub extern "C" fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
     let fd_idx = fd as usize;
     if fd_idx >= VFS_MAX_FDS {
@@ -540,7 +574,10 @@ pub extern "C" fn vfs_truncate_internal(fd: u32, size: u64) -> i32 {
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) -> i32 {
     if buf.is_null() || count == 0 {
         return -1;
@@ -557,7 +594,10 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
 
     let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
         // O_APPEND: 写入前自动 seek 到文件末尾 (POSIX 原子 append)
-        let offset = if (open_file.get_flags() & crate::kernel::services::fs::vfs_types::VfsOpenFlags::APPEND.bits()) != 0 {
+        let offset = if (open_file.get_flags()
+            & crate::kernel::services::fs::vfs_types::VfsOpenFlags::APPEND.bits())
+            != 0
+        {
             match open_file.inode().stat(open_file.pwm) {
                 Ok(stat) => u64::from(stat.size),
                 Err(_) => open_file.get_offset(),
@@ -586,7 +626,10 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
 
@@ -619,7 +662,10 @@ pub extern "C" fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -642,8 +688,14 @@ pub extern "C" fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::no_effect_underscore_binding,
+    reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+)]
 pub extern "C" fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let _pwm = pwm;
@@ -688,7 +740,10 @@ pub extern "C" fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64)
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 {
     if entry.is_null() {
         return -1;
@@ -700,27 +755,31 @@ pub extern "C" fn vfs_readdir_internal(fd: u32, entry: *mut VfsDirEntry) -> i32 
         None => return -1,
     };
 
-    let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
-        let offset = open_file.get_offset();
+    let result =
+        OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
+            let offset = open_file.get_offset();
 
-        match open_file.inode().readdir(offset) {
-            Ok((name, file_type, has_more)) => {
-                if !has_more {
-                    return 0;
+            match open_file.inode().readdir(offset) {
+                Ok((name, file_type, has_more)) => {
+                    if !has_more {
+                        return 0;
+                    }
+                    let mut dir_entry = VfsDirEntry::default();
+                    dir_entry.set_name(&name);
+                    dir_entry.file_type = file_type.as_u8();
+                    // SAFETY: 调用方保证指针/类型有效
+                    let mut entry_ref = unsafe { UserRefMut::new(entry) };
+                    *entry_ref.as_mut() = dir_entry;
+                    let new_offset = offset
+                        + core::mem::size_of::<
+                            crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry,
+                        >() as u64;
+                    open_file.set_offset(new_offset);
+                    1
                 }
-                let mut dir_entry = VfsDirEntry::default();
-                dir_entry.set_name(&name);
-                dir_entry.file_type = file_type.as_u8();
-                // SAFETY: 调用方保证指针/类型有效
-                let mut entry_ref = unsafe { UserRefMut::new(entry) };
-                *entry_ref.as_mut() = dir_entry;
-                let new_offset = offset + core::mem::size_of::<crate::kernel::framework::fs::ramfs::ramfs::RamFsDirEntry>() as u64;
-                open_file.set_offset(new_offset);
-                1
+                Err(_) => -1,
             }
-            Err(_) => -1,
-        }
-    });
+        });
 
     result.unwrap_or(-1)
 }
@@ -736,7 +795,10 @@ pub extern "C" fn vfs_set_cwd_internal(path: *const u8) {
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_get_cwd_internal(buf: *mut u8, size: u32) -> i32 {
     if buf.is_null() || size == 0 {
         return -1;
@@ -840,23 +902,17 @@ pub fn vfs_rmdir_safe(path: &str, pwm: u64) -> i32 {
 
 /// Safe 包装: `vfs_symlink` (接受 &str 路径)
 pub fn vfs_symlink_safe(target: &str, linkpath: &str, pwm: u64) -> i32 {
-    with_cstr(target, |t| {
-        with_cstr(linkpath, |l| vfs_symlink(t, l, pwm))
-    })
+    with_cstr(target, |t| with_cstr(linkpath, |l| vfs_symlink(t, l, pwm)))
 }
 
 /// Safe 包装: `vfs_link` (接受 &str 路径)
 pub fn vfs_link_safe(oldpath: &str, newpath: &str, pwm: u64) -> i32 {
-    with_cstr(oldpath, |o| {
-        with_cstr(newpath, |n| vfs_link(o, n, pwm))
-    })
+    with_cstr(oldpath, |o| with_cstr(newpath, |n| vfs_link(o, n, pwm)))
 }
 
 /// Safe 包装: `vfs_rename` (接受 &str 路径)
 pub fn vfs_rename_safe(old: &str, new: &str, pwm: u64) -> i32 {
-    with_cstr(old, |o| {
-        with_cstr(new, |n| vfs_rename(o, n, pwm))
-    })
+    with_cstr(old, |o| with_cstr(new, |n| vfs_rename(o, n, pwm)))
 }
 
 /// Safe 包装: `vfs_readlink` (接受 &str 路径)
@@ -897,9 +953,15 @@ pub fn vfs_seek_safe(fd: u32, offset: i32, whence: u32) -> i32 {
     vfs_seek(fd, offset, whence)
 }
 
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 /// Safe 包装: `vfs_readdir`
-pub fn vfs_readdir_safe(fd: u32, entry: &mut crate::kernel::services::fs::vfs_types::VfsDirEntry) -> i32 {
+pub fn vfs_readdir_safe(
+    fd: u32,
+    entry: &mut crate::kernel::services::fs::vfs_types::VfsDirEntry,
+) -> i32 {
     // SAFETY: entry 是调用方拥有的有效可写结构体
     vfs_readdir(fd, entry as *mut _)
 }
@@ -952,7 +1014,10 @@ pub extern "C" fn vfs_stat(path: *const u8, st: *mut VfsStat, pwm: u64) -> i32 {
     vfs_stat_internal(path, st, pwm)
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// Safe 包装: services 层用, 返回 `VfsStat` 而非 raw pointer.
 ///
 /// 内部复用 `vfs_stat_internal`, 在 stack 上接收结果, 然后转为 Option 返回.
@@ -963,11 +1028,7 @@ pub fn vfs_stat_safe(path: *const u8, pwm: u64) -> Option<VfsStat> {
     }
     let mut st = VfsStat::default();
     let r = vfs_stat_internal(path, &mut st as *mut VfsStat, pwm);
-    if r < 0 {
-        None
-    } else {
-        Some(st)
-    }
+    if r < 0 { None } else { Some(st) }
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -978,7 +1039,10 @@ pub extern "C" fn vfs_mkdir(path: *const u8, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -1007,13 +1071,11 @@ pub extern "C" fn vfs_chown(path: *const u8, owner_pwm: u64, pwm: u64) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub extern "C" fn vfs_chown_ext(
-    path: *const u8,
-    owner_pwm: u64,
-    group_pwm: u64,
-    pwm: u64,
-) -> i32 {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_chown_ext(path: *const u8, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
         Some(r) => r,
@@ -1041,7 +1103,10 @@ pub extern "C" fn vfs_chown_ext(
 /// - `pwm`: 权限凭证
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
@@ -1066,7 +1131,10 @@ pub extern "C" fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u6
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
     // Plan B: 通过 OpenFile 的 Inode trait 执行
     let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
@@ -1090,7 +1158,10 @@ pub extern "C" fn vfs_fchmod(fd: u32, mode: u16) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_fchown(fd: u32, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
     // Plan B: 通过 OpenFile 的 Inode trait 执行
     let handle_id = match VFS_MANAGER.get_fd_handle(fd as usize) {
@@ -1118,7 +1189,10 @@ pub extern "C" fn vfs_unlink(path: *const u8, pwm: u64) -> i32 {
 /// E6-5: 通过 trait object 分发
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(oldpath);
     let new_path = ptr_to_str(newpath);
@@ -1145,7 +1219,10 @@ pub extern "C" fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> 
 /// E6-5: 通过 trait object 分发
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) -> i32 {
     let tgt = ptr_to_str(target);
     let link_path = ptr_to_str(linkpath);
@@ -1174,7 +1251,10 @@ pub extern "C" fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) 
 #[unsafe(no_mangle)]
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: u64) -> i32 {
     let _ = pwm;
     let p = ptr_to_str(path);
@@ -1203,7 +1283,10 @@ pub extern "C" fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: 
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let old_path = ptr_to_str(old);
     let new_path = ptr_to_str(new);
@@ -1302,7 +1385,10 @@ pub extern "C" fn vfs_set_cwd(path: *const u8) {
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
     let whence = match VfsSeekWhence::from_u32(whence) {
         Some(w) => w,
@@ -1317,7 +1403,10 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 
     let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
         let current_offset = open_file.get_offset();
-        match open_file.inode().seek(i64::from(offset), whence, current_offset) {
+        match open_file
+            .inode()
+            .seek(i64::from(offset), whence, current_offset)
+        {
             Ok(new_offset) => {
                 open_file.set_offset(new_offset);
                 new_offset as i32
@@ -1331,7 +1420,10 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_fd_table() -> *const u8 {
     VFS_MANAGER.fd_table.lock().as_ptr() as *const u8
 }
@@ -1373,7 +1465,10 @@ pub extern "C" fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i3
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
     if st.is_null() {
         return -1;
@@ -1414,16 +1509,15 @@ pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
     result
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// Safe 包装: services 层用, 返回 `VfsStat` 而非 raw pointer.
 pub fn vfs_fstat_safe(fd: u32, pwm: u64) -> Option<VfsStat> {
     let mut st = VfsStat::default();
     let r = vfs_fstat(fd, &mut st as *mut VfsStat, pwm);
-    if r < 0 {
-        None
-    } else {
-        Some(st)
-    }
+    if r < 0 { None } else { Some(st) }
 }
 
 // ============================================================================
@@ -1524,8 +1618,17 @@ pub extern "C" fn vfs_dup2(oldfd: u32, newfd: u32) -> i32 {
 /// 设置扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub extern "C" fn vfs_setxattr_internal(path: *const u8, name: *const u8, value: *const u8, size: u32, pwm: u64) -> i32 {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_setxattr_internal(
+    path: *const u8,
+    name: *const u8,
+    value: *const u8,
+    size: u32,
+    pwm: u64,
+) -> i32 {
     let path = ptr_to_str(path);
     let name = ptr_to_str(name);
     let value = if !value.is_null() && size > 0 {
@@ -1556,8 +1659,17 @@ pub extern "C" fn vfs_setxattr_internal(path: *const u8, name: *const u8, value:
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub extern "C" fn vfs_getxattr_internal(path: *const u8, name: *const u8, value: *mut u8, size: u32, pwm: u64) -> i32 {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_getxattr_internal(
+    path: *const u8,
+    name: *const u8,
+    value: *mut u8,
+    size: u32,
+    pwm: u64,
+) -> i32 {
     let path = ptr_to_str(path);
     let name = ptr_to_str(name);
 
@@ -1589,8 +1701,16 @@ pub extern "C" fn vfs_getxattr_internal(path: *const u8, name: *const u8, value:
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub extern "C" fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u32, pwm: u64) -> i32 {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_listxattr_internal(
+    path: *const u8,
+    list: *mut u8,
+    size: u32,
+    pwm: u64,
+) -> i32 {
     let path = ptr_to_str(path);
 
     if list.is_null() || size == 0 {
@@ -1619,7 +1739,10 @@ pub extern "C" fn vfs_listxattr_internal(path: *const u8, list: *mut u8, size: u
 /// 删除扩展属性
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm: u64) -> i32 {
     let path = ptr_to_str(path);
     let name = ptr_to_str(name);

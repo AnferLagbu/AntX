@@ -5,12 +5,11 @@
 
 // 重导出强类型
 pub use crate::kernel::framework::timer::{
-    TicklessMode, TicklessCpuState, TicklessSubsystem,
-    DEFAULT_HZ, MAX_HZ, MIN_HZ,
+    DEFAULT_HZ, MAX_HZ, MIN_HZ, TicklessCpuState, TicklessMode, TicklessSubsystem,
 };
 
 use crate::kernel::framework::timer::{
-    tickless_init, tickless_is_initialized, tickless_subsystem, sys_tickless,
+    sys_tickless, tickless_init, tickless_is_initialized, tickless_subsystem,
 };
 
 /// 初始化 Tickless

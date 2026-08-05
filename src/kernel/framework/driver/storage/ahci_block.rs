@@ -103,11 +103,7 @@ impl AhciBlockDevice {
             }
         }
 
-        if lo > 0 {
-            lo
-        } else {
-            0
-        }
+        if lo > 0 { lo } else { 0 }
     }
 }
 

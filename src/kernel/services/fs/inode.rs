@@ -19,10 +19,9 @@
 //! 这保证 POSIX dup 共享 offset 语义: 多个 fd 通过同一个 OpenFile
 //! 共享 offset, Inode 本身是无状态的 I/O 执行器.
 
-
 use alloc::sync::Arc;
 
-use super::vfs_types::{KernelResult, VfsStat, VfsFileType, VfsSeekWhence, KernelError};
+use super::vfs_types::{KernelError, KernelResult, VfsFileType, VfsSeekWhence, VfsStat};
 
 // ============================================================================
 // Inode trait — 文件级操作
@@ -220,9 +219,7 @@ impl Inode for AnonymousInode {
     }
 
     fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
-        let size = ANONYMOUS_FS
-            .get_size(self.inode_id)
-            .unwrap_or(0);
+        let size = ANONYMOUS_FS.get_size(self.inode_id).unwrap_or(0);
         Ok(VfsStat {
             node_id: self.inode_id,
             size,
@@ -240,9 +237,7 @@ impl Inode for AnonymousInode {
     }
 
     fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
-        let file_size = u64::from(ANONYMOUS_FS
-            .get_size(self.inode_id)
-            .unwrap_or(0));
+        let file_size = u64::from(ANONYMOUS_FS.get_size(self.inode_id).unwrap_or(0));
         let new_offset = match whence {
             VfsSeekWhence::Set => offset as u64,
             VfsSeekWhence::Cur => current_offset.saturating_add(offset as u64),
@@ -285,7 +280,10 @@ pub struct RamFsInode {
 impl RamFsInode {
     /// 创建新的 `RamFS` Inode
     pub fn new(inode_id: u32, mount_idx: u32) -> Self {
-        Self { inode_id, mount_idx }
+        Self {
+            inode_id,
+            mount_idx,
+        }
     }
 }
 
@@ -315,7 +313,10 @@ impl Inode for RamFsInode {
         }
     }
 
-#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect"
+    )]
     fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
         // icache 快速路径: 避免 RAMFS_DATA 锁
         if let Some(cached) = crate::kernel::services::fs::dcache::icache_lookup(self.inode_id) {
@@ -337,8 +338,14 @@ impl Inode for RamFsInode {
         let st = ramfs.get_stat(self.inode_id, pwm)?;
         // 填充 icache
         crate::kernel::services::fs::dcache::icache_insert(
-            self.inode_id, st.file_type, st.perm, st.size as u32, st.mtime,
-            st.ctime, st.owner_pwm, st.group_pwm,
+            self.inode_id,
+            st.file_type,
+            st.perm,
+            st.size as u32,
+            st.mtime,
+            st.ctime,
+            st.owner_pwm,
+            st.group_pwm,
         );
         Ok(st)
     }
@@ -592,6 +599,13 @@ pub fn new_ramfs_inode(inode_id: u32, mount_idx: u32) -> Arc<dyn Inode> {
 }
 
 /// 创建 `LegacyInode` 的 Arc 包装 (过渡期: 从 `FsOpenResult` 创建)
-pub fn new_legacy_inode(handle: u32, mount_idx: u32, file_type: u8, rel_path: &str) -> Arc<dyn Inode> {
-    Arc::new(LegacyInode::from_fs_result(handle, mount_idx, file_type, rel_path))
+pub fn new_legacy_inode(
+    handle: u32,
+    mount_idx: u32,
+    file_type: u8,
+    rel_path: &str,
+) -> Arc<dyn Inode> {
+    Arc::new(LegacyInode::from_fs_result(
+        handle, mount_idx, file_type, rel_path,
+    ))
 }

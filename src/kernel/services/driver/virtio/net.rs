@@ -20,7 +20,7 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.1.2 任务: VirtIO-Net 网卡迁移
 
-use super::transport::{VirtioDevice, DEVICE_ID_NET, VIRTIO_F_VERSION_1};
+use super::transport::{DEVICE_ID_NET, VIRTIO_F_VERSION_1, VirtioDevice};
 use crate::kernel::framework::driver::virtio::queue::{DmaBuffer, VirtQueue};
 use crate::slog_info;
 use crate::slog_warn;
@@ -308,7 +308,10 @@ impl VirtioNetDriver {
 
     // ── 队列配置辅助 (通过 VirtioDevice MMIO) ──
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 配置指定 virtqueue 的 MMIO 寄存器.
     ///
     /// # 参数
@@ -332,17 +335,11 @@ impl VirtioNetDriver {
     ) -> Result<u32, ()> {
         self.device.select_queue(vq_index);
         let max_size = self.device.queue_num_max();
-        slog_info!(
-            Driver,
-            "virtio-net: vq{} max_size={}",
-            vq_index,
-            max_size
-        );
+        slog_info!(Driver, "virtio-net: vq{} max_size={}", vq_index, max_size);
 
         if self.is_legacy() {
             // 传统模式: 使用 PFN 接口
-            self.device
-                .setup_queue_legacy(desc_paddr);
+            self.device.setup_queue_legacy(desc_paddr);
         } else {
             // 现代模式: 使用 64 位地址
             self.device
@@ -376,7 +373,10 @@ impl VirtioNetDriver {
 
     // ── 数据路径: 网络包收发 ──
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 发送网络包.
     ///
     /// `data` 包含完整以太网帧 (不含 `VirtIO` 头). 框架自动添加头.
@@ -392,7 +392,9 @@ impl VirtioNetDriver {
 
         // DMA 缓冲区: VirtIO 头 + 帧数据
         let total = self.hdr_size + data.len();
-        let mut dma = if let Some(b) = DmaBuffer::new(total) { b } else {
+        let mut dma = if let Some(b) = DmaBuffer::new(total) {
+            b
+        } else {
             slog_warn!(Driver, "virtio-net: TX DMA 缓冲区分配失败");
             return Err(());
         };
@@ -436,8 +438,14 @@ impl VirtioNetDriver {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::no_effect_underscore_binding,
+        reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+    )]
     /// 尝试接收一个网络包.
     ///
     /// 将包数据 (不含 `VirtIO` 头) 复制到 `buf`, 返回实际拷贝的字节数.

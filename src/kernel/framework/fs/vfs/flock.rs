@@ -11,15 +11,8 @@
 
 // Re-export 所有公共类型与函数
 pub use crate::kernel::services::fs::flock::{
-    FlockResult, PosixLockConflict, PosixLockResult,
-    LOCK_SH, LOCK_EX, LOCK_UN, LOCK_NB,
-    F_RDLCK, F_WRLCK, F_UNLCK,
-    F_SETLK, F_SETLKW, F_GETLK,
-    POSIX_LOCK_TO_EOF,
-    sys_flock, sys_posix_lock,
-    flock_release_fd, flock_release_pid,
-    posix_lock_release_pid, posix_lock_release_inode,
-    flock_ops, posix_lock_ops,
-    flock_count, posix_lock_count,
-    reset_stats,
+    F_GETLK, F_RDLCK, F_SETLK, F_SETLKW, F_UNLCK, F_WRLCK, FlockResult, LOCK_EX, LOCK_NB, LOCK_SH,
+    LOCK_UN, POSIX_LOCK_TO_EOF, PosixLockConflict, PosixLockResult, flock_count, flock_ops,
+    flock_release_fd, flock_release_pid, posix_lock_count, posix_lock_ops,
+    posix_lock_release_inode, posix_lock_release_pid, reset_stats, sys_flock, sys_posix_lock,
 };

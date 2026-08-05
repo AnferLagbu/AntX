@@ -28,14 +28,14 @@ pub mod nvme_block;
 pub use ahci::{AhciController, AhciPort, AtaCommand, H2dFis};
 pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 
-use alloc::vec::Vec;
+use super::framework::{self, Driver};
 use crate::kernel::framework::iomem::IoMem;
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::mm::PAGE_SIZE;
-use super::framework::{self, Driver};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::klog_info;
 use crate::klog_warn;
+use alloc::vec::Vec;
 
 /// PCI 存储控制器类码
 #[cfg(target_arch = "x86_64")]
@@ -57,9 +57,18 @@ static NVME_CONTROLLERS: Mutex<Vec<NvmeController>> = Mutex::new(Vec::new());
 #[cfg(target_arch = "x86_64")]
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
-#[expect(clippy::unnecessary_wraps, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
     let pci_count = crate::kernel::framework::pci::init();
@@ -201,7 +210,9 @@ pub fn storage_init() -> framework::Result<()> {
         crate::kernel::framework::chitin::ChitinProto::Block,
         None,
         None,
-        alloc::boxed::Box::new(crate::kernel::framework::driver::storage::ata::AtaController::new()),
+        alloc::boxed::Box::new(
+            crate::kernel::framework::driver::storage::ata::AtaController::new(),
+        ),
     );
 
     // Step 3.5: 将 ATA 磁盘注册到 Chitin (唯一注册入口)
@@ -325,9 +336,18 @@ pub fn storage_init() -> framework::Result<()> {
 
 /// AArch64 存储初始化 — 通过 virtio-mmio 发现块设备。
 #[cfg(not(target_arch = "x86_64"))]
-#[expect(clippy::missing_errors_doc, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-#[expect(clippy::uninlined_format_args, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
-#[expect(clippy::unnecessary_wraps, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
+#[expect(
+    clippy::uninlined_format_args,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 pub fn storage_init() -> framework::Result<()> {
     use crate::kernel::framework::driver::virtio::{self, VIRTIO_ID_BLOCK};
 
@@ -340,7 +360,11 @@ pub fn storage_init() -> framework::Result<()> {
             if let Some(mut blk) = virtio::blk::VirtioBlk::new(dev) {
                 // I-42: 尝试注册 IRQ 中断驱动路径; 失败时退到 spin-loop 轮询.
                 if let Err(e) = blk.enable_irq() {
-                    klog_warn!(Driver, "virtio-blk: IRQ registration failed: {}, using poll mode", e);
+                    klog_warn!(
+                        Driver,
+                        "virtio-blk: IRQ registration failed: {}, using poll mode",
+                        e
+                    );
                 }
                 let blk_name = alloc::format!("virtio-blk{}", blk_count);
                 let name_leaked: &'static str = blk_name.leak();
@@ -374,7 +398,10 @@ pub fn nvme_controller_count() -> usize {
     NVME_CONTROLLERS.lock().len()
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 关机 — 关闭所有存储控制器
 /// # Errors
 /// 任一存储控制器关闭失败时返回 Err。
@@ -635,11 +662,7 @@ pub fn nvme_read_identify_controller(vaddr: u64) -> Option<(u32, [u8; 40])> {
     unsafe {
         let nn = core::ptr::read_volatile((vaddr as *const u32).add(129)); // offset 516/4=129
         let mut model = [0u8; 40];
-        core::ptr::copy_nonoverlapping(
-            (vaddr as *const u8).add(24),
-            model.as_mut_ptr(),
-            40,
-        );
+        core::ptr::copy_nonoverlapping((vaddr as *const u8).add(24), model.as_mut_ptr(), 40);
         Some((nn, model))
     }
 }
@@ -774,7 +797,10 @@ pub fn ahci_copy_from_dma(dst: *mut u8, src_vaddr: u64, len: usize) {
 /// 填充 AHCI Command Header (slot 0)
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 pub fn ahci_fill_cmd_header(
     cmd_list_virt: u64,
     slot: u32,
@@ -787,8 +813,7 @@ pub fn ahci_fill_cmd_header(
     // SAFETY: cmd_list_virt 由 DMA 分配保证有效; slot < CMD_SLOTS
     unsafe {
         let hdr = (cmd_list_virt as *mut ahci::AhciCommandHeader).add(slot as usize);
-        let flags: u32 = fis_len_dwords
-            | (if is_write { 1 << 6 } else { 0 });
+        let flags: u32 = fis_len_dwords | (if is_write { 1 << 6 } else { 0 });
         let dw0_val = flags | u32::from(prdt_len);
         let ctba_val = cmd_table_phys as u32;
         let ctbau_val = (cmd_table_phys >> 32) as u32;
@@ -816,7 +841,13 @@ pub fn ahci_fill_h2d_fis(cmd_table_virt: u64, fis_src: usize, fis_size: usize) {
 /// 填充 AHCI PRDT entry (数据缓冲区物理地址 + 字节数)
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-pub fn ahci_fill_prdt(cmd_table_virt: u64, entry_index: usize, data_phys: u64, byte_count: u32, ioc: bool) {
+pub fn ahci_fill_prdt(
+    cmd_table_virt: u64,
+    entry_index: usize,
+    data_phys: u64,
+    byte_count: u32,
+    ioc: bool,
+) {
     // SAFETY: cmd_table_virt 由 DMA 分配保证有效; entry_index < 8
     unsafe {
         let table = cmd_table_virt as *mut ahci::AhciCommandTable;

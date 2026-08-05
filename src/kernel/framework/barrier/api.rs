@@ -79,11 +79,7 @@ pub extern "C" fn recovery_test_rollback(domain_id: u64, crash_fingerprint: u64)
     let tick = crate::kernel::framework::tick_query::current_tick();
     let mgr = super::RECOVERY_MANAGER.lock();
     let rollbacks = mgr.cascade_rollback(domain_id, tick, crash_fingerprint);
-    if rollbacks > 0 {
-        0
-    } else {
-        -1
-    }
+    if rollbacks > 0 { 0 } else { -1 }
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -199,8 +195,14 @@ pub fn recovery_domain_set_cbs(
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
     if let Some(dom) = mgr.find(domain_id) {

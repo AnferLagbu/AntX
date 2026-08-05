@@ -62,7 +62,7 @@ pub fn aslr_pie_base() -> u64 {
 
 #[cfg(feature = "kernel_test")]
 fn test_aslr_constants() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // ASLR 偏移必须是页对齐的
     check!(PAGE_SIZE > 0, "PAGE_SIZE > 0");
     check!(USER_STACK_TOP > USER_STACK_SIZE, "stack_top > stack_size");
@@ -77,7 +77,7 @@ fn test_aslr_constants() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_aslr_random_offset_range() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // 多次调用应产生不同偏移 (概率性测试, 可能偶尔失败)
     let o1 = aslr_random_offset(8);
     let o2 = aslr_random_offset(8);
@@ -93,7 +93,7 @@ fn test_aslr_random_offset_range() -> crate::kernel::framework::tests::TestResul
 
 #[cfg(feature = "kernel_test")]
 fn test_aslr_stack_top_range() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     let top = aslr_stack_top();
     // 栈顶应低于 USER_STACK_TOP
     check!(top <= USER_STACK_TOP, "stack_top <= USER_STACK_TOP");
@@ -106,7 +106,7 @@ fn test_aslr_stack_top_range() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_aslr_pie_base_range() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     let base = aslr_pie_base();
     // PIE 基址应 >= USER_PIE_BASE
     check!(base >= USER_PIE_BASE, "PIE base >= USER_PIE_BASE");

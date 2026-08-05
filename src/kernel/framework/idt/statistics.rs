@@ -12,9 +12,8 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::types::{InterruptFrame, IRQ_BASE};
+use super::types::{IRQ_BASE, InterruptFrame};
 use crate::kernel::framework::sync::IrqSpinLock;
-
 
 use crate::kernel::framework::sync::OnceLock;
 /// 中断事件记录 (用于历史追踪)

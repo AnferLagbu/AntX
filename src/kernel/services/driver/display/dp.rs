@@ -26,7 +26,7 @@ use crate::kernel::services::error::KernelError;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::hdmi::{lookup_dmt_timing, VideoMode, VideoTiming};
+use super::hdmi::{VideoMode, VideoTiming, lookup_dmt_timing};
 
 // ============================================================================
 // DisplayPort 常量定义
@@ -98,7 +98,10 @@ pub const REQUIRED_IOMEM_SIZE: usize = 0x312;
 /// 当 `size < REQUIRED_IOMEM_SIZE` 时编译期 panic, 提示 `IoMem size must be >= DpController::REQUIRED_IOMEM_SIZE`。
 #[inline]
 pub const fn assert_iomem_size_at_least(size: usize) {
-    assert!(size >= REQUIRED_IOMEM_SIZE, "IoMem size must be >= DpController::REQUIRED_IOMEM_SIZE");
+    assert!(
+        size >= REQUIRED_IOMEM_SIZE,
+        "IoMem size must be >= DpController::REQUIRED_IOMEM_SIZE"
+    );
 }
 
 /// DP HPD 状态位 (bit 0)
@@ -241,8 +244,7 @@ impl DpIo {
     ///
     /// 当从 PCI BAR 映射物理地址失败时返回 [`KernelError::Io`]。
     pub fn new(phys: PhysAddr, len: usize) -> Result<Self, KernelError> {
-        let mmio = IoMem::from_pci_bar(phys, len, "dp-bar0")
-            .map_err(|_| KernelError::Io)?;
+        let mmio = IoMem::from_pci_bar(phys, len, "dp-bar0").map_err(|_| KernelError::Io)?;
         Ok(Self { mmio })
     }
 
@@ -260,35 +262,50 @@ impl DpIo {
 
     /// 读取 8 位寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn read8(&self, reg: u32) -> u8 {
         self.mmio.read_u8(reg as usize)
     }
 
     /// 写入 8 位寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn write8(&self, reg: u32, val: u8) {
         self.mmio.write_u8(reg as usize, val);
     }
 
     /// 读取 16 位寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn read16(&self, reg: u32) -> u16 {
         self.mmio.read_u16(reg as usize)
     }
 
     /// 写入 16 位寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn write16(&self, reg: u32, val: u16) {
         self.mmio.write_u16(reg as usize, val);
     }
 
     /// 读取 32 位寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn read32(&self, reg: u32) -> u32 {
         self.mmio.read_u32(reg as usize)
     }
@@ -315,7 +332,10 @@ pub enum LinkRate {
 }
 
 impl LinkRate {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 返回链路速率对应的带宽 (10 Mbps 为单位, 即 162 = 1.62 Gbps)
     pub fn bandwidth_gbps(&self) -> u32 {
         match self {
@@ -428,10 +448,8 @@ impl Dpcd {
         }
 
         let revision = data[0];
-        let max_link_rate =
-            LinkRate::from_u8(data[1]).ok_or(DpError::InvalidParameter)?;
-        let max_lane_count =
-            LaneCount::from_u8(data[2] & 0x1F).ok_or(DpError::InvalidParameter)?;
+        let max_link_rate = LinkRate::from_u8(data[1]).ok_or(DpError::InvalidParameter)?;
+        let max_lane_count = LaneCount::from_u8(data[2] & 0x1F).ok_or(DpError::InvalidParameter)?;
 
         Ok(Self {
             revision,
@@ -599,12 +617,7 @@ impl DpController {
     }
 
     /// AUX 真实硬件读事务 (DISPLAY-2.5) — 通过 `DpIo` 安全代理, 无 unsafe.
-    fn aux_read_via_mmio(
-        &self,
-        io: &DpIo,
-        address: u16,
-        length: u8,
-    ) -> Result<Vec<u8>, DpError> {
+    fn aux_read_via_mmio(&self, io: &DpIo, address: u16, length: u8) -> Result<Vec<u8>, DpError> {
         // 1. 等待控制器空闲
         self.aux_wait_not_busy(io)?;
 
@@ -613,8 +626,7 @@ impl DpController {
         io.write8(AUX_DAT0_REG_OFFSET + 1, ((address >> 8) & 0x0F) as u8);
 
         // 3. 构造 CMD 寄存器值: bit 0 = start, bit 1-3 = command (5 = Read)
-        let cmd_val: u8 =
-            AUX_CMD_START_BIT | ((AuxCommand::Read as u8) << AUX_CMD_COMMAND_SHIFT);
+        let cmd_val: u8 = AUX_CMD_START_BIT | ((AuxCommand::Read as u8) << AUX_CMD_COMMAND_SHIFT);
         io.write8(AUX_CMD_REG_OFFSET, cmd_val);
 
         let _ = length;
@@ -667,8 +679,14 @@ impl DpController {
         Ok(data)
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// AUX 无硬件 fallback 读取 (保持原行为, 兼容 QEMU).
     fn aux_read_fallback(&mut self, address: u16, length: u8) -> Result<Vec<u8>, DpError> {
         let mut data = vec![0u8; length as usize];
@@ -716,12 +734,7 @@ impl DpController {
     }
 
     /// AUX 真实硬件写事务 (DISPLAY-2.5) — 通过 `DpIo` 安全代理, 无 unsafe.
-    fn aux_write_via_mmio(
-        &self,
-        io: &DpIo,
-        address: u16,
-        data: &[u8],
-    ) -> Result<(), DpError> {
+    fn aux_write_via_mmio(&self, io: &DpIo, address: u16, data: &[u8]) -> Result<(), DpError> {
         // 1. 等待控制器空闲
         self.aux_wait_not_busy(io)?;
 
@@ -748,8 +761,7 @@ impl DpController {
         }
 
         // 4. 构造 CMD 寄存器值: bit 0 = start, bit 1-3 = command (4 = Write)
-        let cmd_val: u8 =
-            AUX_CMD_START_BIT | ((AuxCommand::Write as u8) << AUX_CMD_COMMAND_SHIFT);
+        let cmd_val: u8 = AUX_CMD_START_BIT | ((AuxCommand::Write as u8) << AUX_CMD_COMMAND_SHIFT);
         io.write8(AUX_CMD_REG_OFFSET, cmd_val);
 
         // 5. 轮询 STA 寄存器等待 reply_ready
@@ -778,7 +790,10 @@ impl DpController {
         Ok(())
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 等待 AUX 控制器进入空闲状态 (busy == 0).
     fn aux_wait_not_busy(&self, io: &DpIo) -> Result<(), DpError> {
         let mut elapsed_iters: usize = 0;
@@ -868,7 +883,11 @@ impl DpController {
     ///
     /// 真实硬件: 通过 AUX 读 DPCD 状态寄存器, 超时 ~10 ms.
     /// 无硬件 fallback: 模拟训练立即成功 (兼容 QEMU/QEMU+bochs-vbe 开发环境).
-    fn training_phase1(&mut self, link_rate: LinkRate, lane_count: LaneCount) -> Result<(), DpError> {
+    fn training_phase1(
+        &mut self,
+        link_rate: LinkRate,
+        lane_count: LaneCount,
+    ) -> Result<(), DpError> {
         // 1. 设置链路速率
         self.aux_write(aux_address::LINK_BW_SET, &[link_rate as u8])?;
 
@@ -889,7 +908,10 @@ impl DpController {
         Ok(())
     }
 
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+    #[expect(
+        clippy::no_effect_underscore_binding,
+        reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+    )]
     /// 轮询 LANE 状态寄存器直到训练完成 (DISPLAY-2.6).
     ///
     /// 读取 `LANE0_1_STATUS` + `LANE2_3_STATUS` (4-lane 时), 等待所有活动 lane 报告
@@ -903,7 +925,10 @@ impl DpController {
     ) -> Result<(), DpError> {
         let mut elapsed_iters: usize = 0;
         // 单次迭代 ~50 spin_loops ≈ 1-2 µs, 10 ms = ~5_000 iters
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const MAX_TRAINING_ITERS: usize = 5_000;
 
         loop {
@@ -934,8 +959,7 @@ impl DpController {
 
             if trained_2lanes {
                 // 读取接收器请求的调整 (用于 phase 2 前的电压/预加重调整)
-                let adjust01 =
-                    self.aux_read_via_mmio(io, aux_address::ADJUST_REQ_LANE0_1, 1)?;
+                let adjust01 = self.aux_read_via_mmio(io, aux_address::ADJUST_REQ_LANE0_1, 1)?;
                 let _adjust = adjust01[0]; // 真实硬件应据此调整 transmitter swing/pre-emphasis
                 if matches!(lane_count, LaneCount::Four) {
                     // 4-lane 时还需读取 LANE2/3 的调整请求
@@ -964,7 +988,11 @@ impl DpController {
     ///
     /// 真实硬件: 通过 AUX 读 DPCD 0x0206 状态寄存器, 超时 ~10 ms.
     /// 无硬件 fallback: 模拟训练立即成功 (兼容 QEMU/QEMU+bochs-vbe 开发环境).
-    fn training_phase2(&mut self, _link_rate: LinkRate, _lane_count: LaneCount) -> Result<(), DpError> {
+    fn training_phase2(
+        &mut self,
+        _link_rate: LinkRate,
+        _lane_count: LaneCount,
+    ) -> Result<(), DpError> {
         // 1. 设置训练模式 2 (TPS2)
         //    0x22 = bit 1 (TPS2 selected) | bit 5 (training enabled, disable scrambler)
         self.aux_write(aux_address::TRAINING_PTN_SET, &[0x22])?;
@@ -991,7 +1019,10 @@ impl DpController {
     fn poll_lane_align_status(&self, io: &DpIo) -> Result<(), DpError> {
         let mut elapsed_iters: usize = 0;
         // 单次迭代 ~50 spin_loops ≈ 1-2 µs, 10 ms = ~5_000 iters
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const MAX_TRAINING_ITERS: usize = 5_000;
 
         loop {
@@ -1000,8 +1031,7 @@ impl DpController {
             }
 
             // 读取 LANE_ALIGN_STATUS_UPDATED 寄存器
-            let status =
-                self.aux_read_via_mmio(io, aux_address::LANE_ALIGN_STATUS_UPDATED, 1)?;
+            let status = self.aux_read_via_mmio(io, aux_address::LANE_ALIGN_STATUS_UPDATED, 1)?;
             let align = status[0];
 
             // bit 0 = LANE_ALIGN_STATUS_UPDATED (1 = 已对齐)
@@ -1063,8 +1093,14 @@ impl DpController {
         Ok(())
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 派生 DP 视频时序 (复用 `hdmi::lookup_dmt_timing` + 简化公式 fallback).
     ///
     /// 注: 此方法**不依赖** `hdmi::derive_video_timing` (它是 `pub`),
@@ -1086,8 +1122,8 @@ impl DpController {
         };
 
         let h_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
-            let h_total_u32 = (mode.pixel_clock_khz * 1000)
-                / (u32::from(v_total) * u32::from(mode.refresh_rate));
+            let h_total_u32 =
+                (mode.pixel_clock_khz * 1000) / (u32::from(v_total) * u32::from(mode.refresh_rate));
             h_total_u32.max(u32::from(h_active) + 1) as u16
         } else {
             h_active + 200
@@ -1111,9 +1147,18 @@ impl DpController {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 写入 DP 时序 + sync + output enable 寄存器 — 通过 `DpIo` 安全代理, 无 unsafe.
     fn write_dp_timing_registers(
         &self,
@@ -1132,8 +1177,15 @@ impl DpController {
         io.write16(DP_V_SYNC_PW_REG_OFFSET, timing.v_sync_pulse_width);
 
         // 写 sync polarity (8-bit, bit 0=H, bit 1=V)
-        let sync_pol: u8 = if mode.flags.hsync_positive { DP_SYNC_POL_H_BIT } else { 0 }
-            | if mode.flags.vsync_positive { DP_SYNC_POL_V_BIT } else { 0 };
+        let sync_pol: u8 = if mode.flags.hsync_positive {
+            DP_SYNC_POL_H_BIT
+        } else {
+            0
+        } | if mode.flags.vsync_positive {
+            DP_SYNC_POL_V_BIT
+        } else {
+            0
+        };
         io.write8(DP_SYNC_POL_REG_OFFSET, sync_pol);
 
         // 写 output enable (8-bit, bit 0=enable)
@@ -1142,7 +1194,10 @@ impl DpController {
         Ok(())
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 获取设备名称
     pub fn name(&self) -> &'static str {
         "DisplayPort Controller"
@@ -1363,7 +1418,8 @@ mod tests {
         let mut ctrl = DpController::new(0xFE000000);
         ctrl.detect_hot_plug();
         ctrl.training_state = TrainingState::Disabled;
-        ctrl.aux_write(aux_address::TRAINING_PTN_SET, &[0x21]).unwrap();
+        ctrl.aux_write(aux_address::TRAINING_PTN_SET, &[0x21])
+            .unwrap();
         let data = ctrl.aux_read(0x0000, 16).unwrap();
         assert_eq!(data[1], LinkRate::Hbr2 as u8);
     }
@@ -1378,9 +1434,18 @@ mod tests {
     #[test]
     fn test_dpcd_lane_status_addresses_distinct() {
         assert_ne!(aux_address::LANE0_1_STATUS, aux_address::LANE2_3_STATUS);
-        assert_ne!(aux_address::LANE0_1_STATUS, aux_address::LANE_ALIGN_STATUS_UPDATED);
-        assert_ne!(aux_address::LANE2_3_STATUS, aux_address::LANE_ALIGN_STATUS_UPDATED);
-        assert_ne!(aux_address::ADJUST_REQ_LANE0_1, aux_address::ADJUST_REQ_LANE2_3);
+        assert_ne!(
+            aux_address::LANE0_1_STATUS,
+            aux_address::LANE_ALIGN_STATUS_UPDATED
+        );
+        assert_ne!(
+            aux_address::LANE2_3_STATUS,
+            aux_address::LANE_ALIGN_STATUS_UPDATED
+        );
+        assert_ne!(
+            aux_address::ADJUST_REQ_LANE0_1,
+            aux_address::ADJUST_REQ_LANE2_3
+        );
         assert_ne!(aux_address::LANE0_1_STATUS, aux_address::LINK_BW_SET);
         assert_ne!(aux_address::LANE0_1_STATUS, aux_address::LANE_COUNT_SET);
         assert_ne!(aux_address::TRAINING_PTN_SET, aux_address::LANE0_1_STATUS);
@@ -1506,7 +1571,11 @@ mod tests {
             },
         };
         let result = ctrl.set_video_mode(mode);
-        assert!(result.is_ok(), "fallback set_video_mode 必须成功: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "fallback set_video_mode 必须成功: {:?}",
+            result
+        );
     }
 
     #[test]

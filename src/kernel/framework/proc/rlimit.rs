@@ -10,20 +10,16 @@
 
 // Re-export services 层的策略主体 — 保持调用方路径兼容
 pub use crate::kernel::services::proc::rlimit::{
-    Rlimit, RlimitTable,
-    RLIMIT_CPU, RLIMIT_FSIZE, RLIMIT_DATA, RLIMIT_STACK, RLIMIT_CORE,
-    RLIMIT_RSS, RLIMIT_NPROC, RLIMIT_NOFILE, RLIMIT_MEMLOCK, RLIMIT_AS,
-    RLIMIT_LOCKS, RLIMIT_SIGPENDING, RLIMIT_MSGQUEUE, RLIMIT_NICE,
-    RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_NLIMITS,
-    RLIM_INFINITY,
-    check_nofile_exceeded, check_as_exceeded, check_nproc_exceeded,
-    get_stack_limit, get_nofile_limit,
-    get_memlock_limit, check_memlock_exceeded,
+    RLIM_INFINITY, RLIMIT_AS, RLIMIT_CORE, RLIMIT_CPU, RLIMIT_DATA, RLIMIT_FSIZE, RLIMIT_LOCKS,
+    RLIMIT_MEMLOCK, RLIMIT_MSGQUEUE, RLIMIT_NICE, RLIMIT_NLIMITS, RLIMIT_NOFILE, RLIMIT_NPROC,
+    RLIMIT_RSS, RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_SIGPENDING, RLIMIT_STACK, Rlimit, RlimitTable,
+    check_as_exceeded, check_memlock_exceeded, check_nofile_exceeded, check_nproc_exceeded,
+    get_memlock_limit, get_nofile_limit, get_stack_limit,
 };
 
+use crate::kernel::framework::errno::Errno;
 use crate::kernel::framework::proc::{process_get_current_pid, process_with};
 use crate::kernel::framework::userptr;
-use crate::kernel::framework::errno::Errno;
 
 // ============================================================================
 // 系统调用实现 (含 unsafe 用户指针操作, 必须留在 framework)

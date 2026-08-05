@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use super::types::{ThreadPriority, ThreadState, SCHED_LEVEL_2_QUANTUM};
+use super::types::{SCHED_LEVEL_2_QUANTUM, ThreadPriority, ThreadState};
 
 pub use crate::kernel::framework::config::{MAX_THREADS, MAX_THREADS_PER_PROCESS};
 
@@ -86,7 +86,10 @@ impl Thread {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// ✅ 安全的状态设置 (带合法性检查)
     ///
     /// # Errors
@@ -116,8 +119,10 @@ impl Thread {
         self.state_change_count.fetch_add(1, Ordering::Relaxed);
 
         if new_state == ThreadState::Frozen {
-            self.frozen_since
-                .store(crate::kernel::framework::timer::get_ticks(), Ordering::Relaxed);
+            self.frozen_since.store(
+                crate::kernel::framework::timer::get_ticks(),
+                Ordering::Relaxed,
+            );
         }
 
         Ok(())
@@ -218,11 +223,20 @@ impl ThreadManager {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn init(&self) {}
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     pub fn create_thread(
         &self,
         pid: u32,
@@ -271,18 +285,17 @@ impl ThreadManager {
 
     pub fn get_current_thread(&self) -> Option<u64> {
         let id = self.current_thread.load(Ordering::SeqCst);
-        if id == 0 {
-            None
-        } else {
-            Some(id)
-        }
+        if id == 0 { None } else { Some(id) }
     }
 
     pub fn set_current(&self, tid: u32) {
         self.current_thread.store(u64::from(tid), Ordering::SeqCst);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn get_thread(&self, tid: u32) -> Option<*mut Thread> {
         THREAD_TABLE.get(tid)
     }

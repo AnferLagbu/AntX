@@ -5,18 +5,14 @@
 
 // 重导出强类型
 pub use crate::kernel::framework::credo::{
-    Ed25519PubKey, TrustRole, TrustEntry, VerifyResult,
-    SecureBootSubsystem,
-    PcrIndex, TpmSubsystem, TpmSealedData, TpmQuote,
-    SHA256_LEN, ED25519_PUBKEY_LEN, ED25519_SIG_LEN,
-    PCR_COUNT, MAX_TRUST_CHAIN_DEPTH,
+    ED25519_PUBKEY_LEN, ED25519_SIG_LEN, Ed25519PubKey, MAX_TRUST_CHAIN_DEPTH, PCR_COUNT, PcrIndex,
+    SHA256_LEN, SecureBootSubsystem, TpmQuote, TpmSealedData, TpmSubsystem, TrustEntry, TrustRole,
+    VerifyResult,
 };
 
 use crate::kernel::framework::credo::{
-    secure_boot_init, secure_boot_is_initialized, secure_boot_subsystem,
-    tpm_init, tpm_is_initialized, tpm_subsystem,
-    sys_secure_boot, sys_tpm,
-    sha256_hash, sha256_extend,
+    secure_boot_init, secure_boot_is_initialized, secure_boot_subsystem, sha256_extend,
+    sha256_hash, sys_secure_boot, sys_tpm, tpm_init, tpm_is_initialized, tpm_subsystem,
 };
 
 /// 初始化安全启动

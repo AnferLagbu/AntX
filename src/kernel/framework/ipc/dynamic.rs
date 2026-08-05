@@ -17,10 +17,12 @@
 //! 旧版 `IpcNamespace` 保持不变（向后兼容）。
 //! 新代码使用 `DynIpcNamespace`，通过 FFI 桥接暴露给 C。
 
-use alloc::vec::Vec;
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use super::types::{
+    IpcId, Message, MsgQueue, Pipe, SHM_MAX_SIZE, Semaphore, ShmSegment, WaitQueue,
+};
 use crate::kernel::framework::mm::PAGE_SIZE;
-use super::types::{Message, Pipe, ShmSegment, MsgQueue, Semaphore, IpcId, SHM_MAX_SIZE, WaitQueue};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use alloc::vec::Vec;
 
 /// === Message 原始指针特权封装 (Framekernel 模式) ===
 ///
@@ -57,8 +59,8 @@ pub(crate) mod raw {
     }
 }
 
-use raw::MessageRef;
 use crate::kernel::framework::racy_cell::RacyCell;
+use raw::MessageRef;
 
 pub struct DynIpcNamespace {
     pub pipes: Mutex<Vec<Pipe>>,
@@ -172,7 +174,10 @@ impl DynIpcNamespace {
 
     // ─── Message Queue ─────────────────────────────────────
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 创建消息队列并返回其 IPC ID。
     /// # Errors
     /// 队列创建失败时返回 Err。
@@ -228,7 +233,10 @@ impl DynIpcNamespace {
 
     // ─── Semaphore ─────────────────────────────────────────
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 创建信号量并返回其 IPC ID。
     /// # Errors
     /// 信号量创建失败时返回 Err。

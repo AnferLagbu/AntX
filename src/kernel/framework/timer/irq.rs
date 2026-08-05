@@ -22,7 +22,6 @@
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::idt::InterruptFrame;
 
-
 /// Timer IRQ0 中断处理程序 (仅 `x86_64`)
 /// aarch64 定时器中断由 exception.rs 的 `irq_handler_el1` 处理
 #[cfg(target_arch = "x86_64")]
@@ -118,7 +117,7 @@ mod tests {
 
 #[cfg(all(feature = "kernel_test", target_arch = "x86_64"))]
 pub fn register_timer_irq_tests() {
-    use crate::kernel::framework::tests::{runner, TestFn, TestResult};
+    use crate::kernel::framework::tests::{TestFn, TestResult, runner};
 
     fn timer_irq0_handler_signature() -> TestResult {
         let _handler: extern "C" fn(*mut InterruptFrame) = timer_irq0_handler;

@@ -11,16 +11,15 @@
 
 use core::sync::atomic::Ordering;
 
-use super::process::{Process, PROCESS_TABLE};
+use super::process::{PROCESS_TABLE, Process};
 use super::scheduler::SCHEDULER;
 use super::session::SESSION_MANAGER;
-use super::types::{ProcessId, Pid, ProcessState, BlockReason};
+use super::types::{BlockReason, Pid, ProcessId, ProcessState};
 use super::user_proc::USER_PROC_MANAGER;
 pub use super::user_proc::proc_alloc_pid;
 use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::mm::{
-    get_kernel_pml4, vmm_clone_user_page_table_cow,
-    vmm_destroy_page_table, vmm_switch_page_table,
+    get_kernel_pml4, vmm_clone_user_page_table_cow, vmm_destroy_page_table, vmm_switch_page_table,
 };
 use crate::kernel::framework::racy_cell::RacyCell;
 use crate::kernel::framework::timer::timer_get_ticks;
@@ -31,7 +30,10 @@ use crate::kernel::framework::timer::timer_get_ticks;
 // 的 `unsafe` 代码。本模块的其余部分 (`api.rs` 顶层) 保持 100% 安全 Rust,
 // 通过 `raw::*` 安全函数访问底层功能。
 pub mod raw {
-    use super::{Process, ProcessId, vmm_destroy_page_table, vmm_switch_page_table, vmm_clone_user_page_table_cow};
+    use super::{
+        Process, ProcessId, vmm_clone_user_page_table_cow, vmm_destroy_page_table,
+        vmm_switch_page_table,
+    };
 
     /// 从裸指针读取 `&Process`。
     ///
@@ -52,8 +54,14 @@ pub mod raw {
         unsafe { &mut *ptr }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 分配并构造一个 `Process` (用于 fork 创建子进程)。
     ///
     /// # Safety (内部)
@@ -130,10 +138,8 @@ pub mod raw {
 
 // === 当前进程状态 (供 api.rs 与本模块共享) ===
 
-static CURRENT_PROCESS_PTR: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
-static INIT_PROCESS_CREATED: core::sync::atomic::AtomicU32 =
-    core::sync::atomic::AtomicU32::new(0);
+static CURRENT_PROCESS_PTR: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+static INIT_PROCESS_CREATED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 /// TD-10: 当前 CPU 是否处于内核态 (syscall / 中断 / 异常).
 ///
@@ -142,8 +148,7 @@ static INIT_PROCESS_CREATED: core::sync::atomic::AtomicU32 =
 ///
 /// 单一全局变量, 单核模型. 调度器每 tick 在 `tick_accounting` 读取,
 /// syscall dispatch 入口设 1, 出口设 0.
-static CURRENT_IN_KERN: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+static CURRENT_IN_KERN: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 /// TD-10: 设置当前 CPU 是否处于内核态.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -221,10 +226,7 @@ fn create_init_process() {
     });
     // SAFETY: klog_ffi_info is unsafe extern "C". msg is a valid static byte slice.
     raw::klog_info(b"[PROC] Init process created (pid=1)");
-    CURRENT_PROCESS_PTR.store(
-        C_CURRENT_PROCESS.as_ptr() as u64,
-        Ordering::SeqCst,
-    );
+    CURRENT_PROCESS_PTR.store(C_CURRENT_PROCESS.as_ptr() as u64, Ordering::SeqCst);
 }
 
 #[unsafe(no_mangle)]
@@ -310,7 +312,10 @@ where
     PROCESS_TABLE.for_each(f);
 }
 
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 /// 获取进程的原始指针 (用于需要直接访问进程的场景).
 pub fn process_get_raw(pid: u32) -> Option<*const super::process::Process> {
     PROCESS_TABLE.get(pid).map(|p| p as *const _)
@@ -328,7 +333,10 @@ pub fn process_insert(process: *mut super::process::Process) -> bool {
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(
+    clippy::used_underscore_binding,
+    reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+)]
 pub extern "C" fn process_get_by_pid(_pid: u32) -> u64 {
     if u64::from(_pid) == C_CURRENT_PROCESS.map(|p| p.pid) {
         C_CURRENT_PROCESS.as_ptr() as u64
@@ -344,7 +352,9 @@ pub extern "C" fn process_get_current_pwm() -> u64 {
     if pid == 0 {
         return 0;
     }
-    PROCESS_TABLE.with_process(pid, super::process::Process::get_pwm).unwrap_or(0)
+    PROCESS_TABLE
+        .with_process(pid, super::process::Process::get_pwm)
+        .unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -353,7 +363,9 @@ pub extern "C" fn process_get_pwm_by_pid(pid: u32) -> u64 {
     if pid == 0 {
         return 0;
     }
-    PROCESS_TABLE.with_process(pid, super::process::Process::get_pwm).unwrap_or(0)
+    PROCESS_TABLE
+        .with_process(pid, super::process::Process::get_pwm)
+        .unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -466,8 +478,14 @@ pub extern "C" fn proc_create_internal(name: *const u8, parent_pid: Pid, pwm: u6
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn proc_create_user(
     path: *const u8,
     argv: *const *const u8,
@@ -540,8 +558,14 @@ pub extern "C" fn proc_create_user(
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn proc_exec_replace(path: *const u8, argv: *const *const u8, argc: u32) -> i32 {
     if path.is_null() {
         return -1;
@@ -579,7 +603,10 @@ pub extern "C" fn proc_exec_replace(path: *const u8, argv: *const *const u8, arg
         })
         .flatten();
 
-    let (new_cr3, new_entry, new_user_stack, new_stack_bottom) = if let Some(info) = new_addr_space { info } else {
+    let (new_cr3, new_entry, new_user_stack, new_stack_bottom) = if let Some(info) = new_addr_space
+    {
+        info
+    } else {
         USER_PROC_MANAGER.destroy_by_pid(new_pid_u32);
         PROCESS_TABLE.remove_and_free(new_pid_u32);
         return -1;
@@ -690,21 +717,36 @@ pub extern "C" fn proc_sleep_ms(ms: u64) {
 /// fork 系统调用实现 (COW 页表克隆 + namespace 继承)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 pub extern "C" fn sys_fork() -> Pid {
     let parent_pid = SCHEDULER.current().unwrap_or(0);
-    if parent_pid == 0 { return 0; }
-    let parent_cr3 = PROCESS_TABLE.with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst)).unwrap_or(0);
-    if parent_cr3 == 0 { return 0; }
+    if parent_pid == 0 {
+        return 0;
+    }
+    let parent_cr3 = PROCESS_TABLE
+        .with_process(parent_pid, |p| p.cr3.load(Ordering::SeqCst))
+        .unwrap_or(0);
+    if parent_cr3 == 0 {
+        return 0;
+    }
     let child_pid = proc_alloc_pid();
-    if child_pid == 0 { return 0; }
+    if child_pid == 0 {
+        return 0;
+    }
     let child_ptr = raw::alloc_process(child_pid, "", Some(ProcessId(parent_pid)));
     let child = raw::process_ref_mut(child_ptr);
 
     // COW 页表克隆: 父子共享物理页, 写入时触发 page fault 复制
     // KPTI 修复: page fault handler 现在使用 get_user_pml4() 获取正确的用户页表
-    let child_cr3 = crate::kernel::framework::mm::cow::clone_user_page_table_cow(parent_cr3).unwrap_or(parent_cr3);
+    let child_cr3 = crate::kernel::framework::mm::cow::clone_user_page_table_cow(parent_cr3)
+        .unwrap_or(parent_cr3);
     child.cr3.store(child_cr3, Ordering::SeqCst);
     child.pwm.store(0, Ordering::SeqCst);
     // rlimit
@@ -713,18 +755,31 @@ pub extern "C" fn sys_fork() -> Pid {
     }
     // session/pgid/canary
     if let Some((sid, pgid, canary)) = PROCESS_TABLE.with_process(parent_pid, |p| {
-        (p.session_id.load(Ordering::SeqCst), p.pgid.load(Ordering::SeqCst), p.stack_canary.load(Ordering::SeqCst))
+        (
+            p.session_id.load(Ordering::SeqCst),
+            p.pgid.load(Ordering::SeqCst),
+            p.stack_canary.load(Ordering::SeqCst),
+        )
     }) {
         child.session_id.store(sid, Ordering::SeqCst);
-        child.pgid.store(if pgid == 0 { parent_pid } else { pgid }, Ordering::SeqCst);
+        child
+            .pgid
+            .store(if pgid == 0 { parent_pid } else { pgid }, Ordering::SeqCst);
         child.stack_canary.store(canary, Ordering::SeqCst);
     }
     // seccomp
     if let Some((mode, nnp, filters)) = PROCESS_TABLE.with_process(parent_pid, |p| {
-        (p.seccomp.get_mode(), p.seccomp.is_no_new_privs(), p.seccomp.filters.lock().clone())
+        (
+            p.seccomp.get_mode(),
+            p.seccomp.is_no_new_privs(),
+            p.seccomp.filters.lock().clone(),
+        )
     }) {
         child.seccomp.mode.store(mode as u8, Ordering::SeqCst);
-        child.seccomp.no_new_privs.store(u8::from(nnp), Ordering::SeqCst);
+        child
+            .seccomp
+            .no_new_privs
+            .store(u8::from(nnp), Ordering::SeqCst);
         *child.seccomp.filters.lock() = filters;
     }
     // namespace: 从父进程继承 (fork_from 仅 7 个 Arc::clone, 无锁交互)
@@ -735,15 +790,28 @@ pub extern "C" fn sys_fork() -> Pid {
         *child.namespaces.lock() = parent_ns;
     }
     // cgroup
-    if let Some(cg) = PROCESS_TABLE.with_process(parent_pid, |p| p.cgroup_id.load(Ordering::Acquire)) {
+    if let Some(cg) =
+        PROCESS_TABLE.with_process(parent_pid, |p| p.cgroup_id.load(Ordering::Acquire))
+    {
         child.cgroup_id.store(cg, Ordering::Release);
     }
     // 内核栈
-    if !child.allocate_kernel_stack() { raw::drop_boxed_process(child_ptr); return 0; }
-    if let Some(parent_kstack) = PROCESS_TABLE.with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst)) {
+    if !child.allocate_kernel_stack() {
+        raw::drop_boxed_process(child_ptr);
+        return 0;
+    }
+    if let Some(parent_kstack) =
+        PROCESS_TABLE.with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
+    {
         if parent_kstack != 0 {
-            raw::copy_kstack(child.kernel_stack.load(Ordering::SeqCst), parent_kstack, 65536);
-            crate::kernel::framework::proc::kernel_stack_write_canary(child.kernel_stack.load(Ordering::SeqCst));
+            raw::copy_kstack(
+                child.kernel_stack.load(Ordering::SeqCst),
+                parent_kstack,
+                65536,
+            );
+            crate::kernel::framework::proc::kernel_stack_write_canary(
+                child.kernel_stack.load(Ordering::SeqCst),
+            );
         }
     }
     // 上下文 RAX=0 (fork 返回值)
@@ -755,7 +823,9 @@ pub extern "C" fn sys_fork() -> Pid {
         child_ctx.rax = 0;
     }
     PROCESS_TABLE.insert(child as *const Process as *mut Process);
-    PROCESS_TABLE.with_process(parent_pid, |p| { p.children.lock().push(ProcessId(child_pid)); });
+    PROCESS_TABLE.with_process(parent_pid, |p| {
+        p.children.lock().push(ProcessId(child_pid));
+    });
     let _ = child.set_state_safe(ProcessState::Ready);
     SCHEDULER.add_to_run_queue(child_pid);
     child_pid
@@ -885,7 +955,8 @@ pub extern "C" fn proc_alarm(pid: u32, seconds: u32) -> u32 {
                 p.alarm_deadline
                     .store(now + u64::from(seconds) * hz, Ordering::SeqCst);
             }
-            p.alarm_prev_remaining.store(u64::from(prev), Ordering::SeqCst);
+            p.alarm_prev_remaining
+                .store(u64::from(prev), Ordering::SeqCst);
             prev
         })
         .unwrap_or(0);
@@ -1021,8 +1092,14 @@ pub extern "C" fn proc_check_itimer_real(pid: u32) -> i32 {
 /// POSIX getrusage(who, rusage) — 写回进程/子进程 user/sys 时间.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn proc_get_rusage(pid: u32, who: i32, out: *mut u8, out_len: u64) -> i32 {
     if out.is_null() || out_len < 32 {
         return -1;

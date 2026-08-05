@@ -2,15 +2,15 @@
 use crate::register_tests_inner;
 
 use super::check;
-use crate::kernel::framework::fs::hvfs::arc::{HvArc, HvArcKey, HvArcBufType};
+use crate::kernel::framework::fs::hvfs::arc::{HvArc, HvArcBufType, HvArcKey};
 use crate::kernel::framework::fs::hvfs::bp::{HvBlockPointer, HvCompType};
 use crate::kernel::framework::fs::hvfs::compress;
 use crate::kernel::framework::fs::hvfs::dataset::HvDataset;
-use crate::kernel::framework::fs::hvfs::dmu::{HvObjSet, HvObjType, HvDmuObject};
+use crate::kernel::framework::fs::hvfs::dmu::{HvDmuObject, HvObjSet, HvObjType};
 use crate::kernel::framework::fs::hvfs::snapshot::{HvSnapshot, HvSnapshotManager};
 use crate::kernel::framework::fs::hvfs::txg::HvTxg;
 use crate::kernel::framework::fs::hvfs::zap::HvZap;
-use crate::kernel::framework::tests::{runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, runner};
 
 fn test_dmu_objset_alloc() -> TestResult {
     let os = HvObjSet::new();
@@ -65,7 +65,10 @@ fn test_dmu_cow_preserves_old() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 fn test_zap_large_namespace() -> TestResult {
     let zap = HvZap::with_capacity(64);
     for i in 0..30u64 {

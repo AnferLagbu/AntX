@@ -45,8 +45,8 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use alloc::vec::Vec;
 // ============================================================================
 // 公共类型
 // ============================================================================
@@ -130,7 +130,8 @@ impl HrTimer {
         self.callback = callback;
         self.expiry_ns.store(0, Ordering::Relaxed);
         self.interval_ns.store(0, Ordering::Relaxed);
-        self.state.store(HrTimerState::Inactive as u64, Ordering::Relaxed);
+        self.state
+            .store(HrTimerState::Inactive as u64, Ordering::Relaxed);
         self.queue_seq.store(0, Ordering::Relaxed);
     }
 
@@ -144,7 +145,10 @@ impl HrTimer {
         self.interval_ns.load(Ordering::Acquire)
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 获取当前状态
     pub fn state(&self) -> HrTimerState {
         match self.state.load(Ordering::Acquire) {
@@ -245,8 +249,14 @@ pub fn is_hrtimer_ready() -> bool {
     HRTIMER_READY.load(Ordering::Acquire)
 }
 
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 /// 启动定时器 (绝对时间)
 ///
 /// 将定时器以绝对到期时间 `expiry_ns` 入队。
@@ -388,7 +398,9 @@ pub fn hrtimer_run_queues() {
 
         // 重新排序 (retain 可能打乱顺序)
         // SAFETY: `entry` 由调用方保证为有效指针; 只读访问
-        queue.sort_by_key(|entry| unsafe { (*entry.timer.as_ptr()).expiry_ns.load(Ordering::Acquire) });
+        queue.sort_by_key(|entry| unsafe {
+            (*entry.timer.as_ptr()).expiry_ns.load(Ordering::Acquire)
+        });
 
         expired
     };
@@ -547,7 +559,10 @@ pub fn hrtimer_sleep(delay_ns: u64) -> Result<(), ()> {
 
     // 闭包用 static 状态在 ISR (hrtimer 回调) 与调用方 (本函数) 之间传递完成信号.
     // SAFETY: SLEEP_FLAG 仅为本函数独占, 不会跨调用并发 (单线程执行模型).
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     static mut SLEEP_FLAG: AtomicBool = AtomicBool::new(false);
 
     let mut timer = HrTimer::uninit();
@@ -563,7 +578,10 @@ pub fn hrtimer_sleep(delay_ns: u64) -> Result<(), ()> {
     // 处理到期定时器, 触发回调 set SLEEP_FLAG=true.
     // SAFETY: SLEEP_FLAG 由本函数 set up, 此处仅 load 检查完成.
     let mut spins: u32 = 0;
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const SLEEP_WAIT_BOUND: u32 = 1_000_000_000; // ~1s @ 1GHz spin_loop
     unsafe {
         while !SLEEP_FLAG.load(Ordering::Acquire) {
@@ -690,7 +708,7 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 fn test_state_encoding() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     assert_eq_test!(HrTimerState::Inactive as u64, 0, "Inactive=0");
     assert_eq_test!(HrTimerState::Pending as u64, 1, "Pending=1");
     assert_eq_test!(HrTimerState::Running as u64, 2, "Running=2");
@@ -699,7 +717,7 @@ fn test_state_encoding() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_uninit_state() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test, check};
     let timer = HrTimer::uninit();
     assert_eq_test!(timer.state(), HrTimerState::Inactive, "state");
     assert_eq_test!(timer.expiry_ns(), 0, "expiry");
@@ -709,7 +727,7 @@ fn test_uninit_state() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_init_and_cancel() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test, check};
     static mut TEST_TIMER: HrTimer = HrTimer::uninit();
     // SAFETY: 测试单线程, 无竞争
     unsafe {
@@ -723,7 +741,7 @@ fn test_init_and_cancel() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_forward_periodic() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     let mut timer = HrTimer::uninit();
     timer.init(noop_callback);
     timer.interval_ns.store(1_000_000, Ordering::Release);
@@ -736,7 +754,7 @@ fn test_forward_periodic() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_mul_u64_div_basic() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     assert_eq_test!(mul_u64_div(100, 3, 100), 3, "100*3/100=3");
     assert_eq_test!(mul_u64_div(0, 100, 50), 0, "zero a");
     assert_eq_test!(mul_u64_div(100, 0, 50), 0, "zero b");
@@ -746,7 +764,7 @@ fn test_mul_u64_div_basic() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_clock_read() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // u64 类型即非负契约; 此测试只验证调用不 panic + 返回合理量级.
     let ns = hrtimer_clock_read();
     check!(ns < u64::MAX, "clock read bounded");
@@ -755,7 +773,7 @@ fn test_clock_read() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_queue_operations() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test, check};
     hrtimer_init();
     check!(is_hrtimer_ready(), "initialized");
     assert_eq_test!(hrtimer_pending_count(), 0, "empty queue");
@@ -782,7 +800,7 @@ fn test_queue_operations() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_periodic_restart() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     static mut T2: HrTimer = HrTimer::uninit();
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {

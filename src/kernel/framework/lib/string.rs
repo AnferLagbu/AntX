@@ -45,21 +45,23 @@
 /// # Safety
 /// 此函数通过 FFI 暴露给 C 代码使用
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn strlen(s: *const i8) -> usize { unsafe {
-    if s.is_null() {
-        return 0;
+pub unsafe extern "C" fn strlen(s: *const i8) -> usize {
+    unsafe {
+        if s.is_null() {
+            return 0;
+        }
+
+        let mut len = 0;
+        let mut ptr = s;
+
+        while *ptr != 0 {
+            len += 1;
+            ptr = ptr.add(1);
+        }
+
+        len
     }
-
-    let mut len = 0;
-    let mut ptr = s;
-
-    while *ptr != 0 {
-        len += 1;
-        ptr = ptr.add(1);
-    }
-
-    len
-}}
+}
 
 /// 计算字符串长度 (Rust 安全版本)
 ///
@@ -98,29 +100,31 @@ pub fn strlen_safe(s: &[i8]) -> usize {
 /// # Safety
 ///
 /// `src` 是指向以 NUL 结尾的 C 字符串的有效指针. `dst` 至少有 `max_len` 字节可写内存.
-pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 { unsafe {
-    if s1.is_null() || s2.is_null() {
-        if s1.is_null() && s2.is_null() {
-            return 0;
-        }
-        return if s1.is_null() { -1 } else { 1 };
-    }
-
-    let mut p1 = s1;
-    let mut p2 = s2;
-
-    loop {
-        let c1 = *p1;
-        let c2 = *p2;
-
-        if c1 == 0 || c2 == 0 || c1 != c2 {
-            return i32::from(c1 as u8) - i32::from(c2 as u8);
+pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 {
+    unsafe {
+        if s1.is_null() || s2.is_null() {
+            if s1.is_null() && s2.is_null() {
+                return 0;
+            }
+            return if s1.is_null() { -1 } else { 1 };
         }
 
-        p1 = p1.add(1);
-        p2 = p2.add(1);
+        let mut p1 = s1;
+        let mut p2 = s2;
+
+        loop {
+            let c1 = *p1;
+            let c2 = *p2;
+
+            if c1 == 0 || c2 == 0 || c1 != c2 {
+                return i32::from(c1 as u8) - i32::from(c2 as u8);
+            }
+
+            p1 = p1.add(1);
+            p2 = p2.add(1);
+        }
     }
-}}
+}
 
 /// 字符串比较（限制长度）(C 风格 FFI 接口)
 ///
@@ -139,37 +143,39 @@ pub unsafe extern "C" fn strcmp(s1: *const i8, s2: *const i8) -> i32 { unsafe {
 /// # Safety
 ///
 /// `src` 与 `dst` 均为有效指针. `dst` 至少有 `n` 字节可写内存. 两个区域不可重叠.
-pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 { unsafe {
-    if n == 0 {
-        return 0;
-    }
-
-    if s1.is_null() || s2.is_null() {
-        if s1.is_null() && s2.is_null() {
+pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 {
+    unsafe {
+        if n == 0 {
             return 0;
         }
-        return if s1.is_null() { -1 } else { 1 };
-    }
 
-    let mut p1 = s1;
-    let mut p2 = s2;
-    let mut remaining = n;
-
-    while remaining > 0 {
-        let c1 = *p1;
-        let c2 = *p2;
-
-        if c1 == 0 || c2 == 0 || c1 != c2 {
-            return i32::from(c1 as u8) - i32::from(c2 as u8);
+        if s1.is_null() || s2.is_null() {
+            if s1.is_null() && s2.is_null() {
+                return 0;
+            }
+            return if s1.is_null() { -1 } else { 1 };
         }
 
-        p1 = p1.add(1);
-        p2 = p2.add(1);
-        remaining -= 1;
-    }
+        let mut p1 = s1;
+        let mut p2 = s2;
+        let mut remaining = n;
 
-    0
-}}
+        while remaining > 0 {
+            let c1 = *p1;
+            let c2 = *p2;
+
+            if c1 == 0 || c2 == 0 || c1 != c2 {
+                return i32::from(c1 as u8) - i32::from(c2 as u8);
+            }
+
+            p1 = p1.add(1);
+            p2 = p2.add(1);
+            remaining -= 1;
+        }
+
+        0
+    }
+}
 
 /// 字符串拷贝 (C 风格 FFI 接口)
 ///
@@ -183,29 +189,31 @@ pub unsafe extern "C" fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32 
 /// # Safety
 /// 调用者必须确保 dest 有足够的空间
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 { unsafe {
-    if dest.is_null() || src.is_null() {
-        return dest;
-    }
-
-    let ret = dest;
-    let mut d = dest;
-    let mut s = src;
-
-    loop {
-        let ch = *s;
-        *d = ch;
-
-        if ch == 0 {
-            break;
+pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 {
+    unsafe {
+        if dest.is_null() || src.is_null() {
+            return dest;
         }
 
-        d = d.add(1);
-        s = s.add(1);
-    }
+        let ret = dest;
+        let mut d = dest;
+        let mut s = src;
 
-    ret
-}}
+        loop {
+            let ch = *s;
+            *d = ch;
+
+            if ch == 0 {
+                break;
+            }
+
+            d = d.add(1);
+            s = s.add(1);
+        }
+
+        ret
+    }
+}
 
 /// 字符串拷贝（限制长度）(C 风格 FFI 接口)
 ///
@@ -220,39 +228,41 @@ pub unsafe extern "C" fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8 { unsa
 /// # Safety
 /// 调用者必须确保 dest 有至少 n 字节的空间
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mut i8 { unsafe {
-    if dest.is_null() || src.is_null() || n == 0 {
-        return dest;
-    }
-
-    let ret = dest;
-    let mut d = dest;
-    let mut s = src;
-    let mut remaining = n;
-
-    // 拷贝源字符串内容
-    while remaining > 0 {
-        let ch = *s;
-        *d = ch;
-
-        if ch == 0 {
-            break; // 遇到终止符停止
+pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mut i8 {
+    unsafe {
+        if dest.is_null() || src.is_null() || n == 0 {
+            return dest;
         }
 
-        d = d.add(1);
-        s = s.add(1);
-        remaining -= 1;
-    }
+        let ret = dest;
+        let mut d = dest;
+        let mut s = src;
+        let mut remaining = n;
 
-    // 用 '\0' 填充剩余空间
-    while remaining > 0 {
-        *d = 0;
-        d = d.add(1);
-        remaining -= 1;
-    }
+        // 拷贝源字符串内容
+        while remaining > 0 {
+            let ch = *s;
+            *d = ch;
 
-    ret
-}}
+            if ch == 0 {
+                break; // 遇到终止符停止
+            }
+
+            d = d.add(1);
+            s = s.add(1);
+            remaining -= 1;
+        }
+
+        // 用 '\0' 填充剩余空间
+        while remaining > 0 {
+            *d = 0;
+            d = d.add(1);
+            remaining -= 1;
+        }
+
+        ret
+    }
+}
 
 /// 字符串连接 (C 风格 FFI 接口)
 ///
@@ -268,35 +278,37 @@ pub unsafe extern "C" fn strncpy(dest: *mut i8, src: *const i8, n: usize) -> *mu
 /// # Safety
 /// 调用者必须确保 dest 有足够的空间容纳结果
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 { unsafe {
-    if dest.is_null() || src.is_null() {
-        return dest;
-    }
-
-    let ret = dest;
-
-    // 找到 dest 的末尾
-    let mut d = dest;
-    while *d != 0 {
-        d = d.add(1);
-    }
-
-    // 追加 src
-    let mut s = src;
-    loop {
-        let ch = *s;
-        *d = ch;
-
-        if ch == 0 {
-            break;
+pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 {
+    unsafe {
+        if dest.is_null() || src.is_null() {
+            return dest;
         }
 
-        d = d.add(1);
-        s = s.add(1);
-    }
+        let ret = dest;
 
-    ret
-}}
+        // 找到 dest 的末尾
+        let mut d = dest;
+        while *d != 0 {
+            d = d.add(1);
+        }
+
+        // 追加 src
+        let mut s = src;
+        loop {
+            let ch = *s;
+            *d = ch;
+
+            if ch == 0 {
+                break;
+            }
+
+            d = d.add(1);
+            s = s.add(1);
+        }
+
+        ret
+    }
+}
 
 /// 查找字符首次出现位置 (C 风格 FFI 接口)
 ///
@@ -314,29 +326,34 @@ pub unsafe extern "C" fn strcat(dest: *mut i8, src: *const i8) -> *mut i8 { unsa
 /// `ptr` 是有效指针. 若 `n` 非零, 则从 `ptr` 起至少有 `n` 字节可读.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
-pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
-    if s.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    let target = c as i8;
-    let mut p = s;
-
-    loop {
-        let ch = *p;
-
-        if ch == target {
-            return p as *mut i8;
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
+pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 {
+    unsafe {
+        if s.is_null() {
+            return core::ptr::null_mut();
         }
 
-        if ch == 0 {
-            return core::ptr::null_mut(); // 未找到
-        }
+        let target = c as i8;
+        let mut p = s;
 
-        p = p.add(1);
+        loop {
+            let ch = *p;
+
+            if ch == target {
+                return p as *mut i8;
+            }
+
+            if ch == 0 {
+                return core::ptr::null_mut(); // 未找到
+            }
+
+            p = p.add(1);
+        }
     }
-}}
+}
 
 /// 查找字符最后出现位置 (C 风格 FFI 接口)
 ///
@@ -354,36 +371,41 @@ pub unsafe extern "C" fn strchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 /// `a` 与 `b` 均为有效指针. 各自至少有 `n` 字节可读.
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
-pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
-    if s.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    let target = c as i8;
-    let mut p = s;
-    let mut last: *const i8 = core::ptr::null();
-
-    loop {
-        let ch = *p;
-
-        if ch == target {
-            last = p;
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
+pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 {
+    unsafe {
+        if s.is_null() {
+            return core::ptr::null_mut();
         }
 
-        if ch == 0 {
-            break;
+        let target = c as i8;
+        let mut p = s;
+        let mut last: *const i8 = core::ptr::null();
+
+        loop {
+            let ch = *p;
+
+            if ch == target {
+                last = p;
+            }
+
+            if ch == 0 {
+                break;
+            }
+
+            p = p.add(1);
         }
 
-        p = p.add(1);
+        if last.is_null() {
+            core::ptr::null_mut()
+        } else {
+            last as *mut i8
+        }
     }
-
-    if last.is_null() {
-        core::ptr::null_mut()
-    } else {
-        last as *mut i8
-    }
-}}
+}
 
 /// 查找子串 (C 风格 FFI 接口)
 ///
@@ -397,52 +419,57 @@ pub unsafe extern "C" fn strrchr(s: *const i8, c: i32) -> *mut i8 { unsafe {
 /// 找到的子串指针，或 NULL 如果未找到
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 ///
 /// # Safety
 ///
 /// `ptr` 是有效指针. `value` 将被写入从 `ptr` 起 `n` 个连续字节.
-pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8 { unsafe {
-    if haystack.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    // 空子串返回 haystack 本身
-    if needle.is_null() || *needle == 0 {
-        return haystack as *mut i8;
-    }
-
-    let mut h = haystack;
-
-    loop {
-        let h_ch = *h;
-
-        if h_ch == 0 {
-            return core::ptr::null_mut(); // 到达 haystack 末尾
+pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8 {
+    unsafe {
+        if haystack.is_null() {
+            return core::ptr::null_mut();
         }
 
-        // 尝试从当前位置匹配 needle
-        let mut h_temp = h;
-        let mut n = needle;
+        // 空子串返回 haystack 本身
+        if needle.is_null() || *needle == 0 {
+            return haystack as *mut i8;
+        }
+
+        let mut h = haystack;
 
         loop {
-            let n_ch = *n;
+            let h_ch = *h;
 
-            if n_ch == 0 {
-                return h as *mut i8; // 匹配成功
+            if h_ch == 0 {
+                return core::ptr::null_mut(); // 到达 haystack 末尾
             }
 
-            if *h_temp != n_ch {
-                break; // 不匹配，继续下一个位置
+            // 尝试从当前位置匹配 needle
+            let mut h_temp = h;
+            let mut n = needle;
+
+            loop {
+                let n_ch = *n;
+
+                if n_ch == 0 {
+                    return h as *mut i8; // 匹配成功
+                }
+
+                if *h_temp != n_ch {
+                    break; // 不匹配，继续下一个位置
+                }
+
+                h_temp = h_temp.add(1);
+                n = n.add(1);
             }
 
-            h_temp = h_temp.add(1);
-            n = n.add(1);
+            h = h.add(1);
         }
-
-        h = h.add(1);
     }
-}}
+}
 
 // ============================================================================
 // 内存操作函数 (Memory Operations)
@@ -464,26 +491,31 @@ pub unsafe extern "C" fn strstr(haystack: *const i8, needle: *const i8) -> *mut 
 /// - 区域不能重叠（否则应使用 memmove）
 /// - dest 有足够空间
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub unsafe extern "C" fn memcpy(
     dest: *mut u8,
     src: *const u8,
     n: usize,
-// SAFETY: 指针操作在有效范围内，调用方保证指针有效性
-) -> *mut u8 { unsafe {
-    if dest.is_null() || src.is_null() || n == 0 {
-        return dest;
+    // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
+) -> *mut u8 {
+    unsafe {
+        if dest.is_null() || src.is_null() || n == 0 {
+            return dest;
+        }
+
+        let d = dest as *mut u8;
+        let s = src as *const u8;
+
+        for i in 0..n {
+            *d.add(i) = *s.add(i);
+        }
+
+        dest
     }
-
-    let d = dest as *mut u8;
-    let s = src as *const u8;
-
-    for i in 0..n {
-        *d.add(i) = *s.add(i);
-    }
-
-    dest
-}}
+}
 
 /// 内存移动（处理重叠区域）(C 风格 FFI 接口)
 ///
@@ -498,39 +530,43 @@ pub unsafe extern "C" fn memcpy(
 /// 目标地址
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 ///
 /// # Safety
 ///
 /// `src` 与 `dst` 均为有效指针. `dst` 至少有 `n` 字节可写内存. 两个区域可重叠.
-pub unsafe extern "C" fn memmove(
-    dest: *mut u8,
-    src: *const u8,
-    n: usize,
-) -> *mut u8 { unsafe {
-    if dest.is_null() || src.is_null() || n == 0 {
-        return dest;
-    }
-
-    let d = dest as *mut u8;
-    let s = src as *const u8;
-
-    // 判断是否需要反向拷贝（处理重叠区域）
-    if d < s as *mut u8 {
-        // 正向拷贝
-        for i in 0..n {
-            *d.add(i) = *s.add(i);
+pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    unsafe {
+        if dest.is_null() || src.is_null() || n == 0 {
+            return dest;
         }
-    } else {
-        // 反向拷贝
-        for i in (0..n).rev() {
-            *d.add(i) = *s.add(i);
-        }
-    }
 
-    dest
-}}
+        let d = dest as *mut u8;
+        let s = src as *const u8;
+
+        // 判断是否需要反向拷贝（处理重叠区域）
+        if d < s as *mut u8 {
+            // 正向拷贝
+            for i in 0..n {
+                *d.add(i) = *s.add(i);
+            }
+        } else {
+            // 反向拷贝
+            for i in (0..n).rev() {
+                *d.add(i) = *s.add(i);
+            }
+        }
+
+        dest
+    }
+}
 
 /// 内存设置 (C 风格 FFI 接口)
 ///
@@ -549,66 +585,64 @@ pub unsafe extern "C" fn memmove(
 /// # Safety
 ///
 /// `src` 与 `dst` 均为有效指针. `dst` 至少有 `n` 字节可写内存. 两个区域不可重叠.
-pub unsafe extern "C" fn memset(
-    s: *mut u8,
-    c: i32,
-    n: usize,
-) -> *mut u8 { unsafe {
-    if s.is_null() || n == 0 {
-        return s;
+pub unsafe extern "C" fn memset(s: *mut u8, c: i32, n: usize) -> *mut u8 {
+    unsafe {
+        if s.is_null() || n == 0 {
+            return s;
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            let val = (c & 0xFF) as u8;
+            let mut dst = s;
+            let mut remaining = n;
+
+            // 逐字节对齐到 16 字节边界
+            while remaining > 0 && (dst as usize) & 0xF != 0 {
+                *dst = val;
+                dst = dst.add(1);
+                remaining -= 1;
+            }
+
+            // 16 字节批量写入 (stp 一次写 16 字节)
+            if remaining >= 16 {
+                let val64 = u64::from_le_bytes([val; 8]);
+                let mut blocks = remaining / 16;
+                // SAFETY: asm 使用 stp 指令, 仅写入 dst 指向的内存
+                core::arch::asm!(
+                    "1:",
+                    "stp {val}, {val}, [{dst}], #16",
+                    "subs {blocks}, {blocks}, #1",
+                    "b.ne 1b",
+                    val = in(reg) val64,
+                    dst = inout(reg) dst,
+                    blocks = inout(reg) blocks,
+                    options(nostack, readonly),
+                );
+                // blocks 在汇编中被递减至 0, 明确丢弃
+                let _ = blocks;
+                remaining &= 0xF;
+            }
+
+            // 处理剩余字节
+            for _ in 0..remaining {
+                *dst = val;
+                dst = dst.add(1);
+            }
+        }
+
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            let p = s as *mut u8;
+            let val = (c & 0xFF) as u8;
+            for i in 0..n {
+                *p.add(i) = val;
+            }
+        }
+
+        s
     }
-
-    #[cfg(target_arch = "aarch64")]
-    {
-        let val = (c & 0xFF) as u8;
-        let mut dst = s;
-        let mut remaining = n;
-
-        // 逐字节对齐到 16 字节边界
-        while remaining > 0 && (dst as usize) & 0xF != 0 {
-            *dst = val;
-            dst = dst.add(1);
-            remaining -= 1;
-        }
-
-        // 16 字节批量写入 (stp 一次写 16 字节)
-        if remaining >= 16 {
-            let val64 = u64::from_le_bytes([val; 8]);
-            let mut blocks = remaining / 16;
-            // SAFETY: asm 使用 stp 指令, 仅写入 dst 指向的内存
-            core::arch::asm!(
-                "1:",
-                "stp {val}, {val}, [{dst}], #16",
-                "subs {blocks}, {blocks}, #1",
-                "b.ne 1b",
-                val = in(reg) val64,
-                dst = inout(reg) dst,
-                blocks = inout(reg) blocks,
-                options(nostack, readonly),
-            );
-            // blocks 在汇编中被递减至 0, 明确丢弃
-            let _ = blocks;
-            remaining &= 0xF;
-        }
-
-        // 处理剩余字节
-        for _ in 0..remaining {
-            *dst = val;
-            dst = dst.add(1);
-        }
-    }
-
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        let p = s as *mut u8;
-        let val = (c & 0xFF) as u8;
-        for i in 0..n {
-            *p.add(i) = val;
-        }
-    }
-
-    s
-}}
+}
 
 /// 优化的内存设置（使用 x86 汇编指令）
 ///
@@ -624,34 +658,35 @@ pub unsafe extern "C" fn memset(
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `src` 是指向至少有 `n` 字节可读内存的有效指针.
-pub unsafe extern "C" fn memset_optimized(
-    s: *mut u8,
-    c: i32,
-    n: usize,
-) -> *mut u8 { unsafe {
-    if s.is_null() || n == 0 {
-        return s;
+pub unsafe extern "C" fn memset_optimized(s: *mut u8, c: i32, n: usize) -> *mut u8 {
+    unsafe {
+        if s.is_null() || n == 0 {
+            return s;
+        }
+
+        let val = (c & 0xFF) as u64; // 转换为 u64 以适配 rax 寄存器
+        let dest = s as *mut u8;
+
+        // 使用内联汇编调用 REP STOSB
+        core::arch::asm!(
+            "rep stosb",
+            in("rdi") dest,
+            in("rax") val,
+            in("rcx") n,
+            options(nostack, nomem)
+        );
+
+        s
     }
-
-    let val = (c & 0xFF) as u64; // 转换为 u64 以适配 rax 寄存器
-    let dest = s as *mut u8;
-
-    // 使用内联汇编调用 REP STOSB
-    core::arch::asm!(
-        "rep stosb",
-        in("rdi") dest,
-        in("rax") val,
-        in("rcx") n,
-        options(nostack, nomem)
-    );
-
-    s
-}}
+}
 
 /// 内存比较 (C 风格 FFI 接口)
 ///
@@ -666,41 +701,42 @@ pub unsafe extern "C" fn memset_optimized(
 /// * \>0 - s1 > s2
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `dst` 是指向至少有 `n` 字节可写内存的有效指针. `value` 须能放入 `u8`.
-pub unsafe extern "C" fn memcmp(
-    s1: *const u8,
-    s2: *const u8,
-    n: usize,
-) -> i32 { unsafe {
-    if n == 0 {
-        return 0;
-    }
-
-    if s1.is_null() || s2.is_null() {
-        if s1.is_null() && s2.is_null() {
+pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
+    unsafe {
+        if n == 0 {
             return 0;
         }
-        return if s1.is_null() { -1 } else { 1 };
-    }
 
-    let p1 = s1 as *const u8;
-    let p2 = s2 as *const u8;
-
-    for i in 0..n {
-        let b1 = *p1.add(i);
-        let b2 = *p2.add(i);
-
-        if b1 != b2 {
-            return i32::from(b1) - i32::from(b2);
+        if s1.is_null() || s2.is_null() {
+            if s1.is_null() && s2.is_null() {
+                return 0;
+            }
+            return if s1.is_null() { -1 } else { 1 };
         }
-    }
 
-    0
-}}
+        let p1 = s1 as *const u8;
+        let p2 = s2 as *const u8;
+
+        for i in 0..n {
+            let b1 = *p1.add(i);
+            let b2 = *p2.add(i);
+
+            if b1 != b2 {
+                return i32::from(b1) - i32::from(b2);
+            }
+        }
+
+        0
+    }
+}
 
 /// 在内存中查找字符 (C 风格 FFI 接口)
 ///
@@ -713,32 +749,36 @@ pub unsafe extern "C" fn memcmp(
 /// 找到的字符指针，或 NULL 如果未找到
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ptr_cast_constness, reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ptr_cast_constness,
+    reason = "ptr_cast_constness: *mut T as *const T 是已知安全 (Rust 2024 可用 ptr.cast_const 或 &raw const; 当前优先 expect"
+)]
 ///
 /// # Safety
 ///
 /// `src` 是指向以 NUL 结尾的 C 字符串的有效指针.
-pub unsafe extern "C" fn memchr(
-    s: *const u8,
-    c: i32,
-    n: usize,
-) -> *mut u8 { unsafe {
-    if s.is_null() || n == 0 {
-        return core::ptr::null_mut();
-    }
-
-    let p = s as *const u8;
-    let target = (c & 0xFF) as u8;
-
-    for i in 0..n {
-        if *p.add(i) == target {
-            return p.add(i) as *mut u8;
+pub unsafe extern "C" fn memchr(s: *const u8, c: i32, n: usize) -> *mut u8 {
+    unsafe {
+        if s.is_null() || n == 0 {
+            return core::ptr::null_mut();
         }
-    }
 
-    core::ptr::null_mut()
-}}
+        let p = s as *const u8;
+        let target = (c & 0xFF) as u8;
+
+        for i in 0..n {
+            if *p.add(i) == target {
+                return p.add(i) as *mut u8;
+            }
+        }
+
+        core::ptr::null_mut()
+    }
+}
 
 // ============================================================================
 // 安全函数 (Secure Functions)
@@ -754,23 +794,28 @@ pub unsafe extern "C" fn memchr(
 /// * `len` - 清零的字节数
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `src` 是合法指针, 至少指向 `max_len` 字节可读内存.
-pub unsafe extern "C" fn secure_zero(ptr: *mut u8, len: usize) { unsafe {
-    if ptr.is_null() || len == 0 {
-        return;
-    }
+pub unsafe extern "C" fn secure_zero(ptr: *mut u8, len: usize) {
+    unsafe {
+        if ptr.is_null() || len == 0 {
+            return;
+        }
 
-    // 使用 volatile 指针强制写入，防止编译器优化
-    let p = ptr as *mut core::sync::atomic::AtomicU8;
+        // 使用 volatile 指针强制写入，防止编译器优化
+        let p = ptr as *mut core::sync::atomic::AtomicU8;
 
-    for i in 0..len {
-        (*p.add(i)).store(0, core::sync::atomic::Ordering::Relaxed);
+        for i in 0..len {
+            (*p.add(i)).store(0, core::sync::atomic::Ordering::Relaxed);
+        }
     }
-}}
+}
 
 // ============================================================================
 // Rust 原生安全接口 (Safe Wrappers)
@@ -803,7 +848,10 @@ pub fn safe_memset(buf: &mut [u8], val: u8, len: Option<usize>) {
     }
 }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+#[expect(
+    clippy::needless_continue,
+    reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+)]
 /// Rust 安全版本的 memcmp
 ///
 /// # Returns
@@ -947,11 +995,7 @@ mod tests {
             let src = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
             // 测试 memcpy
-            memcpy(
-                dest.as_mut_ptr() as *mut u8,
-                src.as_ptr() as *const u8,
-                10,
-            );
+            memcpy(dest.as_mut_ptr() as *mut u8, src.as_ptr() as *const u8, 10);
             assert_eq!(dest, src);
 
             // 测试 memmove（重叠区域）
@@ -997,22 +1041,12 @@ mod tests {
 
             // 相等
             assert_eq!(
-                memcmp(
-                    a.as_ptr() as *const u8,
-                    b.as_ptr() as *const u8,
-                    5
-                ),
+                memcmp(a.as_ptr() as *const u8, b.as_ptr() as *const u8, 5),
                 0
             );
 
             // 小于
-            assert!(
-                memcmp(
-                    a.as_ptr() as *const u8,
-                    c.as_ptr() as *const u8,
-                    5
-                ) < 0
-            );
+            assert!(memcmp(a.as_ptr() as *const u8, c.as_ptr() as *const u8, 5) < 0);
         }
     }
 

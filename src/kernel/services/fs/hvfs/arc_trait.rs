@@ -256,9 +256,9 @@ mod tests {
         // 插 1 个, 查 2 次 (1 hit + 1 miss)
         let k = HvArcKey::new(0, 0, 0);
         arc.insert(k, &[0u8; 32], HvArcBufType::Data);
-        arc.lookup(&k);  // hit
+        arc.lookup(&k); // hit
         let miss_key = HvArcKey::new(0, 0, 99);
-        arc.lookup(&miss_key);  // miss
+        arc.lookup(&miss_key); // miss
         // hit_rate = 1/2 = 0.5
         assert!((arc.hit_rate() - 0.5).abs() < 1e-9);
     }
@@ -298,7 +298,7 @@ mod tests {
         arc.init(50);
         assert!(arc.is_initialized());
         let k = HvArcKey::new(0, 0, 0);
-        assert!(!arc.lookup(&k));  // miss
+        assert!(!arc.lookup(&k)); // miss
         assert!(arc.insert(k, &[0u8; 16], HvArcBufType::Data));
     }
 
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn test_arc_capacity_eviction() {
         let arc = StandardArc::new();
-        arc.init(3);  // 容量 3
+        arc.init(3); // 容量 3
         // 插 5 个
         for i in 0..5 {
             let k = HvArcKey::new(0, i, 0);

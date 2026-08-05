@@ -837,7 +837,10 @@ impl Errno {
         -(self as i64)
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 从负返回值恢复 Errno
     ///
     /// 输入: framework 层返回的负错误码 (如 -ENOMEM)

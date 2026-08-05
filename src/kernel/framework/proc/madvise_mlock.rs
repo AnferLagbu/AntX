@@ -6,8 +6,7 @@
 //! 本文件仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::mm::madvise_mlock::{
-    sys_madvise, sys_mlock, sys_munlock, sys_mlockall, sys_munlockall, sys_mincore,
-    MADV_NORMAL, MADV_RANDOM, MADV_SEQUENTIAL, MADV_WILLNEED, MADV_DONTNEED,
-    MADV_FREE, MADV_REMOVE, MADV_PAGEOUT,
-    MCL_CURRENT, MCL_FUTURE, MCL_ONFAULT,
+    MADV_DONTNEED, MADV_FREE, MADV_NORMAL, MADV_PAGEOUT, MADV_RANDOM, MADV_REMOVE, MADV_SEQUENTIAL,
+    MADV_WILLNEED, MCL_CURRENT, MCL_FUTURE, MCL_ONFAULT, sys_madvise, sys_mincore, sys_mlock,
+    sys_mlockall, sys_munlock, sys_munlockall,
 };

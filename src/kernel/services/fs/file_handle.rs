@@ -15,14 +15,13 @@
 //! - Linux name_to_handle_at(2) 手册页
 //! - Linux open_by_handle_at(2) 手册页
 
-
-use alloc::sync::Arc;
+use crate::kernel::framework::mm::copy_user::{copy_from_user, copy_to_user};
 use crate::kernel::framework::syscall::Errno;
-use crate::kernel::framework::mm::copy_user::{copy_to_user, copy_from_user};
-use crate::kernel::services::fs::vfs_types::OpenFile;
-use crate::kernel::services::fs::vfs_manager::VFS_MANAGER;
-use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
 use crate::kernel::services::fs::inode::Inode;
+use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
+use crate::kernel::services::fs::vfs_manager::VFS_MANAGER;
+use crate::kernel::services::fs::vfs_types::OpenFile;
+use alloc::sync::Arc;
 
 /// 文件句柄类型 (与 Linux 兼容)
 pub const FILE_HANDLE_GHEST_ID: i32 = 0x01; // 通用句柄类型
@@ -42,7 +41,10 @@ const HANDLE_TYPE_OFF: usize = 8;
 const HANDLE_HBYTES_OFF: usize = 12;
 const HANDLE_SERIALIZED_SIZE: usize = 16;
 
-#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
+#[expect(
+    clippy::items_after_statements,
+    reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect"
+)]
 /// `name_to_handle_at` — 导出文件句柄
 ///
 /// 将文件路径导出为可序列化的文件句柄, 用于跨进程传递或持久化.
@@ -82,31 +84,33 @@ pub fn name_to_handle_at_syscall(
         return Err(Errno::ENOENT);
     }
 
-    let (mount_idx, _fs_type, fs_opt) = VFS_MANAGER.resolve_mount_fs(path)
-        .ok_or(Errno::ENOENT)?;
+    let (mount_idx, _fs_type, fs_opt) = VFS_MANAGER.resolve_mount_fs(path).ok_or(Errno::ENOENT)?;
     let fs = fs_opt.ok_or(Errno::ENOENT)?;
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // 通过 FileSystem trait 获取 inode_id
-    let inode_id = fs.fs_resolve_path(rel_path)
-        .ok_or(Errno::ENOENT)?;
+    let inode_id = fs.fs_resolve_path(rel_path).ok_or(Errno::ENOENT)?;
 
     // 构建句柄数据
     let mut handle_data = [0u8; FILE_HANDLE_SIZE];
     handle_data[HANDLE_INODE_OFF..HANDLE_INODE_OFF + 4].copy_from_slice(&inode_id.to_le_bytes());
-    handle_data[HANDLE_MOUNT_OFF..HANDLE_MOUNT_OFF + 4].copy_from_slice(&(mount_idx as u32).to_le_bytes());
+    handle_data[HANDLE_MOUNT_OFF..HANDLE_MOUNT_OFF + 4]
+        .copy_from_slice(&(mount_idx as u32).to_le_bytes());
     handle_data[HANDLE_TYPE_OFF] = FILE_HANDLE_GHEST_ID as u8;
     handle_data[HANDLE_HBYTES_OFF..HANDLE_HBYTES_OFF + 4].copy_from_slice(&8u32.to_le_bytes());
 
     // 写入用户空间
-    copy_to_user(handle_buf, &handle_data[..HANDLE_SERIALIZED_SIZE], HANDLE_SERIALIZED_SIZE)
-        .map_err(|()| Errno::EFAULT)?;
+    copy_to_user(
+        handle_buf,
+        &handle_data[..HANDLE_SERIALIZED_SIZE],
+        HANDLE_SERIALIZED_SIZE,
+    )
+    .map_err(|()| Errno::EFAULT)?;
 
     // 写入 mnt_id
     if mnt_id != 0 {
         let mnt_data = (mount_idx as u32).to_le_bytes();
-        copy_to_user(mnt_id, &mnt_data, 4)
-            .map_err(|()| Errno::EFAULT)?;
+        copy_to_user(mnt_id, &mnt_data, 4).map_err(|()| Errno::EFAULT)?;
     }
 
     Ok(0)
@@ -150,10 +154,14 @@ pub fn open_by_handle_at_syscall(
 
     // 提取 inode_id 和 mount_idx
     let inode_id = u32::from_le_bytes(
-        handle_data[HANDLE_INODE_OFF..HANDLE_INODE_OFF + 4].try_into().map_err(|_| Errno::EINVAL)?
+        handle_data[HANDLE_INODE_OFF..HANDLE_INODE_OFF + 4]
+            .try_into()
+            .map_err(|_| Errno::EINVAL)?,
     );
     let mount_idx = u32::from_le_bytes(
-        handle_data[HANDLE_MOUNT_OFF..HANDLE_MOUNT_OFF + 4].try_into().map_err(|_| Errno::EINVAL)?
+        handle_data[HANDLE_MOUNT_OFF..HANDLE_MOUNT_OFF + 4]
+            .try_into()
+            .map_err(|_| Errno::EINVAL)?,
     );
     let handle_type_in = i32::from(handle_data[HANDLE_TYPE_OFF]);
 
@@ -176,15 +184,16 @@ pub fn open_by_handle_at_syscall(
 
     // 尝试通过 fs_resolve_inode 获取原生 Inode
     // 如果 FS 未实现, 回退到 LegacyInode
-    let inode: Arc<dyn Inode> = if let Some(inode) = fs.fs_resolve_inode(inode_id, mount_idx) { inode } else {
+    let inode: Arc<dyn Inode> = if let Some(inode) = fs.fs_resolve_inode(inode_id, mount_idx) {
+        inode
+    } else {
         // 回退: 使用 LegacyInode (stat/chmod 等需要路径的操作将不可用)
         let rel_path = alloc::string::String::new();
-        Arc::new(crate::kernel::services::fs::inode::LegacyInode::from_fs_result(
-            inode_id,
-            mount_idx,
-            0,
-            &rel_path,
-        ))
+        Arc::new(
+            crate::kernel::services::fs::inode::LegacyInode::from_fs_result(
+                inode_id, mount_idx, 0, &rel_path,
+            ),
+        )
     };
 
     // 通过 stat 获取 file_type (避免硬编码)
@@ -192,12 +201,10 @@ pub fn open_by_handle_at_syscall(
     let open_file = OpenFile::new(inode, flags, pwm, file_type);
 
     // 插入全局 OpenFile 表
-    let handle_id = OPEN_FILE_TABLE.alloc(open_file)
-        .ok_or(Errno::ENOMEM)?;
+    let handle_id = OPEN_FILE_TABLE.alloc(open_file).ok_or(Errno::ENOMEM)?;
 
     // 分配 fd (使用 VFS_MANAGER 全局 fd 表)
-    let fd_idx = VFS_MANAGER.alloc_fd()
-        .ok_or(Errno::EMFILE)?;
+    let fd_idx = VFS_MANAGER.alloc_fd().ok_or(Errno::EMFILE)?;
 
     VFS_MANAGER.set_fd_handle(fd_idx, handle_id);
 

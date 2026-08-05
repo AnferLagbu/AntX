@@ -41,12 +41,12 @@
 //! - 换出/换入操作在 #PF 上下文中执行, 必须无阻塞
 //! - 当前阶段 swap 区使用预留内存区域模拟, 后续集成块设备
 
-use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PAGE_SIZE, pmm, vmm};
-use crate::kernel::framework::mm::PfResult;
 use crate::kernel::framework::irq::{self, SoftirqVec};
+use crate::kernel::framework::mm::PfResult;
+use crate::kernel::framework::mm::{PAGE_SIZE, PhysAddr, VirtAddr, pmm, vmm};
 use crate::kernel::framework::sync::IrqSpinLock;
 
 // ============================================================================
@@ -84,19 +84,28 @@ impl SwapEntry {
         Some(SwapEntry(pte))
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取 swap slot 索引
     pub fn slot(&self) -> u64 {
         (self.0 >> 2) & 0x003F_FFFF_FFFF_FFFF
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 转换为 PTE 值
     pub fn to_pte(&self) -> u64 {
         self.0
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 是否为有效的 swap entry
     pub fn is_valid(&self) -> bool {
         self.0 != 0
@@ -175,9 +184,12 @@ impl SwapArea {
 
         self.storage_virt = virt_base;
         self.initialized = true;
-        crate::klog_info!(Swap, "[SWAP] Initialized: {} slots ({} MB)",
+        crate::klog_info!(
+            Swap,
+            "[SWAP] Initialized: {} slots ({} MB)",
             SWAP_MAX_SLOTS,
-            SWAP_MAX_SLOTS * PAGE_SIZE as usize / (1024 * 1024));
+            SWAP_MAX_SLOTS * PAGE_SIZE as usize / (1024 * 1024)
+        );
         true
     }
 
@@ -223,11 +235,7 @@ impl SwapArea {
         let dst = self.slot_addr(slot) as *mut u8;
         // SAFETY: dst 指向 swap 存储区 (已分配并映射), src 为有效用户页
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                src_virt as *const u8,
-                dst,
-                PAGE_SIZE as usize,
-            );
+            core::ptr::copy_nonoverlapping(src_virt as *const u8, dst, PAGE_SIZE as usize);
         }
     }
 
@@ -245,11 +253,7 @@ impl SwapArea {
         let src = self.slot_addr(slot) as *const u8;
         // SAFETY: src 指向 swap 存储区, dst 为有效物理页
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                src,
-                dst_virt as *mut u8,
-                PAGE_SIZE as usize,
-            );
+            core::ptr::copy_nonoverlapping(src, dst_virt as *mut u8, PAGE_SIZE as usize);
         }
     }
 
@@ -330,7 +334,13 @@ impl LruList {
                 self.inactive_count -= 1;
                 entry.locked = locked || entry.locked;
                 entry.dirty |= dirty;
-                self.push_active(entry.pml4, entry.virt_addr, entry.phys_addr, entry.dirty, entry.locked);
+                self.push_active(
+                    entry.pml4,
+                    entry.virt_addr,
+                    entry.phys_addr,
+                    entry.dirty,
+                    entry.locked,
+                );
                 return;
             }
         }
@@ -339,7 +349,14 @@ impl LruList {
         self.push_active(pml4, virt_addr, phys_addr, dirty, locked);
     }
 
-    fn push_active(&mut self, pml4: u64, virt_addr: u64, phys_addr: u64, dirty: bool, locked: bool) {
+    fn push_active(
+        &mut self,
+        pml4: u64,
+        virt_addr: u64,
+        phys_addr: u64,
+        dirty: bool,
+        locked: bool,
+    ) {
         // 检查是否已在 active 中
         for i in 0..LRU_CAPACITY {
             if self.active[i].occupied && self.active[i].virt_addr == virt_addr {
@@ -353,7 +370,9 @@ impl LruList {
         }
 
         // T2-4: 降级决策委托给 SwapPolicy
-        if super::swap_trait::current_swap_policy().should_demote_active(self.active_count, LRU_CAPACITY) {
+        if super::swap_trait::current_swap_policy()
+            .should_demote_active(self.active_count, LRU_CAPACITY)
+        {
             self.demote_oldest();
         }
 
@@ -384,7 +403,9 @@ impl LruList {
                 self.active_count -= 1;
 
                 // T2-4: inactive 满时丢弃决策委托给 SwapPolicy
-                if super::swap_trait::current_swap_policy().should_evict_inactive(self.inactive_count, LRU_CAPACITY) {
+                if super::swap_trait::current_swap_policy()
+                    .should_evict_inactive(self.inactive_count, LRU_CAPACITY)
+                {
                     // 移除最旧的 inactive 条目 (跳过 locked 优先保护)
                     for j in 0..LRU_CAPACITY {
                         if self.inactive[j].occupied && !self.inactive[j].locked {
@@ -528,8 +549,13 @@ pub fn swap_out(virt_addr: u64, phys_addr: u64, _dirty: bool) -> Option<SwapEntr
 
     let entry = SwapEntry::new(slot);
 
-    crate::klog_debug!(Swap, "[SWAP] Out: vaddr={:#x} paddr={:#x} -> slot={}",
-        virt_addr, phys_addr, slot);
+    crate::klog_debug!(
+        Swap,
+        "[SWAP] Out: vaddr={:#x} paddr={:#x} -> slot={}",
+        virt_addr,
+        phys_addr,
+        slot
+    );
 
     Some(entry)
 }
@@ -566,8 +592,13 @@ pub fn swap_out_to_pte(pml4: u64, virt_addr: u64) -> Option<SwapEntry> {
     // 3. 替换 PTE 为 swap entry
     vmm_inst.set_pte_value(pml4, VirtAddr(virt_addr), entry.to_pte());
 
-    crate::klog_debug!(Swap, "[SWAP] Out→PTE: vaddr={:#x} pml4={:#x} slot={}",
-        virt_addr, pml4, entry.slot());
+    crate::klog_debug!(
+        Swap,
+        "[SWAP] Out→PTE: vaddr={:#x} pml4={:#x} slot={}",
+        virt_addr,
+        pml4,
+        entry.slot()
+    );
 
     Some(entry)
 }
@@ -599,7 +630,12 @@ pub fn swap_in(entry: SwapEntry) -> Option<PhysAddr> {
     // 释放 swap slot
     area.free_slot(slot);
 
-    crate::klog_debug!(Swap, "[SWAP] In: slot={} -> paddr={:#x}", slot, new_phys.as_u64());
+    crate::klog_debug!(
+        Swap,
+        "[SWAP] In: slot={} -> paddr={:#x}",
+        slot,
+        new_phys.as_u64()
+    );
 
     Some(new_phys)
 }
@@ -726,7 +762,10 @@ pub fn swap_info() -> (u64, u64) {
 // #PF Swap Entry 检测
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 处理 swap-in 缺页
 ///
 /// 当 #PF 检测到 PTE 为 swap entry 时调用.
@@ -873,7 +912,7 @@ pub fn kswapd_is_pending() -> bool {
 
 #[cfg(feature = "kernel_test")]
 fn test_swap_entry_encoding() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test, check};
 
     let entry = SwapEntry::new(42);
     assert_eq_test!(entry.slot(), 42, "slot decode");
@@ -883,7 +922,10 @@ fn test_swap_entry_encoding() -> crate::kernel::framework::tests::TestResult {
     check!(SwapEntry::from_pte(pte).is_some(), "from_pte valid");
 
     // present=1 的 PTE 不应被解析为 swap entry
-    check!(SwapEntry::from_pte(0x1001).is_none(), "present pte not swap");
+    check!(
+        SwapEntry::from_pte(0x1001).is_none(),
+        "present pte not swap"
+    );
     // 零值不应被解析
     check!(SwapEntry::from_pte(0).is_none(), "zero not swap");
 
@@ -892,7 +934,7 @@ fn test_swap_entry_encoding() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_swap_entry_large_slot() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
 
     let entry = SwapEntry::new(0x003F_FFFF_FFFF_FFFF);
     assert_eq_test!(entry.slot(), 0x003F_FFFF_FFFF_FFFF, "max slot");

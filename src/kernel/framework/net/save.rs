@@ -150,14 +150,16 @@ static NET_SNAPSHOT_LOCK: Mutex<NetSnapshot> = Mutex::new(NetSnapshot::empty());
 pub unsafe fn save_unchecked<F>(filler: F)
 where
     F: FnOnce(&mut NetSnapshot),
-{ unsafe {
-    let mut snap = NetSnapshot::empty();
-    filler(&mut snap);
-    snap.seal();
-    // SAFETY: NET_SNAPSHOT_LOCK 由调用方独占持有, 写路径串行, 与 `save()` 互斥.
-    let ptr = NET_SNAPSHOT_LOCK.data_ptr();
-    *ptr = snap;
-}}
+{
+    unsafe {
+        let mut snap = NetSnapshot::empty();
+        filler(&mut snap);
+        snap.seal();
+        // SAFETY: NET_SNAPSHOT_LOCK 由调用方独占持有, 写路径串行, 与 `save()` 互斥.
+        let ptr = NET_SNAPSHOT_LOCK.data_ptr();
+        *ptr = snap;
+    }
+}
 
 /// 读快照副本 (`NET_SNAPSHOT_LOCK` 持有)
 ///
@@ -165,9 +167,9 @@ where
 ///
 /// 调用方必须持有 `NET_SNAPSHOT_LOCK`. 返回值是 `NetSnapshot` 的副本, 不
 /// 持有对全局静态的可变引用, 调用方后续修改不会影响全局.
-pub unsafe fn load_unchecked() -> NetSnapshot { unsafe {
-    *NET_SNAPSHOT_LOCK.data_ptr()
-}}
+pub unsafe fn load_unchecked() -> NetSnapshot {
+    unsafe { *NET_SNAPSHOT_LOCK.data_ptr() }
+}
 
 /// 通过 `NET_SNAPSHOT_LOCK` 串行化的保存入口
 pub fn save<F>(filler: F)

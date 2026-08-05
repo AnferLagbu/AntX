@@ -17,15 +17,15 @@ pub mod layered;
 pub mod parallel;
 
 pub use config::{
-    get_current_layer, get_stats, is_reset_in_progress, reset_stats, set_current_layer,
-    set_reset_in_progress, RecoveryConfig, RecoveryLayer, RecoveryResult, RollbackMode,
     BBR_ATTEMPT_COUNT, BHR_ATTEMPT_COUNT, BSR_ATTEMPT_COUNT, CURRENT_LAYER, RECOVERY_CONFIG,
-    RESET_IN_PROGRESS,
+    RESET_IN_PROGRESS, RecoveryConfig, RecoveryLayer, RecoveryResult, RollbackMode,
+    get_current_layer, get_stats, is_reset_in_progress, reset_stats, set_current_layer,
+    set_reset_in_progress,
 };
 
 pub use audit::{
-    audit_clear, audit_get_last, audit_record, audit_record_domain, ResetAuditEntry, ResetAuditLog,
-    RESET_AUDIT_LOG,
+    RESET_AUDIT_LOG, ResetAuditEntry, ResetAuditLog, audit_clear, audit_get_last, audit_record,
+    audit_record_domain,
 };
 
 pub use bbr::{
@@ -48,11 +48,11 @@ pub use bhr::{
 };
 
 pub use parallel::{
-    compute_dependency_layers, get_parallel_stats, rollback_all, rollback_all_parallel,
-    rollback_layer_parallel, rollback_layer_serial, DependencyLayer, DependencyLayers,
+    DependencyLayer, DependencyLayers, compute_dependency_layers, get_parallel_stats, rollback_all,
+    rollback_all_parallel, rollback_layer_parallel, rollback_layer_serial,
 };
 
 pub use layered::{
-    execute_from_panic, execute_layered as recovery_execute_layered, get_recovery_status,
-    try_bbr_first, RecoveryStatus,
+    RecoveryStatus, execute_from_panic, execute_layered as recovery_execute_layered,
+    get_recovery_status, try_bbr_first,
 };

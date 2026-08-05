@@ -11,11 +11,9 @@ use core::sync::atomic::Ordering;
 
 // Re-export services 层策略主体
 pub use crate::kernel::services::driver::power::{
-    MAX_CSTATES, MAX_FREQ_LEVELS, MAX_PM_CPUS,
-    CpuIdleState, CpuIdleStats, CpuIdleDriver,
-    FreqGovernor, FreqLevel, CpuFreqDriver,
-    SystemPowerState, SuspendNotifier, SuspendCallback, ResumeCallback,
-    PmSubsystem,
+    CpuFreqDriver, CpuIdleDriver, CpuIdleState, CpuIdleStats, FreqGovernor, FreqLevel, MAX_CSTATES,
+    MAX_FREQ_LEVELS, MAX_PM_CPUS, PmSubsystem, ResumeCallback, SuspendCallback, SuspendNotifier,
+    SystemPowerState,
 };
 
 // ============================================================================
@@ -79,7 +77,10 @@ pub fn arch_halt() {
     }
 }
 
-#[expect(clippy::similar_names, reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect")]
+#[expect(
+    clippy::similar_names,
+    reason = "similar_names: 变量名相似表达同族概念; 当前优先 expect"
+)]
 /// CPU 进入空闲 (调度器 idle 调用)
 ///
 /// 组合策略选择 (services) + 硬件 halt (framework)
@@ -102,7 +103,9 @@ pub fn pm_idle(cpu_id: u32) {
     // 被中断唤醒, 退出空闲
     let stats = PM_SUBSYSTEM.cpuidle.per_cpu_stats.lock();
     if (cpu_id as usize) < stats.len() {
-        let entry_ts = stats[cpu_id as usize].last_idle_entry.load(Ordering::Acquire);
+        let entry_ts = stats[cpu_id as usize]
+            .last_idle_entry
+            .load(Ordering::Acquire);
         let elapsed_ms = if entry_ts > 0 {
             (read_timestamp() - entry_ts) / 1_000_000
         } else {
@@ -112,18 +115,17 @@ pub fn pm_idle(cpu_id: u32) {
     }
 }
 
-#[expect(clippy::match_wildcard_for_single_variants, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::match_wildcard_for_single_variants,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// 挂起系统 (组合策略 + 硬件操作)
 pub fn pm_suspend(target: SystemPowerState) -> i64 {
     if let Err(e) = PM_SUBSYSTEM.suspend_prepare(target) {
         return e;
     }
 
-    crate::klog_ffi!(
-        klog_ffi_info,
-        "[PM] suspending to S{}...",
-        target as u32
-    );
+    crate::klog_ffi!(klog_ffi_info, "[PM] suspending to S{}...", target as u32);
 
     // 执行架构相关挂起
     match target {
@@ -144,10 +146,7 @@ pub fn pm_suspend(target: SystemPowerState) -> i64 {
 /// 架构相关: 挂起到内存
 fn arch_suspend_to_ram() {
     // TODO(TRACK-6F7A9A): 实现真正的 S3 挂起
-    crate::klog_ffi!(
-        klog_ffi_info,
-        "[PM] S3: entering halt loop (placeholder)"
-    );
+    crate::klog_ffi!(klog_ffi_info, "[PM] S3: entering halt loop (placeholder)");
     loop {
         #[cfg(target_arch = "x86_64")]
         {

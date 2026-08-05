@@ -41,7 +41,10 @@ static LAST_CALIBRATION_RANGE: AtomicU64 = AtomicU64::new(0);
 // 校准算法实现
 // ============================================================================
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 /// 执行 TSC 频率校准
 ///
 /// 使用 PIT 作为精确的时间基准，测量 TSC 的实际运行频率。
@@ -87,7 +90,10 @@ pub fn calibrate_tsc(calibration_ms: u64) -> Result<u64, &'static str> {
     }
 
     // 多次采样取平均 (提高精度)
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     const SAMPLE_COUNT: usize = 3;
     let mut measurements: [u64; SAMPLE_COUNT] = [0; 3];
 
@@ -183,11 +189,7 @@ pub fn get_tsc_frequency_mhz() -> Option<u64> {
     }
 
     let freq = CALIBRATED_TSC_FREQ_MHZ.load(Ordering::Acquire);
-    if freq == 0 {
-        None
-    } else {
-        Some(freq)
-    }
+    if freq == 0 { None } else { Some(freq) }
 }
 
 /// 获取已校准的 TSC 频率 (Hz, 完整精度)
@@ -201,11 +203,7 @@ pub fn get_tsc_frequency_hz() -> Option<u64> {
     }
 
     let freq = CALIBRATED_TSC_FREQ_HZ.load(Ordering::Acquire);
-    if freq == 0 {
-        None
-    } else {
-        Some(freq)
-    }
+    if freq == 0 { None } else { Some(freq) }
 }
 
 /// 检查是否已完成校准
@@ -213,7 +211,10 @@ pub fn is_calibrated() -> bool {
     CALIBRATION_DONE.load(Ordering::Acquire)
 }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 /// 获取上次校准的详细信息
 ///
 /// # Returns
@@ -223,11 +224,7 @@ pub fn get_calibration_info() -> (Option<u64>, Option<u64>, Option<u64>) {
     let freq_hz = get_tsc_frequency_hz();
     let range = {
         let r = LAST_CALIBRATION_RANGE.load(Ordering::Acquire);
-        if r == 0 {
-            None
-        } else {
-            Some(r)
-        }
+        if r == 0 { None } else { Some(r) }
     };
 
     (freq_mhz, freq_hz, range)
@@ -387,7 +384,7 @@ mod tests {
 
 #[cfg(feature = "kernel_test")]
 pub fn register_timer_calibration_tests() {
-    use crate::kernel::framework::tests::{runner, TestFn, TestResult};
+    use crate::kernel::framework::tests::{TestFn, TestResult, runner};
     let r = runner();
 
     fn initial_state() -> TestResult {

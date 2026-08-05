@@ -57,7 +57,12 @@ pub const MAX_TOPOLOGY_DOMAINS: usize = 16;
 
 impl DomainTopology {
     pub const fn new() -> Self {
-        const EMPTY: DomainNode = DomainNode { id: 0, name: "", parent: None, children_count: 0 };
+        const EMPTY: DomainNode = DomainNode {
+            id: 0,
+            name: "",
+            parent: None,
+            children_count: 0,
+        };
         Self {
             nodes: [EMPTY; MAX_TOPOLOGY_DOMAINS],
             count: 0,
@@ -86,7 +91,12 @@ impl DomainTopology {
                 }
             }
         }
-        self.nodes[self.count] = DomainNode { id, name, parent, children_count: 0 };
+        self.nodes[self.count] = DomainNode {
+            id,
+            name,
+            parent,
+            children_count: 0,
+        };
         self.count += 1;
         true
     }
@@ -136,7 +146,10 @@ pub struct CascadeQueue {
 
 impl CascadeQueue {
     pub const fn new() -> Self {
-        Self { order: [0; MAX_TOPOLOGY_DOMAINS], count: 0 }
+        Self {
+            order: [0; MAX_TOPOLOGY_DOMAINS],
+            count: 0,
+        }
     }
     pub fn push(&mut self, id: u64) {
         if self.count < MAX_TOPOLOGY_DOMAINS {
@@ -150,9 +163,16 @@ impl CascadeQueue {
 pub struct CascadePolicy;
 
 impl CascadePolicy {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 给定故障域 + 拓扑, 决定级联方向
-    pub fn direction(attribution: &FaultAttribution, topo: &DomainTopology, failed_id: u64) -> CascadeDirection {
+    pub fn direction(
+        attribution: &FaultAttribution,
+        topo: &DomainTopology,
+        failed_id: u64,
+    ) -> CascadeDirection {
         match attribution {
             FaultAttribution::Tcb { .. } => {
                 // TCB 故障 → 隔离 (防止级联)
@@ -162,9 +182,9 @@ impl CascadePolicy {
                 // 跨层故障 → 隔离失败域
                 CascadeDirection::Isolated
             }
-            FaultAttribution::Service { recoverable: false, .. } => {
-                CascadeDirection::Isolated
-            }
+            FaultAttribution::Service {
+                recoverable: false, ..
+            } => CascadeDirection::Isolated,
             FaultAttribution::Service { .. } | FaultAttribution::Unknown => {
                 // 服务域故障 → 根据子节点数量决策
                 if let Some(node) = topo.find(failed_id) {
@@ -185,10 +205,7 @@ impl CascadePolicy {
     /// 编排级联恢复
     ///
     /// 返回: 实际执行的恢复动作 + 队列
-    pub fn orchestrate(
-        signal: &FaultSignal,
-        topo: &DomainTopology,
-    ) -> CascadePlan {
+    pub fn orchestrate(signal: &FaultSignal, topo: &DomainTopology) -> CascadePlan {
         let action = RecoveryPolicy::decide(signal);
         let direction = Self::direction(&signal.attribution, topo, signal.domain_id());
         let queue = match direction {
@@ -196,7 +213,11 @@ impl CascadePolicy {
             CascadeDirection::TopDown => topo.top_down_order(signal.domain_id()),
             CascadeDirection::Isolated => CascadeQueue::new(),
         };
-        CascadePlan { action, direction, queue }
+        CascadePlan {
+            action,
+            direction,
+            queue,
+        }
     }
 }
 
@@ -290,7 +311,9 @@ mod tests {
     #[test]
     fn direction_tcb_isolated() {
         let topo = build_topology();
-        let attr = FaultAttribution::Tcb { module: TcbModule::Barrier };
+        let attr = FaultAttribution::Tcb {
+            module: TcbModule::Barrier,
+        };
         let dir = CascadePolicy::direction(&attr, &topo, 2);
         assert_eq!(dir, CascadeDirection::Isolated);
     }
@@ -298,7 +321,10 @@ mod tests {
     #[test]
     fn direction_service_leaf_bottomup() {
         let topo = build_topology();
-        let attr = FaultAttribution::Service { domain_id: 4, recoverable: true };
+        let attr = FaultAttribution::Service {
+            domain_id: 4,
+            recoverable: true,
+        };
         let dir = CascadePolicy::direction(&attr, &topo, 4);
         assert_eq!(dir, CascadeDirection::BottomUp);
     }
@@ -306,7 +332,10 @@ mod tests {
     #[test]
     fn direction_service_internal_topdown() {
         let topo = build_topology();
-        let attr = FaultAttribution::Service { domain_id: 1, recoverable: true };
+        let attr = FaultAttribution::Service {
+            domain_id: 1,
+            recoverable: true,
+        };
         let dir = CascadePolicy::direction(&attr, &topo, 1);
         assert_eq!(dir, CascadeDirection::TopDown);
     }

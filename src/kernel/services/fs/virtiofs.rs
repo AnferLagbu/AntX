@@ -13,8 +13,8 @@
 //!
 //! - virtio-fs 文档: docs/virtio-fs.rst
 
-use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -67,7 +67,10 @@ pub enum VirtioFsOp {
 }
 
 impl VirtioFsOp {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 从操作码解析
     pub fn from_opcode(opcode: u32) -> Self {
         match opcode {
@@ -156,7 +159,10 @@ pub struct VirtioFs {
 }
 
 impl VirtioFs {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     pub const fn new() -> Self {
         Self {
             nodes: [const { VirtioFsNode::new(0, 0, 0) }; MAX_NODES],
@@ -187,12 +193,7 @@ impl VirtioFs {
     ///
     /// # Errors
     /// 当父节点不存在时返回 `ENOENT`; 当节点表已满 (`MAX_NODES`) 时返回 `ENOMEM`.
-    pub fn create_node(
-        &mut self,
-        parent_id: u64,
-        name: &str,
-        mode: u32,
-    ) -> Result<u64, Errno> {
+    pub fn create_node(&mut self, parent_id: u64, name: &str, mode: u32) -> Result<u64, Errno> {
         if self.find_node(parent_id).is_none() {
             return Err(Errno::ENOENT);
         }
@@ -241,14 +242,13 @@ impl VirtioFs {
             }
         }
 
-        if found {
-            Ok(())
-        } else {
-            Err(Errno::ENOENT)
-        }
+        if found { Ok(()) } else { Err(Errno::ENOENT) }
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 列出子节点
     ///
     /// # Errors
@@ -289,7 +289,10 @@ pub fn get_virtiofs() -> &'static Mutex<VirtioFs> {
 // safe API
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 挂载 virtiofs
 ///
 /// # Errors
@@ -300,7 +303,10 @@ pub fn mount_virtiofs() -> Result<(), Errno> {
     Ok(())
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 卸载 virtiofs
 ///
 /// # Errors
@@ -312,7 +318,10 @@ pub fn umount_virtiofs() -> Result<(), Errno> {
     Ok(())
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 处理请求
 ///
 /// # Errors
@@ -370,9 +379,7 @@ pub fn handle_request(
             fs.delete_node(node_id)?;
             Ok(0)
         }
-        VirtioFsOp::Readdir => {
-            fs.list_children(node_id, buf)
-        }
+        VirtioFsOp::Readdir => fs.list_children(node_id, buf),
         _ => Err(Errno::ENOSYS),
     }
 }

@@ -43,8 +43,14 @@ pub const EM_AARCH64: u16 = 0xB7;
 /// `ET_DYN`: 共享对象 / PIE
 pub const ET_DYN: u16 = 3;
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 /// 验证 ELF 文件头 + program header table 边界
 ///
 /// ## 校验项
@@ -99,7 +105,10 @@ pub unsafe fn verify_elf(elf_data: *const u8, elf_size: u64) -> Result<VerifyRes
     let phdr_table_size = u64::from(header.e_phnum)
         .checked_mul(u64::from(header.e_phentsize))
         .ok_or(VerifyError::Overflow)?;
-    let phdr_end = header.e_phoff.checked_add(phdr_table_size).ok_or(VerifyError::Overflow)?;
+    let phdr_end = header
+        .e_phoff
+        .checked_add(phdr_table_size)
+        .ok_or(VerifyError::Overflow)?;
     if phdr_end > elf_size {
         return Err(VerifyError::PhdrOutOfBounds);
     }

@@ -118,13 +118,21 @@ impl core::fmt::Display for KernelError {
 // 向后兼容别名 (fs 层旧变体名 → 统一变体名)
 impl KernelError {
     /// fs 层旧名: `NotFound` → `FileNotFound`
-    pub const fn not_found() -> Self { Self::FileNotFound }
+    pub const fn not_found() -> Self {
+        Self::FileNotFound
+    }
     /// fs 层旧名: `IoError` → Io
-    pub const fn io_error() -> Self { Self::Io }
+    pub const fn io_error() -> Self {
+        Self::Io
+    }
     /// fs 层旧名: `OutOfMemory` → `NoMemory`
-    pub const fn out_of_memory() -> Self { Self::NoMemory }
+    pub const fn out_of_memory() -> Self {
+        Self::NoMemory
+    }
     /// fs 层旧名: `ReadOnly` → `ReadOnlyFilesystem`
-    pub const fn read_only() -> Self { Self::ReadOnlyFilesystem }
+    pub const fn read_only() -> Self {
+        Self::ReadOnlyFilesystem
+    }
 }
 
 impl KernelError {
@@ -161,7 +169,10 @@ impl KernelError {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 反向映射: 强类型 → POSIX errno.
     pub const fn as_errno(self) -> Errno {
         match self {

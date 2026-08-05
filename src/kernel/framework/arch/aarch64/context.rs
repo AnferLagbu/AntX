@@ -183,6 +183,8 @@ unsafe extern "C" {
 /// # Safety
 /// 调用者必须确保两个上下文指针有效且已初始化。
 #[inline(always)]
-pub unsafe fn switch(from: *mut u8, to: *const u8) { unsafe {
-    context_switch_asm(from as *const u64, to as *const u64);
-}}
+pub unsafe fn switch(from: *mut u8, to: *const u8) {
+    unsafe {
+        context_switch_asm(from as *const u64, to as *const u64);
+    }
+}

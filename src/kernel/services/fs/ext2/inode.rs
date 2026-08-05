@@ -27,7 +27,10 @@ pub struct Ext2Inode {
 }
 
 impl Ext2Inode {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 文件类型 (从 `i_mode` 提取)
     pub fn file_type(&self) -> u8 {
         match self.i_mode & 0xF000 {
@@ -107,7 +110,10 @@ impl Ext2Inode {
         Some(inode)
     }
 
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+    #[expect(
+        clippy::no_effect_underscore_binding,
+        reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+    )]
     /// 获取逻辑块号 (支持直接/间接寻址)
     pub fn get_block(&self, logical: u32, block_size: u32) -> Option<u32> {
         let blocks_per_indirect = block_size / 4;

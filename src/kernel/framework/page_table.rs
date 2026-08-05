@@ -16,9 +16,9 @@
 //! - 不修改页表, 纯只读验证。
 //! - 可在每次 map/unmap 后调用 (性能敏感路径用 feature gate)。
 
-use crate::kernel::framework::mm::{PhysAddr, VirtAddr, PageFlags, get_vmm, PAGE_SIZE};
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::mm::KERNEL_BASE;
+use crate::kernel::framework::mm::{PAGE_SIZE, PageFlags, PhysAddr, VirtAddr, get_vmm};
 
 /// 检查虚拟地址是否在用户地址空间内。
 ///
@@ -37,7 +37,10 @@ pub fn check_user_boundary(vaddr: VirtAddr, flags: PageFlags) {
 }
 
 #[cfg(target_arch = "aarch64")]
-#[expect(clippy::uninlined_format_args, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+#[expect(
+    clippy::uninlined_format_args,
+    reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+)]
 pub fn check_user_boundary(vaddr: VirtAddr, flags: PageFlags) {
     let va = vaddr.as_u64();
     if va >= 0xFFFF000000000000 {
@@ -49,7 +52,10 @@ pub fn check_user_boundary(vaddr: VirtAddr, flags: PageFlags) {
     }
 }
 
-#[expect(clippy::nonminimal_bool, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::nonminimal_bool,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// 检查写可执行页 (W^X 策略)。
 ///
 /// 不允许同时设置 WRITABLE 和执行标志, 防止代码注入。
@@ -69,9 +75,12 @@ pub fn verify_mapping(vaddr: VirtAddr, expected_phys: PhysAddr) {
     let vmm = get_vmm();
     if let Some(actual) = vmm.get_physical(vaddr) {
         debug_assert_eq!(
-            actual.as_u64(), expected_phys.as_u64(),
+            actual.as_u64(),
+            expected_phys.as_u64(),
             "PageTableChecker: vaddr 0x{:x} mapped to 0x{:x}, expected 0x{:x}",
-            vaddr.as_u64(), actual.as_u64(), expected_phys.as_u64()
+            vaddr.as_u64(),
+            actual.as_u64(),
+            expected_phys.as_u64()
         );
     }
 }

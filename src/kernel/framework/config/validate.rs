@@ -6,7 +6,7 @@
 //! framework 层仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::config::validate::{
-    validate_cpu_config, validate_memory_config, validate_interrupt_config,
-    validate_cross_module_consistency, validate_pci_subsystem,
-    validate_network_subsystem, validate_drivers, validate_system_config,
+    validate_cpu_config, validate_cross_module_consistency, validate_drivers,
+    validate_interrupt_config, validate_memory_config, validate_network_subsystem,
+    validate_pci_subsystem, validate_system_config,
 };

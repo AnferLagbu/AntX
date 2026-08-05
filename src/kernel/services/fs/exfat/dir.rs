@@ -2,19 +2,19 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! exFAT 目录项数据结构
 
-use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::driver::block::{read_sectors, with_device};
 use super::super_block::ExfatSuperBlock;
+use crate::kernel::framework::driver::block::{read_sectors, with_device};
+use crate::kernel::framework::fs::KernelError;
 use alloc::vec;
 use alloc::vec::Vec;
 
 /// exFAT 目录项类型
-pub const DIR_ENTRY_END: u8 = 0x00;       // 空目录项 (结束标记)
-pub const DIR_ENTRY_DELETED: u8 = 0xE5;   // 已删除
-pub const DIR_ENTRY_FILE: u8 = 0x85;      // 文件条目
-pub const DIR_ENTRY_STREAM: u8 = 0xC0;    // 流扩展 (文件名)
-pub const DIR_ENTRY_VOLUME: u8 = 0x81;    // 卷标
-pub const DIR_ENTRY_ALLOC: u8 = 0xA0;     // 分配位图
+pub const DIR_ENTRY_END: u8 = 0x00; // 空目录项 (结束标记)
+pub const DIR_ENTRY_DELETED: u8 = 0xE5; // 已删除
+pub const DIR_ENTRY_FILE: u8 = 0x85; // 文件条目
+pub const DIR_ENTRY_STREAM: u8 = 0xC0; // 流扩展 (文件名)
+pub const DIR_ENTRY_VOLUME: u8 = 0x81; // 卷标
+pub const DIR_ENTRY_ALLOC: u8 = 0xA0; // 分配位图
 
 /// exFAT 目录项 (32 字节)
 #[derive(Debug, Clone, Copy)]
@@ -77,8 +77,14 @@ impl ExfatDirEntry {
     pub fn stream_length(&self) -> u64 {
         if self.is_stream() {
             u64::from_le_bytes([
-                self.data[4], self.data[5], self.data[6], self.data[7],
-                self.data[8], self.data[9], self.data[10], self.data[11],
+                self.data[4],
+                self.data[5],
+                self.data[6],
+                self.data[7],
+                self.data[8],
+                self.data[9],
+                self.data[10],
+                self.data[11],
             ])
         } else {
             0
@@ -89,8 +95,14 @@ impl ExfatDirEntry {
     pub fn valid_length(&self) -> u64 {
         if self.is_file() {
             u64::from_le_bytes([
-                self.data[4], self.data[5], self.data[6], self.data[7],
-                self.data[8], self.data[9], self.data[10], self.data[11],
+                self.data[4],
+                self.data[5],
+                self.data[6],
+                self.data[7],
+                self.data[8],
+                self.data[9],
+                self.data[10],
+                self.data[11],
             ])
         } else {
             0
@@ -119,7 +131,12 @@ impl ExfatDirEntry {
             for i in 0..sectors_per_cluster {
                 let offset = i as usize * super_block.bytes_per_sector() as usize;
                 let result = with_device(device_idx as usize, |dev| {
-                    read_sectors(dev, u64::from(sector + i), 1, &mut cluster_data[offset..offset + super_block.bytes_per_sector() as usize])
+                    read_sectors(
+                        dev,
+                        u64::from(sector + i),
+                        1,
+                        &mut cluster_data[offset..offset + super_block.bytes_per_sector() as usize],
+                    )
                 });
 
                 if !matches!(result, Some(Ok(()))) {

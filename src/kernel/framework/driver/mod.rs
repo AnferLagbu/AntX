@@ -91,10 +91,10 @@ pub mod block;
 
 /// 热插拔管理器 (设备插入/移除事件分发)
 pub mod hotplug;
-/// D5: 电源管理 (CpuIdle/CpuFreq/Suspend)
-pub mod power;
 /// D10: kexec (直接内核引导)
 pub mod kexec;
+/// D5: 电源管理 (CpuIdle/CpuFreq/Suspend)
+pub mod power;
 /// D11: UEFI 运行时服务
 pub mod uefi;
 
@@ -103,39 +103,50 @@ pub mod uefi;
 // ============================================================================
 
 // --- 框架导出 ---
-pub use framework::{DeviceInfo, DeviceType, Driver, DriverError, Result as DriverResult, inb, outb};
+pub use framework::{
+    DeviceInfo, DeviceType, Driver, DriverError, Result as DriverResult, inb, outb,
+};
 
 // --- 块设备导出 ---
-pub use block::{BlockDevice, block_device_count, block_device_state, block_device_name, block_device_info, block_device_list, hdd_read_sector, hdd_write_sector, hdd_is_present, hdd_total_sectors};
+pub use block::{
+    BlockDevice, block_device_count, block_device_info, block_device_list, block_device_name,
+    block_device_state, hdd_is_present, hdd_read_sector, hdd_total_sectors, hdd_write_sector,
+};
 
 // --- 显示设备导出 ---
 pub use display::font::Font;
 pub use display::framebuffer::{Color, Framebuffer, Rect, colors};
-pub use display::{get_framebuffer, display_init, FB_PHYS_ADDR, FB_PHYS_SIZE};
+pub use display::{FB_PHYS_ADDR, FB_PHYS_SIZE, display_init, get_framebuffer};
 
 // --- 总线驱动导出 ---
 #[cfg(target_arch = "x86_64")]
 pub use bus::pci;
 
 // --- 字符设备导出 ---
-#[cfg(target_arch = "x86_64")]
-pub use char::{
-    BaudRate, DataBits, ParityMode, SerialConfig, SerialPort, StopBits, TextAttribute,
-    VgaChar, VgaDriver, SCREEN_HEIGHT, SCREEN_WIDTH,
-};
-#[cfg(target_arch = "x86_64")]
-pub use char::vga::Color as VgaColor;
 #[cfg(target_arch = "aarch64")]
 pub use char::pl011::Pl011Driver;
+#[cfg(target_arch = "x86_64")]
+pub use char::vga::Color as VgaColor;
+#[cfg(target_arch = "x86_64")]
+pub use char::{
+    BaudRate, DataBits, ParityMode, SCREEN_HEIGHT, SCREEN_WIDTH, SerialConfig, SerialPort,
+    StopBits, TextAttribute, VgaChar, VgaDriver,
+};
 
 // --- 网络设备导出 ---
 // e1000 内部函数 (`e1000_probe` 等) 在 e1000.rs 中以
 // `#[cfg(not(feature = "kernel_test"))]` 守卫 (kernel_test 无 PCI 总线);
 // 此处 re-export 必须同步 gate, 否则 kernel_test build 失败 (P0-1 修复).
 #[cfg(not(feature = "kernel_test"))]
-pub use net::e1000::{e1000_probe, e1000_net_send, e1000_net_recv, e1000_net_get_mac, e1000_net_irq, take_device as e1000_take_device};
+pub use net::e1000::{
+    e1000_net_get_mac, e1000_net_irq, e1000_net_recv, e1000_net_send, e1000_probe,
+    take_device as e1000_take_device,
+};
 #[cfg(not(feature = "kernel_test"))]
-pub use virtio::net::{virtio_net_probe, virtio_net_send, virtio_net_recv, virtio_net_get_mac, virtio_net_irq, take_device as virtio_net_take_device};
+pub use virtio::net::{
+    take_device as virtio_net_take_device, virtio_net_get_mac, virtio_net_irq, virtio_net_probe,
+    virtio_net_recv, virtio_net_send,
+};
 
 // --- 输入设备导出 ---
 #[cfg(target_arch = "x86_64")]
@@ -148,19 +159,25 @@ pub use storage::{
 
 // 为了向后兼容，保留一些直接导入
 #[cfg(target_arch = "x86_64")]
-pub use storage::ata::{AtaController, AtaDevice, get_io_base, get_ctrl_base, ATA_PRIMARY_IO, ATA_PRIMARY_CTRL, ATA_SECONDARY_IO, ATA_SECONDARY_CTRL, MAX_ATA_DEVICES, WORDS_PER_SECTOR};
+pub use storage::ata::{
+    ATA_PRIMARY_CTRL, ATA_PRIMARY_IO, ATA_SECONDARY_CTRL, ATA_SECONDARY_IO, AtaController,
+    AtaDevice, MAX_ATA_DEVICES, WORDS_PER_SECTOR, get_ctrl_base, get_io_base,
+};
 
 // --- serial 内部细节 re-export (供测试使用) ---
 #[cfg(target_arch = "x86_64")]
-pub use char::serial::{RingBuffer, COM1_BASE, COM2_BASE, MAX_COM_PORTS, SERIAL_BUFFER_SIZE};
+pub use char::serial::{COM1_BASE, COM2_BASE, MAX_COM_PORTS, RingBuffer, SERIAL_BUFFER_SIZE};
 
 // --- e1000 内部细节 re-export (供测试使用) ---
 #[cfg(not(feature = "kernel_test"))]
-pub use net::e1000::{E1000Device, E1000RxDesc, E1000TxDesc, E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_TX_RING_SIZE};
+pub use net::e1000::{
+    E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_TX_RING_SIZE, E1000Device, E1000RxDesc,
+    E1000TxDesc,
+};
 
 // --- power/kexec/uefi 公共接口 re-export ---
-pub use power::*;
 pub use kexec::*;
+pub use power::*;
 pub use uefi::*;
 
 // ============================================================================
@@ -335,8 +352,8 @@ pub extern "C" fn driver_shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
     use crate::kernel::framework::driver::input::KeyboardDriver;
+    use alloc::vec;
     use alloc::vec::Vec;
 
     #[test]

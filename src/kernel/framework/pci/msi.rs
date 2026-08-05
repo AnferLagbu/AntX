@@ -103,7 +103,8 @@ pub fn msi_alloc_vector() -> Option<u8> {
         // 找到第一个空闲位
         let bit = (0..u32::from(MSI_VECTOR_COUNT)).find(|&i| bitmap & (1 << i) == 0)?;
         let new_bitmap = bitmap | (1 << bit);
-        match MSI_VECTORS.compare_exchange(bitmap, new_bitmap, Ordering::AcqRel, Ordering::Acquire) {
+        match MSI_VECTORS.compare_exchange(bitmap, new_bitmap, Ordering::AcqRel, Ordering::Acquire)
+        {
             Ok(_) => {
                 let vector = MSI_VECTOR_BASE + bit as u8;
                 crate::klog_debug!(Driver, "[MSI] Allocated vector {}", vector);
@@ -206,7 +207,13 @@ pub fn msi_enable(dev: &pci::PciDevice) -> Option<MsiConfig> {
     let msg_data = u32::from(vector);
 
     // 写入 Message Address (低32位)
-    pci::write_config_dword(dev.bus, dev.device, dev.function, cap_offset + 0x04, msg_addr);
+    pci::write_config_dword(
+        dev.bus,
+        dev.device,
+        dev.function,
+        cap_offset + 0x04,
+        msg_addr,
+    );
 
     // 写入 Message Upper Address (64-bit capable)
     if is_64bit {
@@ -215,18 +222,36 @@ pub fn msi_enable(dev: &pci::PciDevice) -> Option<MsiConfig> {
 
     // 写入 Message Data
     let data_offset = if is_64bit { 0x0C } else { 0x08 };
-    pci::write_config_word(dev.bus, dev.device, dev.function, cap_offset + data_offset, msg_data as u16);
+    pci::write_config_word(
+        dev.bus,
+        dev.device,
+        dev.function,
+        cap_offset + data_offset,
+        msg_data as u16,
+    );
 
     // 启用 MSI (设置 Enable 位)
     let new_ctrl = ctrl | MSI_CTRL_ENABLE;
-    pci::write_config_word(dev.bus, dev.device, dev.function, cap_offset + 0x02, new_ctrl);
+    pci::write_config_word(
+        dev.bus,
+        dev.device,
+        dev.function,
+        cap_offset + 0x02,
+        new_ctrl,
+    );
 
     // 禁用 INTx (PCI 命令寄存器)
     let cmd = pci::read_config_word(dev.bus, dev.device, dev.function, 0x04);
     pci::write_config_word(dev.bus, dev.device, dev.function, 0x04, cmd | 0x0400);
 
-    crate::klog_info!(Driver, "[MSI] Enabled for {:02x}:{:02x}.{:01x} vector={}",
-        dev.bus, dev.device, dev.function, vector);
+    crate::klog_info!(
+        Driver,
+        "[MSI] Enabled for {:02x}:{:02x}.{:01x} vector={}",
+        dev.bus,
+        dev.device,
+        dev.function,
+        vector
+    );
 
     Some(MsiConfig {
         vector,
@@ -239,12 +264,23 @@ pub fn msi_enable(dev: &pci::PciDevice) -> Option<MsiConfig> {
 pub fn msi_disable(dev: &pci::PciDevice, config: &MsiConfig) {
     let ctrl = pci::read_config_word(dev.bus, dev.device, dev.function, config.cap_offset + 0x02);
     let new_ctrl = ctrl & !MSI_CTRL_ENABLE;
-    pci::write_config_word(dev.bus, dev.device, dev.function, config.cap_offset + 0x02, new_ctrl);
+    pci::write_config_word(
+        dev.bus,
+        dev.device,
+        dev.function,
+        config.cap_offset + 0x02,
+        new_ctrl,
+    );
 
     msi_free_vector(config.vector);
 
-    crate::klog_info!(Driver, "[MSI] Disabled for {:02x}:{:02x}.{:01x}",
-        dev.bus, dev.device, dev.function);
+    crate::klog_info!(
+        Driver,
+        "[MSI] Disabled for {:02x}:{:02x}.{:01x}",
+        dev.bus,
+        dev.device,
+        dev.function
+    );
 }
 
 // ============================================================================
@@ -342,14 +378,28 @@ pub fn msix_enable(dev: &pci::PciDevice, num_vectors: u16) -> Option<MsixConfig>
 
     // 启用 MSI-X
     let new_ctrl = ctrl | MSIX_CTRL_ENABLE;
-    pci::write_config_word(dev.bus, dev.device, dev.function, cap_offset + 0x02, new_ctrl);
+    pci::write_config_word(
+        dev.bus,
+        dev.device,
+        dev.function,
+        cap_offset + 0x02,
+        new_ctrl,
+    );
 
     // 禁用 INTx
     let cmd = pci::read_config_word(dev.bus, dev.device, dev.function, 0x04);
     pci::write_config_word(dev.bus, dev.device, dev.function, 0x04, cmd | 0x0400);
 
-    crate::klog_info!(Driver, "[MSI-X] Enabled for {:02x}:{:02x}.{:01x} vectors={}/{} base_vec={}",
-        dev.bus, dev.device, dev.function, actual_vectors, table_size, base_vector);
+    crate::klog_info!(
+        Driver,
+        "[MSI-X] Enabled for {:02x}:{:02x}.{:01x} vectors={}/{} base_vec={}",
+        dev.bus,
+        dev.device,
+        dev.function,
+        actual_vectors,
+        table_size,
+        base_vector
+    );
 
     Some(MsixConfig {
         base_vector,
@@ -366,12 +416,23 @@ pub fn msix_enable(dev: &pci::PciDevice, num_vectors: u16) -> Option<MsixConfig>
 pub fn msix_disable(dev: &pci::PciDevice, config: &MsixConfig) {
     let ctrl = pci::read_config_word(dev.bus, dev.device, dev.function, config.cap_offset + 0x02);
     let new_ctrl = ctrl & !MSIX_CTRL_ENABLE;
-    pci::write_config_word(dev.bus, dev.device, dev.function, config.cap_offset + 0x02, new_ctrl);
+    pci::write_config_word(
+        dev.bus,
+        dev.device,
+        dev.function,
+        config.cap_offset + 0x02,
+        new_ctrl,
+    );
 
     msi_free_vector(config.base_vector);
 
-    crate::klog_info!(Driver, "[MSI-X] Disabled for {:02x}:{:02x}.{:01x}",
-        dev.bus, dev.device, dev.function);
+    crate::klog_info!(
+        Driver,
+        "[MSI-X] Disabled for {:02x}:{:02x}.{:01x}",
+        dev.bus,
+        dev.device,
+        dev.function
+    );
 }
 
 /// 屏蔽 MSI-X 向量
@@ -382,7 +443,8 @@ pub fn msix_mask_vector(dev: &pci::PciDevice, config: &MsixConfig, index: u16) {
     if (config.table_bar as usize) < dev.bar_count {
         let bar = &dev.bars[config.table_bar as usize];
         if bar.bar_type == pci::BarType::Memory32 || bar.bar_type == pci::BarType::Memory64 {
-            let table_virt = (bar.base_addr + u64::from(config.table_offset)) as *mut MsixTableEntry;
+            let table_virt =
+                (bar.base_addr + u64::from(config.table_offset)) as *mut MsixTableEntry;
             // SAFETY: MMIO 访问
             unsafe {
                 let entry = &mut *table_virt.add(index as usize);
@@ -400,7 +462,8 @@ pub fn msix_unmask_vector(dev: &pci::PciDevice, config: &MsixConfig, index: u16)
     if (config.table_bar as usize) < dev.bar_count {
         let bar = &dev.bars[config.table_bar as usize];
         if bar.bar_type == pci::BarType::Memory32 || bar.bar_type == pci::BarType::Memory64 {
-            let table_virt = (bar.base_addr + u64::from(config.table_offset)) as *mut MsixTableEntry;
+            let table_virt =
+                (bar.base_addr + u64::from(config.table_offset)) as *mut MsixTableEntry;
             // SAFETY: MMIO 访问
             unsafe {
                 let entry = &mut *table_virt.add(index as usize);
@@ -416,7 +479,7 @@ pub fn msix_unmask_vector(dev: &pci::PciDevice, config: &MsixConfig, index: u16)
 
 #[cfg(feature = "kernel_test")]
 fn test_msi_vector_alloc_free() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     // 重置位图
     MSI_VECTORS.store(0, Ordering::SeqCst);
@@ -442,7 +505,7 @@ fn test_msi_vector_alloc_free() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_msi_ctrl_bits() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
 
     assert_eq_test!(MSI_CTRL_ENABLE, 0x0001, "MSI enable bit");
     assert_eq_test!(MSI_CTRL_64BIT, 0x0080, "MSI 64-bit bit");

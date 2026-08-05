@@ -7,7 +7,19 @@ use crate::kernel::framework::idt::InterruptFrame;
 use core::sync::atomic::Ordering;
 
 use super::raw;
-use super::types::{SYS_read, SYS_write, SYS_mremap, QX_RT_SIGRETURN, QX_FW_LOAD, QX_FW_GET, QX_FW_GET_INFO, QX_FW_DETACH, QX_FTRACE_ENABLE, QX_FTRACE_DISABLE, QX_FTRACE_READ, QX_FTRACE_STAT, QX_KGDB_ENTER, QX_SECCOMP, QX_PRCTL, QX_ROUTE_ADD, QX_ROUTE_DEL, QX_ROUTE_QUERY, QX_NF_ADD_RULE, QX_NF_DEL_RULE, QX_IO_URING_SETUP, QX_IO_URING_ENTER, QX_IO_URING_REGISTER, QX_IO_URING_SUBMIT, QX_UNSHARE, QX_SETNS, QX_CGROUP_CREATE, QX_CGROUP_DESTROY, QX_CGROUP_ATTACH, QX_CGROUP_SET_LIMIT, QX_CGROUP_GET_STAT, QX_BPF, QX_PM, QX_SECURE_BOOT, QX_TPM, QX_CET, QX_TICKLESS, QX_TIMESYNC, QX_KEXEC, QX_UEFI, QX_TCGETPGRP, QX_TCSETPGRP, QX_SOCKET, QX_CONNECT, QX_ACCEPT, QX_SENDTO, QX_RECVFROM, QX_SHUTDOWN, QX_BIND, QX_LISTEN, QX_SENDMSG, QX_RECVMSG, QX_SETSOCKOPT, QX_GETSOCKOPT, QX_GETSOCKNAME, QX_GETPEERNAME, Errno, QX_EXECVE, QX_SETRLIMIT, QX_TGKILL, QX_SENDFILE, QX_SPLICE, SYS_CREDO_HOTPLUG_STATUS, SYS_FB_OPEN, SYS_FB_MMAP, SYS_FB_RELEASE};
+use super::types::{
+    Errno, QX_ACCEPT, QX_BIND, QX_BPF, QX_CET, QX_CGROUP_ATTACH, QX_CGROUP_CREATE,
+    QX_CGROUP_DESTROY, QX_CGROUP_GET_STAT, QX_CGROUP_SET_LIMIT, QX_CONNECT, QX_EXECVE,
+    QX_FTRACE_DISABLE, QX_FTRACE_ENABLE, QX_FTRACE_READ, QX_FTRACE_STAT, QX_FW_DETACH, QX_FW_GET,
+    QX_FW_GET_INFO, QX_FW_LOAD, QX_GETPEERNAME, QX_GETSOCKNAME, QX_GETSOCKOPT, QX_IO_URING_ENTER,
+    QX_IO_URING_REGISTER, QX_IO_URING_SETUP, QX_IO_URING_SUBMIT, QX_KEXEC, QX_KGDB_ENTER,
+    QX_LISTEN, QX_NF_ADD_RULE, QX_NF_DEL_RULE, QX_PM, QX_PRCTL, QX_RECVFROM, QX_RECVMSG,
+    QX_ROUTE_ADD, QX_ROUTE_DEL, QX_ROUTE_QUERY, QX_RT_SIGRETURN, QX_SECCOMP, QX_SECURE_BOOT,
+    QX_SENDFILE, QX_SENDMSG, QX_SENDTO, QX_SETNS, QX_SETRLIMIT, QX_SETSOCKOPT, QX_SHUTDOWN,
+    QX_SOCKET, QX_SPLICE, QX_TCGETPGRP, QX_TCSETPGRP, QX_TGKILL, QX_TICKLESS, QX_TIMESYNC, QX_TPM,
+    QX_UEFI, QX_UNSHARE, SYS_CREDO_HOTPLUG_STATUS, SYS_FB_MMAP, SYS_FB_OPEN, SYS_FB_RELEASE,
+    SYS_mremap, SYS_read, SYS_write,
+};
 // SYS_CREDO_DISK_INSTALL 仅 x86_64 (非 kernel_test) 或 kernel_test 模式使用, aarch64 生产构建不引用
 #[cfg(any(feature = "kernel_test", target_arch = "x86_64"))]
 use super::types::SYS_CREDO_DISK_INSTALL;
@@ -47,7 +59,7 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
             "push rax",
             "push rdx",
             "mov dx, 0x3F8",
-            "mov al, 0x4A",  // 'J' - dispatch entered
+            "mov al, 0x4A", // 'J' - dispatch entered
             "out dx, al",
             "pop rdx",
             "pop rax",
@@ -71,8 +83,7 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
         let is_rt_sigreturn = syscall_num == 139;
 
         if is_rt_sigreturn {
-            let sigframe_ptr =
-                (f.rsp + 8) as *const crate::kernel::framework::proc::SignalFrame;
+            let sigframe_ptr = (f.rsp + 8) as *const crate::kernel::framework::proc::SignalFrame;
             if !sigframe_ptr.is_null() {
                 let sigframe = core::ptr::read_unaligned(sigframe_ptr);
                 f.r15 = sigframe.r15;
@@ -156,18 +167,19 @@ pub unsafe extern "C" fn syscall_dispatch(
     result
 }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::cast_possible_truncation, reason = "syscall handler 中 u64 → u32/i32 转换: 严格校验在 try_fd/try_flags helper 内; 剩余 cast 是 sys_* 函数内数据转换, 已知安全")]
-#[expect(clippy::cast_possible_wrap, reason = "syscall handler 中 usize/u64 互转: 内核/用户态地址均为 usize 表示, 位宽不变")]
-fn syscall_dispatch_impl(
-    num: u64,
-    a0: u64,
-    a1: u64,
-    a2: u64,
-    a3: u64,
-    a4: u64,
-    a5: u64,
-) -> i64 {
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "syscall handler 中 u64 → u32/i32 转换: 严格校验在 try_fd/try_flags helper 内; 剩余 cast 是 sys_* 函数内数据转换, 已知安全"
+)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "syscall handler 中 usize/u64 互转: 内核/用户态地址均为 usize 表示, 位宽不变"
+)]
+fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     // 直接 Linux ABI: syscall 编号直接使用 Linux 标准编号, 无需翻译
 
     // C7: Seccomp 过滤检查 (在 dispatch 之前)
@@ -177,8 +189,7 @@ fn syscall_dispatch_impl(
     }
 
     // L-01: 优先委托 services 层策略分发
-    let svc_ret =
-        super::dispatch_trait::current_syscall_dispatch().dispatch(num, args);
+    let svc_ret = super::dispatch_trait::current_syscall_dispatch().dispatch(num, args);
     if svc_ret != -38 {
         return svc_ret;
     }
@@ -209,8 +220,8 @@ fn syscall_dispatch_impl(
                             match crate::kernel::services::mm::mremap::mremap_syscall(
                                 mm, a0, a1, a2, flags,
                             ) {
-                            Ok(addr) => addr as i64,
-                            Err(e) => e.as_ret(),
+                                Ok(addr) => addr as i64,
+                                Err(e) => e.as_ret(),
                             },
                             b"mremap\0"
                         ),
@@ -416,9 +427,9 @@ fn syscall_dispatch_impl(
         #[cfg(feature = "net")]
         QX_GETPEERNAME => dispatch!(sys_getpeername(a0 as i32, a1, a2), b"getpeername\0"),
         #[cfg(not(feature = "net"))]
-        QX_SOCKET | QX_CONNECT | QX_ACCEPT | QX_SENDTO | QX_RECVFROM | QX_SHUTDOWN
-        | QX_BIND | QX_LISTEN | QX_SENDMSG | QX_RECVMSG | QX_SETSOCKOPT | QX_GETSOCKOPT
-        | QX_GETSOCKNAME | QX_GETPEERNAME => {
+        QX_SOCKET | QX_CONNECT | QX_ACCEPT | QX_SENDTO | QX_RECVFROM | QX_SHUTDOWN | QX_BIND
+        | QX_LISTEN | QX_SENDMSG | QX_RECVMSG | QX_SETSOCKOPT | QX_GETSOCKOPT | QX_GETSOCKNAME
+        | QX_GETPEERNAME => {
             dispatch!(Errno::ENOSYS.as_ret(), b"net_nosys\0")
         }
 
@@ -443,13 +454,21 @@ fn syscall_dispatch_impl(
         // ==================== sendfile / splice ====================
         QX_SENDFILE => dispatch!(
             crate::kernel::framework::syscall::sendfile::sys_sendfile(
-                a0 as i32, a1 as i32, a2, a3 as usize
+                a0 as i32,
+                a1 as i32,
+                a2,
+                a3 as usize
             ),
             b"sendfile\0"
         ),
         QX_SPLICE => dispatch!(
             crate::kernel::framework::syscall::sendfile::sys_splice(
-                a0 as i32, a1, a2 as i32, a3, a4 as usize, a5 as u32
+                a0 as i32,
+                a1,
+                a2 as i32,
+                a3,
+                a4 as usize,
+                a5 as u32
             ),
             b"splice\0"
         ),
@@ -479,7 +498,10 @@ fn syscall_dispatch_impl(
 // 文件 I/O — read / write
 // ============================================================================
 
-#[expect(clippy::cast_possible_truncation, reason = "fd as u32: fd 由 try_fd 严格校验, 在 i32 范围内; count as u32: 单次 read 不会超过 u32::MAX (Linux ABI)")]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "fd as u32: fd 由 try_fd 严格校验, 在 i32 范围内; count as u32: 单次 read 不会超过 u32::MAX (Linux ABI)"
+)]
 fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if buf.is_null() || count == 0 {
         return Errno::EINVAL.as_ret();
@@ -521,7 +543,11 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
     if crate::kernel::framework::fs::is_inotify_fd(fd) {
         return crate::kernel::framework::fs::sys_inotify_read(i64::from(fd), buf, count as usize);
     }
-    i64::from(crate::kernel::framework::fs::vfs_read(fd as u32, buf, count as u32))
+    i64::from(crate::kernel::framework::fs::vfs_read(
+        fd as u32,
+        buf,
+        count as u32,
+    ))
 }
 
 /// 从用户空间缓冲区复制数据到内核缓冲区.
@@ -530,11 +556,7 @@ fn sys_read(fd: i32, buf: *mut u8, count: u64) -> i64 {
 /// 将用户虚拟地址转译为物理地址, 再通过 `KERNEL_BASE` 恒等映射访问.
 ///
 /// 返回实际复制的字节数; 若任一转译失败则返回已复制字节数 (调用方按需处理).
-fn copy_from_user_buf(
-    user_buf: *const u8,
-    kernel_buf: &mut [u8],
-    user_cr3: u64,
-) -> usize {
+fn copy_from_user_buf(user_buf: *const u8, kernel_buf: &mut [u8], user_cr3: u64) -> usize {
     if user_buf.is_null() || kernel_buf.is_empty() || user_cr3 == 0 {
         return 0;
     }
@@ -548,10 +570,9 @@ fn copy_from_user_buf(
         let page_va = user_va & !(page_size - 1);
         let offset = user_va & (page_size - 1);
         let step = (page_size - offset).min((total - copied) as u64) as usize;
-        let phys = match vmm.get_physical_in_pml4(
-            user_cr3,
-            crate::kernel::framework::mm::VirtAddr(page_va),
-        ) {
+        let phys = match vmm
+            .get_physical_in_pml4(user_cr3, crate::kernel::framework::mm::VirtAddr(page_va))
+        {
             Some(p) => p.as_u64(),
             None => break,
         };
@@ -626,10 +647,7 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
         if copied == 0 {
             break;
         }
-        let n = crate::kernel::framework::fs::vfs_write_safe(
-            fd as u32,
-            &kernel_buf[..copied],
-        );
+        let n = crate::kernel::framework::fs::vfs_write_safe(fd as u32, &kernel_buf[..copied]);
         if n < 0 {
             return i64::from(n);
         }
@@ -642,12 +660,11 @@ fn sys_write(fd: i32, buf: *const u8, count: u64) -> i64 {
 // execve / 网络 / 时间
 // ============================================================================
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-fn sys_execve(
-    path: *const u8,
-    argv: *const *const u8,
-    envp: *const *const u8,
-) -> i64 {
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+fn sys_execve(path: *const u8, argv: *const *const u8, envp: *const *const u8) -> i64 {
     if path.is_null() || !raw::check_user_ptr(path as u64) {
         return Errno::EFAULT.as_ret();
     }
@@ -679,11 +696,8 @@ fn sys_execve(
     // SUID 处理
     let mut stat_buf = core::mem::MaybeUninit::<crate::kernel::framework::fs::VfsStat>::uninit();
     let current_pwm = crate::kernel::framework::credo::get_current_pwm();
-    let stat_result = crate::kernel::framework::fs::vfs_stat_internal(
-        path,
-        stat_buf.as_mut_ptr(),
-        current_pwm,
-    );
+    let stat_result =
+        crate::kernel::framework::fs::vfs_stat_internal(path, stat_buf.as_mut_ptr(), current_pwm);
     if stat_result == 0 {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         let st = unsafe { stat_buf.assume_init() };
@@ -710,13 +724,19 @@ fn sys_getpeername(sockfd: i32, addr: u64, addrlen: u64) -> i64 {
     crate::kernel::framework::net::syscall::getpeername_syscall(sockfd, addr, addrlen)
 }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 pub(crate) fn sys_nanosleep(req: u64, rem: u64) -> i64 {
     if req == 0 || !raw::check_user_ptr(req) {
         return Errno::EINVAL.as_ret();
     }
     #[repr(C)]
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     struct Timespec {
         tv_sec: i64,
         tv_nsec: i64,
@@ -844,8 +864,8 @@ pub(crate) fn sys_rt_sigprocmask(how: i32, set: u64, oset: u64) -> i64 {
 }
 
 fn sys_rt_sigreturn() -> i64 {
-    if let Some(pid) = Some(crate::kernel::framework::proc::process_get_current_pid())
-        .filter(|&p| p != 0)
+    if let Some(pid) =
+        Some(crate::kernel::framework::proc::process_get_current_pid()).filter(|&p| p != 0)
     {
         crate::kernel::framework::proc::process_with_mut(pid, |proc| {
             let flags = proc.sigaltstack_flags.load(Ordering::Acquire);
@@ -1038,14 +1058,14 @@ fn sys_fb_open(info_ptr: u64, _flags: u64) -> i64 {
         return Errno::EFAULT.as_ret();
     }
 
-    let fb_addr = crate::kernel::framework::driver::FB_PHYS_ADDR
-        .load(core::sync::atomic::Ordering::Acquire);
+    let fb_addr =
+        crate::kernel::framework::driver::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
     if fb_addr == 0 {
         return Errno::ENODEV.as_ret();
     }
 
-    let fb_size = crate::kernel::framework::driver::FB_PHYS_SIZE
-        .load(core::sync::atomic::Ordering::Acquire);
+    let fb_size =
+        crate::kernel::framework::driver::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
 
     let (width, height, pitch, bpp) = match crate::kernel::framework::driver::get_framebuffer() {
         Some(guard) => {
@@ -1084,14 +1104,14 @@ fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
 
-    let fb_phys = crate::kernel::framework::driver::FB_PHYS_ADDR
-        .load(core::sync::atomic::Ordering::Acquire);
+    let fb_phys =
+        crate::kernel::framework::driver::FB_PHYS_ADDR.load(core::sync::atomic::Ordering::Acquire);
     if fb_phys == 0 {
         return Errno::ENODEV.as_ret();
     }
 
-    let fb_total = crate::kernel::framework::driver::FB_PHYS_SIZE
-        .load(core::sync::atomic::Ordering::Acquire);
+    let fb_total =
+        crate::kernel::framework::driver::FB_PHYS_SIZE.load(core::sync::atomic::Ordering::Acquire);
     if size > fb_total {
         return Errno::EINVAL.as_ret();
     }
@@ -1145,7 +1165,10 @@ fn write_le32(buf: &mut [u8], offset: usize, val: u32) {
 const BOOT_PART_SECTORS: u32 = 16384;
 
 #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn sys_boot_install(disk_id: u32) -> i64 {
     let pwm = crate::kernel::framework::credo::pwm_get_current();
     if !crate::kernel::framework::credo::pwm_has_capability(pwm, 4, 0) {
@@ -1211,11 +1234,8 @@ fn sys_boot_install(disk_id: u32) -> i64 {
         unsafe {
             core::ptr::copy_nonoverlapping(kernel_ptr.add(offset), buf.as_mut_ptr(), n);
         }
-        if crate::kernel::framework::driver::hdd_write_sector(
-            disk_id as u8,
-            u64::from(1 + s),
-            &buf,
-        ) < 0
+        if crate::kernel::framework::driver::hdd_write_sector(disk_id as u8, u64::from(1 + s), &buf)
+            < 0
         {
             return Errno::EIO.as_ret();
         }

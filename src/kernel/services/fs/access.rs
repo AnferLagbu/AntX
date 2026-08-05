@@ -14,8 +14,8 @@
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // 权限位
@@ -70,7 +70,12 @@ pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
 ///
 /// # Errors
 /// 错误条件与 [`access_syscall`] 相同, 参见其 `# Errors` 段.
-pub fn faccessat_syscall(_dirfd: i32, path_ptr: u64, mode: i32, _flags: i32) -> Result<usize, Errno> {
+pub fn faccessat_syscall(
+    _dirfd: i32,
+    path_ptr: u64,
+    mode: i32,
+    _flags: i32,
+) -> Result<usize, Errno> {
     access_syscall(path_ptr, mode)
 }
 
@@ -105,7 +110,10 @@ pub fn unlink_syscall(path_ptr: u64) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())

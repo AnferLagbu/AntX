@@ -6,8 +6,8 @@
 //! - gettimeofday: 时钟
 
 use crate::kernel::framework::proc::api;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // 进程/线程 ID
@@ -50,7 +50,10 @@ pub fn sys_uname(buf: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     struct Utsname {
         sysname: [u8; 65],
         nodename: [u8; 65],
@@ -111,7 +114,10 @@ pub fn sys_gettimeofday(tv: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     struct Timeval {
         tv_sec: i64,
         tv_usec: i64,

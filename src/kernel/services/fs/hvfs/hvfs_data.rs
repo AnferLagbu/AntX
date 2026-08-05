@@ -1,22 +1,21 @@
 #![deny(unsafe_code)]
 
-
 use crate::kernel::framework::credo::api as pwm_api;
 use crate::kernel::framework::driver::block;
+use crate::kernel::framework::fs::KernelError;
 use crate::kernel::services::fs::hvfs::arc::{HvArcBufType, HvArcKey};
-use crate::kernel::services::fs::hvfs::bp::{HvCksumType, HvCompType, HvBlockPointer};
+use crate::kernel::services::fs::hvfs::bp::{HvBlockPointer, HvCksumType, HvCompType};
 use crate::kernel::services::fs::hvfs::compress;
 use crate::kernel::services::fs::hvfs::dataset::HvDataset;
 use crate::kernel::services::fs::hvfs::dmu::{HV_DMU_OBJ_ROOT, HvDmuObject, HvObjType};
 use crate::kernel::services::fs::hvfs::snapshot::HvSnapshotManager;
-use crate::kernel::services::fs::hvfs::spa::{HvSpa, HvPoolState, HV_POOL_BLOCK_SIZE};
+use crate::kernel::services::fs::hvfs::spa::{HV_POOL_BLOCK_SIZE, HvPoolState, HvSpa};
 use crate::kernel::services::fs::hvfs::txg::HvTxgGroup;
 use crate::kernel::services::fs::hvfs::zil::{HvZil, HvZilRecord};
-use crate::kernel::framework::fs::KernelError;
+use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use crate::kernel::services::sync::irq_lock::IrqSpinLock as Mutex;
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 use crate::kernel::services::sync::once::OnceCell;
 
@@ -116,7 +115,10 @@ pub fn get_hvfs() -> &'static HvfsData {
 }
 
 impl HvfsData {
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 扫描所有已注册的块设备，返回检测到的驱动器列表 (`drive_id`, `partition_start_lba`)
     /// 对于已格式化的磁盘读取 `QueenX` 签名，对于空白磁盘使用默认分区起始偏移
     fn scan_all_drives(&self) -> Vec<(u8, u32)> {
@@ -137,12 +139,19 @@ impl HvfsData {
                 };
             discovered.push((drive, part_start));
         }
-        crate::slog_info!(FS, "[HvFS] scan: {} block device(s) in registry, {} drive(s) available",
-            block::block_device_count(), discovered.len());
+        crate::slog_info!(
+            FS,
+            "[HvFS] scan: {} block device(s) in registry, {} drive(s) available",
+            block::block_device_count(),
+            discovered.len()
+        );
         discovered
     }
 
-#[expect(clippy::assigning_clones, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::assigning_clones,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn init(&self) {
         crate::slog_info!(FS, "[HvFS] Initializing...");
 
@@ -179,7 +188,10 @@ impl HvfsData {
 
             if !mounted_any {
                 // Step 3: 格式化第一个磁盘 (全新 HvFS)
-                crate::slog_warn!(FS, "[HvFS] No valid uberblock found, formatting first drive...");
+                crate::slog_warn!(
+                    FS,
+                    "[HvFS] No valid uberblock found, formatting first drive..."
+                );
                 let (drive_id, part_start) = discovered[0];
                 self.disk_drive.store(drive_id, Ordering::Release);
                 self.format_drive(drive_id, part_start);
@@ -187,11 +199,12 @@ impl HvfsData {
                 // 其余磁盘也添加为 vdev
                 for (drive_id, part_start) in &discovered[1..] {
                     self.disk_drive.store(*drive_id, Ordering::Release);
-                    let mut vdev_cfg = crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
-                        u16::from(*drive_id),
-                        "disk",
-                        12,
-                    );
+                    let mut vdev_cfg =
+                        crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
+                            u16::from(*drive_id),
+                            "disk",
+                            12,
+                        );
                     vdev_cfg.asize = self.probe_partition_size_for_drive(*drive_id, *part_start);
                     vdev_cfg.partition_start = *part_start;
                     self.spa.add_vdev(vdev_cfg);
@@ -202,13 +215,16 @@ impl HvfsData {
             self.disk_drive.store(discovered[0].0, Ordering::Release);
             self.partition_start
                 .store(discovered[0].1, Ordering::Release);
-            crate::slog_info!(FS, "[HvFS] Initialized: pool=queenx-pool (disk, {} drive(s))", discovered.len());
+            crate::slog_info!(
+                FS,
+                "[HvFS] Initialized: pool=queenx-pool (disk, {} drive(s))",
+                discovered.len()
+            );
         } else {
             crate::slog_info!(FS, "[HvFS] No disk, running in memory mode");
-            self.spa
-                .add_vdev(crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
-                    0, "ata0", 12,
-                ));
+            self.spa.add_vdev(
+                crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(0, "ata0", 12),
+            );
         }
 
         self.setup_zil_datasets();
@@ -273,10 +289,17 @@ impl HvfsData {
         self.spa
             .partition_start
             .store(part_start, Ordering::Release);
-        crate::slog_info!(FS, "[HvFS] FORMAT: Writing fresh HvFS v2 to disk (partition @LBA {})...", part_start);
+        crate::slog_info!(
+            FS,
+            "[HvFS] FORMAT: Writing fresh HvFS v2 to disk (partition @LBA {})...",
+            part_start
+        );
         self.spa.disk_present.store(true, Ordering::Release);
-        let mut vdev_cfg =
-            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(u16::from(drive_id), "disk", 12);
+        let mut vdev_cfg = crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
+            u16::from(drive_id),
+            "disk",
+            12,
+        );
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -315,8 +338,11 @@ impl HvfsData {
             }
         };
 
-        let mut vdev_cfg =
-            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(u16::from(drive), "disk", 12);
+        let mut vdev_cfg = crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
+            u16::from(drive),
+            "disk",
+            12,
+        );
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -337,16 +363,26 @@ impl HvfsData {
     /// 返回 true 表示找到并标记成功。
     pub fn hotplug_remove_disk(&self, drive: u8) -> bool {
         let mut vdevs = self.spa.vdevs.lock();
-        if let Some(vdev) = vdevs.iter_mut().find(|v| v.config.vdev_id == u16::from(drive)) {
+        if let Some(vdev) = vdevs
+            .iter_mut()
+            .find(|v| v.config.vdev_id == u16::from(drive))
+        {
             vdev.state = crate::kernel::services::fs::hvfs::vdev::HvVdevState::Removed;
             crate::slog_info!(FS, "[HvFS] HOTPLUG: disk removed (drive={})", drive);
             return true;
         }
-        crate::slog_warn!(FS, "[HvFS] HOTPLUG: disk not found in vdevs (drive={})", drive);
+        crate::slog_warn!(
+            FS,
+            "[HvFS] HOTPLUG: disk not found in vdevs (drive={})",
+            drive
+        );
         false
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn probe_partition_size_for_drive(&self, drive_id: u8, part_start: u32) -> u64 {
         if !block::hdd_is_present(drive_id) {
             return 0;
@@ -371,7 +407,10 @@ impl HvfsData {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn mount_drive(&self, drive_id: u8, part_start: u32) -> bool {
         if !block::hdd_is_present(drive_id) {
             return false;
@@ -380,8 +419,14 @@ impl HvfsData {
         self.spa
             .partition_start
             .store(part_start, Ordering::Release);
-        crate::slog_info!(FS, "[HvFS] MOUNT: Reading uberblock from disk (partition @LBA {})...", part_start);
-        let ub = if let Some(u) = self.spa.read_uberblock_from_disk() { u } else {
+        crate::slog_info!(
+            FS,
+            "[HvFS] MOUNT: Reading uberblock from disk (partition @LBA {})...",
+            part_start
+        );
+        let ub = if let Some(u) = self.spa.read_uberblock_from_disk() {
+            u
+        } else {
             crate::slog_warn!(FS, "[HvFS] MOUNT: No valid uberblock found");
             return false;
         };
@@ -394,8 +439,11 @@ impl HvfsData {
         self.spa.formatted.store(true, Ordering::Release);
         self.spa.disk_present.store(true, Ordering::Release);
         self.mode.store(HvfsMode::Disk as u8, Ordering::Release);
-        let mut vdev_cfg =
-            crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(u16::from(drive_id), "disk", 12);
+        let mut vdev_cfg = crate::kernel::services::fs::hvfs::vdev::HvVdevConfig::new_disk(
+            u16::from(drive_id),
+            "disk",
+            12,
+        );
         vdev_cfg.asize = self.probe_partition_size_for_drive(drive_id, part_start);
         vdev_cfg.partition_start = part_start;
         self.spa.add_vdev(vdev_cfg);
@@ -430,7 +478,11 @@ impl HvfsData {
         self.spa
             .state
             .store(HvPoolState::Active as u8, Ordering::Release);
-        crate::slog_info!(FS, "[HvFS] MOUNT: Ready (pool_guid={})", self.spa.config.lock().guid);
+        crate::slog_info!(
+            FS,
+            "[HvFS] MOUNT: Ready (pool_guid={})",
+            self.spa.config.lock().guid
+        );
         true
     }
 
@@ -455,7 +507,10 @@ impl HvfsData {
         None
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     fn check_permission(&self, obj: &HvDmuObject, pwm: u64, cap: u64) -> bool {
         if pwm == 0 {
             return false;
@@ -475,7 +530,10 @@ impl HvfsData {
         pwm_api::pwm_has_capability(pwm, 3, cap)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 打开 hvfs 中的对象并分配文件描述符.
     ///
     /// # Errors
@@ -579,7 +637,11 @@ impl HvfsData {
         }
         let block_offset = (offset / HV_POOL_BLOCK_SIZE) * HV_POOL_BLOCK_SIZE;
         let block_key = HvArcKey::new(0, (obj_id << 40) | block_offset, obj.birth_txg);
-        if let Some(data) = self.spa.arc.lookup_slice(&block_key, HV_POOL_BLOCK_SIZE as usize) {
+        if let Some(data) = self
+            .spa
+            .arc
+            .lookup_slice(&block_key, HV_POOL_BLOCK_SIZE as usize)
+        {
             let start = (offset - block_offset) as usize;
             let end = (start + to_read).min(HV_POOL_BLOCK_SIZE as usize);
             buf[..end - start].copy_from_slice(&data[start..end]);
@@ -601,7 +663,10 @@ impl HvfsData {
         to_read as i32
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn write(&self, fd: u32, buf: &[u8], count: u32) -> i32 {
         let (obj_id, offset, pwm, flags) = {
             let fds = self.fds.lock();
@@ -698,7 +763,10 @@ impl HvfsData {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn unlink(&self, path: &str, pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -751,7 +819,10 @@ impl HvfsData {
         Some(obj)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn chmod(&self, path: &str, mode: u16, pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -794,7 +865,10 @@ impl HvfsData {
         self.chown_ext(path, owner_pwm, 0, pwm)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn chown_ext(&self, path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> i32 {
         if !self.is_initialized() {
             return KernelError::NotInitialized.as_i32();
@@ -1268,7 +1342,10 @@ impl HvfsData {
         0
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
     fn serialize_dataset_metadata(&self, txg: u64) -> Option<HvBlockPointer> {
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_SERIALIZE_OBJECTS: usize = 65536;
@@ -1285,7 +1362,10 @@ impl HvfsData {
         };
 
         if objects.len() > MAX_SERIALIZE_OBJECTS || dir_entries.len() > MAX_SERIALIZE_ENTRIES {
-            crate::slog_err!(FS, "[HvFS] serialize: object/entry count exceeds safety limit");
+            crate::slog_err!(
+                FS,
+                "[HvFS] serialize: object/entry count exceeds safety limit"
+            );
             return None;
         }
 
@@ -1422,8 +1502,14 @@ impl HvfsData {
         Some(bp)
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     fn deserialize_dataset_metadata(&self, bp: &HvBlockPointer) -> bool {
         const OBJ_RECORD_SIZE: usize = 222;
         const MAX_DESERIALIZE_OBJECTS: usize = 65536;
@@ -1458,14 +1544,20 @@ impl HvfsData {
         };
 
         if obj_count > MAX_DESERIALIZE_OBJECTS || zap_count > MAX_DESERIALIZE_ENTRIES {
-            crate::slog_err!(FS, "[HvFS] deserialize: count exceeds safety limit, possible corruption");
+            crate::slog_err!(
+                FS,
+                "[HvFS] deserialize: count exceeds safety limit, possible corruption"
+            );
             return false;
         }
 
         let expected_min =
             32u64 + obj_count as u64 * OBJ_RECORD_SIZE as u64 + zap_count as u64 * (2 + 8);
         if (buf.len() as u64) < expected_min {
-            crate::slog_err!(FS, "[HvFS] deserialize: buffer too small for declared counts");
+            crate::slog_err!(
+                FS,
+                "[HvFS] deserialize: buffer too small for declared counts"
+            );
             return false;
         }
 
@@ -1505,10 +1597,11 @@ impl HvfsData {
                 if off + HvBlockPointer::BYTES > buf.len() {
                     return false;
                 }
-                let bp_val = match HvBlockPointer::from_bytes(&buf[off..off + HvBlockPointer::BYTES]) {
-                    Some(v) => v,
-                    None => return false,
-                };
+                let bp_val =
+                    match HvBlockPointer::from_bytes(&buf[off..off + HvBlockPointer::BYTES]) {
+                        Some(v) => v,
+                        None => return false,
+                    };
                 off += HvBlockPointer::BYTES;
 
                 let atime = match Self::read_le64(&buf, off) {
@@ -1598,7 +1691,10 @@ impl HvfsData {
                 };
                 off += 2;
                 if name_len > MAX_NAME_LEN {
-                    crate::slog_err!(FS, "[HvFS] deserialize: name length exceeds limit, possible corruption");
+                    crate::slog_err!(
+                        FS,
+                        "[HvFS] deserialize: name length exceeds limit, possible corruption"
+                    );
                     return false;
                 }
                 if off + name_len + 8 > buf.len() {

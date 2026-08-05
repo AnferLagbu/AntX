@@ -15,7 +15,10 @@ const MFD_ALLOW_SEALING: u32 = 0x0002;
 /// `MFD_HUGE_16GB` 标志位 (简化: 不支持大页)
 const MFD_HUGE_MASK: u32 = 0x3F << 26;
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 /// `memfd_create` — 创建匿名内存文件
 ///
 /// # Errors
@@ -35,8 +38,7 @@ pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> 
     }
 
     // 在 AnonymousFs 中分配 inode
-    let inode_id = ANONYMOUS_FS.alloc_inode()
-        .ok_or(Errno::ENOMEM)?;
+    let inode_id = ANONYMOUS_FS.alloc_inode().ok_or(Errno::ENOMEM)?;
 
     // 创建匿名 Inode
     let inode = crate::kernel::services::fs::inode::new_anonymous_inode(inode_id);
@@ -50,8 +52,7 @@ pub fn memfd_create_syscall(_name_ptr: u64, flags: u32) -> Result<usize, Errno> 
     );
 
     // 插入全局 OpenFile 表
-    let handle_id = OPEN_FILE_TABLE.alloc(open_file)
-        .ok_or(Errno::ENOMEM)?;
+    let handle_id = OPEN_FILE_TABLE.alloc(open_file).ok_or(Errno::ENOMEM)?;
 
     // 在当前进程 fd 表中分配 fd
     // TODO: 使用 per-process fd 表

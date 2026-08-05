@@ -28,9 +28,10 @@
 //! - 提供纯 Rust 抽象,无 C ABI 依赖
 //! - 异常路径:空指针 / 越界 / 内存不足一律返回 0 / -1 / null,调用方按需检查
 
-use super::{get_pmm, PhysAddr, PageSize, VirtAddr, PageFlags, get_vmm, get_kmalloc, get_kmalloc_mut};
+use super::{
+    PageFlags, PageSize, PhysAddr, VirtAddr, get_kmalloc, get_kmalloc_mut, get_pmm, get_vmm,
+};
 use core::sync::atomic::AtomicU64;
-
 
 /// 内核 malloc 统计结构 (C 兼容)
 #[repr(C)]
@@ -175,7 +176,10 @@ pub struct SlabStats {
     pub total_caches: u32,
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// 获取 slab 分配器系统级统计
 pub fn slab_get_stats() -> SlabStats {
     let mut total_memory = 0u64;
@@ -183,11 +187,7 @@ pub fn slab_get_stats() -> SlabStats {
     let mut total_caches = 0u32;
     // SAFETY: slab_get_system_stats 是 FFI 函数, 输出指针由本函数保证有效
     unsafe {
-        super::slab::slab_get_system_stats(
-            &mut total_memory,
-            &mut used_memory,
-            &mut total_caches,
-        );
+        super::slab::slab_get_system_stats(&mut total_memory, &mut used_memory, &mut total_caches);
     }
     SlabStats {
         total_memory,
@@ -435,7 +435,10 @@ pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn k_malloc(size: usize) -> *mut u8 {
     match get_kmalloc().allocate(size) {
         Some(ptr) => ptr as *mut u8,
@@ -447,7 +450,10 @@ pub extern "C" fn k_malloc(size: usize) -> *mut u8 {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn k_free(ptr: *mut u8) {
     if !ptr.is_null() {
         get_kmalloc().deallocate(ptr as *mut u8);
@@ -458,7 +464,10 @@ pub extern "C" fn k_free(ptr: *mut u8) {
 ///
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn k_realloc(ptr: *mut u8, size: usize) -> *mut u8 {
     match get_kmalloc().reallocate(ptr as *mut u8, size) {
         Some(new_ptr) => new_ptr as *mut u8,
@@ -532,15 +541,21 @@ pub extern "C" fn krealloc(ptr: *mut u8, size: u64) -> *mut u8 {
 /// 注: 此为简化版本, 暂不填充结构
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub extern "C" fn kmalloc_stats(stats: *mut u8) {
     if stats.is_null() {
         return;
     }
 
     let heap_stats = get_kmalloc().get_stats();
-    
+
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let stats_ptr = stats as *mut KmallocStats;
@@ -580,10 +595,10 @@ pub fn vma_set_current_mm(mm: *const super::vma::MmStruct) {
 }
 
 // copy_user re-export — 避免跨子系统直接引用 mm::copy_user 内部
-pub use super::copy_user::{copy_to_user, copy_from_user, is_user_buf};
+pub use super::copy_user::{copy_from_user, copy_to_user, is_user_buf};
 
 // pressure re-export — 避免跨子系统直接引用 mm::pressure 内部
-pub use super::pressure::{update_pressure, MemoryPressure};
+pub use super::pressure::{MemoryPressure, update_pressure};
 
 // page_fault re-export — 避免跨子系统直接引用 mm::page_fault 内部
-pub use super::page_fault::{PfResult, PageFaultInfo, handle_page_fault, handle_user_page_fault};
+pub use super::page_fault::{PageFaultInfo, PfResult, handle_page_fault, handle_user_page_fault};

@@ -10,11 +10,11 @@
 //! `BlockDevice` trait 定义在 chitin (设备框架) 中, 本模块 re-export.
 //! `hdd_*` 函数提供向后兼容的 Chitin 代理.
 
+use crate::kernel::framework::fs::{KernelError, KernelResult};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::sync::atomic::{fence, AtomicBool, AtomicU32, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::fs::{KernelError, KernelResult};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering, fence};
 
 // ── BlockDevice Trait (定义在 chitin, 此处 re-export) ──
 
@@ -158,7 +158,12 @@ pub fn count() -> usize {
 /// 从块设备连续读取多个扇区 (每扇区 512 字节)。
 /// # Errors
 /// 缓冲区长度不足以容纳读取数据或底层设备读取失败时返回 Err。
-pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut [u8]) -> KernelResult<()> {
+pub fn read_sectors(
+    dev: &mut dyn BlockDevice,
+    start: u64,
+    count: u32,
+    buf: &mut [u8],
+) -> KernelResult<()> {
     let need = u64::from(count) * 512;
     if (buf.len() as u64) < need {
         return Err(KernelError::InvalidArgument);
@@ -176,7 +181,12 @@ pub fn read_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &mut
 /// 向块设备连续写入多个扇区 (每扇区 512 字节)。
 /// # Errors
 /// 缓冲区长度不足以提供待写数据或底层设备写入失败时返回 Err。
-pub fn write_sectors(dev: &mut dyn BlockDevice, start: u64, count: u32, buf: &[u8]) -> KernelResult<()> {
+pub fn write_sectors(
+    dev: &mut dyn BlockDevice,
+    start: u64,
+    count: u32,
+    buf: &[u8],
+) -> KernelResult<()> {
     let need = u64::from(count) * 512;
     if (buf.len() as u64) < need {
         return Err(KernelError::InvalidArgument);

@@ -15,9 +15,7 @@
 //! - `KmemCache` (slab.rs): buddy 页面分配/释放, 位图操作, 链表管理 (机制)
 //! - `SlabPolicy` (本模块): 缓存大小选择, 对象数计算, 分配优先级 (策略)
 
-use crate::kernel::framework::config::{
-    SLAB_MIN_OBJECT_SIZE, SLAB_MAX_OBJECT_SIZE,
-};
+use crate::kernel::framework::config::{SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE};
 
 /// Slab 策略上下文 — 传递给策略决策的只读信息
 #[derive(Debug, Clone, Copy)]
@@ -144,7 +142,9 @@ static SLAB_POLICY: crate::kernel::framework::sync::OnceLock<&'static dyn SlabPo
 ///
 /// # Errors
 /// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
-pub fn register_slab_policy(policy: &'static dyn SlabPolicy) -> Result<(), &'static dyn SlabPolicy> {
+pub fn register_slab_policy(
+    policy: &'static dyn SlabPolicy,
+) -> Result<(), &'static dyn SlabPolicy> {
     match SLAB_POLICY.set(policy) {
         Ok(()) => Ok(()),
         Err(existing) => Err(existing),

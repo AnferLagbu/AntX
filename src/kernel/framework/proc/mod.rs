@@ -40,18 +40,16 @@
 
 #![allow(ambiguous_glob_reexports)]
 
-pub mod cfs;
-/// D2: cgroup 资源控制器
-/// TD-02: 全局统一 FD 分配器与基址规划
-pub mod fd_alloc;
-pub mod cgroup;
+pub mod api;
 pub mod canary;
+pub mod cfs;
+pub mod cgroup;
 pub mod coredump;
 pub mod cpu_queue;
 pub mod elf;
-pub mod api;
-pub mod proc_ops;
-pub mod sched_ops;
+/// D2: cgroup 资源控制器
+/// TD-02: 全局统一 FD 分配器与基址规划
+pub mod fd_alloc;
 pub mod madvise_mlock;
 /// L-02: 机制 API 集中导出 — 供 services 层策略实现调用
 pub mod mechanism;
@@ -59,8 +57,10 @@ pub mod mechanism;
 pub mod namespace;
 pub mod oomd;
 pub mod posix_timer;
+pub mod proc_ops;
 pub mod process;
 pub mod rlimit;
+pub mod sched_ops;
 pub mod sched_trait;
 pub mod scheduler;
 pub mod scheduler_ex;
@@ -105,25 +105,32 @@ pub use proc_ops::raw;
 pub use fd_alloc::{FdPlan, FdSubsystem, fd_at, idx_of};
 
 // madvise_mlock 公共接口 re-export — 避免跨子系统直接访问 proc::madvise_mlock 内部
-pub use madvise_mlock::{sys_madvise, sys_mlock, sys_munlock, sys_mlockall, sys_munlockall, sys_mincore};
+pub use madvise_mlock::{
+    sys_madvise, sys_mincore, sys_mlock, sys_mlockall, sys_munlock, sys_munlockall,
+};
 
 // elf 公共接口 re-export — 避免跨子系统直接访问 proc::elf 内部
-pub use elf::{Elf64Header, Elf64Phdr, ElfLoadResult, elf_validate, elf_load};
+pub use elf::{Elf64Header, Elf64Phdr, ElfLoadResult, elf_load, elf_validate};
 
 // rlimit 公共接口显式 re-export — glob re-export 可能被遮蔽
-pub use rlimit::{sys_getrlimit, sys_setrlimit, RLIMIT_CORE, RLIM_INFINITY, get_memlock_limit};
+pub use rlimit::{RLIM_INFINITY, RLIMIT_CORE, get_memlock_limit, sys_getrlimit, sys_setrlimit};
 
 // seccomp 公共接口 re-export — 避免跨子系统直接访问 proc::seccomp 内部
-pub use seccomp::{seccomp_check, sys_seccomp, sys_prctl_prctl, SeccompMode, SeccompState};
+pub use seccomp::{SeccompMode, SeccompState, seccomp_check, sys_prctl_prctl, sys_seccomp};
 
 // namespace 公共接口 re-export — 避免跨子系统直接访问 proc::namespace 内部
-pub use namespace::{sys_unshare, sys_setns, NamespaceSet};
+pub use namespace::{NamespaceSet, sys_setns, sys_unshare};
 
 // cgroup 公共接口 re-export — 避免跨子系统直接访问 proc::cgroup 内部
-pub use cgroup::{sys_cgroup_create, sys_cgroup_destroy, sys_cgroup_attach, sys_cgroup_set_limit, sys_cgroup_get_stat, cgroup_is_initialized, cgroup_subsystem};
+pub use cgroup::{
+    cgroup_is_initialized, cgroup_subsystem, sys_cgroup_attach, sys_cgroup_create,
+    sys_cgroup_destroy, sys_cgroup_get_stat, sys_cgroup_set_limit,
+};
 
 // sched_trait 公共接口 re-export — 策略-机制分离
-pub use sched_trait::{SchedDecision, FallbackPolicy, register_sched_decision, current_sched_decision};
+pub use sched_trait::{
+    FallbackPolicy, SchedDecision, current_sched_decision, register_sched_decision,
+};
 
 // mechanism 模块供 services 层通过 framework::proc::mechanism::* 访问机制 API
 // 不使用 glob re-export 因与现有 api re-export 产生歧义

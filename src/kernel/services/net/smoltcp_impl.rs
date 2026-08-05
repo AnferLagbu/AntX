@@ -194,7 +194,9 @@ impl SmoltcpNetStack {
 
     /// 找空槽位.
     fn find_free_slot(&self) -> Option<usize> {
-        self.handle_map.iter().position(core::option::Option::is_none)
+        self.handle_map
+            .iter()
+            .position(core::option::Option::is_none)
     }
 
     /// 分配下一个 user 句柄 ID.
@@ -346,8 +348,14 @@ impl SmoltcpNetStack {
             return Err(NetError::InvalidHandle);
         }
         let (sin, addrlen) = endpoint_to_sockaddr(addr);
-        let rc =
-            fw_net_socket::sm_net_sendto(fd, buf.as_ptr(), buf.len() as u32, 0, sin.as_ptr(), addrlen);
+        let rc = fw_net_socket::sm_net_sendto(
+            fd,
+            buf.as_ptr(),
+            buf.len() as u32,
+            0,
+            sin.as_ptr(),
+            addrlen,
+        );
         if rc >= 0 {
             Ok(rc as usize)
         } else {
@@ -355,7 +363,10 @@ impl SmoltcpNetStack {
         }
     }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 接收数据报并获取来源端点信息 (UDP 主要场景).
     ///
     /// # Errors
@@ -376,7 +387,8 @@ impl SmoltcpNetStack {
             &mut addrlen,
         );
         if rc >= 0 {
-            let ep = sockaddr_to_endpoint(&src[..addrlen as usize]).unwrap_or(NetEndpoint::UNSPECIFIED);
+            let ep =
+                sockaddr_to_endpoint(&src[..addrlen as usize]).unwrap_or(NetEndpoint::UNSPECIFIED);
             Ok((rc as usize, ep))
         } else {
             Err(NetError::Other)
@@ -410,7 +422,8 @@ impl SmoltcpNetStack {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
         }
-        let rc = fw_net_socket::sm_net_setsockopt(fd, level, optname, val.as_ptr(), val.len() as u32);
+        let rc =
+            fw_net_socket::sm_net_setsockopt(fd, level, optname, val.as_ptr(), val.len() as u32);
         if rc == 0 {
             Ok(())
         } else {
@@ -418,18 +431,28 @@ impl SmoltcpNetStack {
         }
     }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 通过 fd 获取 Socket 选项.
     ///
     /// # Errors
     ///
     /// 当 `fd` 非活动 socket 时返回 `Err(NetError::InvalidHandle)`; 底层 `sm_net_getsockopt` 失败时返回 `Err(NetError::Other)`。
-    pub fn getsockopt_fd(&self, fd: i32, level: i32, optname: i32, out: &mut [u8]) -> Result<usize> {
+    pub fn getsockopt_fd(
+        &self,
+        fd: i32,
+        level: i32,
+        optname: i32,
+        out: &mut [u8],
+    ) -> Result<usize> {
         if !self.is_active_fd(fd) {
             return Err(NetError::InvalidHandle);
         }
         let mut out_len = out.len() as u32;
-        let rc = fw_net_socket::sm_net_getsockopt(fd, level, optname, out.as_mut_ptr(), &mut out_len);
+        let rc =
+            fw_net_socket::sm_net_getsockopt(fd, level, optname, out.as_mut_ptr(), &mut out_len);
         if rc == 0 {
             Ok(out_len as usize)
         } else {
@@ -437,7 +460,10 @@ impl SmoltcpNetStack {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 轮询所有 fd 的 Socket 状态.
     ///
     /// # Errors
@@ -749,13 +775,12 @@ impl NetStack for SmoltcpNetStack {
         }
     }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 从监听 Socket 的已完成连接队列中取出一个新连接.
-    fn accept(
-        &mut self,
-        h: SocketHandle,
-        peer: Option<&mut NetEndpoint>,
-    ) -> Result<SocketHandle> {
+    fn accept(&mut self, h: SocketHandle, peer: Option<&mut NetEndpoint>) -> Result<SocketHandle> {
         if !self.initialized || !h.is_valid() {
             return Err(NetError::NotReady);
         }
@@ -847,7 +872,10 @@ impl NetStack for SmoltcpNetStack {
         }
     }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     /// 接收数据报并获取来源端点信息 (UDP 主要场景).
     fn recvfrom(
         &mut self,
@@ -910,7 +938,10 @@ impl SmoltcpNetStack {
     /// `DhcpAction` 由调用方决定如何推进 (e.g. 协议栈在 `Continue` 时
     /// 保持现状, 在 `Renew` 时启动续约, 在 `FallbackToStatic` 时切换
     /// 到静态 IP, 在 `GiveUp` 时停机).
-    #[expect(clippy::trivially_copy_pass_by_ref, reason = "policy_cfg 需为引用 (受 trait DhcpPolicy::decide 约束); 传值会破坏 trait 协议")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "policy_cfg 需为引用 (受 trait DhcpPolicy::decide 约束); 传值会破坏 trait 协议"
+    )]
     pub fn dhcp_decide<P: DhcpPolicy>(
         &self,
         policy: &P,
@@ -1226,7 +1257,11 @@ mod tests {
         };
         stack.init(cfg).unwrap();
         assert!(stack.socket_close(SocketHandle::INVALID).is_ok());
-        assert!(stack.socket_close(SocketHandle::from_raw(0xDEAD_BEEF)).is_ok());
+        assert!(
+            stack
+                .socket_close(SocketHandle::from_raw(0xDEAD_BEEF))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -1331,7 +1366,12 @@ mod tests {
         // 确认 DHCP 句柄仍在
         assert_eq!(stack.dhcp_user_id, Some(dhcp_id));
         // 确认 DHCP 槽位仍占用
-        assert!(stack.handle_map.iter().any(|s| matches!(s, Some((u, _)) if *u == dhcp_id)));
+        assert!(
+            stack
+                .handle_map
+                .iter()
+                .any(|s| matches!(s, Some((u, _)) if *u == dhcp_id))
+        );
     }
 
     // ---- 6. DHCP 状态机 ----
@@ -1418,8 +1458,10 @@ mod tests {
 
     // ---- 8. W6: DHCP 策略接入 ----
 
-    use crate::kernel::services::net::dhcp_policy::{DefaultDhcpPolicy, DhcpPolicy, DhcpPolicyConfig};
     use crate::kernel::framework::net::iface_trait::Ipv4Addr;
+    use crate::kernel::services::net::dhcp_policy::{
+        DefaultDhcpPolicy, DhcpPolicy, DhcpPolicyConfig,
+    };
 
     /// 验证: Idle 状态接入默认策略 → Continue.
     #[test]
@@ -1766,10 +1808,7 @@ mod tests {
             stack.sendto_fd(1, b"test", ep),
             Err(NetError::InvalidHandle)
         );
-        assert_eq!(
-            stack.recvfrom_fd(1, &mut buf),
-            Err(NetError::InvalidHandle)
-        );
+        assert_eq!(stack.recvfrom_fd(1, &mut buf), Err(NetError::InvalidHandle));
         assert_eq!(
             stack.setsockopt_fd(1, 1, 2, &[1, 2, 3]),
             Err(NetError::InvalidHandle)

@@ -17,7 +17,7 @@ use core::fmt;
 use core::sync::atomic::Ordering;
 
 use crate::kernel::framework::proc::Process;
-use crate::kernel::framework::proc::{Pid, BlockReason};
+use crate::kernel::framework::proc::{BlockReason, Pid};
 
 // ============================================================================
 // Task 抽象 — 进程/线程控制块安全句柄
@@ -43,7 +43,9 @@ impl Task {
 
     /// PID
     #[inline(always)]
-    pub fn pid(&self) -> Pid { self.pid }
+    pub fn pid(&self) -> Pid {
+        self.pid
+    }
 
     /// 进程名称 (克隆)。
     pub fn name(&self) -> alloc::string::String {

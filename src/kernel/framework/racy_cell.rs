@@ -47,12 +47,14 @@ impl<T> RacyCell<T> {
     /// # Safety
     ///
     /// 调用方必须保证当前没有对同一数据的可变引用。
-    pub unsafe fn get(&self) -> &T { unsafe {
-        // SAFETY: `UnsafeCell::get()` 返回 `*mut T`, `&*` 解引用为 `&T`。
-        // 调用方 (此函数标记为 `unsafe fn`) 必须保证: 当前无其他线程持有
-        // `&mut T` 引用, 否则构成数据竞争 (Rust 内存模型 UB)。
-        &*self.inner.get()
-    }}
+    pub unsafe fn get(&self) -> &T {
+        unsafe {
+            // SAFETY: `UnsafeCell::get()` 返回 `*mut T`, `&*` 解引用为 `&T`。
+            // 调用方 (此函数标记为 `unsafe fn`) 必须保证: 当前无其他线程持有
+            // `&mut T` 引用, 否则构成数据竞争 (Rust 内存模型 UB)。
+            &*self.inner.get()
+        }
+    }
 
     /// 获取可变引用
     ///
@@ -73,12 +75,14 @@ impl<T> RacyCell<T> {
     pub unsafe fn read(&self) -> T
     where
         T: Copy,
-    { unsafe {
-        // SAFETY: `core::ptr::read` 是未对齐的 memcpy, 不要求 T 初始化;
-        // 调用方必须保证: 1) T: Copy (T 是无 drop 的简单值), 2) 当前无并发写
-        // (避免读到撕裂值), 3) 地址来自 UnsafeCell, 必然 valid for reads。
-        core::ptr::read(self.inner.get())
-    }}
+    {
+        unsafe {
+            // SAFETY: `core::ptr::read` 是未对齐的 memcpy, 不要求 T 初始化;
+            // 调用方必须保证: 1) T: Copy (T 是无 drop 的简单值), 2) 当前无并发写
+            // (避免读到撕裂值), 3) 地址来自 UnsafeCell, 必然 valid for reads。
+            core::ptr::read(self.inner.get())
+        }
+    }
 
     /// 写入值
     ///

@@ -36,7 +36,10 @@ pub enum SinkListFormat {
     Json,
 }
 
-#[expect(clippy::case_sensitive_file_extension_comparisons, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// 解析 procfs 入口名 → 格式选择.
 ///
 /// 规则: 文件名以 `.json` 结尾 → Json; 否则 → Text。
@@ -112,8 +115,7 @@ pub fn list_names(buf: &mut [&'static str; framework_klog::MAX_LOG_SINKS]) -> us
 /// 写指针不越界, 写入字节数 = min(内容长度, `buf.len()`).
 pub fn render_text(buf: &mut [u8]) -> usize {
     let mut pos = 0usize;
-    let mut names = [core::str::from_utf8(b"")
-        .unwrap_or(""); framework_klog::MAX_LOG_SINKS];
+    let mut names = [core::str::from_utf8(b"").unwrap_or(""); framework_klog::MAX_LOG_SINKS];
     let n = list_names(&mut names);
 
     let push_str = |dst: &mut [u8], p: &mut usize, src: &str| {
@@ -170,8 +172,7 @@ pub fn render_text(buf: &mut [u8]) -> usize {
 /// {"format_version":"1","count":2,"sinks":["serial","net"]}
 pub fn render_json(buf: &mut [u8]) -> usize {
     let mut pos = 0usize;
-    let mut names = [core::str::from_utf8(b"")
-        .unwrap_or(""); framework_klog::MAX_LOG_SINKS];
+    let mut names = [core::str::from_utf8(b"").unwrap_or(""); framework_klog::MAX_LOG_SINKS];
     let n = list_names(&mut names);
 
     let push_str = |dst: &mut [u8], p: &mut usize, src: &str| {

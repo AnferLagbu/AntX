@@ -4,7 +4,7 @@
 //! 支持从 v4 格式迁移.
 
 use super::identity;
-use super::types::{PWM_NOTE_LEN, PWM_HASH_LEN, PwmEntry, MAX_PWM_ENTRIES};
+use super::types::{MAX_PWM_ENTRIES, PWM_HASH_LEN, PWM_NOTE_LEN, PwmEntry};
 use core::sync::atomic::Ordering;
 
 const DB_PATH: &str = "/pwm.db";
@@ -163,7 +163,10 @@ fn deserialize(
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+#[expect(
+    clippy::large_stack_arrays,
+    reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+)]
 pub fn save_database() -> i32 {
     let t = identity::get_table();
     if !t.is_modified() {
@@ -218,8 +221,14 @@ pub fn save_database() -> i32 {
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::large_stack_arrays,
+    reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+)]
 pub fn load_database() -> i32 {
     let path = path_to_bytes(DB_PATH);
     let fd = raw::vfs_open(as_cstr(&path), O_RDONLY, 0);
@@ -366,9 +375,11 @@ pub fn load_database() -> i32 {
     }
     // 交叉验证: 加载后条目计数应与头部声明的 count 一致
     debug_assert_eq!(
-        t.count.load(Ordering::Acquire), count,
+        t.count.load(Ordering::Acquire),
+        count,
         "Credo 存储加载: 条目计数不一致 (header={}, loaded={})",
-        count, t.count.load(Ordering::Acquire),
+        count,
+        t.count.load(Ordering::Acquire),
     );
     t.clear_modified();
     0
@@ -384,7 +395,10 @@ pub fn remove_database() -> i32 {
 // ============================================================================
 
 pub(crate) mod raw {
-    use super::{vfs_open_internal, vfs_close_internal, vfs_write_internal, vfs_read_internal, vfs_unlink_internal};
+    use super::{
+        vfs_close_internal, vfs_open_internal, vfs_read_internal, vfs_unlink_internal,
+        vfs_write_internal,
+    };
 
     /// VFS open 包装 (调用方负责 path 指针有效)
     pub fn vfs_open(path: *const u8, flags: u32, pwm: u64) -> i32 {

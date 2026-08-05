@@ -21,7 +21,7 @@
 //! 本模块属于 framework/TCB, 允许 unsafe.
 //! 时钟调整涉及定时器频率修改.
 
-use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock;
 
@@ -74,7 +74,10 @@ impl NtpTimestamp {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 转换为 Unix 时间 (ns)
     pub fn to_unix_ns(&self) -> u64 {
         let sec = u64::from(self.sec.wrapping_sub(NTP_EPOCH_OFFSET as u32));
@@ -135,7 +138,7 @@ impl NtpPacket {
 
     fn read_clock_ns() -> u64 {
         crate::kernel::framework::timer::tick::ticks_to_ns(
-            crate::kernel::framework::timer::tick::get_ticks()
+            crate::kernel::framework::timer::tick::get_ticks(),
         )
     }
 }
@@ -160,7 +163,10 @@ pub struct NtpResult {
 }
 
 impl NtpResult {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 从 NTP 交换计算偏移和延迟
     ///
     /// offset = ((T2 - T1) + (T3 - T4)) / 2
@@ -297,7 +303,9 @@ impl TimeSyncSubsystem {
             MAX_FREQ_ADJUST_PPM * 1000,
         );
         self.adj.freq_adj_ppb.store(clamped_freq, Ordering::Release);
-        self.adj.total_freq_adj.fetch_add(clamped_freq, Ordering::Relaxed);
+        self.adj
+            .total_freq_adj
+            .fetch_add(clamped_freq, Ordering::Relaxed);
 
         // 偏移调整: 渐进调整
         let offset = result.offset_ns.clamp(-MAX_OFFSET_NS, MAX_OFFSET_NS);
@@ -306,7 +314,9 @@ impl TimeSyncSubsystem {
             self.adj.offset_remaining.store(offset, Ordering::Release);
         } else {
             // 小偏移: 直接跳变
-            self.adj.total_offset_adj.fetch_add(offset, Ordering::Relaxed);
+            self.adj
+                .total_offset_adj
+                .fetch_add(offset, Ordering::Relaxed);
         }
 
         self.adj.last_sync_time.store(now_ns, Ordering::Release);
@@ -316,7 +326,9 @@ impl TimeSyncSubsystem {
         crate::klog_ffi!(
             klog_ffi_info,
             "[TimeSync] NTP sync: offset={}ns delay={}ns freq_adj={}ppb",
-            result.offset_ns, result.delay_ns, clamped_freq
+            result.offset_ns,
+            result.delay_ns,
+            clamped_freq
         );
         true
     }
@@ -335,10 +347,14 @@ impl TimeSyncSubsystem {
             self.adj.offset_remaining.store(0, Ordering::Release);
             r
         } else if remaining > 0 {
-            self.adj.offset_remaining.fetch_sub(ADJ_RATE_NS, Ordering::Relaxed);
+            self.adj
+                .offset_remaining
+                .fetch_sub(ADJ_RATE_NS, Ordering::Relaxed);
             ADJ_RATE_NS
         } else {
-            self.adj.offset_remaining.fetch_add(ADJ_RATE_NS, Ordering::Relaxed);
+            self.adj
+                .offset_remaining
+                .fetch_add(ADJ_RATE_NS, Ordering::Relaxed);
             -ADJ_RATE_NS
         };
 
@@ -367,10 +383,7 @@ impl TimeSyncSubsystem {
 
     /// 手动设置频率调整 (ppb)
     pub fn adj_freq(&self, ppb: i64) -> bool {
-        let clamped = ppb.clamp(
-            -MAX_FREQ_ADJUST_PPM * 1000,
-            MAX_FREQ_ADJUST_PPM * 1000,
-        );
+        let clamped = ppb.clamp(-MAX_FREQ_ADJUST_PPM * 1000, MAX_FREQ_ADJUST_PPM * 1000);
         self.adj.freq_adj_ppb.store(clamped, Ordering::Release);
         self.adj.total_freq_adj.store(clamped, Ordering::Relaxed);
         true
@@ -429,7 +442,7 @@ impl TimeSyncSubsystem {
 
     fn read_clock_ns() -> u64 {
         crate::kernel::framework::timer::tick::ticks_to_ns(
-            crate::kernel::framework::timer::tick::get_ticks()
+            crate::kernel::framework::timer::tick::get_ticks(),
         )
     }
 }
@@ -475,7 +488,10 @@ pub fn timesync_is_initialized() -> bool {
 ///   9 = `is_initialized()` → bool (是否已初始化)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub extern "C" fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !timesync_is_initialized() && cmd != 9 {
         return -(11i64); // EAGAIN
@@ -485,16 +501,28 @@ pub extern "C" fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
         0 => {
             // adj_freq
             let ppb = a1 as i64;
-            if timesync_subsystem().adj_freq(ppb) { 0 } else { -(22i64) }
+            if timesync_subsystem().adj_freq(ppb) {
+                0
+            } else {
+                -(22i64)
+            }
         }
         1 => {
             // adj_time
             let offset_ns = a1 as i64;
-            if timesync_subsystem().adj_time(offset_ns) { 0 } else { -(22i64) }
+            if timesync_subsystem().adj_time(offset_ns) {
+                0
+            } else {
+                -(22i64)
+            }
         }
         2 => {
             // set_time
-            if timesync_subsystem().set_time(a1) { 0 } else { -(22i64) }
+            if timesync_subsystem().set_time(a1) {
+                0
+            } else {
+                -(22i64)
+            }
         }
         3 => {
             // set_ntp_server
@@ -531,7 +559,11 @@ pub extern "C" fn sys_timesync(cmd: u64, a1: u64, a2: u64) -> i64 {
                 stratum: 1,
                 valid: true,
             };
-            if timesync_subsystem().apply_ntp_result(&result) { 0 } else { -(22i64) }
+            if timesync_subsystem().apply_ntp_result(&result) {
+                0
+            } else {
+                -(22i64)
+            }
         }
         9 => {
             // is_initialized

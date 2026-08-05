@@ -27,10 +27,10 @@
 //! 本模块属于 framework/TCB, 允许 unsafe.
 //! 定时器编程涉及 LAPIC/HPET MSR 写入.
 
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock;
+use alloc::vec::Vec;
 
 // ============================================================================
 // 常量
@@ -141,7 +141,9 @@ impl TicklessSubsystem {
         for _ in 0..num_cpus {
             let state = TicklessCpuState::new();
             // 默认使用全局模式
-            state.mode.store(self.global_mode.load(Ordering::Acquire), Ordering::Release);
+            state
+                .mode
+                .store(self.global_mode.load(Ordering::Acquire), Ordering::Release);
             per_cpu.push(state);
         }
         self.initialized.store(true, Ordering::Release);
@@ -178,7 +180,9 @@ impl TicklessSubsystem {
 
         // 计算下一个定时器到期时间
         let next_expiry = self.get_next_timer_expiry(cpu_id);
-        state.next_timer_expiry.store(next_expiry, Ordering::Release);
+        state
+            .next_timer_expiry
+            .store(next_expiry, Ordering::Release);
 
         if next_expiry > 0 && next_expiry > now_ns {
             // 编程 one-shot 定时器
@@ -208,7 +212,9 @@ impl TicklessSubsystem {
         let entry_ns = state.idle_entry_time.load(Ordering::Acquire);
         if now_ns > entry_ns {
             let idle_ns = now_ns - entry_ns;
-            state.idle_tickless_time.fetch_add(idle_ns, Ordering::Relaxed);
+            state
+                .idle_tickless_time
+                .fetch_add(idle_ns, Ordering::Relaxed);
         }
 
         // 恢复周期 tick
@@ -220,7 +226,10 @@ impl TicklessSubsystem {
         Self::program_periodic(hz);
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 获取下一个定时器到期时间
     fn get_next_timer_expiry(&self, _cpu_id: u32) -> u64 {
         // 查询 hrtimer 子系统的下一个到期时间
@@ -235,7 +244,9 @@ impl TicklessSubsystem {
         if (cpu_id as usize) >= per_cpu.len() {
             return false;
         }
-        per_cpu[cpu_id as usize].mode.store(mode as u32, Ordering::Release);
+        per_cpu[cpu_id as usize]
+            .mode
+            .store(mode as u32, Ordering::Release);
         true
     }
 
@@ -276,7 +287,10 @@ impl TicklessSubsystem {
         }
         per_cpu[cpu_id as usize].hz.store(hz, Ordering::Release);
         // 如果当前是周期模式, 重新编程
-        if !per_cpu[cpu_id as usize].tick_stopped.load(Ordering::Acquire) {
+        if !per_cpu[cpu_id as usize]
+            .tick_stopped
+            .load(Ordering::Acquire)
+        {
             Self::program_periodic(hz);
         }
         true
@@ -294,7 +308,7 @@ impl TicklessSubsystem {
     /// 读取当前时钟 (ns)
     fn read_clock_ns() -> u64 {
         crate::kernel::framework::timer::tick::ticks_to_ns(
-            crate::kernel::framework::timer::tick::get_ticks()
+            crate::kernel::framework::timer::tick::get_ticks(),
         )
     }
 
@@ -311,7 +325,7 @@ impl TicklessSubsystem {
             let count = ((delta_ns * timer_hz) / 1_000_000_000) as u32;
             if count > 0 {
                 crate::kernel::framework::arch::apic::init_timer(
-                    0x20, // IRQ0 vector
+                    0x20,  // IRQ0 vector
                     false, // one-shot
                     16,    // divisor
                 );
@@ -336,8 +350,7 @@ impl TicklessSubsystem {
             }
             let count = (timer_hz / u64::from(hz)) as u32;
             crate::kernel::framework::arch::apic::init_timer(
-                0x20,
-                true, // periodic
+                0x20, true, // periodic
                 16,
             );
             crate::kernel::framework::arch::apic::set_timer_count(count);
@@ -386,7 +399,10 @@ pub fn tickless_is_initialized() -> bool {
 ///   5 = `is_initialized()` → bool (是否已初始化)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub extern "C" fn sys_tickless(cmd: u64, a1: u64, a2: u64) -> i64 {
     if !tickless_is_initialized() && cmd != 5 {
         return -(11i64); // EAGAIN
@@ -406,7 +422,11 @@ pub extern "C" fn sys_tickless(cmd: u64, a1: u64, a2: u64) -> i64 {
         2 => {
             // set_cpu_mode
             let mode = TicklessMode::from_u32(a2 as u32);
-            if tickless_subsystem().set_cpu_mode(a1 as u32, mode) { 0 } else { -(22i64) }
+            if tickless_subsystem().set_cpu_mode(a1 as u32, mode) {
+                0
+            } else {
+                -(22i64)
+            }
         }
         3 => {
             // get_cpu_stats
@@ -422,7 +442,11 @@ pub extern "C" fn sys_tickless(cmd: u64, a1: u64, a2: u64) -> i64 {
         }
         4 => {
             // set_hz
-            if tickless_subsystem().set_hz(a1 as u32, a2 as u32) { 0 } else { -(22i64) }
+            if tickless_subsystem().set_hz(a1 as u32, a2 as u32) {
+                0
+            } else {
+                -(22i64)
+            }
         }
         5 => {
             // is_initialized

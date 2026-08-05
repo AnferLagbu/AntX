@@ -6,21 +6,21 @@
 //! services 依赖: `services::net` (安全代理)
 
 pub mod driver;
-#[cfg(not(feature = "kernel_test"))]
-pub mod init;
-/// C5: 路由表管理
-pub mod route;
-/// C5: Netfilter 包过滤框架
-pub mod netfilter;
 /// REVAL-W: 网络协议栈抽象 — Framekernel Safe API (W1 子任务, 2026-06-24)
 /// 设计见 [docs/plan/smoltcp-framekernel-wrapper.md]
 pub mod iface_trait;
 #[cfg(not(feature = "kernel_test"))]
+pub mod init;
+/// C5: Netfilter 包过滤框架
+pub mod netfilter;
+/// C5: 路由表管理
+pub mod route;
+/// P2-I-44: 网络快照 (`net_save` / `net_restore` 完整实现)
+pub mod save;
+#[cfg(not(feature = "kernel_test"))]
 pub mod smoltcp_impl;
 /// P2-I-41: Socket WaitQueue 基础设施
 pub mod wait_queue;
-/// P2-I-44: 网络快照 (`net_save` / `net_restore` 完整实现)
-pub mod save;
 
 /// 网络子系统 Rust 模块
 ///
@@ -67,6 +67,6 @@ pub use wait_queue::*;
 #[cfg(not(feature = "kernel_test"))]
 pub use init::poll_network;
 #[cfg(not(feature = "kernel_test"))]
-pub use smoltcp_impl::{ChitinNetDevice, NetworkStack, init_stack, poll_stack};
-#[cfg(not(feature = "kernel_test"))]
 pub(crate) use init::raw;
+#[cfg(not(feature = "kernel_test"))]
+pub use smoltcp_impl::{ChitinNetDevice, NetworkStack, init_stack, poll_stack};

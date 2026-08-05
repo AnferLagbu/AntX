@@ -8,8 +8,8 @@
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // umask
@@ -48,7 +48,11 @@ pub fn mkdir_syscall(path_ptr: u64, _mode: i32) -> Result<usize, Errno> {
     let pwm = current_pwm()?;
     // SAFETY: path_ptr 由 check_user_ptr 验证
     let r = fw::vfs_mkdir(path_ptr as *const u8, pwm);
-    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(i64::from(r)))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 // ============================================================================
@@ -69,7 +73,11 @@ pub fn rmdir_syscall(path_ptr: u64) -> Result<usize, Errno> {
     }
     let pwm = current_pwm()?;
     let r = fw::vfs_rmdir(path_ptr as *const u8, pwm);
-    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(i64::from(r)))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 // ============================================================================
@@ -95,7 +103,11 @@ pub fn chmod_syscall(path_ptr: u64, mode: u32) -> Result<usize, Errno> {
     }
     let pwm = current_pwm()?;
     let r = fw::vfs_chmod(path_ptr as *const u8, mode as u16, pwm);
-    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(i64::from(r)))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 // ============================================================================
@@ -115,14 +127,21 @@ pub fn fchmod_syscall(fd: i32, mode: u32) -> Result<usize, Errno> {
         return Err(Errno::EINVAL);
     }
     let r = fw::vfs_fchmod(fd as u32, mode as u16);
-    if r < 0 { Err(Errno::from_ret(i64::from(r))) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(i64::from(r)))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 // ============================================================================
 // 内部辅助
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())

@@ -8,17 +8,17 @@
 //! 纯策略代码 (控制器 + cgroup 实例 + 全局管理器 + syscall), 0 unsafe.
 //! 日志使用 framework::klog::serial_write_bytes (safe API).
 
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use crate::kernel::framework::klog::serial_write_bytes;
 use crate::kernel::framework::proc::Pid;
 use crate::kernel::framework::sync::IrqSpinLock;
 use crate::kernel::framework::sync::OnceLock;
-use crate::kernel::framework::klog::serial_write_bytes;
 
 // ============================================================================
 // 常量
@@ -80,7 +80,8 @@ impl CpuController {
             let prev = self.runtime_used.swap(0, Ordering::AcqRel);
             if prev > quota {
                 self.nr_throttled.fetch_add(1, Ordering::Relaxed);
-                self.throttled_time.fetch_add(prev - quota, Ordering::Relaxed);
+                self.throttled_time
+                    .fetch_add(prev - quota, Ordering::Relaxed);
             }
         }
     }
@@ -120,7 +121,10 @@ impl MemoryController {
         }
     }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+    #[expect(
+        clippy::needless_continue,
+        reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+    )]
     pub fn try_charge(&self, bytes: u64) -> bool {
         let limit = self.limit_in_bytes.load(Ordering::Acquire);
         if limit == MEMORY_LIMIT_MAX {
@@ -167,7 +171,10 @@ impl MemoryController {
         self.usage_in_bytes.load(Ordering::Acquire) > limit
     }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+    #[expect(
+        clippy::needless_continue,
+        reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+    )]
     fn update_max(&self, current: u64) {
         loop {
             let max = self.max_usage_in_bytes.load(Ordering::Acquire);
@@ -207,7 +214,10 @@ impl PidsController {
         }
     }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+    #[expect(
+        clippy::needless_continue,
+        reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+    )]
     pub fn try_fork(&self) -> bool {
         let max = self.pids_max.load(Ordering::Acquire);
         if max == PIDS_MAX_DEFAULT {
@@ -510,7 +520,9 @@ static CGROUP_SUBSYSTEM: OnceLock<CgroupSubsystem> = OnceLock::new();
 static CGROUP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 pub fn cgroup_init() {
-    CGROUP_SUBSYSTEM.get_or_init(|slot| { slot.write(CgroupSubsystem::new()); });
+    CGROUP_SUBSYSTEM.get_or_init(|slot| {
+        slot.write(CgroupSubsystem::new());
+    });
     CGROUP_INITIALIZED.store(true, Ordering::Release);
     serial_write_bytes(b"[CGROUP] subsystem initialized (root cgroup id=0)\n");
 }
@@ -521,7 +533,9 @@ pub fn cgroup_init() {
 ///
 /// 当子系统尚未通过 `cgroup_init()` 初始化时 panic.
 pub fn cgroup_subsystem() -> &'static CgroupSubsystem {
-    CGROUP_SUBSYSTEM.get().expect("cgroup subsystem not initialized")
+    CGROUP_SUBSYSTEM
+        .get()
+        .expect("cgroup subsystem not initialized")
 }
 
 pub fn cgroup_is_initialized() -> bool {
@@ -565,7 +579,10 @@ pub fn sys_cgroup_attach(cg_id: u64, pid: u64) -> i64 {
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn sys_cgroup_set_limit(cg_id: u64, controller: u64, value: u64) -> i64 {
     if !cgroup_is_initialized() {
         return -(Errno::EINVAL as i64);
@@ -587,7 +604,10 @@ pub fn sys_cgroup_set_limit(cg_id: u64, controller: u64, value: u64) -> i64 {
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn sys_cgroup_get_stat(cg_id: u64, stat_type: u64) -> i64 {
     if !cgroup_is_initialized() {
         return -(Errno::EINVAL as i64);

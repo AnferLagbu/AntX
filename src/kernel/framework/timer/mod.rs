@@ -129,8 +129,8 @@ pub use sleep::{
 
 /// 使用 `pit` 模块的底层功能 (高级用户)
 pub use pit::{
-    pit_elapsed_since_tick_us, pit_get_frequency, pit_init as raw_pit_init, pit_is_initialized,
-    pit_read_count, pit_shutdown, DEFAULT_INTERRUPT_FREQ_HZ, PIT_BASE_FREQUENCY,
+    DEFAULT_INTERRUPT_FREQ_HZ, PIT_BASE_FREQUENCY, pit_elapsed_since_tick_us, pit_get_frequency,
+    pit_init as raw_pit_init, pit_is_initialized, pit_read_count, pit_shutdown,
 };
 
 // --- TSC 校准 ---
@@ -146,9 +146,9 @@ pub use calibration::{
 
 /// 使用 `hrtimer` 模块的高精度定时器功能
 pub use hrtimer::{
-    hrtimer_cancel, hrtimer_clock_read, hrtimer_init, hrtimer_next_expiry, hrtimer_start,
-    hrtimer_start_periodic, hrtimer_start_rel, hrtimer_run_queues, is_hrtimer_ready,
-    HrTimer, HrTimerRestart, HrTimerState,
+    HrTimer, HrTimerRestart, HrTimerState, hrtimer_cancel, hrtimer_clock_read, hrtimer_init,
+    hrtimer_next_expiry, hrtimer_run_queues, hrtimer_start, hrtimer_start_periodic,
+    hrtimer_start_rel, is_hrtimer_ready,
 };
 
 // tickless/time_sync 公共接口 re-export — 避免跨子系统直接访问 timer 内部子模块

@@ -14,8 +14,14 @@
 
 use alloc::vec::Vec;
 
-use super::leb128::{read_leb128_u32, read_name, read_leb128_i32, read_leb128_i64};
-use super::types::{WasmModule, WasmError, WASM_MAGIC, WASM_VERSION, SECTION_TYPE, SECTION_IMPORT, SECTION_FUNCTION, SECTION_TABLE, SECTION_MEMORY, SECTION_GLOBAL, SECTION_EXPORT, SECTION_START, SECTION_ELEMENT, SECTION_CODE, SECTION_DATA, FuncType, ValueType, ImportDesc, ImportKind, TableType, MemoryType, GlobalType, Limits, ExportDesc, ExportKind, FunctionBody, DataSegment, ElementSegment};
+use super::leb128::{read_leb128_i32, read_leb128_i64, read_leb128_u32, read_name};
+use super::types::{
+    DataSegment, ElementSegment, ExportDesc, ExportKind, FuncType, FunctionBody, GlobalType,
+    ImportDesc, ImportKind, Limits, MemoryType, SECTION_CODE, SECTION_DATA, SECTION_ELEMENT,
+    SECTION_EXPORT, SECTION_FUNCTION, SECTION_GLOBAL, SECTION_IMPORT, SECTION_MEMORY,
+    SECTION_START, SECTION_TABLE, SECTION_TYPE, TableType, ValueType, WASM_MAGIC, WASM_VERSION,
+    WasmError, WasmModule,
+};
 
 /// 解析 WASM 二进制格式, 生成模块结构.
 ///

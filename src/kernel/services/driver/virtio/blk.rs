@@ -20,7 +20,7 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.1.3 任务: VirtIO-blk 块设备迁移
 
-use super::transport::{VirtioDevice, DEVICE_ID_BLOCK, VIRTIO_F_VERSION_1};
+use super::transport::{DEVICE_ID_BLOCK, VIRTIO_F_VERSION_1, VirtioDevice};
 use crate::kernel::framework::driver::virtio::queue::{DmaBuffer, VirtQueue};
 use crate::slog_info;
 use crate::slog_warn;
@@ -212,11 +212,7 @@ impl VirtioBlkDriver {
         }
 
         device.set_driver_features(driver_features);
-        slog_info!(
-            Driver,
-            "virtio-blk: 驱动特性={:#018x}",
-            driver_features
-        );
+        slog_info!(Driver, "virtio-blk: 驱动特性={:#018x}", driver_features);
 
         // Step 5: FEATURES_OK
         if !device.features_ok() {
@@ -323,7 +319,10 @@ impl VirtioBlkDriver {
 
     // ── 队列配置辅助 (通过 VirtioDevice MMIO) ──
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 配置指定 virtqueue 的 MMIO 寄存器.
     ///
     /// # 参数
@@ -347,13 +346,9 @@ impl VirtioBlkDriver {
     ) -> Result<u32, ()> {
         self.device.select_queue(vq_index);
         let max_size = self.device.queue_num_max();
-        slog_info!(
-            Driver,
-            "virtio-blk: vq{} max_size={}",
-            vq_index,
-            max_size
-        );
-        self.device.setup_queue_addrs(desc_paddr, avail_paddr, used_paddr);
+        slog_info!(Driver, "virtio-blk: vq{} max_size={}", vq_index, max_size);
+        self.device
+            .setup_queue_addrs(desc_paddr, avail_paddr, used_paddr);
         self.device.set_queue_ready();
         slog_info!(Driver, "virtio-blk: vq{} ready", vq_index);
         Ok(max_size)
@@ -392,7 +387,10 @@ impl VirtioBlkDriver {
         self.do_sector_io_write(lba, buf)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 执行读扇区 I/O (设备 → DMA → buf).
     fn do_sector_io(&mut self, lba: u64, req_type: u32, buf: &mut [u8]) -> Result<(), ()> {
         let req_size = BlkRequest::header_size();
@@ -400,7 +398,9 @@ impl VirtioBlkDriver {
         let status_size = 1;
         let total_dma = req_size + data_size + status_size;
 
-        let mut dma = if let Some(b) = DmaBuffer::new(total_dma) { b } else {
+        let mut dma = if let Some(b) = DmaBuffer::new(total_dma) {
+            b
+        } else {
             slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
             return Err(());
         };
@@ -421,7 +421,10 @@ impl VirtioBlkDriver {
         Ok(())
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 执行写扇区 I/O (buf → DMA → 设备).
     fn do_sector_io_write(&mut self, lba: u64, buf: &[u8]) -> Result<(), ()> {
         let req_size = BlkRequest::header_size();
@@ -429,7 +432,9 @@ impl VirtioBlkDriver {
         let status_size = 1;
         let total_dma = req_size + data_size + status_size;
 
-        let mut dma = if let Some(b) = DmaBuffer::new(total_dma) { b } else {
+        let mut dma = if let Some(b) = DmaBuffer::new(total_dma) {
+            b
+        } else {
             slog_warn!(Driver, "virtio-blk: DMA 缓冲区分配失败");
             return Err(());
         };
@@ -444,7 +449,14 @@ impl VirtioBlkDriver {
         let copy_len = data_size.min(buf.len());
         dma.write_slice(req_size, &buf[..copy_len]);
 
-        self.submit_and_wait(dma_phys, req_size, data_size, status_size, VIRTIO_BLK_T_OUT, &dma)
+        self.submit_and_wait(
+            dma_phys,
+            req_size,
+            data_size,
+            status_size,
+            VIRTIO_BLK_T_OUT,
+            &dma,
+        )
     }
 
     /// 提交描述符链并等待设备完成.
@@ -467,9 +479,11 @@ impl VirtioBlkDriver {
             data_size as u32,
             req_type == VIRTIO_BLK_T_IN,
         );
-        let desc_status = self
-            .vq
-            .prepare_desc(dma_phys + (req_size + data_size) as u64, status_size as u32, true);
+        let desc_status = self.vq.prepare_desc(
+            dma_phys + (req_size + data_size) as u64,
+            status_size as u32,
+            true,
+        );
 
         if desc_req == 0xFFFF || desc_data == 0xFFFF || desc_status == 0xFFFF {
             if desc_status != 0xFFFF {

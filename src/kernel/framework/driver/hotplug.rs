@@ -19,9 +19,9 @@
 //! 不使用中断线程, 采用轮询模式 (在调度器 idle loop 中调用 poll)。
 
 use crate::kernel::framework::pci::PcieHotplugSlot;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 // ── 事件类型 ──
 
 /// 总线类型
@@ -190,7 +190,8 @@ impl HotplugManager {
         let blk_count = crate::kernel::framework::driver::block_device_count();
         let mut blk_states: Vec<BlockDeviceState> = Vec::new();
         for d in 0..blk_count as u8 {
-            let (present, removing, io_count) = crate::kernel::framework::driver::block_device_state(d);
+            let (present, removing, io_count) =
+                crate::kernel::framework::driver::block_device_state(d);
             blk_states.push(BlockDeviceState {
                 drive: d,
                 present,

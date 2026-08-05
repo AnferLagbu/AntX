@@ -4,9 +4,9 @@
 //! 存储所有打开的文件描述 (OpenFile), 通过 handle_id 引用.
 //! dup() 通过引用计数共享 OpenFile, 实现 POSIX 共享 offset 语义.
 
-use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock;
 use super::vfs_types::OpenFile;
+use crate::kernel::framework::sync::IrqSpinLock;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 /// 全局 `OpenFile` 表上限
 const MAX_OPEN_FILES: usize = 256;

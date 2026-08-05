@@ -2,11 +2,12 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! ext2 `FileSystem` trait 实现
 
-
-use crate::kernel::framework::fs::KernelError;
-use crate::kernel::services::fs::vfs_types::{KernelResult, VfsStat, VfsSeekWhence, FileSystem, VfsDirEntry};
 use super::read::Ext2Fs;
+use crate::kernel::framework::fs::KernelError;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::services::fs::vfs_types::{
+    FileSystem, KernelResult, VfsDirEntry, VfsSeekWhence, VfsStat,
+};
 
 /// ext2 文件系统实例 (全局单例)
 static EXT2_FS: Mutex<Option<Ext2Fs>> = Mutex::new(None);
@@ -25,7 +26,10 @@ pub struct Ext2Inode {
 
 impl Ext2Inode {
     pub fn new(inode_num: u32, mount_idx: u32) -> Self {
-        Self { inode_num, mount_idx }
+        Self {
+            inode_num,
+            mount_idx,
+        }
     }
 }
 
@@ -130,7 +134,12 @@ impl FileSystem for Ext2FileSystem {
         Ok(())
     }
 
-    fn fs_open(&self, rel_path: &str, _flags: u32, _pwm: u64) -> KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+    fn fs_open(
+        &self,
+        rel_path: &str,
+        _flags: u32,
+        _pwm: u64,
+    ) -> KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
         let mut fs_guard = EXT2_FS.lock();
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
 
@@ -185,7 +194,13 @@ impl FileSystem for Ext2FileSystem {
         Err(KernelError::ReadOnlyFilesystem)
     }
 
-    fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
+    fn fs_chown(
+        &self,
+        _rel_path: &str,
+        _owner_pwm: u64,
+        _group_pwm: u64,
+        _pwm: u64,
+    ) -> KernelResult<()> {
         Err(KernelError::ReadOnlyFilesystem)
     }
 
@@ -235,7 +250,8 @@ impl FileSystem for Ext2FileSystem {
             }
         }
 
-        let group_idx = (inode_num - fs.super_block.first_inode()) / fs.super_block.s_inodes_per_group;
+        let group_idx =
+            (inode_num - fs.super_block.first_inode()) / fs.super_block.s_inodes_per_group;
         if (group_idx as usize) < fs.block_groups.len() {
             super::alloc::free_inode(
                 fs.device_idx,
@@ -320,7 +336,11 @@ impl FileSystem for Ext2FileSystem {
         Ok(())
     }
 
-    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+    fn fs_resolve_inode(
+        &self,
+        inode_id: u32,
+        mount_idx: u32,
+    ) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
         Some(alloc::sync::Arc::new(Ext2Inode::new(inode_id, mount_idx)))
     }
 }

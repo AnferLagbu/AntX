@@ -248,7 +248,9 @@ impl<T> OnceLock<T> {
                      Check: 1) page table corruption during init, \
                      2) interrupt enabled before init complete, \
                      3) stack overflow corrupting init state.",
-                    name, name.to_lowercase(), name
+                    name,
+                    name.to_lowercase(),
+                    name
                 );
             }
             _ => {

@@ -61,59 +61,59 @@ pub const BPF_REG_NUM: usize = 11;
 /// eBPF 指令操作码 — 高 3 bit = class, 低 5 bit = operation
 pub mod opcode {
     // Classes
-    pub const LD:     u8 = 0x00;
-    pub const LDX:    u8 = 0x01;
-    pub const ST:     u8 = 0x02;
-    pub const STX:    u8 = 0x03;
-    pub const ALU:    u8 = 0x04;
-    pub const JMP:    u8 = 0x05;
-    pub const JMP32:  u8 = 0x06;
-    pub const ALU64:  u8 = 0x07;
+    pub const LD: u8 = 0x00;
+    pub const LDX: u8 = 0x01;
+    pub const ST: u8 = 0x02;
+    pub const STX: u8 = 0x03;
+    pub const ALU: u8 = 0x04;
+    pub const JMP: u8 = 0x05;
+    pub const JMP32: u8 = 0x06;
+    pub const ALU64: u8 = 0x07;
 
     // Size modifiers
-    pub const W:  u8 = 0x00; // 32-bit
-    pub const H:  u8 = 0x08; // 16-bit
-    pub const B:  u8 = 0x10; // 8-bit
+    pub const W: u8 = 0x00; // 32-bit
+    pub const H: u8 = 0x08; // 16-bit
+    pub const B: u8 = 0x10; // 8-bit
     pub const DW: u8 = 0x18; // 64-bit
 
     // Mode modifiers (for LD/ST)
-    pub const IMM:   u8 = 0x00;
-    pub const ABS:   u8 = 0x20;
-    pub const IND:   u8 = 0x40;
-    pub const MEM:   u8 = 0x60;
+    pub const IMM: u8 = 0x00;
+    pub const ABS: u8 = 0x20;
+    pub const IND: u8 = 0x40;
+    pub const MEM: u8 = 0x60;
     pub const ATOMIC: u8 = 0xc0;
 
     // ALU operations
-    pub const ADD:  u8 = 0x00;
-    pub const SUB:  u8 = 0x10;
-    pub const MUL:  u8 = 0x20;
-    pub const DIV:  u8 = 0x30;
-    pub const OR:   u8 = 0x40;
-    pub const AND:  u8 = 0x50;
-    pub const LSH:  u8 = 0x60;
-    pub const RSH:  u8 = 0x70;
-    pub const NEG:  u8 = 0x80;
-    pub const MOD:  u8 = 0x90;
-    pub const XOR:  u8 = 0xa0;
-    pub const MOV:  u8 = 0xb0;
+    pub const ADD: u8 = 0x00;
+    pub const SUB: u8 = 0x10;
+    pub const MUL: u8 = 0x20;
+    pub const DIV: u8 = 0x30;
+    pub const OR: u8 = 0x40;
+    pub const AND: u8 = 0x50;
+    pub const LSH: u8 = 0x60;
+    pub const RSH: u8 = 0x70;
+    pub const NEG: u8 = 0x80;
+    pub const MOD: u8 = 0x90;
+    pub const XOR: u8 = 0xa0;
+    pub const MOV: u8 = 0xb0;
     pub const ARSH: u8 = 0xc0;
-    pub const END:  u8 = 0xd0;
+    pub const END: u8 = 0xd0;
 
     // JMP operations
-    pub const JA:    u8 = 0x00;
-    pub const JEQ:   u8 = 0x10;
-    pub const JGT:   u8 = 0x20;
-    pub const JGE:   u8 = 0x30;
-    pub const JSET:  u8 = 0x40;
-    pub const JNE:   u8 = 0x50;
-    pub const JSGT:  u8 = 0x60;
-    pub const JSGE:  u8 = 0x70;
-    pub const CALL:  u8 = 0x80;
-    pub const EXIT:  u8 = 0x90;
-    pub const JLT:   u8 = 0xa0;
-    pub const JLE:   u8 = 0xb0;
-    pub const JSLT:  u8 = 0xc0;
-    pub const JSLE:  u8 = 0xd0;
+    pub const JA: u8 = 0x00;
+    pub const JEQ: u8 = 0x10;
+    pub const JGT: u8 = 0x20;
+    pub const JGE: u8 = 0x30;
+    pub const JSET: u8 = 0x40;
+    pub const JNE: u8 = 0x50;
+    pub const JSGT: u8 = 0x60;
+    pub const JSGE: u8 = 0x70;
+    pub const CALL: u8 = 0x80;
+    pub const EXIT: u8 = 0x90;
+    pub const JLT: u8 = 0xa0;
+    pub const JLE: u8 = 0xb0;
+    pub const JSLT: u8 = 0xc0;
+    pub const JSLE: u8 = 0xd0;
 
     // Source modifier
     pub const K: u8 = 0x00; // immediate
@@ -125,7 +125,7 @@ pub mod opcode {
 #[repr(C)]
 pub struct BpfInsn {
     pub op: u8,
-    pub dst_reg: u8,   // 低 4 bit = dst, 高 4 bit = src
+    pub dst_reg: u8, // 低 4 bit = dst, 高 4 bit = src
     pub off: i16,
     pub imm: i32,
 }
@@ -140,12 +140,27 @@ impl BpfInsn {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
-    pub fn dst(&self) -> u8 { self.dst_reg & 0xf }
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
-    pub fn src(&self) -> u8 { (self.dst_reg >> 4) & 0xf }
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
-    pub fn class(&self) -> u8 { self.op & 0x07 }
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
+    pub fn dst(&self) -> u8 {
+        self.dst_reg & 0xf
+    }
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
+    pub fn src(&self) -> u8 {
+        (self.dst_reg >> 4) & 0xf
+    }
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
+    pub fn class(&self) -> u8 {
+        self.op & 0x07
+    }
 }
 
 // ============================================================================
@@ -154,16 +169,16 @@ impl BpfInsn {
 
 /// eBPF 寄存器编号
 pub mod reg {
-    pub const R0:  usize = 0;  // 返回值
-    pub const R1:  usize = 1;  // 参数 1
-    pub const R2:  usize = 2;  // 参数 2
-    pub const R3:  usize = 3;  // 参数 3
-    pub const R4:  usize = 4;  // 参数 4
-    pub const R5:  usize = 5;  // 参数 5
-    pub const R6:  usize = 6;  // callee-saved
-    pub const R7:  usize = 7;  // callee-saved
-    pub const R8:  usize = 8;  // callee-saved
-    pub const R9:  usize = 9;  // callee-saved
+    pub const R0: usize = 0; // 返回值
+    pub const R1: usize = 1; // 参数 1
+    pub const R2: usize = 2; // 参数 2
+    pub const R3: usize = 3; // 参数 3
+    pub const R4: usize = 4; // 参数 4
+    pub const R5: usize = 5; // 参数 5
+    pub const R6: usize = 6; // callee-saved
+    pub const R7: usize = 7; // callee-saved
+    pub const R8: usize = 8; // callee-saved
+    pub const R9: usize = 9; // callee-saved
     pub const R10: usize = 10; // 栈帧指针 (只读)
 }
 
@@ -249,18 +264,26 @@ pub enum BpfMap {
 
 impl BpfMap {
     /// 创建新的 BPF Map
-    pub fn create(map_type: BpfMapType, key_size: u32, value_size: u32, max_entries: u32) -> Option<Self> {
+    pub fn create(
+        map_type: BpfMapType,
+        key_size: u32,
+        value_size: u32,
+        max_entries: u32,
+    ) -> Option<Self> {
         if key_size == 0 || value_size == 0 || max_entries == 0 {
             return None;
         }
-        let def = BpfMapDef { map_type, key_size, value_size, max_entries };
+        let def = BpfMapDef {
+            map_type,
+            key_size,
+            value_size,
+            max_entries,
+        };
         match map_type {
-            BpfMapType::Hash | BpfMapType::PerCpuHash => {
-                Some(Self::Hash {
-                    def,
-                    data: IrqSpinLock::new(BTreeMap::new()),
-                })
-            }
+            BpfMapType::Hash | BpfMapType::PerCpuHash => Some(Self::Hash {
+                def,
+                data: IrqSpinLock::new(BTreeMap::new()),
+            }),
             BpfMapType::Array | BpfMapType::PerCpuArray => {
                 let data = (0..max_entries).map(|_| None).collect();
                 Some(Self::Array {
@@ -271,7 +294,10 @@ impl BpfMap {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 查找元素
     pub fn lookup(&self, key: &[u8], value_out: &mut [u8]) -> bool {
         match self {
@@ -312,7 +338,10 @@ impl BpfMap {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 更新/插入元素
     pub fn update(&self, key: &[u8], value: &[u8]) -> bool {
         match self {
@@ -346,7 +375,10 @@ impl BpfMap {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 删除元素
     pub fn delete(&self, key: &[u8]) -> bool {
         match self {
@@ -372,7 +404,10 @@ impl BpfMap {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 获取 Map 定义
     pub fn def(&self) -> &BpfMapDef {
         match self {
@@ -389,8 +424,7 @@ impl BpfMap {
             4 => Some(u32::from_ne_bytes([key[0], key[1], key[2], key[3]]) as usize),
             8 => {
                 let v = u64::from_ne_bytes([
-                    key[0], key[1], key[2], key[3],
-                    key[4], key[5], key[6], key[7],
+                    key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7],
                 ]);
                 usize::try_from(v).ok()
             }
@@ -478,12 +512,12 @@ pub trait BpfVerifier: Sync + Send {
 
 /// Helper 函数 ID
 pub mod helper_id {
-    pub const TRACE_PRINTK:      u32 = 6;
-    pub const KTIME_GET_NS:      u32 = 5;
+    pub const TRACE_PRINTK: u32 = 6;
+    pub const KTIME_GET_NS: u32 = 5;
     pub const GET_SMP_PROCESSOR: u32 = 8;
-    pub const MAP_LOOKUP_ELEM:   u32 = 1;
-    pub const MAP_UPDATE_ELEM:   u32 = 2;
-    pub const MAP_DELETE_ELEM:   u32 = 3;
+    pub const MAP_LOOKUP_ELEM: u32 = 1;
+    pub const MAP_UPDATE_ELEM: u32 = 2;
+    pub const MAP_DELETE_ELEM: u32 = 3;
 }
 
 /// BPF Helper 函数
@@ -492,13 +526,14 @@ pub struct BpfHelper;
 impl BpfHelper {
     /// 检查 helper ID 是否合法
     pub fn is_valid(id: u32) -> bool {
-        matches!(id,
+        matches!(
+            id,
             helper_id::TRACE_PRINTK
-            | helper_id::KTIME_GET_NS
-            | helper_id::GET_SMP_PROCESSOR
-            | helper_id::MAP_LOOKUP_ELEM
-            | helper_id::MAP_UPDATE_ELEM
-            | helper_id::MAP_DELETE_ELEM
+                | helper_id::KTIME_GET_NS
+                | helper_id::GET_SMP_PROCESSOR
+                | helper_id::MAP_LOOKUP_ELEM
+                | helper_id::MAP_UPDATE_ELEM
+                | helper_id::MAP_DELETE_ELEM
         )
     }
 
@@ -513,10 +548,17 @@ impl BpfHelper {
     /// 返回: R0 的值
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::bool_to_int_with_if, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::bool_to_int_with_if,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn execute(
         id: u32,
-        r1: u64, r2: u64, r3: u64, _r4: u64, _r5: u64,
+        r1: u64,
+        r2: u64,
+        r3: u64,
+        _r4: u64,
+        _r5: u64,
         _ctx: &[u8],
         maps: &BTreeMap<u32, Arc<BpfMap>>,
     ) -> u64 {
@@ -545,7 +587,10 @@ impl BpfHelper {
                 // 简化: 仅记录到 ftrace
                 crate::kernel::framework::debug::ftrace::record_named(
                     crate::kernel::framework::debug::ftrace::fnv1a_32(b"bpf_trace"),
-                    r3, 0, 0, 0,
+                    r3,
+                    0,
+                    0,
+                    0,
                 );
                 r2 // 返回写入字节数
             }
@@ -582,7 +627,11 @@ impl BpfHelper {
                     let key = unsafe { core::slice::from_raw_parts(key_ptr, key_size) };
                     // SAFETY: 同上
                     let value = unsafe { core::slice::from_raw_parts(val_ptr, val_size) };
-                    if map.update(key, value) { 0 } else { -(1i64) as u64 }
+                    if map.update(key, value) {
+                        0
+                    } else {
+                        -(1i64) as u64
+                    }
                 } else {
                     -(1i64) as u64
                 }
@@ -671,8 +720,14 @@ impl BpfInterpreter {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     fn exec_alu(insn: &BpfInsn, regs: &mut [u64; BPF_REG_NUM]) {
         let dst = insn.dst() as usize;
         let src = insn.src() as usize;
@@ -687,15 +742,23 @@ impl BpfInterpreter {
             opcode::SUB => regs[dst].wrapping_sub(src_val),
             opcode::MUL => regs[dst].wrapping_mul(src_val),
             opcode::DIV => {
-                if src_val == 0 { 0 } else { regs[dst] / src_val }
+                if src_val == 0 {
+                    0
+                } else {
+                    regs[dst] / src_val
+                }
             }
-            opcode::OR  => regs[dst] | src_val,
+            opcode::OR => regs[dst] | src_val,
             opcode::AND => regs[dst] & src_val,
             opcode::LSH => regs[dst].wrapping_shl(src_val as u32),
             opcode::RSH => regs[dst].wrapping_shr(src_val as u32),
             opcode::NEG => (!regs[dst]).wrapping_add(1),
             opcode::MOD => {
-                if src_val == 0 { 0 } else { regs[dst] % src_val }
+                if src_val == 0 {
+                    0
+                } else {
+                    regs[dst] % src_val
+                }
             }
             opcode::XOR => regs[dst] ^ src_val,
             opcode::MOV => src_val,
@@ -732,8 +795,7 @@ impl BpfInterpreter {
 
         if op == opcode::LD | opcode::IMM | opcode::DW {
             // 64-bit immediate load (2 条指令)
-            regs[dst] = u64::from(insn.imm as u32)
-                | (u64::from(insn.off as u32) << 32);
+            regs[dst] = u64::from(insn.imm as u32) | (u64::from(insn.off as u32) << 32);
         } else if op == opcode::LD | opcode::ABS | opcode::W {
             // LD_ABS_W: 从 packet 偏移 insn.imm 加载 32-bit
             // 简化: 返回 0
@@ -855,7 +917,10 @@ impl BpfInterpreter {
 
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     fn exec_jmp(
         insn: &BpfInsn,
         regs: &mut [u64; BPF_REG_NUM],
@@ -868,16 +933,17 @@ impl BpfInterpreter {
         let is_32 = insn.class() == opcode::JMP32;
 
         match op_low {
-            opcode::JA => {
-                Some((pc as i64 + 1 + i64::from(insn.off)) as usize)
-            }
+            opcode::JA => Some((pc as i64 + 1 + i64::from(insn.off)) as usize),
             opcode::EXIT => None,
             opcode::CALL => {
                 let helper_id = insn.imm as u32;
                 regs[reg::R0] = BpfHelper::execute(
                     helper_id,
-                    regs[reg::R1], regs[reg::R2], regs[reg::R3],
-                    regs[reg::R4], regs[reg::R5],
+                    regs[reg::R1],
+                    regs[reg::R2],
+                    regs[reg::R3],
+                    regs[reg::R4],
+                    regs[reg::R5],
                     &[],
                     maps,
                 );
@@ -886,7 +952,11 @@ impl BpfInterpreter {
             _ => {
                 // 条件跳转
                 let dst_val = regs[dst];
-                let src_val = if (insn.op & opcode::X) != 0 { regs[src] } else { insn.imm as u64 };
+                let src_val = if (insn.op & opcode::X) != 0 {
+                    regs[src]
+                } else {
+                    insn.imm as u64
+                };
                 let taken = if is_32 {
                     Self::eval_cond32(op_low, dst_val as u32, src_val as u32)
                 } else {
@@ -903,15 +973,15 @@ impl BpfInterpreter {
 
     fn eval_cond64(op: u8, dst: u64, src: u64) -> bool {
         match op {
-            opcode::JEQ  => dst == src,
-            opcode::JGT  => dst > src,
-            opcode::JGE  => dst >= src,
+            opcode::JEQ => dst == src,
+            opcode::JGT => dst > src,
+            opcode::JGE => dst >= src,
             opcode::JSET => dst & src != 0,
-            opcode::JNE  => dst != src,
+            opcode::JNE => dst != src,
             opcode::JSGT => (dst as i64) > (src as i64),
             opcode::JSGE => (dst as i64) >= (src as i64),
-            opcode::JLT  => dst < src,
-            opcode::JLE  => dst <= src,
+            opcode::JLT => dst < src,
+            opcode::JLE => dst <= src,
             opcode::JSLT => (dst as i64) < (src as i64),
             opcode::JSLE => (dst as i64) <= (src as i64),
             _ => false,
@@ -920,15 +990,15 @@ impl BpfInterpreter {
 
     fn eval_cond32(op: u8, dst: u32, src: u32) -> bool {
         match op {
-            opcode::JEQ  => dst == src,
-            opcode::JGT  => dst > src,
-            opcode::JGE  => dst >= src,
+            opcode::JEQ => dst == src,
+            opcode::JGT => dst > src,
+            opcode::JGE => dst >= src,
             opcode::JSET => dst & src != 0,
-            opcode::JNE  => dst != src,
+            opcode::JNE => dst != src,
             opcode::JSGT => (dst as i32) > (src as i32),
             opcode::JSGE => (dst as i32) >= (src as i32),
-            opcode::JLT  => dst < src,
-            opcode::JLE  => dst <= src,
+            opcode::JLT => dst < src,
+            opcode::JLE => dst <= src,
             opcode::JSLT => (dst as i32) < (src as i32),
             opcode::JSLE => (dst as i32) <= (src as i32),
             _ => false,
@@ -986,10 +1056,7 @@ impl BpfSubsystem {
             );
         }
         *slot = Some(v);
-        crate::klog_ffi!(
-            klog_ffi_info,
-            "[BPF] verifier registered"
-        );
+        crate::klog_ffi!(klog_ffi_info, "[BPF] verifier registered");
         // 注册后验证: 确认 verifier 可读回 (交叉校验)
         debug_assert!(
             self.verifier().is_some(),
@@ -1008,10 +1075,7 @@ impl BpfSubsystem {
             return;
         }
         self.initialized.store(true, Ordering::Release);
-        crate::klog_ffi!(
-            klog_ffi_info,
-            "[BPF] subsystem initialized"
-        );
+        crate::klog_ffi!(klog_ffi_info, "[BPF] subsystem initialized");
     }
 
     /// 创建 Map
@@ -1037,19 +1101,20 @@ impl BpfSubsystem {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 加载程序
-    pub fn prog_load(
-        &self,
-        prog_type: BpfProgType,
-        insns: Vec<BpfInsn>,
-    ) -> i64 {
+    pub fn prog_load(&self, prog_type: BpfProgType, insns: Vec<BpfInsn>) -> i64 {
         let prog = BpfProg::new(prog_type, insns);
 
         // T4-3: 验证通过动态分派到注册的 verifier
         // 安全默认: 未注册时拒绝所有程序
         let verifier_slot = self.verifier.lock();
-        let verifier = if let Some(v) = *verifier_slot { v } else {
+        let verifier = if let Some(v) = *verifier_slot {
+            v
+        } else {
             drop(verifier_slot);
             crate::klog_ffi!(
                 klog_ffi_warn,
@@ -1088,7 +1153,11 @@ impl BpfSubsystem {
         let maps = self.maps.lock();
         match maps.get(&map_fd) {
             Some(map) => {
-                if map.lookup(key, value_out) { 0 } else { -(2i64) } // ENOENT
+                if map.lookup(key, value_out) {
+                    0
+                } else {
+                    -(2i64)
+                } // ENOENT
             }
             None => -(9i64), // EBADF
         }
@@ -1099,7 +1168,11 @@ impl BpfSubsystem {
         let maps = self.maps.lock();
         match maps.get(&map_fd) {
             Some(map) => {
-                if map.update(key, value) { 0 } else { -(22i64) }
+                if map.update(key, value) {
+                    0
+                } else {
+                    -(22i64)
+                }
             }
             None => -(9i64),
         }
@@ -1110,7 +1183,11 @@ impl BpfSubsystem {
         let maps = self.maps.lock();
         match maps.get(&map_fd) {
             Some(map) => {
-                if map.delete(key) { 0 } else { -(2i64) }
+                if map.delete(key) {
+                    0
+                } else {
+                    -(2i64)
+                }
             }
             None => -(9i64),
         }
@@ -1188,8 +1265,14 @@ pub fn bpf_is_initialized() -> bool {
 #[unsafe(no_mangle)]
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub extern "C" fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
     if !bpf_is_initialized() {
         return -(11i64); // EAGAIN
@@ -1255,9 +1338,7 @@ pub extern "C" fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
             if result == 0 {
                 // SAFETY: val_ptr 由用户态传入, 大小与 map 定义一致
                 unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        value.as_ptr(), val_ptr as *mut u8, val_size,
-                    );
+                    core::ptr::copy_nonoverlapping(value.as_ptr(), val_ptr as *mut u8, val_size);
                 }
             }
             result
@@ -1325,11 +1406,7 @@ pub extern "C" fn sys_bpf(cmd: u64, attr: u64, size: u64) -> i64 {
             let (prog_type, insn_cnt, insns_ptr) = unsafe {
                 let lo = core::ptr::read_unaligned(attr_ptr) as u32;
                 let hi = core::ptr::read_unaligned(attr_ptr.add(0)) >> 32;
-                (
-                    lo,
-                    hi as u32,
-                    core::ptr::read_unaligned(attr_ptr.add(1)),
-                )
+                (lo, hi as u32, core::ptr::read_unaligned(attr_ptr.add(1)))
             };
             let pt = match BpfProgType::from_u32(prog_type) {
                 Some(t) => t,

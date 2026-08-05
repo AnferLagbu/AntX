@@ -23,7 +23,10 @@ pub enum RecoveryLayer {
 }
 
 impl RecoveryLayer {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_u32(v: u32) -> Self {
         match v {
             1 => RecoveryLayer::Layer1,
@@ -43,12 +46,18 @@ pub enum RecoveryResult {
 }
 
 impl RecoveryResult {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_success(&self) -> bool {
         matches!(self, RecoveryResult::Success)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn should_escalate(&self) -> bool {
         matches!(self, RecoveryResult::Escalate)
     }
@@ -132,7 +141,10 @@ pub fn increment_bhr_count() -> u32 {
     BHR_ATTEMPT_COUNT.fetch_add(1, Ordering::SeqCst)
 }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 pub fn get_stats() -> (u32, u32, u32) {
     let bsr_count = BSR_ATTEMPT_COUNT.load(Ordering::SeqCst);
     let bhr_count = BHR_ATTEMPT_COUNT.load(Ordering::SeqCst);

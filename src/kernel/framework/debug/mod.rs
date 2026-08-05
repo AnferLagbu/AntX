@@ -17,8 +17,8 @@
 //! - [kgdb](file:///home/anfer/Code/QueenX/src/kernel/framework/debug/kgdb.rs) — KGDB 桩
 //! - [api](file:///home/anfer/Code/QueenX/src/kernel/framework/debug/api.rs) — 公共 re-export
 // ebpf 公共接口 re-export — 避免跨子系统直接访问 debug::ebpf 内部
-pub use ebpf::sys_bpf;
 pub use ebpf::bpf_init;
+pub use ebpf::sys_bpf;
 
 pub mod api;
 /// D4: eBPF 扩展包过滤器
@@ -29,6 +29,6 @@ pub mod ringbuf;
 
 // 子模块公共接口 re-export — 避免跨子系统直接访问 debug 内部子模块
 pub use api::*;
+pub use ebpf::*;
 pub use ftrace::*;
 pub use kgdb::*;
-pub use ebpf::*;

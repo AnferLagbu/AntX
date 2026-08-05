@@ -4,12 +4,7 @@
 //! framework 内部代码 (如 ramfs) 通过本模块引用 dcache, 保持路径兼容.
 
 pub use crate::kernel::services::fs::dcache::{
-    DCacheResult, ICacheResult,
-    dcache_lookup, dcache_insert, dcache_insert_negative,
-    dcache_invalidate_parent, dcache_flush,
-    icache_lookup, icache_insert, icache_invalidate, icache_flush,
-    flush_all,
-    dcache_hit_rate, icache_hit_rate,
-    dcache_count, icache_count,
-    reset_stats,
+    DCacheResult, ICacheResult, dcache_count, dcache_flush, dcache_hit_rate, dcache_insert,
+    dcache_insert_negative, dcache_invalidate_parent, dcache_lookup, flush_all, icache_count,
+    icache_flush, icache_hit_rate, icache_insert, icache_invalidate, icache_lookup, reset_stats,
 };

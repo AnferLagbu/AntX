@@ -1,10 +1,10 @@
 use crate::kernel::framework::credo::sha256::sha256;
-use crate::kernel::framework::mm::slab::{
-    find_general_cache_index, KmemCache, GENERAL_CACHE_SIZES, SLAB_MAX_OBJECT_SIZE,
-    SLAB_MIN_OBJECT_SIZE,
-};
 use crate::kernel::framework::errno::Errno;
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::mm::slab::{
+    GENERAL_CACHE_SIZES, KmemCache, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE,
+    find_general_cache_index,
+};
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 use crate::kernel::framework::timer::pit::{
     DEFAULT_INTERRUPT_FREQ_HZ, PIT_BASE_FREQUENCY, PIT_MAX_COUNT, PIT_MIN_COUNT,
 };

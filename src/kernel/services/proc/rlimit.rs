@@ -24,8 +24,8 @@
 //! - `RLIMIT_STACK` 默认 8MB
 
 use crate::kernel::framework::config::{MAX_OPEN_FILES, MAX_PROCESSES};
-use crate::kernel::framework::proc::process_get_current_pid;
 use crate::kernel::framework::proc::PROCESS_TABLE;
+use crate::kernel::framework::proc::process_get_current_pid;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -83,22 +83,22 @@ impl RlimitTable {
     pub fn new() -> Self {
         Self {
             limits: [
-                Rlimit::infinity(),                          // 0  CPU
-                Rlimit::infinity(),                          // 1  FSIZE
-                Rlimit::infinity(),                          // 2  DATA
-                Rlimit::new(8 * 1024 * 1024, RLIM_INFINITY), // 3  STACK (8MB soft)
-                Rlimit::infinity(),                          // 4  CORE
-                Rlimit::infinity(),                          // 5  RSS
-                Rlimit::new(MAX_PROCESSES as u64, RLIM_INFINITY), // 6  NPROC
+                Rlimit::infinity(),                                // 0  CPU
+                Rlimit::infinity(),                                // 1  FSIZE
+                Rlimit::infinity(),                                // 2  DATA
+                Rlimit::new(8 * 1024 * 1024, RLIM_INFINITY),       // 3  STACK (8MB soft)
+                Rlimit::infinity(),                                // 4  CORE
+                Rlimit::infinity(),                                // 5  RSS
+                Rlimit::new(MAX_PROCESSES as u64, RLIM_INFINITY),  // 6  NPROC
                 Rlimit::new(MAX_OPEN_FILES as u64, RLIM_INFINITY), // 7  NOFILE
-                Rlimit::infinity(),                          // 8  MEMLOCK
-                Rlimit::infinity(),                          // 9  AS
-                Rlimit::infinity(),                          // 10 LOCKS
-                Rlimit::infinity(),                          // 11 SIGPENDING
-                Rlimit::infinity(),                          // 12 MSGQUEUE
-                Rlimit::infinity(),                          // 13 NICE
-                Rlimit::infinity(),                          // 14 RTPRIO
-                Rlimit::infinity(),                          // 15 RTTIME
+                Rlimit::infinity(),                                // 8  MEMLOCK
+                Rlimit::infinity(),                                // 9  AS
+                Rlimit::infinity(),                                // 10 LOCKS
+                Rlimit::infinity(),                                // 11 SIGPENDING
+                Rlimit::infinity(),                                // 12 MSGQUEUE
+                Rlimit::infinity(),                                // 13 NICE
+                Rlimit::infinity(),                                // 14 RTPRIO
+                Rlimit::infinity(),                                // 15 RTTIME
             ],
         }
     }
@@ -122,7 +122,13 @@ impl RlimitTable {
     ///
     /// - `resource` 超出范围或 `cur > max` → `EINVAL`
     /// - 非特权进程试图提高 hard limit → `EPERM`
-    pub fn set(&mut self, resource: usize, cur: u64, max: u64, is_privileged: bool) -> Result<(), Errno> {
+    pub fn set(
+        &mut self,
+        resource: usize,
+        cur: u64,
+        max: u64,
+        is_privileged: bool,
+    ) -> Result<(), Errno> {
         if resource >= RLIMIT_NLIMITS {
             return Err(Errno::EINVAL);
         }
@@ -155,14 +161,16 @@ impl Default for RlimitTable {
 pub fn check_nofile_exceeded(fd_count: usize) -> bool {
     let pid = process_get_current_pid();
     let table = &PROCESS_TABLE;
-    table.with_process(pid, |proc| {
-        let rlimit_table = proc.rlimit_table.lock();
-        if let Some(rlim) = rlimit_table.get(RLIMIT_NOFILE) {
-            fd_count as u64 >= rlim.cur
-        } else {
-            false
-        }
-    }).unwrap_or(false)
+    table
+        .with_process(pid, |proc| {
+            let rlimit_table = proc.rlimit_table.lock();
+            if let Some(rlim) = rlimit_table.get(RLIMIT_NOFILE) {
+                fd_count as u64 >= rlim.cur
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
 }
 
 /// 检查当前进程的 AS (地址空间) 限制
@@ -173,17 +181,19 @@ pub fn check_nofile_exceeded(fd_count: usize) -> bool {
 pub fn check_as_exceeded(current_usage: u64, additional_bytes: u64) -> bool {
     let pid = process_get_current_pid();
     let table = &PROCESS_TABLE;
-    table.with_process(pid, |proc| {
-        let rlimit_table = proc.rlimit_table.lock();
-        if let Some(rlim) = rlimit_table.get(RLIMIT_AS) {
-            if rlim.cur == RLIM_INFINITY {
-                return false;
+    table
+        .with_process(pid, |proc| {
+            let rlimit_table = proc.rlimit_table.lock();
+            if let Some(rlim) = rlimit_table.get(RLIMIT_AS) {
+                if rlim.cur == RLIM_INFINITY {
+                    return false;
+                }
+                current_usage.saturating_add(additional_bytes) > rlim.cur
+            } else {
+                false
             }
-            current_usage.saturating_add(additional_bytes) > rlim.cur
-        } else {
-            false
-        }
-    }).unwrap_or(false)
+        })
+        .unwrap_or(false)
 }
 
 /// 检查当前进程的 NPROC 限制
@@ -192,44 +202,58 @@ pub fn check_as_exceeded(current_usage: u64, additional_bytes: u64) -> bool {
 pub fn check_nproc_exceeded(child_count: usize) -> bool {
     let pid = process_get_current_pid();
     let table = &PROCESS_TABLE;
-    table.with_process(pid, |proc| {
-        let rlimit_table = proc.rlimit_table.lock();
-        if let Some(rlim) = rlimit_table.get(RLIMIT_NPROC) {
-            child_count as u64 >= rlim.cur
-        } else {
-            false
-        }
-    }).unwrap_or(false)
+    table
+        .with_process(pid, |proc| {
+            let rlimit_table = proc.rlimit_table.lock();
+            if let Some(rlim) = rlimit_table.get(RLIMIT_NPROC) {
+                child_count as u64 >= rlim.cur
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
 }
 
 /// 获取当前进程的 STACK 限制
 pub fn get_stack_limit() -> u64 {
     let pid = process_get_current_pid();
     let table = &PROCESS_TABLE;
-    table.with_process(pid, |proc| {
-        let rlimit_table = proc.rlimit_table.lock();
-        rlimit_table.get(RLIMIT_STACK).map_or(8 * 1024 * 1024, |r| r.cur)
-    }).unwrap_or(8 * 1024 * 1024)
+    table
+        .with_process(pid, |proc| {
+            let rlimit_table = proc.rlimit_table.lock();
+            rlimit_table
+                .get(RLIMIT_STACK)
+                .map_or(8 * 1024 * 1024, |r| r.cur)
+        })
+        .unwrap_or(8 * 1024 * 1024)
 }
 
 /// 获取当前进程的 NOFILE 限制
 pub fn get_nofile_limit() -> u64 {
     let pid = process_get_current_pid();
     let table = &PROCESS_TABLE;
-    table.with_process(pid, |proc| {
-        let rlimit_table = proc.rlimit_table.lock();
-        rlimit_table.get(RLIMIT_NOFILE).map_or(MAX_OPEN_FILES as u64, |r| r.cur)
-    }).unwrap_or(MAX_OPEN_FILES as u64)
+    table
+        .with_process(pid, |proc| {
+            let rlimit_table = proc.rlimit_table.lock();
+            rlimit_table
+                .get(RLIMIT_NOFILE)
+                .map_or(MAX_OPEN_FILES as u64, |r| r.cur)
+        })
+        .unwrap_or(MAX_OPEN_FILES as u64)
 }
 
 /// 获取当前进程的 `RLIMIT_MEMLOCK` (字节)
 pub fn get_memlock_limit() -> u64 {
     let pid = process_get_current_pid();
     let table = &PROCESS_TABLE;
-    table.with_process(pid, |proc| {
-        let rlimit_table = proc.rlimit_table.lock();
-        rlimit_table.get(RLIMIT_MEMLOCK).map_or(64 * 1024, |r| r.cur)
-    }).unwrap_or(64 * 1024)
+    table
+        .with_process(pid, |proc| {
+            let rlimit_table = proc.rlimit_table.lock();
+            rlimit_table
+                .get(RLIMIT_MEMLOCK)
+                .map_or(64 * 1024, |r| r.cur)
+        })
+        .unwrap_or(64 * 1024)
 }
 
 /// 检查 mlock 锁定字节数是否超 `RLIMIT_MEMLOCK`

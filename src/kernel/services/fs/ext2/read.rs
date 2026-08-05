@@ -2,14 +2,14 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! ext2 读取核心逻辑
 
+use super::block_group::Ext2BlockGroupDescriptor;
+use super::dir::Ext2DirEntry;
+use super::inode::Ext2Inode;
+use super::super_block::Ext2SuperBlock;
+use crate::kernel::framework::driver::block::{read_sectors, with_device};
+use crate::kernel::framework::fs::KernelError;
 use alloc::format;
 use alloc::vec::Vec;
-use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::driver::block::{read_sectors, with_device};
-use super::super_block::Ext2SuperBlock;
-use super::block_group::Ext2BlockGroupDescriptor;
-use super::inode::Ext2Inode;
-use super::dir::Ext2DirEntry;
 
 /// ext2 文件系统实例
 pub struct Ext2Fs {
@@ -45,8 +45,8 @@ impl Ext2Fs {
         }
 
         // 解析超级块
-        let super_block = Ext2SuperBlock::from_bytes(&sb_data)
-            .ok_or(KernelError::InvalidArgument)?;
+        let super_block =
+            Ext2SuperBlock::from_bytes(&sb_data).ok_or(KernelError::InvalidArgument)?;
 
         // 读取块组描述符表
         let bgd_block = u64::from(super_block.bgd_block());
@@ -116,8 +116,7 @@ impl Ext2Fs {
             _ => return Err(KernelError::Io),
         }
 
-        let inode = Ext2Inode::from_bytes(&inode_data)
-            .ok_or(KernelError::InvalidArgument)?;
+        let inode = Ext2Inode::from_bytes(&inode_data).ok_or(KernelError::InvalidArgument)?;
 
         // 缓存
         self.inode_cache.push((inode_num, inode));
@@ -241,7 +240,12 @@ impl Ext2Fs {
     /// # Errors
     /// 当 inode 不是普通文件时返回 `InvalidArgument`;
     /// 当 inode 或底层数据块读取失败时返回对应的 `KernelError`.
-    pub fn read_file(&mut self, inode_num: u32, offset: u64, buf: &mut [u8]) -> Result<usize, KernelError> {
+    pub fn read_file(
+        &mut self,
+        inode_num: u32,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Result<usize, KernelError> {
         let inode = self.read_inode(inode_num)?;
 
         if inode.file_type() != 0 {
@@ -269,7 +273,9 @@ impl Ext2Fs {
 
             let block_data = self.read_block(block_num)?;
             let available = block_size as usize - block_offset;
-            let to_read = (buf.len() - bytes_read).min(available).min((file_size - pos) as usize);
+            let to_read = (buf.len() - bytes_read)
+                .min(available)
+                .min((file_size - pos) as usize);
 
             buf[bytes_read..bytes_read + to_read]
                 .copy_from_slice(&block_data[block_offset..block_offset + to_read]);
@@ -281,7 +287,10 @@ impl Ext2Fs {
         Ok(bytes_read)
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
     /// 获取物理块号 (处理间接寻址)
     fn get_physical_block(&mut self, inode: &Ext2Inode, logical: u32) -> Result<u32, KernelError> {
         let block_size = self.super_block.block_size();
@@ -362,7 +371,8 @@ impl Ext2Fs {
                 return Ok(0);
             }
 
-            let idx = logical - 12 - blocks_per_indirect - blocks_per_indirect * blocks_per_indirect;
+            let idx =
+                logical - 12 - blocks_per_indirect - blocks_per_indirect * blocks_per_indirect;
             let l1_idx = idx / (blocks_per_indirect * blocks_per_indirect);
             let l2_idx = (idx / blocks_per_indirect) % blocks_per_indirect;
             let l3_idx = idx % blocks_per_indirect;
@@ -538,11 +548,12 @@ impl Ext2Fs {
             };
 
             // 读取现有块内容（如果需要部分写入）
-            let mut block_data = if block_offset > 0 || buf.len() - bytes_written < block_size as usize {
-                self.read_block(block_num)?
-            } else {
-                alloc::vec![0u8; block_size as usize]
-            };
+            let mut block_data =
+                if block_offset > 0 || buf.len() - bytes_written < block_size as usize {
+                    self.read_block(block_num)?
+                } else {
+                    alloc::vec![0u8; block_size as usize]
+                };
 
             // 写入数据
             let available = block_size as usize - block_offset;
@@ -561,7 +572,10 @@ impl Ext2Fs {
         let new_size = (offset + bytes_written as u64).max(u64::from(inode.i_size));
         inode.i_size = new_size as u32;
         inode.i_mtime = crate::arch!(timestamp()) as u32;
-        inode.i_blocks = ((new_size + u64::from(self.super_block.block_size()) - 1) / u64::from(self.super_block.block_size()) * 512 / u64::from(self.super_block.block_size())) as u32;
+        inode.i_blocks = ((new_size + u64::from(self.super_block.block_size()) - 1)
+            / u64::from(self.super_block.block_size())
+            * 512
+            / u64::from(self.super_block.block_size())) as u32;
 
         self.save_inode(inode_num, &inode)?;
 
@@ -738,7 +752,8 @@ impl Ext2Fs {
                         block_data[offset + 2],
                         block_data[offset + 3],
                     ]);
-                    let entry_rec_len = u16::from_le_bytes([block_data[offset + 4], block_data[offset + 5]]);
+                    let entry_rec_len =
+                        u16::from_le_bytes([block_data[offset + 4], block_data[offset + 5]]);
 
                     if entry_inode == 0 {
                         // 空闲目录项
@@ -828,12 +843,15 @@ impl Ext2Fs {
                     block_data[offset + 2],
                     block_data[offset + 3],
                 ]);
-                let entry_rec_len = u16::from_le_bytes([block_data[offset + 4], block_data[offset + 5]]);
+                let entry_rec_len =
+                    u16::from_le_bytes([block_data[offset + 4], block_data[offset + 5]]);
                 let entry_name_len = block_data[offset + 6];
 
                 if entry_inode != 0 && entry_name_len as usize == name.len() {
-                    let entry_name = core::str::from_utf8(&block_data[offset + 8..offset + 8 + entry_name_len as usize])
-                        .unwrap_or("");
+                    let entry_name = core::str::from_utf8(
+                        &block_data[offset + 8..offset + 8 + entry_name_len as usize],
+                    )
+                    .unwrap_or("");
                     if entry_name == name {
                         // 找到目录项，标记为已删除
                         let removed_inode = entry_inode;
@@ -943,7 +961,8 @@ impl Ext2Fs {
 
         // 检查目录是否为空
         let entries = self.read_dir(dir_inode_num)?;
-        let valid_entries: Vec<_> = entries.iter()
+        let valid_entries: Vec<_> = entries
+            .iter()
             .filter(|e| e.get_name() != "." && e.get_name() != "..")
             .collect();
 
@@ -965,7 +984,8 @@ impl Ext2Fs {
         }
 
         // 释放 inode
-        let group_idx = (dir_inode_num - self.super_block.first_inode()) / self.super_block.s_inodes_per_group;
+        let group_idx =
+            (dir_inode_num - self.super_block.first_inode()) / self.super_block.s_inodes_per_group;
         if (group_idx as usize) < self.block_groups.len() {
             super::alloc::free_inode(
                 self.device_idx,
@@ -1096,11 +1116,7 @@ impl Ext2Fs {
     /// # Errors
     /// 当目标或父路径无效时返回底层 `KernelError`;
     /// 当同名链接已存在时返回 `AlreadyExists`.
-    pub fn link(
-        &mut self,
-        target_path: &str,
-        link_path: &str,
-    ) -> Result<u32, KernelError> {
+    pub fn link(&mut self, target_path: &str, link_path: &str) -> Result<u32, KernelError> {
         let target_inode_num = self.lookup_path(target_path)?;
 
         // 解析链接路径

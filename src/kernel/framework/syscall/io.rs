@@ -7,8 +7,8 @@
 
 use crate::kernel::framework::fs::vfs as vfs_api;
 use crate::kernel::framework::ipc::pipe as ipc_pipe;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // 管道
@@ -97,7 +97,10 @@ const F_SETFD: i32 = 2;
 const F_GETFL: i32 = 3;
 const F_SETFL: i32 = 4;
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 /// fcntl 系统调用
 pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
     if fd < 0 {
@@ -122,7 +125,10 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
     }
 }
 
-#[expect(clippy::comparison_chain, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::comparison_chain,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// fcntl POSIX record lock 处理
 ///
 /// `arg` 指向用户空间的 `flock` 结构体:
@@ -132,9 +138,7 @@ pub fn sys_fcntl(fd: i32, cmd: i32, arg: u64) -> i64 {
 ///   `l_len`:   i64  (0=到文件末尾)
 ///   `l_pid`:   i32  (`F_GETLK` 返回冲突锁的 PID)
 fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
-    use crate::kernel::framework::fs::{
-        sys_posix_lock, PosixLockResult, F_GETLK,
-    };
+    use crate::kernel::framework::fs::{F_GETLK, PosixLockResult, sys_posix_lock};
 
     // flock 结构体布局 (与 Linux 兼容):
     // offset 0:  l_type   i16
@@ -144,7 +148,9 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
     // offset 20: l_pid    i32
     const FLOCK_STRUCT_SIZE: usize = 24;
 
-    if arg == 0 || !crate::kernel::framework::syscall::raw::check_user_buf(arg, FLOCK_STRUCT_SIZE as u64) {
+    if arg == 0
+        || !crate::kernel::framework::syscall::raw::check_user_buf(arg, FLOCK_STRUCT_SIZE as u64)
+    {
         return Errno::EFAULT.as_ret();
     }
 
@@ -155,12 +161,24 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
         let l_type = i16::from_ne_bytes([*ptr, *ptr.add(1)]);
         let l_whence = i16::from_ne_bytes([*ptr.add(2), *ptr.add(3)]);
         let l_start = i64::from_ne_bytes([
-            *ptr.add(4), *ptr.add(5), *ptr.add(6), *ptr.add(7),
-            *ptr.add(8), *ptr.add(9), *ptr.add(10), *ptr.add(11),
+            *ptr.add(4),
+            *ptr.add(5),
+            *ptr.add(6),
+            *ptr.add(7),
+            *ptr.add(8),
+            *ptr.add(9),
+            *ptr.add(10),
+            *ptr.add(11),
         ]);
         let l_len = i64::from_ne_bytes([
-            *ptr.add(12), *ptr.add(13), *ptr.add(14), *ptr.add(15),
-            *ptr.add(16), *ptr.add(17), *ptr.add(18), *ptr.add(19),
+            *ptr.add(12),
+            *ptr.add(13),
+            *ptr.add(14),
+            *ptr.add(15),
+            *ptr.add(16),
+            *ptr.add(17),
+            *ptr.add(18),
+            *ptr.add(19),
         ]);
         (l_type, l_whence, l_start, l_len)
     };
@@ -173,7 +191,8 @@ fn sys_fcntl_posix_lock(fd: i32, cmd: i32, arg: u64) -> i64 {
     // 获取 fd 对应的 inode 号
     let ino = {
         let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
-        if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS || !fd_table[fd as usize].used {
+        if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS || !fd_table[fd as usize].used
+        {
             return Errno::EBADF.as_ret();
         }
         fd_table[fd as usize].node_id

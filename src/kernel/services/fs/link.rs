@@ -9,8 +9,8 @@
 
 use crate::kernel::framework::credo;
 use crate::kernel::framework::fs::api as fw;
-use crate::kernel::framework::syscall::raw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 // ============================================================================
 // link
@@ -32,11 +32,7 @@ pub fn link_syscall(oldpath_ptr: u64, newpath_ptr: u64) -> Result<usize, Errno> 
         return Err(Errno::EFAULT);
     }
     let pwm = current_pwm()?;
-    let r = fw::vfs_link(
-        oldpath_ptr as *const u8,
-        newpath_ptr as *const u8,
-        pwm,
-    );
+    let r = fw::vfs_link(oldpath_ptr as *const u8, newpath_ptr as *const u8, pwm);
     if r < 0 {
         Err(Errno::from_ret(i64::from(r)))
     } else {
@@ -64,11 +60,7 @@ pub fn symlink_syscall(target_ptr: u64, linkpath_ptr: u64) -> Result<usize, Errn
         return Err(Errno::EFAULT);
     }
     let pwm = current_pwm()?;
-    let r = fw::vfs_symlink(
-        target_ptr as *const u8,
-        linkpath_ptr as *const u8,
-        pwm,
-    );
+    let r = fw::vfs_symlink(target_ptr as *const u8, linkpath_ptr as *const u8, pwm);
     if r < 0 {
         Err(Errno::from_ret(i64::from(r)))
     } else {
@@ -99,12 +91,7 @@ pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usiz
         return Err(Errno::EFAULT);
     }
     let pwm = current_pwm()?;
-    let r = fw::vfs_readlink(
-        path_ptr as *const u8,
-        buf_ptr as *mut u8,
-        bufsiz,
-        pwm,
-    );
+    let r = fw::vfs_readlink(path_ptr as *const u8, buf_ptr as *mut u8, bufsiz, pwm);
     if r < 0 {
         Err(Errno::from_ret(i64::from(r)))
     } else {
@@ -116,7 +103,10 @@ pub fn readlink_syscall(path_ptr: u64, buf_ptr: u64, bufsiz: u64) -> Result<usiz
 // 内部辅助
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())

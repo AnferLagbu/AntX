@@ -14,8 +14,8 @@
 //! - 调用前必须调用 `VmSpace::activate()` 切换到正确的页表。
 
 use super::arch::Arch;
-use super::vmspace::VmSpace;
 use super::userctx::UserContext;
+use super::vmspace::VmSpace;
 
 /// 进入用户模式执行直到下一次陷入（syscall / interrupt / exception）。
 ///
@@ -41,11 +41,11 @@ pub unsafe fn enter_user_mode(vmspace: &VmSpace, ctx: &UserContext) -> ! {
     // 内部执行 CR3 切换 + swapgs + 装载数据段 + iretq, 不会返回.
     unsafe {
         <crate::kernel::framework::arch::X8664 as Arch>::enter_user(
-            ctx.rip as usize, // ELR/rip
-            ctx.rsp as usize, // stack pointer
-            ctx.rdi as usize, // arg0 (x86_64 calling convention)
+            ctx.rip as usize,    // ELR/rip
+            ctx.rsp as usize,    // stack pointer
+            ctx.rdi as usize,    // arg0 (x86_64 calling convention)
             vmspace.pt_root().0, // user_cr3
-            0,               // kstack: 由 user_proc 直接调用 enter_user 时传入
+            0,                   // kstack: 由 user_proc 直接调用 enter_user 时传入
         )
     }
 }

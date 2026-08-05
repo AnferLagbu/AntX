@@ -19,23 +19,19 @@
 //!
 //! 评估日期: 2026-06-04
 
-
 use alloc::vec::Vec;
 
 use crate::kernel::framework::chitin;
 
-pub mod devtree;
 pub mod composite;
-pub use devtree::{
-    ChitinNode, DevTreeError, DevTreeNodeId, DevTreeResult, NodeId,
-    Property, PropertyValue,
-    root_id, find_compatible, get_node, children, walk,
-    read_addr, read_irq, properties,
-    add_prop, set_compatible,
-    set_user_mapped, clear_user_mapped, clear_user_mapped_by_pid, get_user_mapped,
-    bind_device, init as devtree_init, print_tree, create_node,
-};
+pub mod devtree;
 pub use composite::{probe as composite_probe, probe_init as composite_probe_init};
+pub use devtree::{
+    ChitinNode, DevTreeError, DevTreeNodeId, DevTreeResult, NodeId, Property, PropertyValue,
+    add_prop, bind_device, children, clear_user_mapped, clear_user_mapped_by_pid, create_node,
+    find_compatible, get_node, get_user_mapped, init as devtree_init, print_tree, properties,
+    read_addr, read_irq, root_id, set_compatible, set_user_mapped, walk,
+};
 
 // ============================================================================
 // 错误
@@ -98,9 +94,14 @@ use crate::kernel::framework::syscall::Errno;
 pub struct DeviceId(pub u32);
 
 impl DeviceId {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 原始 ID
-    pub fn raw(&self) -> u32 { self.0 }
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
 }
 
 // ============================================================================
@@ -120,7 +121,10 @@ pub enum Proto {
 }
 
 impl Proto {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_str(&self) -> &'static str {
         match self {
             Proto::Block => "block",
@@ -191,11 +195,7 @@ pub struct DeviceInfo {
 /// # Errors
 /// 当设备表已满 (`chitin_register` 返回 `u32::MAX`) 时, 返回
 /// `Err(ChitinError::Kernel(KernelError::WouldBlock))`.
-pub fn register(
-    name: &str,
-    proto: Proto,
-    driver_data: *mut u8,
-) -> ChitinResult<DeviceId> {
+pub fn register(name: &str, proto: Proto, driver_data: *mut u8) -> ChitinResult<DeviceId> {
     let chitin_proto = match proto {
         Proto::Block => chitin::ChitinProto::Block,
         Proto::Char => chitin::ChitinProto::Char,
@@ -208,7 +208,9 @@ pub fn register(
     let leaked: &'static str = alloc::string::String::from(name).leak();
     let id = chitin::chitin_register(leaked, chitin_proto, None, None, driver_data);
     if id == u32::MAX {
-        Err(ChitinError::Kernel(crate::kernel::services::error::KernelError::WouldBlock))
+        Err(ChitinError::Kernel(
+            crate::kernel::services::error::KernelError::WouldBlock,
+        ))
     } else {
         Ok(DeviceId(id))
     }
@@ -320,7 +322,11 @@ pub fn shutdown_all() {
 /// `Err(ChitinError)`.
 pub fn blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> ChitinResult<()> {
     let rc = chitin::chitin_blk_read(drive, sector, buf);
-    if rc == 0 { Ok(()) } else { Err(ChitinError::from_i32(rc)) }
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ChitinError::from_i32(rc))
+    }
 }
 
 /// 写块设备
@@ -330,7 +336,11 @@ pub fn blk_read(drive: u8, sector: u64, buf: &mut [u8]) -> ChitinResult<()> {
 /// `Err(ChitinError)`.
 pub fn blk_write(drive: u8, sector: u64, buf: &[u8]) -> ChitinResult<()> {
     let rc = chitin::chitin_blk_write(drive, sector, buf);
-    if rc == 0 { Ok(()) } else { Err(ChitinError::from_i32(rc)) }
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(ChitinError::from_i32(rc))
+    }
 }
 
 /// 块设备是否存在
@@ -348,7 +358,10 @@ pub fn blk_name(drive: u8) -> Option<alloc::string::String> {
     chitin::chitin_blk_name(drive).map(alloc::string::String::from)
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 块设备信息
 pub fn blk_info(drive: u8) -> Option<(alloc::string::String, bool, u64)> {
     let (name, present, sectors) = chitin::chitin_blk_info(drive);

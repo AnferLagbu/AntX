@@ -20,8 +20,8 @@
 //! 当前简化实现: 同步等待直至子进程变为 Zombie 或 Terminated.
 //! 非阻塞模式 (WNOHANG) 通过 SCHEDULER.block + 调度器轮询实现.
 
-use crate::kernel::framework::proc::api;
 use crate::kernel::framework::proc::ProcessState;
+use crate::kernel::framework::proc::api;
 use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::syscall::raw;
 
@@ -32,7 +32,10 @@ pub const WNOHANG: i32 = 0x1;
 pub const WUNTRACED: i32 = 0x2;
 pub const WCONTINUED: i32 = 0x8;
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// wait4 系统调用实现
 ///
 /// 返回子进程 PID, 或错误 (ECHILD/EINTR).
@@ -56,7 +59,9 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
     let non_blocking = options & WNOHANG != 0;
 
     // 查找匹配的子进程
-    let child_pid = if let Some(p) = find_waitable_child(current_pid, pid) { p } else {
+    let child_pid = if let Some(p) = find_waitable_child(current_pid, pid) {
+        p
+    } else {
         if non_blocking {
             return 0; // WNOHANG: 无可等待子进程
         }
@@ -69,8 +74,8 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
 
     if state == ProcessState::Zombie {
         // 子进程已退出, 收集状态
-        let exit_code = api::process_with(child_pid, |p| p.exit_code.load(Ordering::SeqCst))
-            .unwrap_or(0);
+        let exit_code =
+            api::process_with(child_pid, |p| p.exit_code.load(Ordering::SeqCst)).unwrap_or(0);
 
         // 写入 wstatus (WIFEXITED | exit_code << 8)
         if wstatus_ptr != 0 {
@@ -98,8 +103,8 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
 
         if state == ProcessState::Zombie {
             // 子进程已退出, 收集状态
-            let exit_code = api::process_with(child_pid, |p| p.exit_code.load(Ordering::SeqCst))
-                .unwrap_or(0);
+            let exit_code =
+                api::process_with(child_pid, |p| p.exit_code.load(Ordering::SeqCst)).unwrap_or(0);
 
             if wstatus_ptr != 0 {
                 // SAFETY: wstatus_ptr 由 check_user_ptr 验证
@@ -122,8 +127,7 @@ pub fn sys_wait4(pid: i32, wstatus_ptr: u64, options: i32) -> i64 {
 ///
 /// 根据 pid 参数匹配, 返回 PID 或 None.
 fn find_waitable_child(parent_pid: u32, target_pid: i32) -> Option<u32> {
-    let children = api::process_with(parent_pid, |p| p.children.lock().clone())
-        .unwrap_or_default();
+    let children = api::process_with(parent_pid, |p| p.children.lock().clone()).unwrap_or_default();
 
     for &child in &children {
         let child_pid = child.0;

@@ -19,15 +19,17 @@
 //! - 除以零和溢出均返回 Trap
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
 
 use super::leb128::{read_leb128_i32, read_leb128_i64, read_leb128_u32};
 use super::module::parse_wasm;
-use super::runtime::{ValueStack, LinearMemory, CallFrame, InterpreterConfig};
-use super::types::{WasmModule, WasmError, Value, ImportKind, ExportKind, FuncType, FunctionBody, Opcode};
+use super::runtime::{CallFrame, InterpreterConfig, LinearMemory, ValueStack};
+use super::types::{
+    ExportKind, FuncType, FunctionBody, ImportKind, Opcode, Value, WasmError, WasmModule,
+};
 
 // ============================================================================
 // 解释器
@@ -219,10 +221,8 @@ impl Interpreter {
     ) {
         let idx = self.host_functions.len();
         self.host_functions.push(f);
-        self.named_host_functions.insert(
-            (String::from(module), String::from(name)),
-            idx,
-        );
+        self.named_host_functions
+            .insert((String::from(module), String::from(name)), idx);
     }
 
     /// 自动注册 WASI 函数 (根据 WASM 模块 import section)
@@ -239,7 +239,10 @@ impl Interpreter {
                 let module_name = core::str::from_utf8(&import.module).unwrap_or("");
                 let func_name = core::str::from_utf8(&import.name).unwrap_or("");
                 if module_name == "wasi_snapshot_preview1" {
-                    if let Some(&idx) = self.named_host_functions.get(&(String::from(module_name), String::from(func_name))) {
+                    if let Some(&idx) = self
+                        .named_host_functions
+                        .get(&(String::from(module_name), String::from(func_name)))
+                    {
                         // 确保 host_functions 数组足够大
                         while self.host_functions.len() <= func_idx as usize {
                             self.host_functions.push(Box::new(|_| Ok(())));
@@ -403,8 +406,14 @@ impl Interpreter {
         }
     }
 
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     fn execute_call_stack(&mut self) -> Result<(), WasmError> {
         while let Some(frame) = self.call_stack.last() {
             if frame.pc >= frame.code.len() {
@@ -414,7 +423,10 @@ impl Interpreter {
 
         while self.call_stack.last().is_some() {
             let opcode = {
-                let frame = self.call_stack.last().expect("wasm: call_stack 非空 (while is_some 守护)");
+                let frame = self
+                    .call_stack
+                    .last()
+                    .expect("wasm: call_stack 非空 (while is_some 守护)");
                 if frame.pc >= frame.code.len() {
                     self.call_stack.pop();
                     continue;
@@ -514,7 +526,10 @@ impl Interpreter {
                 Ok(Opcode::I32Store16) => self.execute_memory_store_n(2)?,
                 Ok(Opcode::MemorySize) => {
                     self.advance_pc(1)?;
-                    let pages = self.memory.as_ref().map_or(0, super::runtime::LinearMemory::pages);
+                    let pages = self
+                        .memory
+                        .as_ref()
+                        .map_or(0, super::runtime::LinearMemory::pages);
                     self.stack.push(Value::I32(pages as i32))?;
                 }
                 Ok(Opcode::MemoryGrow) => {
@@ -582,7 +597,10 @@ impl Interpreter {
         Ok(())
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     fn advance_pc(&mut self, amount: usize) -> Result<(), WasmError> {
         if let Some(frame) = self.call_stack.last_mut() {
             frame.pc += amount;
@@ -610,7 +628,10 @@ impl Interpreter {
         Ok(())
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     fn execute_return(&mut self) -> Result<(), WasmError> {
         while let Some(frame) = self.call_stack.pop() {
             let arity = frame.arity;
@@ -774,7 +795,10 @@ impl Interpreter {
         Ok(())
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     fn unwind_to(&mut self, depth: usize) -> Result<(), WasmError> {
         let target = self.call_stack.len().saturating_sub(depth + 1);
         while self.call_stack.len() > target {

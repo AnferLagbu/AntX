@@ -63,7 +63,10 @@ impl IoPort {
 
     /// 基端口号
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn base(&self) -> u16 {
         self.base
     }
@@ -90,7 +93,9 @@ impl IoPort {
     #[inline]
     pub fn read_u8(&self, offset: u16) -> u8 {
         // 不可恢复: I/O 端口偏移越界是编程错误, 调用方必须保证合法偏移
-        let port = self.check_offset(offset, 1).expect("IoPort::read_u8: offset+1 越界");
+        let port = self
+            .check_offset(offset, 1)
+            .expect("IoPort::read_u8: offset+1 越界");
         // SAFETY: `in al, dx` 触发 x86 I/O 端口读; `check_offset` 已验证 `offset + 1`
         // 不超出本 IoPort 持有的端口范围; `port` 是 u16 (与 dx 寄存器同宽), 由
         // `nomem`/`nostack` 告诉编译器此指令无内存/栈副作用, 不会与 Rust 内存模型冲突。
@@ -107,7 +112,10 @@ impl IoPort {
     /// 编译期由 `#[cfg(target_arch = "x86_64")]` 关闭实际定义。
     #[cfg(target_arch = "aarch64")]
     #[inline]
-#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
     pub fn read_u8(&self, _offset: u16) -> u8 {
         0xFF
     }
@@ -119,7 +127,9 @@ impl IoPort {
     #[inline]
     pub fn read_u16(&self, offset: u16) -> u16 {
         // 不可恢复: I/O 端口偏移越界是编程错误
-        let port = self.check_offset(offset, 2).expect("IoPort::read_u16: offset+2 越界");
+        let port = self
+            .check_offset(offset, 2)
+            .expect("IoPort::read_u16: offset+2 越界");
         // SAFETY: `in ax, dx` 2 字节 PIO 读; `check_offset(offset, 2)` 已验证 2 字节不越界;
         // 2 字节对齐由 x86 PIO 总线自然保证 (端口按字节寻址, 2 字节访问需偶地址端口)。
         unsafe {
@@ -132,7 +142,10 @@ impl IoPort {
     /// 读取 u16 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
-#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
     pub fn read_u16(&self, _offset: u16) -> u16 {
         0xFFFF
     }
@@ -144,7 +157,9 @@ impl IoPort {
     #[inline]
     pub fn read_u32(&self, offset: u16) -> u32 {
         // 不可恢复: I/O 端口偏移越界是编程错误
-        let port = self.check_offset(offset, 4).expect("IoPort::read_u32: offset+4 越界");
+        let port = self
+            .check_offset(offset, 4)
+            .expect("IoPort::read_u32: offset+4 越界");
         // SAFETY: `in eax, dx` 4 字节 PIO 读; `check_offset(offset, 4)` 已验证 4 字节不越界;
         // 4 字节对齐由 x86 PIO 总线自然保证 (4 字节端口访问需 4 字节对齐端口)。
         unsafe {
@@ -157,7 +172,10 @@ impl IoPort {
     /// 读取 u32 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
-#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
     pub fn read_u32(&self, _offset: u16) -> u32 {
         0xFFFF_FFFF
     }
@@ -169,7 +187,9 @@ impl IoPort {
     #[inline]
     pub fn write_u8(&self, offset: u16, val: u8) {
         // 不可恢复: I/O 端口偏移越界是编程错误
-        let port = self.check_offset(offset, 1).expect("IoPort::write_u8: offset+1 越界");
+        let port = self
+            .check_offset(offset, 1)
+            .expect("IoPort::write_u8: offset+1 越界");
         // SAFETY: `out dx, al` 触发 x86 I/O 端口写; `check_offset` 已验证 1 字节不越界;
         // `nomem`/`nostack` 正确声明指令无 Rust 可见副作用, 不破坏借用检查。
         unsafe {
@@ -183,7 +203,10 @@ impl IoPort {
     /// 调用方应使用 MMIO 寄存器访问 (IoMem) 替代。
     #[cfg(target_arch = "aarch64")]
     #[inline]
-#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
     pub fn write_u8(&self, _offset: u16, _val: u8) {
         // no-op on aarch64: PIO is x86-only.
     }
@@ -195,7 +218,9 @@ impl IoPort {
     #[inline]
     pub fn write_u16(&self, offset: u16, val: u16) {
         // 不可恢复: I/O 端口偏移越界是编程错误
-        let port = self.check_offset(offset, 2).expect("IoPort::write_u16: offset+2 越界");
+        let port = self
+            .check_offset(offset, 2)
+            .expect("IoPort::write_u16: offset+2 越界");
         // SAFETY: `out dx, ax` 2 字节 PIO 写; `check_offset(offset, 2)` 已验证 2 字节不越界;
         // 2 字节对齐由 x86 PIO 总线自然保证。
         unsafe {
@@ -206,7 +231,10 @@ impl IoPort {
     /// 写入 u16 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
-#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
     pub fn write_u16(&self, _offset: u16, _val: u16) {
         // no-op on aarch64.
     }
@@ -218,7 +246,9 @@ impl IoPort {
     #[inline]
     pub fn write_u32(&self, offset: u16, val: u32) {
         // 不可恢复: I/O 端口偏移越界是编程错误
-        let port = self.check_offset(offset, 4).expect("IoPort::write_u32: offset+4 越界");
+        let port = self
+            .check_offset(offset, 4)
+            .expect("IoPort::write_u32: offset+4 越界");
         // SAFETY: `out dx, eax` 4 字节 PIO 写; `check_offset(offset, 4)` 已验证 4 字节不越界;
         // 4 字节对齐由 x86 PIO 总线自然保证。
         unsafe {
@@ -229,7 +259,10 @@ impl IoPort {
     /// 写入 u32 (aarch64 桩)。
     #[cfg(target_arch = "aarch64")]
     #[inline]
-#[expect(clippy::unused_self, reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底")]
+    #[expect(
+        clippy::unused_self,
+        reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
+    )]
     pub fn write_u32(&self, _offset: u16, _val: u32) {
         // no-op on aarch64.
     }

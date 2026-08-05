@@ -165,92 +165,94 @@ fn parse_next_entry(data: &[u8], offset: usize) -> Option<(CpioEntry<'_>, usize)
 /// 数据指针为空、长度为 0 或 cpio 归档格式非法时返回 Err。
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str> { unsafe {
-    if data.is_null() || len == 0 {
-        return Err("initramfs: empty or null data");
-    }
-
-    let data_slice = core::slice::from_raw_parts(data, len);
-    let mut offset = 0;
-    let mut file_count = 0usize;
-
-    // 确保根目录存在
-    let pwm = 0; // 内核权限
-    let _ = crate::kernel::framework::fs::vfs::vfs_mkdir(b"/\0".as_ptr(), pwm);
-
-    while offset < data_slice.len() {
-        let (entry, next_offset) = match parse_next_entry(data_slice, offset) {
-            Some(e) => e,
-            None => break, // TRAILER 或数据结束
-        };
-
-        offset = next_offset;
-
-        // 构造完整路径: /<name>
-        let mut path_buf = [0u8; 256];
-        if entry.name.len() + 1 >= path_buf.len() {
-            continue; // 路径过长, 跳过
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str> {
+    unsafe {
+        if data.is_null() || len == 0 {
+            return Err("initramfs: empty or null data");
         }
-        path_buf[0] = b'/';
-        path_buf[1..=entry.name.len()].copy_from_slice(entry.name);
-        // NUL 终止符已由初始化保证
 
-        let file_type = entry.mode & CPIO_S_IFMT;
+        let data_slice = core::slice::from_raw_parts(data, len);
+        let mut offset = 0;
+        let mut file_count = 0usize;
 
-        match file_type {
-            CPIO_S_IFDIR => {
-                // 创建目录
-                let _ = crate::kernel::framework::fs::vfs::vfs_mkdir(
-                    path_buf.as_ptr(),
-                    pwm,
-                );
+        // 确保根目录存在
+        let pwm = 0; // 内核权限
+        let _ = crate::kernel::framework::fs::vfs::vfs_mkdir(b"/\0".as_ptr(), pwm);
+
+        while offset < data_slice.len() {
+            let (entry, next_offset) = match parse_next_entry(data_slice, offset) {
+                Some(e) => e,
+                None => break, // TRAILER 或数据结束
+            };
+
+            offset = next_offset;
+
+            // 构造完整路径: /<name>
+            let mut path_buf = [0u8; 256];
+            if entry.name.len() + 1 >= path_buf.len() {
+                continue; // 路径过长, 跳过
             }
-            CPIO_S_IFREG => {
-                // 创建文件并写入数据
-                let fd = crate::kernel::framework::fs::vfs::vfs_open(
-                    path_buf.as_ptr(),
-                    0x41, // O_WRONLY | O_CREAT
-                    pwm,
-                );
-                if fd >= 0 {
-                    if !entry.data.is_empty() {
-                        crate::kernel::framework::fs::vfs::vfs_write(
-                            fd as u32,
-                            entry.data.as_ptr(),
-                            entry.data.len() as u32,
-                        );
-                    }
-                    crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
+            path_buf[0] = b'/';
+            path_buf[1..=entry.name.len()].copy_from_slice(entry.name);
+            // NUL 终止符已由初始化保证
+
+            let file_type = entry.mode & CPIO_S_IFMT;
+
+            match file_type {
+                CPIO_S_IFDIR => {
+                    // 创建目录
+                    let _ = crate::kernel::framework::fs::vfs::vfs_mkdir(path_buf.as_ptr(), pwm);
                 }
-            }
-            CPIO_S_IFLNK => {
-                // 符号链接: entry.data 是链接目标
-                // 真实实现: 在 linkpath 父目录下建 Symlink 类型新节点.
-                if !entry.data.is_empty() {
-                    crate::kernel::framework::fs::vfs::vfs_symlink(
-                        entry.data.as_ptr(),
+                CPIO_S_IFREG => {
+                    // 创建文件并写入数据
+                    let fd = crate::kernel::framework::fs::vfs::vfs_open(
                         path_buf.as_ptr(),
+                        0x41, // O_WRONLY | O_CREAT
                         pwm,
                     );
+                    if fd >= 0 {
+                        if !entry.data.is_empty() {
+                            crate::kernel::framework::fs::vfs::vfs_write(
+                                fd as u32,
+                                entry.data.as_ptr(),
+                                entry.data.len() as u32,
+                            );
+                        }
+                        crate::kernel::framework::fs::vfs::vfs_close(fd as u32);
+                    }
+                }
+                CPIO_S_IFLNK => {
+                    // 符号链接: entry.data 是链接目标
+                    // 真实实现: 在 linkpath 父目录下建 Symlink 类型新节点.
+                    if !entry.data.is_empty() {
+                        crate::kernel::framework::fs::vfs::vfs_symlink(
+                            entry.data.as_ptr(),
+                            path_buf.as_ptr(),
+                            pwm,
+                        );
+                    }
+                }
+                _ => {
+                    // 其他类型 (设备文件等) 暂不支持
                 }
             }
-            _ => {
-                // 其他类型 (设备文件等) 暂不支持
-            }
+
+            file_count += 1;
         }
 
-        file_count += 1;
+        crate::klog_boot_info!(
+            "[INITRAMFS] Unpacked {} files from {} bytes",
+            file_count,
+            len
+        );
+
+        Ok(file_count)
     }
-
-    crate::klog_boot_info!(
-        "[INITRAMFS] Unpacked {} files from {} bytes",
-        file_count,
-        len
-    );
-
-    Ok(file_count)
-}}
+}
 
 // ============================================================================
 // 内核测试
@@ -258,7 +260,7 @@ pub unsafe fn unpack(data: *const u8, len: usize) -> Result<usize, &'static str>
 
 #[cfg(feature = "kernel_test")]
 fn test_cpio_parse_hex() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     assert_eq_test!(parse_hex_field(b"00000000"), 0u32, "hex 0");
     assert_eq_test!(parse_hex_field(b"00000001"), 1u32, "hex 1");
     assert_eq_test!(parse_hex_field(b"0000000A"), 10u32, "hex A");
@@ -269,7 +271,7 @@ fn test_cpio_parse_hex() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_cpio_align4() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     assert_eq_test!(align4(0), 0, "align4(0)");
     assert_eq_test!(align4(1), 4, "align4(1)");
     assert_eq_test!(align4(3), 4, "align4(3)");
@@ -281,7 +283,7 @@ fn test_cpio_align4() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_cpio_parse_minimal() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // 构造一个最小的 cpio 归档: 一个空目录 + TRAILER
     let mut archive = [0u8; 256];
 

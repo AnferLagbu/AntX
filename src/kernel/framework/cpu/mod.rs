@@ -45,7 +45,7 @@ pub mod tsc;
 // ============================================================================
 // 公共 API 导出 (便捷访问) — 避免跨子系统直接访问 cpu 内部子模块
 // ============================================================================
-pub use tsc::{read_tsc, read_tsc_serialized, cycles_to_nanoseconds};
+pub use tsc::{cycles_to_nanoseconds, read_tsc, read_tsc_serialized};
 
 // ============================================================================
 // 常量定义 (编译时常量)
@@ -86,7 +86,10 @@ pub enum CpuVendor {
 }
 
 impl CpuVendor {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 从厂商字符串识别厂商
     ///
     /// # Arguments
@@ -104,7 +107,10 @@ impl CpuVendor {
 
     /// 获取厂商名称 (用于显示)
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Intel => "Intel",
@@ -119,7 +125,10 @@ impl CpuVendor {
 
     /// 是否为虚拟化环境
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn is_virtualized(&self) -> bool {
         matches!(self, Self::Qemu | Self::Unknown) // Unknown 可能是VMware等
     }
@@ -266,42 +275,60 @@ bitflags::bitflags! {
 impl CpuFeatures {
     /// 检查是否为 Intel 处理器 (基于特性组合判断)
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn is_intel_style(&self) -> bool {
         self.contains(Self::VMX) && !self.contains(Self::SVM)
     }
 
     /// 检查是否为 AMD 处理器
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn is_amd_style(&self) -> bool {
         self.contains(Self::SVM) && !self.contains(Self::VMX)
     }
 
     /// 检查是否支持 x86-64 长模式
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn supports_64bit(&self) -> bool {
         self.contains(Self::LM)
     }
 
     /// 检查是否支持 SIMD 向量指令
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn supports_simd(&self) -> bool {
         self.contains(Self::SSE | Self::SSE2)
     }
 
     /// 检查是否支持 AVX/AVX2
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn supports_avx(&self) -> bool {
         self.contains(Self::AVX | Self::AVX2)
     }
 
     /// 检查是否支持虚拟化扩展
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn supports_virtualization(&self) -> bool {
         self.contains(Self::VMX | Self::SVM)
     }
@@ -340,7 +367,10 @@ impl CpuSignature {
     /// - 如果 Family != 0xF, `Effective_Family` = Family
     /// - 如果 Family == 0xF, `Effective_Family` = `Extended_Family` + Family
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn effective_family(&self) -> u8 {
         if self.family == 0x0F {
             self.ext_family.saturating_add(self.family)
@@ -351,7 +381,10 @@ impl CpuSignature {
 
     /// 计算有效的型号 (同上逻辑)
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn effective_model(&self) -> u8 {
         if self.family == 0x06 || self.family == 0x0F {
             (self.ext_model << 4).saturating_add(self.model)
@@ -360,7 +393,10 @@ impl CpuSignature {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 格式化为人类可读字符串 (如 "6-158-10" 表示 Family 6, Model 158, Stepping 10)
     /// 返回一个静态数组 (避免堆分配)
     pub fn to_string(&self) -> [u8; 16] {
@@ -464,7 +500,10 @@ pub struct TopologyInfo {
 impl TopologyInfo {
     /// 获取每物理核心的逻辑线程数
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn threads_per_core(&self) -> u8 {
         if self.physical_cores > 0 && self.logical_threads >= self.physical_cores {
             self.logical_threads / self.physical_cores
@@ -475,7 +514,10 @@ impl TopologyInfo {
 
     /// 检查是否为单核 CPU
     #[inline]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub const fn is_single_core(&self) -> bool {
         self.physical_cores <= 1 && self.logical_threads <= 1
     }
@@ -613,9 +655,12 @@ pub fn get_cpu_info() -> Option<&'static CpuInfo> {
 #[unsafe(no_mangle)]
 /// FFI 导出函数 (C 可调用)
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn cpu_init() -> i32 {
-    use crate::kernel::framework::klog::{klog_write, LogCategory, LogLevel};
+    use crate::kernel::framework::klog::{LogCategory, LogLevel, klog_write};
 
     static INIT_MSG: &[u8] = b"Initializing QX AMD64 CPU driver...\0";
     // SAFETY: FFI 日志调用; INIT_MSG 是带尾部 NUL 的静态字节切片,
@@ -714,7 +759,10 @@ pub extern "C" fn cpu_init() -> i32 {
         return -1;
     }
 
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     static OK_MSG: &[u8] = b"CPU driver initialized successfully\0";
     // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
     unsafe {
@@ -749,7 +797,10 @@ pub extern "C" fn cpu_init() -> i32 {
 /// FFI 导出函数 (C 可调用)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -895,7 +946,10 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 /// FFI 导出函数 (C 可调用)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
@@ -962,7 +1016,10 @@ fn get_signature(sig_out: &mut CpuSignature, apic_id_out: &mut u8, logical_cores
 
 /// 收集 CPU 特性标志 (多个 CPUID leaf)
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
 fn collect_features(
     features_out: &mut CpuFeatures,
     brand_out: &mut [u8; BRAND_STRING_LEN],
@@ -1162,7 +1219,10 @@ fn collect_features(
 #[cfg(target_arch = "x86_64")]
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: CpuVendor) {
     // 设置默认保守值
     *cache_out = CacheInfo {
@@ -1247,7 +1307,10 @@ fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: C
 #[cfg(target_arch = "x86_64")]
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+)]
 fn detect_topology(
     topo_out: &mut TopologyInfo,
     _sig: &CpuSignature,
@@ -1379,7 +1442,10 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
             self::msr::write_msr(IA32_LSTAR, entry_hi);
 
             // SFMASK: 进入内核时清除 IF (bit 9) 以禁用中断
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+            #[expect(
+                clippy::items_after_statements,
+                reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+            )]
             const SFMASK_IF: u64 = 1 << 9;
             self::msr::write_msr(IA32_SFMASK, SFMASK_IF);
         }

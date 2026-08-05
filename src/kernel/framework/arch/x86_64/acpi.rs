@@ -27,9 +27,9 @@
 //!   0x09 — x2APIC
 //! ```
 
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use alloc::vec::Vec;
 use crate::kernel::framework::sync::IrqSpinLock;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 pub use crate::kernel::framework::config::MAX_CPUS;
 
@@ -69,8 +69,7 @@ static IOAPICS: IrqSpinLock<[Option<IoApicInfo>; MAX_IOAPICS]> =
 static IOAPIC_COUNT: AtomicU32 = AtomicU32::new(0);
 const MAX_IOAPICS: usize = 8;
 
-static AP_LIST: IrqSpinLock<[Option<ApInfo>; MAX_CPUS]> =
-    IrqSpinLock::new([None; MAX_CPUS]);
+static AP_LIST: IrqSpinLock<[Option<ApInfo>; MAX_CPUS]> = IrqSpinLock::new([None; MAX_CPUS]);
 static AP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // ============================================================================
@@ -94,8 +93,14 @@ pub fn find_rsdp(multiboot2_info_ptr: u64) -> Option<u64> {
     scan_bios_rom()
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
     let ptr = mb2_ptr as *const u8;
     // SAFETY: `ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(u32)); 只读访问
@@ -119,7 +124,9 @@ fn find_rsdp_from_mb2(mb2_ptr: u64) -> Option<u64> {
             if is_valid_rsdp(rsdp_ptr) {
                 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
-                    crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP found via Multiboot2".as_ptr());
+                    crate::kernel::framework::klog::klog_info(
+                        c"[ACPI] RSDP found via Multiboot2".as_ptr(),
+                    );
                 }
                 return Some(rsdp_ptr);
             }
@@ -158,7 +165,9 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
         if is_valid_rsdp(addr) {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
-                crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP found via BIOS scan".as_ptr());
+                crate::kernel::framework::klog::klog_info(
+                    c"[ACPI] RSDP found via BIOS scan".as_ptr(),
+                );
             }
             return Some(addr);
         }
@@ -167,7 +176,10 @@ fn scan_memory_range(start: u64, len: u64) -> Option<u64> {
     None
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 fn is_valid_rsdp(addr: u64) -> bool {
     let ptr = addr as *const u8;
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -195,8 +207,14 @@ fn is_valid_rsdp(addr: u64) -> bool {
 // SDT 解析
 // ============================================================================
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 fn get_rsdt(rsdp: u64) -> Option<&'static SdtHeader> {
     let ptr = rsdp as *const u8;
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
@@ -274,12 +292,26 @@ struct MadtIoApic {
 // MADT 解析 — 核心公共接口
 // ============================================================================
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
-    let rsdp = if let Some(addr) = find_rsdp(multiboot2_info_ptr) { addr } else {
+    let rsdp = if let Some(addr) = find_rsdp(multiboot2_info_ptr) {
+        addr
+    } else {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             crate::kernel::framework::klog::klog_info(c"[ACPI] RSDP not found".as_ptr());
@@ -287,7 +319,9 @@ pub fn parse_madt(multiboot2_info_ptr: u64) -> bool {
         return false;
     };
 
-    let rsdt_or_xsdt = if let Some(sdt) = get_rsdt(rsdp) { sdt } else {
+    let rsdt_or_xsdt = if let Some(sdt) = get_rsdt(rsdp) {
+        sdt
+    } else {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             crate::kernel::framework::klog::klog_info(c"[ACPI] RSDT/XSDT not found".as_ptr());
@@ -402,7 +436,9 @@ fn parse_madt_entries(madt_ptr: u64) {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let _count = AP_COUNT.load(Ordering::Acquire);
-        crate::kernel::framework::klog::klog_info(c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr());
+        crate::kernel::framework::klog::klog_info(
+            c"[ACPI] MADT: LAPIC base=0xXXXXXXXX, AP count=N".as_ptr(),
+        );
     }
 }
 
@@ -529,7 +565,7 @@ struct Fadt {
     _reserved2: u8,
     flags: u32,
     // ACPI 2.0+ 扩展字段
-    reset_reg: [u8; 12],  // Generic Address Structure
+    reset_reg: [u8; 12], // Generic Address Structure
     reset_value: u8,
     _reserved3: [u8; 3],
     x_firmware_ctrl: u64,
@@ -553,8 +589,13 @@ fn parse_fadt(fadt_ptr: u64) {
     let pm1a = fadt.pm1a_evt_blk;
     let pm1a_cnt = fadt.pm1a_cnt_blk;
     let flags = fadt.flags;
-    crate::klog_info!(Acpi, "[ACPI] FADT: PM1a_EVT=0x{:X} PM1a_CNT=0x{:X} flags=0x{:X}",
-        pm1a, pm1a_cnt, flags);
+    crate::klog_info!(
+        Acpi,
+        "[ACPI] FADT: PM1a_EVT=0x{:X} PM1a_CNT=0x{:X} flags=0x{:X}",
+        pm1a,
+        pm1a_cnt,
+        flags
+    );
 }
 
 /// ACPI 关机 (S5 状态)
@@ -620,7 +661,12 @@ pub fn acpi_reboot() -> ! {
 
         // 方式1: 通过 Reset Register (ACPI 2.0+)
         let reset_reg_space = fadt.reset_reg[0];
-        let reset_reg_addr = u32::from_le_bytes([fadt.reset_reg[4], fadt.reset_reg[5], fadt.reset_reg[6], fadt.reset_reg[7]]);
+        let reset_reg_addr = u32::from_le_bytes([
+            fadt.reset_reg[4],
+            fadt.reset_reg[5],
+            fadt.reset_reg[6],
+            fadt.reset_reg[7],
+        ]);
         let reset_val = fadt.reset_value;
 
         if reset_reg_space == 1 {
@@ -662,7 +708,7 @@ struct HpetTable {
     _counter_size: u8,
     _reserved1: u8,
     _pci_vendor_id: u16,
-    address: [u8; 12],  // Generic Address Structure
+    address: [u8; 12], // Generic Address Structure
     hpet_number: u8,
     _min_tick: u16,
     _page_protection: u8,
@@ -683,15 +729,24 @@ pub struct HpetInfo {
 
 static HPET_INFO: IrqSpinLock<Option<HpetInfo>> = IrqSpinLock::new(None);
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(
+    clippy::used_underscore_binding,
+    reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+)]
 fn parse_hpet(hpet_ptr: u64) {
     // SAFETY: `hpet_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(HpetTable)); 只读访问
     let hpet = unsafe { &*(hpet_ptr as *const HpetTable) };
 
     // 通用地址结构: [0]=space_id, [4..8]=address
     let base_addr = u64::from_le_bytes([
-        hpet.address[4], hpet.address[5], hpet.address[6], hpet.address[7],
-        0, 0, 0, 0,
+        hpet.address[4],
+        hpet.address[5],
+        hpet.address[6],
+        hpet.address[7],
+        0,
+        0,
+        0,
+        0,
     ]);
 
     let info = HpetInfo {
@@ -701,8 +756,13 @@ fn parse_hpet(hpet_ptr: u64) {
         counter_size: hpet._counter_size,
     };
 
-    crate::klog_info!(Acpi, "[ACPI] HPET: base=0x{:X} comparators={} counter_size={}",
-        base_addr, info.comparator_count, info.counter_size);
+    crate::klog_info!(
+        Acpi,
+        "[ACPI] HPET: base=0x{:X} comparators={} counter_size={}",
+        base_addr,
+        info.comparator_count,
+        info.counter_size
+    );
 
     *HPET_INFO.lock() = Some(info);
 }
@@ -785,8 +845,13 @@ fn parse_dmar(dmar_ptr: u64) {
                     segment_number: drhd.segment_number,
                     include_all: (drhd.flags & 0x01) != 0,
                 };
-                crate::klog_info!(Acpi, "[ACPI] DMAR DRHD: reg_base=0x{:X} seg={} include_all={}",
-                    info.register_base, info.segment_number, info.include_all);
+                crate::klog_info!(
+                    Acpi,
+                    "[ACPI] DMAR DRHD: reg_base=0x{:X} seg={} include_all={}",
+                    info.register_base,
+                    info.segment_number,
+                    info.include_all
+                );
                 DMAR_DRHD_LIST.lock().push(info);
             }
         }
@@ -794,8 +859,12 @@ fn parse_dmar(dmar_ptr: u64) {
         offset += entry_len as usize;
     }
 
-    crate::klog_info!(Acpi, "[ACPI] DMAR: host_addr_width={} DRHD_count={}",
-        dmar.host_addr_width, DMAR_DRHD_LIST.lock().len());
+    crate::klog_info!(
+        Acpi,
+        "[ACPI] DMAR: host_addr_width={} DRHD_count={}",
+        dmar.host_addr_width,
+        DMAR_DRHD_LIST.lock().len()
+    );
 }
 
 /// 获取 DMAR DRHD 列表
@@ -812,20 +881,36 @@ pub fn get_dmar_host_addr_width() -> u8 {
 // 统一 SDT 遍历 — 发现所有表
 // ============================================================================
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 解析所有 ACPI 表 (MADT + FADT + HPET + DMAR)
 ///
 /// 在内核启动时调用, 替代仅解析 MADT 的 `parse_madt`.
 pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
-    let rsdp = if let Some(addr) = find_rsdp(multiboot2_info_ptr) { addr } else {
+    let rsdp = if let Some(addr) = find_rsdp(multiboot2_info_ptr) {
+        addr
+    } else {
         crate::klog_warn!(Acpi, "[ACPI] RSDP not found");
         return false;
     };
 
-    let rsdt_or_xsdt = if let Some(sdt) = get_rsdt(rsdp) { sdt } else {
+    let rsdt_or_xsdt = if let Some(sdt) = get_rsdt(rsdp) {
+        sdt
+    } else {
         crate::klog_warn!(Acpi, "[ACPI] RSDT/XSDT not found");
         return false;
     };
@@ -875,11 +960,14 @@ pub fn parse_all_tables(multiboot2_info_ptr: u64) -> bool {
         }
     }
 
-    crate::klog_info!(Acpi, "[ACPI] Table scan complete: MADT={} FADT={} HPET={} DMAR_DRHD={}",
+    crate::klog_info!(
+        Acpi,
+        "[ACPI] Table scan complete: MADT={} FADT={} HPET={} DMAR_DRHD={}",
         MADT_FOUND.load(Ordering::Acquire),
         FADT_FOUND.load(Ordering::Acquire),
         HPET_INFO.lock().is_some(),
-        DMAR_DRHD_LIST.lock().len());
+        DMAR_DRHD_LIST.lock().len()
+    );
 
     true
 }

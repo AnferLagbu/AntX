@@ -19,6 +19,6 @@ pub mod dp;
 
 // 重新导出 DisplayPort 公共类型
 pub use dp::{
-    AuxCommand, AuxTransaction, DpController, DpError, Dpcd, DpIo, LaneCount,
-    LinkRate, TrainingState, REQUIRED_IOMEM_SIZE, assert_iomem_size_at_least,
+    AuxCommand, AuxTransaction, DpController, DpError, DpIo, Dpcd, LaneCount, LinkRate,
+    REQUIRED_IOMEM_SIZE, TrainingState, assert_iomem_size_at_least,
 };

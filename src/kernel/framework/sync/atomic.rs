@@ -50,12 +50,7 @@ impl AtomicBool {
         failure: Ordering,
     ) -> bool {
         self.0
-            .compare_exchange(
-                u32::from(expected),
-                u32::from(val),
-                success,
-                failure,
-            )
+            .compare_exchange(u32::from(expected), u32::from(val), success, failure)
             .is_ok()
     }
 }
@@ -83,10 +78,12 @@ impl Default for AtomicBool {
 /// # Safety
 ///
 /// `ptr` 是指向 `i32` 的有效且正确对齐的指针, 在调用期间持续有效.
-pub unsafe extern "C" fn atomic_inc(ptr: *mut i32) -> i32 { unsafe {
-    let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic.fetch_add(1, Ordering::SeqCst)
-}}
+pub unsafe extern "C" fn atomic_inc(ptr: *mut i32) -> i32 {
+    unsafe {
+        let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
+        atomic.fetch_add(1, Ordering::SeqCst)
+    }
+}
 
 /// 原子减一 (Atomic decrement)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -95,10 +92,12 @@ pub unsafe extern "C" fn atomic_inc(ptr: *mut i32) -> i32 { unsafe {
 /// # Safety
 ///
 /// `ptr` 是指向 `i32` 的有效且正确对齐的指针, 在调用期间持续有效.
-pub unsafe extern "C" fn atomic_dec(ptr: *mut i32) -> i32 { unsafe {
-    let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic.fetch_sub(1, Ordering::SeqCst)
-}}
+pub unsafe extern "C" fn atomic_dec(ptr: *mut i32) -> i32 {
+    unsafe {
+        let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
+        atomic.fetch_sub(1, Ordering::SeqCst)
+    }
+}
 
 /// 原子比较并交换 (Compare and Swap)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -107,12 +106,14 @@ pub unsafe extern "C" fn atomic_dec(ptr: *mut i32) -> i32 { unsafe {
 /// # Safety
 ///
 /// `ptr` 是指向 `i32` 的有效且正确对齐的指针, 在调用期间持续有效.
-pub unsafe extern "C" fn atomic_cmpxchg(ptr: *mut i32, oldval: i32, newval: i32) -> bool { unsafe {
-    let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic
-        .compare_exchange(oldval, newval, Ordering::SeqCst, Ordering::SeqCst)
-        .is_ok()
-}}
+pub unsafe extern "C" fn atomic_cmpxchg(ptr: *mut i32, oldval: i32, newval: i32) -> bool {
+    unsafe {
+        let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
+        atomic
+            .compare_exchange(oldval, newval, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+}
 
 /// 原子加法 (Atomic add)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -121,10 +122,12 @@ pub unsafe extern "C" fn atomic_cmpxchg(ptr: *mut i32, oldval: i32, newval: i32)
 /// # Safety
 ///
 /// `ptr` 是指向 `i32` 的有效且正确对齐的指针, 在调用期间持续有效.
-pub unsafe extern "C" fn atomic_add(ptr: *mut i32, val: i32) -> i32 { unsafe {
-    let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic.fetch_add(val, Ordering::SeqCst)
-}}
+pub unsafe extern "C" fn atomic_add(ptr: *mut i32, val: i32) -> i32 {
+    unsafe {
+        let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
+        atomic.fetch_add(val, Ordering::SeqCst)
+    }
+}
 
 /// 原子减法 (Atomic subtract)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -133,10 +136,12 @@ pub unsafe extern "C" fn atomic_add(ptr: *mut i32, val: i32) -> i32 { unsafe {
 /// # Safety
 ///
 /// `ptr` 是指向 `i32` 的有效且正确对齐的指针, 在调用期间持续有效.
-pub unsafe extern "C" fn atomic_sub(ptr: *mut i32, val: i32) -> i32 { unsafe {
-    let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic.fetch_sub(val, Ordering::SeqCst)
-}}
+pub unsafe extern "C" fn atomic_sub(ptr: *mut i32, val: i32) -> i32 {
+    unsafe {
+        let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
+        atomic.fetch_sub(val, Ordering::SeqCst)
+    }
+}
 
 /// 原子设置 (Atomic store)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -145,23 +150,30 @@ pub unsafe extern "C" fn atomic_sub(ptr: *mut i32, val: i32) -> i32 { unsafe {
 /// # Safety
 ///
 /// `ptr` 是指向 `i32` 的有效且正确对齐的指针, 在调用期间持续有效.
-pub unsafe extern "C" fn atomic_set(ptr: *mut i32, val: i32) { unsafe {
-    let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic.store(val, Ordering::SeqCst);
-}}
+pub unsafe extern "C" fn atomic_set(ptr: *mut i32, val: i32) {
+    unsafe {
+        let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
+        atomic.store(val, Ordering::SeqCst);
+    }
+}
 
 /// 原子读取 (Atomic load)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 ///
 /// # Safety
 ///
 /// `ptr` 是指向 `i32` 的有效且正确对齐的指针, 在调用期间持续有效.
-pub unsafe extern "C" fn atomic_read(ptr: *const i32) -> i32 { unsafe {
-    let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
-    atomic.load(Ordering::SeqCst)
-}}
+pub unsafe extern "C" fn atomic_read(ptr: *const i32) -> i32 {
+    unsafe {
+        let atomic = &*(ptr as *const core::sync::atomic::AtomicI32);
+        atomic.load(Ordering::SeqCst)
+    }
+}
 
 // ============================================================================
 // 统计功能 (可选)

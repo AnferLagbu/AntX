@@ -19,9 +19,9 @@
 //         Process 本身已通过 `unsafe impl Send/Sync` 标注 (process.rs 中),
 //         `Mutex<...>` 字段提供内部可变性.
 use super::identity;
-use super::types::{PwmContext, PwmError, PwmFlags, PwmId, DomainId, AuditAction, PwmEntry};
-use crate::kernel::framework::proc::process_get_current_pid;
+use super::types::{AuditAction, DomainId, PwmContext, PwmEntry, PwmError, PwmFlags, PwmId};
 use crate::kernel::framework::proc::PROCESS_TABLE;
+use crate::kernel::framework::proc::process_get_current_pid;
 use core::sync::atomic::Ordering;
 
 const MAX_ELEVATION_DEPTH: isize = 8;
@@ -71,7 +71,10 @@ where
 // 登录 / 登出
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 使用 note 与密码执行登录, 成功后把会话信息写入当前进程的 `PwmContext`。
 /// # Errors
 /// 当前进程不存在、note 对应的 PWM 不存在、身份被禁用、处于锁定期或密码错误时返回 Err。
@@ -229,8 +232,14 @@ pub fn clear_lockout(pwm: u64) -> Result<(), PwmError> {
 // SUID 提权 (per-process 栈)
 // ============================================================================
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn elevate_for_suid(target_pwm: u64) -> bool {
     let pid = process_get_current_pid();
     if pid == 0 {
@@ -284,22 +293,24 @@ pub fn drop_elevation() -> bool {
     if pid == 0 {
         return false;
     }
-    PROCESS_TABLE.with_process(pid, |p| {
-        let depth = p.session_elev_depth.load(Ordering::Acquire);
-        if depth == 0 {
-            return false;
-        }
-        let saved = {
-            let stack = p.session_elev_stack.lock();
-            stack[(depth - 1) as usize]
-        };
-        {
-            let mut ctx = p.session.lock();
-            *ctx = saved;
-        }
-        p.session_elev_depth.store(depth - 1, Ordering::Release);
-        true
-    }).unwrap_or(false)
+    PROCESS_TABLE
+        .with_process(pid, |p| {
+            let depth = p.session_elev_depth.load(Ordering::Acquire);
+            if depth == 0 {
+                return false;
+            }
+            let saved = {
+                let stack = p.session_elev_stack.lock();
+                stack[(depth - 1) as usize]
+            };
+            {
+                let mut ctx = p.session.lock();
+                *ctx = saved;
+            }
+            p.session_elev_depth.store(depth - 1, Ordering::Release);
+            true
+        })
+        .unwrap_or(false)
 }
 
 pub fn has_elevation_authority(target_pwm: u64) -> bool {
@@ -310,7 +321,10 @@ pub fn has_elevation_authority(target_pwm: u64) -> bool {
 // POSIX setuid / setgid / setreuid / setregid 系列调用
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn try_setuid(target_uid: u32) -> bool {
     let table = identity::get_table();
     let target_entry = match table.find_by_uid(target_uid) {
@@ -319,8 +333,7 @@ pub fn try_setuid(target_uid: u32) -> bool {
     };
     let target_pwm = target_entry.get_pwm().0;
 
-    let current_pwm = read_current_ctx()
-        .map_or(0, |c| c.session_pwm.as_u64());
+    let current_pwm = read_current_ctx().map_or(0, |c| c.session_pwm.as_u64());
 
     if super::engine::check_privilege(target_pwm, current_pwm)
         || has_elevation_authority(target_pwm)
@@ -331,7 +344,10 @@ pub fn try_setuid(target_uid: u32) -> bool {
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn try_setgid(target_gid: u32) -> bool {
     let egid = get_egid();
     if target_gid == egid {
@@ -366,7 +382,10 @@ pub fn try_setgid(target_gid: u32) -> bool {
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn try_seteuid(target_euid: u32) -> bool {
     let euid = get_euid();
     if target_euid == euid {
@@ -401,7 +420,10 @@ pub fn try_seteuid(target_euid: u32) -> bool {
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn try_setegid(target_egid: u32) -> bool {
     let egid = get_egid();
     if target_egid == egid {
@@ -436,7 +458,10 @@ pub fn try_setegid(target_egid: u32) -> bool {
     }
 }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 pub fn try_setreuid(target_ruid: u32, target_euid: u32) -> bool {
     #[inline]
     fn has_uid_privilege(table: &identity::IdentityTable, uid: u32, current_pwm: u64) -> bool {
@@ -448,12 +473,7 @@ pub fn try_setreuid(target_ruid: u32, target_euid: u32) -> bool {
     }
 
     let (current_pwm, old_cached_uid, old_euid, old_saved_euid) = match read_current_ctx() {
-        Some(c) => (
-            c.session_pwm.as_u64(),
-            c.cached_uid,
-            c.euid,
-            c.saved_euid,
-        ),
+        Some(c) => (c.session_pwm.as_u64(), c.cached_uid, c.euid, c.saved_euid),
         None => return false,
     };
 
@@ -500,7 +520,10 @@ pub fn try_setreuid(target_ruid: u32, target_euid: u32) -> bool {
     })
 }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+#[expect(
+    clippy::similar_names,
+    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+)]
 pub fn try_setregid(target_rgid: u32, target_egid: u32) -> bool {
     #[inline]
     fn has_gid_privilege(table: &identity::IdentityTable, gid: u32, current_pwm: u64) -> bool {
@@ -512,12 +535,7 @@ pub fn try_setregid(target_rgid: u32, target_egid: u32) -> bool {
     }
 
     let (current_pwm, old_cached_gid, old_egid, old_saved_egid) = match read_current_ctx() {
-        Some(c) => (
-            c.session_pwm.as_u64(),
-            c.cached_gid,
-            c.egid,
-            c.saved_egid,
-        ),
+        Some(c) => (c.session_pwm.as_u64(), c.cached_gid, c.egid, c.saved_egid),
         None => return false,
     };
 

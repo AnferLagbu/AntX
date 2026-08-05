@@ -101,9 +101,7 @@ pub fn route_add(entry: RouteEntry) -> Result<(), Errno> {
     }
 
     if table.iter().any(|r| {
-        r.dest == entry.dest
-            && r.prefix_len == entry.prefix_len
-            && r.gateway == entry.gateway
+        r.dest == entry.dest && r.prefix_len == entry.prefix_len && r.gateway == entry.gateway
     }) {
         return Err(Errno::EEXIST);
     }
@@ -125,9 +123,9 @@ pub fn route_add(entry: RouteEntry) -> Result<(), Errno> {
 pub fn route_del(dest: IpAddr, prefix_len: u8, gateway: IpAddr) -> Result<(), Errno> {
     let mut table = KERNEL_ROUTE_TABLE.lock();
 
-    let idx = table.iter().position(|r| {
-        r.dest == dest && r.prefix_len == prefix_len && r.gateway == gateway
-    });
+    let idx = table
+        .iter()
+        .position(|r| r.dest == dest && r.prefix_len == prefix_len && r.gateway == gateway);
 
     match idx {
         Some(i) => {
@@ -182,7 +180,10 @@ fn cidr_contains(entry: &RouteEntry, dest: &IpAddr) -> bool {
     }
 }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+)]
 /// IPv6 CIDR 匹配: 按 `prefix_len` (0-128) 逐字节掩码比较.
 fn ipv6_cidr_contains(net: &Ipv6Addr, dest: &Ipv6Addr, prefix_len: u8) -> bool {
     let n = prefix_len as usize;
@@ -211,7 +212,11 @@ fn ipv6_cidr_contains(net: &Ipv6Addr, dest: &Ipv6Addr, prefix_len: u8) -> bool {
 pub fn sys_route_add(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
     let entry = RouteEntry {
         dest: IpAddr::V4(Ipv4Addr::from_octets((dest_u32 as u32).to_be_bytes())),
-        prefix_len: if prefix_len > 32 { return -(Errno::EINVAL as i64); } else { prefix_len as u8 },
+        prefix_len: if prefix_len > 32 {
+            return -(Errno::EINVAL as i64);
+        } else {
+            prefix_len as u8
+        },
         gateway: IpAddr::V4(Ipv4Addr::from_octets((gateway_u32 as u32).to_be_bytes())),
         iface: None,
     };
@@ -225,7 +230,11 @@ pub fn sys_route_add(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
 pub fn sys_route_del(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
     match route_del(
         IpAddr::V4(Ipv4Addr::from_octets((dest_u32 as u32).to_be_bytes())),
-        if prefix_len > 32 { return -(Errno::EINVAL as i64); } else { prefix_len as u8 },
+        if prefix_len > 32 {
+            return -(Errno::EINVAL as i64);
+        } else {
+            prefix_len as u8
+        },
         IpAddr::V4(Ipv4Addr::from_octets((gateway_u32 as u32).to_be_bytes())),
     ) {
         Ok(()) => 0,
@@ -234,7 +243,9 @@ pub fn sys_route_del(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
 }
 
 pub fn sys_route_query(dest_u32: u64) -> i64 {
-    match route_query(IpAddr::V4(Ipv4Addr::from_octets((dest_u32 as u32).to_be_bytes()))) {
+    match route_query(IpAddr::V4(Ipv4Addr::from_octets(
+        (dest_u32 as u32).to_be_bytes(),
+    ))) {
         Some(result) => match result.gateway {
             IpAddr::V4(v4) => i64::from(u32::from_be_bytes(v4.octets())),
             // V6 路由在 u32 syscall ABI 下不可表达, 视为不可达

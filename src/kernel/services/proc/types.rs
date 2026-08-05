@@ -44,7 +44,10 @@ pub enum ProcessState {
 }
 
 impl ProcessState {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 安全的从 u8 值转换为 `ProcessState`
     pub fn from_u8(value: u8) -> Self {
         match value {
@@ -64,7 +67,10 @@ impl ProcessState {
         Self::from_u8(value as u8)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取状态名称 (用于日志和调试)
     pub fn name(&self) -> &'static str {
         match self {
@@ -78,19 +84,28 @@ impl ProcessState {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// ✅ 检查进程是否可调度 (在就绪队列或运行中)
     pub fn is_runnable(&self) -> bool {
         matches!(self, ProcessState::Ready | ProcessState::Running)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// ✅ 检查进程是否存活 (未终止或僵尸)
     pub fn is_alive(&self) -> bool {
         !matches!(self, ProcessState::Zombie | ProcessState::Terminated)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// ✅ 检查进程是否可以被冻结
     pub fn can_freeze(&self) -> bool {
         matches!(
@@ -99,7 +114,10 @@ impl ProcessState {
         )
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// ✅ 检查进程是否可以被唤醒 (从 Frozen 解冻后应转到的状态)
     pub fn thaw_target_state(&self) -> Option<ProcessState> {
         match self {
@@ -142,7 +160,10 @@ pub enum ProcessPriority {
 }
 
 impl ProcessPriority {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_u32(value: u32) -> Self {
         match value {
             0 => ProcessPriority::Idle,
@@ -249,18 +270,26 @@ impl Default for ProcessContext {
 // 集中式 re-export: 所有 proc 子模块 (types/process/thread/user_proc) 共享同一组常量,
 // 避免分散定义与影子覆盖。user_proc.rs 等子模块通过 `use super::types::*;` 引入。
 pub use crate::kernel::framework::config::{
+    // 栈规模
+    KERNEL_STACK_SIZE,
+    MAX_OPEN_FILES,
+    // 进程规模
+    MAX_PROCESSES,
     // 内存页
     PAGE_SIZE,
-    // 进程规模
-    MAX_PROCESSES, MAX_OPEN_FILES,
-    // 栈规模
-    KERNEL_STACK_SIZE, USER_KSTACK_SIZE,
-    USER_STACK_SIZE, USER_STACK_GUARD, USER_STACK_TOP, USER_STACK_MAX_SIZE,
-    USER_CODE_BASE,
     // 调度参数
     SCHED_BOOST_INTERVAL,
-    SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM,
+    SCHED_LEVEL_0_QUANTUM,
+    SCHED_LEVEL_1_QUANTUM,
+    SCHED_LEVEL_2_QUANTUM,
+    SCHED_LEVEL_3_QUANTUM,
     SCHED_RT_WATCHDOG_TICKS,
+    USER_CODE_BASE,
+    USER_KSTACK_SIZE,
+    USER_STACK_GUARD,
+    USER_STACK_MAX_SIZE,
+    USER_STACK_SIZE,
+    USER_STACK_TOP,
 };
 
 /// 线程调度优先级
@@ -274,7 +303,10 @@ pub enum ThreadPriority {
 }
 
 impl ThreadPriority {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_u32(value: u32) -> Self {
         match value {
             0 => ThreadPriority::Idle,
@@ -300,7 +332,10 @@ pub enum ThreadState {
 }
 
 impl ThreadState {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn from_u32(value: u32) -> Self {
         match value {
             0 => ThreadState::Created,
@@ -314,17 +349,26 @@ impl ThreadState {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_runnable(&self) -> bool {
         matches!(self, ThreadState::Ready | ThreadState::Running)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_alive(&self) -> bool {
         !matches!(self, ThreadState::Zombie | ThreadState::Terminated)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn can_freeze(&self) -> bool {
         matches!(
             self,

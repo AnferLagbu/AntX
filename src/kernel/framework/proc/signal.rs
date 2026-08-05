@@ -121,7 +121,8 @@ pub const SIGRETURN_TRAMPOLINE: [u8; 8] = [0xD2, 0x80, 0x11, 0x68, 0xD4, 0x00, 0
 pub const SIGRETURN_TRAMPOLINE_SIZE: usize = SIGRETURN_TRAMPOLINE.len();
 
 /// 信号栈帧总大小 (含 trampoline)
-pub const SIGNAL_FRAME_TOTAL_SIZE: usize = core::mem::size_of::<SignalFrame>() + SIGRETURN_TRAMPOLINE_SIZE;
+pub const SIGNAL_FRAME_TOTAL_SIZE: usize =
+    core::mem::size_of::<SignalFrame>() + SIGRETURN_TRAMPOLINE_SIZE;
 
 // ============================================================================
 // 常量
@@ -227,7 +228,8 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
 
     // 唤醒目标进程 (如果处于可中断睡眠)
     if state == ProcessState::Blocked as u32 {
-        proc.state.store(ProcessState::Ready as u32, Ordering::Release);
+        proc.state
+            .store(ProcessState::Ready as u32, Ordering::Release);
     }
 
     Ok(())
@@ -255,11 +257,18 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
     if sig == 0 {
         return match pid {
             p if p > 0 => {
-                if PROCESS_TABLE.get(p as u32).is_some() { Ok(1) } else { Err(-2) }
+                if PROCESS_TABLE.get(p as u32).is_some() {
+                    Ok(1)
+                } else {
+                    Err(-2)
+                }
             }
             0 => {
                 // 至少检查当前进程存在
-                if PROCESS_TABLE.get(super::scheduler::SCHEDULER.current().unwrap_or(0)).is_some() {
+                if PROCESS_TABLE
+                    .get(super::scheduler::SCHEDULER.current().unwrap_or(0))
+                    .is_some()
+                {
                     Ok(1)
                 } else {
                     Err(-2)
@@ -267,7 +276,10 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
             }
             -1 => {
                 let mut count = 0usize;
-                PROCESS_TABLE.for_each(|_| { count += 1; true });
+                PROCESS_TABLE.for_each(|_| {
+                    count += 1;
+                    true
+                });
                 if count > 0 { Ok(count) } else { Err(-2) }
             }
             p if p < -1 => {
@@ -294,7 +306,11 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
     match pid {
         p if p > 0 => {
             // 单进程
-            if do_signal_send_inner(p as u32, sig).is_ok() { Ok(1) } else { Err(-2) }
+            if do_signal_send_inner(p as u32, sig).is_ok() {
+                Ok(1)
+            } else {
+                Err(-2)
+            }
         }
         0 => {
             // 广播到同进程组
@@ -303,7 +319,11 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
                 .get(current)
                 // SAFETY: PROCESS_TABLE 保证指针有效, 进程在表中期间不会释放; 只读 pgid
                 .map_or(0, |p| unsafe { (&*p).pgid.load(Ordering::SeqCst) });
-            let target_pgid = if current_pgid == 0 { current } else { current_pgid };
+            let target_pgid = if current_pgid == 0 {
+                current
+            } else {
+                current_pgid
+            };
             let mut count = 0usize;
             PROCESS_TABLE.for_each(|proc| {
                 let pg = proc.pgid.load(Ordering::SeqCst);
@@ -366,7 +386,8 @@ fn do_signal_send_inner(pid: u32, sig: u8) -> Result<(), i32> {
     }
     proc.signal_pending_set(u32::from(sig));
     if state == ProcessState::Blocked as u32 {
-        proc.state.store(ProcessState::Ready as u32, Ordering::Release);
+        proc.state
+            .store(ProcessState::Ready as u32, Ordering::Release);
     }
     Ok(())
 }
@@ -400,14 +421,16 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
                 // SAFETY: PROCESS_TABLE 保证指针有效
                 let proc = unsafe { &*proc_ptr };
-                proc.state.store(ProcessState::Ready as u32, Ordering::Release);
+                proc.state
+                    .store(ProcessState::Ready as u32, Ordering::Release);
             }
         }
         SignalDefaultAction::Stop => {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
                 // SAFETY: PROCESS_TABLE 保证指针有效, 进程在表中期间不会释放
                 let proc = unsafe { &*proc_ptr };
-                proc.state.store(ProcessState::Blocked as u32, Ordering::Release);
+                proc.state
+                    .store(ProcessState::Blocked as u32, Ordering::Release);
             }
         }
         SignalDefaultAction::Core => {
@@ -416,24 +439,37 @@ pub fn do_signal_default_action(pid: Pid, sig: u8, frame_addr: u64) {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
                 // SAFETY: `proc_ptr` 由调用方保证为有效指针; 只读访问
                 let proc = unsafe { &*proc_ptr };
-                proc.exit_code.store(u32::from(sig) << 8 | 0x7f, Ordering::Release);
-                proc.state.store(ProcessState::Zombie as u32, Ordering::Release);
+                proc.exit_code
+                    .store(u32::from(sig) << 8 | 0x7f, Ordering::Release);
+                proc.state
+                    .store(ProcessState::Zombie as u32, Ordering::Release);
             }
         }
         SignalDefaultAction::Term => {
             if let Some(proc_ptr) = PROCESS_TABLE.get(pid) {
                 // SAFETY: `proc_ptr` 由调用方保证为有效指针; 只读访问
                 let proc = unsafe { &*proc_ptr };
-                proc.exit_code.store(u32::from(sig) << 8 | 0x7f, Ordering::Release);
-                proc.state.store(ProcessState::Zombie as u32, Ordering::Release);
+                proc.exit_code
+                    .store(u32::from(sig) << 8 | 0x7f, Ordering::Release);
+                proc.state
+                    .store(ProcessState::Zombie as u32, Ordering::Release);
             }
         }
     }
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 投递待处理信号 (在返回用户态前调用)
 ///
 /// 遍历当前进程的 pending & ~blocked, 逐个投递:
@@ -470,7 +506,6 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
     let mut delivered = false;
 
     while let Some(sig) = signal_pick_next(proc) {
-
         // 清除 pending 位
         proc.signal_pending_clear(1u64 << u64::from(sig));
 
@@ -486,9 +521,7 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
                 delivered = true;
                 // 如果进程被终止或停止, 不再投递更多信号
                 let state = proc.state.load(Ordering::Acquire);
-                if state == ProcessState::Zombie as u32
-                    || state == ProcessState::Blocked as u32
-                {
+                if state == ProcessState::Zombie as u32 || state == ProcessState::Blocked as u32 {
                     break;
                 }
             }
@@ -534,17 +567,34 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
 
                 // 标记替代栈为"正在使用", 防止信号重入再次落回主栈
                 if use_alternate {
-                    proc.sigaltstack_flags.store(ss_flags | SS_ONSTACK, Ordering::Release);
+                    proc.sigaltstack_flags
+                        .store(ss_flags | SS_ONSTACK, Ordering::Release);
                 }
 
                 // 构建 SignalFrame (保存原始寄存器)
                 let sigframe = SignalFrame {
-                    r15: f.r15, r14: f.r14, r13: f.r13, r12: f.r12,
-                    r11: f.r11, r10: f.r10, r9: f.r9, r8: f.r8,
-                    rdi: f.rdi, rsi: f.rsi, rbp: f.rbp, rdx: f.rdx,
-                    rcx: f.rcx, rbx: f.rbx, rax: f.rax,
-                    int_no: f.int_no, err_code: f.err_code,
-                    rip: f.rip, cs: f.cs, rflags: f.rflags, rsp: f.rsp, ss: f.ss,
+                    r15: f.r15,
+                    r14: f.r14,
+                    r13: f.r13,
+                    r12: f.r12,
+                    r11: f.r11,
+                    r10: f.r10,
+                    r9: f.r9,
+                    r8: f.r8,
+                    rdi: f.rdi,
+                    rsi: f.rsi,
+                    rbp: f.rbp,
+                    rdx: f.rdx,
+                    rcx: f.rcx,
+                    rbx: f.rbx,
+                    rax: f.rax,
+                    int_no: f.int_no,
+                    err_code: f.err_code,
+                    rip: f.rip,
+                    cs: f.cs,
+                    rflags: f.rflags,
+                    rsp: f.rsp,
+                    ss: f.ss,
                     signum: u64::from(sig),
                 };
 
@@ -563,11 +613,8 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
                     )
                 };
 
-                let ok_ret = crate::kernel::framework::mm::copy_to_user(
-                    frame_rsp,
-                    &ret_addr_bytes,
-                    8,
-                );
+                let ok_ret =
+                    crate::kernel::framework::mm::copy_to_user(frame_rsp, &ret_addr_bytes, 8);
                 let ok_frame = crate::kernel::framework::mm::copy_to_user(
                     frame_rsp + 8,
                     sigframe_bytes,
@@ -588,9 +635,9 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
 
                 // 修改 InterruptFrame: 跳转到 handler
                 f.rip = handler_addr;
-                f.rdi = u64::from(sig);  // 参数1: signum
-                f.rsi = 0;           // 参数2: siginfo (简化: NULL)
-                f.rdx = 0;           // 参数3: ucontext (简化: NULL)
+                f.rdi = u64::from(sig); // 参数1: signum
+                f.rsi = 0; // 参数2: siginfo (简化: NULL)
+                f.rdx = 0; // 参数3: ucontext (简化: NULL)
                 f.rsp = frame_rsp;
 
                 delivered = true;
@@ -607,7 +654,10 @@ pub fn do_signal_deliver(frame: *mut crate::kernel::framework::idt::InterruptFra
 // 便利函数
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 检查当前进程是否有可投递信号
 pub fn has_deliverable_signal(pid: Pid) -> bool {
     let proc_ptr = match PROCESS_TABLE.get(pid) {
@@ -621,7 +671,10 @@ pub fn has_deliverable_signal(pid: Pid) -> bool {
     (pending & !blocked) != 0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 获取进程的信号屏蔽字
 pub fn get_blocked_mask(pid: Pid) -> u64 {
     let proc_ptr = match PROCESS_TABLE.get(pid) {
@@ -633,7 +686,10 @@ pub fn get_blocked_mask(pid: Pid) -> u64 {
     proc.blocked_mask.load(Ordering::Acquire)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 设置进程的信号屏蔽字
 pub fn set_blocked_mask(pid: Pid, mask: u64) {
     let proc_ptr = match PROCESS_TABLE.get(pid) {
@@ -694,7 +750,10 @@ pub fn set_sigaction(pid: Pid, sig: u8, action: u64) -> Option<u64> {
 //   即可在此实现, 保持调用点稳定.
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// I-48: 显式重置 execve 后进程的信号状态.
 ///
 /// 当前实现为幂等 no-op (新进程已由 `user_proc_load_elf` 分配, 默认状态已正确).
@@ -723,19 +782,43 @@ pub fn reset_signal_state_on_exec(pid: Pid) {
 
 #[cfg(feature = "kernel_test")]
 fn test_signal_default_action() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
-    assert_eq_test!(signal_default_action(9), SignalDefaultAction::Term, "SIGKILL=Term");
-    assert_eq_test!(signal_default_action(11), SignalDefaultAction::Core, "SIGSEGV=Core");
-    assert_eq_test!(signal_default_action(17), SignalDefaultAction::Ign, "SIGCHLD=Ign");
-    assert_eq_test!(signal_default_action(19), SignalDefaultAction::Stop, "SIGSTOP=Stop");
-    assert_eq_test!(signal_default_action(18), SignalDefaultAction::Cont, "SIGCONT=Cont");
-    assert_eq_test!(signal_default_action(15), SignalDefaultAction::Term, "SIGTERM=Term");
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
+    assert_eq_test!(
+        signal_default_action(9),
+        SignalDefaultAction::Term,
+        "SIGKILL=Term"
+    );
+    assert_eq_test!(
+        signal_default_action(11),
+        SignalDefaultAction::Core,
+        "SIGSEGV=Core"
+    );
+    assert_eq_test!(
+        signal_default_action(17),
+        SignalDefaultAction::Ign,
+        "SIGCHLD=Ign"
+    );
+    assert_eq_test!(
+        signal_default_action(19),
+        SignalDefaultAction::Stop,
+        "SIGSTOP=Stop"
+    );
+    assert_eq_test!(
+        signal_default_action(18),
+        SignalDefaultAction::Cont,
+        "SIGCONT=Cont"
+    );
+    assert_eq_test!(
+        signal_default_action(15),
+        SignalDefaultAction::Term,
+        "SIGTERM=Term"
+    );
     TestResult::Pass
 }
 
 #[cfg(feature = "kernel_test")]
 fn test_uncatchable() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     check!(is_uncatchable(9), "SIGKILL uncatchable");
     check!(is_uncatchable(19), "SIGSTOP uncatchable");
     check!(!is_uncatchable(15), "SIGTERM catchable");
@@ -745,7 +828,7 @@ fn test_uncatchable() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_signal_pick_next_logic() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     // 模拟 pending = 0b1010 (bit 1=SIGINT, bit 3=SIGQUIT)
     // blocked = 0b10 (bit 1=SIGINT)
     // deliverable = 0b1000, 应选择 bit 3 = SIGQUIT (sig=3)
@@ -760,7 +843,7 @@ fn test_signal_pick_next_logic() -> crate::kernel::framework::tests::TestResult 
 
 #[cfg(feature = "kernel_test")]
 fn test_set_get_sigaction() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // SIGKILL (9) 不可设置
     let result = set_sigaction(1, 9, 0xDEAD);
     check!(result.is_none(), "SIGKILL cannot be caught");
@@ -772,16 +855,32 @@ fn test_set_get_sigaction() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_default_action_coverage() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test};
     // 验证所有 31 个标准信号都有定义
     for sig in 1u8..=31 {
         let _action = signal_default_action(sig);
     }
     // 抽查关键信号
-    assert_eq_test!(signal_default_action(1), SignalDefaultAction::Term, "SIGHUP=Term");
-    assert_eq_test!(signal_default_action(2), SignalDefaultAction::Term, "SIGINT=Term");
-    assert_eq_test!(signal_default_action(13), SignalDefaultAction::Term, "SIGPIPE=Term");
-    assert_eq_test!(signal_default_action(14), SignalDefaultAction::Term, "SIGALRM=Term");
+    assert_eq_test!(
+        signal_default_action(1),
+        SignalDefaultAction::Term,
+        "SIGHUP=Term"
+    );
+    assert_eq_test!(
+        signal_default_action(2),
+        SignalDefaultAction::Term,
+        "SIGINT=Term"
+    );
+    assert_eq_test!(
+        signal_default_action(13),
+        SignalDefaultAction::Term,
+        "SIGPIPE=Term"
+    );
+    assert_eq_test!(
+        signal_default_action(14),
+        SignalDefaultAction::Term,
+        "SIGALRM=Term"
+    );
     TestResult::Pass
 }
 
@@ -793,11 +892,31 @@ pub fn register_signal_tests() {
     r.register("signal", "uncatchable", test_uncatchable);
     r.register("signal", "pick_next_logic", test_signal_pick_next_logic);
     r.register("signal", "set_get_sigaction", test_set_get_sigaction);
-    r.register("signal", "default_action_coverage", test_default_action_coverage);
-    r.register("signal", "kill_broadcast_pid_positive", test_kill_broadcast_pid_positive);
-    r.register("signal", "kill_broadcast_pid_zero_group", test_kill_broadcast_pid_zero_group);
-    r.register("signal", "kill_broadcast_pid_negative_all", test_kill_broadcast_pid_negative_all);
-    r.register("signal", "kill_broadcast_pid_negative_group", test_kill_broadcast_pid_negative_group);
+    r.register(
+        "signal",
+        "default_action_coverage",
+        test_default_action_coverage,
+    );
+    r.register(
+        "signal",
+        "kill_broadcast_pid_positive",
+        test_kill_broadcast_pid_positive,
+    );
+    r.register(
+        "signal",
+        "kill_broadcast_pid_zero_group",
+        test_kill_broadcast_pid_zero_group,
+    );
+    r.register(
+        "signal",
+        "kill_broadcast_pid_negative_all",
+        test_kill_broadcast_pid_negative_all,
+    );
+    r.register(
+        "signal",
+        "kill_broadcast_pid_negative_group",
+        test_kill_broadcast_pid_negative_group,
+    );
 }
 
 // ============================================================================
@@ -806,7 +925,7 @@ pub fn register_signal_tests() {
 
 #[cfg(feature = "kernel_test")]
 fn test_kill_broadcast_pid_positive() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test, check};
     // pid > 0 单进程: 不存在的 pid 必返回 Err(ESRCH)
     let res = do_signal_send_extended(9999, 9);
     check!(res.is_err(), "kill non-existent pid should fail");
@@ -818,7 +937,7 @@ fn test_kill_broadcast_pid_positive() -> crate::kernel::framework::tests::TestRe
 
 #[cfg(feature = "kernel_test")]
 fn test_kill_broadcast_pid_zero_group() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{assert_eq_test, check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, assert_eq_test, check};
     // pid = 0 广播: 接受 Err(-2) (ESRCH) 或 Ok(N) (有进程)
     let res = do_signal_send_extended(0, 9);
     check!(res.is_err() || res.is_ok(), "pid=0 must not EINVAL");
@@ -830,7 +949,7 @@ fn test_kill_broadcast_pid_zero_group() -> crate::kernel::framework::tests::Test
 
 #[cfg(feature = "kernel_test")]
 fn test_kill_broadcast_pid_negative_all() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // pid = -1: 广播到所有进程 (除 init).
     // host test 环境下进程表通常为空 -> Err(ESRCH)
     let res = do_signal_send_extended(-1, 9);
@@ -843,7 +962,7 @@ fn test_kill_broadcast_pid_negative_all() -> crate::kernel::framework::tests::Te
 
 #[cfg(feature = "kernel_test")]
 fn test_kill_broadcast_pid_negative_group() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
     // pid < -1: 广播到进程组 |pid|.
     let res = do_signal_send_extended(-100, 9);
     check!(res != Err(-1i32), "pid=-100 must not return EINVAL");

@@ -6,4 +6,4 @@
 //! 已于 2026-06-17 迁移到 `services::proc::oomd`.
 //! 本文件仅 re-export 保持调用方兼容.
 
-pub use crate::kernel::services::proc::oomd::{OomDaemon, OOMD};
+pub use crate::kernel::services::proc::oomd::{OOMD, OomDaemon};

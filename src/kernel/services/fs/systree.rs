@@ -15,8 +15,8 @@
 //! - Linux sysfs 文档: Documentation/filesystems/sysfs.rst
 //! - Linux kobject 文档: Documentation/core-api/kobject.rst
 
-use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::OnceLock;
 use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
@@ -211,11 +211,7 @@ impl SystreeNode {
                 break;
             }
         }
-        if found {
-            Ok(())
-        } else {
-            Err(Errno::ENOENT)
-        }
+        if found { Ok(()) } else { Err(Errno::ENOENT) }
     }
 }
 
@@ -234,7 +230,10 @@ pub struct Systree {
 }
 
 impl Systree {
-#[expect(clippy::large_stack_arrays, reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect")]
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
     pub const fn new() -> Self {
         Self {
             nodes: [const { SystreeNode::new(0, 0) }; MAX_NODES],
@@ -255,11 +254,7 @@ impl Systree {
     ///
     /// # Errors
     /// 当父节点不存在时返回 `ENOENT`; 当节点表已满 (`MAX_NODES`) 时返回 `ENOMEM`.
-    pub fn create_node(
-        &mut self,
-        parent_id: u32,
-        name: &str,
-    ) -> Result<u32, Errno> {
+    pub fn create_node(&mut self, parent_id: u32, name: &str) -> Result<u32, Errno> {
         if self.find_node(parent_id).is_none() {
             return Err(Errno::ENOENT);
         }
@@ -308,11 +303,7 @@ impl Systree {
             }
         }
 
-        if found {
-            Ok(())
-        } else {
-            Err(Errno::ENOENT)
-        }
+        if found { Ok(()) } else { Err(Errno::ENOENT) }
     }
 
     /// 查找节点
@@ -345,7 +336,10 @@ impl Systree {
         None
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 列出子节点
     ///
     /// # Errors
@@ -371,12 +365,7 @@ impl Systree {
     ///
     /// # Errors
     /// 当节点或属性不存在时返回 `ENOENT`; 当属性未注册读取回调时返回 `EIO`.
-    pub fn read_attr(
-        &self,
-        node_id: u32,
-        attr_name: &str,
-        buf: &mut [u8],
-    ) -> Result<usize, Errno> {
+    pub fn read_attr(&self, node_id: u32, attr_name: &str, buf: &mut [u8]) -> Result<usize, Errno> {
         let node = self.find_node(node_id).ok_or(Errno::ENOENT)?;
         let attr = node.find_attr(attr_name).ok_or(Errno::ENOENT)?;
         attr.read(buf)
@@ -386,12 +375,7 @@ impl Systree {
     ///
     /// # Errors
     /// 当节点或属性不存在时返回 `ENOENT`; 当属性未注册写入回调时返回 `EIO`.
-    pub fn write_attr(
-        &mut self,
-        node_id: u32,
-        attr_name: &str,
-        data: &[u8],
-    ) -> Result<(), Errno> {
+    pub fn write_attr(&mut self, node_id: u32, attr_name: &str, data: &[u8]) -> Result<(), Errno> {
         let node = self.find_node_mut(node_id).ok_or(Errno::ENOENT)?;
         let attr = node.find_attr(attr_name).ok_or(Errno::ENOENT)?;
         attr.write(data)
@@ -504,7 +488,10 @@ fn format_u64(mut n: u64) -> [u8; 20] {
 // safe API
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 挂载 systree
 ///
 /// # Errors
@@ -515,7 +502,10 @@ pub fn mount_systree() -> Result<(), Errno> {
     Ok(())
 }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 卸载 systree
 ///
 /// # Errors

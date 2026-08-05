@@ -34,9 +34,9 @@
 //! 评估日期: 2026-07-04
 //! Phase 2.1.6 任务: USB/XHCI 驱动迁移
 
-pub mod xhci;
-pub mod usb_core;
 pub mod enumerate;
-pub mod ring;
 pub mod hid;
 pub mod mass_storage;
+pub mod ring;
+pub mod usb_core;
+pub mod xhci;

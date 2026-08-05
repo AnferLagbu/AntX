@@ -1,8 +1,9 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::domain::RecoveryDomain;
-use super::types::{RollbackEvent, MAX_ROLLBACK_LOG, MAX_RECOVERY_DOMAINS, DIRECT_MAP_SIZE, DomainState};
-
+use super::types::{
+    DIRECT_MAP_SIZE, DomainState, MAX_RECOVERY_DOMAINS, MAX_ROLLBACK_LOG, RollbackEvent,
+};
 
 use crate::kernel::framework::sync::IrqSpinLock;
 pub static ROLLBACK_LOG: IrqSpinLock<[Option<RollbackEvent>; MAX_ROLLBACK_LOG]> =
@@ -141,9 +142,13 @@ impl RecoveryManager {
                     }
 
                     if failures >= 3 {
-                        crate::klog_ffi!(klog_ffi_warn,
-                            "[BARRIER] domain {} persistent failures ({failures}), escalating to BSR", dom.id);
-                        crate::kernel::framework::barrier::NEED_BSR_ESCALATION.store(true, Ordering::SeqCst);
+                        crate::klog_ffi!(
+                            klog_ffi_warn,
+                            "[BARRIER] domain {} persistent failures ({failures}), escalating to BSR",
+                            dom.id
+                        );
+                        crate::kernel::framework::barrier::NEED_BSR_ESCALATION
+                            .store(true, Ordering::SeqCst);
                         return;
                     }
                 }
@@ -173,9 +178,13 @@ impl RecoveryManager {
             if let Some(dom) = self.domains[i] {
                 let fp = dom.load_boot_fingerprint();
                 if fp != 0 && dom.consecutive_failures.load(Ordering::SeqCst) >= 3 {
-                    crate::klog_ffi!(klog_ffi_warn,
+                    crate::klog_ffi!(
+                        klog_ffi_warn,
                         "[BARRIER] domain {} has persistent crash fingerprint 0x{:X} ({} failures), starting in degraded mode",
-                        dom.id, fp, dom.consecutive_failures.load(Ordering::SeqCst));
+                        dom.id,
+                        fp,
+                        dom.consecutive_failures.load(Ordering::SeqCst)
+                    );
                     dom.set_state(super::types::DomainState::Degraded, Ordering::SeqCst);
                     dom.clear_boot_fingerprint();
                 }
@@ -215,7 +224,10 @@ impl RecoveryManager {
 
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     pub fn rollback_domain(
         &self,
         dom: &RecoveryDomain,

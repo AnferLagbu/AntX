@@ -3,23 +3,23 @@ pub mod brk;
 pub mod canary;
 pub mod clone;
 pub mod dispatch;
+/// T-03: 系统调用分发决策 trait
+pub mod dispatch_trait;
 pub mod epoll;
 pub mod eventfd;
 pub mod firmware;
-pub mod signalfd;
-pub mod timerfd;
+pub mod ftrace_kgdb;
 pub mod futex;
 pub mod info;
 pub mod io;
 pub mod madvise_mlock;
 pub mod mmap;
 pub mod mprotect;
-pub mod sendfile;
-pub mod ftrace_kgdb;
 pub mod posix_timer;
+pub mod sendfile;
+pub mod signalfd;
+pub mod timerfd;
 pub mod wait4;
-/// T-03: 系统调用分发决策 trait
-pub mod dispatch_trait;
 
 /// Syscall 模块 — `QueenX` 原生系统调用分发
 ///
@@ -33,15 +33,18 @@ pub mod dispatch_trait;
 ///   800-899 : QueenX 自由 syscall (QX_*) — 扩展
 ///
 /// 0-299 直接走 Linux ABI, 无翻译层. 500+ 与 Linux 错开, 避免与未来 Linux 新增 syscall 冲突.
-
 // 公共接口 re-export — 避免跨子系统直接访问内部子模块
-pub use epoll::{EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLRDHUP, epoll_pwake};
-pub use types::{Errno, SyscallHandler};
+pub use epoll::{EPOLLERR, EPOLLHUP, EPOLLIN, EPOLLOUT, EPOLLRDHUP, epoll_pwake};
+pub use sendfile::{
+    SPLICE_F_GIFT, SPLICE_F_MORE, SPLICE_F_MOVE, SPLICE_F_NONBLOCK, sys_sendfile, sys_splice,
+};
 pub use types::*;
-pub use sendfile::{sys_sendfile, sys_splice, SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT};
+pub use types::{Errno, SyscallHandler};
 
 // dispatch_trait 公共接口 re-export — T-03 策略-机制分离
-pub use dispatch_trait::{SyscallDispatch, FallbackSyscallDispatch, register_syscall_dispatch, current_syscall_dispatch};
+pub use dispatch_trait::{
+    FallbackSyscallDispatch, SyscallDispatch, current_syscall_dispatch, register_syscall_dispatch,
+};
 pub mod types;
 
 pub use dispatch::*;
@@ -269,11 +272,7 @@ pub(crate) mod raw {
         unsafe {
             if keyboard_has_data() {
                 let c = keyboard_get_char();
-                if c > 0 {
-                    Some(c as u8)
-                } else {
-                    None
-                }
+                if c > 0 { Some(c as u8) } else { None }
             } else {
                 None
             }
@@ -290,11 +289,7 @@ pub(crate) mod raw {
         unsafe {
             if serial_has_data(com) {
                 let c = serial_getc(com);
-                if c > 0 {
-                    Some(c as u8)
-                } else {
-                    None
-                }
+                if c > 0 { Some(c as u8) } else { None }
             } else {
                 None
             }
@@ -347,7 +342,10 @@ pub(crate) mod raw {
     /// # Safety
     /// 链接器符号，仅在 boot 后有效。
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     pub fn kernel_start_ptr() -> *const u8 {
         // SAFETY: _kernel_start 是链接器符号 (extern "C")，是静态地址，
         // boot 后由 VMM 建立映射可读。
@@ -357,7 +355,10 @@ pub(crate) mod raw {
     /// 内核映像结束物理地址（已减 `HHDM_OFFSET`）。
     /// # SAFETY: `链接器符号，hhdm_offset` 必须与启动时一致。
     #[cfg(all(not(feature = "kernel_test"), target_arch = "x86_64"))]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+    #[expect(
+        clippy::borrow_as_ptr,
+        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+    )]
     pub fn kernel_end_phys(hhdm_offset: usize) -> usize {
         unsafe { (&_kernel_end as *const u8 as usize).wrapping_sub(hhdm_offset) }
     }
@@ -367,21 +368,25 @@ pub(crate) mod raw {
     /// 加载空 IDT 后触发异常，重启 `CPU（x86_64`）。
     /// # SAFETY: 不返回；调用方须确保已关闭其他 CPU。
     #[cfg(target_arch = "x86_64")]
-    pub unsafe fn reboot_via_idt() -> ! { unsafe {
-        core::arch::asm!(
-            "lidt [rdi]",
-            "int 0",
-            in("rdi") &[0u16; 4],
-            options(nostack, nomem)
-        );
-        loop {}
-    }}
+    pub unsafe fn reboot_via_idt() -> ! {
+        unsafe {
+            core::arch::asm!(
+                "lidt [rdi]",
+                "int 0",
+                in("rdi") &[0u16; 4],
+                options(nostack, nomem)
+            );
+            loop {}
+        }
+    }
 
     /// 通过 SVC 触发 PSCI reset（aarch64）。
     /// # SAFETY: 不返回；调用方须确保已关闭其他 CPU。
     #[cfg(target_arch = "aarch64")]
-    pub unsafe fn reboot_via_psci() -> ! { unsafe {
-        core::arch::asm!("svc #0", in("x0") 0u64, options(nostack));
-        loop {}
-    }}
+    pub unsafe fn reboot_via_psci() -> ! {
+        unsafe {
+            core::arch::asm!("svc #0", in("x0") 0u64, options(nostack));
+            loop {}
+        }
+    }
 }

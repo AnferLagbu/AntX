@@ -53,7 +53,10 @@ static TRY_GETC: AtomicPtr<TryGetcFn> = AtomicPtr::new(core::ptr::null_mut());
 static PUTC: AtomicPtr<PutcFn> = AtomicPtr::new(core::ptr::null_mut());
 
 #[inline]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 fn read_dispatch<T: KgdbSerial>(p: *const ()) -> Option<u8> {
     // SAFETY: SERIAL 由 kgdb_set_serial 注入, T 满足 trait 约束
     unsafe { (*(p as *const T)).try_getchar() }
@@ -122,7 +125,10 @@ fn pkt_checksum(data: &[u8]) -> u8 {
     data.iter().fold(0u8, |a, b| a.wrapping_add(*b))
 }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+#[expect(
+    clippy::needless_continue,
+    reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+)]
 /// 发送一个 packet (含 ACK 等待)
 pub fn kgdb_send_packet(payload: &[u8]) {
     kgdb_putc(b'$');
@@ -156,7 +162,10 @@ pub fn kgdb_send_packet(payload: &[u8]) {
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 接收一个 packet, payload 写入 out, 返回有效字节数
 pub fn kgdb_recv_packet(out: &mut [u8]) -> usize {
     let mut state = 0u8;
@@ -307,22 +316,74 @@ fn format_registers(out: &mut [u8], r: &KgdbRegs) -> usize {
     let _ = write!(
         w,
         "{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}",
-        r.rax, r.rbx, r.rcx, r.rdx, r.rsi, r.rdi, r.rbp, r.rsp, r.r8, r.r9, r.r10, r.r11,
-        r.r12, r.r13, r.r14, r.r15, r.rip, r.eflags
+        r.rax,
+        r.rbx,
+        r.rcx,
+        r.rdx,
+        r.rsi,
+        r.rdi,
+        r.rbp,
+        r.rsp,
+        r.r8,
+        r.r9,
+        r.r10,
+        r.r11,
+        r.r12,
+        r.r13,
+        r.r14,
+        r.r15,
+        r.rip,
+        r.eflags
     );
     #[cfg(target_arch = "aarch64")]
     let _ = write!(
         w,
         "{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}{:016x}",
-        r.x0, r.x1, r.x2, r.x3, r.x4, r.x5, r.x6, r.x7, r.x8, r.x9, r.x10, r.x11, r.x12,
-        r.x13, r.x14, r.x15, r.x16, r.x17, r.x18, r.x19, r.x20, r.x21, r.x22, r.x23, r.x24,
-        r.x25, r.x26, r.x27, r.x28, r.x29, r.x30, r.sp, r.pc
+        r.x0,
+        r.x1,
+        r.x2,
+        r.x3,
+        r.x4,
+        r.x5,
+        r.x6,
+        r.x7,
+        r.x8,
+        r.x9,
+        r.x10,
+        r.x11,
+        r.x12,
+        r.x13,
+        r.x14,
+        r.x15,
+        r.x16,
+        r.x17,
+        r.x18,
+        r.x19,
+        r.x20,
+        r.x21,
+        r.x22,
+        r.x23,
+        r.x24,
+        r.x25,
+        r.x26,
+        r.x27,
+        r.x28,
+        r.x29,
+        r.x30,
+        r.sp,
+        r.pc
     );
     orig_len - w.0.expect("W invariant: 1 slice at a time").len()
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 fn parse_registers(hex: &[u8], r: &mut KgdbRegs) -> bool {
     #[cfg(target_arch = "x86_64")]
     const N: usize = 18;

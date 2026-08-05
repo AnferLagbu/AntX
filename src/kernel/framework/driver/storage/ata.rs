@@ -25,8 +25,8 @@
 use super::framework::Driver;
 use super::framework::{DeviceInfo, DeviceType, DriverError, Result};
 use crate::kernel::framework::ioport::IoPort;
-use alloc::boxed::Box;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use alloc::boxed::Box;
 // ============================================================================
 // ATA 硬件常量定义
 // ============================================================================
@@ -386,7 +386,10 @@ impl Driver for AtaController {
         self.initialized && (self.primary_present || self.secondary_present)
     }
 
-#[expect(clippy::no_effect_underscore_binding, reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect")]
+    #[expect(
+        clippy::no_effect_underscore_binding,
+        reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
+    )]
     fn status(&self) -> &'static str {
         if !self.initialized {
             "Not initialized"
@@ -415,8 +418,8 @@ impl AtaController {
     pub fn new() -> Self {
         // SAFETY: ATA I/O 端口地址由 PC 规范确定 (Primary: 0x1F0/0x3F6, Secondary: 0x170/0x176),
         // 不与其他 IoPort 实例重叠.
-        let primary_io = unsafe { IoPort::new(ATA_PRIMARY_IO, 8, "ata-pio") }
-            .expect("ata-pio port init failed");
+        let primary_io =
+            unsafe { IoPort::new(ATA_PRIMARY_IO, 8, "ata-pio") }.expect("ata-pio port init failed");
         let primary_ctrl = unsafe { IoPort::new(ATA_PRIMARY_CTRL, 2, "ata-pctrl") }
             .expect("ata-pctrl port init failed");
         let secondary_io = unsafe { IoPort::new(ATA_SECONDARY_IO, 8, "ata-sio") }
@@ -630,8 +633,14 @@ static ATA_DEVICE: Mutex<Option<Box<AtaController>>> = Mutex::new(None);
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 pub extern "C" fn ata_init() {
     let mut controller = Box::new(AtaController::new());
     let _ = controller.init();
@@ -655,9 +664,7 @@ pub extern "C" fn ata_init() {
 pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
     let guard = ATA_DEVICE.lock();
     match &*guard {
-        Some(controller) => {
-            i32::from(controller.disk_present(drive))
-        }
+        Some(controller) => i32::from(controller.disk_present(drive)),
         None => 0,
     }
 }

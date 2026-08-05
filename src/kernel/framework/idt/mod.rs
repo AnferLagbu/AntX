@@ -57,15 +57,7 @@ pub mod types; // Phase 3: 统计与 JSON 导出
 
 // 重新导出核心类型 (方便外部使用)
 pub use types::{
-    // 辅助函数
-    get_exception_name,
-    get_irq_name,
     ErrorFlags,
-    IdtEntry,
-    IdtPtr,
-    InterruptFrame,
-    InterruptStatistics,
-    IrqDescriptor,
     GDT_KERNEL_CODE,
     IDT_DPL_USER,
     // 常量
@@ -73,30 +65,40 @@ pub use types::{
     IDT_TYPE_INTERRUPT,
     IDT_TYPE_TRAP,
     IRQ_BASE,
+    IdtEntry,
+    IdtPtr,
+    InterruptFrame,
+    InterruptStatistics,
+    IrqDescriptor,
     MODULE_INIT_FAILURE,
     MODULE_INIT_SUCCESS,
+    // 辅助函数
+    get_exception_name,
+    get_irq_name,
 };
 
 pub use safety::{
-    disable_interrupts, enable_interrupts, halt_loop, rdtsc, read_cr2,
-    is_null_or_invalid, is_valid_kernel_address, is_valid_user_address,
-    CpuFeatures,
+    CpuFeatures, disable_interrupts, enable_interrupts, halt_loop, is_null_or_invalid,
+    is_valid_kernel_address, is_valid_user_address, rdtsc, read_cr2,
 };
 
 pub use idt::IdtManager;
 
 // Phase 3: 异常处理器导出
 pub use handlers::{
-    create_handler, get_collector, DefaultHandler, DivisionByZeroHandler, DoubleFaultHandler,
-    ExceptionCategory, ExceptionHandler, GeneralProtectionFaultHandler, PageFaultHandler,
-    PanicInfo, RecoveryAction, Severity,
+    DefaultHandler, DivisionByZeroHandler, DoubleFaultHandler, ExceptionCategory, ExceptionHandler,
+    GeneralProtectionFaultHandler, PageFaultHandler, PanicInfo, RecoveryAction, Severity,
+    create_handler, get_collector,
 };
 
 // Phase 3: 统计模块导出
-pub use statistics::{get_detailed_statistics, DetailedStatistics, InterruptEvent};
+pub use statistics::{DetailedStatistics, InterruptEvent, get_detailed_statistics};
 
 // irq_trait 公共接口 re-export — T-04 策略-机制分离
-pub use irq_trait::{IrqDecision, FallbackIrqDecision, IrqContext, SoftirqContext, register_irq_decision, current_irq_decision};
+pub use irq_trait::{
+    FallbackIrqDecision, IrqContext, IrqDecision, SoftirqContext, current_irq_decision,
+    register_irq_decision,
+};
 
 /// 全局 IDT 管理器实例 (Phase 2 已实现)
 pub static IDT_MANAGER: () = ();
@@ -124,7 +126,10 @@ pub type CIrqHandler = extern "C" fn(*mut InterruptFrame);
 /// - `MODULE_INIT_FAILURE` (-1): 失败
 #[unsafe(no_mangle)]
 #[cfg(target_arch = "x86_64")]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
 pub extern "C" fn idt_init() -> i32 {
     use crate::klog_error;
 
@@ -132,7 +137,10 @@ pub extern "C" fn idt_init() -> i32 {
 
     // 获取 ISR 地址表 (从 isr.asm 导出的符号, 使用 fn 指针)
     // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     unsafe extern "C" {
         fn isr0();
         fn isr1();
@@ -261,9 +269,13 @@ pub extern "C" fn idt_init() -> i32 {
             ($f:ident) => {{
                 let lo = ($f as *const ()) as usize as u64;
                 #[cfg(target_arch = "x86_64")]
-                { lo + crate::kernel::framework::mm::KERNEL_BASE }
+                {
+                    lo + crate::kernel::framework::mm::KERNEL_BASE
+                }
                 #[cfg(not(target_arch = "x86_64"))]
-                { lo }
+                {
+                    lo
+                }
             }};
         }
         let isr_table: [u64; 32] = [
@@ -322,22 +334,70 @@ pub extern "C" fn idt_init() -> i32 {
 
         // MSI 向量 stub 表 (0x40-0x7F → irq16-irq79)
         let msi_table: [u64; 64] = [
-            addr!(irq16), addr!(irq17), addr!(irq18), addr!(irq19),
-            addr!(irq20), addr!(irq21), addr!(irq22), addr!(irq23),
-            addr!(irq24), addr!(irq25), addr!(irq26), addr!(irq27),
-            addr!(irq28), addr!(irq29), addr!(irq30), addr!(irq31),
-            addr!(irq32), addr!(irq33), addr!(irq34), addr!(irq35),
-            addr!(irq36), addr!(irq37), addr!(irq38), addr!(irq39),
-            addr!(irq40), addr!(irq41), addr!(irq42), addr!(irq43),
-            addr!(irq44), addr!(irq45), addr!(irq46), addr!(irq47),
-            addr!(irq48), addr!(irq49), addr!(irq50), addr!(irq51),
-            addr!(irq52), addr!(irq53), addr!(irq54), addr!(irq55),
-            addr!(irq56), addr!(irq57), addr!(irq58), addr!(irq59),
-            addr!(irq60), addr!(irq61), addr!(irq62), addr!(irq63),
-            addr!(irq64), addr!(irq65), addr!(irq66), addr!(irq67),
-            addr!(irq68), addr!(irq69), addr!(irq70), addr!(irq71),
-            addr!(irq72), addr!(irq73), addr!(irq74), addr!(irq75),
-            addr!(irq76), addr!(irq77), addr!(irq78), addr!(irq79),
+            addr!(irq16),
+            addr!(irq17),
+            addr!(irq18),
+            addr!(irq19),
+            addr!(irq20),
+            addr!(irq21),
+            addr!(irq22),
+            addr!(irq23),
+            addr!(irq24),
+            addr!(irq25),
+            addr!(irq26),
+            addr!(irq27),
+            addr!(irq28),
+            addr!(irq29),
+            addr!(irq30),
+            addr!(irq31),
+            addr!(irq32),
+            addr!(irq33),
+            addr!(irq34),
+            addr!(irq35),
+            addr!(irq36),
+            addr!(irq37),
+            addr!(irq38),
+            addr!(irq39),
+            addr!(irq40),
+            addr!(irq41),
+            addr!(irq42),
+            addr!(irq43),
+            addr!(irq44),
+            addr!(irq45),
+            addr!(irq46),
+            addr!(irq47),
+            addr!(irq48),
+            addr!(irq49),
+            addr!(irq50),
+            addr!(irq51),
+            addr!(irq52),
+            addr!(irq53),
+            addr!(irq54),
+            addr!(irq55),
+            addr!(irq56),
+            addr!(irq57),
+            addr!(irq58),
+            addr!(irq59),
+            addr!(irq60),
+            addr!(irq61),
+            addr!(irq62),
+            addr!(irq63),
+            addr!(irq64),
+            addr!(irq65),
+            addr!(irq66),
+            addr!(irq67),
+            addr!(irq68),
+            addr!(irq69),
+            addr!(irq70),
+            addr!(irq71),
+            addr!(irq72),
+            addr!(irq73),
+            addr!(irq74),
+            addr!(irq75),
+            addr!(irq76),
+            addr!(irq77),
+            addr!(irq78),
+            addr!(irq79),
         ];
 
         match manager.init(
@@ -386,17 +446,19 @@ pub unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
 #[unsafe(link_section = ".kpti_trampoline")]
 // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
 #[expect(clippy::cast_possible_truncation)]
-pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) { unsafe {
-    if frame.is_null() {
-        return;
+pub unsafe extern "C" fn irq_handler(frame: *mut InterruptFrame) {
+    unsafe {
+        if frame.is_null() {
+            return;
+        }
+
+        let manager = IdtManager::instance();
+        let frame_ref = &*frame;
+        let vector = frame_ref.int_no as u8;
+
+        manager.handle_irq(frame, vector);
     }
-
-    let manager = IdtManager::instance();
-    let frame_ref = &*frame;
-    let vector = frame_ref.int_no as u8;
-
-    manager.handle_irq(frame, vector);
-}}
+}
 
 /// 设置 IDT 门描述符 (FFI 兼容接口)
 ///
@@ -432,7 +494,10 @@ pub extern "C" fn idt_set_gate(num: u8, handler: u64, selector: u16, type_attr: 
 /// - `-1`: 参数无效
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub extern "C" fn idt_register_irq(
     irq: u8,
     handler: CIrqHandler,
@@ -447,7 +512,11 @@ pub extern "C" fn idt_register_irq(
     } else {
         // 简单处理：假设 name 指向静态字符串
         // SAFETY: `const` 由调用方保证为有效指针; 只读访问
-        unsafe { core::ffi::CStr::from_ptr(name as *const core::ffi::c_char).to_str().unwrap_or("") }
+        unsafe {
+            core::ffi::CStr::from_ptr(name as *const core::ffi::c_char)
+                .to_str()
+                .unwrap_or("")
+        }
     };
 
     match manager.register_irq(irq, handler, name_str, flags) {

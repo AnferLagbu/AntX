@@ -30,7 +30,8 @@ pub fn sched_setaffinity(pid: u32, mask: u64) -> i64 {
 
     let ok = PROCESS_TABLE
         .with_process(target_pid, |p| {
-            p.cpuset_allowed.store(mask, core::sync::atomic::Ordering::Release);
+            p.cpuset_allowed
+                .store(mask, core::sync::atomic::Ordering::Release);
         })
         .is_some();
 
@@ -52,7 +53,9 @@ pub fn sched_getaffinity(pid: u32) -> Option<u64> {
     if target_pid == 0 {
         return None;
     }
-    PROCESS_TABLE.with_process(target_pid, |p| p.cpuset_allowed.load(core::sync::atomic::Ordering::Acquire))
+    PROCESS_TABLE.with_process(target_pid, |p| {
+        p.cpuset_allowed.load(core::sync::atomic::Ordering::Acquire)
+    })
 }
 
 /// C2: 检查 CPU 是否在进程 allowed cpuset 中

@@ -8,7 +8,6 @@
 //! framework 内部依赖: sync, syscall, proc, tests
 //! services 依赖: `services::mm` (安全代理)
 
-
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -46,6 +45,8 @@ pub mod vmm;
 #[path = "vmm_aarch64.rs"]
 pub mod vmm;
 
+/// T-02: 物理页帧分配决策 trait
+pub mod alloc_trait;
 pub mod api;
 pub mod arch;
 pub mod copy_user;
@@ -53,24 +54,22 @@ pub mod cow;
 pub mod frame;
 pub mod kmalloc;
 pub mod kmalloc_slab;
-/// D3: NUMA 拓扑感知与内存策略
-pub mod numa;
-pub mod pcache;
-pub mod page_fault;
-pub mod pressure;
-pub mod slab;
-pub mod swap;
-pub mod vma;
-/// T-02: 物理页帧分配决策 trait
-pub mod alloc_trait;
-/// T2-2: PMM 策略决策 trait (阶数选择/碎片化/水位线)
-pub mod pmm_trait;
-/// T2-3: Slab 策略决策 trait (缓存大小选择/对象数计算/分配优先级)
-pub mod slab_trait;
-/// T2-4: Swap 策略决策 trait (LRU 管理/回收决策/kswapd 触发)
-pub mod swap_trait;
 /// L-03: 机制 API 集中导出 — 供 services 层策略实现调用
 pub mod mechanism;
+/// D3: NUMA 拓扑感知与内存策略
+pub mod numa;
+pub mod page_fault;
+pub mod pcache;
+/// T2-2: PMM 策略决策 trait (阶数选择/碎片化/水位线)
+pub mod pmm_trait;
+pub mod pressure;
+pub mod slab;
+/// T2-3: Slab 策略决策 trait (缓存大小选择/对象数计算/分配优先级)
+pub mod slab_trait;
+pub mod swap;
+/// T2-4: Swap 策略决策 trait (LRU 管理/回收决策/kswapd 触发)
+pub mod swap_trait;
+pub mod vma;
 
 #[cfg(target_arch = "x86_64")]
 pub mod kpti;
@@ -86,19 +85,14 @@ pub use vmm::*;
 // api 公共接口 re-export — 避免跨子系统直接访问 mm::api 内部
 // 注意: 不使用 glob re-export 因与 vmm::* 有名称冲突 (vmm_init 等)
 pub use api::{
-    KmallocStats,
-    pmm_init, pmm_init_bitmap,
-    pmm_alloc_page, pmm_free_page, pmm_alloc_pages, pmm_free_pages,
-    pmm_alloc_page_phys, pmm_free_page_phys, pmm_alloc_pages_phys, pmm_free_pages_phys,
-    pmm_alloc_huge_page_phys, pmm_alloc_huge_page, pmm_free_huge_page,
-    pmm_is_aligned_for_huge, pmm_get_free_pages, pmm_get_total_pages, pmm_get_used_pages,
-    pmm_dump_stats,
-    vma_get_current_mm, vma_set_current_mm,
-    vmm_clone_user_page_table_cow, vmm_destroy_page_table, vmm_switch_page_table,
-    copy_to_user, copy_from_user, is_user_buf,
-    update_pressure, MemoryPressure,
-    PfResult, PageFaultInfo, handle_page_fault, handle_user_page_fault,
-    k_malloc, k_free, kfree, kmalloc_stats,
+    KmallocStats, MemoryPressure, PageFaultInfo, PfResult, copy_from_user, copy_to_user,
+    handle_page_fault, handle_user_page_fault, is_user_buf, k_free, k_malloc, kfree, kmalloc_stats,
+    pmm_alloc_huge_page, pmm_alloc_huge_page_phys, pmm_alloc_page, pmm_alloc_page_phys,
+    pmm_alloc_pages, pmm_alloc_pages_phys, pmm_dump_stats, pmm_free_huge_page, pmm_free_page,
+    pmm_free_page_phys, pmm_free_pages, pmm_free_pages_phys, pmm_get_free_pages,
+    pmm_get_total_pages, pmm_get_used_pages, pmm_init, pmm_init_bitmap, pmm_is_aligned_for_huge,
+    update_pressure, vma_get_current_mm, vma_set_current_mm, vmm_clone_user_page_table_cow,
+    vmm_destroy_page_table, vmm_switch_page_table,
 };
 
 // vma 公共类型 re-export — 避免跨子系统直接访问 mm::vma 内部
@@ -112,19 +106,31 @@ pub use swap::{kswapd_wakeup, set_page_locked};
 pub use kpti::kpti_trampoline_ttbr1_or_kernel;
 
 // alloc_trait 公共接口 re-export — T-02 策略-机制分离
-pub use alloc_trait::{FrameAllocDecision, FallbackAllocPolicy, AllocContext, AllocDecision, register_alloc_decision, current_alloc_decision};
+pub use alloc_trait::{
+    AllocContext, AllocDecision, FallbackAllocPolicy, FrameAllocDecision, current_alloc_decision,
+    register_alloc_decision,
+};
 
 // pmm_trait 公共接口 re-export — T2-2 PMM 策略-机制分离
-pub use pmm_trait::{PmmPolicy, FallbackPmmPolicy, PmmPolicyContext, Watermarks, register_pmm_policy, current_pmm_policy};
+pub use pmm_trait::{
+    FallbackPmmPolicy, PmmPolicy, PmmPolicyContext, Watermarks, current_pmm_policy,
+    register_pmm_policy,
+};
 
 // slab_trait 公共接口 re-export — T2-3 Slab 策略-机制分离
-pub use slab_trait::{SlabPolicy, FallbackSlabPolicy, SlabPolicyContext, SlabAllocSource, register_slab_policy, current_slab_policy};
+pub use slab_trait::{
+    FallbackSlabPolicy, SlabAllocSource, SlabPolicy, SlabPolicyContext, current_slab_policy,
+    register_slab_policy,
+};
 
 // swap_trait 公共接口 re-export — T2-4 Swap 策略-机制分离
-pub use swap_trait::{SwapPolicy, FallbackSwapPolicy, SwapPolicyContext, LruPageInfo, register_swap_policy, current_swap_policy};
+pub use swap_trait::{
+    FallbackSwapPolicy, LruPageInfo, SwapPolicy, SwapPolicyContext, current_swap_policy,
+    register_swap_policy,
+};
 
 // cow 公共接口 re-export — 避免跨子系统直接访问 mm::cow 内部
-pub use cow::{cow_init, cow_ref_count, cow_inc_ref, cow_dec_ref};
+pub use cow::{cow_dec_ref, cow_inc_ref, cow_init, cow_ref_count};
 
 // DECOUPL-4: 顶层 re-export NUMA 初始化入口, 避免 framework 内部 3+ 层深度访问
 pub use numa::numa_init;
@@ -134,8 +140,8 @@ pub use numa::numa_init;
 
 /// Page size and huge-page constants (统一从 config.rs 引用)
 pub use crate::kernel::framework::config::{
-    PAGE_SIZE, PAGE_SHIFT, HUGE_PAGE_2M_SIZE, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT,
-    HUGE_PAGE_1G_SHIFT,
+    HUGE_PAGE_1G_SHIFT, HUGE_PAGE_1G_SIZE, HUGE_PAGE_2M_SHIFT, HUGE_PAGE_2M_SIZE, PAGE_SHIFT,
+    PAGE_SIZE,
 };
 
 /// 内存布局常量
@@ -186,32 +192,47 @@ pub const PAGE_NX: u64 = 1u64 << 63;
 
 /// 页表索引辅助宏
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub const fn pml4_index(addr: u64) -> usize {
     ((addr >> 39) & 0x1FF) as usize
 }
 
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub const fn pdpt_index(addr: u64) -> usize {
     ((addr >> 30) & 0x1FF) as usize
 }
 
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub const fn pd_index(addr: u64) -> usize {
     ((addr >> 21) & 0x1FF) as usize
 }
 
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub const fn pt_index(addr: u64) -> usize {
     ((addr >> 12) & 0x1FF) as usize
 }
 
 /// 物理地址转虚拟地址 (内核空间)
 #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+#[expect(
+    clippy::inline_always,
+    reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+)]
 pub const fn phys_to_virt(phys: u64) -> u64 {
     phys + KERNEL_BASE
 }
@@ -232,7 +253,10 @@ pub enum PageSize {
 }
 
 impl PageSize {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn size(&self) -> u64 {
         match self {
             PageSize::Size4K => PAGE_SIZE,
@@ -241,7 +265,10 @@ impl PageSize {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn shift(&self) -> u64 {
         match self {
             PageSize::Size4K => PAGE_SHIFT,
@@ -250,7 +277,10 @@ impl PageSize {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     /// 检查地址是否按当前页大小正确对齐
     pub fn is_aligned(&self, addr: u64) -> bool {
         let mask = self.size() - 1;
@@ -299,29 +329,50 @@ impl PhysAddr {
         Self(addr)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
 
     /// 向上对齐到页边界
     #[inline(always)]
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn align_up(&self, align: u64) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
     /// 向下对齐到页边界
     #[inline(always)]
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     pub fn align_down(&self, align: u64) -> Self {
         Self(self.0 & !(align - 1))
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 转为内核空间虚拟地址
     pub fn to_virt(&self) -> VirtAddr {
         VirtAddr(phys_to_virt(self.0))
@@ -337,53 +388,86 @@ impl VirtAddr {
         Self(addr)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_u64(&self) -> u64 {
         self.0
     }
 
     /// 向上对齐到页边界
     #[inline(always)]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn align_up(&self, align: u64) -> Self {
         Self((self.0 + align - 1) & !(align - 1))
     }
 
     /// 向下对齐到页边界
     #[inline(always)]
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     pub fn align_down(&self, align: u64) -> Self {
         Self(self.0 & !(align - 1))
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 转为物理地址 (假定为内核空间)
     pub fn to_phys(&self) -> PhysAddr {
         PhysAddr(virt_to_phys(self.0))
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取该地址的 PML4 索引
     pub fn pml4_idx(&self) -> usize {
         pml4_index(self.0)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取该地址的 PDPT 索引
     pub fn pdpt_idx(&self) -> usize {
         pdpt_index(self.0)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取该地址的 PD 索引
     pub fn pd_idx(&self) -> usize {
         pd_index(self.0)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     /// 获取该地址的 PT 索引
     pub fn pt_idx(&self) -> usize {
         pt_index(self.0)
@@ -528,13 +612,19 @@ impl PageTableEntry {
         self.bits.load(Ordering::Acquire) & PAGE_HUGE != 0
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 返回帧地址 (页的物理地址).
     pub fn frame(&self) -> PhysAddr {
         PhysAddr(self.bits.load(Ordering::Acquire) & 0x000FFFFFFFFFF000)
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 设置帧地址.
     pub fn set_frame(&self, frame: PhysAddr) {
         let mut val = self.bits.load(Ordering::Acquire);
@@ -577,7 +667,10 @@ impl Default for PageTableEntry {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 将帧缓冲物理地址映射到内核虚拟地址空间
 ///
 /// 帧缓冲位于 PCI MMIO 区域（高位物理地址），启动页表的恒等映射
@@ -606,7 +699,9 @@ pub fn map_framebuffer(phys_addr: u64, size: u64) -> *mut u8 {
             Err(e) => {
                 crate::klog_boot_info!(
                     "[MM] map_framebuffer: FAILED pa={:#X} va={:#X} err={}",
-                    pa, va, e
+                    pa,
+                    va,
+                    e
                 );
             }
         }

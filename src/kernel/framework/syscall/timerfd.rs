@@ -34,7 +34,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::Errno;
-use crate::kernel::framework::timer::{HrTimer, HrTimerRestart, hrtimer_start, hrtimer_cancel, hrtimer_clock_read};
+use crate::kernel::framework::timer::{
+    HrTimer, HrTimerRestart, hrtimer_cancel, hrtimer_clock_read, hrtimer_start,
+};
 
 // ============================================================================
 // 常量
@@ -138,7 +140,10 @@ static TFD_COUNT: AtomicU32 = AtomicU32::new(0);
 // 系统调用实现
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `timerfd_create` — 创建 timerfd 实例
 ///
 /// `clockid`: `CLOCK_MONOTONIC` 或 `CLOCK_REALTIME`
@@ -188,7 +193,10 @@ pub fn sys_timerfd_create(clockid: i32, flags: i32) -> i64 {
     i64::from(fd)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `timerfd_settime` — 设置定时器
 ///
 /// `fd`: timerfd 文件描述符
@@ -216,10 +224,9 @@ pub fn sys_timerfd_settime(fd: i32, flags: i32, new_value_ptr: u64, old_value_pt
     let new_value = unsafe { core::ptr::read(new_value_ptr as *const Itimerspec) };
 
     // 校验: it_value 必须非零才能启动 (it_value 全零 = disarm)
-    let value_ns = new_value.it_value_sec as u64 * 1_000_000_000
-        + new_value.it_value_nsec as u64;
-    let interval_ns = new_value.it_interval_sec as u64 * 1_000_000_000
-        + new_value.it_interval_nsec as u64;
+    let value_ns = new_value.it_value_sec as u64 * 1_000_000_000 + new_value.it_value_nsec as u64;
+    let interval_ns =
+        new_value.it_interval_sec as u64 * 1_000_000_000 + new_value.it_interval_nsec as u64;
 
     let mut table = TFD_TABLE.lock();
     let slot = &mut table.slots[idx];
@@ -289,12 +296,18 @@ pub fn sys_timerfd_settime(fd: i32, flags: i32, new_value_ptr: u64, old_value_pt
     crate::klog_debug!(
         Sync,
         "[timerfd] Settime fd={} value_ns={} interval_ns={} abstime={}",
-        fd, value_ns, interval_ns, (flags & TFD_TIMER_ABSTIME) != 0
+        fd,
+        value_ns,
+        interval_ns,
+        (flags & TFD_TIMER_ABSTIME) != 0
     );
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `timerfd_gettime` — 获取定时器状态
 ///
 /// `fd`: timerfd 文件描述符
@@ -338,7 +351,10 @@ pub fn sys_timerfd_gettime(fd: i32, curr_value_ptr: u64) -> i64 {
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// timerfd read — 读取到期次数
 ///
 /// `fd`: timerfd 文件描述符
@@ -378,7 +394,10 @@ pub fn sys_timerfd_read(fd: i32, buf: u64) -> i64 {
     8
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// timerfd close — 关闭 timerfd
 pub fn sys_timerfd_close(fd: i32) -> i64 {
     let idx = match fd_to_idx(fd) {
@@ -412,9 +431,18 @@ pub fn sys_timerfd_close(fd: i32) -> i64 {
 // HrTimer 回调
 // ============================================================================
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// timerfd 定时器回调
 ///
 /// 在中断上下文执行: 递增 `expiry_count`, 唤醒 epoll.
@@ -479,12 +507,15 @@ fn timerfd_callback(timer: &HrTimer) -> HrTimerRestart {
 // epoll 集成
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 检查 timerfd 是否就绪 (供 epoll `check_fd_ready` 调用)
 ///
 /// 返回 EPOLLIN (有到期事件) 或 0
 pub fn timerfd_poll_events(fd: i32) -> u32 {
-    use crate::kernel::framework::syscall::{EPOLLIN, EPOLLERR};
+    use crate::kernel::framework::syscall::{EPOLLERR, EPOLLIN};
 
     let idx = match fd_to_idx(fd) {
         Some(i) => i,
@@ -498,11 +529,7 @@ pub fn timerfd_poll_events(fd: i32) -> u32 {
         return EPOLLERR;
     }
 
-    if slot.expiry_count > 0 {
-        EPOLLIN
-    } else {
-        0
-    }
+    if slot.expiry_count > 0 { EPOLLIN } else { 0 }
 }
 
 // ============================================================================
@@ -515,9 +542,7 @@ pub fn timerfd_poll_events(fd: i32) -> u32 {
 /// 减法边界检查.
 fn fd_to_idx(fd: i32) -> Option<usize> {
     match crate::kernel::framework::proc::idx_of(fd) {
-        Some((crate::kernel::framework::proc::FdSubsystem::TimerFd, slot)) => {
-            Some(slot)
-        }
+        Some((crate::kernel::framework::proc::FdSubsystem::TimerFd, slot)) => Some(slot),
         _ => None,
     }
 }
@@ -538,7 +563,7 @@ pub fn is_timerfd_fd(fd: i32) -> bool {
 
 #[cfg(feature = "kernel_test")]
 fn test_timerfd_create() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     let fd = sys_timerfd_create(CLOCK_MONOTONIC, 0);
     check!(fd >= 240, "timerfd returns fd >= 240");
@@ -552,7 +577,7 @@ fn test_timerfd_create() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_timerfd_settime_disarm() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     let fd = sys_timerfd_create(CLOCK_MONOTONIC, 0);
     check!(fd >= 240, "timerfd create ok");
@@ -568,7 +593,7 @@ fn test_timerfd_settime_disarm() -> crate::kernel::framework::tests::TestResult 
 
 #[cfg(feature = "kernel_test")]
 fn test_timerfd_read_empty() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     let fd = sys_timerfd_create(CLOCK_MONOTONIC, 0);
     check!(fd >= 240, "timerfd create ok");

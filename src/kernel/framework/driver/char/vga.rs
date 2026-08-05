@@ -137,7 +137,10 @@ impl TextAttribute {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_u8(&self) -> u8 {
         let fg = self.foreground as u8;
         let bg = (self.background as u8) << 4;
@@ -213,15 +216,18 @@ impl Driver for VgaDriver {
         // 初始化 VGA 显存 IoMem
         // SAFETY: 0xB8000 是 VGA 标准显存物理地址, 内核 identity-map 后可直接访问
         self.iomem = Some(unsafe {
-            IoMem::new(PhysAddr(VGA_BUFFER_START as u64), VGA_BUFFER_SIZE, "vga-buffer")
-                .map_err(|_| DriverError::HardwareError)?
+            IoMem::new(
+                PhysAddr(VGA_BUFFER_START as u64),
+                VGA_BUFFER_SIZE,
+                "vga-buffer",
+            )
+            .map_err(|_| DriverError::HardwareError)?
         });
 
         // 初始化 VGA CRT 控制器 IoPort
         // SAFETY: 0x3D4-0x3D5 是标准 VGA CRT 控制器端口
         self.vga_port = Some(unsafe {
-            IoPort::new(VGA_CTRL_REGISTER, 2, "vga-crt")
-                .map_err(|_| DriverError::HardwareError)?
+            IoPort::new(VGA_CTRL_REGISTER, 2, "vga-crt").map_err(|_| DriverError::HardwareError)?
         });
 
         self.clear_screen();
@@ -267,14 +273,23 @@ impl VgaDriver {
         }
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+    )]
     /// 获取显存缓冲区为 u16 切片 (可写)
     fn buffer_slice_mut(&mut self) -> &mut [u16] {
         // SAFETY: IoMem 保证 0xB8000 开始的 VGA_BUFFER_SIZE 字节已正确映射
         unsafe {
             core::slice::from_raw_parts_mut(
-                self.iomem.as_ref().expect("vga: iomem 在 new() 中初始化").virt_ptr() as *mut u16,
+                self.iomem
+                    .as_ref()
+                    .expect("vga: iomem 在 new() 中初始化")
+                    .virt_ptr() as *mut u16,
                 SCREEN_WIDTH * SCREEN_HEIGHT,
             )
         }
@@ -408,7 +423,6 @@ impl VgaDriver {
             port.write_u8(1, 0x20);
         }
     }
-
 }
 
 impl Default for VgaDriver {
@@ -494,5 +508,3 @@ pub extern "C" fn vga_set_color(fg: u8, bg: u8) {
         }
     });
 }
-
-

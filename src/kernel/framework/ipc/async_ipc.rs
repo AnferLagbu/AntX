@@ -12,6 +12,5 @@
 
 #[cfg(feature = "async")]
 pub use crate::kernel::services::ipc::async_ipc::{
-    AsyncPipeWriter, AsyncPipeReader, AsyncMsgSender, AsyncMsgReceiver,
-    wait_for_condition,
+    AsyncMsgReceiver, AsyncMsgSender, AsyncPipeReader, AsyncPipeWriter, wait_for_condition,
 };

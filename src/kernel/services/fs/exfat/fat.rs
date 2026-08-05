@@ -2,17 +2,23 @@
 //! @SAFE: 本文件不含 unsafe 代码。
 //! exFAT FAT 表操作
 
-use crate::kernel::framework::fs::KernelError;
-use crate::kernel::framework::driver::block::{read_sectors, with_device};
 use super::super_block::ExfatSuperBlock;
+use crate::kernel::framework::driver::block::{read_sectors, with_device};
+use crate::kernel::framework::fs::KernelError;
 
 /// FAT 表条目常量
 pub const FAT_FREE: u32 = 0x00000000;
 pub const FAT_BAD: u32 = 0xFFFFFFF7;
 pub const FAT_END: u32 = 0x0FFFFFFF;
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// 从 FAT 表读取簇链
 ///
 /// # Errors
@@ -97,7 +103,12 @@ pub fn write_fat_entry(
     sector_data[fat_offset as usize + 3] = bytes[3];
 
     let result = with_device(device_idx as usize, |dev| {
-        crate::kernel::framework::driver::block::write_sectors(dev, u64::from(fat_sector), 1, &sector_data)
+        crate::kernel::framework::driver::block::write_sectors(
+            dev,
+            u64::from(fat_sector),
+            1,
+            &sector_data,
+        )
     });
 
     match result {

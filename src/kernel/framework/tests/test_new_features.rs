@@ -1,4 +1,4 @@
-use crate::kernel::framework::tests::{assert_eq_test, check, runner, TestResult};
+use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 use crate::register_tests_inner;
 
 // ============================================================
@@ -6,7 +6,8 @@ use crate::register_tests_inner;
 // ============================================================
 
 fn test_pf_info_from_error_code() -> TestResult {
-    let info = crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(0x4000, 0x06);
+    let info =
+        crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(0x4000, 0x06);
     check!(info.fault_addr == 0x4000, "fault_addr");
     check!(info.write, "write flag");
     check!(info.user, "user flag");
@@ -17,7 +18,8 @@ fn test_pf_info_from_error_code() -> TestResult {
 }
 
 fn test_pf_info_not_present() -> TestResult {
-    let info = crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(0x1000, 0x00);
+    let info =
+        crate::kernel::framework::mm::page_fault::PageFaultInfo::from_error_code(0x1000, 0x00);
     check!(!info.present, "not present");
     check!(!info.write, "not write");
     check!(!info.user, "not user");
@@ -106,7 +108,10 @@ fn test_elf_validation_null() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
+#[expect(
+    clippy::ref_as_ptr,
+    reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+)]
 fn test_elf_validation_small() -> TestResult {
     let result = crate::kernel::framework::proc::elf_validate(&0u8 as *const u8, 10);
     check!(result.is_none(), "too small rejected");
@@ -120,7 +125,10 @@ fn test_elf_magic_rejected() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 fn test_elf_valid_minimal() -> TestResult {
     use crate::kernel::framework::proc::Elf64Header;
     let data = [0u8; 80]; // header + some room
@@ -309,10 +317,13 @@ fn test_dyn_ipc_sem_create() -> TestResult {
 // VMA
 // ============================================================
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_vma_creation() -> TestResult {
-    use crate::kernel::framework::mm::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
+    use crate::kernel::framework::mm::{Vma, VmaType};
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vma = Vma::new(0x400000, 0x401000, flags, VmaType::Anonymous);
     assert_eq_test!(vma.start, 0x400000usize, "start");
@@ -322,10 +333,13 @@ fn test_vma_creation() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_mm_struct_operations() -> TestResult {
-    use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
+    use crate::kernel::framework::mm::{MmStruct, Vma, VmaType};
     let mm = MmStruct::new();
     let flags = PageFlags::PRESENT | PageFlags::USER;
 
@@ -345,10 +359,13 @@ fn test_mm_struct_operations() -> TestResult {
     TestResult::Pass
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 fn test_vma_stack_guard() -> TestResult {
-    use crate::kernel::framework::mm::{Vma, VmaType};
     use crate::kernel::framework::mm::PageFlags;
+    use crate::kernel::framework::mm::{Vma, VmaType};
     let guard = Vma::new(0x700000, 0x701000, PageFlags::empty(), VmaType::Guard);
     check!(guard.is_guard(), "is_guard");
     check!(!guard.is_stack(), "not stack");

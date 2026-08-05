@@ -1,9 +1,9 @@
 //! WASI 时钟/随机: `clock_time_get`, `random_get`
 
-use crate::kernel::services::wasm::types::{Value, WasmError};
-use crate::kernel::services::wasm::interpreter::Interpreter;
-use super::{WasiContext, wasi_success, wasi_errno, WasiErrno};
 use super::fd_table::write_i64_to_memory;
+use super::{WasiContext, WasiErrno, wasi_errno, wasi_success};
+use crate::kernel::services::wasm::interpreter::Interpreter;
+use crate::kernel::services::wasm::types::{Value, WasmError};
 
 /// WASI clock IDs
 const CLOCK_REALTIME: u32 = 0;
@@ -13,7 +13,10 @@ const CLOCK_MONOTONIC: u32 = 1;
 ///
 /// 参数: (`clock_id`: i32, precision: i64, `result_ptr`: i32)
 /// 返回: 0 (成功) 或 errno
-pub fn wasi_clock_time_get(_ctx: &mut WasiContext, interp: &mut Interpreter) -> Result<(), WasmError> {
+pub fn wasi_clock_time_get(
+    _ctx: &mut WasiContext,
+    interp: &mut Interpreter,
+) -> Result<(), WasmError> {
     let clock_id = interp.stack.pop_i32()? as u32;
     let _precision = interp.stack.pop_i64()?;
     let result_ptr = interp.stack.pop_i32()? as u32;
@@ -21,11 +24,12 @@ pub fn wasi_clock_time_get(_ctx: &mut WasiContext, interp: &mut Interpreter) -> 
     let nanos: u64 = match clock_id {
         CLOCK_MONOTONIC | CLOCK_REALTIME => {
             // 单一实时时钟 (简化: 单一时钟源)
-            crate::kernel::framework::timer::calibration::get_time_ns()
-                .unwrap_or(0)
+            crate::kernel::framework::timer::calibration::get_time_ns().unwrap_or(0)
         }
         _ => {
-            interp.stack.push(Value::I32(wasi_errno(WasiErrno::Inval)))?;
+            interp
+                .stack
+                .push(Value::I32(wasi_errno(WasiErrno::Inval)))?;
             return Ok(());
         }
     };

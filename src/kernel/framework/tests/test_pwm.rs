@@ -2,8 +2,11 @@ use super::check;
 use crate::kernel::framework::credo::capability;
 use crate::kernel::framework::credo::engine;
 use crate::kernel::framework::credo::sha256;
-use crate::kernel::framework::credo::types::{PwmId, CapDomain, CapBits, PwmEntry, PwmFlags, GrantRecord, AuditEntry, AuditAction, AuditResult};
-use crate::kernel::framework::tests::{runner, TestResult};
+use crate::kernel::framework::credo::types::{
+    AuditAction, AuditEntry, AuditResult, CapBits, CapDomain, GrantRecord, PwmEntry, PwmFlags,
+    PwmId,
+};
+use crate::kernel::framework::tests::{TestResult, runner};
 use crate::register_tests_inner;
 
 fn test_sha256_vectors() -> TestResult {
@@ -32,7 +35,10 @@ fn test_pwm_id_newtype() -> TestResult {
     // 现在改用任意非零 PwmId 即可验证 is_valid 语义。
     let arbitrary = PwmId(0xDEAD_BEEF_CAFE_F00D);
     check!(arbitrary.is_valid(), "non-zero PwmId should be valid");
-    check!(arbitrary.as_u64() == 0xDEAD_BEEF_CAFE_F00D, "arbitrary as_u64 mismatch");
+    check!(
+        arbitrary.as_u64() == 0xDEAD_BEEF_CAFE_F00D,
+        "arbitrary as_u64 mismatch"
+    );
     TestResult::Pass
 }
 

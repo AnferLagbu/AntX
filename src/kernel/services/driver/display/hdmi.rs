@@ -162,20 +162,29 @@ pub struct EdidDetailedTiming {
 }
 
 impl EdidDetailedTiming {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取水平分辨率
     pub fn horizontal_resolution(&self) -> u16 {
         u16::from(self.horizontal_active) | ((u16::from(self.horizontal_active_high) & 0xF0) << 4)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取垂直分辨率
     pub fn vertical_resolution(&self) -> u16 {
         u16::from(self.vertical_active)
             | ((u16::from(self.vertical_active_blanking_high) & 0xF0) << 4)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取刷新率 (近似)
     pub fn refresh_rate(&self) -> u32 {
         if self.pixel_clock == 0 {
@@ -363,44 +372,74 @@ const DEFAULT_FLAGS: VideoModeFlags = VideoModeFlags {
 /// 标准视频模式列表 (10 个常见分辨率)
 pub const STANDARD_VIDEO_MODES: &[VideoMode] = &[
     VideoMode {
-        width: 640, height: 480, refresh_rate: 60,
-        pixel_clock_khz: 25175, flags: DEFAULT_FLAGS,
+        width: 640,
+        height: 480,
+        refresh_rate: 60,
+        pixel_clock_khz: 25175,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 800, height: 600, refresh_rate: 60,
-        pixel_clock_khz: 40000, flags: DEFAULT_FLAGS,
+        width: 800,
+        height: 600,
+        refresh_rate: 60,
+        pixel_clock_khz: 40000,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 1024, height: 768, refresh_rate: 60,
-        pixel_clock_khz: 65000, flags: DEFAULT_FLAGS,
+        width: 1024,
+        height: 768,
+        refresh_rate: 60,
+        pixel_clock_khz: 65000,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 1280, height: 720, refresh_rate: 60,
-        pixel_clock_khz: 74250, flags: DEFAULT_FLAGS,
+        width: 1280,
+        height: 720,
+        refresh_rate: 60,
+        pixel_clock_khz: 74250,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 1280, height: 1024, refresh_rate: 60,
-        pixel_clock_khz: 108000, flags: DEFAULT_FLAGS,
+        width: 1280,
+        height: 1024,
+        refresh_rate: 60,
+        pixel_clock_khz: 108000,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 1920, height: 1080, refresh_rate: 60,
-        pixel_clock_khz: 148500, flags: DEFAULT_FLAGS,
+        width: 1920,
+        height: 1080,
+        refresh_rate: 60,
+        pixel_clock_khz: 148500,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 1920, height: 1200, refresh_rate: 60,
-        pixel_clock_khz: 193250, flags: DEFAULT_FLAGS,
+        width: 1920,
+        height: 1200,
+        refresh_rate: 60,
+        pixel_clock_khz: 193250,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 2560, height: 1440, refresh_rate: 60,
-        pixel_clock_khz: 241500, flags: DEFAULT_FLAGS,
+        width: 2560,
+        height: 1440,
+        refresh_rate: 60,
+        pixel_clock_khz: 241500,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 3840, height: 2160, refresh_rate: 60,
-        pixel_clock_khz: 594000, flags: DEFAULT_FLAGS,
+        width: 3840,
+        height: 2160,
+        refresh_rate: 60,
+        pixel_clock_khz: 594000,
+        flags: DEFAULT_FLAGS,
     },
     VideoMode {
-        width: 2560, height: 1600, refresh_rate: 60,
-        pixel_clock_khz: 268500, flags: DEFAULT_FLAGS,
+        width: 2560,
+        height: 1600,
+        refresh_rate: 60,
+        pixel_clock_khz: 268500,
+        flags: DEFAULT_FLAGS,
     },
 ];
 
@@ -411,78 +450,161 @@ pub const STANDARD_VIDEO_MODES: &[VideoMode] = &[
 /// DMT lookup table — 覆盖 `STANDARD_VIDEO_MODES` 全部 10 个常见模式
 const DMT_TIMINGS: &[(u16, u16, u8, VideoTiming)] = &[
     (
-        640, 480, 60,
+        640,
+        480,
+        60,
         VideoTiming {
-            h_active: 640, h_total: 800, h_sync_offset: 16, h_sync_pulse_width: 96,
-            v_active: 480, v_total: 525, v_sync_offset: 10, v_sync_pulse_width: 2,
+            h_active: 640,
+            h_total: 800,
+            h_sync_offset: 16,
+            h_sync_pulse_width: 96,
+            v_active: 480,
+            v_total: 525,
+            v_sync_offset: 10,
+            v_sync_pulse_width: 2,
         },
     ),
     (
-        800, 600, 60,
+        800,
+        600,
+        60,
         VideoTiming {
-            h_active: 800, h_total: 1056, h_sync_offset: 88, h_sync_pulse_width: 128,
-            v_active: 600, v_total: 628, v_sync_offset: 23, v_sync_pulse_width: 4,
+            h_active: 800,
+            h_total: 1056,
+            h_sync_offset: 88,
+            h_sync_pulse_width: 128,
+            v_active: 600,
+            v_total: 628,
+            v_sync_offset: 23,
+            v_sync_pulse_width: 4,
         },
     ),
     (
-        1024, 768, 60,
+        1024,
+        768,
+        60,
         VideoTiming {
-            h_active: 1024, h_total: 1344, h_sync_offset: 24, h_sync_pulse_width: 136,
-            v_active: 768, v_total: 806, v_sync_offset: 3, v_sync_pulse_width: 6,
+            h_active: 1024,
+            h_total: 1344,
+            h_sync_offset: 24,
+            h_sync_pulse_width: 136,
+            v_active: 768,
+            v_total: 806,
+            v_sync_offset: 3,
+            v_sync_pulse_width: 6,
         },
     ),
     (
-        1280, 720, 60,
+        1280,
+        720,
+        60,
         VideoTiming {
-            h_active: 1280, h_total: 1650, h_sync_offset: 110, h_sync_pulse_width: 40,
-            v_active: 720, v_total: 750, v_sync_offset: 5, v_sync_pulse_width: 5,
+            h_active: 1280,
+            h_total: 1650,
+            h_sync_offset: 110,
+            h_sync_pulse_width: 40,
+            v_active: 720,
+            v_total: 750,
+            v_sync_offset: 5,
+            v_sync_pulse_width: 5,
         },
     ),
     (
-        1280, 1024, 60,
+        1280,
+        1024,
+        60,
         VideoTiming {
-            h_active: 1280, h_total: 1688, h_sync_offset: 48, h_sync_pulse_width: 112,
-            v_active: 1024, v_total: 1066, v_sync_offset: 1, v_sync_pulse_width: 3,
+            h_active: 1280,
+            h_total: 1688,
+            h_sync_offset: 48,
+            h_sync_pulse_width: 112,
+            v_active: 1024,
+            v_total: 1066,
+            v_sync_offset: 1,
+            v_sync_pulse_width: 3,
         },
     ),
     (
-        1920, 1080, 60,
+        1920,
+        1080,
+        60,
         VideoTiming {
-            h_active: 1920, h_total: 2200, h_sync_offset: 88, h_sync_pulse_width: 44,
-            v_active: 1080, v_total: 1125, v_sync_offset: 4, v_sync_pulse_width: 5,
+            h_active: 1920,
+            h_total: 2200,
+            h_sync_offset: 88,
+            h_sync_pulse_width: 44,
+            v_active: 1080,
+            v_total: 1125,
+            v_sync_offset: 4,
+            v_sync_pulse_width: 5,
         },
     ),
     (
-        1920, 1200, 60,
+        1920,
+        1200,
+        60,
         VideoTiming {
-            h_active: 1920, h_total: 2592, h_sync_offset: 136, h_sync_pulse_width: 32,
-            v_active: 1200, v_total: 1245, v_sync_offset: 3, v_sync_pulse_width: 6,
+            h_active: 1920,
+            h_total: 2592,
+            h_sync_offset: 136,
+            h_sync_pulse_width: 32,
+            v_active: 1200,
+            v_total: 1245,
+            v_sync_offset: 3,
+            v_sync_pulse_width: 6,
         },
     ),
     (
-        2560, 1440, 60,
+        2560,
+        1440,
+        60,
         VideoTiming {
-            h_active: 2560, h_total: 2720, h_sync_offset: 48, h_sync_pulse_width: 32,
-            v_active: 1440, v_total: 1481, v_sync_offset: 3, v_sync_pulse_width: 5,
+            h_active: 2560,
+            h_total: 2720,
+            h_sync_offset: 48,
+            h_sync_pulse_width: 32,
+            v_active: 1440,
+            v_total: 1481,
+            v_sync_offset: 3,
+            v_sync_pulse_width: 5,
         },
     ),
     (
-        2560, 1600, 60,
+        2560,
+        1600,
+        60,
         VideoTiming {
-            h_active: 2560, h_total: 2720, h_sync_offset: 48, h_sync_pulse_width: 32,
-            v_active: 1600, v_total: 1646, v_sync_offset: 3, v_sync_pulse_width: 6,
+            h_active: 2560,
+            h_total: 2720,
+            h_sync_offset: 48,
+            h_sync_pulse_width: 32,
+            v_active: 1600,
+            v_total: 1646,
+            v_sync_offset: 3,
+            v_sync_pulse_width: 6,
         },
     ),
     (
-        3840, 2160, 60,
+        3840,
+        2160,
+        60,
         VideoTiming {
-            h_active: 3840, h_total: 4400, h_sync_offset: 88, h_sync_pulse_width: 44,
-            v_active: 2160, v_total: 2250, v_sync_offset: 4, v_sync_pulse_width: 5,
+            h_active: 3840,
+            h_total: 4400,
+            h_sync_offset: 88,
+            h_sync_pulse_width: 44,
+            v_active: 2160,
+            v_total: 2250,
+            v_sync_offset: 4,
+            v_sync_pulse_width: 5,
         },
     ),
 ];
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+)]
 /// 在 DMT lookup table 中查找精确时序参数
 pub fn lookup_dmt_timing(mode: &VideoMode) -> Option<VideoTiming> {
     for &(w, h, rate, timing) in DMT_TIMINGS {
@@ -493,7 +615,10 @@ pub fn lookup_dmt_timing(mode: &VideoMode) -> Option<VideoTiming> {
     None
 }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
 /// 从 `VideoMode` 派生时序参数 (DMT lookup 优先, 公式 fallback)
 pub fn derive_video_timing(mode: &VideoMode) -> VideoTiming {
     if let Some(timing) = lookup_dmt_timing(mode) {
@@ -511,8 +636,8 @@ pub fn derive_video_timing(mode: &VideoMode) -> VideoTiming {
     };
 
     let h_total = if mode.refresh_rate > 0 && mode.pixel_clock_khz > 0 {
-        let h_total_u32 = (mode.pixel_clock_khz * 1000)
-            / (u32::from(v_total) * u32::from(mode.refresh_rate));
+        let h_total_u32 =
+            (mode.pixel_clock_khz * 1000) / (u32::from(v_total) * u32::from(mode.refresh_rate));
         h_total_u32.max(u32::from(h_active) + 1) as u16
     } else {
         h_active + 200
@@ -546,10 +671,7 @@ pub fn compute_pixel_clock_mul_div(target_khz: u32, base_khz: u32) -> (u8, u8) {
     let mut best = (1u8, 1u8);
     let mut best_err: u32 = u32::MAX;
     for div in 1u32..=16 {
-        let mul = target_khz
-            .saturating_mul(div)
-            .saturating_add(base_khz / 2)
-            / base_khz;
+        let mul = target_khz.saturating_mul(div).saturating_add(base_khz / 2) / base_khz;
         if mul == 0 || mul > 255 {
             continue;
         }
@@ -702,8 +824,7 @@ impl HdmiController {
 
         // 第 1 步: 配置像素时钟
         if let Some(iomem) = &self.iomem {
-            let (mul, div) =
-                compute_pixel_clock_mul_div(mode.pixel_clock_khz, PCLK_BASE_KHZ);
+            let (mul, div) = compute_pixel_clock_mul_div(mode.pixel_clock_khz, PCLK_BASE_KHZ);
             iomem.write_u8(self.pclk_mul_reg_offset, mul);
             iomem.write_u8(self.pclk_div_reg_offset, div);
         }
@@ -758,7 +879,10 @@ impl HdmiController {
         Ok(())
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 获取支持的视频模式列表
     pub fn get_supported_modes(&self) -> &[VideoMode] {
         STANDARD_VIDEO_MODES
@@ -791,7 +915,10 @@ impl HdmiController {
         Ok(())
     }
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     /// 关闭 HDMI 控制器 (禁用 TMDS 输出)
     ///
     /// # Errors

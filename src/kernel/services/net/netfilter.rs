@@ -183,11 +183,26 @@ struct NfState {
 
 static NF_STATE: IrqSpinLock<NfState> = IrqSpinLock::new(NfState {
     chains: [
-        NfChain { rules: Vec::new(), hooks: Vec::new() },
-        NfChain { rules: Vec::new(), hooks: Vec::new() },
-        NfChain { rules: Vec::new(), hooks: Vec::new() },
-        NfChain { rules: Vec::new(), hooks: Vec::new() },
-        NfChain { rules: Vec::new(), hooks: Vec::new() },
+        NfChain {
+            rules: Vec::new(),
+            hooks: Vec::new(),
+        },
+        NfChain {
+            rules: Vec::new(),
+            hooks: Vec::new(),
+        },
+        NfChain {
+            rules: Vec::new(),
+            hooks: Vec::new(),
+        },
+        NfChain {
+            rules: Vec::new(),
+            hooks: Vec::new(),
+        },
+        NfChain {
+            rules: Vec::new(),
+            hooks: Vec::new(),
+        },
     ],
     hook_counts: [
         AtomicUsize::new(0),
@@ -272,7 +287,10 @@ pub fn nf_unregister_hook(hook: NfHook, callback: NfHookFn) -> Result<(), i32> {
     let idx = hook as usize;
     let chain = &mut state.chains[idx];
 
-    let pos = chain.hooks.iter().position(|h| h.callback as usize == callback as usize);
+    let pos = chain
+        .hooks
+        .iter()
+        .position(|h| h.callback as usize == callback as usize);
     match pos {
         Some(i) => {
             chain.hooks.remove(i);
@@ -372,8 +390,18 @@ pub fn list_rules(hook: NfHook) -> Vec<NfRule> {
 // Syscall 接口
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-pub fn sys_nf_add_rule(hook: u64, src_ip: u64, src_prefix: u64, dst_ip: u64, dst_prefix: u64, verdict: u64) -> i64 {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub fn sys_nf_add_rule(
+    hook: u64,
+    src_ip: u64,
+    src_prefix: u64,
+    dst_ip: u64,
+    dst_prefix: u64,
+    verdict: u64,
+) -> i64 {
     let hook = match NfHook::from_u8(hook as u8) {
         Some(h) => h,
         None => return -(Errno::EINVAL as i64),
@@ -386,8 +414,16 @@ pub fn sys_nf_add_rule(hook: u64, src_ip: u64, src_prefix: u64, dst_ip: u64, dst
 
     let rule = NfRule {
         name: alloc::format!("rule_{}", nf_hook_count(hook)),
-        src_cidr: if src_prefix > 0 { Some(((src_ip as u32).to_be_bytes(), src_prefix as u8)) } else { None },
-        dst_cidr: if dst_prefix > 0 { Some(((dst_ip as u32).to_be_bytes(), dst_prefix as u8)) } else { None },
+        src_cidr: if src_prefix > 0 {
+            Some(((src_ip as u32).to_be_bytes(), src_prefix as u8))
+        } else {
+            None
+        },
+        dst_cidr: if dst_prefix > 0 {
+            Some(((dst_ip as u32).to_be_bytes(), dst_prefix as u8))
+        } else {
+            None
+        },
         src_port_range: None,
         dst_port_range: None,
         protocol: None,
@@ -401,7 +437,10 @@ pub fn sys_nf_add_rule(hook: u64, src_ip: u64, src_prefix: u64, dst_ip: u64, dst
     }
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn sys_nf_del_rule(hook: u64, rule_index: u64) -> i64 {
     let hook = match NfHook::from_u8(hook as u8) {
         Some(h) => h,

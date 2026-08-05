@@ -25,7 +25,7 @@
 //! 是 sound 的, 因为所有写操作都在顺序锁保护下进行.
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{compiler_fence, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, compiler_fence};
 
 pub struct SeqLock<T> {
     pub(crate) sequence: AtomicUsize,

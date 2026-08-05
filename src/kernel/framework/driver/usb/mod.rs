@@ -68,7 +68,10 @@ const XHCI_DEFAULT_MMIO_SIZE: usize = 0x10000; // 64 KiB
 /// 为控制器分配 MMIO 或创建 `IoMem` 失败时返回 Err。
 // 有意窄化: 用户内存代理, 指针/长度上下文保证
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 pub fn discover_xhci_controllers() -> framework::Result<Vec<XhciController>> {
     use crate::kernel::framework::iomem::IoMem;
     use crate::kernel::framework::mm::PhysAddr;
@@ -85,9 +88,14 @@ pub fn discover_xhci_controllers() -> framework::Result<Vec<XhciController>> {
 
         // 3. 读取 BAR0 (MMIO 基地址 + size)
         let (bar_base, bar_size) = match dev.bars.first() {
-            Some(bar) if bar.bar_type != crate::kernel::framework::pci::BarType::None => {
-                (bar.base_addr, if bar.size > 0 { bar.size } else { XHCI_DEFAULT_MMIO_SIZE as u64 })
-            }
+            Some(bar) if bar.bar_type != crate::kernel::framework::pci::BarType::None => (
+                bar.base_addr,
+                if bar.size > 0 {
+                    bar.size
+                } else {
+                    XHCI_DEFAULT_MMIO_SIZE as u64
+                },
+            ),
             _ => {
                 // 无 BAR0 跳过 (设备未配置, 通常是 BIOS 尚未枚举的设备)
                 continue;
@@ -131,7 +139,11 @@ fn is_xhci_device(dev: &crate::kernel::framework::pci::PciDevice) -> bool {
 pub fn usb_init() -> framework::Result<()> {
     // USB-1.2: TRACK-558BA7 消除 — 扫描 PCI 总线查找 xHCI 控制器
     let controllers = discover_xhci_controllers()?;
-    crate::klog_info!(Driver, "[USB] discovered {} xHCI controller(s)", controllers.len());
+    crate::klog_info!(
+        Driver,
+        "[USB] discovered {} xHCI controller(s)",
+        controllers.len()
+    );
 
     // USB-1.2 续: 初始化找到的控制器
     // 注: 每个控制器的 init_hardware 会触发 reset + start (USB-1.1).
@@ -147,10 +159,7 @@ pub fn usb_init() -> framework::Result<()> {
                 );
             }
             Err(e) => {
-                crate::klog_drv_warn!(
-                    "[USB] xHCI init failed: {:?}, skipping",
-                    e
-                );
+                crate::klog_drv_warn!("[USB] xHCI init failed: {:?}, skipping", e);
                 continue;
             }
         }
@@ -169,7 +178,8 @@ pub fn usb_init() -> framework::Result<()> {
 ///
 /// 调用方必须保证 `ctrl` 由 `discover_xhci_controllers` 创建 (`IoMem` 边界已保证).
 unsafe fn init_xhci_controller(ctrl: &mut XhciController) -> framework::Result<()> {
-    ctrl.init_hardware().map_err(|_| super::framework::DriverError::HardwareError)?;
+    ctrl.init_hardware()
+        .map_err(|_| super::framework::DriverError::HardwareError)?;
     Ok(())
 }
 

@@ -24,7 +24,10 @@ impl HvDva {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_null(&self) -> bool {
         self.vdev_id == 0 && self.offset == 0 && self.asize == 0
     }
@@ -39,13 +42,19 @@ impl HvDva {
         }
     }
 
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     pub fn with_gang(mut self) -> Self {
         self.gang = 1;
         self
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_gang(&self) -> bool {
         self.gang != 0
     }
@@ -67,7 +76,7 @@ impl HvDva {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-#[allow(clippy::upper_case_acronyms)]  // ZSTD/ZLE/LZ4 压缩算法名
+#[allow(clippy::upper_case_acronyms)] // ZSTD/ZLE/LZ4 压缩算法名
 pub enum HvCompType {
     Off = 0,
     LZ4 = 1,
@@ -141,12 +150,18 @@ impl HvBpProp {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn comp_type(&self) -> HvCompType {
         HvCompType::from_u8(self.comp_type)
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn cksum_type(&self) -> HvCksumType {
         HvCksumType::from_u8(self.cksum_type)
     }
@@ -159,7 +174,10 @@ impl HvBpProp {
         self.cksum_type = v as u8;
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn is_encrypted(&self) -> bool {
         self.encrypted != 0
     }
@@ -274,7 +292,8 @@ impl HvBlockPointer {
         off += HvBpProp::BYTES;
         // checksum, birth_txg, fill, _pad 直接从字节切片读取
         for i in 0..4 {
-            bp.checksum[i] = u64::from_le_bytes(bytes[off + i * 8..off + i * 8 + 8].try_into().ok()?);
+            bp.checksum[i] =
+                u64::from_le_bytes(bytes[off + i * 8..off + i * 8 + 8].try_into().ok()?);
         }
         off += 32;
         bp.birth_txg = u64::from_le_bytes(bytes[off..off + 8].try_into().ok()?);

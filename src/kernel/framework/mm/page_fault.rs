@@ -26,7 +26,7 @@
 use super::pmm;
 use super::vma::{MmStruct, Vma, VmaType};
 use super::vmm;
-use super::{VirtAddr, PAGE_SIZE, PageFlags, PhysAddr};
+use super::{PAGE_SIZE, PageFlags, PhysAddr, VirtAddr};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,7 +155,10 @@ pub fn handle_user_page_fault(info: PageFaultInfo) -> PfResult {
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
@@ -179,12 +182,7 @@ fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
 
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vmm_inst = vmm::get_vmm();
-    vmm_inst.map_page_in_table(
-        user_cr3,
-        VirtAddr(page_aligned as u64),
-        phys,
-        flags,
-    );
+    vmm_inst.map_page_in_table(user_cr3, VirtAddr(page_aligned as u64), phys, flags);
 
     PAGE_FAULT_COUNT.fetch_add(1, Ordering::Relaxed);
     PfResult::Fixed
@@ -192,8 +190,16 @@ fn handle_stack_expansion_simple(addr: usize, user_cr3: u64) -> PfResult {
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user_cr3: u64) -> PfResult {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+fn handle_vma_fault_with_mm(
+    mm: &MmStruct,
+    vma: &Vma,
+    info: &PageFaultInfo,
+    user_cr3: u64,
+) -> PfResult {
     let aligned = (info.fault_addr as usize) & !(PAGE_SIZE as usize - 1);
 
     // ── FileBacked VMA: 从 Page Cache 获取缓存页 ──
@@ -232,9 +238,21 @@ fn handle_vma_fault_with_mm(mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, user
 /// 文件映射缺页处理: 从 Page Cache 获取/创建缓存页
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::single_match_else, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
-fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: usize, user_cr3: u64) -> PfResult {
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::single_match_else,
+    reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+)]
+fn handle_file_fault(
+    _mm: &MmStruct,
+    vma: &Vma,
+    info: &PageFaultInfo,
+    aligned: usize,
+    user_cr3: u64,
+) -> PfResult {
     let page_index = ((aligned - vma.start) as u64 + vma.offset) / PAGE_SIZE;
 
     // Demand Paging (B2 第三步真语义): miss 时同步从 vfs 读 4KB 填 pcache.
@@ -274,12 +292,7 @@ fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: u
     if vma.shared {
         // MAP_SHARED: 可写映射, 写入回写 Page Cache
         let flags = vma.flags | PageFlags::PRESENT | PageFlags::WRITABLE;
-        vmm_inst.map_page_in_table(
-            pml4,
-            VirtAddr(aligned as u64),
-            PhysAddr(cache_phys),
-            flags,
-        );
+        vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), PhysAddr(cache_phys), flags);
 
         // 写入时标记脏页
         if info.write {
@@ -288,12 +301,7 @@ fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: u
     } else {
         // MAP_PRIVATE: 只读映射, 写入时触发 COW
         let flags = (vma.flags | PageFlags::PRESENT) & !PageFlags::WRITABLE;
-        vmm_inst.map_page_in_table(
-            pml4,
-            VirtAddr(aligned as u64),
-            PhysAddr(cache_phys),
-            flags,
-        );
+        vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), PhysAddr(cache_phys), flags);
 
         // 写入时 COW: 分配新页, 复制数据, 可写映射
         if info.write {
@@ -320,12 +328,7 @@ fn handle_file_fault(_mm: &MmStruct, vma: &Vma, info: &PageFaultInfo, aligned: u
 
             // 用新页替换映射 (可写)
             let cow_flags = vma.flags | PageFlags::PRESENT | PageFlags::WRITABLE;
-            vmm_inst.map_page_in_table(
-                pml4,
-                VirtAddr(aligned as u64),
-                new_phys,
-                cow_flags,
-            );
+            vmm_inst.map_page_in_table(pml4, VirtAddr(aligned as u64), new_phys, cow_flags);
         }
     }
 
@@ -340,7 +343,10 @@ fn is_stack_expansion_candidate(addr: usize) -> bool {
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult {
     let page_aligned = addr & !(PAGE_SIZE as usize - 1);
     let stack_base = USER_STACK_TOP - USER_STACK_DEFAULT_SIZE;
@@ -368,12 +374,7 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult
 
     let flags = PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER;
     let vmm_inst = vmm::get_vmm();
-    vmm_inst.map_page_in_table(
-        user_cr3,
-        VirtAddr(page_aligned as u64),
-        phys,
-        flags,
-    );
+    vmm_inst.map_page_in_table(user_cr3, VirtAddr(page_aligned as u64), phys, flags);
 
     let stack_vma = Vma::new(
         page_aligned,
@@ -397,7 +398,10 @@ fn handle_stack_expansion(mm: &MmStruct, addr: usize, user_cr3: u64) -> PfResult
 
 // 有意窄化: 显式收窄, 调用方保证值域
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 fn do_cow_copy_with_mm(_mm: &MmStruct, _vma: &Vma, addr: usize, user_cr3: u64) -> PfResult {
     let vmm_inst = vmm::get_vmm();
     let pml4 = user_cr3;

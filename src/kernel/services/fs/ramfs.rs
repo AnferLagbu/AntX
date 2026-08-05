@@ -33,7 +33,7 @@ pub const RAMFS_BLOCK_SIZE: usize = crate::kernel::framework::mm::PAGE_SIZE as u
 pub const RAMFS_MAX_NODES: usize = 256;
 pub const RAMFS_MAX_BLOCKS: usize = 2048;
 pub use crate::kernel::framework::fs::{
-    VfsDirEntry, VfsFileType, VfsOpenFlags, VfsSeekWhence, VfsStat, VFS_MAX_NAME, VFS_MAX_PATH,
+    VFS_MAX_NAME, VFS_MAX_PATH, VfsDirEntry, VfsFileType, VfsOpenFlags, VfsSeekWhence, VfsStat,
 };
 
 // ============================================================================
@@ -187,7 +187,9 @@ impl SafeRamFs {
         let mut fs = self.inner.lock();
         match fs.open(path, raw_flags, pwm) {
             Some((node_id, _cap, _sens)) => Ok(FileDescriptor::new(node_id, raw_flags, pwm)),
-            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
+            None => Err(FsError::Kernel(
+                crate::kernel::services::error::KernelError::FileNotFound,
+            )),
         }
     }
 
@@ -260,14 +262,21 @@ impl SafeRamFs {
     ///
     /// # Errors
     /// 当 `whence` 非法或计算出的偏移越界时返回 `InvalidArgument`.
-    pub fn seek(&self, fd: &mut FileDescriptor, offset: i64, whence: VfsSeekWhence) -> FsResult<u64> {
+    pub fn seek(
+        &self,
+        fd: &mut FileDescriptor,
+        offset: i64,
+        whence: VfsSeekWhence,
+    ) -> FsResult<u64> {
         let fs = self.inner.lock();
         match fs.seek(fd.node_id, fd.offset, offset, whence) {
             Some(new_off) => {
                 fd.offset = new_off;
                 Ok(new_off)
             }
-            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument)),
+            None => Err(FsError::Kernel(
+                crate::kernel::services::error::KernelError::InvalidArgument,
+            )),
         }
     }
 
@@ -279,7 +288,9 @@ impl SafeRamFs {
         let fs = self.inner.lock();
         match fs.get_file_size(fd.node_id) {
             Some(sz) => Ok(sz),
-            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
+            None => Err(FsError::Kernel(
+                crate::kernel::services::error::KernelError::FileNotFound,
+            )),
         }
     }
 
@@ -291,7 +302,9 @@ impl SafeRamFs {
         let fs = self.inner.lock();
         match fs.stat(fd.node_id) {
             Some(st) => Ok(st),
-            None => Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
+            None => Err(FsError::Kernel(
+                crate::kernel::services::error::KernelError::FileNotFound,
+            )),
         }
     }
 
@@ -361,13 +374,7 @@ impl SafeRamFs {
     ///
     /// # Errors
     /// 当底层 `chown_ext` 失败 (如路径不存在、无权限等) 时返回对应的 `FsError`.
-    pub fn chown_ext(
-        &self,
-        path: &str,
-        owner_pwm: u64,
-        group_pwm: u64,
-        pwm: u64,
-    ) -> FsResult<()> {
+    pub fn chown_ext(&self, path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> FsResult<()> {
         let mut fs = self.inner.lock();
         let rc = fs.chown_ext(path, owner_pwm, group_pwm, pwm);
         to_fs_result(rc)
@@ -381,7 +388,10 @@ impl SafeRamFs {
 
     // ── 目录枚举 (Phase 2.2.1 增补) ──
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 列出目录内容
     ///
     /// # 参数
@@ -396,16 +406,26 @@ impl SafeRamFs {
         let fs = self.inner.lock();
         let node_id = match fs.resolve_path(path) {
             Some(id) => id,
-            None => return Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
+            None => {
+                return Err(FsError::Kernel(
+                    crate::kernel::services::error::KernelError::FileNotFound,
+                ));
+            }
         };
 
         // 通过 stat 验证是目录
         let st = match fs.stat(node_id) {
             Some(s) => s,
-            None => return Err(FsError::Kernel(crate::kernel::services::error::KernelError::FileNotFound)),
+            None => {
+                return Err(FsError::Kernel(
+                    crate::kernel::services::error::KernelError::FileNotFound,
+                ));
+            }
         };
         if VfsFileType::from_u8(st.file_type) != Some(VfsFileType::Dir) {
-            return Err(FsError::Kernel(crate::kernel::services::error::KernelError::NotADirectory));
+            return Err(FsError::Kernel(
+                crate::kernel::services::error::KernelError::NotADirectory,
+            ));
         }
 
         // 扫描所有节点 (RamFs 当前未暴露 listdir API, 这里返回空 Vec)
@@ -450,7 +470,9 @@ pub fn init_global(mount_point: &str) -> FsResult<()> {
     if GLOBAL_RAMFS.get().is_none() {
         let fs = SafeRamFs::new();
         fs.mount(mount_point)?;
-        let _ = GLOBAL_RAMFS.get_or_init(|slot| { slot.write(fs); });
+        let _ = GLOBAL_RAMFS.get_or_init(|slot| {
+            slot.write(fs);
+        });
     }
     Ok(())
 }
@@ -463,7 +485,9 @@ pub fn init_global(mount_point: &str) -> FsResult<()> {
 /// # Panics
 /// 当 `init_global()` 尚未被调用、全局实例未初始化时发生 panic (内部使用 `expect`).
 pub fn global() -> &'static SafeRamFs {
-    GLOBAL_RAMFS.get().expect("fs::global() called before init_global()")
+    GLOBAL_RAMFS
+        .get()
+        .expect("fs::global() called before init_global()")
 }
 
 // ============================================================================
@@ -530,14 +554,20 @@ pub fn split_path(path: &str) -> Option<(&str, &str)> {
 /// 当路径为空或包含 NUL 字节时返回 `InvalidArgument`; 当路径超过 `VFS_MAX_PATH` 时返回 `NameTooLong`.
 pub fn validate_path(path: &str) -> FsResult<String> {
     if path.is_empty() {
-        return Err(FsError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));
+        return Err(FsError::Kernel(
+            crate::kernel::services::error::KernelError::InvalidArgument,
+        ));
     }
     if path.len() > VFS_MAX_PATH {
-        return Err(FsError::Kernel(crate::kernel::services::error::KernelError::NameTooLong));
+        return Err(FsError::Kernel(
+            crate::kernel::services::error::KernelError::NameTooLong,
+        ));
     }
     // 简化校验: 不允许 NUL 字节
     if path.as_bytes().contains(&0) {
-        return Err(FsError::Kernel(crate::kernel::services::error::KernelError::InvalidArgument));
+        return Err(FsError::Kernel(
+            crate::kernel::services::error::KernelError::InvalidArgument,
+        ));
     }
     Ok(String::from(path))
 }

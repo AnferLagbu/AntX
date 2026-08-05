@@ -32,10 +32,10 @@
 //! 评估日期: 2026-06-04
 //! Phase 2.1.3 任务: `NVMe` 存储控制器迁移
 
+use crate::kernel::framework::driver::storage as fw_storage;
+use crate::kernel::framework::driver::storage::nvme as fw_nvme;
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
-use crate::kernel::framework::driver::storage::nvme as fw_nvme;
-use crate::kernel::framework::driver::storage as fw_storage;
 
 // Services 层日志
 use crate::slog_info;
@@ -317,19 +317,28 @@ pub struct NvmeCplEntry {
 }
 
 impl NvmeCplEntry {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 阶段标记匹配 = 完成
     pub fn is_completed(&self, phase: u16) -> bool {
         (self.status & 0x01) == phase
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 获取状态码
     pub fn status_code(&self) -> u16 {
         (self.status >> 1) & 0x7FF
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 是否成功
     pub fn is_success(&self) -> bool {
         self.status_code() == 0
@@ -650,7 +659,10 @@ impl NvmeController {
 
     // ── Admin 队列配置 ──
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
     /// 写 AQA (Admin Queue Attributes)
     pub fn set_aqa(&self, asqs: u16, acqs: u16) {
         let val = u32::from(asqs) | (u32::from(acqs) << 16);
@@ -692,7 +704,10 @@ impl NvmeController {
     // ── 命令提交 (通过 framework safe wrapper) ──
 
     /// 提交 Admin 命令并等待完成
-    fn submit_admin_cmd(&mut self, cmd: fw_nvme::NvmeCommand) -> Result<fw_nvme::NvmeCompletion, ()> {
+    fn submit_admin_cmd(
+        &mut self,
+        cmd: fw_nvme::NvmeCommand,
+    ) -> Result<fw_nvme::NvmeCompletion, ()> {
         let cid = self.admin_queue.next_admin_cid();
         let sq_phys = self.admin_sq_phys;
         let cq_phys = self.admin_cq_phys;
@@ -704,11 +719,16 @@ impl NvmeController {
 
         // 通过 framework safe wrapper 执行 unsafe 队列操作
         let result = crate::kernel::framework::driver::storage::nvme_submit_admin_cmd(
-            sq_phys, cq_phys, cmd,
+            sq_phys,
+            cq_phys,
+            cmd,
             &mut self.admin_queue.sq_tail,
             &mut self.admin_queue.cq_head,
             &mut self.admin_queue.admin_cq_phase,
-            depth, db_stride, &self.mmio, cid,
+            depth,
+            db_stride,
+            &self.mmio,
+            cid,
         );
 
         match result {
@@ -739,11 +759,16 @@ impl NvmeController {
         let io_db_offset = NVME_DB_BASE + (IO_QID as usize) * 8 * (db_stride as usize);
 
         crate::kernel::framework::driver::storage::nvme_submit_io_cmd(
-            sq_phys, cq_phys, cmd,
+            sq_phys,
+            cq_phys,
+            cmd,
             &mut self.io_queue.sq_tail,
             &mut self.io_queue.cq_head,
             &mut self.io_queue.io_cq_phase,
-            depth, db_stride, &self.mmio, cid,
+            depth,
+            db_stride,
+            &self.mmio,
+            cid,
             io_db_offset,
         )
     }
@@ -756,7 +781,10 @@ impl NvmeController {
         self.wait_disabled(1_000_000)
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 初始化控制器 (MMIO + 队列配置)
     pub fn init_controller(&mut self) -> bool {
         // 读取控制器版本
@@ -779,10 +807,13 @@ impl NvmeController {
         }
 
         // 分配 Admin 队列 DMA 内存
-        let (sq_phys, cq_phys) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_admin_queues() { v } else {
-            slog_warn!(Driver, "Admin 队列 DMA 分配失败");
-            return false;
-        };
+        let (sq_phys, cq_phys) =
+            if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_admin_queues() {
+                v
+            } else {
+                slog_warn!(Driver, "Admin 队列 DMA 分配失败");
+                return false;
+            };
         self.admin_sq_phys = sq_phys;
         self.admin_cq_phys = cq_phys;
 
@@ -794,12 +825,7 @@ impl NvmeController {
 
         // 启用控制器: CC = EN | CSS_NVM | MPS=0 | AMS_RR | IOCQES=4 | IOSQES=6
         self.set_cc(
-            CC_EN
-                | CC_CSS_NVM
-                | (0u32 << CC_MPS_SHIFT)
-                | CC_AMS_RR
-                | CC_IOCQES_VAL
-                | CC_IOSQES_VAL,
+            CC_EN | CC_CSS_NVM | (0u32 << CC_MPS_SHIFT) | CC_AMS_RR | CC_IOCQES_VAL | CC_IOSQES_VAL,
         );
 
         // 等待控制器就绪
@@ -812,11 +838,18 @@ impl NvmeController {
         true
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// Identify 控制器
     pub fn identify_controller(&mut self) -> bool {
         let buf_size = 4096; // Identify 数据为 4KB
-        let (vaddr, paddr, actual_size) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size) { v } else {
+        let (vaddr, paddr, actual_size) = if let Some(v) =
+            crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size)
+        {
+            v
+        } else {
             slog_warn!(Driver, "Identify 缓冲区分配失败");
             return false;
         };
@@ -849,11 +882,18 @@ impl NvmeController {
         success
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// Identify 命名空间
     pub fn identify_namespace(&mut self, nsid: u32) -> bool {
         let buf_size = 4096;
-        let (vaddr, paddr, actual_size) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size) { v } else {
+        let (vaddr, paddr, actual_size) = if let Some(v) =
+            crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(buf_size)
+        {
+            v
+        } else {
             slog_warn!(Driver, "Identify NS 缓冲区分配失败");
             return false;
         };
@@ -866,7 +906,8 @@ impl NvmeController {
         let success = result.is_ok();
         if success {
             // 通过 framework safe wrapper 读取 Identify Namespace 数据
-            if let Some((nsze, flbas, lbaf_data)) = fw_storage::nvme_read_identify_namespace(vaddr) {
+            if let Some((nsze, flbas, lbaf_data)) = fw_storage::nvme_read_identify_namespace(vaddr)
+            {
                 self.namespace_size_lba = nsze;
 
                 let lbaf_idx = (flbas & 0xF) as usize;
@@ -893,15 +934,24 @@ impl NvmeController {
         success
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 创建 I/O 队列对 (CQ + SQ)
     pub fn create_io_queue(&mut self) -> bool {
         // 分配 I/O 队列 DMA 内存
-        let (sq_phys, cq_phys) = if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_io_queues() { v } else {
-            slog_warn!(Driver, "I/O 队列 DMA 分配失败");
-            return false;
-        };
+        let (sq_phys, cq_phys) =
+            if let Some(v) = crate::kernel::framework::driver::storage::nvme_alloc_io_queues() {
+                v
+            } else {
+                slog_warn!(Driver, "I/O 队列 DMA 分配失败");
+                return false;
+            };
         self.io_sq_phys = sq_phys;
         self.io_cq_phys = cq_phys;
 
@@ -950,11 +1000,7 @@ impl NvmeController {
         }
 
         self.initialized = true;
-        slog_info!(
-            Driver,
-            "NVMe 完全初始化, {} 命名空间",
-            self.namespace_count
-        );
+        slog_info!(Driver, "NVMe 完全初始化, {} 命名空间", self.namespace_count);
         true
     }
 
@@ -981,8 +1027,14 @@ impl NvmeController {
 
     // ── 数据读写 ──
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 读取扇区 (通过 framework DMA)
     ///
     /// # Errors
@@ -1002,10 +1054,11 @@ impl NvmeController {
         let byte_count = (count as usize) * self.lba_format_size as usize;
 
         // 分配 DMA 缓冲区
-        let (buf_vaddr, buf_paddr, buf_size) = match crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(byte_count) {
-            Some(v) => v,
-            None => return Err(()),
-        };
+        let (buf_vaddr, buf_paddr, buf_size) =
+            match crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(byte_count) {
+                Some(v) => v,
+                None => return Err(()),
+            };
 
         let nlb = ((byte_count + (self.lba_format_size as usize) - 1)
             / (self.lba_format_size as usize)) as u16;
@@ -1019,15 +1072,23 @@ impl NvmeController {
 
         if result.is_ok() {
             // 从 DMA 缓冲区复制到用户缓冲区
-            crate::kernel::framework::driver::storage::nvme_copy_from_dma(buffer, buf_vaddr, byte_count);
+            crate::kernel::framework::driver::storage::nvme_copy_from_dma(
+                buffer, buf_vaddr, byte_count,
+            );
         }
 
         crate::kernel::framework::driver::storage::nvme_free_dma_buffer(buf_vaddr, buf_size);
         result
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 写入扇区 (通过 framework DMA)
     ///
     /// # Errors
@@ -1047,10 +1108,11 @@ impl NvmeController {
         let byte_count = (count as usize) * self.lba_format_size as usize;
 
         // 分配 DMA 缓冲区
-        let (buf_vaddr, buf_paddr, buf_size) = match crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(byte_count) {
-            Some(v) => v,
-            None => return Err(()),
-        };
+        let (buf_vaddr, buf_paddr, buf_size) =
+            match crate::kernel::framework::driver::storage::nvme_alloc_dma_buffer(byte_count) {
+                Some(v) => v,
+                None => return Err(()),
+            };
 
         // 复制数据到 DMA 缓冲区
         crate::kernel::framework::driver::storage::nvme_copy_to_dma(buf_vaddr, buffer, byte_count);

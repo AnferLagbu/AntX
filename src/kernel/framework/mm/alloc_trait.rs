@@ -96,7 +96,9 @@ static ALLOC_DECISION: crate::kernel::framework::sync::OnceLock<&'static dyn Fra
 /// 只能注册一次; 重复注册返回 `Err`.
 /// # Errors
 /// 策略已被注册过时返回 Err。
-pub fn register_alloc_decision(policy: &'static dyn FrameAllocDecision) -> Result<(), &'static dyn FrameAllocDecision> {
+pub fn register_alloc_decision(
+    policy: &'static dyn FrameAllocDecision,
+) -> Result<(), &'static dyn FrameAllocDecision> {
     match ALLOC_DECISION.set(policy) {
         Ok(()) => Ok(()),
         Err(existing) => Err(existing),

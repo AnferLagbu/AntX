@@ -63,7 +63,9 @@ static SYSCALL_DISPATCH: crate::kernel::framework::sync::OnceLock<&'static dyn S
 ///
 /// # Errors
 /// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
-pub fn register_syscall_dispatch(policy: &'static dyn SyscallDispatch) -> Result<(), &'static dyn SyscallDispatch> {
+pub fn register_syscall_dispatch(
+    policy: &'static dyn SyscallDispatch,
+) -> Result<(), &'static dyn SyscallDispatch> {
     match SYSCALL_DISPATCH.set(policy) {
         Ok(()) => Ok(()),
         Err(existing) => Err(existing),

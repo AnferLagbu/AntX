@@ -1,13 +1,16 @@
+use super::rlimit::RlimitTable;
+use super::scheduler::SchedPolicy;
+use super::types::{
+    BlockReason, KERNEL_STACK_SIZE, MAX_PROCESSES, Pid, ProcessContext, ProcessFlags, ProcessId,
+    ProcessPriority, ProcessState,
+};
+use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE, USER_ADDR_FLOOR};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
-use crate::kernel::framework::mm::{KERNEL_BASE, PAGE_SIZE, USER_ADDR_FLOOR};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use super::scheduler::SchedPolicy;
-use super::rlimit::RlimitTable;
-use super::types::{ProcessId, ProcessContext, Pid, ProcessState, ProcessPriority, BlockReason, KERNEL_STACK_SIZE, ProcessFlags, MAX_PROCESSES};
 
 // ============================================================================
 // 进程级 FD 分配策略 (P1-I-01 提取)
@@ -35,10 +38,13 @@ unsafe extern "C" {
     static stack_bottom: u8;
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// 检查 boot 栈 canary 是否完整.
 ///
-/// boot 栈位于低 1MB 恒等映射区 (.bootbss), 
+/// boot 栈位于低 1MB 恒等映射区 (.bootbss),
 /// 通过 `KERNEL_BASE + &stack_bottom as *const u8 as u64` 转换为内核虚拟地址访问.
 /// 返回 true 表示 canary 未被覆盖 (栈未溢出至栈底).
 pub fn check_boot_stack_canary() -> bool {
@@ -52,7 +58,10 @@ pub fn check_boot_stack_canary() -> bool {
     }
 }
 
-#[expect(clippy::borrow_as_ptr, reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect")]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
 /// 写入 boot 栈 canary 到 `stack_bottom`.
 ///
 /// 供 aarch64 入口在 `clear_bss` 之后调用 (`x86_64` 由 boot.asm trampoline 写入).
@@ -172,7 +181,6 @@ pub struct Process {
     pub pending_signals: AtomicU64,
 
     // --- POSIX 信号处理字段 ---
-
     /// 信号屏蔽字 (bit i = 信号 i+1 被屏蔽)
     pub blocked_mask: AtomicU64,
 
@@ -321,25 +329,17 @@ impl Process {
             sigaltstack_flags: AtomicU32::new(0),
             rlimit_table: Mutex::new(RlimitTable::new()),
             // P1 #14: 进程创建时分配独立 canary
-            stack_canary: AtomicU64::new(
-                crate::kernel::framework::proc::generate_canary(),
-            ),
+            stack_canary: AtomicU64::new(crate::kernel::framework::proc::generate_canary()),
             // C7: Seccomp 默认 Disabled
             seccomp: crate::kernel::framework::proc::SeccompState::new(),
             // D1: Namespace 默认 init namespace 集合
-            namespaces: Mutex::new(
-                crate::kernel::framework::proc::NamespaceSet::new_init(),
-            ),
+            namespaces: Mutex::new(crate::kernel::framework::proc::NamespaceSet::new_init()),
             // D2: cgroup 默认根 cgroup (id=0)
             cgroup_id: AtomicU64::new(0),
             // D3: NUMA 策略默认 Default
-            numa_policy: Mutex::new(
-                crate::kernel::framework::mm::numa::NumaMempolicy::new(),
-            ),
+            numa_policy: Mutex::new(crate::kernel::framework::mm::numa::NumaMempolicy::new()),
             // P2-I-30: 进程级凭证会话上下文 (uid/gid/euid/egid/saved_*/domain)
-            session: Mutex::new(
-                crate::kernel::framework::credo::types::PwmContext::default(),
-            ),
+            session: Mutex::new(crate::kernel::framework::credo::types::PwmContext::default()),
             // P2-I-30: SUID 提权栈 (深度 0, 容量 8)
             session_elev_stack: Mutex::new(
                 [crate::kernel::framework::credo::types::PwmContext::default(); 8],
@@ -381,7 +381,10 @@ impl Process {
         ProcessState::from_u8(self.state.load(Ordering::SeqCst) as u8)
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// ✅ 安全的状态设置 (带合法性检查和审计日志)
     ///
     /// # Arguments
@@ -467,7 +470,8 @@ impl Process {
     }
 
     pub fn set_rt_priority(&self, priority: u8) {
-        self.rt_priority.store(u32::from(priority), Ordering::SeqCst);
+        self.rt_priority
+            .store(u32::from(priority), Ordering::SeqCst);
     }
 
     pub fn get_pwm(&self) -> u64 {
@@ -481,11 +485,7 @@ impl Process {
     pub fn try_inc_ref(&self) -> bool {
         self.ref_count
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
-                if v > 0 {
-                    Some(v + 1)
-                } else {
-                    None
-                }
+                if v > 0 { Some(v + 1) } else { None }
             })
             .is_ok()
     }
@@ -583,7 +583,10 @@ impl ProcessTable {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     pub fn insert(&self, process: *mut Process) -> bool {
         // SAFETY: caller guarantees process is a valid non-null pointer.
         let nn = match NonNull::new(process) {
@@ -789,7 +792,10 @@ fn proc_barrier_rollback_cb() -> bool {
 
 pub fn proc_register_barrier_domain() {
     crate::kernel::framework::barrier::recovery_domain_register(4);
-    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER.lock().find(4) {
+    if let Some(dom) = crate::kernel::framework::barrier::RECOVERY_MANAGER
+        .lock()
+        .find(4)
+    {
         *dom.capture_cb.lock() = Some(proc_barrier_capture_cb);
         *dom.rollback_cb.lock() = Some(proc_barrier_rollback_cb);
     }

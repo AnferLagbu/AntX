@@ -25,7 +25,10 @@ const POLLOUT: i16 = 4;
 const TIOCGWINSZ: u64 = 0x5413;
 const TCGETS: u64 = 0x5401;
 
-#[expect(clippy::struct_field_names, reason = "struct_field_names: 字段名前缀相同是为可读性/调试; 当前优先 expect")]
+#[expect(
+    clippy::struct_field_names,
+    reason = "struct_field_names: 字段名前缀相同是为可读性/调试; 当前优先 expect"
+)]
 /// ioctl(fd, request, arg) 策略
 pub fn ioctl_syscall(_fd: i32, request: u64, arg: u64) -> i64 {
     if arg == 0 {
@@ -57,7 +60,10 @@ pub fn ioctl_syscall(_fd: i32, request: u64, arg: u64) -> i64 {
     }
 }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 /// `clock_gettime(clk_id`, tp) 策略
 pub fn clock_gettime_syscall(clk_id: i32, tp_ptr: u64) -> i64 {
     if tp_ptr == 0 {
@@ -69,7 +75,10 @@ pub fn clock_gettime_syscall(clk_id: i32, tp_ptr: u64) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     struct Timespec {
         tv_sec: i64,
         tv_nsec: i64,
@@ -95,7 +104,10 @@ pub fn poll_syscall(fds_ptr: u64, nfds: u32, _timeout: i32) -> i64 {
 
     #[repr(C)]
     #[derive(Copy, Clone)]
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+    #[expect(
+        clippy::items_after_statements,
+        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+    )]
     struct PollFd {
         fd: i32,
         events: i16,
@@ -113,14 +125,20 @@ pub fn poll_syscall(fds_ptr: u64, nfds: u32, _timeout: i32) -> i64 {
             revents: 0,
         };
 
-        if !crate::kernel::framework::syscall::api::read_struct_from_user(fds_ptr + offset, &mut pfd) {
+        if !crate::kernel::framework::syscall::api::read_struct_from_user(
+            fds_ptr + offset,
+            &mut pfd,
+        ) {
             continue;
         }
 
         pfd.revents = 0;
         if pfd.fd < 0 {
             // 写回原位
-            let _ = crate::kernel::framework::syscall::api::write_struct_to_user(fds_ptr + offset, &pfd);
+            let _ = crate::kernel::framework::syscall::api::write_struct_to_user(
+                fds_ptr + offset,
+                &pfd,
+            );
             continue;
         }
         if pfd.events & POLLIN != 0 {
@@ -135,7 +153,8 @@ pub fn poll_syscall(fds_ptr: u64, nfds: u32, _timeout: i32) -> i64 {
             ready += 1;
         }
 
-        let _ = crate::kernel::framework::syscall::api::write_struct_to_user(fds_ptr + offset, &pfd);
+        let _ =
+            crate::kernel::framework::syscall::api::write_struct_to_user(fds_ptr + offset, &pfd);
     }
     i64::from(ready)
 }
@@ -150,7 +169,9 @@ pub fn chown_syscall(path_ptr: u64, uid: u32, gid: u32) -> i64 {
     let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
     let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
     let pwm = crate::kernel::framework::credo::pwm_get_current();
-    i64::from(crate::kernel::framework::fs::vfs_chown_ext(path, owner_pwm, group_pwm, pwm))
+    i64::from(crate::kernel::framework::fs::vfs_chown_ext(
+        path, owner_pwm, group_pwm, pwm,
+    ))
 }
 
 /// truncate(path, length) 策略
@@ -172,11 +193,7 @@ pub fn truncate_syscall(path_ptr: u64, length: i64) -> i64 {
     }
     let result = crate::kernel::framework::fs::vfs_truncate_internal(fd as u32, length as u64);
     crate::kernel::framework::fs::vfs_close(fd as u32);
-    if result < 0 {
-        Errno::EIO.as_ret()
-    } else {
-        0
-    }
+    if result < 0 { Errno::EIO.as_ret() } else { 0 }
 }
 
 /// ftruncate(fd, length) 策略
@@ -185,17 +202,16 @@ pub fn ftruncate_syscall(fd: i32, length: i64) -> i64 {
         return Errno::EINVAL.as_ret();
     }
     let result = crate::kernel::framework::fs::vfs_truncate_internal(fd as u32, length as u64);
-    if result < 0 {
-        Errno::EIO.as_ret()
-    } else {
-        0
-    }
+    if result < 0 { Errno::EIO.as_ret() } else { 0 }
 }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
 /// flock(fd, operation) 策略
 pub fn flock_syscall(fd: i32, operation: i32) -> i64 {
-    use crate::kernel::framework::fs::{sys_flock as do_flock, FlockResult};
+    use crate::kernel::framework::fs::{FlockResult, sys_flock as do_flock};
 
     if fd < 0 {
         return Errno::EBADF.as_ret();
@@ -203,7 +219,8 @@ pub fn flock_syscall(fd: i32, operation: i32) -> i64 {
 
     let ino = {
         let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
-        if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS || !fd_table[fd as usize].used {
+        if (fd as usize) >= crate::kernel::framework::fs::VFS_MAX_FDS || !fd_table[fd as usize].used
+        {
             return Errno::EBADF.as_ret();
         }
         fd_table[fd as usize].node_id

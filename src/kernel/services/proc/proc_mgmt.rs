@@ -72,7 +72,9 @@ pub fn proc_list_syscall(buf_ptr: u64, max_entries: u32) -> i64 {
 
 /// `proc_setpri(pid`, priority) 策略
 pub fn proc_setpri_syscall(pid: u32, priority: u32) -> i64 {
-    i64::from(crate::kernel::framework::proc::proc_set_priority(pid, priority))
+    i64::from(crate::kernel::framework::proc::proc_set_priority(
+        pid, priority,
+    ))
 }
 
 /// `credo_proc_cputime(pid)` 策略

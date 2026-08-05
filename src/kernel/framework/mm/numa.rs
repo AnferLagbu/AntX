@@ -7,8 +7,7 @@
 //! 本文件仅 re-export 保持调用方兼容.
 
 pub use crate::kernel::services::mm::numa::{
-    NumaPolicy, NumaMempolicy, NumaNode, NumaTopology,
-    MAX_NUMA_NODES, LOCAL_DISTANCE, REMOTE_DISTANCE,
-    numa_init, numa_topology, numa_is_initialized,
-    sys_get_mempolicy, sys_set_mempolicy, sys_migrate_pages, sys_getcpu,
+    LOCAL_DISTANCE, MAX_NUMA_NODES, NumaMempolicy, NumaNode, NumaPolicy, NumaTopology,
+    REMOTE_DISTANCE, numa_init, numa_is_initialized, numa_topology, sys_get_mempolicy, sys_getcpu,
+    sys_migrate_pages, sys_set_mempolicy,
 };

@@ -28,7 +28,7 @@
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use super::policy::{CapBits, CapDomain, PolicyEngine, PolicyResult, CAP_DOMAINS};
+use super::policy::{CAP_DOMAINS, CapBits, CapDomain, PolicyEngine, PolicyResult};
 
 /// 最大并发会话数
 pub const MAX_SESSIONS: usize = 64;
@@ -114,7 +114,9 @@ impl SessionTable {
                 if s.pwm == pwm && matches!(s.state, SessionState::Active) {
                     count += 1;
                     if count >= per_pwm {
-                        return Err(SessionError::Kernel(crate::kernel::services::error::KernelError::WouldBlock));
+                        return Err(SessionError::Kernel(
+                            crate::kernel::services::error::KernelError::WouldBlock,
+                        ));
                     }
                 }
             }
@@ -136,7 +138,8 @@ impl SessionTable {
                     failed_attempts: 0,
                     pid,
                 });
-                self.next_slot.store(((idx + 1) % MAX_SESSIONS) as u32, Ordering::Release);
+                self.next_slot
+                    .store(((idx + 1) % MAX_SESSIONS) as u32, Ordering::Release);
                 self.active.fetch_add(1, Ordering::AcqRel);
                 return Ok(id);
             }
@@ -173,7 +176,9 @@ impl SessionTable {
                 }
             }
         }
-        Err(SessionError::Kernel(crate::kernel::services::error::KernelError::FileNotFound))
+        Err(SessionError::Kernel(
+            crate::kernel::services::error::KernelError::FileNotFound,
+        ))
     }
 
     /// 结束会话
@@ -192,7 +197,9 @@ impl SessionTable {
                 }
             }
         }
-        Err(SessionError::Kernel(crate::kernel::services::error::KernelError::FileNotFound))
+        Err(SessionError::Kernel(
+            crate::kernel::services::error::KernelError::FileNotFound,
+        ))
     }
 
     /// 强制结束某 PWM 的所有会话
@@ -291,10 +298,7 @@ pub struct SessionManager<'a> {
 }
 
 impl<'a> SessionManager<'a> {
-    pub fn new(
-        table: &'a mut SessionTable,
-        policy: &'a PolicyEngine,
-    ) -> Self {
+    pub fn new(table: &'a mut SessionTable, policy: &'a PolicyEngine) -> Self {
         Self {
             table,
             policy,
@@ -302,8 +306,14 @@ impl<'a> SessionManager<'a> {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
-#[expect(clippy::match_wildcard_for_single_variants, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::match_wildcard_for_single_variants,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     /// 登录流程 (services 层抽象, 实际密码验证由 `framework::credo::password` 提供)
     pub fn login(
         &mut self,
@@ -324,15 +334,14 @@ impl<'a> SessionManager<'a> {
         let matrix = InMemoryCaps(matrix_caps);
         match self.policy.check(&matrix, domain, required) {
             PolicyResult::Allow => {
-                let id = match self.table.create(
-                    pwm,
-                    matrix_caps,
-                    current_tick,
-                    expires_tick,
-                    pid,
-                ) {
+                let id = match self
+                    .table
+                    .create(pwm, matrix_caps, current_tick, expires_tick, pid)
+                {
                     Ok(id) => id,
-                    Err(SessionError::Kernel(crate::kernel::services::error::KernelError::WouldBlock)) => {
+                    Err(SessionError::Kernel(
+                        crate::kernel::services::error::KernelError::WouldBlock,
+                    )) => {
                         return LoginResult::Denied(LoginDeny::TooManySessions);
                     }
                     Err(SessionError::TableFull) => {
@@ -352,7 +361,9 @@ struct InMemoryCaps([CapBits; CAP_DOMAINS]);
 
 impl super::policy::CapabilityMatrix for InMemoryCaps {
     fn get(&self, domain: CapDomain) -> Option<CapBits> {
-        if !domain.is_valid() { return None; }
+        if !domain.is_valid() {
+            return None;
+        }
         Some(self.0[domain.0 as usize])
     }
     fn set(&self, _domain: CapDomain, _bits: CapBits) -> Result<CapBits, ()> {
@@ -371,7 +382,6 @@ impl super::policy::CapabilityMatrix for InMemoryCaps {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     fn default_caps() -> [CapBits; CAP_DOMAINS] {
         [CapBits(0); CAP_DOMAINS]
@@ -438,7 +448,12 @@ mod tests {
         }
         // 第 9 个应被拒
         let r = t.create(1, default_caps(), 100, 0, 0);
-        assert_eq!(r, Err(SessionError::Kernel(crate::kernel::services::error::KernelError::WouldBlock)));
+        assert_eq!(
+            r,
+            Err(SessionError::Kernel(
+                crate::kernel::services::error::KernelError::WouldBlock
+            ))
+        );
     }
 
     #[test]
@@ -470,7 +485,10 @@ mod tests {
         // 不给 FS 任何能力, 但要求 0b0001
         caps[CapDomain::FS.0 as usize] = CapBits(0);
         let r = mgr.login(1, true, CapBits(0b0001), CapDomain::FS, 100, 0, 0, caps);
-        assert!(matches!(r, LoginResult::Denied(LoginDeny::CapabilityDenied(_))));
+        assert!(matches!(
+            r,
+            LoginResult::Denied(LoginDeny::CapabilityDenied(_))
+        ));
     }
 
     #[test]
@@ -492,5 +510,4 @@ mod tests {
         assert_eq!(m.get(CapDomain::FS), Some(CapBits(0x42)));
         assert_eq!(m.get(CapDomain::NET), Some(CapBits::NONE));
     }
-
 }

@@ -185,7 +185,10 @@ impl DCache {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// FNV-1a 哈希: (`parent_ino`, name) → u64
     fn hash_key(parent_ino: u32, name: &str) -> u64 {
         let mut h: u64 = 14695981039346656037;
@@ -375,7 +378,10 @@ impl ICache {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// FNV-1a 哈希: ino → u64
     fn hash_key(ino: u32) -> u64 {
         let mut h: u64 = 14695981039346656037;
@@ -416,7 +422,17 @@ impl ICache {
     }
 
     /// 插入/更新 inode 缓存
-    fn insert(&mut self, ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64, ctime: u64, owner_pwm: u64, group_pwm: u64) {
+    fn insert(
+        &mut self,
+        ino: u32,
+        file_type: u8,
+        perm: u16,
+        size: u32,
+        mtime: u64,
+        ctime: u64,
+        owner_pwm: u64,
+        group_pwm: u64,
+    ) {
         if ino == EMPTY_INO || ino == NEGATIVE_INO {
             return;
         }
@@ -698,9 +714,20 @@ pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
 }
 
 /// icache 插入/更新
-pub fn icache_insert(ino: u32, file_type: u8, perm: u16, size: u32, mtime: u64, ctime: u64, owner_pwm: u64, group_pwm: u64) {
+pub fn icache_insert(
+    ino: u32,
+    file_type: u8,
+    perm: u16,
+    size: u32,
+    mtime: u64,
+    ctime: u64,
+    owner_pwm: u64,
+    group_pwm: u64,
+) {
     let mut icache = ICACHE.lock();
-    icache.insert(ino, file_type, perm, size, mtime, ctime, owner_pwm, group_pwm);
+    icache.insert(
+        ino, file_type, perm, size, mtime, ctime, owner_pwm, group_pwm,
+    );
 }
 
 /// icache 失效
@@ -784,10 +811,7 @@ mod tests {
     fn test_dcache_insert_lookup() {
         let mut dcache = DCache::new();
         dcache.insert(1, "bin", 10, 1);
-        assert!(matches!(
-            dcache.lookup(1, "bin"),
-            Some((10, 1))
-        ));
+        assert!(matches!(dcache.lookup(1, "bin"), Some((10, 1))));
     }
 
     #[test]
@@ -800,10 +824,7 @@ mod tests {
     fn test_dcache_negative() {
         let mut dcache = DCache::new();
         dcache.insert(1, "gone", NEGATIVE_INO, 0);
-        assert!(matches!(
-            dcache.lookup(1, "gone"),
-            Some((NEGATIVE_INO, 0))
-        ));
+        assert!(matches!(dcache.lookup(1, "gone"), Some((NEGATIVE_INO, 0))));
     }
 
     #[test]
@@ -833,10 +854,7 @@ mod tests {
         let mut dcache = DCache::new();
         dcache.insert(1, "file", 10, 0);
         dcache.insert(1, "file", 20, 1);
-        assert!(matches!(
-            dcache.lookup(1, "file"),
-            Some((20, 1))
-        ));
+        assert!(matches!(dcache.lookup(1, "file"), Some((20, 1))));
     }
 
     #[test]

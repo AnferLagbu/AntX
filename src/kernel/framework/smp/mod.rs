@@ -8,13 +8,16 @@ static SMP_ENABLED: AtomicBool = AtomicBool::new(false);
 static CPU_COUNT: AtomicU32 = AtomicU32::new(1);
 static BSP_ID: AtomicU32 = AtomicU32::new(0);
 
-static CPU_APIC_IDS: [AtomicU32; crate::kernel::framework::config::MAX_CPUS] = 
+static CPU_APIC_IDS: [AtomicU32; crate::kernel::framework::config::MAX_CPUS] =
     [const { AtomicU32::new(0xFFFF) }; crate::kernel::framework::config::MAX_CPUS];
 
-static CPU_ONLINE: [AtomicBool; crate::kernel::framework::config::MAX_CPUS] = 
+static CPU_ONLINE: [AtomicBool; crate::kernel::framework::config::MAX_CPUS] =
     [const { AtomicBool::new(false) }; crate::kernel::framework::config::MAX_CPUS];
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub fn init() {
     let bsp_apic_id = crate::arch!(cpu_id());
     BSP_ID.store(bsp_apic_id, Ordering::Release);

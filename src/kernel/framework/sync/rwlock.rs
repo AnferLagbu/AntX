@@ -22,10 +22,10 @@
 
 use core::sync::atomic::Ordering;
 
-use super::spinlock::{disable_interrupts, restore_interrupts};
-use super::types::{RwLockInner, RwLockReadGuard, RwLockWriteGuard, IrqSaveFlags};
 #[cfg(debug_assertions)]
-use super::lockdep::{self, LockClassId, LockClassDesc, LockKind};
+use super::lockdep::{self, LockClassDesc, LockClassId, LockKind};
+use super::spinlock::{disable_interrupts, restore_interrupts};
+use super::types::{IrqSaveFlags, RwLockInner, RwLockReadGuard, RwLockWriteGuard};
 
 /// 读写锁 (`RwLock`)
 pub struct RwLock<T: ?Sized> {
@@ -56,7 +56,10 @@ impl<T> RwLock<T> {
 
     /// 创建命名 `RwLock` (用于调试 + lockdep)
     #[cfg(debug_assertions)]
-#[expect(clippy::doc_markdown, reason = "doc_markdown: 文档 markdown 格式已知 (中文 + 内核术语); 当前优先 expect")]
+    #[expect(
+        clippy::doc_markdown,
+        reason = "doc_markdown: 文档 markdown 格式已知 (中文 + 内核术语); 当前优先 expect"
+    )]
     pub fn named(name: &'static str, data: T) -> Self {
         let class_id = lockdep::register_class(LockClassDesc {
             name,
@@ -343,8 +346,8 @@ fn scheduler_yield() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
     use alloc::string::String;
+    use alloc::vec;
 
     #[test]
     fn test_rwlock_basic_read() {

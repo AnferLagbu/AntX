@@ -11,16 +11,19 @@
 //! - [`super::socket`] 强类型 API (Domain, `SockType`, `SockAddrIn`, &[u8])
 //! - 本模块 syscall 入口 API (i32, u64 用户指针, u32 长度)
 
+use super::unix as uds;
 use crate::kernel::framework::net::syscall as fw;
 use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::syscall::raw;
-use super::unix as uds;
 
 // ============================================================================
 // 12 个 Socket Syscall 安全代理
 // ============================================================================
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+#[expect(
+    clippy::used_underscore_binding,
+    reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+)]
 /// socket(domain, type, protocol) — 返回新 FD
 ///
 /// 分流: `AF_UNIX(1)` → UDS 子系统; `AF_INET(2)` → smoltcp 协议栈; 其他 → EAFNOSUPPORT
@@ -37,11 +40,17 @@ pub fn socket_syscall(domain: i32, sock_type: i32, _protocol: i32) -> Result<usi
             2 => uds::SockType::Dgram,
             _ => return Err(Errno::EINVAL),
         };
-        return uds::socket(st).map(|fd| fd as usize).map_err(super::unix::UnixSocketError::to_errno);
+        return uds::socket(st)
+            .map(|fd| fd as usize)
+            .map_err(super::unix::UnixSocketError::to_errno);
     }
     // AF_INET (smoltcp)
     let r = fw::socket_syscall(domain, sock_type, _protocol);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// bind(fd, addr, addrlen)
@@ -53,19 +62,27 @@ pub fn socket_syscall(domain: i32, sock_type: i32, _protocol: i32) -> Result<usi
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; 用户地址不可读时返回 `Err(Errno::EFAULT)`; 不支持的协议族返回
 /// `Err(Errno::EAFNOSUPPORT)`; 底层 bind 失败时返回对应的 `Errno`。
 pub fn bind_syscall(fd: i32, addr_ptr: u64, addrlen: u32) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     // Peek sun_family
     let family = fw::raw_read_sun_family(addr_ptr)?;
     match family {
         1 => {
             // AF_UNIX
             let addr = fw::raw_read_sockaddr_un(addr_ptr, addrlen)?;
-            uds::bind(fd, &addr).map(|()| 0).map_err(super::unix::UnixSocketError::to_errno)
+            uds::bind(fd, &addr)
+                .map(|()| 0)
+                .map_err(super::unix::UnixSocketError::to_errno)
         }
         2 | 10 => {
             // AF_INET / AF_INET6 (双栈, DECISION-032)
             let r = fw::bind_syscall(fd, addr_ptr, addrlen);
-            if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+            if r < 0 {
+                Err(Errno::from_ret(r))
+            } else {
+                Ok(r as usize)
+            }
         }
         _ => Err(Errno::EAFNOSUPPORT),
     }
@@ -80,13 +97,23 @@ pub fn bind_syscall(fd: i32, addr_ptr: u64, addrlen: u32) -> Result<usize, Errno
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; 当 `backlog` 为负数时返回 `Err(Errno::EINVAL)`;
 /// 底层 listen 失败时返回对应的 `Errno`。
 pub fn listen_syscall(fd: i32, backlog: i32) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
-    if backlog < 0 { return Err(Errno::EINVAL); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if backlog < 0 {
+        return Err(Errno::EINVAL);
+    }
     if uds::is_uds_fd(fd) {
-        return uds::listen(fd).map(|()| 0).map_err(super::unix::UnixSocketError::to_errno);
+        return uds::listen(fd)
+            .map(|()| 0)
+            .map_err(super::unix::UnixSocketError::to_errno);
     }
     let r = fw::listen_syscall(fd, backlog);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// accept(fd, addr, addrlen)
@@ -97,12 +124,20 @@ pub fn listen_syscall(fd: i32, backlog: i32) -> Result<usize, Errno> {
 ///
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; 底层 accept 失败 (如无待处理连接) 时返回对应的 `Errno`。
 pub fn accept_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     if uds::is_uds_fd(fd) {
-        return uds::accept(fd).map(|fd| fd as usize).map_err(super::unix::UnixSocketError::to_errno);
+        return uds::accept(fd)
+            .map(|fd| fd as usize)
+            .map_err(super::unix::UnixSocketError::to_errno);
     }
     let r = fw::accept_syscall(fd, addr_ptr, addrlen_ptr);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// connect(fd, addr, addrlen)
@@ -114,17 +149,25 @@ pub fn accept_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<usize,
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; 用户地址不可读时返回 `Err(Errno::EFAULT)`; 不支持的协议族返回
 /// `Err(Errno::EAFNOSUPPORT)`; 底层 connect 失败时返回对应的 `Errno`。
 pub fn connect_syscall(fd: i32, addr_ptr: u64, addrlen: u32) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     let family = fw::raw_read_sun_family(addr_ptr)?;
     match family {
         1 => {
             let addr = fw::raw_read_sockaddr_un(addr_ptr, addrlen)?;
-            uds::connect(fd, &addr).map(|()| 0).map_err(super::unix::UnixSocketError::to_errno)
+            uds::connect(fd, &addr)
+                .map(|()| 0)
+                .map_err(super::unix::UnixSocketError::to_errno)
         }
         2 | 10 => {
             // AF_INET / AF_INET6 (双栈, DECISION-032)
             let r = fw::connect_syscall(fd, addr_ptr, addrlen);
-            if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+            if r < 0 {
+                Err(Errno::from_ret(r))
+            } else {
+                Ok(r as usize)
+            }
         }
         _ => Err(Errno::EAFNOSUPPORT),
     }
@@ -146,7 +189,9 @@ pub fn sendto_syscall(
     dest_ptr: u64,
     dest_len: u32,
 ) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     if uds::is_uds_fd(fd) {
         if dest_ptr == 0 {
             return Err(Errno::EDESTADDRREQ);
@@ -160,7 +205,11 @@ pub fn sendto_syscall(
             .map_err(super::unix::UnixSocketError::to_errno);
     }
     let r = fw::sendto_syscall(fd, buf_ptr, len, flags, dest_ptr, dest_len);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// `recvfrom` 系统调用 — 签名 `(fd, buf, len, flags, src_addr, addrlen)`
@@ -179,16 +228,20 @@ pub fn recvfrom_syscall(
     src_ptr: u64,
     src_len_ptr: u64,
 ) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
-    if buf_ptr == 0 || len == 0 { return Err(Errno::EFAULT); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if buf_ptr == 0 || len == 0 {
+        return Err(Errno::EFAULT);
+    }
     if uds::is_uds_fd(fd) {
         if !raw::check_user_buf(buf_ptr, u64::from(len)) {
             return Err(Errno::EFAULT);
         }
         // 栈上缓冲接收, 再 copy-out (走 TCB raw_copy_out, 0 unsafe)
         let mut stack_buf = alloc::vec![0u8; len as usize];
-        let n = uds::recvfrom(fd, &mut stack_buf)
-            .map_err(super::unix::UnixSocketError::to_errno)?;
+        let n =
+            uds::recvfrom(fd, &mut stack_buf).map_err(super::unix::UnixSocketError::to_errno)?;
         if n > 0 {
             fw::raw_copy_out(buf_ptr, n as u32, &stack_buf[..n])?;
         }
@@ -197,7 +250,11 @@ pub fn recvfrom_syscall(
         return Ok(n as usize);
     }
     let r = fw::recvfrom_syscall(fd, buf_ptr, len, flags, src_ptr, src_len_ptr);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// setsockopt(fd, level, optname, val, valen)
@@ -212,9 +269,15 @@ pub fn setsockopt_syscall(
     val_ptr: u64,
     valen: u32,
 ) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     let r = fw::setsockopt_syscall(fd, level, optname, val_ptr, valen);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// getsockopt(fd, level, optname, val, valen)
@@ -229,9 +292,15 @@ pub fn getsockopt_syscall(
     val_ptr: u64,
     valen_ptr: u64,
 ) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     let r = fw::getsockopt_syscall(fd, level, optname, val_ptr, valen_ptr);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// getsockname(fd, addr, addrlen) — 获取本端地址
@@ -240,9 +309,15 @@ pub fn getsockopt_syscall(
 ///
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; 底层 getsockname 失败时返回对应的 `Errno`。
 pub fn getsockname_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     let r = fw::getsockname_syscall(fd, addr_ptr, addrlen_ptr);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// getpeername(fd, addr, addrlen) — 获取对端地址
@@ -251,9 +326,15 @@ pub fn getsockname_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<u
 ///
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; 底层 getpeername 失败时返回对应的 `Errno`。
 pub fn getpeername_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     let r = fw::getpeername_syscall(fd, addr_ptr, addrlen_ptr);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// shutdown(fd, how)
@@ -262,9 +343,15 @@ pub fn getpeername_syscall(fd: i32, addr_ptr: u64, addrlen_ptr: u64) -> Result<u
 ///
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; 底层 shutdown 失败时返回对应的 `Errno`。
 pub fn shutdown_syscall(fd: i32, how: i32) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
     let r = fw::shutdown_syscall(fd, how);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// sendmsg(fd, msg, flags) — 真实实现
@@ -277,8 +364,12 @@ pub fn shutdown_syscall(fd: i32, how: i32) -> Result<usize, Errno> {
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; `msg_ptr` 或 `iov` 等用户缓冲区无效时返回 `Err(Errno::EFAULT)`;
 /// 参数不合法 (如 `iovlen` 为 0 或超过上限) 时返回 `Err(Errno::EINVAL)`; 底层 sendmsg 失败时返回对应的 `Errno`。
 pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
-    if msg_ptr == 0 { return Err(Errno::EFAULT); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if msg_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
     if !raw::check_user_buf(msg_ptr, 56) {
         return Err(Errno::EFAULT);
     }
@@ -334,7 +425,9 @@ pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
             if cmsg_len < 16 || cmsg_len > msg_controllen_raw - coff {
                 break;
             }
-            if cmsg_level == 1 /* SOL_SOCKET */ && cmsg_type == 1 /* SCM_RIGHTS */ {
+            if cmsg_level == 1 /* SOL_SOCKET */ && cmsg_type == 1
+            /* SCM_RIGHTS */
+            {
                 // v2: SCM_RIGHTS (fd 跨进程传递) — deferred 到后续 PR.
                 // 需对接 fd_alloc::dup_to_process 实现完整跨进程 fd 传递.
                 // 当前简化: 仅标记已处理, 不做实际操作.
@@ -344,7 +437,11 @@ pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
     }
 
     let r = fw::sendmsg_syscall(fd, msg_ptr, flags);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }
 
 /// recvmsg(fd, msg, flags)
@@ -357,8 +454,12 @@ pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
 /// 当 `fd` 为负数时返回 `Err(Errno::EBADF)`; `msg_ptr` 或 `iov` 等用户缓冲区无效时返回 `Err(Errno::EFAULT)`;
 /// 参数不合法时返回 `Err(Errno::EINVAL)`; 底层 recvmsg 失败时返回对应的 `Errno`。
 pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno> {
-    if fd < 0 { return Err(Errno::EBADF); }
-    if msg_ptr == 0 { return Err(Errno::EFAULT); }
+    if fd < 0 {
+        return Err(Errno::EBADF);
+    }
+    if msg_ptr == 0 {
+        return Err(Errno::EFAULT);
+    }
     if !raw::check_user_buf(msg_ptr, 56) {
         return Err(Errno::EFAULT);
     }
@@ -391,5 +492,9 @@ pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
         raw::write_u64_to_user(msg_ptr + 40, 28u64);
     }
     let r = fw::recvmsg_syscall(fd, msg_ptr, flags);
-    if r < 0 { Err(Errno::from_ret(r)) } else { Ok(r as usize) }
+    if r < 0 {
+        Err(Errno::from_ret(r))
+    } else {
+        Ok(r as usize)
+    }
 }

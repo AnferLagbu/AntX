@@ -14,10 +14,10 @@
 //! - [`fstat_syscall`] 按 FD 查询
 
 use crate::kernel::framework::credo;
-use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::fs::VfsStat;
-use crate::kernel::framework::syscall::raw;
+use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::syscall::Errno;
+use crate::kernel::framework::syscall::raw;
 
 const VFS_STAT_SIZE: u64 = core::mem::size_of::<VfsStat>() as u64;
 
@@ -94,7 +94,10 @@ pub fn fstat_syscall(fd: i32, st_buf_ptr: u64) -> Result<usize, Errno> {
 // 内部辅助
 // ============================================================================
 
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+)]
 /// 取当前进程凭证,无会话时直接返回 EACCES (历史硬编码 `TEST_PWM` 路径已弃用)。
 fn current_pwm() -> Result<u64, Errno> {
     Ok(credo::api::pwm_get_current())

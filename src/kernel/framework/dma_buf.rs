@@ -86,8 +86,14 @@ pub struct DmaStream {
 }
 
 impl DmaStream {
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 从 Frame 创建流式 DMA 映射。
     ///
     /// 验证 Frame 物理地址 + 大小满足:
@@ -141,28 +147,40 @@ impl DmaStream {
 
     /// CPU 可访问的虚拟地址
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn cpu_addr(&self) -> NonNull<u8> {
         self.cpu_addr
     }
 
     /// 设备可访问的物理地址
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn dma_addr(&self) -> PhysAddr {
         self.dma_addr
     }
 
     /// 缓冲区大小
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn size(&self) -> usize {
         self.size
     }
 
     /// 同步方向
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn direction(&self) -> DmaDirection {
         self.direction
     }
@@ -198,11 +216,15 @@ impl DmaStream {
                         while addr < end {
                             // SAFETY: dc cvau 是 aarch64 标准 cache 维护指令,
                             // 输入地址已对齐到 cache line, 无副作用.
-                            unsafe { core::arch::asm!("dc cvau, {}", in(reg) addr); }
+                            unsafe {
+                                core::arch::asm!("dc cvau, {}", in(reg) addr);
+                            }
                             addr += CACHE_LINE_SIZE;
                         }
                         // SAFETY: dsb ish 是数据同步屏障, 确保 cache 维护完成.
-                        unsafe { core::arch::asm!("dsb ish"); }
+                        unsafe {
+                            core::arch::asm!("dsb ish");
+                        }
                     }
                     Ok(())
                 } else {
@@ -237,11 +259,15 @@ impl DmaStream {
                         while addr < end {
                             // SAFETY: dc ivau 是 aarch64 标准 cache 维护指令,
                             // 输入地址已对齐到 cache line, 无副作用.
-                            unsafe { core::arch::asm!("dc ivau, {}", in(reg) addr); }
+                            unsafe {
+                                core::arch::asm!("dc ivau, {}", in(reg) addr);
+                            }
                             addr += CACHE_LINE_SIZE;
                         }
                         // SAFETY: dsb ish 是数据同步屏障, 确保 cache 维护完成.
-                        unsafe { core::arch::asm!("dsb ish"); }
+                        unsafe {
+                            core::arch::asm!("dsb ish");
+                        }
                     }
                     Ok(())
                 } else {
@@ -255,7 +281,9 @@ impl DmaStream {
 
 impl fmt::Display for DmaStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DmaStream(cpu=0x{:x}, dma=0x{:x}, size={}, dir={:?}, state={:?})",
+        write!(
+            f,
+            "DmaStream(cpu=0x{:x}, dma=0x{:x}, size={}, dir={:?}, state={:?})",
             self.cpu_addr.as_ptr() as usize,
             self.dma_addr.as_u64(),
             self.size,

@@ -1,8 +1,8 @@
 //! WASI 进程控制: `proc_exit`, `sched_yield`
 
-use crate::kernel::services::wasm::types::{Value, WasmError};
-use crate::kernel::services::wasm::interpreter::Interpreter;
 use super::{WasiContext, wasi_success};
+use crate::kernel::services::wasm::interpreter::Interpreter;
+use crate::kernel::services::wasm::types::{Value, WasmError};
 
 /// WASI `proc_exit`: 终止当前 WASM 实例
 ///

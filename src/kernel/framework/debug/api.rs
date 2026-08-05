@@ -1,13 +1,13 @@
 //! debug 模块公共 re-export
 
 pub use super::ftrace::{
-    fnv1a_32, FtraceState, TraceEvent, EVENT_SIZE, FTRACE_BUF_CAP, MAX_TRACE_POINTS, FTRACE,
+    EVENT_SIZE, FTRACE, FTRACE_BUF_CAP, FtraceState, MAX_TRACE_POINTS, TraceEvent, fnv1a_32,
 };
 pub use super::kgdb::{
-    kgdb_active, kgdb_breakpoint, kgdb_handle_exception, kgdb_loop, kgdb_serial_ready,
-    kgdb_set_serial, kgdb_try_getc, kgdb_write_str, KgdbRegs, KgdbSerial,
+    KgdbRegs, KgdbSerial, kgdb_active, kgdb_breakpoint, kgdb_handle_exception, kgdb_loop,
+    kgdb_serial_ready, kgdb_set_serial, kgdb_try_getc, kgdb_write_str,
 };
-pub use super::ringbuf::{RingBuffer, DEFAULT_RING_CAPACITY};
+pub use super::ringbuf::{DEFAULT_RING_CAPACITY, RingBuffer};
 
 /// 初始化 debug 子系统
 pub fn debug_init() {
@@ -54,4 +54,3 @@ pub fn kgdb_break_now() {
     let mut regs = KgdbRegs::default();
     kgdb_breakpoint(&mut regs);
 }
-

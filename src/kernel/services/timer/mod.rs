@@ -19,8 +19,8 @@
 
 #![deny(unsafe_code)]
 
-pub mod sleep;
 pub mod posix_timer;
-pub mod timerfd;
+pub mod sleep;
 pub mod tickless;
 pub mod time_sync;
+pub mod timerfd;

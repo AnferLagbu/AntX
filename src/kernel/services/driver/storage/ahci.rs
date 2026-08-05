@@ -205,7 +205,10 @@ pub enum AhciDeviceKind {
 }
 
 impl AhciDeviceKind {
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     /// 从 `PxSIG` 寄存器解析
     pub fn from_signature(sig: u32) -> Self {
         match sig {
@@ -240,7 +243,10 @@ impl SataStatus {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 设备是否已建立通信 (PxSSTS.DET == 3)
     pub fn is_connected(&self) -> bool {
         self.device_detection == 3
@@ -302,9 +308,9 @@ impl H2dFis {
     pub fn read_dma(lba: u64, count: u16) -> Self {
         let mut fis = Self::new();
         fis.fis_type = 0x27; // H2D Register FIS
-        fis.flags = 0x80;    // 写命令
-        fis.command = 0x25;   // READ DMA EXT
-        fis.device = 0x40;    // LBA 模式
+        fis.flags = 0x80; // 写命令
+        fis.command = 0x25; // READ DMA EXT
+        fis.device = 0x40; // LBA 模式
         fis.lba0 = (lba & 0xFF) as u8;
         fis.lba1 = ((lba >> 8) & 0xFF) as u8;
         fis.lba2 = ((lba >> 16) & 0xFF) as u8;
@@ -546,13 +552,19 @@ impl AhciPort {
         }
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 分配 DMA 内存并设置寄存器
     pub fn setup_dma(&mut self, hba: &AhciHba) -> bool {
-        let handle = if let Some(h) = crate::kernel::framework::driver::storage::ahci_alloc_port_dma() { h } else {
-            slog_warn!(Driver, "端口 {} DMA 分配失败", self.port_num);
-            return false;
-        };
+        let handle =
+            if let Some(h) = crate::kernel::framework::driver::storage::ahci_alloc_port_dma() {
+                h
+            } else {
+                slog_warn!(Driver, "端口 {} DMA 分配失败", self.port_num);
+                return false;
+            };
 
         // 写入寄存器
         self.set_cmd_list(hba, handle.cmd_list_phys);
@@ -642,9 +654,18 @@ impl AhciPort {
         self.port_initialized = false;
     }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::ref_as_ptr, reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 提交 DMA 命令并等待完成
     ///
     /// 通过 framework safe wrapper 填充命令头、FIS、PRDT,
@@ -731,8 +752,14 @@ impl AhciPort {
         Ok(())
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 读取扇区 (DMA)
     ///
     /// # Errors
@@ -752,25 +779,38 @@ impl AhciPort {
         let byte_count = u32::from(count) * SECTOR_SIZE as u32;
 
         // 分配 DMA 缓冲区
-        let (buf_vaddr, buf_paddr, buf_size) = match crate::kernel::framework::driver::storage::ahci_alloc_dma_buffer(byte_count as usize) {
-            Some(v) => v,
-            None => return Err(()),
-        };
+        let (buf_vaddr, buf_paddr, buf_size) =
+            match crate::kernel::framework::driver::storage::ahci_alloc_dma_buffer(
+                byte_count as usize,
+            ) {
+                Some(v) => v,
+                None => return Err(()),
+            };
 
         let fis = H2dFis::read_dma(lba, count);
         let result = self.submit_dma_command(hba, &fis, buf_paddr, byte_count, false);
 
         // 复制数据到用户 buffer
         if result.is_ok() {
-            crate::kernel::framework::driver::storage::ahci_copy_from_dma(buffer, buf_vaddr, byte_count as usize);
+            crate::kernel::framework::driver::storage::ahci_copy_from_dma(
+                buffer,
+                buf_vaddr,
+                byte_count as usize,
+            );
         }
 
         crate::kernel::framework::driver::storage::ahci_free_dma_buffer(buf_vaddr, buf_size);
         result
     }
 
-#[expect(clippy::similar_names, reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::similar_names,
+        reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
+    )]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 写入扇区 (DMA)
     ///
     /// # Errors
@@ -779,7 +819,13 @@ impl AhciPort {
     /// - `count` 为 0 或超过单命令最大扇区数时返回 `Err(())`
     /// - DMA 缓冲区分配失败时返回 `Err(())`
     /// - 命令提交超时、传输错误 (TFE) 或端口出错时返回 `Err(())`
-    pub fn write(&mut self, hba: &AhciHba, lba: u64, count: u16, buffer: *const u8) -> Result<(), ()> {
+    pub fn write(
+        &mut self,
+        hba: &AhciHba,
+        lba: u64,
+        count: u16,
+        buffer: *const u8,
+    ) -> Result<(), ()> {
         if !self.port_initialized || !self.device_present {
             return Err(());
         }
@@ -790,13 +836,20 @@ impl AhciPort {
         let byte_count = u32::from(count) * SECTOR_SIZE as u32;
 
         // 分配 DMA 缓冲区
-        let (buf_vaddr, buf_paddr, buf_size) = match crate::kernel::framework::driver::storage::ahci_alloc_dma_buffer(byte_count as usize) {
-            Some(v) => v,
-            None => return Err(()),
-        };
+        let (buf_vaddr, buf_paddr, buf_size) =
+            match crate::kernel::framework::driver::storage::ahci_alloc_dma_buffer(
+                byte_count as usize,
+            ) {
+                Some(v) => v,
+                None => return Err(()),
+            };
 
         // 复制数据到 DMA 缓冲区
-        crate::kernel::framework::driver::storage::ahci_copy_to_dma(buf_vaddr, buffer, byte_count as usize);
+        crate::kernel::framework::driver::storage::ahci_copy_to_dma(
+            buf_vaddr,
+            buffer,
+            byte_count as usize,
+        );
 
         let fis = H2dFis::write_dma(lba, count);
         let result = self.submit_dma_command(hba, &fis, buf_paddr, byte_count, true);
@@ -1016,11 +1069,7 @@ impl AhciController {
         }
 
         self.initialized = true;
-        slog_info!(
-            Driver,
-            "控制器初始化完成, {} 端口活动",
-            self.ports.len()
-        );
+        slog_info!(Driver, "控制器初始化完成, {} 端口活动", self.ports.len());
         true
     }
 
@@ -1077,10 +1126,22 @@ mod tests {
 
     #[test]
     fn test_ahci_device_kind_from_signature() {
-        assert_eq!(AhciDeviceKind::from_signature(SATA_SIG_ATA), AhciDeviceKind::Ata);
-        assert_eq!(AhciDeviceKind::from_signature(SATA_SIG_ATAPI), AhciDeviceKind::Atapi);
-        assert_eq!(AhciDeviceKind::from_signature(0x00000000), AhciDeviceKind::None);
-        assert_eq!(AhciDeviceKind::from_signature(0xFFFFFFFF), AhciDeviceKind::None);
+        assert_eq!(
+            AhciDeviceKind::from_signature(SATA_SIG_ATA),
+            AhciDeviceKind::Ata
+        );
+        assert_eq!(
+            AhciDeviceKind::from_signature(SATA_SIG_ATAPI),
+            AhciDeviceKind::Atapi
+        );
+        assert_eq!(
+            AhciDeviceKind::from_signature(0x00000000),
+            AhciDeviceKind::None
+        );
+        assert_eq!(
+            AhciDeviceKind::from_signature(0xFFFFFFFF),
+            AhciDeviceKind::None
+        );
     }
 
     #[test]

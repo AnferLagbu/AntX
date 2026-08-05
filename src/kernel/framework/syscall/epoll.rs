@@ -38,13 +38,11 @@
 //! - `epoll_pwake` 在文件 I/O 路径 (write/close) 调用, 持锁时不可睡眠
 //! - 阻塞在 `epoll_wait` 中调用 `SCHEDULER.yield_to_wait`, 无需额外锁保护
 
-use alloc::vec::Vec;
+use crate::kernel::framework::fs::vfs_poll_trait::{VfsPollContext, current_vfs_poll_policy};
+use crate::kernel::framework::ipc::{WaitQueue, WaitQueueItem};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use crate::kernel::framework::syscall::Errno;
-use crate::kernel::framework::ipc::{WaitQueue, WaitQueueItem};
-use crate::kernel::framework::fs::vfs_poll_trait::{
-    VfsPollContext, current_vfs_poll_policy,
-};
+use alloc::vec::Vec;
 
 // ============================================================================
 // epoll 常量
@@ -149,7 +147,10 @@ pub fn sys_epoll_create(size: i32) -> i64 {
     id as i64
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `epoll_ctl` — 控制 epoll 实例
 ///
 /// - `EPOLL_CTL_ADD`: 注册 fd
@@ -175,7 +176,11 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
     match op {
         EPOLL_CTL_ADD => {
             // 检查 fd 是否已存在
-            if instances[idx].interest_list.iter().any(|item| item.fd == fd) {
+            if instances[idx]
+                .interest_list
+                .iter()
+                .any(|item| item.fd == fd)
+            {
                 return Errno::EEXIST.as_ret();
             }
 
@@ -199,7 +204,13 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
             };
 
             instances[idx].interest_list.push(item);
-            crate::klog_debug!(Sync, "[epoll] ADD fd={} events=0x{:X} to epfd={}", fd, ev_events, epfd_id);
+            crate::klog_debug!(
+                Sync,
+                "[epoll] ADD fd={} events=0x{:X} to epfd={}",
+                fd,
+                ev_events,
+                epfd_id
+            );
         }
         EPOLL_CTL_MOD => {
             let item = match instances[idx].interest_list.iter_mut().find(|i| i.fd == fd) {
@@ -223,7 +234,13 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
             item.is_oneshot = (ev_events & EPOLLONESHOT) != 0;
             item.ready = false;
 
-            crate::klog_debug!(Sync, "[epoll] MOD fd={} events=0x{:X} in epfd={}", fd, ev_events, epfd_id);
+            crate::klog_debug!(
+                Sync,
+                "[epoll] MOD fd={} events=0x{:X} in epfd={}",
+                fd,
+                ev_events,
+                epfd_id
+            );
         }
         EPOLL_CTL_DEL => {
             let len_before = instances[idx].interest_list.len();
@@ -245,7 +262,10 @@ pub fn sys_epoll_ctl(epfd: i64, op: i32, fd: i32, event: *const EpollEvent) -> i
     0
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// `epoll_wait` — 等待事件
 ///
 /// `maxevents` 必须大于 0.
@@ -293,7 +313,9 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
 
         if current_pid != 0 && timeout == -1 {
             // 1. 挂入 wait_queue (持锁, 避免与 epoll_pwake 竞态)
-            instances[idx].wait_queue.add(WaitQueueItem { tid: current_pid as u32 });
+            instances[idx].wait_queue.add(WaitQueueItem {
+                tid: current_pid as u32,
+            });
             // 2. 释放锁, 再阻塞 (与 futex 模式一致: unlock → block → schedule)
             drop(instances);
 
@@ -330,7 +352,12 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
         }
     }
 
-    crate::klog_debug!(Sync, "[epoll] WAIT epfd={} returned {} events", epfd_id, count);
+    crate::klog_debug!(
+        Sync,
+        "[epoll] WAIT epfd={} returned {} events",
+        epfd_id,
+        count
+    );
     count as i64
 }
 
@@ -388,7 +415,10 @@ fn instance_watches_fd(instance: &EpollInstance, fd: i32) -> bool {
     instance.interest_list.iter().any(|item| item.fd == fd)
 }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 /// 策略: 把 fd 的就绪事件加入 epoll 实例的 `ready_list`
 ///
 /// REVAL-6.2: 从 `epoll_pwake` 提取, 封装:
@@ -419,7 +449,10 @@ fn enqueue_ready_for_fd(instance: &mut EpollInstance, fd: i32) -> bool {
     }
 
     // 入队
-    instance.ready_list.push(EpollEvent { events: revents, data });
+    instance.ready_list.push(EpollEvent {
+        events: revents,
+        data,
+    });
     true
 }
 
@@ -427,8 +460,14 @@ fn enqueue_ready_for_fd(instance: &mut EpollInstance, fd: i32) -> bool {
 // 辅助函数
 // ============================================================================
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
-#[expect(clippy::items_after_statements, reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect")]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::items_after_statements,
+    reason = "items_after_statements: item 紧邻使用点声明便于阅读上下文; 当前优先 expect"
+)]
 /// 检查 fd 是否就绪 (完整集成 VFS)
 ///
 /// REVAL-6.1: 4 种 VFS `file_type` → events 位映射改走 `VfsPollPolicy` trait dispatch
@@ -504,7 +543,7 @@ pub fn epoll_destroy(epfd: u64) {
 
 #[cfg(feature = "kernel_test")]
 fn test_epoll_create() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     let fd = sys_epoll_create(1);
     check!(fd > 0, "epoll_create returns positive fd");
@@ -517,12 +556,15 @@ fn test_epoll_create() -> crate::kernel::framework::tests::TestResult {
 
 #[cfg(feature = "kernel_test")]
 fn test_epoll_ctl_add_del() -> crate::kernel::framework::tests::TestResult {
-    use crate::kernel::framework::tests::{check, TestResult};
+    use crate::kernel::framework::tests::{TestResult, check};
 
     let epfd = sys_epoll_create(4);
     check!(epfd > 0, "epoll_create ok");
 
-    let ev = EpollEvent { events: EPOLLIN, data: 42 };
+    let ev = EpollEvent {
+        events: EPOLLIN,
+        data: 42,
+    };
     let ret = sys_epoll_ctl(epfd, EPOLL_CTL_ADD, 3, &ev as *const EpollEvent);
     check!(ret == 0, "epoll_ctl ADD ok");
 

@@ -18,7 +18,6 @@ pub const VFS_MAX_NAME: usize = 64;
 pub const VFS_MAX_FDS: usize = 32;
 pub const VFS_MAX_MOUNTS: usize = 8;
 
-
 // 统一到顶层 KernelError
 pub use crate::kernel::services::error::KernelError;
 
@@ -336,7 +335,13 @@ pub trait FileSystem: Send + Sync {
     ///
     /// # Errors
     /// 当路径不存在、无权限或底层元数据更新失败时返回 `KernelError`.
-    fn fs_chown(&self, rel_path: &str, owner_pwm: u64, group_pwm: u64, pwm: u64) -> KernelResult<()>;
+    fn fs_chown(
+        &self,
+        rel_path: &str,
+        owner_pwm: u64,
+        group_pwm: u64,
+        pwm: u64,
+    ) -> KernelResult<()>;
 
     // ---- 目录操作 ----
 
@@ -396,7 +401,13 @@ pub trait FileSystem: Send + Sync {
     ///
     /// # Errors
     /// 默认实现返回 `NotSupported`; 当路径不存在、无权限或底层更新失败时返回 `KernelError`.
-    fn fs_utimensat(&self, _rel_path: &str, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
+    fn fs_utimensat(
+        &self,
+        _rel_path: &str,
+        _atime: u64,
+        _mtime: u64,
+        _pwm: u64,
+    ) -> KernelResult<()> {
         Err(KernelError::NotSupported)
     }
     /// 截断文件到指定大小.
@@ -410,7 +421,13 @@ pub trait FileSystem: Send + Sync {
     ///
     /// # Errors
     /// 默认实现返回 `NotSupported`; 当 `whence` 非法或计算偏移越界时返回 `KernelError`.
-    fn fs_seek(&self, _handle: u32, _offset: i64, _whence: VfsSeekWhence, _current: u64) -> KernelResult<u64> {
+    fn fs_seek(
+        &self,
+        _handle: u32,
+        _offset: i64,
+        _whence: VfsSeekWhence,
+        _current: u64,
+    ) -> KernelResult<u64> {
         Err(KernelError::NotSupported)
     }
     fn fs_resolve_path(&self, _rel_path: &str) -> Option<u32> {
@@ -438,7 +455,13 @@ pub trait FileSystem: Send + Sync {
     ///
     /// # Errors
     /// 默认实现返回 `NotSupported`; 当底层读取失败时返回 `KernelError`.
-    fn fs_pread_inode(&self, _node_id: u32, _offset: u64, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+    fn fs_pread_inode(
+        &self,
+        _node_id: u32,
+        _offset: u64,
+        _buf: &mut [u8],
+        _pwm: u64,
+    ) -> KernelResult<usize> {
         Err(KernelError::NotSupported)
     }
 
@@ -447,14 +470,26 @@ pub trait FileSystem: Send + Sync {
     ///
     /// # Errors
     /// 默认实现返回 `NotSupported`; 当路径不存在、无权限或底层设置失败时返回 `KernelError`.
-    fn fs_setxattr(&self, _rel_path: &str, _name: &str, _value: &[u8], _pwm: u64) -> KernelResult<()> {
+    fn fs_setxattr(
+        &self,
+        _rel_path: &str,
+        _name: &str,
+        _value: &[u8],
+        _pwm: u64,
+    ) -> KernelResult<()> {
         Err(KernelError::NotSupported)
     }
     /// 读取扩展属性.
     ///
     /// # Errors
     /// 默认实现返回 `NotSupported`; 当属性不存在、缓冲区过小或底层读取失败时返回 `KernelError`.
-    fn fs_getxattr(&self, _rel_path: &str, _name: &str, _buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+    fn fs_getxattr(
+        &self,
+        _rel_path: &str,
+        _name: &str,
+        _buf: &mut [u8],
+        _pwm: u64,
+    ) -> KernelResult<usize> {
         Err(KernelError::NotSupported)
     }
     /// 列出扩展属性.
@@ -480,9 +515,9 @@ pub trait FileSystem: Send + Sync {
 // 对应 POSIX "打开文件描述", 多个 fd 可共享 (dup 语义).
 // offset 和 flags 在所有共享者之间共享.
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use alloc::sync::Arc;
 use super::inode::Inode;
+use alloc::sync::Arc;
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// 打开文件描述 — POSIX open file description 的 `QueenX` 实现
 ///

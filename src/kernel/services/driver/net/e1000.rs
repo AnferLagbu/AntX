@@ -16,9 +16,9 @@
 //! - `E1000Driver`: 安全驱动逻辑 (初始化序列/寄存器配置/中断应答)
 //! - DMA 环管理/发送/接收/中断处理: 在 framework 层
 
+use crate::kernel::framework::driver::net::e1000::{RxRing, TxRing};
 use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::PhysAddr;
-use crate::kernel::framework::driver::net::e1000::{TxRing, RxRing};
 use crate::kernel::services::error::KernelError;
 
 // Services 层安全日志宏 (无 unsafe 展开)
@@ -194,8 +194,7 @@ impl E1000Io {
     ///
     /// 当从 PCI BAR 映射物理地址失败时返回 [`KernelError::Io`]。
     pub fn new(phys: PhysAddr, len: usize) -> Result<Self, KernelError> {
-        let mmio = IoMem::from_pci_bar(phys, len, "e1000-bar0")
-            .map_err(|_| KernelError::Io)?;
+        let mmio = IoMem::from_pci_bar(phys, len, "e1000-bar0").map_err(|_| KernelError::Io)?;
         Ok(Self { mmio })
     }
 
@@ -203,7 +202,10 @@ impl E1000Io {
 
     /// 读取 32 位寄存器
     #[inline(always)]
-#[expect(clippy::inline_always, reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect")]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
     pub fn read32(&self, reg: u32) -> u32 {
         self.mmio.read_u32(reg as usize)
     }
@@ -242,7 +244,10 @@ impl E1000Io {
         icr
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 清除所有待处理中断
     pub fn irq_disable_all(&self) {
         self.write32(E1000_IMC, 0xFFFFFFFF);
@@ -280,7 +285,11 @@ impl E1000Io {
         } else {
             "10"
         };
-        let duplex = if status & E1000_STATUS_FD != 0 { "FD" } else { "HD" };
+        let duplex = if status & E1000_STATUS_FD != 0 {
+            "FD"
+        } else {
+            "HD"
+        };
         (speed, duplex)
     }
 
@@ -372,7 +381,10 @@ impl E1000Io {
 
     // ── MAC 地址 ──
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 写入 MAC 地址到 RAL0/RAH0 寄存器
     pub fn set_mac(&self, mac: &[u8; 6]) {
         let ral = u32::from(mac[0])
@@ -436,7 +448,10 @@ impl E1000Driver {
         &self.io
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 硬件复位与链路检测。
     ///
     /// 执行 E1000 软复位, 清除中断, 配置链路/速率/双工, 并等待链路 UP。
@@ -494,7 +509,10 @@ impl E1000Driver {
         Ok(())
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     /// 完成初始化: TCTL/RCTL/MAC/IPG/IMS。
     ///
     /// 应在 DMA 环分配并配置基地址后调用。
@@ -519,8 +537,12 @@ impl E1000Driver {
         slog_info!(
             Net,
             "e1000: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            self.mac[0], self.mac[1], self.mac[2],
-            self.mac[3], self.mac[4], self.mac[5]
+            self.mac[0],
+            self.mac[1],
+            self.mac[2],
+            self.mac[3],
+            self.mac[4],
+            self.mac[5]
         );
 
         // RX tail: 通知硬件可接收范围
@@ -530,7 +552,8 @@ impl E1000Driver {
         self.io.write32(E1000_IPG, 0x0060200A);
 
         // 启用中断: RX Timer + RX Descriptor Minimum Threshold + Link Status Change
-        self.io.irq_enable(E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC);
+        self.io
+            .irq_enable(E1000_ICR_RXT0 | E1000_ICR_RXDMT0 | E1000_ICR_LSC);
 
         slog_info!(
             Net,
@@ -737,7 +760,10 @@ impl E1000Driver {
         None
     }
 
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::manual_let_else,
+        reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+    )]
     /// 批量处理接收描述符 (中断路径调用)
     ///
     /// 遍历所有就绪的 RX 描述符, 清除状态并推进 tail。

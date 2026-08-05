@@ -32,12 +32,12 @@ pub mod reset_config;
 
 pub use attribution::{
     AddrRange, CrossLayerHandler, DomainFailureRecord, FaultAttribution, FaultAttributor,
-    TcbModule, MAX_SERVICE_DOMAINS, SERVICE_RANGES, TCB_RANGES,
+    MAX_SERVICE_DOMAINS, SERVICE_RANGES, TCB_RANGES, TcbModule,
 };
 pub use audit_export::{AuditExporter, RollbackSummary};
 pub use cascade::{
     CascadeDirection, CascadePlan, CascadePolicy, CascadeQueue, DomainNode, DomainTopology,
     MAX_TOPOLOGY_DOMAINS,
 };
-pub use health_monitor::{DomainHealth, HealthMonitor, MonitorAction, MAX_MONITOR_DOMAINS};
+pub use health_monitor::{DomainHealth, HealthMonitor, MAX_MONITOR_DOMAINS, MonitorAction};
 pub use recovery_policy::{FaultSignal, RecoveryAction, RecoveryPolicy};

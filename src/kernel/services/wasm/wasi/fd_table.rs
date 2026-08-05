@@ -1,7 +1,7 @@
 //! WASI 文件描述符表 (独立于 POSIX fd 表)
 
-use alloc::vec::Vec;
 use super::errno::WasiErrno;
+use alloc::vec::Vec;
 
 /// WASI 标准 fd 编号
 pub const WASI_STDIN: u32 = 0;
@@ -32,13 +32,36 @@ impl WasiRights {
     };
 
     pub const DIRECTORY: Self = Self {
-        base: 0x10000000 | 0x800 | 0x400 | 0x200 | 0x100 | 0x80 | 0x40 | 0x20 | 0x10 | 0x08 | 0x04 | 0x02 | 0x01,
+        base: 0x10000000
+            | 0x800
+            | 0x400
+            | 0x200
+            | 0x100
+            | 0x80
+            | 0x40
+            | 0x20
+            | 0x10
+            | 0x08
+            | 0x04
+            | 0x02
+            | 0x01,
         inheriting: u64::MAX,
     };
 
     pub const FILE: Self = Self {
         base: 0x800 | 0x400 | 0x200 | 0x100 | 0x80 | 0x40 | 0x20 | 0x10 | 0x08 | 0x04 | 0x02 | 0x01,
-        inheriting: 0x800 | 0x400 | 0x200 | 0x100 | 0x80 | 0x40 | 0x20 | 0x10 | 0x08 | 0x04 | 0x02 | 0x01,
+        inheriting: 0x800
+            | 0x400
+            | 0x200
+            | 0x100
+            | 0x80
+            | 0x40
+            | 0x20
+            | 0x10
+            | 0x08
+            | 0x04
+            | 0x02
+            | 0x01,
     };
 }
 
@@ -161,7 +184,10 @@ pub fn read_iovec_from_memory(
         let ptr = iovs_ptr + i * 8; // 每个 iovec: {ptr: u32, len: u32}
         let buf_ptr = mem.read_u32(ptr).map_err(|_| WasiErrno::Fault)?;
         let buf_len = mem.read_u32(ptr + 4).map_err(|_| WasiErrno::Fault)?;
-        iovecs.push(WasiIoVec { buf: buf_ptr, len: buf_len });
+        iovecs.push(WasiIoVec {
+            buf: buf_ptr,
+            len: buf_len,
+        });
     }
     Ok(iovecs)
 }

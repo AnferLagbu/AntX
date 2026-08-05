@@ -31,7 +31,10 @@ impl HvChecksum {
         }
     }
 
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn compute(kind: HvCksumType, data: &[u8]) -> Self {
         let mut ck = Self::new(kind);
         match kind {
@@ -75,7 +78,10 @@ impl HvChecksum {
         self.value[3] = 0;
     }
 
-#[expect(clippy::many_single_char_names, reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)")]
+    #[expect(
+        clippy::many_single_char_names,
+        reason = "DECISION-043 pedantic 兜底: 当前批量 expect 兑底; 后续可逐处手工重构 (改 .cast() / let-else / 命名等)"
+    )]
     fn fletcher4(&mut self, data: &[u8]) {
         let words = data.chunks_exact(8);
         let mut a: u64 = 0;
@@ -110,18 +116,10 @@ impl HvChecksum {
 
     fn sha256(&mut self, data: &[u8]) {
         let hash = crate::kernel::framework::credo::sha256::sha256(data);
-        self.value[0] = u64::from_be_bytes(
-            hash[0..8].try_into().unwrap_or_else(|_| [0u8; 8])
-        );
-        self.value[1] = u64::from_be_bytes(
-            hash[8..16].try_into().unwrap_or_else(|_| [0u8; 8])
-        );
-        self.value[2] = u64::from_be_bytes(
-            hash[16..24].try_into().unwrap_or_else(|_| [0u8; 8])
-        );
-        self.value[3] = u64::from_be_bytes(
-            hash[24..32].try_into().unwrap_or_else(|_| [0u8; 8])
-        );
+        self.value[0] = u64::from_be_bytes(hash[0..8].try_into().unwrap_or_else(|_| [0u8; 8]));
+        self.value[1] = u64::from_be_bytes(hash[8..16].try_into().unwrap_or_else(|_| [0u8; 8]));
+        self.value[2] = u64::from_be_bytes(hash[16..24].try_into().unwrap_or_else(|_| [0u8; 8]));
+        self.value[3] = u64::from_be_bytes(hash[24..32].try_into().unwrap_or_else(|_| [0u8; 8]));
     }
 }
 

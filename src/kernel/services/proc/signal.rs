@@ -21,7 +21,6 @@
 //!
 //! 评估日期: 2026-06-04, v2.16 更新: 2026-06-12
 
-
 // ============================================================================
 // 标准 POSIX 信号 (强类型枚举)
 // ============================================================================
@@ -230,9 +229,10 @@ impl SignalDisposition {
     pub fn default_for(sig: StandardSignal) -> Self {
         match sig {
             StandardSignal::Chld | StandardSignal::Urg => Self::Ign,
-            StandardSignal::Stop | StandardSignal::Tstp | StandardSignal::Ttin | StandardSignal::Ttou => {
-                Self::Stop
-            }
+            StandardSignal::Stop
+            | StandardSignal::Tstp
+            | StandardSignal::Ttin
+            | StandardSignal::Ttou => Self::Stop,
             StandardSignal::Cont => Self::Cont,
             s if s.is_core_dump() => Self::Core,
             _ => Self::Term,
@@ -448,7 +448,11 @@ pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framewor
     // 最小校验: pid 至少 0 或负数 (i32 范围), 由 framework 内部 4 路径分发
 
     let ret = crate::kernel::framework::syscall::api::sys_kill(pid, sig);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// `rt_sigaction` 系统调用安全代理
@@ -475,7 +479,11 @@ pub fn rt_sigaction_syscall(
     }
 
     let ret = crate::kernel::framework::syscall::api::sys_rt_sigaction(signum, act, oact);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// `rt_sigprocmask` 系统调用安全代理
@@ -499,7 +507,11 @@ pub fn rt_sigprocmask_syscall(
     }
 
     let ret = crate::kernel::framework::syscall::api::sys_rt_sigprocmask(how, set, oset);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 /// P1-I-45: sigaltstack 系统调用安全代理
@@ -519,7 +531,11 @@ pub fn sigaltstack_syscall(
     use crate::kernel::framework::syscall::Errno;
 
     let ret = crate::kernel::framework::syscall::api::sys_sigaltstack(ss, old_ss);
-    if ret < 0 { Err(Errno::from_ret(ret)) } else { Ok(ret as usize) }
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
 }
 
 // ============================================================================
@@ -531,8 +547,8 @@ pub fn sigaltstack_syscall(
 // 零成本读取引用解决 (已经是 vtable 一次解析, 后续调用直接通过指针).
 // 本文件实现 StandardSignalPolicy, 在 services::proc::init() 中注册.
 
-use crate::kernel::framework::proc::signal_trait::SignalDecision;
 use crate::kernel::framework::proc::SignalDefaultAction;
+use crate::kernel::framework::proc::signal_trait::SignalDecision;
 
 /// 标准 POSIX 信号策略 (services 端实现)
 ///

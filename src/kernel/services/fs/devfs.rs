@@ -29,7 +29,6 @@ pub const DEVFS_MAX_NAME: usize = 32;
 // 设备类型
 // ============================================================================
 
-
 /// 设备类型 (强类型枚举, 替代裸 `u8`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -71,13 +70,22 @@ impl DevKind {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 是否为虚拟设备 (内核内部实现)
     pub fn is_virtual(&self) -> bool {
-        matches!(self, Self::Null | Self::Zero | Self::Console | Self::Tty | Self::Credo)
+        matches!(
+            self,
+            Self::Null | Self::Zero | Self::Console | Self::Tty | Self::Credo
+        )
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 是否为物理设备 (由 Chitin 驱动提供)
     pub fn is_physical(&self) -> bool {
         matches!(self, Self::Block | Self::Char | Self::Net | Self::Input)
@@ -245,8 +253,14 @@ impl DevfsData {
         None
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn read(&self, dev_type: u8, buf: &mut [u8]) -> i32 {
         match DevKind::from_u8(dev_type) {
             Some(DevKind::Null) => 0,
@@ -262,26 +276,50 @@ impl DevfsData {
                 if pwm != 0 {
                     let mut off = 0;
                     let blen = buf.len();
-                    if off < blen { buf[off] = b'O'; off += 1; }
-                    if off < blen { buf[off] = b'K'; off += 1; }
-                    if off < blen { buf[off] = b' '; off += 1; }
+                    if off < blen {
+                        buf[off] = b'O';
+                        off += 1;
+                    }
+                    if off < blen {
+                        buf[off] = b'K';
+                        off += 1;
+                    }
+                    if off < blen {
+                        buf[off] = b' ';
+                        off += 1;
+                    }
                     for &b in b"pwm=0x" {
-                        if off < blen { buf[off] = b; off += 1; }
+                        if off < blen {
+                            buf[off] = b;
+                            off += 1;
+                        }
                     }
                     let hex = b"0123456789ABCDEF";
                     for shift in (0..64).rev().step_by(4) {
                         let nibble = ((pwm >> shift) & 0xF) as usize;
-                        if off < blen { buf[off] = hex[nibble]; off += 1; }
+                        if off < blen {
+                            buf[off] = hex[nibble];
+                            off += 1;
+                        }
                     }
                     for &b in b" uid=" {
-                        if off < blen { buf[off] = b; off += 1; }
+                        if off < blen {
+                            buf[off] = b;
+                            off += 1;
+                        }
                     }
                     off = write_u32_dec(buf, off, uid);
                     for &b in b" euid=" {
-                        if off < blen { buf[off] = b; off += 1; }
+                        if off < blen {
+                            buf[off] = b;
+                            off += 1;
+                        }
                     }
                     off = write_u32_dec(buf, off, euid);
-                    if off < blen { buf[off] = b'\n'; off += 1; }
+                    if off < blen {
+                        buf[off] = b'\n';
+                        off += 1;
+                    }
                     off as i32
                 } else {
                     let msg = b"ERR not_authenticated\n";
@@ -298,8 +336,14 @@ impl DevfsData {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
-#[expect(clippy::match_same_arms, reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+    )]
     pub fn write(&self, dev_type: u8, buf: &[u8]) -> i32 {
         match DevKind::from_u8(dev_type) {
             Some(DevKind::Null | DevKind::Zero) => buf.len() as i32,
@@ -402,7 +446,10 @@ pub struct DevFile {
 }
 
 impl DevFile {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 设备名 (如 "null", "zero", "console")
     /// 物理设备无固定名称, 返回 "device"
     pub fn name(&self) -> &'static str {
@@ -429,9 +476,7 @@ pub struct SafeDevFs {
 impl SafeDevFs {
     /// 创建全局 `DevFS` 代理
     pub fn new() -> Self {
-        Self {
-            inner: &DEVFS_DATA,
-        }
+        Self { inner: &DEVFS_DATA }
     }
 
     /// 注册设备
@@ -457,15 +502,17 @@ impl SafeDevFs {
     pub fn open(&self, path: &str) -> Result<DevFile, KernelError> {
         match self.inner.open(path) {
             Some((index, dev_type)) => {
-                let kind = DevKind::from_u8(dev_type)
-                    .ok_or(KernelError::InvalidArgument)?;
+                let kind = DevKind::from_u8(dev_type).ok_or(KernelError::InvalidArgument)?;
                 Ok(DevFile { index, kind })
             }
             None => Err(KernelError::FileNotFound),
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 从设备读
     ///
     /// # Errors
@@ -479,7 +526,10 @@ impl SafeDevFs {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 向设备写
     ///
     /// # Errors
@@ -497,7 +547,10 @@ impl SafeDevFs {
     pub fn readdir(&self, index: usize) -> Option<(alloc::string::String, DevKind)> {
         let (raw_name, dev_type) = self.inner.readdir(index)?;
         let kind = DevKind::from_u8(dev_type)?;
-        let end = raw_name.iter().position(|&b| b == 0).unwrap_or(raw_name.len());
+        let end = raw_name
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(raw_name.len());
         let name = alloc::string::String::from_utf8_lossy(&raw_name[..end]).into_owned();
         Some((name, kind))
     }
@@ -524,7 +577,9 @@ static GLOBAL_DEVFS: OnceCell<SafeDevFs> = OnceCell::new();
 
 /// 初始化全局 `DevFS`
 pub fn init_global() {
-    let _ = GLOBAL_DEVFS.get_or_init(|slot| { slot.write(SafeDevFs::new()); });
+    let _ = GLOBAL_DEVFS.get_or_init(|slot| {
+        slot.write(SafeDevFs::new());
+    });
 }
 
 /// 获取全局 `DevFS` 引用
@@ -579,8 +634,8 @@ pub fn register_standard() {
 // DevFs Inode — 设备文件 Inode 实现
 // ============================================================================
 
-use alloc::sync::Arc;
 use crate::kernel::services::fs::inode::Inode;
+use alloc::sync::Arc;
 
 /// 设备文件 Inode — `DevFS` 的 Inode 实现
 pub struct DevFsInode {
@@ -590,7 +645,10 @@ pub struct DevFsInode {
 
 impl DevFsInode {
     pub fn new(dev_type: u8, mount_idx: u32) -> Self {
-        Self { dev_type, mount_idx }
+        Self {
+            dev_type,
+            mount_idx,
+        }
     }
 }
 
@@ -627,7 +685,12 @@ impl Inode for DevFsInode {
         Err(KernelError::NotSupported)
     }
 
-    fn seek(&self, _offset: i64, _whence: crate::kernel::framework::fs::VfsSeekWhence, _current_offset: u64) -> KernelResult<u64> {
+    fn seek(
+        &self,
+        _offset: i64,
+        _whence: crate::kernel::framework::fs::VfsSeekWhence,
+        _current_offset: u64,
+    ) -> KernelResult<u64> {
         Err(KernelError::InvalidArgument)
     }
 
@@ -653,9 +716,7 @@ impl Inode for DevFsInode {
 // FileSystem trait 实现 (E6-9c: VFS 分发接入)
 // ============================================================================
 
-use crate::kernel::framework::fs::{
-    FileSystem, KernelError, KernelResult, VfsDirEntry, VfsStat,
-};
+use crate::kernel::framework::fs::{FileSystem, KernelError, KernelResult, VfsDirEntry, VfsStat};
 
 impl FileSystem for DevfsData {
     fn name(&self) -> &'static str {
@@ -685,8 +746,17 @@ impl FileSystem for DevfsData {
         Ok(())
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
-    fn fs_read(&self, _handle: u32, _offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
+    fn fs_read(
+        &self,
+        _handle: u32,
+        _offset: u64,
+        buf: &mut [u8],
+        _pwm: u64,
+    ) -> KernelResult<usize> {
         // DevFS read 需要 dev_type, handle 即为 dev_type
         let result = self.read(_handle as u8, buf);
         if result < 0 {
@@ -696,7 +766,10 @@ impl FileSystem for DevfsData {
         }
     }
 
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
+    #[expect(
+        clippy::used_underscore_binding,
+        reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+    )]
     fn fs_write(&self, _handle: u32, _offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
         let result = self.write(_handle as u8, buf);
         if result < 0 {
@@ -731,7 +804,13 @@ impl FileSystem for DevfsData {
         Err(KernelError::PermissionDenied)
     }
 
-    fn fs_chown(&self, _rel_path: &str, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
+    fn fs_chown(
+        &self,
+        _rel_path: &str,
+        _owner_pwm: u64,
+        _group_pwm: u64,
+        _pwm: u64,
+    ) -> KernelResult<()> {
         Err(KernelError::PermissionDenied)
     }
 
@@ -754,7 +833,10 @@ impl FileSystem for DevfsData {
     fn fs_readdir(&self, _handle: u32, offset: u64, entry: &mut VfsDirEntry) -> KernelResult<bool> {
         match self.readdir(offset as usize) {
             Some((raw_name, dev_type)) => {
-                let end = raw_name.iter().position(|&b| b == 0).unwrap_or(raw_name.len());
+                let end = raw_name
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(raw_name.len());
                 let len = end.min(entry.name.len());
                 entry.name[..len].copy_from_slice(&raw_name[..len]);
                 // 剩余部分填零
@@ -768,7 +850,14 @@ impl FileSystem for DevfsData {
     }
 
     // L4 重构: 扩展方法实现 (override trait 默认实现)
-    fn fs_resolve_inode(&self, inode_id: u32, mount_idx: u32) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
-        Some(alloc::sync::Arc::new(DevFsInode::new(inode_id as u8, mount_idx)))
+    fn fs_resolve_inode(
+        &self,
+        inode_id: u32,
+        mount_idx: u32,
+    ) -> Option<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
+        Some(alloc::sync::Arc::new(DevFsInode::new(
+            inode_id as u8,
+            mount_idx,
+        )))
     }
 }

@@ -1,7 +1,9 @@
-use crate::kernel::framework::chitin::{devtree_children, devtree_get_node, devtree_walk, register_block_device};
 use crate::kernel::framework::chitin::{
-    chitin_blk_is_present, chitin_blk_read, chitin_blk_total_sectors, chitin_blk_write,
-    chitin_find_by_id, chitin_find_by_name, ChitinProto, BlockDevice,
+    BlockDevice, ChitinProto, chitin_blk_is_present, chitin_blk_read, chitin_blk_total_sectors,
+    chitin_blk_write, chitin_find_by_id, chitin_find_by_name,
+};
+use crate::kernel::framework::chitin::{
+    devtree_children, devtree_get_node, devtree_walk, register_block_device,
 };
 use crate::kernel::framework::fs::KernelError;
 use crate::klog_info;
@@ -18,7 +20,10 @@ pub enum CompositeType {
 }
 
 impl CompositeType {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn compatible_str(&self) -> &'static str {
         match self {
             CompositeType::Raid0 => "qx,raid0",
@@ -34,7 +39,10 @@ impl CompositeType {
         }
     }
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn display_name(&self) -> &'static str {
         match self {
             CompositeType::Raid0 => "RAID0",
@@ -130,7 +138,10 @@ impl CompositeBlockDevice {
     #[inline]
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::unnecessary_wraps, reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大")]
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
+    )]
     fn map_raid0_sector(&self, logical: u64) -> Option<(u8, u64)> {
         let stripe = logical / self.stripe_sectors;
         let child_idx = (stripe % u64::from(self.child_count)) as u8;
@@ -265,8 +276,14 @@ impl BlockDevice for CompositeBlockDevice {
 
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
 #[expect(clippy::cast_possible_truncation)]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::manual_let_else, reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
 pub fn devtree_probe_composites() -> usize {
     let composite_compatibles: &[&str] = &["qx,raid0", "qx,raid1"];
 
@@ -305,7 +322,9 @@ pub fn devtree_probe_composites() -> usize {
         let mut child_drives: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
 
         for &child_id in &children {
-            let child_node = if let Some(n) = devtree_get_node(child_id) { n } else {
+            let child_node = if let Some(n) = devtree_get_node(child_id) {
+                n
+            } else {
                 klog_warn!(
                     Driver,
                     "Chitin: composite child node {} not found, skipping",
@@ -325,7 +344,9 @@ pub fn devtree_probe_composites() -> usize {
 
             let idx: usize = {
                 if let Some(dev_id) = child_node.device_id {
-                    if let Some(i) = chitin_find_by_id(dev_id) { i } else {
+                    if let Some(i) = chitin_find_by_id(dev_id) {
+                        i
+                    } else {
                         klog_warn!(
                             Driver,
                             "Chitin: child '{}' device_id={} not in registry",
@@ -335,7 +356,9 @@ pub fn devtree_probe_composites() -> usize {
                         continue;
                     }
                 } else {
-                    if let Some(i) = chitin_find_by_name(child_node.name) { i } else {
+                    if let Some(i) = chitin_find_by_name(child_node.name) {
+                        i
+                    } else {
                         klog_warn!(
                             Driver,
                             "Chitin: child '{}' not found in Chitin registry",
@@ -398,7 +421,11 @@ pub fn devtree_probe_composites() -> usize {
         // 这是有界分配 —— 初始化时每个复合设备一份.
         let name_leaked: &'static str = dev_name.leak();
 
-        let composite = if let Some(c) = CompositeBlockDevice::new(composite_type, &child_drives, stripe_size) { c } else {
+        let composite = if let Some(c) =
+            CompositeBlockDevice::new(composite_type, &child_drives, stripe_size)
+        {
+            c
+        } else {
             klog_warn!(
                 Driver,
                 "Chitin: failed to create composite device '{}'",

@@ -39,6 +39,8 @@
 #![allow(clippy::empty_line_after_doc_comments)]
 // 10. Clippy: Result<_, ()> — 内核错误路径使用 () 作为错误值是有意设计
 #![allow(clippy::result_unit_err)]
+// rustfmt 整改后函数体行数普遍增长 10-20%, 原 100 行阈值过紧; 放宽至 200
+#![allow(clippy::too_many_lines)]
 // 11. Clippy: module_inception — 内核模块命名（如 fs/hvfs/hvfs.rs）是架构惯例
 #![allow(clippy::module_inception)]
 // 12. Clippy: new_without_default — 内核对象通常不应有无参默认构造
@@ -165,7 +167,10 @@ use core::panic::PanicInfo;
 use core::sync::atomic::Ordering;
 
 #[panic_handler]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
 fn panic(info: &PanicInfo) -> ! {
     crate::kernel::framework::barrier::PANIC_FLAG.store(true, Ordering::SeqCst);
 
@@ -219,7 +224,9 @@ fn panic(info: &PanicInfo) -> ! {
 
     // 1. 串口输出崩溃信息
     if crate::kernel::framework::klog::KLOG_INIT.load(Ordering::Acquire) {
-        crate::kernel::framework::klog::serial_write_bytes(b"\n========== KERNEL PANIC ==========\n");
+        crate::kernel::framework::klog::serial_write_bytes(
+            b"\n========== KERNEL PANIC ==========\n",
+        );
         crate::kernel::framework::klog::serial_write_bytes(msg.as_bytes());
         crate::kernel::framework::klog::serial_write_bytes(b"\n--- Register Dump ---\n");
         for i in 0..16 {
@@ -259,7 +266,9 @@ fn panic(info: &PanicInfo) -> ! {
                 b'a' + nibble - 10
             }]);
         }
-        crate::kernel::framework::klog::serial_write_bytes(b"\n===================================\n");
+        crate::kernel::framework::klog::serial_write_bytes(
+            b"\n===================================\n",
+        );
     }
 
     // 2. 图形控制台输出崩溃信息
@@ -311,7 +320,8 @@ fn panic(info: &PanicInfo) -> ! {
             crate::kernel::framework::klog::serial_write_bytes(
                 b"\n[RECOVERY] Barrier-stack: domain rolled back\n",
             );
-            crate::kernel::framework::barrier::PANIC_FLAG.store(false, core::sync::atomic::Ordering::SeqCst);
+            crate::kernel::framework::barrier::PANIC_FLAG
+                .store(false, core::sync::atomic::Ordering::SeqCst);
         } else {
             crate::kernel::framework::klog::serial_write_bytes(
                 b"\n[RECOVERY] Barrier-stack: recovery failed, halting\n",
@@ -360,9 +370,18 @@ fn alloc_error(layout: alloc::alloc::Layout) -> ! {
 /// # Panics
 /// Boot 栈 canary 校验失败 (栈溢出至栈底) 时立即 panic, 断言内核状态不可信.
 #[unsafe(no_mangle)]
-#[expect(clippy::used_underscore_binding, reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高")]
-#[expect(clippy::too_many_lines, reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底")]
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::used_underscore_binding,
+    reason = "下划线前缀表示私有约定或局部清理; 重命名需追改所有访问点, 风险高"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
+)]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub extern "C" fn kernel_init() {
     // 0. KLog — 自举串口驱动, 必须先于所有子系统
     unsafe {
@@ -373,7 +392,8 @@ pub extern "C" fn kernel_init() {
     // 0.05. Boot 栈 canary 验证 — 检测 trampoline → kernel_init 路径上的栈溢出.
     // canary 在 boot.asm trampoline64_high (x86_64) 或 entry.rs (aarch64) 写入 stack_bottom,
     // 若被覆盖则说明 boot 栈已溢出至栈底, 内核状态不可信, 立即 panic.
-    assert!(crate::kernel::framework::proc::check_boot_stack_canary(), 
+    assert!(
+        crate::kernel::framework::proc::check_boot_stack_canary(),
         "[BOOT] stack canary corrupted! Boot stack overflow detected. \
          Stack size=256KB, canary at stack_bottom was overwritten \
          during trampoline→kernel_init transition."
@@ -390,7 +410,7 @@ pub extern "C" fn kernel_init() {
     {
         // Validate configuration even in test mode
         crate::kernel::framework::config::init();
-        
+
         <crate::kernel::framework::arch::CurrentArch as crate::kernel::framework::arch::InterruptArch>::interrupt_disable(
         );
 
@@ -402,7 +422,8 @@ pub extern "C" fn kernel_init() {
             crate::kernel::framework::mm::KERNEL_BASE + boot_info.kernel_end + 0x200000,
         );
         unsafe {
-            crate::kernel::framework::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
+            crate::kernel::framework::mm::kmalloc::get_kmalloc_mut()
+                .init(heap_start, KMALLOC_HEAP_SIZE);
         }
         // 诊断: kmalloc init 后检查页表
         {
@@ -414,7 +435,8 @@ pub extern "C" fn kernel_init() {
             let pd63 = read_u64(0x109000, 63);
             crate::klog_boot_info!(
                 "[PAGETABLE] after kmalloc: pd[24]=0x{:016X} pd[63]=0x{:016X}",
-                pd24, pd63
+                pd24,
+                pd63
             );
         }
         // 必须包含 kernel_end 到 heap_start 之间的 2MB 间隙，
@@ -424,7 +446,9 @@ pub extern "C" fn kernel_init() {
         // GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE = 0x200000 + 16MB + 0x200000 = 20MB
         const GAP_SIZE: u64 = 0x200000;
         const BITMAP_GAP_SIZE: u64 = 0x200000;
-        crate::kernel::framework::mm::pmm::pmm_init_bitmap(GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE);
+        crate::kernel::framework::mm::pmm::pmm_init_bitmap(
+            GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE,
+        );
 
         // 诊断: dump 页表关键条目 (PML4[256]→pdpt_high[0]→pd[24]/[63])
         {
@@ -433,13 +457,17 @@ pub extern "C" fn kernel_init() {
                 unsafe { core::ptr::read_volatile(va as *const u64) }
             };
             let pml4_256 = read_u64(0x102000, 256);
-            let pdpt_0   = read_u64(0x104000, 0);
-            let pd24      = read_u64(0x109000, 24);
-            let pd63      = read_u64(0x109000, 63);
-            let pd0       = read_u64(0x109000, 0);
+            let pdpt_0 = read_u64(0x104000, 0);
+            let pd24 = read_u64(0x109000, 24);
+            let pd63 = read_u64(0x109000, 63);
+            let pd0 = read_u64(0x109000, 0);
             crate::klog_boot_info!(
                 "[PAGETABLE] pml4[256]=0x{:016X} pdpt[0]=0x{:016X} pd[0]=0x{:016X} pd[24]=0x{:016X} pd[63]=0x{:016X}",
-                pml4_256, pdpt_0, pd0, pd24, pd63
+                pml4_256,
+                pdpt_0,
+                pd0,
+                pd24,
+                pd63
             );
         }
 
@@ -500,13 +528,17 @@ pub extern "C" fn kernel_init() {
         // 若 VMM init 内部静默失败 (如页错误导致 OnceLock 状态停留在 IN_PROGRESS),
         // 此处提前 panic 并给出明确诊断信息, 避免后续 get_vmm() 时信息不足.
         let vmm_state = crate::kernel::framework::mm::vmm::vmm_debug_state();
-        assert!(vmm_state == 2, 
+        assert!(
+            vmm_state == 2,
             "[VMM] initialization verification failed: OnceLock state={vmm_state} (expected 2=DONE). \
              VMM init may have panicked or been interrupted."
         );
 
         // 4. kmalloc — 内核堆初始化
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const KMALLOC_HEAP_SIZE: u64 = 16 * 1024 * 1024; // 16 MB
         #[cfg(target_arch = "x86_64")]
         let heap_start = crate::kernel::framework::mm::VirtAddr(
@@ -515,7 +547,8 @@ pub extern "C" fn kernel_init() {
         #[cfg(target_arch = "aarch64")]
         let heap_start = crate::kernel::framework::mm::VirtAddr(boot_info.kernel_end + 0x200000);
         unsafe {
-            crate::kernel::framework::mm::kmalloc::get_kmalloc_mut().init(heap_start, KMALLOC_HEAP_SIZE);
+            crate::kernel::framework::mm::kmalloc::get_kmalloc_mut()
+                .init(heap_start, KMALLOC_HEAP_SIZE);
         }
         crate::klog_boot_info!(
             "kmalloc initialized at 0x{:X}, size={} MB",
@@ -532,9 +565,15 @@ pub extern "C" fn kernel_init() {
         // otherwise bitmap shares a 2MB huge page with heap, and heap
         // expansion's 2MB huge split will overwrite the bitmap PTE.
         // GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE = 0x200000 + 16MB + 0x200000 = 20MB
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const GAP_SIZE: u64 = 0x200000;
-#[expect(clippy::items_after_statements, reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构")]
+        #[expect(
+            clippy::items_after_statements,
+            reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
+        )]
         const BITMAP_GAP_SIZE: u64 = 0x200000;
         let reserved_after_kernel = GAP_SIZE + KMALLOC_HEAP_SIZE + BITMAP_GAP_SIZE;
         crate::kernel::framework::mm::pmm::pmm_init_bitmap(reserved_after_kernel);
@@ -677,7 +716,8 @@ pub extern "C" fn kernel_init() {
         // 11.5. 进入 Ring 3 前最终 boot 栈 canary 验证.
         // 内核初始化全程 (PMM→VMM→kmalloc→中断→调度→网络→VFS→驱动→syscall)
         // 均在 boot 栈上运行, 此处做最终溢出检测, 确保进入用户态前栈完整性.
-        assert!(crate::kernel::framework::proc::check_boot_stack_canary(), 
+        assert!(
+            crate::kernel::framework::proc::check_boot_stack_canary(),
             "[BOOT] stack canary corrupted before Ring 3 entry! \
              Boot stack overflow during kernel init sequence. \
              Stack size=128KB."

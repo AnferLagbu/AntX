@@ -36,7 +36,10 @@ pub enum SysctlValue {
 }
 
 impl SysctlValue {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     /// 序列化为文本 (用于 /proc/sys/* 节点读取)
     pub fn write_to(&self, buf: &mut [u8]) -> usize {
         match *self {
@@ -53,10 +56,14 @@ impl SysctlValue {
     /// `Bool` 不是 `1/0/true/false/yes/no/on/off`) 时, 返回 `SysctlError::ParseFailed`.
     pub fn parse(kind: SysctlKind, text: &str) -> Result<SysctlValue, SysctlError> {
         match kind {
-            SysctlKind::Int => text.trim().parse::<i64>()
+            SysctlKind::Int => text
+                .trim()
+                .parse::<i64>()
                 .map(SysctlValue::Int)
                 .map_err(|_| SysctlError::ParseFailed),
-            SysctlKind::UInt => text.trim().parse::<u64>()
+            SysctlKind::UInt => text
+                .trim()
+                .parse::<u64>()
                 .map(SysctlValue::UInt)
                 .map_err(|_| SysctlError::ParseFailed),
             SysctlKind::Bool => match text.trim() {
@@ -280,7 +287,11 @@ fn write_u64(buf: &mut [u8], val: u64) -> usize {
 }
 
 fn write_i64(buf: &mut [u8], val: i64) -> usize {
-    let (neg, abs) = if val < 0 { (true, val.unsigned_abs()) } else { (false, val as u64) };
+    let (neg, abs) = if val < 0 {
+        (true, val.unsigned_abs())
+    } else {
+        (false, val as u64)
+    };
     let mut pos = 0;
     if neg && !buf.is_empty() {
         buf[0] = b'-';
@@ -291,10 +302,14 @@ fn write_i64(buf: &mut [u8], val: i64) -> usize {
 
 fn write_bool(buf: &mut [u8], val: bool) -> usize {
     if val {
-        if !buf.is_empty() { buf[0] = b'1'; }
+        if !buf.is_empty() {
+            buf[0] = b'1';
+        }
         1
     } else {
-        if !buf.is_empty() { buf[0] = b'0'; }
+        if !buf.is_empty() {
+            buf[0] = b'0';
+        }
         1
     }
 }
@@ -309,10 +324,22 @@ mod tests {
 
     #[test]
     fn parse_basic() {
-        assert_eq!(SysctlValue::parse(SysctlKind::Int, "42").unwrap(), SysctlValue::Int(42));
-        assert_eq!(SysctlValue::parse(SysctlKind::UInt, "100").unwrap(), SysctlValue::UInt(100));
-        assert_eq!(SysctlValue::parse(SysctlKind::Bool, "yes").unwrap(), SysctlValue::Bool(true));
-        assert_eq!(SysctlValue::parse(SysctlKind::Bool, "off").unwrap(), SysctlValue::Bool(false));
+        assert_eq!(
+            SysctlValue::parse(SysctlKind::Int, "42").unwrap(),
+            SysctlValue::Int(42)
+        );
+        assert_eq!(
+            SysctlValue::parse(SysctlKind::UInt, "100").unwrap(),
+            SysctlValue::UInt(100)
+        );
+        assert_eq!(
+            SysctlValue::parse(SysctlKind::Bool, "yes").unwrap(),
+            SysctlValue::Bool(true)
+        );
+        assert_eq!(
+            SysctlValue::parse(SysctlKind::Bool, "off").unwrap(),
+            SysctlValue::Bool(false)
+        );
         assert!(SysctlValue::parse(SysctlKind::Int, "abc").is_err());
     }
 

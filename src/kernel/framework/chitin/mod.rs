@@ -48,12 +48,12 @@
 //!   └── CHITIN_DEVICES[drive].block_dev.blk_read(...)
 //! ```
 
+use super::driver::Driver;
+use crate::kernel::framework::fs::KernelError;
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
-use crate::kernel::framework::sync::IrqSpinLock as Mutex;
-use crate::kernel::framework::fs::KernelError;
-use super::driver::Driver;
 
 // ── 协议模块 ──
 pub mod composite;
@@ -114,7 +114,10 @@ pub enum ChitinProto {
 }
 
 impl ChitinProto {
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect")]
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
+    )]
     pub fn as_str(&self) -> &'static str {
         match self {
             ChitinProto::Block => "block",
@@ -175,7 +178,7 @@ pub struct ChitinDevice {
     pub irq: Option<u8>,
     pub driver_data: *mut u8,
     pub ops: Option<ChitinOps>,
-/// 块设备 trait 引用
+    /// 块设备 trait 引用
     /// 当 `proto == ChitinProto::Block` 且驱动通过 `register_block_device` 注册时,
     /// `chitin_blk_read/write` 走此字段 (0 unsafe)
     ///
@@ -197,15 +200,18 @@ unsafe impl Sync for ChitinDevice {}
 
 impl ChitinDevice {
     #[inline]
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+    #[expect(
+        clippy::ptr_as_ptr,
+        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+    )]
     ///
     /// # Safety
     ///
     /// `self.driver_data` 由驱动在 probe 阶段设置. 调用方必须保证
     /// `T` 与 `set_driver_data` 写入时的具体类型一致.
-    pub unsafe fn driver_as_mut<T>(&self) -> &mut T { unsafe {
-        &mut *(self.driver_data as *mut T)
-    }}
+    pub unsafe fn driver_as_mut<T>(&self) -> &mut T {
+        unsafe { &mut *(self.driver_data as *mut T) }
+    }
 
     #[inline]
     ///
@@ -213,9 +219,9 @@ impl ChitinDevice {
     ///
     /// `self.driver_data` 由驱动在 probe 阶段设置. 调用方必须保证
     /// `T` 与 `set_driver_data` 写入时的具体类型一致.
-    pub unsafe fn driver_as_ref<T>(&self) -> &T { unsafe {
-        &*(self.driver_data as *const T)
-    }}
+    pub unsafe fn driver_as_ref<T>(&self) -> &T {
+        unsafe { &*(self.driver_data as *const T) }
+    }
 
     pub fn char_ops(&self) -> Option<&'static proto_char::CharOps> {
         match &self.ops {
@@ -358,8 +364,8 @@ pub fn chitin_register_block_dev(
         state: DeviceState::Ready,
         io_base,
         irq,
-        driver_data: core::ptr::null_mut(),  // 不再使用, 改用 block_dev
-        ops: None,                            // 不再使用, 改用 block_dev
+        driver_data: core::ptr::null_mut(), // 不再使用, 改用 block_dev
+        ops: None,                          // 不再使用, 改用 block_dev
         block_dev: Some(dev),
     };
     let idx;
@@ -406,7 +412,10 @@ pub fn chitin_count_by_proto(proto: ChitinProto) -> usize {
         .count()
 }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+#[expect(
+    clippy::needless_continue,
+    reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+)]
 /// 查找第一个网络设备, 返回其 `NetOps` + `driver_data` + MAC 地址
 ///
 /// 供 `smoltcp_impl` 使用——协议栈不关心具体驱动类型, 只需要
@@ -586,7 +595,10 @@ pub fn chitin_blk_count() -> usize {
 
 // ── 字符设备 I/O (统一入口) ──
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+#[expect(
+    clippy::needless_continue,
+    reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+)]
 /// 通过 Chitin 向第一个就绪字符设备写入字节
 ///
 /// 遍历 `CHITIN_DEVICES` 查找第一个 proto=Char+Ready 且携带 `CharOps` 的设备,
@@ -610,7 +622,10 @@ pub fn chitin_char_write(data: &[u8]) {
     }
 }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+#[expect(
+    clippy::needless_continue,
+    reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+)]
 /// 通过 Chitin 从第一个就绪字符设备读取字节
 pub fn chitin_char_read(buf: &mut [u8]) -> usize {
     let devices = CHITIN_DEVICES.lock();
@@ -631,7 +646,10 @@ pub fn chitin_char_read(buf: &mut [u8]) -> usize {
 
 // ── 输入设备 I/O (统一入口) ──
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+#[expect(
+    clippy::needless_continue,
+    reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+)]
 /// 通过 Chitin 从第一个就绪输入设备读取一个字符
 pub fn chitin_input_read() -> Option<u8> {
     let devices = CHITIN_DEVICES.lock();
@@ -650,7 +668,10 @@ pub fn chitin_input_read() -> Option<u8> {
     None
 }
 
-#[expect(clippy::needless_continue, reason = "needless_continue: continue 提升循环可读性; 当前优先 expect")]
+#[expect(
+    clippy::needless_continue,
+    reason = "needless_continue: continue 提升循环可读性; 当前优先 expect"
+)]
 /// 通过 Chitin 检查第一个就绪输入设备是否有数据
 pub fn chitin_input_has_data() -> bool {
     let devices = CHITIN_DEVICES.lock();
@@ -671,7 +692,10 @@ pub fn chitin_input_has_data() -> bool {
 
 // ── 工具 ──
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub fn box_to_raw<T: ?Sized>(b: Box<T>) -> *mut u8 {
     Box::into_raw(b) as *mut u8
 }
@@ -691,7 +715,10 @@ impl Drop for DriverObject {
     }
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 pub fn chitin_register_driver(
     name: &'static str,
     proto: ChitinProto,
@@ -723,7 +750,10 @@ pub fn chitin_register_driver(
     id
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
 /// 注册带 Driver trait 和 I/O 操作表的设备
 pub fn chitin_register_driver_with_ops(
     name: &'static str,
@@ -757,8 +787,14 @@ pub fn chitin_register_driver_with_ops(
     id
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 fn driver_from_obj<'a>(ptr: *mut u8) -> &'a mut dyn Driver {
     // SAFETY: `mut` 由调用方保证为有效指针; 只读访问
     let obj: &mut DriverObject = unsafe { &mut *(ptr as *mut DriverObject) };
@@ -785,8 +821,14 @@ pub fn chitin_init_all() {
     }
 }
 
-#[expect(clippy::ptr_as_ptr, reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底")]
-#[expect(clippy::cast_ptr_alignment, reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect")]
+#[expect(
+    clippy::ptr_as_ptr,
+    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
+)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
+)]
 pub fn chitin_shutdown_all() {
     let mut devices = CHITIN_DEVICES.lock();
     for dev in devices.iter_mut() {
@@ -927,7 +969,9 @@ mod tests {
         assert!(devices.iter().any(|d| d.id == id && d.ops.is_some()));
         CHITIN_DEVICES.lock().clear();
         // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
-        unsafe { drop(Box::from_raw(raw as *mut u8)); }
+        unsafe {
+            drop(Box::from_raw(raw as *mut u8));
+        }
     }
 
     // ==========================================================================
@@ -946,7 +990,11 @@ mod tests {
 
     impl MockBlockDevice {
         const fn new() -> Self {
-            Self { counter: 0, last_sector: 0, last_written: [0u8; 16] }
+            Self {
+                counter: 0,
+                last_sector: 0,
+                last_written: [0u8; 16],
+            }
         }
     }
 
@@ -954,10 +1002,12 @@ mod tests {
         fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {
             self.counter += 1;
             self.last_sector = sector;
-            if buf.len() < 512 { return -1; }
+            if buf.len() < 512 {
+                return -1;
+            }
             // 写一个 magic 模式, 测试用
             for i in 0..16 {
-                buf[i] = b'T';  // 标识 "通过 trait 来的数据"
+                buf[i] = b'T'; // 标识 "通过 trait 来的数据"
             }
             buf[16] = (sector & 0xFF) as u8;
             0
@@ -970,8 +1020,12 @@ mod tests {
             }
             0
         }
-        fn blk_is_present(&self) -> bool { true }
-        fn blk_total_sectors(&self) -> u64 { 2048 }
+        fn blk_is_present(&self) -> bool {
+            true
+        }
+        fn blk_total_sectors(&self) -> u64 {
+            2048
+        }
     }
 
     /// 1. 注册路径: register_block_device + chitin_register_block_dev

@@ -75,7 +75,10 @@ impl CapBits {
         self.0 == 0
     }
 
-#[expect(clippy::return_self_not_must_use, reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect")]
+    #[expect(
+        clippy::return_self_not_must_use,
+        reason = "return_self_not_must_use: 返回 Self 是 builder/fluent API; 当前优先 expect"
+    )]
     pub fn diff(self, other: CapBits) -> CapBits {
         CapBits(self.0 & !other.0)
     }
@@ -83,17 +86,23 @@ impl CapBits {
 
 impl core::ops::BitOr for CapBits {
     type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { CapBits(self.0 | rhs.0) }
+    fn bitor(self, rhs: Self) -> Self {
+        CapBits(self.0 | rhs.0)
+    }
 }
 
 impl core::ops::BitAnd for CapBits {
     type Output = Self;
-    fn bitand(self, rhs: Self) -> Self { CapBits(self.0 & rhs.0) }
+    fn bitand(self, rhs: Self) -> Self {
+        CapBits(self.0 & rhs.0)
+    }
 }
 
 impl core::ops::Not for CapBits {
     type Output = Self;
-    fn not(self) -> Self { CapBits(!self.0) }
+    fn not(self) -> Self {
+        CapBits(!self.0)
+    }
 }
 
 /// 策略结果
@@ -175,11 +184,15 @@ pub struct CapMatrix {
 impl CapMatrix {
     /// 空能力位图 (所有域均为 NONE)
     pub const fn empty() -> Self {
-        Self { bits: [0u64; CAP_DOMAINS] }
+        Self {
+            bits: [0u64; CAP_DOMAINS],
+        }
     }
     /// 全能力位图
     pub const fn all() -> Self {
-        Self { bits: [u64::MAX; CAP_DOMAINS] }
+        Self {
+            bits: [u64::MAX; CAP_DOMAINS],
+        }
     }
     /// 从域位图构造
     pub const fn from_bits(bits: [u64; CAP_DOMAINS]) -> Self {
@@ -195,10 +208,22 @@ impl InMemoryMatrix {
     pub const fn new() -> Self {
         Self {
             rows: [
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-                AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
+                AtomicU64::new(0),
             ],
         }
     }
@@ -206,12 +231,18 @@ impl InMemoryMatrix {
 
 impl CapabilityMatrix for InMemoryMatrix {
     fn get(&self, domain: CapDomain) -> Option<CapBits> {
-        if !domain.is_valid() { return None; }
-        Some(CapBits(self.rows[domain.0 as usize].load(Ordering::Acquire)))
+        if !domain.is_valid() {
+            return None;
+        }
+        Some(CapBits(
+            self.rows[domain.0 as usize].load(Ordering::Acquire),
+        ))
     }
 
     fn set(&self, domain: CapDomain, bits: CapBits) -> Result<CapBits, ()> {
-        if !domain.is_valid() { return Err(()); }
+        if !domain.is_valid() {
+            return Err(());
+        }
         let old = self.rows[domain.0 as usize].swap(bits.0, Ordering::AcqRel);
         Ok(CapBits(old))
     }
@@ -222,7 +253,9 @@ impl CapabilityMatrix for InMemoryMatrix {
         current: CapBits,
         new: CapBits,
     ) -> Result<CapBits, CapBits> {
-        if !domain.is_valid() { return Err(current); }
+        if !domain.is_valid() {
+            return Err(current);
+        }
         self.rows[domain.0 as usize]
             .compare_exchange(current.0, new.0, Ordering::AcqRel, Ordering::Acquire)
             .map(CapBits)
@@ -238,9 +271,9 @@ impl CapabilityMatrix for InMemoryMatrix {
 /// - `USER_MGMT`: LIST
 pub const VIABLE_FLOOR: [u64; CAP_DOMAINS] = {
     let mut f = [0u64; CAP_DOMAINS];
-    f[CapDomain::FS.0 as usize] = (1 << 0) | (1 << 2);        // READ | EXEC
-    f[CapDomain::PROC.0 as usize] = (1 << 0) | (1 << 1);     // FORK | EXEC
-    f[CapDomain::USER_MGMT.0 as usize] = 1 << 0;             // LIST
+    f[CapDomain::FS.0 as usize] = (1 << 0) | (1 << 2); // READ | EXEC
+    f[CapDomain::PROC.0 as usize] = (1 << 0) | (1 << 1); // FORK | EXEC
+    f[CapDomain::USER_MGMT.0 as usize] = 1 << 0; // LIST
     f
 };
 
@@ -255,7 +288,10 @@ impl PolicyEngine {
         Self {}
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 检查 (matrix, domain, required) 是否被允许
     pub fn check<M: CapabilityMatrix>(
         &self,
@@ -283,7 +319,10 @@ impl PolicyEngine {
         PolicyResult::Allow
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 委托 (使用 CAS 保证并发安全)
     pub fn grant<M: CapabilityMatrix>(
         &self,
@@ -315,7 +354,10 @@ impl PolicyEngine {
         }
     }
 
-#[expect(clippy::unused_self, reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数")]
+    #[expect(
+        clippy::unused_self,
+        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
+    )]
     /// 撤销 (保护可行下界)
     pub fn revoke<M: CapabilityMatrix>(
         &self,
@@ -346,7 +388,9 @@ impl PolicyEngine {
 }
 
 impl Default for PolicyEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -363,7 +407,10 @@ mod tests {
         m.set(CapDomain::FS, CapBits(0xFF)).unwrap();
 
         let p = PolicyEngine::new();
-        assert_eq!(p.check(&m, CapDomain::FS, CapBits(0x0F)), PolicyResult::Allow);
+        assert_eq!(
+            p.check(&m, CapDomain::FS, CapBits(0x0F)),
+            PolicyResult::Allow
+        );
         assert_eq!(
             p.check(&m, CapDomain::FS, CapBits(0x100)),
             PolicyResult::Deny(DenyReason::NoAuthority)
@@ -385,7 +432,10 @@ mod tests {
         let m = make_matrix();
         let p = PolicyEngine::new();
         // 无要求即通过
-        assert_eq!(p.check(&m, CapDomain::FS, CapBits::NONE), PolicyResult::Allow);
+        assert_eq!(
+            p.check(&m, CapDomain::FS, CapBits::NONE),
+            PolicyResult::Allow
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use super::types::{CapDomain, CapBits, PwmError, AuditAction};
+use super::types::{AuditAction, CapBits, CapDomain, PwmError};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub struct FirstToken {
@@ -21,7 +21,10 @@ static FIRST_TOKEN_USED: AtomicBool = AtomicBool::new(true);
 static FIRST_TOKEN_ID: AtomicU64 = AtomicU64::new(0);
 static FIRST_TOKEN_CREATED: AtomicU64 = AtomicU64::new(0);
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+#[expect(
+    clippy::unreadable_literal,
+    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+)]
 pub fn generate_first_token() {
     let token_id = {
         let tsc = crate::arch!(timestamp());

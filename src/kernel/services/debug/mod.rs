@@ -44,8 +44,8 @@
 //! - `kgdb_enter` 在用户态串口未注册时返回 false (而非阻塞)
 
 // Re-export 关键类型
-pub use crate::kernel::framework::debug::{TraceEvent, EVENT_SIZE, FTRACE_BUF_CAP};
 pub use crate::kernel::framework::debug::fnv1a_32;
+pub use crate::kernel::framework::debug::{EVENT_SIZE, FTRACE_BUF_CAP, TraceEvent};
 pub use crate::kernel::framework::debug::{KgdbRegs, KgdbSerial};
 
 /// D4: eBPF 安全封装

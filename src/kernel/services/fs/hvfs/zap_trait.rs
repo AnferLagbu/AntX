@@ -24,8 +24,8 @@
 //! - trait dispatch (无 thunk)
 //! - 编译期类型安全 (实现方必须 impl `ZapStore`)
 
-use alloc::vec::Vec;
 use super::zap::{HvZap, HvZapType};
+use alloc::vec::Vec;
 
 // ============================================================================
 // ZapStore trait — 键值存储接口

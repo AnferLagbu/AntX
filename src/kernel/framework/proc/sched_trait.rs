@@ -15,8 +15,8 @@
 //! 命名为 `SchedDecision` 而非 `SchedPolicy`, 因为 `SchedPolicy` 已被
 //! `framework::proc::scheduler` 中的 enum (Normal/Fifo/Rr/Idle/Deadline) 占用.
 
-use crate::kernel::framework::sync::OnceLock;
 pub use super::types::ThreadPriority;
+use crate::kernel::framework::sync::OnceLock;
 
 /// 调度决策接口 — services 实现, framework 调用
 ///
@@ -70,7 +70,10 @@ impl SchedDecision for FallbackPolicy {
     }
 
     fn time_slice_for(&self, priority: ThreadPriority) -> u32 {
-        use super::types::{ThreadPriority, SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM, SCHED_LEVEL_3_QUANTUM};
+        use super::types::{
+            SCHED_LEVEL_0_QUANTUM, SCHED_LEVEL_1_QUANTUM, SCHED_LEVEL_2_QUANTUM,
+            SCHED_LEVEL_3_QUANTUM, ThreadPriority,
+        };
         match priority {
             ThreadPriority::Realtime => SCHED_LEVEL_0_QUANTUM,
             ThreadPriority::High => SCHED_LEVEL_1_QUANTUM,
@@ -96,7 +99,9 @@ static SCHED_DECISION: OnceLock<&'static dyn SchedDecision> = OnceLock::new();
 ///
 /// # Errors
 /// 当策略已注册时, 返回 `Err`, 其中携带已注册的旧策略指针.
-pub fn register_sched_decision(policy: &'static dyn SchedDecision) -> Result<(), &'static dyn SchedDecision> {
+pub fn register_sched_decision(
+    policy: &'static dyn SchedDecision,
+) -> Result<(), &'static dyn SchedDecision> {
     match SCHED_DECISION.set(policy) {
         Ok(()) => Ok(()),
         Err(existing) => Err(existing),

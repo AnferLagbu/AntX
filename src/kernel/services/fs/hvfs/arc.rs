@@ -43,7 +43,10 @@ impl HvArcKey {
         }
     }
 
-#[expect(clippy::unreadable_literal, reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect")]
+    #[expect(
+        clippy::unreadable_literal,
+        reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
+    )]
     pub fn hash(&self) -> u64 {
         let mut h: u64 = 14695981039346656037;
         h ^= u64::from(self.vdev_id);
@@ -344,9 +347,7 @@ impl HvArc {
         }
         if let Some(pos) = found {
             let idx = inner.hash_table[bucket_idx].remove(pos);
-            let size = inner.buffers[idx]
-                .as_ref()
-                .map_or(0, |b| b.data.len());
+            let size = inner.buffers[idx].as_ref().map_or(0, |b| b.data.len());
             self.stats.size.fetch_sub(size as u64, Ordering::Relaxed);
             inner.buffers[idx] = None;
             inner.mru.retain(|&i| i != idx);
