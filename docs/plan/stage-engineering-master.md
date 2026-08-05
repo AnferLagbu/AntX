@@ -4,7 +4,7 @@
 >
 > 已交付状态: 双架构 (x86_64 + aarch64) cargo check 0 warning + clippy `-D pedantic` 0 warning + rustdoc `broken_intra_doc_links` 0 + cargo fmt --check 0 差异 + 三审计全过 + host-tests 838 passed / 0 failed + CI 5 阻断位全部就位.
 >
-> 本文档**取代** (合并同类项): [clippy-pedantic-cleanup.md](./clippy-pedantic-cleanup.md) 8 个工程计划. 原 clippy-pedantic-cleanup.md 已归档.
+> 本文档**取代** (合并同类项): 原 [clippy-pedantic-cleanup.md](./archive/clippy-pedantic-cleanup.md) 8 个工程计划 (历史快照, 已 DEPRECATED).
 
 ## 工程计划 A: clippy pedantic 主战场 (阶段 7-11, 10591 → 0)
 
@@ -39,6 +39,10 @@
 - **工程计划 1: 批次 1-3 已完成 (清单/自动修复/文档类)**
   - 阶段: 7-8.2
   - 内容: 批次 1 清单分类 + 批次 2 cargo clippy --fix 排除会破坏编译的 cast/ptr 类 (~3900 处 MachineApplicable) + 272 处 no_mangle 补 extern "C" + 6 处 #[expect] 豁免 + 批次 3 doc_markdown 3078 + missing_errors_doc/missing_panics_doc 841 (--fix 自动补反引号 461 文件 + 4 组并行 worker 补中文文档)
+  - 方案:
+    1. **批次 1 (清单分类)**: `cargo clippy --message-format=json -W clippy::pedantic` 解析 JSON, 按 lint 名 + 文件聚类, 输出 `lint_name: file:line:msg` 清单 (CSV), 41 唯一 lint / 64 文件.
+    2. **批次 2 (自动修复)**: `cargo clippy --fix --allow-dirty --allow-staged` 排除会破坏编译的 cast/ptr 类, 验证编译 + 单测试. 272 处 no_mangle 补 `extern "C"` ABI 标注. 6 处 `#[expect]` 豁免 (clippy::needless_pass_by_value 等).
+    3. **批次 3 (文档类)**: doc_markdown 用 `cargo clippy --fix` 自动补反引号 (461 文件). missing_errors_doc/missing_panics_doc 4 组并行 worker 补中文文档 (按模块分组: framework/net, framework/mm, framework/driver, services).
   - 状态: [X]
 
 - **工程计划 2: 批次 4 剩余 — cast 类 (截断/符号/回绕/精度)**
@@ -86,14 +90,16 @@
 
 ### 待办
 
-- **短期待办**
+### 待办 (按时间窗口分组)
+
+- **短期待办 (1-2 周内可完成)**
   - [ ] credo/storage.rs 3 处 expect 修复 (DECISION-036)
   - [ ] barrier/api.rs 2 处 no_mangle extern "C" 补全
   - [ ] ab/ac 组 191 处 expect 注释统一 (DECISION-035)
   - 状态: []
 
-- **长期待办**
-  - [ ] cast 类 1700+ 处已知安全 cast 保留原状 (DECISION-041, 永久不强制)
+- **长期待办 (永久保留, 不强制修复)**
+  - [ ] cast 类 1700+ 处已知安全 cast 保留原状 (DECISION-041)
   - 状态: []
 
 ### 决策记录
@@ -188,11 +194,19 @@
 
 - **阶段 12 (rustfmt)**
   - 描述: 全仓 rustfmt 应用 + host-tests 加鲁棒化处理 (split_whitespace 模式 + pubconstfn 匹配模式) + CI cargo fmt --check 阻断位就位.
+  - 方案:
+    1. **rustfmt 全量应用**: `cargo fmt -- --manifest-path src/rust/Cargo.toml` (单仓库统一). 检查差异 `cargo fmt -- --check` 应 0 差异.
+    2. **host-tests 鲁棒化**: 测试断言从精确字符串匹配改为 split_whitespace + 关键 token 匹配模式 (避免 rustfmt 改字段顺序后测试 brittle). pubconstfn 模式: 测试不假设 fn 是否 const (因 rustfmt 不改 fn 性质, 但保守处理).
+    3. **CI 阻断**: ci-lint.yml 新增 job, `cargo fmt -- --manifest-path src/rust/Cargo.toml --check` 非 0 退出码阻断.
   - commit: `d7642e41` (rustfmt 全量整改 + host-tests 鲁棒化) + `99c30cd3` (阶段 12 rustfmt 整改 + CI cargo fmt --check 阻断)
   - 状态: [X]
 
 - **阶段 13 (clippy 加严)**
   - 描述: clippy-pedantic job 加 `--lib --bins --examples` (排除 tests 因 no_std kernel 不支持 #[test]). 5 处 unfulfilled expect 处理: aarch64 差异化 expect 用 `#[cfg_attr(target_arch = "aarch64", expect(...))]`.
+  - 方案:
+    1. **加严覆盖**: ci-x86.yml `clippy-pedantic` job 命令从 `--lib` 扩展为 `--lib --bins --examples` (排除 `--tests`, 因 no_std kernel 不支持 `#[test]`).
+    2. **5 处 unfulfilled expect 处理**: 加严后触发了隐藏的 unfulfilled expect (shadow_stack.rs × 2 / idt/idt.rs / config/validate.rs / display/mod.rs). 策略: 双架构分别跑 clippy, 找出仅在某一架构触发的 lint, 用 `#[cfg_attr(target_arch = "aarch64", expect(clippy::xxx))]` 隔离.
+    3. **架构差异保留**: 完成后 aarch64 与 x86_64 独立 lint 集合, fn 内 expect 按架构 cfg_attr, 不破坏编译.
   - commit: `5a4c6c16` (CI clippy 扩展到 --lib --bins --examples 加严覆盖)
   - 状态: [X]
 
@@ -227,6 +241,10 @@
 
 - **阶段 14 (clippy.toml 评估)**
   - 描述: 评估 clippy.toml 是否需要增强 (check-private-items 等). 评估加 `check-private-items = true` → 触发 162 errors (missing_safety_doc 在 lib.rs 已 allow 之后未生效), **回退**. clippy.toml 保持现状 (cognitive-complexity=25, type-complexity=250, too-many-lines=100, missing-docs-in-crate-items, standard-macro-braces).
+  - 方案:
+    1. **check-private-items 实验**: 在 clippy.toml 加 `check-private-items = true`, 重新跑 `cargo clippy --release --lib --bins --examples`. 触发了 162 errors (missing_safety_doc 在 lib.rs 已 allow 之后未生效). 验证后**回退**.
+    2. **现状决策**: clippy.toml 现有 5 项配置 (cognitive-complexity=25, type-complexity=250, too-many-lines=100, missing-docs-in-crate-items, standard-macro-braces) 是经验调优结果, 不再增加配置项.
+    3. **lib.rs `#![allow]` 52 处不再迁移**: DECISION-043 治根路径下, lib.rs `#![allow]` 是手工审查过的 (含 aarch64 差异化 allow). 不迁移到 workspace.lints (会破坏 aarch64 差异化).
   - 决策: clippy.toml 已是最优状态, 不再迁移 lib.rs 52 处 `#![allow]` (DECISION-043 手工审查, 含 aarch64 差异化 allow).
   - 状态: [X]
 
@@ -262,19 +280,19 @@
   - commit: `e891d655` (rustdoc 阻断位)
   - 状态: [X]
 
-### 待办
+### 待办 (按时间窗口分组)
 
-- **短期待办 (1-2 周)**
+- **短期待办 (1-2 周内可完成)**
   - [ ] host-tests 鲁棒化深度审计 (剩余 ~15 处 brittle 评估)
   - 状态: []
 
-- **中期 (4-6 周)**
+- **中期待办 (4-6 周内可完成)**
   - [ ] option_if_let_else 211 处手工重构 (map_or/map_or_else 链式) — DECISION-044 留作中期
   - [ ] kernel `#[test]` → host-tests 迁移 (184 个, 解锁 cargo clippy --tests)
   - 状态: []
 
-- **长期**
-  - [ ] QEMU 实际验证 (阶段 12-18 改动均未做运行时验证, 仅静态)
+- **长期待办 (永久保留, 不强制修复)**
+  - [ ] QEMU 实际验证 (阶段 7-18 改动均未做运行时验证, 仅静态)
   - [ ] 真实硬件启动验证
   - 状态: []
 
