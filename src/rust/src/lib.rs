@@ -65,14 +65,12 @@
 #![allow(clippy::manual_find)]
 // 23. Clippy: unnecessary_cast
 #![allow(clippy::unnecessary_cast)]
-// 24. Clippy: double_parens
-#![allow(clippy::double_parens)]
+// 24. Clippy: double_parens — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 // 25. Clippy: unnecessary_lazy_evaluations
 #![allow(clippy::unnecessary_lazy_evaluations)]
 // 26. Clippy: manual_div_ceil
 #![allow(clippy::manual_div_ceil)]
-// 27. Clippy: match_like_matches_macro
-#![allow(clippy::match_like_matches_macro)]
+// 27. Clippy: match_like_matches_macro — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 // 28. Clippy: manual_unwrap_or_default / manual_unwrap_or — 显式 match 更清晰
 #![allow(clippy::manual_unwrap_or_default)]
 #![allow(clippy::manual_unwrap_or)]
@@ -90,16 +88,14 @@
 #![allow(clippy::manual_flatten)]
 // 35. Clippy: collapsible_match — 保留嵌套 match 结构
 #![allow(clippy::collapsible_match)]
-// 36. Clippy: let_unit_value — 含副作用的 let 绑定是合理的
-#![allow(clippy::let_unit_value)]
+// 36. Clippy: let_unit_value — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 // 37. Clippy: empty_loop — 内核自旋等待
 #![allow(clippy::empty_loop)]
 // 38. Clippy: explicit_counter_loop — 显式计数器在测试代码中更直观
 #![allow(clippy::explicit_counter_loop)]
 // 39. Clippy: pointers_in_nomem_asm_block — 内核 ASM 代码必须传指针
 #![allow(clippy::pointers_in_nomem_asm_block)]
-// 40. Clippy: empty_line_after_outer_attr — 内核 attr 风格
-#![allow(clippy::empty_line_after_outer_attr)]
+// 40. Clippy: empty_line_after_outer_attr — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 // 41. Clippy: doc_lazy_continuation / doc_overindented_list_items — 内核文档风格
 #![allow(clippy::doc_lazy_continuation)]
 #![allow(clippy::doc_overindented_list_items)]
@@ -111,8 +107,7 @@
 #![allow(clippy::unreadable_literal)]
 // 44. Clippy: inline_always — 内核大量 #[inline(always)] 是性能关键 (中断处理/锁内热路径); 全局保持显式标注
 #![allow(clippy::inline_always)]
-// 45. Clippy: large_stack_arrays — 部分场景需要大栈数组 (DMA 描述符 ring/帧缓冲); 当前实现已知无栈溢出风险
-#![allow(clippy::large_stack_arrays)]
+// 45. Clippy: large_stack_arrays — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 // 46. Clippy: struct_field_names / pub_underscore_fields — 结构体字段命名约定是模块内风格 (如 page_state 含 page_* 字段); pub _xxx 是内核模块内 convention
 #![allow(clippy::struct_field_names)]
 #![allow(clippy::pub_underscore_fields)]
@@ -124,14 +119,11 @@
 #![allow(clippy::ptr_as_ptr)]
 // 50. Clippy: cast_ptr_alignment — 部分 MMIO 寄存器地址已知对齐 (硬件规范); macro 内 cast_ptr_alignment 无法 expect
 #![allow(clippy::cast_ptr_alignment)]
-// 51. Clippy: zero_sized_map_values / missing_fields_in_debug / ptr_cast_constness — 内核 struct 字段设计选择; 当前实现合理
+// 51. Clippy: zero_sized_map_values / missing_fields_in_debug — 内核 struct 字段设计选择; 当前实现合理
 #![allow(clippy::zero_sized_map_values)]
 #![allow(clippy::missing_fields_in_debug)]
-#![allow(clippy::ptr_cast_constness)]
-// 52. Clippy: cast_lossless — aarch64 架构代码 (GIC/异常处理) 有大量 i32/u32 与 usize 互转; cast_lossless 是无功能影响的样式 lint
-#![allow(clippy::cast_lossless)]
-// 53. Clippy: duplicated_attributes — expect 兑底批量推进时同 lint 可能在多 hint 行重复 (脚本 fn 级去重已处理, 但跨架构 cfg 内可能出现重复)
-#![allow(clippy::duplicated_attributes)]
+// 52. Clippy: cast_lossless — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
+// 53. Clippy: duplicated_attributes — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 
 extern crate alloc;
 

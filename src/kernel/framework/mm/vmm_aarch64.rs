@@ -244,7 +244,7 @@ impl Aarch64Vmm {
         // 存储内核 L0 地址 (TTBR0 identity mapping, 用于内核低地址映射)
         // 暂复用现有页表.
         // 完整实现中应创建独立的内核表.
-        let kernel_l0_ptr = &raw const self.kernel_l0 as *mut u64;
+        let kernel_l0_ptr = (&raw const self.kernel_l0).cast_mut();
         // SAFETY: kernel_l0_ptr 指向 self.kernel_l0 (类型对齐的 u64)；
         // write_volatile 防止编译器优化掉对页表硬件的写。
         unsafe {

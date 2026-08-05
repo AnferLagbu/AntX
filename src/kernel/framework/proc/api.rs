@@ -294,7 +294,7 @@ pub extern "C" fn launch_first_user_process() -> ! {
                     if pid > 0 {
                         let pid_u32 = pid as u32;
                         proc_ops::C_CURRENT_PROCESS.map_mut(|p| {
-                            p.pid = pid_u32 as u64;
+                            p.pid = u64::from(pid_u32);
                             p.pwm = 0;
                             p.state = 2;
                             p.parent_pid = 1;
@@ -334,7 +334,7 @@ pub extern "C" fn launch_first_user_process() -> ! {
         let pid_u32 = pid as u32;
 
         proc_ops::C_CURRENT_PROCESS.map_mut(|p| {
-            p.pid = pid_u32 as u64;
+            p.pid = u64::from(pid_u32);
             p.pwm = 0;
             p.state = 2;
             p.parent_pid = 1;
@@ -419,7 +419,7 @@ pub extern "C" fn launch_first_user_process() -> ! {
         let pid_u32 = pid as u32;
 
         proc_ops::C_CURRENT_PROCESS.map_mut(|p| {
-            p.pid = pid_u32 as u64;
+            p.pid = u64::from(pid_u32);
             p.pwm = 0;
             p.state = 2;
             p.parent_pid = 1;
