@@ -184,13 +184,11 @@ pub fn recovery_domain_set_cbs(
     rollback_fn: Option<unsafe fn() -> bool>,
 ) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
+    mgr.find(domain_id).map_or(-1, |dom| {
         *dom.capture_cb.lock() = capture_fn;
         *dom.rollback_cb.lock() = rollback_fn;
         0
-    } else {
-        -1
-    }
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -205,13 +203,11 @@ pub fn recovery_domain_set_cbs(
 )]
 pub extern "C" fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_val: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
+    mgr.find(domain_id).map_or(-1, |dom| {
         let mut undo = dom.undo.lock();
         undo.record(field_ptr as *mut u64, old_val);
         0
-    } else {
-        -1
-    }
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -220,18 +216,14 @@ pub extern "C" fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_v
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn recovery_undo_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
-        dom.undo.lock().count as i32
-    } else {
-        -1
-    }
+    mgr.find(domain_id).map_or(-1, |dom| dom.undo.lock().count as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
+    mgr.find(domain_id).map_or(-1, |dom| {
         if dom.add_dependency(dep_id) {
             if let Some(dep_dom) = mgr.find(dep_id) {
                 dep_dom.add_depended_by(domain_id);
@@ -240,9 +232,7 @@ pub extern "C" fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
         } else {
             -1
         }
-    } else {
-        -1
-    }
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -251,26 +241,20 @@ pub extern "C" fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn recovery_domain_dep_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
-        dom.dependency_count() as i32
-    } else {
-        -1
-    }
+    mgr.find(domain_id).map_or(-1, |dom| dom.dependency_count() as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn recovery_domain_add_addr_range(domain_id: u64, start: u64, end: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
+    mgr.find(domain_id).map_or(-1, |dom| {
         if dom.add_addr_range(start, end) {
             0
         } else {
             -1
         }
-    } else {
-        -1
-    }
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
