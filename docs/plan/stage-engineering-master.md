@@ -283,8 +283,13 @@
 ### 待办 (按时间窗口分组)
 
 - **短期待办 (1-2 周内可完成)**
-  - [ ] host-tests 鲁棒化深度审计 (剩余 ~15 处 brittle 评估)
-  - 状态: []
+  - [x] ~~host-tests 鲁棒化深度审计 (剩余 ~15 处 brittle 评估)~~ — **已评估**: 阶段 23 评估结果
+    - 当前状态: 838 测试全过, 0 failed
+    - 评估统计: `src.find("...")` 37 处 (高风险) + `src.contains("...")` 308 处 (中风险) = **345 处潜在 brittle**, 跨 13 个测试文件
+    - 真实风险分布: td19_proc_kernel_error_test 8 处, usermode_ring3_test 6 处, td10/td09 各 4 处, 其他各 1-3 处
+    - 修复策略: 不批量机械改 (易引入 false negative), 仅在**真实测试失败时**针对性改用 `split_whitespace + 关键 token 匹配` (阶段 12 模式)
+    - **结论**: brittle 是**潜在风险**不是**当前问题**, 维持现状. 后续若修改 impl 字段名/方法名, 先 grep host-tests 看匹配模式是否失效
+    - 状态: [X] (评估完成)
 
 - **中期待办 (4-6 周内可完成)**
   - [ ] option_if_let_else 211 处手工重构 (map_or/map_or_else 链式) — DECISION-044 留作中期
