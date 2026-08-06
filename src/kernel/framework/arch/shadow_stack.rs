@@ -604,10 +604,9 @@ pub extern "C" fn sys_cet(cmd: u64, a1: u64, _a2: u64) -> i64 {
         }
         1 => {
             // create_user_shadow_stack
-            match cet_subsystem().create_user_shadow_stack(a1 as usize) {
-                Some(ss) => ss.get_ssp() as i64,
-                None => -(12i64), // ENOMEM
-            }
+            cet_subsystem()
+                .create_user_shadow_stack(a1 as usize)
+                .map_or(-(12i64), |ss| ss.get_ssp() as i64) // ENOMEM
         }
         2 => {
             // is_initialized

@@ -280,12 +280,10 @@ pub fn route_irq_to_cpu(irq: u8, apic_id: u8) {
 /// 多 IOAPIC 系统中, 每个 IOAPIC 有唯一 ID, 用于中断路由决策.
 pub fn get_id_on(ioapic_idx: usize) -> u8 {
     let ioapics = IOAPICS.lock();
-    if let Some(ref state) = ioapics[ioapic_idx] {
+    ioapics[ioapic_idx].as_ref().map_or(0, |state| {
         let val = ioapic_read_on(state.base_addr, IOAPIC_ID);
         ((val >> 24) & 0x0F) as u8
-    } else {
-        0
-    }
+    })
 }
 
 /// 设置指定 IOAPIC 的 ID (bit`[24:27]`)
@@ -306,12 +304,10 @@ pub fn set_id_on(ioapic_idx: usize, id: u8) {
 /// 读取指定 IOAPIC 的仲裁 ID (只读, bit`[24:27]`)
 pub fn get_arbitration_id_on(ioapic_idx: usize) -> u8 {
     let ioapics = IOAPICS.lock();
-    if let Some(ref state) = ioapics[ioapic_idx] {
+    ioapics[ioapic_idx].as_ref().map_or(0, |state| {
         let val = ioapic_read_on(state.base_addr, IOAPIC_ARB);
         ((val >> 24) & 0x0F) as u8
-    } else {
-        0
-    }
+    })
 }
 
 /// 向后兼容: 读取第一个 IOAPIC 的 ID
