@@ -81,24 +81,27 @@ pub fn execute(panic_info: &core::panic::PanicInfo<'_>) -> RecoveryResult {
     let tick = crate::kernel::framework::timer::get_ticks();
     let fingerprint = compute_fingerprint(panic_info);
 
-    if let Some(domain_id) = locate_domain_from_panic(panic_info) {
-        crate::klog_info!(Kernel, "[BBR] Located domain {} from panic", domain_id);
-
-        let rolled = cascade_rollback(domain_id, tick, fingerprint);
-        crate::klog_info!(Kernel, "[BBR] Cascade rolled {} domains", rolled);
-
-        if rolled > 0 {
-            audit::audit_record(RecoveryLayer::Layer1, RecoveryResult::Success, 0);
-            RecoveryResult::Success
-        } else {
-            audit::audit_record(RecoveryLayer::Layer1, RecoveryResult::Escalate, 1);
+    locate_domain_from_panic(panic_info).map_or_else(
+        || {
+            crate::klog_warn!(Kernel, "[BBR] Could not locate domain from panic");
+            audit::audit_record(RecoveryLayer::Layer1, RecoveryResult::Escalate, 2);
             RecoveryResult::Escalate
-        }
-    } else {
-        crate::klog_warn!(Kernel, "[BBR] Could not locate domain from panic");
-        audit::audit_record(RecoveryLayer::Layer1, RecoveryResult::Escalate, 2);
-        RecoveryResult::Escalate
-    }
+        },
+        |domain_id| {
+            crate::klog_info!(Kernel, "[BBR] Located domain {} from panic", domain_id);
+
+            let rolled = cascade_rollback(domain_id, tick, fingerprint);
+            crate::klog_info!(Kernel, "[BBR] Cascade rolled {} domains", rolled);
+
+            if rolled > 0 {
+                audit::audit_record(RecoveryLayer::Layer1, RecoveryResult::Success, 0);
+                RecoveryResult::Success
+            } else {
+                audit::audit_record(RecoveryLayer::Layer1, RecoveryResult::Escalate, 1);
+                RecoveryResult::Escalate
+            }
+        },
+    )
 }
 
 #[expect(
