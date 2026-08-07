@@ -827,10 +827,7 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_intel() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.is_intel(),
-        None => false,
-    }
+    get_cpu_info().map_or(false, |info| info.is_intel())
 }
 
 /// 检查是否为 AMD CPU (FFI兼容)
@@ -840,10 +837,7 @@ pub extern "C" fn cpu_is_intel() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_amd() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.is_amd(),
-        None => false,
-    }
+    get_cpu_info().map_or(false, |info| info.is_amd())
 }
 
 /// 检查是否在虚拟化环境中 (FFI兼容)
@@ -853,10 +847,7 @@ pub extern "C" fn cpu_is_amd() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_virtualized() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.is_virtualized(),
-        None => false,
-    }
+    get_cpu_info().map_or(false, |info| info.is_virtualized())
 }
 
 /// 获取最大标准 CPUID leaf 号 (FFI兼容)
@@ -866,10 +857,7 @@ pub extern "C" fn cpu_is_virtualized() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.max_standard_leaf,
-        None => 0,
-    }
+    get_cpu_info().map_or(0, |info| info.max_standard_leaf)
 }
 
 /// 获取最大扩展 CPUID leaf 号 (FFI兼容)
@@ -879,10 +867,7 @@ pub extern "C" fn cpu_get_max_cpuid_leaf() -> u32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.max_ext_leaf,
-        None => 0,
-    }
+    get_cpu_info().map_or(0, |info| info.max_ext_leaf)
 }
 
 /// 获取 APIC ID (FFI兼容)
@@ -892,10 +877,7 @@ pub extern "C" fn cpu_get_max_ext_cpuid_leaf() -> u32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_apic_id() -> u32 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => u32::from(info.topology.apic_id),
-        None => 0,
-    }
+    get_cpu_info().map_or(0, |info| u32::from(info.topology.apic_id))
 }
 
 /// 获取逻辑线程数 (FFI兼容)
@@ -918,10 +900,7 @@ pub extern "C" fn cpu_get_logical_cores() -> u8 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_physical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.topology.physical_cores,
-        None => 1,
-    }
+    get_cpu_info().map_or(1, |info| info.topology.physical_cores)
 }
 
 /// 获取 CPU 签名 (FFI兼容)
@@ -931,10 +910,7 @@ pub extern "C" fn cpu_get_physical_cores() -> u8 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_signature() -> CpuSignature {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.signature,
-        _ => CpuSignature::default(),
-    }
+    get_cpu_info().map_or(CpuSignature::default(), |info| info.signature)
 }
 
 /// 获取缓存信息指针 (FFI兼容)
@@ -948,10 +924,7 @@ pub extern "C" fn cpu_get_signature() -> CpuSignature {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => &info.cache as *const CacheInfo,
-        None => core::ptr::null(),
-    }
+    get_cpu_info().map_or(core::ptr::null(), |info| &info.cache as *const CacheInfo)
 }
 
 /// 获取 TSC 频率 (Hz) (FFI兼容)
@@ -961,10 +934,7 @@ pub extern "C" fn cpu_get_cache_info() -> *const CacheInfo {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_tsc_frequency() -> u64 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.tsc_frequency_hz,
-        None => 0,
-    }
+    get_cpu_info().map_or(0, |info| info.tsc_frequency_hz)
 }
 
 // ============================================================================
