@@ -804,10 +804,7 @@ pub extern "C" fn cpu_init() -> i32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_info() -> *const CpuInfo {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info as *const CpuInfo,
-        None => core::ptr::null(),
-    }
+    get_cpu_info().map_or(core::ptr::null(), |info| info as *const CpuInfo)
 }
 
 /// 检查 CPU 是否支持指定特性 (FFI兼容)
@@ -817,12 +814,10 @@ pub extern "C" fn cpu_get_info() -> *const CpuInfo {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info
-            .features
-            .contains(CpuFeatures::from_bits_truncate(u128::from(feature_bit))),
-        None => false,
-    }
+    get_cpu_info().map_or(false, |info| {
+        info.features
+            .contains(CpuFeatures::from_bits_truncate(u128::from(feature_bit)))
+    })
 }
 
 /// 检查是否为 Intel CPU (FFI兼容)
