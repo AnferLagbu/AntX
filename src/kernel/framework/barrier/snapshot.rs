@@ -210,16 +210,12 @@ impl DeviceSnapshotRegistry {
         for i in 1..self.count {
             let mut j = i;
             while j > 0 {
-                let prev_prio = if let Some(ref snap) = self.snapshots[sorted_indices[j - 1]] {
-                    snap.priority
-                } else {
-                    0
-                };
-                let curr_prio = if let Some(ref snap) = self.snapshots[sorted_indices[j]] {
-                    snap.priority
-                } else {
-                    0
-                };
+                let prev_prio = self.snapshots[sorted_indices[j - 1]]
+                    .as_ref()
+                    .map_or(0, |snap| snap.priority);
+                let curr_prio = self.snapshots[sorted_indices[j]]
+                    .as_ref()
+                    .map_or(0, |snap| snap.priority);
                 if prev_prio <= curr_prio {
                     break;
                 }
