@@ -270,22 +270,14 @@ pub extern "C" fn recovery_rollback_log_count() -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn recovery_domain_get_state(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
-        dom.get_state() as i32
-    } else {
-        -1
-    }
+    mgr.find(domain_id).map_or(-1, |dom| dom.get_state() as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn recovery_domain_get_failures(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    if let Some(dom) = mgr.find(domain_id) {
-        dom.consecutive_failures.load(Ordering::SeqCst) as i32
-    } else {
-        -1
-    }
+    mgr.find(domain_id).map_or(-1, |dom| dom.consecutive_failures.load(Ordering::SeqCst) as i32)
 }
 
 // SAFETY: FFI 导出函数, 通过 C ABI 与外部代码互操作
