@@ -102,12 +102,13 @@ pub fn devtree_attach_firmware(
         return false;
     }
     let mut tree = DEV_TREE.lock();
-    if let Some(node) = tree.nodes.iter_mut().find(|n| n.id == node_id) {
-        node.firmware = Some(FirmwareBlob::new(data, name_hash, version));
-        true
-    } else {
-        false
-    }
+    tree.nodes
+        .iter_mut()
+        .find(|n| n.id == node_id)
+        .map_or(false, |node| {
+            node.firmware = Some(FirmwareBlob::new(data, name_hash, version));
+            true
+        })
 }
 
 /// 读取节点上的固件 (驱动 probe 用, 返回不可变引用)
@@ -124,11 +125,10 @@ pub fn devtree_get_firmware(node_id: NodeId) -> Option<FirmwareBlob> {
 /// 移除节点上的固件
 pub fn devtree_detach_firmware(node_id: NodeId) -> bool {
     let mut tree = DEV_TREE.lock();
-    if let Some(node) = tree.nodes.iter_mut().find(|n| n.id == node_id) {
-        node.firmware.take().is_some()
-    } else {
-        false
-    }
+    tree.nodes
+        .iter_mut()
+        .find(|n| n.id == node_id)
+        .map_or(false, |node| node.firmware.take().is_some())
 }
 
 // ── 错误码 (与 syscall 共享) ──
