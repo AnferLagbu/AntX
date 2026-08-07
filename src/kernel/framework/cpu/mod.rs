@@ -827,7 +827,7 @@ pub extern "C" fn cpu_has_feature(feature_bit: u32) -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_intel() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    get_cpu_info().map_or(false, |info| info.is_intel())
+    get_cpu_info().map_or(false, CpuInfo::is_intel)
 }
 
 /// 检查是否为 AMD CPU (FFI兼容)
@@ -837,7 +837,7 @@ pub extern "C" fn cpu_is_intel() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_amd() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    get_cpu_info().map_or(false, |info| info.is_amd())
+    get_cpu_info().map_or(false, CpuInfo::is_amd)
 }
 
 /// 检查是否在虚拟化环境中 (FFI兼容)
@@ -847,7 +847,7 @@ pub extern "C" fn cpu_is_amd() -> bool {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_is_virtualized() -> bool {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    get_cpu_info().map_or(false, |info| info.is_virtualized())
+    get_cpu_info().map_or(false, CpuInfo::is_virtualized)
 }
 
 /// 获取最大标准 CPUID leaf 号 (FFI兼容)
