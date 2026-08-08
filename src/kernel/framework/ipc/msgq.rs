@@ -127,10 +127,7 @@ pub extern "C" fn ipc_msgq_create(perm: i32) -> IpcId {
     let ns = super::IPC_NAMESPACE.get_mut();
     let next_id = super::NEXT_IPC_ID.get_mut();
     let pid = process_get_current_pid();
-    match crate::kernel::services::ipc::msgq::msgq_create_safe(ns, next_id, perm, pid) {
-        Ok(id) => id,
-        Err(_) => 0,
-    }
+    crate::kernel::services::ipc::msgq::msgq_create_safe(ns, next_id, perm, pid).unwrap_or(0)
 }
 
 /// FFI: 发送消息。
@@ -224,10 +221,8 @@ pub unsafe extern "C" fn ipc_msgq_recv(
         .as_mut()
         .map(super::super::userptr::UserRefMut::as_mut);
 
-    match crate::kernel::services::ipc::msgq::msgq_recv_safe(ns, id, type_ref, data_ref, size_ref) {
-        Ok(n) => n as i64,
-        Err(_) => -1,
-    }
+    crate::kernel::services::ipc::msgq::msgq_recv_safe(ns, id, type_ref, data_ref, size_ref)
+        .map_or(-1, |n| n as i64)
 }
 
 /// FFI: 销毁消息队列

@@ -22,10 +22,7 @@ pub extern "C" fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
     let ns = super::IPC_NAMESPACE.get_mut();
     let next_id = super::NEXT_IPC_ID.get_mut();
     let pid = process_get_current_pid();
-    match crate::kernel::services::ipc::shm::shm_create_safe(ns, next_id, size, perm, pid) {
-        Ok(id) => id,
-        Err(_) => 0,
-    }
+    crate::kernel::services::ipc::shm::shm_create_safe(ns, next_id, size, perm, pid).unwrap_or(0)
 }
 
 /// FFI: 附加共享内存段。
@@ -57,10 +54,7 @@ pub unsafe extern "C" fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
 pub extern "C" fn ipc_shm_detach(id: IpcId) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     let pid = process_get_current_pid();
-    match crate::kernel::services::ipc::shm::shm_detach_safe(ns, id, pid) {
-        Ok(()) => 0,
-        Err(_) => -1,
-    }
+    crate::kernel::services::ipc::shm::shm_detach_safe(ns, id, pid).map_or(-1, |()| 0)
 }
 
 /// FFI: 销毁共享内存段

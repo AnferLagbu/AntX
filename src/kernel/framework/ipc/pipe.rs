@@ -65,11 +65,8 @@ pub unsafe extern "C" fn ipc_pipe_read(fd: i32, buf: *mut u8, count: u32) -> i32
     // SAFETY: buf 已校验非空; 调用方保证其指向用户态内存中
     // 至少 `count` 个有效字节.
     let mut user_buf = unsafe { UserWritePtr::new(buf, count as usize) };
-    match crate::kernel::services::ipc::pipe::pipe_read_safe(ns, fd, user_buf.as_mut_slice(), count)
-    {
-        Ok(n) => n as i32,
-        Err(_) => -1,
-    }
+    crate::kernel::services::ipc::pipe::pipe_read_safe(ns, fd, user_buf.as_mut_slice(), count)
+        .map_or(-1, |n| n as i32)
 }
 
 /// POSIX `write(fd, buf, count)` 内核实现 (仅 pipe fd)。
@@ -87,10 +84,8 @@ pub unsafe extern "C" fn ipc_pipe_write(fd: i32, buf: *const u8, count: u32) -> 
     // SAFETY: buf 已校验非空; 调用方保证其指向用户态内存中
     // 至少 `count` 个有效字节.
     let user_buf = unsafe { UserReadPtr::new(buf, count as usize) };
-    match crate::kernel::services::ipc::pipe::pipe_write_safe(ns, fd, user_buf.as_slice(), count) {
-        Ok(n) => n as i32,
-        Err(_) => -1,
-    }
+    crate::kernel::services::ipc::pipe::pipe_write_safe(ns, fd, user_buf.as_slice(), count)
+        .map_or(-1, |n| n as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作

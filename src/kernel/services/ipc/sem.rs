@@ -186,10 +186,7 @@ pub fn ipc_sem_create(count: u32, max_count: u32) -> IpcId {
     let ns = crate::kernel::framework::ipc::IPC_NAMESPACE.get_mut();
     let next_id = crate::kernel::framework::ipc::NEXT_IPC_ID.get_mut();
     let pid = process_get_current_pid();
-    match sem_create_safe(ns, next_id, count, max_count, pid) {
-        Ok(id) => id,
-        Err(_) => 0,
-    }
+    sem_create_safe(ns, next_id, count, max_count, pid).unwrap_or(0)
 }
 
 /// FFI: 等待信号量 (P 操作)
