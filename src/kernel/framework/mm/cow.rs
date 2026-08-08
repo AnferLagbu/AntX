@@ -73,7 +73,9 @@ pub fn cow_dec_ref(phys: u64) -> bool {
 pub fn cow_ref_count(phys: u64) -> u32 {
     let key = frame_key(phys);
     let guard = COW_REFS.lock();
-    guard.as_ref().map_or(0, |refs| refs.get(&key).copied().unwrap_or(0))
+    guard
+        .as_ref()
+        .map_or(0, |refs| refs.get(&key).copied().unwrap_or(0))
 }
 
 #[expect(

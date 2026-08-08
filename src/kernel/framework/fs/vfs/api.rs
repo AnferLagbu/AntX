@@ -409,11 +409,14 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
         }
 
         // 慢速路径: Inode trait 分发
-        open_file.inode().read(offset, user_buf.as_mut_slice(), pwm).map_or(-1, |n| {
-            let new_offset = offset + n as u64;
-            open_file.set_offset(new_offset);
-            n as i32
-        })
+        open_file
+            .inode()
+            .read(offset, user_buf.as_mut_slice(), pwm)
+            .map_or(-1, |n| {
+                let new_offset = offset + n as u64;
+                open_file.set_offset(new_offset);
+                n as i32
+            })
     });
 
     result.unwrap_or(-1)
@@ -471,7 +474,8 @@ pub fn vfs_pread_inode(
         Some(f) => f,
         None => return -1,
     };
-    fs.fs_pread_inode(node_id, file_offset, user_buf.as_mut_slice(), pwm).map_or(-1, |n| n as i32)
+    fs.fs_pread_inode(node_id, file_offset, user_buf.as_mut_slice(), pwm)
+        .map_or(-1, |n| n as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -587,14 +591,17 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
         let pwm = open_file.pwm;
         let node_id = open_file.inode_id();
 
-        open_file.inode().write(offset, user_buf.as_slice(), pwm).map_or(-1, |n| {
-            let new_offset = offset + n as u64;
-            open_file.set_offset(new_offset);
-            // inotify + fd_notify 通知
-            fd_notify::notify_fd_close(fd_idx as i32);
-            super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
-            n as i32
-        })
+        open_file
+            .inode()
+            .write(offset, user_buf.as_slice(), pwm)
+            .map_or(-1, |n| {
+                let new_offset = offset + n as u64;
+                open_file.set_offset(new_offset);
+                // inotify + fd_notify 通知
+                fd_notify::notify_fd_close(fd_idx as i32);
+                super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
+                n as i32
+            })
     });
 
     result.unwrap_or(-1)
@@ -1039,9 +1046,11 @@ pub extern "C" fn vfs_chown_ext(path: *const u8, owner_pwm: u64, group_pwm: u64,
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // E6-4: trait object 分发
-    fs_opt.map_or(-1, |fs| match fs.fs_chown(rel_path, owner_pwm, group_pwm, pwm) {
-        Ok(()) => 0,
-        Err(_) => -1,
+    fs_opt.map_or(-1, |fs| {
+        match fs.fs_chown(rel_path, owner_pwm, group_pwm, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
     })
 }
 
@@ -1065,9 +1074,11 @@ pub extern "C" fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u6
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    fs_opt.map_or(-1, |fs| match fs.fs_utimensat(rel_path, atime, mtime, pwm) {
-        Ok(()) => 0,
-        Err(_) => -1,
+    fs_opt.map_or(-1, |fs| {
+        match fs.fs_utimensat(rel_path, atime, mtime, pwm) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        }
     })
 }
 
@@ -1608,7 +1619,8 @@ pub extern "C" fn vfs_getxattr_internal(
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     fs_opt.map_or(-38, |fs| {
-        fs.fs_getxattr(rel_path, name, buf, pwm).map_or(-1, |len| len as i32)
+        fs.fs_getxattr(rel_path, name, buf, pwm)
+            .map_or(-1, |len| len as i32)
     })
 }
 
@@ -1643,7 +1655,8 @@ pub extern "C" fn vfs_listxattr_internal(
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     fs_opt.map_or(-38, |fs| {
-        fs.fs_listxattr(rel_path, buf, pwm).map_or(-1, |len| len as i32)
+        fs.fs_listxattr(rel_path, buf, pwm)
+            .map_or(-1, |len| len as i32)
     })
 }
 

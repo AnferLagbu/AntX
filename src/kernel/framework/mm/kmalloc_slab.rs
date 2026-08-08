@@ -82,9 +82,10 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
 
     cache_index(size).map_or(super::kmalloc::get_kmalloc().allocate(size), |idx| {
         let mut caches = SLAB_CACHES.lock();
-        caches[idx]
-            .as_mut()
-            .map_or(super::kmalloc::get_kmalloc().allocate(size), KmemCache::allocate)
+        caches[idx].as_mut().map_or(
+            super::kmalloc::get_kmalloc().allocate(size),
+            KmemCache::allocate,
+        )
     })
 }
 

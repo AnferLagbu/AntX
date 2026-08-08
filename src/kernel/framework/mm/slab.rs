@@ -1030,7 +1030,9 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
         let mut caches = GENERAL_CACHES.lock();
         caches[idx]
             .as_mut()
-            .map_or(core::ptr::null_mut(), |cache| cache.allocate().unwrap_or(core::ptr::null_mut()))
+            .map_or(core::ptr::null_mut(), |cache| {
+                cache.allocate().unwrap_or(core::ptr::null_mut())
+            })
     })
 }
 

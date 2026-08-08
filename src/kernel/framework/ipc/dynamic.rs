@@ -316,7 +316,9 @@ pub extern "C" fn dyn_ipc_pipe_destroy(id: u32) -> i32 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn dyn_ipc_msgq_create(owner_pid: u32, max_msgs: u32, max_size: u32) -> u32 {
-    get_dyn_ipc().msgq_create(owner_pid, max_msgs, max_size).unwrap_or(0)
+    get_dyn_ipc()
+        .msgq_create(owner_pid, max_msgs, max_size)
+        .unwrap_or(0)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -328,7 +330,9 @@ pub extern "C" fn dyn_ipc_shm_create(owner_pid: u32, size: u64) -> u32 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn dyn_ipc_sem_create(owner_pid: u32, count: u32, max_count: u32) -> u32 {
-    get_dyn_ipc().sem_create(owner_pid, count, max_count).unwrap_or(0)
+    get_dyn_ipc()
+        .sem_create(owner_pid, count, max_count)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
