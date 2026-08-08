@@ -510,10 +510,7 @@ unsafe fn net_save() {
             // FD 表
             for i in 0..MAX_SM_FD {
                 s.fd_types[i] = raw::fd_type(i);
-                s.fd_handles[i] = match raw::socket_handle(i) {
-                    Some(h) => as_u32_handle(h),
-                    None => u32::MAX,
-                };
+                s.fd_handles[i] = raw::socket_handle(i).map_or(u32::MAX, as_u32_handle);
             }
 
             // 状态

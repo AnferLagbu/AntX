@@ -202,10 +202,7 @@ impl<T> OnceLock<T> {
             // SAFETY: call_once 互斥保证此写独占 cell.
             unsafe { (*self.value.get()).write(v) };
         });
-        match slot {
-            None => Ok(()),
-            Some(v) => Err(v),
-        }
+        slot.map_or_else(|| Ok(()), |v| Err(v))
     }
 
     /// 获取值 (若已初始化)。

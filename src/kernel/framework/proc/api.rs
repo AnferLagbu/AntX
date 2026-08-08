@@ -249,6 +249,10 @@ pub extern "C" fn user_proc_enter_by_pid(pid: u32) -> i32 {
     SCHEDULER.set_current(pid);
 
     crate::klog_boot_info!("[USER] calling USER_PROC_MANAGER.get({})", pid);
+    #[expect(
+        clippy::option_if_let_else,
+        reason = "含 unsafe { *proc.process().kernel_stack.load } + USER_PROC_MANAGER.enter 副作用 + 多个 klog_boot_info! 调用, 改 map_or 触发冗余闭包/optional_if_let_else, 保留 match 形式"
+    )]
     if let Some(proc) = USER_PROC_MANAGER.get(pid) {
         // 诊断：打印从 Process 读取的 kernel_stack 值
         // SAFETY: 指针操作在有效范围内，调用方保证指针有效性

@@ -241,10 +241,7 @@ pub fn block_device_list() -> Vec<(usize, &'static str, u64)> {
         .filter(|d| d.proto == crate::kernel::framework::chitin::ChitinProto::Block)
         .enumerate()
         .map(|(i, d)| {
-            let sectors = match d.block_dev.as_ref() {
-                Some(bd) => bd.blk_total_sectors(),
-                None => 0,
-            };
+            let sectors = d.block_dev.as_ref().map_or(0, |bd| bd.blk_total_sectors());
             (i, d.name, sectors)
         })
         .collect()

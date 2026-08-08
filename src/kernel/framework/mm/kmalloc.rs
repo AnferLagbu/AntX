@@ -521,6 +521,10 @@ impl KernelHeap {
             self.early_allocate(actual_size as usize)
         };
 
+        #[expect(
+            clippy::option_if_let_else,
+            reason = "含 fetch_add + release_lock + compare_exchange_weak 循环 + release_lock 多重副作用, 改 map_or 触发冗余闭包, 保留 match 形式"
+        )]
         if let Some(ptr) = result {
             self.alloc_count.fetch_add(1, Ordering::Relaxed);
             self.total_allocated
