@@ -199,24 +199,25 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
         // ==================== 文件 I/O ====================
         SYS_read => {
             // 严格校验 fd (用户态可传任意 u64), 失败返回 -EINVAL (Errno::EINVAL as i64)
-            match try_fd(a0) {
-                Some(fd) => dispatch!(sys_read(fd, a1 as *mut u8, a2), b"read\0"),
-                None => -(Errno::EINVAL as i64),
-            }
+            try_fd(a0).map_or_else(
+                || -(Errno::EINVAL as i64),
+                |fd| dispatch!(sys_read(fd, a1 as *mut u8, a2), b"read\0"),
+            )
         }
-        SYS_write => match try_fd(a0) {
-            Some(fd) => dispatch!(sys_write(fd, a1 as *const u8, a2), b"write\0"),
-            None => -(Errno::EINVAL as i64),
-        },
+        SYS_write => try_fd(a0).map_or_else(
+            || -(Errno::EINVAL as i64),
+            |fd| dispatch!(sys_write(fd, a1 as *const u8, a2), b"write\0"),
+        ),
 
         // ==================== 内存管理 ====================
         SYS_mremap => {
             use crate::kernel::framework::mm::vma_get_current_mm;
-            match vma_get_current_mm() {
-                Some(mm) => {
-                    // flags (a3) 是 i32 (Linux mremap flags); 严格校验
-                    match try_flags(a3) {
-                        Some(flags) => dispatch!(
+            vma_get_current_mm().map_or(-1, |mm| {
+                // flags (a3) 是 i32 (Linux mremap flags); 严格校验
+                try_flags(a3).map_or_else(
+                    || -(Errno::EINVAL as i64),
+                    |flags| {
+                        dispatch!(
                             match crate::kernel::services::mm::mremap::mremap_syscall(
                                 mm, a0, a1, a2, flags,
                             ) {
@@ -224,12 +225,10 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
                                 Err(e) => e.as_ret(),
                             },
                             b"mremap\0"
-                        ),
-                        None => -(Errno::EINVAL as i64),
-                    }
-                }
-                None => -1,
-            }
+                        )
+                    },
+                )
+            })
         }
 
         // ==================== 信号 ====================
