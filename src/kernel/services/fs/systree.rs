@@ -96,11 +96,7 @@ impl SystreeAttr {
     /// # Errors
     /// 当属性未注册读取回调函数时返回 `EIO`.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, Errno> {
-        if let Some(f) = self.read_fn {
-            f(buf)
-        } else {
-            Err(Errno::EIO)
-        }
+        self.read_fn.map_or(Err(Errno::EIO), |f| f(buf))
     }
 
     /// 写入属性值
@@ -108,11 +104,7 @@ impl SystreeAttr {
     /// # Errors
     /// 当属性未注册写入回调函数时返回 `EIO`.
     pub fn write(&self, data: &[u8]) -> Result<(), Errno> {
-        if let Some(f) = self.write_fn {
-            f(data)
-        } else {
-            Err(Errno::EIO)
-        }
+        self.write_fn.map_or(Err(Errno::EIO), |f| f(data))
     }
 }
 

@@ -127,14 +127,11 @@ pub fn route_del(dest: IpAddr, prefix_len: u8, gateway: IpAddr) -> Result<(), Er
         .iter()
         .position(|r| r.dest == dest && r.prefix_len == prefix_len && r.gateway == gateway);
 
-    match idx {
-        Some(i) => {
-            table.remove(i);
-            crate::kernel::framework::net::route::rebuild_smoltcp_routes(&table);
-            Ok(())
-        }
-        None => Err(Errno::ENOENT),
-    }
+    idx.map_or(Err(Errno::ENOENT), |i| {
+        table.remove(i);
+        crate::kernel::framework::net::route::rebuild_smoltcp_routes(&table);
+        Ok(())
+    })
 }
 
 /// 查询路由 (最长前缀匹配, 按 family 分发)
@@ -243,14 +240,12 @@ pub fn sys_route_del(dest_u32: u64, prefix_len: u64, gateway_u32: u64) -> i64 {
 }
 
 pub fn sys_route_query(dest_u32: u64) -> i64 {
-    match route_query(IpAddr::V4(Ipv4Addr::from_octets(
+    route_query(IpAddr::V4(Ipv4Addr::from_octets(
         (dest_u32 as u32).to_be_bytes(),
-    ))) {
-        Some(result) => match result.gateway {
-            IpAddr::V4(v4) => i64::from(u32::from_be_bytes(v4.octets())),
-            // V6 路由在 u32 syscall ABI 下不可表达, 视为不可达
-            IpAddr::V6(_) => -(Errno::ENETUNREACH as i64),
-        },
-        None => -(Errno::ENETUNREACH as i64),
-    }
+    )))
+    .map_or(-(Errno::ENETUNREACH as i64), |result| match result.gateway {
+        IpAddr::V4(v4) => i64::from(u32::from_be_bytes(v4.octets())),
+        // V6 路由在 u32 syscall ABI 下不可表达, 视为不可达
+        IpAddr::V6(_) => -(Errno::ENETUNREACH as i64),
+    })
 }
