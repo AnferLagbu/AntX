@@ -80,17 +80,12 @@ pub fn slab_kmalloc(size: usize) -> Option<*mut u8> {
         return super::kmalloc::get_kmalloc().allocate(size);
     }
 
-    if let Some(idx) = cache_index(size) {
+    cache_index(size).map_or(super::kmalloc::get_kmalloc().allocate(size), |idx| {
         let mut caches = SLAB_CACHES.lock();
-        if let Some(ref mut cache) = caches[idx] {
-            cache.allocate()
-        } else {
-            drop(caches);
-            super::kmalloc::get_kmalloc().allocate(size)
-        }
-    } else {
-        super::kmalloc::get_kmalloc().allocate(size)
-    }
+        caches[idx]
+            .as_mut()
+            .map_or(super::kmalloc::get_kmalloc().allocate(size), KmemCache::allocate)
+    })
 }
 
 pub fn slab_kfree(ptr: *mut u8, size: usize) {

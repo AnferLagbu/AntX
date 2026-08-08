@@ -465,11 +465,9 @@ pub fn try_setegid(target_egid: u32) -> bool {
 pub fn try_setreuid(target_ruid: u32, target_euid: u32) -> bool {
     #[inline]
     fn has_uid_privilege(table: &identity::IdentityTable, uid: u32, current_pwm: u64) -> bool {
-        if let Some(entry) = table.find_by_uid(uid) {
+        table.find_by_uid(uid).map_or(false, |entry| {
             super::engine::check_privilege(entry.get_pwm().0, current_pwm)
-        } else {
-            false
-        }
+        })
     }
 
     let (current_pwm, old_cached_uid, old_euid, old_saved_euid) = match read_current_ctx() {
@@ -527,11 +525,9 @@ pub fn try_setreuid(target_ruid: u32, target_euid: u32) -> bool {
 pub fn try_setregid(target_rgid: u32, target_egid: u32) -> bool {
     #[inline]
     fn has_gid_privilege(table: &identity::IdentityTable, gid: u32, current_pwm: u64) -> bool {
-        if let Some(entry) = table.find_by_gid(gid) {
+        table.find_by_gid(gid).map_or(false, |entry| {
             super::engine::check_privilege(entry.get_pwm().0, current_pwm)
-        } else {
-            false
-        }
+        })
     }
 
     let (current_pwm, old_cached_gid, old_egid, old_saved_egid) = match read_current_ctx() {

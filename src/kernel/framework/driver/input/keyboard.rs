@@ -810,10 +810,7 @@ pub extern "C" fn keyboard_irq_handler() {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn keyboard_read_char() -> i32 {
-    match crate::kernel::framework::chitin::chitin_input_read() {
-        Some(ch) => i32::from(ch),
-        None => -1,
-    }
+    crate::kernel::framework::chitin::chitin_input_read().map_or(-1, i32::from)
 }
 
 /// 检查是否有可读字符 (C 兼容接口) — 委托到 Chitin 统一输入路径
@@ -971,14 +968,11 @@ extern "C" fn kb_input_read(driver_data: *mut u8) -> *const u8 {
     }
     // SAFETY: driver_data 由 Chitin InputOps 契约保证有效。
     let kb = unsafe { &mut *(driver_data as *mut KeyboardDriver) };
-    match kb.read_char() {
-        Some(b) => {
-            // 使用原子槽位存放返回值, 调用方在返回后立即拷贝
-            KB_READ_SLOT.store(b, Ordering::Relaxed);
-            &KB_READ_SLOT as *const AtomicU8 as *const u8
-        }
-        None => core::ptr::null(),
-    }
+    kb.read_char().map_or(core::ptr::null(), |b| {
+        // 使用原子槽位存放返回值, 调用方在返回后立即拷贝
+        KB_READ_SLOT.store(b, Ordering::Relaxed);
+        &KB_READ_SLOT as *const AtomicU8 as *const u8
+    })
 }
 
 /// 临时存放 `read_char` 返回值的槽位 (原子操作保证线程安全)

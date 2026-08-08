@@ -778,10 +778,7 @@ pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u3
     // SAFETY: 同上。
     let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
-    match dev.try_receive(user_buf.as_mut_slice()) {
-        Some(n) => n as i32,
-        None => 0,
-    }
+    dev.try_receive(user_buf.as_mut_slice()).map_or(0, |n| n as i32)
 }
 
 #[cfg(not(feature = "kernel_test"))]
@@ -899,10 +896,7 @@ pub extern "C" fn e1000_probe() -> i32 {
     reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
 )]
 pub extern "C" fn get_e1000_instance() -> *mut u8 {
-    match &mut *E1000_DEVICE.lock() {
-        Some(dev) => dev as *mut _ as *mut u8,
-        None => core::ptr::null_mut(),
-    }
+    (*E1000_DEVICE.lock()).as_mut().map_or(core::ptr::null_mut(), |dev| dev as *mut _ as *mut u8)
 }
 
 #[cfg(not(feature = "kernel_test"))]
