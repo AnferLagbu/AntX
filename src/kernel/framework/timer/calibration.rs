@@ -299,11 +299,7 @@ pub fn get_time_ns() -> Option<u64> {
     let uptime_ns = super::tick::ticks_to_ns(uptime_ticks);
 
     // 添加基于 TSC 的亚 tick 精度
-    if let Some(base_ns) = tsc_to_nanoseconds(current_tsc) {
-        Some(base_ns)
-    } else {
-        Some(uptime_ns)
-    }
+    tsc_to_nanoseconds(current_tsc).map_or(Some(uptime_ns), Some)
 }
 
 /// 获取当前时间 (微秒)

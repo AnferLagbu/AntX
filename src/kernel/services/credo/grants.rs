@@ -248,10 +248,10 @@ impl<'a> DelegationEngine<'a> {
                     parent_gen: 0,
                     flags,
                 };
-                match self.table.add(rec) {
-                    Some(r#gen) => DelegationResult::Granted { r#gen },
-                    None => DelegationResult::Denied(DelegationDeny::TableFull),
-                }
+                self.table.add(rec).map_or(
+                    DelegationResult::Denied(DelegationDeny::TableFull),
+                    |r#gen| DelegationResult::Granted { r#gen },
+                )
             }
             other => DelegationResult::Denied(DelegationDeny::Policy(other)),
         }

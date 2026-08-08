@@ -663,10 +663,7 @@ pub extern "C" fn ata_init() {
 #[unsafe(no_mangle)]
 pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
     let guard = ATA_DEVICE.lock();
-    match &*guard {
-        Some(controller) => i32::from(controller.disk_present(drive)),
-        None => 0,
-    }
+    (*guard).as_ref().map_or(0, |controller| i32::from(controller.disk_present(drive)))
 }
 
 /// 读取扇区 (C 兼容接口)
@@ -678,22 +675,19 @@ pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
         return ATA_ERR;
     }
 
-    match &*ATA_DEVICE.lock() {
-        Some(controller) => {
-            let mut buf = [0u8; 512];
-            match controller.read_sector(drive, lba, &mut buf) {
-                Ok(()) => {
-                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                    unsafe {
-                        core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512);
-                    }
-                    ATA_SUCCESS
+    (*ATA_DEVICE.lock()).as_ref().map_or(ATA_NO_DISK, |controller| {
+        let mut buf = [0u8; 512];
+        match controller.read_sector(drive, lba, &mut buf) {
+            Ok(()) => {
+                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+                unsafe {
+                    core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512);
                 }
-                Err(_) => ATA_ERR,
+                ATA_SUCCESS
             }
+            Err(_) => ATA_ERR,
         }
-        None => ATA_NO_DISK,
-    }
+    })
 }
 
 /// 写入扇区 (C 兼容接口)

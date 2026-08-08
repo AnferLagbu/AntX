@@ -724,13 +724,7 @@ impl DpController {
             return Err(DpError::InvalidParameter);
         }
 
-        if let Some(ref io) = self.io {
-            // 真实硬件路径: AUX 写事务 (通过 DpIo 安全代理, 无 unsafe)
-            self.aux_write_via_mmio(io, address, data)
-        } else {
-            // 无硬件 fallback: 静默成功
-            Ok(())
-        }
+        self.io.as_ref().map_or(Ok(()), |io| self.aux_write_via_mmio(io, address, data))
     }
 
     /// AUX 真实硬件写事务 (DISPLAY-2.5) — 通过 `DpIo` 安全代理, 无 unsafe.

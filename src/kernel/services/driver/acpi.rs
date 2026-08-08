@@ -156,10 +156,8 @@ pub enum MsiResult {
 
 /// 分配一个 MSI 中断向量 (0..=255)
 pub fn msi_alloc_vector() -> MsiResult {
-    match crate::kernel::framework::pci::msi::msi_alloc_vector() {
-        Some(v) => MsiResult::Allocated(v),
-        None => MsiResult::PoolExhausted,
-    }
+    crate::kernel::framework::pci::msi::msi_alloc_vector()
+        .map_or(MsiResult::PoolExhausted, MsiResult::Allocated)
 }
 
 /// 释放 MSI 中断向量
