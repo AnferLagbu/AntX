@@ -306,13 +306,11 @@ impl BpfMap {
                     return false;
                 }
                 let map = data.lock();
-                if let Some(v) = map.get(key) {
+                map.get(key).map_or(false, |v| {
                     let copy_len = core::cmp::min(v.len(), value_out.len());
                     value_out[..copy_len].copy_from_slice(&v[..copy_len]);
                     true
-                } else {
-                    false
-                }
+                })
             }
             Self::Array { def, data } => {
                 if key.len() != def.key_size as usize {
@@ -324,13 +322,11 @@ impl BpfMap {
                 };
                 let map = data.lock();
                 if idx < map.len() {
-                    if let Some(v) = &map[idx] {
+                    map[idx].as_ref().map_or(false, |v| {
                         let copy_len = core::cmp::min(v.len(), value_out.len());
                         value_out[..copy_len].copy_from_slice(&v[..copy_len]);
                         true
-                    } else {
-                        false
-                    }
+                    })
                 } else {
                     false
                 }
@@ -598,7 +594,7 @@ impl BpfHelper {
                 // r1 = map_fd, r2 = key_ptr
                 // 简化: 在内核态直接操作, 不做 copy_from_user
                 let map_fd = r1 as u32;
-                if let Some(map) = maps.get(&map_fd) {
+                maps.get(&map_fd).map_or(0, |map| {
                     // key 从 r2 指向的内存读取 (内核态直接访问)
                     let key_size = map.def().key_size as usize;
                     let key_ptr = r2 as *const u8;
@@ -611,14 +607,12 @@ impl BpfHelper {
                     } else {
                         0
                     }
-                } else {
-                    0
-                }
+                })
             }
             helper_id::MAP_UPDATE_ELEM => {
                 // 寄存器分配: r1=map_fd, r2=key_ptr, r3=value_ptr, r4=flags
                 let map_fd = r1 as u32;
-                if let Some(map) = maps.get(&map_fd) {
+                maps.get(&map_fd).map_or(-(1i64) as u64, |map| {
                     let key_size = map.def().key_size as usize;
                     let val_size = map.def().value_size as usize;
                     let key_ptr = r2 as *const u8;
@@ -632,21 +626,17 @@ impl BpfHelper {
                     } else {
                         -(1i64) as u64
                     }
-                } else {
-                    -(1i64) as u64
-                }
+                })
             }
             helper_id::MAP_DELETE_ELEM => {
                 let map_fd = r1 as u32;
-                if let Some(map) = maps.get(&map_fd) {
+                maps.get(&map_fd).map_or(-(1i64) as u64, |map| {
                     let key_size = map.def().key_size as usize;
                     let key_ptr = r2 as *const u8;
                     // SAFETY: 验证器保证 key_ptr 指向有效内存
                     let key = unsafe { core::slice::from_raw_parts(key_ptr, key_size) };
                     if map.delete(key) { 0 } else { -(1i64) as u64 }
-                } else {
-                    -(1i64) as u64
-                }
+                })
             }
             _ => 0,
         }
@@ -1151,46 +1141,25 @@ impl BpfSubsystem {
     /// Map 操作: lookup
     pub fn map_lookup_elem(&self, map_fd: u32, key: &[u8], value_out: &mut [u8]) -> i64 {
         let maps = self.maps.lock();
-        match maps.get(&map_fd) {
-            Some(map) => {
-                if map.lookup(key, value_out) {
-                    0
-                } else {
-                    -(2i64)
-                } // ENOENT
-            }
-            None => -(9i64), // EBADF
-        }
+        maps.get(&map_fd).map_or(-(9i64), |map| {
+            if map.lookup(key, value_out) { 0 } else { -(2i64) }
+        })
     }
 
     /// Map 操作: update
     pub fn map_update_elem(&self, map_fd: u32, key: &[u8], value: &[u8]) -> i64 {
         let maps = self.maps.lock();
-        match maps.get(&map_fd) {
-            Some(map) => {
-                if map.update(key, value) {
-                    0
-                } else {
-                    -(22i64)
-                }
-            }
-            None => -(9i64),
-        }
+        maps.get(&map_fd).map_or(-(9i64), |map| {
+            if map.update(key, value) { 0 } else { -(22i64) }
+        })
     }
 
     /// Map 操作: delete
     pub fn map_delete_elem(&self, map_fd: u32, key: &[u8]) -> i64 {
         let maps = self.maps.lock();
-        match maps.get(&map_fd) {
-            Some(map) => {
-                if map.delete(key) {
-                    0
-                } else {
-                    -(2i64)
-                }
-            }
-            None => -(9i64),
-        }
+        maps.get(&map_fd).map_or(-(9i64), |map| {
+            if map.delete(key) { 0 } else { -(2i64) }
+        })
     }
 
     /// 执行程序
