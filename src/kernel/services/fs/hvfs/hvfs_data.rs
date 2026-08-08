@@ -547,16 +547,16 @@ impl HvfsData {
         let obj_id = {
             let datasets = self.datasets.lock();
             let ds = &datasets[0];
-            match ds.lookup(name) {
-                Some(id) => Some(id),
-                None => {
+            ds.lookup(name).map_or_else(
+                || {
                     if flags & 0x0100 != 0 {
                         ds.create_file(name, pwm)
                     } else {
                         None
                     }
-                }
-            }
+                },
+                Some,
+            )
         };
         let obj_id = match obj_id {
             Some(id) => id,
@@ -753,14 +753,14 @@ impl HvfsData {
         let name = path.trim_start_matches('/');
         let datasets = self.datasets.lock();
         let ds = &datasets[0];
-        match ds.create_dir(name, pwm) {
-            Some(obj_id) => {
+        ds.create_dir(name, pwm).map_or_else(
+            || KernelError::Io.as_i32(),
+            |obj_id| {
                 let txg = self.spa.current_txg();
                 self.zil.add_record(HvZilRecord::new_mkdir(txg, 0, name));
                 obj_id as i32
-            }
-            None => KernelError::Io.as_i32(),
-        }
+            },
+        )
     }
 
     #[expect(
@@ -1794,10 +1794,9 @@ impl HvfsData {
         let datasets = self.datasets.lock();
         let ds = &datasets[0];
         let txg = self.spa.current_txg();
-        match self.snap_mgr.create_snapshot(ds, name, txg) {
-            Some(id) => id as i32,
-            None => KernelError::Io.as_i32(),
-        }
+        self.snap_mgr
+            .create_snapshot(ds, name, txg)
+            .map_or(KernelError::Io.as_i32(), |id| id as i32)
     }
 
     /// 销毁快照
@@ -1830,14 +1829,14 @@ impl HvfsData {
         }
         let ds_id = { self.datasets.lock().len() as u64 };
         let txg = self.spa.current_txg();
-        match self.snap_mgr.create_clone(snap_id, ds_id, name, txg) {
-            Some(ds) => {
+        self.snap_mgr.create_clone(snap_id, ds_id, name, txg).map_or_else(
+            || KernelError::Io.as_i32(),
+            |ds| {
                 ds.init(0);
                 self.datasets.lock().push(ds);
                 ds_id as i32
-            }
-            None => KernelError::Io.as_i32(),
-        }
+            },
+        )
     }
 
     pub fn seek(&self, fd: u32, offset: i64, whence: u32) -> i64 {
