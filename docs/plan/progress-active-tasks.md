@@ -145,13 +145,14 @@
 
 - **条目**: code-review-2026-08-01 #028
 - **现状**:
-  - [services/net/mod.rs:4-19](../../src/kernel/services/net/mod.rs#L4) 仍标 "状态 (v2.7, 2026-06-04)", checkbox 含未勾选项
-  - [services/fs/mod.rs:4-19](../../src/kernel/services/fs/mod.rs#L4) 仍标 "真实状态 (v2.5, 2026-06-04)", 含过期 checkbox
-  - 类似问题: [services/proc/mod.rs:4-21](../../src/kernel/services/proc/mod.rs#L4) 仍标 "状态 (v2.11, 2026-06-04)"
+  - services/net/mod.rs:4-9 — 头注释 "v2.7, 2026-06-04" 已替换为 "封装 smoltcp 协议栈 safe 入口, IPv4/IPv6 双栈已实装 (DECISION-032), 进度见 progress-active-tasks.md"
+  - services/fs/mod.rs:4-9 — 头注释 "v2.5, 2026-06-04" 已替换为 "VFS + 7 个原生 FS + HvFS 列表, 0 unsafe"
+  - services/proc/mod.rs:4-9 — 头注释 "v2.11, 2026-06-04" 已替换为 "18+ 子模块列表, 0 unsafe"
+  - 全部三文件头注释均已更新为当前真实状态, 含模块清单 + 引用 progress-active-tasks.md
 - **方案**:
   - 描述: 删除三文件头注释中的迁移状态块, 替换为当前真实状态描述
   - 优势: 与代码现状一致
-  - 状态: []
+  - 状态: [X] (2026-08-04 落地, 见 services/net/mod.rs:7-9 / services/fs/mod.rs:7-9 / services/proc/mod.rs:7-9. 验证: §2.4 #1-#4 全过)
 
 ##### B3. README.md remote 命名与 kernel-roadmap 链接过期
 
