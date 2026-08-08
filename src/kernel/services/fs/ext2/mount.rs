@@ -209,15 +209,13 @@ impl FileSystem for Ext2FileSystem {
         let fs = fs_guard.as_mut().ok_or(KernelError::NotInitialized)?;
 
         // 解析路径
-        let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
+        let (parent_path, name) = rel_path.rfind('/').map_or(("/", rel_path), |pos| {
             if pos == 0 {
                 ("/", &rel_path[1..])
             } else {
                 (&rel_path[..pos], &rel_path[pos + 1..])
             }
-        } else {
-            ("/", rel_path)
-        };
+        });
 
         fs.mkdir(parent_path, name)?;
         Ok(())

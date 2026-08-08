@@ -619,6 +619,10 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
+        #[expect(
+            clippy::option_if_let_else,
+            reason = "含 unsafe { nn.as_ref() } + 闭包调用 f(proc_ref) 副作用, 改 map_or/None, |x| Some(...) 触发 unnecessary_map_or; and_then(|x| Some(...)) 触发 unused_and_then; 保留 if let/else 形式"
+        )]
         match table[pid as usize] {
             Some(nn) => {
                 // SAFETY: nn is a valid NonNull pointer inserted by insert().
@@ -637,6 +641,10 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
+        #[expect(
+            clippy::option_if_let_else,
+            reason = "含 unsafe { nn.as_mut() } + 闭包调用 f(proc_ref) 副作用, 改 map_or/None, |x| Some(...) 触发 unnecessary_map_or; and_then(|x| Some(...)) 触发 unused_and_then; 保留 if let/else 形式"
+        )]
         match table[pid as usize] {
             Some(mut nn) => {
                 // SAFETY: nn is a valid NonNull pointer inserted by insert().
@@ -693,14 +701,11 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return false;
         }
-        match table[pid as usize] {
-            Some(nn) => {
-                // SAFETY: nn is a valid NonNull pointer inserted by insert().
-                let proc_ref = unsafe { nn.as_ref() };
-                proc_ref.try_inc_ref()
-            }
-            None => false,
-        }
+        table[pid as usize].map_or(false, |nn| {
+            // SAFETY: nn is a valid NonNull pointer inserted by insert().
+            let proc_ref = unsafe { nn.as_ref() };
+            proc_ref.try_inc_ref()
+        })
     }
 
     pub fn dec_ref_and_maybe_free(&self, pid: Pid) {

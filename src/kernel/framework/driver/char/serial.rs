@@ -598,12 +598,10 @@ pub extern "C" fn serial_puts(com: u32, s: *const u8) {
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_getc(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
-        SERIAL_PORTS.with_mut(|ports| match &mut ports[com as usize] {
-            Some(port) => match port.receive_byte() {
-                Some(ch) => i32::from(ch),
-                None => -1,
-            },
-            None => -1,
+        SERIAL_PORTS.with_mut(|ports| {
+            ports[com as usize]
+                .as_mut()
+                .map_or(-1, |port| port.receive_byte().map_or(-1, i32::from))
         })
     } else {
         -1
@@ -615,9 +613,8 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
-        SERIAL_PORTS.with(|ports| match &ports[com as usize] {
-            Some(port) => i32::from(port.has_data()),
-            None => 0,
+        SERIAL_PORTS.with(|ports| {
+            ports[com as usize].as_ref().map_or(0, |port| i32::from(port.has_data()))
         })
     } else {
         0
