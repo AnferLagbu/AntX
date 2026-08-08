@@ -517,10 +517,7 @@ pub unsafe extern "C" fn sm_send(fd: i32, buf: *const u8, len: u32, _flags: i32)
         match raw::fd_type(fd as usize) {
             1 => {
                 let sock = sockets.get_mut::<tcp::Socket>(handle);
-                match sock.send_slice(data) {
-                    Ok(n) => n as i32,
-                    Err(_) => -E_CONNRESET,
-                }
+                sock.send_slice(data).map_or(-E_CONNRESET, |n| n as i32)
             }
             2 => {
                 // UDP 无目的地址: 依赖 socket 已 "连接" (经 endpoint 绑定)
@@ -565,23 +562,14 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
         match raw::fd_type(fd as usize) {
             1 => {
                 let sock = sockets.get_mut::<tcp::Socket>(handle);
-                match sock.recv_slice(data) {
-                    Ok(n) => n as i32,
-                    Err(_) => {
-                        if sock.is_open() {
-                            0
-                        } else {
-                            -E_CONNRESET
-                        }
-                    }
-                }
+                sock.recv_slice(data).map_or_else(
+                    |_| if sock.is_open() { 0 } else { -E_CONNRESET },
+                    |n| n as i32,
+                )
             }
             2 => {
                 let sock = sockets.get_mut::<udp::Socket>(handle);
-                match sock.recv_slice(data) {
-                    Ok((n, _meta)) => n as i32,
-                    Err(_) => -E_AGAIN,
-                }
+                sock.recv_slice(data).map_or(-E_AGAIN, |(n, _meta)| n as i32)
             }
             _ => -E_NOTSUPP,
         }
@@ -641,10 +629,7 @@ pub unsafe extern "C" fn sm_sendto(
             }
             1 => {
                 let sock = sockets.get_mut::<tcp::Socket>(handle);
-                match sock.send_slice(data) {
-                    Ok(n) => n as i32,
-                    Err(_) => -E_CONNRESET,
-                }
+                sock.send_slice(data).map_or(-E_CONNRESET, |n| n as i32)
             }
             _ => -E_NOTSUPP,
         }
@@ -692,30 +677,21 @@ pub unsafe extern "C" fn sm_recvfrom(
         match raw::fd_type(fd as usize) {
             2 => {
                 let sock = sockets.get_mut::<udp::Socket>(handle);
-                match sock.recv_slice(data) {
-                    Ok((n, meta)) => {
-                        // 通过 endpoint_from_smol 将 smoltcp IpEndpoint 翻译为 NetEndpoint,
-                        // 再写入 sockaddr_in 供用户态读取对端地址.
-                        if let Some(ep) = endpoint_from_smol(meta.endpoint) {
-                            write_sockaddr(addr, addrlen, &ep);
-                        }
-                        n as i32
+                sock.recv_slice(data).map_or(-E_AGAIN, |(n, meta)| {
+                    // 通过 endpoint_from_smol 将 smoltcp IpEndpoint 翻译为 NetEndpoint,
+                    // 再写入 sockaddr_in 供用户态读取对端地址.
+                    if let Some(ep) = endpoint_from_smol(meta.endpoint) {
+                        write_sockaddr(addr, addrlen, &ep);
                     }
-                    Err(_) => -E_AGAIN,
-                }
+                    n as i32
+                })
             }
             1 => {
                 let sock = sockets.get_mut::<tcp::Socket>(handle);
-                match sock.recv_slice(data) {
-                    Ok(n) => n as i32,
-                    Err(_) => {
-                        if sock.is_open() {
-                            0
-                        } else {
-                            -E_CONNRESET
-                        }
-                    }
-                }
+                sock.recv_slice(data).map_or_else(
+                    |_| if sock.is_open() { 0 } else { -E_CONNRESET },
+                    |n| n as i32,
+                )
             }
             _ => -E_NOTSUPP,
         }
@@ -1039,16 +1015,16 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
             2 => {
                 let sock = sockets.get::<udp::Socket>(handle);
                 let ep = sock.endpoint();
-                match ep.addr {
-                    Some(addr) => Some(IpEndpoint {
-                        addr,
-                        port: ep.port,
-                    }),
-                    None => Some(IpEndpoint {
+                ep.addr.map_or(
+                    Some(IpEndpoint {
                         addr: IpAddress::Ipv4(Ipv4Address::UNSPECIFIED),
                         port: ep.port,
                     }),
-                }
+                    |addr| Some(IpEndpoint {
+                        addr,
+                        port: ep.port,
+                    }),
+                )
             }
             _ => return -E_NOTSUPP,
         };
