@@ -73,12 +73,10 @@ pub fn mprotect_syscall(addr: u64, len: u64, prot: i32) -> Result<usize, Errno> 
     let new_flags = prot_to_page_flags(prot);
 
     // 委托 framework 层执行页表修改
-    if let Some(mm) = vma_get_current_mm() {
+    vma_get_current_mm().map_or(Err(Errno::ENOMEM), |mm| {
         match mm.mprotect(addr as usize, len as usize, new_flags) {
             Ok(()) => Ok(0),
             Err(e) => Err(e),
         }
-    } else {
-        Err(Errno::ENOMEM)
-    }
+    })
 }

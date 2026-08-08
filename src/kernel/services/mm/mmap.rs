@@ -175,10 +175,7 @@ fn find_or_allocate_addr(
     if addr_hint != 0 && addr_hint < 0x0000_7FFF_FFFF_F000 {
         Ok(addr_hint as usize)
     } else {
-        match mm.find_free_range(len_aligned) {
-            Some(a) => Ok(a),
-            None => Err(Errno::ENOMEM),
-        }
+        mm.find_free_range(len_aligned).ok_or(Errno::ENOMEM)
     }
 }
 

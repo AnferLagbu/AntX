@@ -538,20 +538,12 @@ impl ICache {
 
     /// 检查引用计数是否为零
     fn is_ref_zero(&self, ino: u32) -> bool {
-        if let Some(idx) = self.lookup_index(ino) {
-            self.entries[idx].ref_count == 0
-        } else {
-            true
-        }
+        self.lookup_index(ino).is_none_or(|idx| self.entries[idx].ref_count == 0)
     }
 
     /// 获取引用计数
     fn get_ref_count(&self, ino: u32) -> u32 {
-        if let Some(idx) = self.lookup_index(ino) {
-            self.entries[idx].ref_count
-        } else {
-            0
-        }
+        self.lookup_index(ino).map_or(0, |idx| self.entries[idx].ref_count)
     }
 
     /// 可变查找 (返回索引)

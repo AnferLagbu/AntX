@@ -300,10 +300,7 @@ impl NumaTopology {
     pub fn best_alloc_node(&self, policy: &NumaMempolicy, current_cpu: u32) -> u32 {
         let current_node = self.cpu_to_node(current_cpu);
 
-        match policy.preferred_node(current_node) {
-            Some(node) => node,
-            None => current_node,
-        }
+        policy.preferred_node(current_node).unwrap_or(current_node)
     }
 
     /// 查找距离最近且有空闲内存的节点
