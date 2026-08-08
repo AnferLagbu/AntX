@@ -28,11 +28,13 @@ impl AhciBlockDevice {
         // 确认端口存在且设备就绪
         let present = {
             let mut controllers = AHCI_CONTROLLERS.lock();
-            controllers.get_mut(controller_index).map_or(false, |controller| {
-                controller
-                    .get_port(port_index)
-                    .map_or(false, |p| p.device_present)
-            })
+            controllers
+                .get_mut(controller_index)
+                .map_or(false, |controller| {
+                    controller
+                        .get_port(port_index)
+                        .map_or(false, |p| p.device_present)
+                })
         };
 
         if !present {
@@ -63,9 +65,9 @@ impl AhciBlockDevice {
         let mut buf = [0u8; 512];
         while hi < (1u64 << 32) {
             let ok = controllers.get_mut(ci).map_or(false, |controller| {
-                controller.get_port(pi).map_or(false, |port| {
-                    port.read(hi, 1, buf.as_mut_ptr()).is_ok()
-                })
+                controller
+                    .get_port(pi)
+                    .map_or(false, |port| port.read(hi, 1, buf.as_mut_ptr()).is_ok())
             });
 
             if ok {
@@ -81,9 +83,9 @@ impl AhciBlockDevice {
         while lo < hi {
             let mid = lo + (hi - lo) / 2;
             let ok = controllers.get_mut(ci).map_or(false, |controller| {
-                controller.get_port(pi).map_or(false, |port| {
-                    port.read(mid, 1, buf.as_mut_ptr()).is_ok()
-                })
+                controller
+                    .get_port(pi)
+                    .map_or(false, |port| port.read(mid, 1, buf.as_mut_ptr()).is_ok())
             });
 
             if ok {
@@ -100,31 +102,41 @@ impl AhciBlockDevice {
 impl BlockDevice for AhciBlockDevice {
     fn blk_read(&mut self, sector: u64, buf: &mut [u8]) -> i32 {
         let mut controllers = AHCI_CONTROLLERS.lock();
-        controllers.get_mut(self.controller_index).map_or(-1, |controller| {
-            controller.get_port(self.port_index).map_or(-1, |port| match port.read(sector, 1, buf.as_mut_ptr()) {
-                Ok(()) => 0,
-                Err(_) => -1,
+        controllers
+            .get_mut(self.controller_index)
+            .map_or(-1, |controller| {
+                controller.get_port(self.port_index).map_or(-1, |port| {
+                    match port.read(sector, 1, buf.as_mut_ptr()) {
+                        Ok(()) => 0,
+                        Err(_) => -1,
+                    }
+                })
             })
-        })
     }
 
     fn blk_write(&mut self, sector: u64, buf: &[u8]) -> i32 {
         let mut controllers = AHCI_CONTROLLERS.lock();
-        controllers.get_mut(self.controller_index).map_or(-1, |controller| {
-            controller.get_port(self.port_index).map_or(-1, |port| match port.write(sector, 1, buf.as_ptr()) {
-                Ok(()) => 0,
-                Err(_) => -1,
+        controllers
+            .get_mut(self.controller_index)
+            .map_or(-1, |controller| {
+                controller.get_port(self.port_index).map_or(-1, |port| {
+                    match port.write(sector, 1, buf.as_ptr()) {
+                        Ok(()) => 0,
+                        Err(_) => -1,
+                    }
+                })
             })
-        })
     }
 
     fn blk_is_present(&self) -> bool {
         let mut controllers = AHCI_CONTROLLERS.lock();
-        controllers.get_mut(self.controller_index).map_or(false, |controller| {
-            controller
-                .get_port(self.port_index)
-                .map_or(false, |p| p.device_present)
-        })
+        controllers
+            .get_mut(self.controller_index)
+            .map_or(false, |controller| {
+                controller
+                    .get_port(self.port_index)
+                    .map_or(false, |p| p.device_present)
+            })
     }
 
     fn blk_total_sectors(&self) -> u64 {

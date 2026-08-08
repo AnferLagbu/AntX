@@ -614,7 +614,9 @@ pub extern "C" fn serial_getc(com: u32) -> i32 {
 pub extern "C" fn serial_has_char(com: u32) -> i32 {
     if (com as usize) < MAX_COM_PORTS {
         SERIAL_PORTS.with(|ports| {
-            ports[com as usize].as_ref().map_or(0, |port| i32::from(port.has_data()))
+            ports[com as usize]
+                .as_ref()
+                .map_or(0, |port| i32::from(port.has_data()))
         })
     } else {
         0

@@ -896,7 +896,9 @@ pub extern "C" fn e1000_probe() -> i32 {
     reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
 )]
 pub extern "C" fn get_e1000_instance() -> *mut u8 {
-    (*E1000_DEVICE.lock()).as_mut().map_or(core::ptr::null_mut(), |dev| dev as *mut _ as *mut u8)
+    (*E1000_DEVICE.lock())
+        .as_mut()
+        .map_or(core::ptr::null_mut(), |dev| dev as *mut _ as *mut u8)
 }
 
 #[cfg(not(feature = "kernel_test"))]

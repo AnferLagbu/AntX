@@ -663,7 +663,9 @@ pub extern "C" fn ata_init() {
 #[unsafe(no_mangle)]
 pub extern "C" fn ata_disk_present(drive: u8) -> i32 {
     let guard = ATA_DEVICE.lock();
-    (*guard).as_ref().map_or(0, |controller| i32::from(controller.disk_present(drive)))
+    (*guard)
+        .as_ref()
+        .map_or(0, |controller| i32::from(controller.disk_present(drive)))
 }
 
 /// 读取扇区 (C 兼容接口)
@@ -675,19 +677,21 @@ pub extern "C" fn ata_read_sector(drive: u8, lba: u32, buffer: *mut u8) -> i32 {
         return ATA_ERR;
     }
 
-    (*ATA_DEVICE.lock()).as_ref().map_or(ATA_NO_DISK, |controller| {
-        let mut buf = [0u8; 512];
-        match controller.read_sector(drive, lba, &mut buf) {
-            Ok(()) => {
-                // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                unsafe {
-                    core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512);
+    (*ATA_DEVICE.lock())
+        .as_ref()
+        .map_or(ATA_NO_DISK, |controller| {
+            let mut buf = [0u8; 512];
+            match controller.read_sector(drive, lba, &mut buf) {
+                Ok(()) => {
+                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(buf.as_ptr(), buffer, 512);
+                    }
+                    ATA_SUCCESS
                 }
-                ATA_SUCCESS
+                Err(_) => ATA_ERR,
             }
-            Err(_) => ATA_ERR,
-        }
-    })
+        })
 }
 
 /// 写入扇区 (C 兼容接口)
@@ -699,18 +703,20 @@ pub extern "C" fn ata_write_sector(drive: u8, lba: u32, buffer: *const u8) -> i3
         return ATA_ERR;
     }
 
-    (*ATA_DEVICE.lock()).as_ref().map_or(ATA_NO_DISK, |controller| {
-        let mut buf = [0u8; 512];
-        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-        unsafe {
-            core::ptr::copy_nonoverlapping(buffer, buf.as_mut_ptr(), 512);
-        }
+    (*ATA_DEVICE.lock())
+        .as_ref()
+        .map_or(ATA_NO_DISK, |controller| {
+            let mut buf = [0u8; 512];
+            // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+            unsafe {
+                core::ptr::copy_nonoverlapping(buffer, buf.as_mut_ptr(), 512);
+            }
 
-        match controller.write_sector(drive, lba, &buf) {
-            Ok(()) => ATA_SUCCESS,
-            Err(_) => ATA_ERR,
-        }
-    })
+            match controller.write_sector(drive, lba, &buf) {
+                Ok(()) => ATA_SUCCESS,
+                Err(_) => ATA_ERR,
+            }
+        })
 }
 
 // ============================================================================

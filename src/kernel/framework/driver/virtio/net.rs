@@ -596,7 +596,8 @@ pub extern "C" fn virtio_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u
     // SAFETY: driver_data 由 Chitin 注册时设置, buf 由 Chitin NetOps 契约保证有效。
     let dev = unsafe { &mut *(driver_data as *mut VirtioNet) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
-    dev.try_receive(user_buf.as_mut_slice()).map_or(0, |n| n as i32)
+    dev.try_receive(user_buf.as_mut_slice())
+        .map_or(0, |n| n as i32)
 }
 
 #[expect(

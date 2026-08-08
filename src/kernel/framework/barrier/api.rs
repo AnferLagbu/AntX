@@ -216,7 +216,8 @@ pub extern "C" fn recovery_undo_record(domain_id: u64, field_ptr: *mut u8, old_v
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn recovery_undo_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    mgr.find(domain_id).map_or(-1, |dom| dom.undo.lock().count as i32)
+    mgr.find(domain_id)
+        .map_or(-1, |dom| dom.undo.lock().count as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -241,7 +242,8 @@ pub extern "C" fn recovery_domain_add_dep(domain_id: u64, dep_id: u64) -> i32 {
 #[expect(clippy::cast_possible_truncation)]
 pub extern "C" fn recovery_domain_dep_count(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    mgr.find(domain_id).map_or(-1, |dom| dom.dependency_count() as i32)
+    mgr.find(domain_id)
+        .map_or(-1, |dom| dom.dependency_count() as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -277,7 +279,9 @@ pub extern "C" fn recovery_domain_get_state(domain_id: u64) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn recovery_domain_get_failures(domain_id: u64) -> i32 {
     let mgr = super::RECOVERY_MANAGER.lock();
-    mgr.find(domain_id).map_or(-1, |dom| dom.consecutive_failures.load(Ordering::SeqCst) as i32)
+    mgr.find(domain_id).map_or(-1, |dom| {
+        dom.consecutive_failures.load(Ordering::SeqCst) as i32
+    })
 }
 
 // SAFETY: FFI 导出函数, 通过 C ABI 与外部代码互操作

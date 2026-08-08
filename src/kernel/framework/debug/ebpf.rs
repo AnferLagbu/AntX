@@ -1142,24 +1142,30 @@ impl BpfSubsystem {
     pub fn map_lookup_elem(&self, map_fd: u32, key: &[u8], value_out: &mut [u8]) -> i64 {
         let maps = self.maps.lock();
         maps.get(&map_fd).map_or(-(9i64), |map| {
-            if map.lookup(key, value_out) { 0 } else { -(2i64) }
+            if map.lookup(key, value_out) {
+                0
+            } else {
+                -(2i64)
+            }
         })
     }
 
     /// Map 操作: update
     pub fn map_update_elem(&self, map_fd: u32, key: &[u8], value: &[u8]) -> i64 {
         let maps = self.maps.lock();
-        maps.get(&map_fd).map_or(-(9i64), |map| {
-            if map.update(key, value) { 0 } else { -(22i64) }
-        })
+        maps.get(&map_fd).map_or(
+            -(9i64),
+            |map| {
+                if map.update(key, value) { 0 } else { -(22i64) }
+            },
+        )
     }
 
     /// Map 操作: delete
     pub fn map_delete_elem(&self, map_fd: u32, key: &[u8]) -> i64 {
         let maps = self.maps.lock();
-        maps.get(&map_fd).map_or(-(9i64), |map| {
-            if map.delete(key) { 0 } else { -(2i64) }
-        })
+        maps.get(&map_fd)
+            .map_or(-(9i64), |map| if map.delete(key) { 0 } else { -(2i64) })
     }
 
     /// 执行程序

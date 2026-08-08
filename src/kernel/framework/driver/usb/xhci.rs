@@ -883,16 +883,17 @@ impl HostController for XhciController {
     }
 
     fn get_port_speed(&self, port: usize) -> UsbSpeed {
-        self.get_port_reg(port).map_or(UsbSpeed::Unknown, |port_reg| {
-            let speed = (port_reg.portsc >> 10) & 0xF;
-            match speed {
-                1 => UsbSpeed::Full,
-                2 => UsbSpeed::Low,
-                3 => UsbSpeed::High,
-                4 => UsbSpeed::Super,
-                _ => UsbSpeed::Unknown,
-            }
-        })
+        self.get_port_reg(port)
+            .map_or(UsbSpeed::Unknown, |port_reg| {
+                let speed = (port_reg.portsc >> 10) & 0xF;
+                match speed {
+                    1 => UsbSpeed::Full,
+                    2 => UsbSpeed::Low,
+                    3 => UsbSpeed::High,
+                    4 => UsbSpeed::Super,
+                    _ => UsbSpeed::Unknown,
+                }
+            })
     }
 
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定

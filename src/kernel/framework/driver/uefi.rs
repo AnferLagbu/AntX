@@ -551,7 +551,9 @@ pub extern "C" fn sys_uefi(cmd: u64, a1: u64, a2: u64) -> i64 {
         }
         5 => {
             // get_gop_mode → fb_base
-            uefi_subsystem().get_gop_mode().map_or(0, |mode| mode.frame_buffer_base as i64)
+            uefi_subsystem()
+                .get_gop_mode()
+                .map_or(0, |mode| mode.frame_buffer_base as i64)
         }
         6 => {
             // list_variables → count
