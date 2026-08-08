@@ -117,10 +117,7 @@ pub fn register_vfs_poll_policy(policy: &'static dyn VfsPollPolicy) -> bool {
 /// 这保证 framework 在未注册策略时仍可工作 (向后兼容).
 pub fn current_vfs_poll_policy() -> VfsPollPolicyRef<'static> {
     let slot = CURRENT_POLICY.lock();
-    match *slot {
-        Some(p) => VfsPollPolicyRef::Registered(p),
-        None => VfsPollPolicyRef::Fallback,
-    }
+    slot.map_or(VfsPollPolicyRef::Fallback, VfsPollPolicyRef::Registered)
 }
 
 /// `VfsPollPolicy` 引用 — 可能是注册的或 fallback

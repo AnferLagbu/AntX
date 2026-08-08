@@ -85,10 +85,7 @@ pub fn arch_halt() {
 ///
 /// 组合策略选择 (services) + 硬件 halt (framework)
 pub fn pm_idle(cpu_id: u32) {
-    let state = match PM_SUBSYSTEM.cpuidle.select_cstate(cpu_id) {
-        Some(s) => s,
-        None => CpuIdleState::C1Halt,
-    };
+    let state = PM_SUBSYSTEM.cpuidle.select_cstate(cpu_id).unwrap_or(CpuIdleState::C1Halt);
 
     let stats = PM_SUBSYSTEM.cpuidle.per_cpu_stats.lock();
     if (cpu_id as usize) < stats.len() {

@@ -55,6 +55,10 @@ pub fn sys_ftrace_read(a0: u64) -> i64 {
     if !raw_sync::check_user_buf(a0, mem::size_of::<TraceEvent>() as u64) {
         return EFAULT;
     }
+    #[expect(
+        clippy::option_if_let_else,
+        reason = "含 unsafe { ptr::write_unaligned(a0 as *mut TraceEvent, ev) } userptr 写副作用, 改 map_or 触发冗余闭包, 保留 match 形式"
+    )]
     match api::ftrace_pop_event() {
         Some(ev) => {
             // SAFETY: check_user_buf 已校验 a0 指向大小足够且对齐的用户空间,

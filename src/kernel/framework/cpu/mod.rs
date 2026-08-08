@@ -887,10 +887,7 @@ pub extern "C" fn cpu_get_apic_id() -> u32 {
 /// FFI 导出函数 (C 可调用)
 pub extern "C" fn cpu_get_logical_cores() -> u8 {
     // SAFETY: `as_ref` 是有效的 C ABI 函数指针; 参数列表与声明一致
-    match get_cpu_info() {
-        Some(info) => info.topology.logical_threads,
-        None => 1,
-    }
+    get_cpu_info().map_or(1, |info| info.topology.logical_threads)
 }
 
 /// 获取物理核心数 (FFI兼容)
