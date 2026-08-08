@@ -73,15 +73,13 @@ fn ptr_to_str<'a>(ptr: *const u8) -> &'a str {
 }
 
 fn split_parent_name(rel_path: &str) -> (&str, &str) {
-    if let Some(pos) = rel_path.rfind('/') {
+    rel_path.rfind('/').map_or(("/", rel_path), |pos| {
         if pos == 0 {
             ("/", &rel_path[1..])
         } else {
             (&rel_path[..pos], &rel_path[pos + 1..])
         }
-    } else {
-        ("/", rel_path)
-    }
+    })
 }
 
 // ============================================================================
@@ -411,14 +409,11 @@ pub extern "C" fn vfs_read_internal(fd_idx: u32, buf: *mut u8, count: u32) -> i3
         }
 
         // 慢速路径: Inode trait 分发
-        match open_file.inode().read(offset, user_buf.as_mut_slice(), pwm) {
-            Ok(n) => {
-                let new_offset = offset + n as u64;
-                open_file.set_offset(new_offset);
-                n as i32
-            }
-            Err(_) => -1,
-        }
+        open_file.inode().read(offset, user_buf.as_mut_slice(), pwm).map_or(-1, |n| {
+            let new_offset = offset + n as u64;
+            open_file.set_offset(new_offset);
+            n as i32
+        })
     });
 
     result.unwrap_or(-1)
@@ -476,10 +471,7 @@ pub fn vfs_pread_inode(
         Some(f) => f,
         None => return -1,
     };
-    match fs.fs_pread_inode(node_id, file_offset, user_buf.as_mut_slice(), pwm) {
-        Ok(n) => n as i32,
-        Err(_) => -1,
-    }
+    fs.fs_pread_inode(node_id, file_offset, user_buf.as_mut_slice(), pwm).map_or(-1, |n| n as i32)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -497,32 +489,19 @@ pub extern "C" fn vfs_unlink_internal(path: *const u8, pwm: u64) -> i32 {
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // 在删除前获取 inode 号, 用于删除后释放 POSIX 锁
-    let ino_before = if let Some(fs) = fs_opt {
-        fs.fs_resolve_path(rel_path)
-    } else {
-        None
-    };
+    let ino_before = fs_opt.and_then(|fs| fs.fs_resolve_path(rel_path));
 
-    let result = if let Some(fs) = fs_opt {
-        match fs.fs_unlink(rel_path, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    };
+    let result = fs_opt.map_or(-1, |fs| match fs.fs_unlink(rel_path, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    });
 
     // 文件删除成功后, 释放该 inode 上的 POSIX 锁 + inotify 通知
     if result == 0 {
         if let Some(ino) = ino_before {
             crate::kernel::framework::fs::vfs::flock::posix_lock_release_inode(ino);
             let (parent_path, name) = split_parent_name(rel_path);
-            let parent_ino = if let Some(fs) = fs_opt {
-                fs.fs_resolve_path(parent_path).unwrap_or(0)
-            } else {
-                0
-            };
+            let parent_ino = fs_opt.map_or(0, |fs| fs.fs_resolve_path(parent_path).unwrap_or(0));
             super::inotify::inotify_notify(parent_ino, super::inotify::IN_DELETE, name, false);
             super::inotify::inotify_notify(ino, super::inotify::IN_DELETE_SELF, "", false);
         }
@@ -598,27 +577,24 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
             & crate::kernel::services::fs::vfs_types::VfsOpenFlags::APPEND.bits())
             != 0
         {
-            match open_file.inode().stat(open_file.pwm) {
-                Ok(stat) => u64::from(stat.size),
-                Err(_) => open_file.get_offset(),
-            }
+            open_file
+                .inode()
+                .stat(open_file.pwm)
+                .map_or_else(|_| open_file.get_offset(), |stat| u64::from(stat.size))
         } else {
             open_file.get_offset()
         };
         let pwm = open_file.pwm;
         let node_id = open_file.inode_id();
 
-        match open_file.inode().write(offset, user_buf.as_slice(), pwm) {
-            Ok(n) => {
-                let new_offset = offset + n as u64;
-                open_file.set_offset(new_offset);
-                // inotify + fd_notify 通知
-                fd_notify::notify_fd_close(fd_idx as i32);
-                super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
-                n as i32
-            }
-            Err(_) => -1,
-        }
+        open_file.inode().write(offset, user_buf.as_slice(), pwm).map_or(-1, |n| {
+            let new_offset = offset + n as u64;
+            open_file.set_offset(new_offset);
+            // inotify + fd_notify 通知
+            fd_notify::notify_fd_close(fd_idx as i32);
+            super::inotify::inotify_notify(node_id, super::inotify::IN_MODIFY, "", false);
+            n as i32
+        })
     });
 
     result.unwrap_or(-1)
@@ -645,19 +621,14 @@ pub extern "C" fn vfs_mkdir_internal(path: *const u8, pwm: u64) -> i32 {
     }
 
     // E6-4: trait object 分发
-    if let Some(fs) = fs_opt {
-        match fs.fs_mkdir(rel_path, pwm) {
-            Ok(()) => {
-                let parent_ino = fs.fs_resolve_path(parent_path).unwrap_or(0);
-                super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, true);
-                0
-            }
-            Err(_) => -1,
+    fs_opt.map_or(-1, |fs| match fs.fs_mkdir(rel_path, pwm) {
+        Ok(()) => {
+            let parent_ino = fs.fs_resolve_path(parent_path).unwrap_or(0);
+            super::inotify::inotify_notify(parent_ino, super::inotify::IN_CREATE, name, true);
+            0
         }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    }
+        Err(_) => -1,
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -675,15 +646,10 @@ pub extern "C" fn vfs_rmdir_internal(path: *const u8, pwm: u64) -> i32 {
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // E6-4: trait object 分发
-    if let Some(fs) = fs_opt {
-        match fs.fs_rmdir(rel_path, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    }
+    fs_opt.map_or(-1, |fs| match fs.fs_rmdir(rel_path, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -712,18 +678,12 @@ pub extern "C" fn vfs_stat_internal(path: *const u8, st: *mut VfsStat, pwm: u64)
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // E6-4: trait object 分发
-    let result = if let Some(fs) = fs_opt {
-        match fs.fs_stat(rel_path, pwm) {
-            Ok(stat) => {
-                *st_ref.as_mut() = stat;
-                0
-            }
-            Err(_) => -1,
-        }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    };
+    let result = fs_opt.map_or(-1, |fs| {
+        fs.fs_stat(rel_path, pwm).map_or(-1, |stat| {
+            *st_ref.as_mut() = stat;
+            0
+        })
+    });
 
     if result == 0 {
         let tbl = crate::kernel::framework::credo::identity::get_table();
@@ -1052,15 +1012,10 @@ pub extern "C" fn vfs_chmod(path: *const u8, mode: u16, pwm: u64) -> i32 {
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // E6-4: trait object 分发
-    if let Some(fs) = fs_opt {
-        match fs.fs_chmod(rel_path, mode, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    }
+    fs_opt.map_or(-1, |fs| match fs.fs_chmod(rel_path, mode, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -1084,15 +1039,10 @@ pub extern "C" fn vfs_chown_ext(path: *const u8, owner_pwm: u64, group_pwm: u64,
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
     // E6-4: trait object 分发
-    if let Some(fs) = fs_opt {
-        match fs.fs_chown(rel_path, owner_pwm, group_pwm, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    }
+    fs_opt.map_or(-1, |fs| match fs.fs_chown(rel_path, owner_pwm, group_pwm, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
 }
 
 /// 设置文件时间戳 (utimensat)
@@ -1115,14 +1065,10 @@ pub extern "C" fn vfs_utimensat(path: *const u8, atime: u64, mtime: u64, pwm: u6
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    if let Some(fs) = fs_opt {
-        match fs.fs_utimensat(rel_path, atime, mtime, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        -1
-    }
+    fs_opt.map_or(-1, |fs| match fs.fs_utimensat(rel_path, atime, mtime, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
 }
 
 // ============================================================================
@@ -1205,14 +1151,10 @@ pub extern "C" fn vfs_link(oldpath: *const u8, newpath: *const u8, pwm: u64) -> 
         Some(r) => r,
         None => return -2,
     };
-    if let Some(fs) = fs_opt {
-        match fs.fs_link(old_path, new_path, pwm_eff) {
-            Ok(()) => 0,
-            Err(e) => e.as_i32(),
-        }
-    } else {
-        -1
-    }
+    fs_opt.map_or(-1, |fs| match fs.fs_link(old_path, new_path, pwm_eff) {
+        Ok(()) => 0,
+        Err(e) => e.as_i32(),
+    })
 }
 
 /// symlink(target, linkpath) — 创建符号链接.
@@ -1235,14 +1177,10 @@ pub extern "C" fn vfs_symlink(target: *const u8, linkpath: *const u8, pwm: u64) 
         Some(r) => r,
         None => return -2,
     };
-    if let Some(fs) = fs_opt {
-        match fs.fs_symlink(tgt, link_path, pwm_eff) {
-            Ok(()) => 0,
-            Err(e) => e.as_i32(),
-        }
-    } else {
-        -1
-    }
+    fs_opt.map_or(-1, |fs| match fs.fs_symlink(tgt, link_path, pwm_eff) {
+        Ok(()) => 0,
+        Err(e) => e.as_i32(),
+    })
 }
 
 /// readlink(path, buf, bufsiz) — 读取符号链接目标.
@@ -1269,16 +1207,14 @@ pub extern "C" fn vfs_readlink(path: *const u8, buf: *mut u8, bufsiz: u64, pwm: 
         Some(r) => r,
         None => return -2,
     };
-    if let Some(fs) = fs_opt {
+    fs_opt.map_or(-1, |fs| {
         // SAFETY: buf 经调用方校验, bufsiz 字节可写.
         let slice = unsafe { core::slice::from_raw_parts_mut(buf, bufsiz as usize) };
         match fs.fs_readlink(p, slice) {
             Ok(n) => n as i32,
             Err(e) => e.as_i32(),
         }
-    } else {
-        -1
-    }
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -1309,15 +1245,10 @@ pub extern "C" fn vfs_rename(old: *const u8, new: *const u8, pwm: u64) -> i32 {
     let new_rel = VFS_MANAGER.get_relative_path(new_path, new_mount_idx);
 
     // E6-4: trait object 分发
-    if let Some(fs) = old_fs_opt {
-        match fs.fs_rename(old_rel, new_rel, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        // E6-5: fallback 已移除
-        -1
-    }
+    old_fs_opt.map_or(-1, |fs| match fs.fs_rename(old_rel, new_rel, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -1403,16 +1334,13 @@ pub extern "C" fn vfs_seek(fd: u32, offset: i32, whence: u32) -> i32 {
 
     let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
         let current_offset = open_file.get_offset();
-        match open_file
+        open_file
             .inode()
             .seek(i64::from(offset), whence, current_offset)
-        {
-            Ok(new_offset) => {
+            .map_or(KernelError::InvalidArgument.as_i32(), |new_offset| {
                 open_file.set_offset(new_offset);
                 new_offset as i32
-            }
-            Err(_) => KernelError::InvalidArgument.as_i32(),
-        }
+            })
     });
 
     result.unwrap_or(KernelError::InvalidArgument.as_i32())
@@ -1485,13 +1413,10 @@ pub extern "C" fn vfs_fstat(fd: u32, st: *mut VfsStat, _pwm: u64) -> i32 {
 
     let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
         let pwm = open_file.pwm;
-        match open_file.inode().stat(pwm) {
-            Ok(stat) => {
-                *st_ref.as_mut() = stat;
-                0
-            }
-            Err(_) => -1,
-        }
+        open_file.inode().stat(pwm).map_or(-1, |stat| {
+            *st_ref.as_mut() = stat;
+            0
+        })
     });
 
     let result = result.unwrap_or(-1);
@@ -1644,14 +1569,10 @@ pub extern "C" fn vfs_setxattr_internal(
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    if let Some(fs) = fs_opt {
-        match fs.fs_setxattr(rel_path, name, value, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        -38 // ENOSYS
-    }
+    fs_opt.map_or(-38, |fs| match fs.fs_setxattr(rel_path, name, value, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
 }
 
 /// 获取扩展属性
@@ -1686,14 +1607,9 @@ pub extern "C" fn vfs_getxattr_internal(
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    if let Some(fs) = fs_opt {
-        match fs.fs_getxattr(rel_path, name, buf, pwm) {
-            Ok(len) => len as i32,
-            Err(_) => -1,
-        }
-    } else {
-        -38 // ENOSYS
-    }
+    fs_opt.map_or(-38, |fs| {
+        fs.fs_getxattr(rel_path, name, buf, pwm).map_or(-1, |len| len as i32)
+    })
 }
 
 /// 列出扩展属性
@@ -1726,14 +1642,9 @@ pub extern "C" fn vfs_listxattr_internal(
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    if let Some(fs) = fs_opt {
-        match fs.fs_listxattr(rel_path, buf, pwm) {
-            Ok(len) => len as i32,
-            Err(_) => -1,
-        }
-    } else {
-        -38 // ENOSYS
-    }
+    fs_opt.map_or(-38, |fs| {
+        fs.fs_listxattr(rel_path, buf, pwm).map_or(-1, |len| len as i32)
+    })
 }
 
 /// 删除扩展属性
@@ -1753,14 +1664,10 @@ pub extern "C" fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm
     };
     let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
 
-    if let Some(fs) = fs_opt {
-        match fs.fs_removexattr(rel_path, name, pwm) {
-            Ok(()) => 0,
-            Err(_) => -1,
-        }
-    } else {
-        -38 // ENOSYS
-    }
+    fs_opt.map_or(-38, |fs| match fs.fs_removexattr(rel_path, name, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
 }
 
 // ============================================================================
