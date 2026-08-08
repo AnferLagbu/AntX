@@ -366,13 +366,10 @@ pub fn io_uring_destroy(id: u32) -> Result<(), Errno> {
     let pos = table
         .iter()
         .position(|u| u.as_ref().map_or(false, |u| u.id == id));
-    match pos {
-        Some(i) => {
-            table.remove(i);
-            Ok(())
-        }
-        None => Err(Errno::EBADF),
-    }
+    pos.map_or(Err(Errno::EBADF), |i| {
+        table.remove(i);
+        Ok(())
+    })
 }
 
 /// 提交 SQE 到指定实例
@@ -385,10 +382,7 @@ pub fn io_uring_submit(id: u32, sqe: Sqe) -> Result<(), Errno> {
         .iter()
         .find(|u| u.as_ref().map_or(false, |u| u.id == id))
         .and_then(|u| u.as_ref());
-    match uring {
-        Some(u) => u.submit_sqe(sqe),
-        None => Err(Errno::EBADF),
-    }
+    uring.map_or(Err(Errno::EBADF), |u| u.submit_sqe(sqe))
 }
 
 #[expect(
@@ -421,6 +415,10 @@ pub fn io_uring_enter(id: u32, to_submit: u32, _min_complete: u32) -> Result<u32
                 .find(|u| u.as_ref().map_or(false, |u| u.id == id))
                 .and_then(|u| u.as_ref());
 
+            #[expect(
+                clippy::option_if_let_else,
+                reason = "嵌套 match Some/None 内含 drop(table)+重新取锁+再 match, 改 map_or 触发借用冲突 (E0505); 闭包借用+drop 同一资源不可行, 保留 match 形式"
+            )]
             match uring {
                 Some(u) => {
                     let mut processed = 0u32;
