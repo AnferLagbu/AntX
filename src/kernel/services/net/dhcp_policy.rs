@@ -165,12 +165,12 @@ impl DhcpPolicy for DefaultDhcpPolicy {
                 if retry_count < policy_cfg.max_retries {
                     DhcpAction::Continue
                 } else if policy_cfg.fallback_to_static {
-                        cfg.static_ipv4.map_or(DhcpAction::GiveUp, |octets| {
-                            DhcpAction::FallbackToStatic(Ipv4Addr::from_octets(octets))
-                        })
-                    } else {
-                        DhcpAction::GiveUp
-                    }
+                    cfg.static_ipv4.map_or(DhcpAction::GiveUp, |octets| {
+                        DhcpAction::FallbackToStatic(Ipv4Addr::from_octets(octets))
+                    })
+                } else {
+                    DhcpAction::GiveUp
+                }
             }
             DhcpState::Bound { .. } => {
                 // 续约时机: T1 (50%) → Unicast Renew, T2 (87.5%) → Server Rebind

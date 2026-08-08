@@ -263,10 +263,12 @@ impl HvObjSet {
 
     pub fn update_obj(&self, obj: &HvDmuObject) -> bool {
         let mut objs = self.objects.lock();
-        objs.iter_mut().find(|o| o.obj_id == obj.obj_id).map_or(false, |existing| {
-            *existing = *obj;
-            true
-        })
+        objs.iter_mut()
+            .find(|o| o.obj_id == obj.obj_id)
+            .map_or(false, |existing| {
+                *existing = *obj;
+                true
+            })
     }
 
     pub fn get_root(&self) -> Option<HvDmuObject> {

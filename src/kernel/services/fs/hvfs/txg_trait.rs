@@ -128,7 +128,9 @@ impl TxgManager for StandardTxg {
     }
 
     fn open_txg_state(&self) -> HvTxgState {
-        self.0.get_open_txg().map_or(HvTxgState::Committed, |txg| txg.state)
+        self.0
+            .get_open_txg()
+            .map_or(HvTxgState::Committed, |txg| txg.state)
     }
 
     fn is_sync_in_progress(&self) -> bool {

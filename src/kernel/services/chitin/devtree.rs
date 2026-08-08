@@ -224,10 +224,9 @@ pub fn bind_device(
     irq: Option<u8>,
     driver_data: *mut u8,
 ) -> DevTreeResult<u32> {
-    chitin::devtree::devtree_bind_device(id.0, io_base, irq, driver_data)
-        .ok_or(DevTreeError::Kernel(
-            crate::kernel::services::error::KernelError::FileNotFound,
-        ))
+    chitin::devtree::devtree_bind_device(id.0, io_base, irq, driver_data).ok_or(
+        DevTreeError::Kernel(crate::kernel::services::error::KernelError::FileNotFound),
+    )
 }
 
 // ============================================================================

@@ -36,15 +36,18 @@ fn resolve_path(ctx: &WasiContext, dirfd: u32, path: &str) -> Result<String, Was
     }
 
     let entry = ctx.fd_table.get(dirfd)?;
-    entry.path.as_ref().map_or_else(|| Ok(String::from(path)), |base_path| {
-        if path.starts_with('/') {
-            Ok(String::from(path))
-        } else if base_path.ends_with('/') {
-            Ok(alloc::format!("{base_path}{path}"))
-        } else {
-            Ok(alloc::format!("{base_path}/{path}"))
-        }
-    })
+    entry.path.as_ref().map_or_else(
+        || Ok(String::from(path)),
+        |base_path| {
+            if path.starts_with('/') {
+                Ok(String::from(path))
+            } else if base_path.ends_with('/') {
+                Ok(alloc::format!("{base_path}{path}"))
+            } else {
+                Ok(alloc::format!("{base_path}/{path}"))
+            }
+        },
+    )
 }
 
 /// WASI `o_flags` → VFS flags 映射

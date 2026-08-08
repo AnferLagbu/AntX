@@ -318,7 +318,8 @@ impl SafeRamFs {
     /// 当底层创建失败 (如父路径不存在、名称已存在等) 时返回 `IoError`.
     pub fn create_file(&self, parent_path: &str, name: &str, pwm: u64) -> FsResult<u32> {
         let mut fs = self.inner.lock();
-        fs.create_file(parent_path, name, pwm).ok_or(FsError::IoError)
+        fs.create_file(parent_path, name, pwm)
+            .ok_or(FsError::IoError)
     }
 
     /// 删除文件

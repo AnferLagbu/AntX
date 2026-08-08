@@ -243,9 +243,11 @@ pub fn sys_route_query(dest_u32: u64) -> i64 {
     route_query(IpAddr::V4(Ipv4Addr::from_octets(
         (dest_u32 as u32).to_be_bytes(),
     )))
-    .map_or(-(Errno::ENETUNREACH as i64), |result| match result.gateway {
-        IpAddr::V4(v4) => i64::from(u32::from_be_bytes(v4.octets())),
-        // V6 路由在 u32 syscall ABI 下不可表达, 视为不可达
-        IpAddr::V6(_) => -(Errno::ENETUNREACH as i64),
+    .map_or(-(Errno::ENETUNREACH as i64), |result| {
+        match result.gateway {
+            IpAddr::V4(v4) => i64::from(u32::from_be_bytes(v4.octets())),
+            // V6 路由在 u32 syscall ABI 下不可表达, 视为不可达
+            IpAddr::V6(_) => -(Errno::ENETUNREACH as i64),
+        }
     })
 }

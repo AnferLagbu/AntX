@@ -187,15 +187,16 @@ impl CascadePolicy {
             } => CascadeDirection::Isolated,
             FaultAttribution::Service { .. } | FaultAttribution::Unknown => {
                 // 服务域故障 → 根据子节点数量决策
-                topo.find(failed_id).map_or(CascadeDirection::BottomUp, |node| {
-                    if node.children_count == 0 {
-                        // 叶子节点 → 自底向上
-                        CascadeDirection::BottomUp
-                    } else {
-                        // 内部节点 → 自顶向下 (父先恢复可让子节点重新连接)
-                        CascadeDirection::TopDown
-                    }
-                })
+                topo.find(failed_id)
+                    .map_or(CascadeDirection::BottomUp, |node| {
+                        if node.children_count == 0 {
+                            // 叶子节点 → 自底向上
+                            CascadeDirection::BottomUp
+                        } else {
+                            // 内部节点 → 自顶向下 (父先恢复可让子节点重新连接)
+                            CascadeDirection::TopDown
+                        }
+                    })
             }
         }
     }

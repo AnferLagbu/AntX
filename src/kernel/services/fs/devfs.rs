@@ -362,7 +362,9 @@ impl DevfsData {
                     return KernelError::InvalidArgument.as_i32();
                 }
                 crate::kernel::framework::credo::session::login(note, password)
-                    .map_or(KernelError::PermissionDenied.as_i32(), |_pwm| buf.len() as i32)
+                    .map_or(KernelError::PermissionDenied.as_i32(), |_pwm| {
+                        buf.len() as i32
+                    })
             }
             Some(DevKind::Block | DevKind::Char | DevKind::Net | DevKind::Input) => {
                 // E6-9a: 物理设备 I/O 路由待 E6-9b (Chitin 桥接) 实现

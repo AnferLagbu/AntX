@@ -164,7 +164,9 @@ pub fn check_nofile_exceeded(fd_count: usize) -> bool {
     table
         .with_process(pid, |proc| {
             let rlimit_table = proc.rlimit_table.lock();
-            rlimit_table.get(RLIMIT_NOFILE).map_or(false, |rlim| fd_count as u64 >= rlim.cur)
+            rlimit_table
+                .get(RLIMIT_NOFILE)
+                .map_or(false, |rlim| fd_count as u64 >= rlim.cur)
         })
         .unwrap_or(false)
 }
@@ -201,7 +203,9 @@ pub fn check_nproc_exceeded(child_count: usize) -> bool {
     table
         .with_process(pid, |proc| {
             let rlimit_table = proc.rlimit_table.lock();
-            rlimit_table.get(RLIMIT_NPROC).map_or(false, |rlim| child_count as u64 >= rlim.cur)
+            rlimit_table
+                .get(RLIMIT_NPROC)
+                .map_or(false, |rlim| child_count as u64 >= rlim.cur)
         })
         .unwrap_or(false)
 }

@@ -569,7 +569,8 @@ pub unsafe extern "C" fn sm_recv(fd: i32, buf: *mut u8, len: u32, _flags: i32) -
             }
             2 => {
                 let sock = sockets.get_mut::<udp::Socket>(handle);
-                sock.recv_slice(data).map_or(-E_AGAIN, |(n, _meta)| n as i32)
+                sock.recv_slice(data)
+                    .map_or(-E_AGAIN, |(n, _meta)| n as i32)
             }
             _ => -E_NOTSUPP,
         }
@@ -1020,10 +1021,12 @@ pub unsafe extern "C" fn sm_getsockname(fd: i32, addr: *mut u8, addrlen: *mut u3
                         addr: IpAddress::Ipv4(Ipv4Address::UNSPECIFIED),
                         port: ep.port,
                     }),
-                    |addr| Some(IpEndpoint {
-                        addr,
-                        port: ep.port,
-                    }),
+                    |addr| {
+                        Some(IpEndpoint {
+                            addr,
+                            port: ep.port,
+                        })
+                    },
                 )
             }
             _ => return -E_NOTSUPP,

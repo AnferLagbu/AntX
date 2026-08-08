@@ -477,7 +477,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        fs.map_or(Err(KernelError::NotInitialized), |f| f.fs_stat(&self.rel_path, pwm))
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_stat(&self.rel_path, pwm)
+        })
     }
 
     fn truncate(&self, size: u64, pwm: u64) -> KernelResult<()> {

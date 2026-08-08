@@ -108,10 +108,7 @@ impl ProcessState {
     )]
     /// ✅ 检查进程是否可以被冻结
     pub fn can_freeze(&self) -> bool {
-        matches!(
-            self,
-            Self::Running | Self::Ready | Self::Blocked
-        )
+        matches!(self, Self::Running | Self::Ready | Self::Blocked)
     }
 
     #[expect(
@@ -370,9 +367,6 @@ impl ThreadState {
         reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
     )]
     pub fn can_freeze(&self) -> bool {
-        matches!(
-            self,
-            Self::Running | Self::Ready | Self::Blocked
-        )
+        matches!(self, Self::Running | Self::Ready | Self::Blocked)
     }
 }

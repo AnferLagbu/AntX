@@ -202,10 +202,7 @@ impl Interpreter {
         }
     }
 
-    pub fn register_host_function(
-        &mut self,
-        f: Box<dyn Fn(&mut Self) -> Result<(), WasmError>>,
-    ) {
+    pub fn register_host_function(&mut self, f: Box<dyn Fn(&mut Self) -> Result<(), WasmError>>) {
         self.host_functions.push(f);
     }
 

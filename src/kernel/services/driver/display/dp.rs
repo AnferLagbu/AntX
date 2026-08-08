@@ -724,7 +724,9 @@ impl DpController {
             return Err(DpError::InvalidParameter);
         }
 
-        self.io.as_ref().map_or(Ok(()), |io| self.aux_write_via_mmio(io, address, data))
+        self.io
+            .as_ref()
+            .map_or(Ok(()), |io| self.aux_write_via_mmio(io, address, data))
     }
 
     /// AUX 真实硬件写事务 (DISPLAY-2.5) — 通过 `DpIo` 安全代理, 无 unsafe.

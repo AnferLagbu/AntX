@@ -778,7 +778,8 @@ pub extern "C" fn e1000_net_recv(driver_data: *mut u8, buf: *mut u8, buf_len: u3
     // SAFETY: 同上。
     let dev = unsafe { &mut *(driver_data as *mut E1000Device) };
     let mut user_buf = unsafe { UserWritePtr::new(buf, buf_len as usize) };
-    dev.try_receive(user_buf.as_mut_slice()).map_or(0, |n| n as i32)
+    dev.try_receive(user_buf.as_mut_slice())
+        .map_or(0, |n| n as i32)
 }
 
 #[cfg(not(feature = "kernel_test"))]
