@@ -1005,15 +1005,13 @@ impl Ext2Fs {
     /// 当同名链接已存在时返回 `AlreadyExists`.
     pub fn symlink(&mut self, target: &str, link_path: &str) -> Result<u32, KernelError> {
         // 解析路径
-        let (parent_path, name) = if let Some(pos) = link_path.rfind('/') {
+        let (parent_path, name) = link_path.rfind('/').map_or(("/", link_path), |pos| {
             if pos == 0 {
                 ("/", &link_path[1..])
             } else {
                 (&link_path[..pos], &link_path[pos + 1..])
             }
-        } else {
-            ("/", link_path)
-        };
+        });
 
         let parent_inode_num = self.lookup_path(parent_path)?;
 
@@ -1120,15 +1118,13 @@ impl Ext2Fs {
         let target_inode_num = self.lookup_path(target_path)?;
 
         // 解析链接路径
-        let (parent_path, name) = if let Some(pos) = link_path.rfind('/') {
+        let (parent_path, name) = link_path.rfind('/').map_or(("/", link_path), |pos| {
             if pos == 0 {
                 ("/", &link_path[1..])
             } else {
                 (&link_path[..pos], &link_path[pos + 1..])
             }
-        } else {
-            ("/", link_path)
-        };
+        });
 
         let parent_inode_num = self.lookup_path(parent_path)?;
 

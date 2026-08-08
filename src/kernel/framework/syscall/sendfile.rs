@@ -146,10 +146,8 @@ pub fn sys_sendfile(out_fd: i32, in_fd: i32, offset_ptr: u64, count: usize) -> i
         } else {
             // pipe 写端
             let ns = IPC_NAMESPACE.get_mut();
-            match svc_pipe::pipe_write_safe(ns, out_fd, &bounce[..nread_usize], nread as u32) {
-                Ok(n) => n as i32,
-                Err(_) => -1,
-            }
+            svc_pipe::pipe_write_safe(ns, out_fd, &bounce[..nread_usize], nread as u32)
+                .map_or(-1, |n| n as i32)
         };
 
         if nwritten <= 0 {
@@ -265,10 +263,8 @@ pub fn sys_splice(
         // 2. 从 bounce buffer 写入 fd_out
         let nwritten = if out_is_pipe {
             let ns = IPC_NAMESPACE.get_mut();
-            match svc_pipe::pipe_write_safe(ns, fd_out, &bounce[..nread_usize], nread as u32) {
-                Ok(n) => n as i32,
-                Err(_) => -1,
-            }
+            svc_pipe::pipe_write_safe(ns, fd_out, &bounce[..nread_usize], nread as u32)
+                .map_or(-1, |n| n as i32)
         } else {
             vfs_api::vfs_write_internal(fd_out as u32, bounce.as_ptr(), nread as u32)
         };
