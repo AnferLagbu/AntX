@@ -181,15 +181,13 @@ impl FileSystem for RamFsData {
 
     fn fs_mkdir(&self, rel_path: &str, pwm: u64) -> KernelResult<()> {
         let mut ramfs = RAMFS_DATA.lock();
-        let (parent_path, name) = if let Some(pos) = rel_path.rfind('/') {
+        let (parent_path, name) = rel_path.rfind('/').map_or(("/", rel_path), |pos| {
             if pos == 0 {
                 ("/", &rel_path[1..])
             } else {
                 (&rel_path[..pos], &rel_path[pos + 1..])
             }
-        } else {
-            ("/", rel_path)
-        };
+        });
         if name.is_empty() {
             return Err(KernelError::InvalidArgument);
         }
@@ -213,23 +211,20 @@ impl FileSystem for RamFsData {
 
     fn fs_rmdir(&self, rel_path: &str, pwm: u64) -> KernelResult<()> {
         let mut ramfs = RAMFS_DATA.lock();
-        match ramfs.resolve_path(rel_path) {
-            Some(node_id) => {
-                let stat = ramfs.stat(node_id);
-                match stat {
-                    Some(s) if s.file_type == VfsFileType::Dir.as_u8() => {
-                        let result = ramfs.truncate(node_id, 0, pwm);
-                        if result == 0 {
-                            Ok(())
-                        } else {
-                            Err(KernelError::Io)
-                        }
+        ramfs.resolve_path(rel_path).map_or(Err(KernelError::FileNotFound), |node_id| {
+            let stat = ramfs.stat(node_id);
+            match stat {
+                Some(s) if s.file_type == VfsFileType::Dir.as_u8() => {
+                    let result = ramfs.truncate(node_id, 0, pwm);
+                    if result == 0 {
+                        Ok(())
+                    } else {
+                        Err(KernelError::Io)
                     }
-                    _ => Err(KernelError::NotADirectory),
                 }
+                _ => Err(KernelError::NotADirectory),
             }
-            None => Err(KernelError::FileNotFound),
-        }
+        })
     }
 
     fn fs_rename(&self, old_path: &str, new_path: &str, pwm: u64) -> KernelResult<()> {
@@ -285,15 +280,13 @@ impl FileSystem for RamFsData {
 
     fn fs_symlink(&self, target: &str, link_path: &str, pwm: u64) -> KernelResult<()> {
         let mut ramfs = RAMFS_DATA.lock();
-        let (parent_path, name) = if let Some(pos) = link_path.rfind('/') {
+        let (parent_path, name) = link_path.rfind('/').map_or(("/", link_path), |pos| {
             if pos == 0 {
                 ("/", &link_path[1..])
             } else {
                 (&link_path[..pos], &link_path[pos + 1..])
             }
-        } else {
-            ("/", link_path)
-        };
+        });
         if name.is_empty() || name.contains('/') {
             return Err(KernelError::InvalidArgument);
         }
@@ -307,17 +300,14 @@ impl FileSystem for RamFsData {
 
     fn fs_readlink(&self, rel_path: &str, buf: &mut [u8]) -> KernelResult<usize> {
         let ramfs = RAMFS_DATA.lock();
-        match ramfs.resolve_path(rel_path) {
-            Some(node_id) => {
-                let result = ramfs.readlink(node_id, buf);
-                if result < 0 {
-                    Err(KernelError::Io)
-                } else {
-                    Ok(result as usize)
-                }
+        ramfs.resolve_path(rel_path).map_or(Err(KernelError::FileNotFound), |node_id| {
+            let result = ramfs.readlink(node_id, buf);
+            if result < 0 {
+                Err(KernelError::Io)
+            } else {
+                Ok(result as usize)
             }
-            None => Err(KernelError::FileNotFound),
-        }
+        })
     }
 
     #[expect(
@@ -336,15 +326,13 @@ impl FileSystem for RamFsData {
         if ramfs.nodes[target_node as usize].file_type == VfsFileType::Dir as u8 {
             return Err(KernelError::PermissionDenied);
         }
-        let (parent_path, name) = if let Some(pos) = new_path.rfind('/') {
+        let (parent_path, name) = new_path.rfind('/').map_or(("/", new_path), |pos| {
             if pos == 0 {
                 ("/", &new_path[1..])
             } else {
                 (&new_path[..pos], &new_path[pos + 1..])
             }
-        } else {
-            ("/", new_path)
-        };
+        });
         if name.is_empty() || name.contains('/') {
             return Err(KernelError::InvalidArgument);
         }
@@ -378,10 +366,7 @@ impl FileSystem for RamFsData {
         current: u64,
     ) -> KernelResult<u64> {
         let ramfs = RAMFS_DATA.lock();
-        match ramfs.seek(handle, current, offset, whence) {
-            Some(new_offset) => Ok(new_offset),
-            None => Err(KernelError::InvalidArgument),
-        }
+        ramfs.seek(handle, current, offset, whence).ok_or(KernelError::InvalidArgument)
     }
 
     fn fs_resolve_path(&self, rel_path: &str) -> Option<u32> {
@@ -397,15 +382,12 @@ impl FileSystem for RamFsData {
     ) -> KernelResult<alloc::sync::Arc<dyn crate::kernel::services::fs::inode::Inode>> {
         let mount_idx = 0;
         let mut ramfs = RAMFS_DATA.lock();
-        match ramfs.create_file(parent_path, name, pwm) {
-            Some(new_inode) => {
-                drop(ramfs);
-                Ok(alloc::sync::Arc::new(
-                    crate::kernel::services::fs::inode::RamFsInode::new(new_inode, mount_idx),
-                ))
-            }
-            None => Err(KernelError::NoSpace),
-        }
+        ramfs.create_file(parent_path, name, pwm).map_or(Err(KernelError::NoSpace), |new_inode| {
+            drop(ramfs);
+            Ok(alloc::sync::Arc::new(
+                crate::kernel::services::fs::inode::RamFsInode::new(new_inode, mount_idx),
+            ))
+        })
     }
 
     fn fs_resolve_inode(
