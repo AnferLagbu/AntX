@@ -969,15 +969,13 @@ impl RamFsData {
             }
         }
 
-        let (parent_path, _name) = if let Some(pos) = path.rfind('/') {
+        let (parent_path, _name) = path.rfind('/').map_or(("/", path), |pos| {
             if pos == 0 {
                 ("/", &path[1..])
             } else {
                 (&path[..pos], &path[pos + 1..])
             }
-        } else {
-            ("/", path)
-        };
+        });
 
         let parent_num = match self.resolve_path(parent_path) {
             Some(n) => n,
