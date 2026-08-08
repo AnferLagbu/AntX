@@ -137,12 +137,10 @@ pub fn mark_recovered(domain_id: u64) {
 
 pub fn should_attempt_recovery(domain_id: u64) -> bool {
     let manager = RECOVERY_MANAGER.lock();
-    if let Some(domain) = manager.find(domain_id) {
+    manager.find(domain_id).map_or(false, |domain| {
         let failures = domain.consecutive_failures.load(Ordering::SeqCst);
         failures < config::RECOVERY_CONFIG.layer1_failure_threshold
-    } else {
-        false
-    }
+    })
 }
 
 #[cfg(feature = "kernel_test")]

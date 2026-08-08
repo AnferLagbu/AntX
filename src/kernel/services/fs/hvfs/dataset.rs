@@ -165,13 +165,11 @@ impl HvDataset {
         if !self.is_writeable() {
             return false;
         }
-        if let Some(obj_id) = self.dir_zap.lookup_u64(name) {
+        self.dir_zap.lookup_u64(name).map_or(false, |obj_id| {
             self.objset.free_obj(obj_id);
             self.dir_zap.remove(name);
             true
-        } else {
-            false
-        }
+        })
     }
 
     pub fn link(&self, name: &str, obj_id: u64) -> bool {
