@@ -120,27 +120,15 @@ impl TxgManager for StandardTxg {
     fn open_txg_id(&self) -> u64 {
         // 读 open_txg 索引对应的 HvTxg.txg_id
         // 0 索引为 Open 状态, 返回其 id
-        if let Some(txg) = self.0.get_open_txg() {
-            txg.txg_id
-        } else {
-            0
-        }
+        self.0.get_open_txg().map_or(0, |txg| txg.txg_id)
     }
 
     fn syncing_txg_id(&self) -> u64 {
-        if let Some(txg) = self.0.get_syncing_txg() {
-            txg.txg_id
-        } else {
-            0
-        }
+        self.0.get_syncing_txg().map_or(0, |txg| txg.txg_id)
     }
 
     fn open_txg_state(&self) -> HvTxgState {
-        if let Some(txg) = self.0.get_open_txg() {
-            txg.state
-        } else {
-            HvTxgState::Committed // 无 open → fallback
-        }
+        self.0.get_open_txg().map_or(HvTxgState::Committed, |txg| txg.state)
     }
 
     fn is_sync_in_progress(&self) -> bool {

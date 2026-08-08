@@ -1026,20 +1026,12 @@ pub extern "C" fn slab_alloc(size: usize) -> *mut u8 {
         return core::ptr::null_mut();
     }
 
-    match find_general_cache_index(size) {
-        Some(idx) => {
-            let mut caches = GENERAL_CACHES.lock();
-            if let Some(ref mut cache) = caches[idx] {
-                match cache.allocate() {
-                    Some(ptr) => ptr,
-                    None => core::ptr::null_mut(),
-                }
-            } else {
-                core::ptr::null_mut()
-            }
-        }
-        None => core::ptr::null_mut(),
-    }
+    find_general_cache_index(size).map_or(core::ptr::null_mut(), |idx| {
+        let mut caches = GENERAL_CACHES.lock();
+        caches[idx]
+            .as_mut()
+            .map_or(core::ptr::null_mut(), |cache| cache.allocate().unwrap_or(core::ptr::null_mut()))
+    })
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作

@@ -250,10 +250,8 @@ pub fn sys_splice(
         // 1. 从 fd_in 读取到 bounce buffer
         let nread = if in_is_pipe {
             let ns = IPC_NAMESPACE.get_mut();
-            match svc_pipe::pipe_read_safe(ns, fd_in, &mut bounce[..chunk], chunk as u32) {
-                Ok(n) => n as i32,
-                Err(_) => -1,
-            }
+            svc_pipe::pipe_read_safe(ns, fd_in, &mut bounce[..chunk], chunk as u32)
+                .map_or(-1, |n| n as i32)
         } else {
             // VFS 文件读取
             vfs_api::vfs_read_internal(fd_in as u32, bounce.as_mut_ptr(), chunk as u32)
