@@ -158,13 +158,10 @@ impl HvZap {
         let idx = entries
             .iter()
             .position(|e| e.used && e.hash == hash && e.get_name() == name);
-        match idx {
-            Some(i) => {
-                entries.remove(i);
-                true
-            }
-            None => false,
-        }
+        idx.map_or(false, |i| {
+            entries.remove(i);
+            true
+        })
     }
 
     pub fn contains(&self, name: &str) -> bool {

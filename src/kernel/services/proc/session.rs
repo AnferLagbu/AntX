@@ -291,6 +291,10 @@ pub fn proc_setsid() -> i64 {
         return -1;
     }
 
+    #[expect(
+        clippy::option_if_let_else,
+        reason = "Some 分支含 PROCESS_TABLE.with_process 闭包 + .store 副作用, 改 map_or 触发冗余闭包, 保留 match 形式"
+    )]
     if let Some(sid) = SESSION_MANAGER.create_with_sid(pid, 0) {
         PROCESS_TABLE.with_process(pid, |p| {
             p.session_id.store(sid, Ordering::SeqCst);
