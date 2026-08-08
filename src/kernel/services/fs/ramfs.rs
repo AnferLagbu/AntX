@@ -286,12 +286,9 @@ impl SafeRamFs {
     /// 当文件描述符对应节点不存在时返回 `FileNotFound`.
     pub fn get_file_size(&self, fd: &FileDescriptor) -> FsResult<u32> {
         let fs = self.inner.lock();
-        match fs.get_file_size(fd.node_id) {
-            Some(sz) => Ok(sz),
-            None => Err(FsError::Kernel(
-                crate::kernel::services::error::KernelError::FileNotFound,
-            )),
-        }
+        fs.get_file_size(fd.node_id).ok_or(FsError::Kernel(
+            crate::kernel::services::error::KernelError::FileNotFound,
+        ))
     }
 
     /// 查询文件元数据
@@ -300,12 +297,9 @@ impl SafeRamFs {
     /// 当文件描述符对应节点不存在时返回 `FileNotFound`.
     pub fn stat(&self, fd: &FileDescriptor) -> FsResult<VfsStat> {
         let fs = self.inner.lock();
-        match fs.stat(fd.node_id) {
-            Some(st) => Ok(st),
-            None => Err(FsError::Kernel(
-                crate::kernel::services::error::KernelError::FileNotFound,
-            )),
-        }
+        fs.stat(fd.node_id).ok_or(FsError::Kernel(
+            crate::kernel::services::error::KernelError::FileNotFound,
+        ))
     }
 
     /// 创建目录
@@ -324,10 +318,7 @@ impl SafeRamFs {
     /// 当底层创建失败 (如父路径不存在、名称已存在等) 时返回 `IoError`.
     pub fn create_file(&self, parent_path: &str, name: &str, pwm: u64) -> FsResult<u32> {
         let mut fs = self.inner.lock();
-        match fs.create_file(parent_path, name, pwm) {
-            Some(node_id) => Ok(node_id),
-            None => Err(FsError::IoError),
-        }
+        fs.create_file(parent_path, name, pwm).ok_or(FsError::IoError)
     }
 
     /// 删除文件
@@ -534,18 +525,15 @@ pub fn split_path(path: &str) -> Option<(&str, &str)> {
     if path.is_empty() {
         return None;
     }
-    match path.rfind('/') {
-        Some(pos) => {
-            let parent = if pos == 0 { "/" } else { &path[..pos] };
-            let name = &path[pos + 1..];
-            if name.is_empty() {
-                None
-            } else {
-                Some((parent, name))
-            }
+    path.rfind('/').map_or(Some((".", path)), |pos| {
+        let parent = if pos == 0 { "/" } else { &path[..pos] };
+        let name = &path[pos + 1..];
+        if name.is_empty() {
+            None
+        } else {
+            Some((parent, name))
         }
-        None => Some((".", path)),
-    }
+    })
 }
 
 /// 辅助: 检查路径是否合法 (长度、字符)
