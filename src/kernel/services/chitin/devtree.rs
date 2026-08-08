@@ -224,12 +224,10 @@ pub fn bind_device(
     irq: Option<u8>,
     driver_data: *mut u8,
 ) -> DevTreeResult<u32> {
-    match chitin::devtree::devtree_bind_device(id.0, io_base, irq, driver_data) {
-        Some(dev_id) => Ok(dev_id),
-        None => Err(DevTreeError::Kernel(
+    chitin::devtree::devtree_bind_device(id.0, io_base, irq, driver_data)
+        .ok_or(DevTreeError::Kernel(
             crate::kernel::services::error::KernelError::FileNotFound,
-        )),
-    }
+        ))
 }
 
 // ============================================================================
@@ -276,8 +274,7 @@ pub fn create_node(
         super::Proto::Other => chitin::ChitinProto::Other,
     };
     // SAFETY: devtree_create_node_impl 由 framework 侧管理, 内部锁保护
-    match chitin::devtree::devtree_create_node_impl(name, chitin_proto, parent_id.map(|p| p.0)) {
-        Some(id) => Ok(DevTreeNodeId(id)),
-        None => Err(DevTreeError::ParentNotFound),
-    }
+    chitin::devtree::devtree_create_node_impl(name, chitin_proto, parent_id.map(|p| p.0))
+        .map(DevTreeNodeId)
+        .ok_or(DevTreeError::ParentNotFound)
 }

@@ -849,11 +849,9 @@ impl HostController for XhciController {
     }
 
     fn port_has_device(&self, port: usize) -> bool {
-        if let Some(port_reg) = self.get_port_reg(port) {
+        self.get_port_reg(port).map_or(false, |port_reg| {
             port_reg.portsc & portsc::CURRENT_CONNECT_STATUS != 0
-        } else {
-            false
-        }
+        })
     }
 
     fn reset_port(&mut self, port: usize) -> Result<()> {
@@ -885,9 +883,8 @@ impl HostController for XhciController {
     }
 
     fn get_port_speed(&self, port: usize) -> UsbSpeed {
-        if let Some(port_reg) = self.get_port_reg(port) {
+        self.get_port_reg(port).map_or(UsbSpeed::Unknown, |port_reg| {
             let speed = (port_reg.portsc >> 10) & 0xF;
-
             match speed {
                 1 => UsbSpeed::Full,
                 2 => UsbSpeed::Low,
@@ -895,9 +892,7 @@ impl HostController for XhciController {
                 4 => UsbSpeed::Super,
                 _ => UsbSpeed::Unknown,
             }
-        } else {
-            UsbSpeed::Unknown
-        }
+        })
     }
 
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定

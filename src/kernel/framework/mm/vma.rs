@@ -1152,10 +1152,7 @@ impl MmStruct {
         for i in 0..n_pages {
             let addr = start + i * page_size;
             let pte = vmm_inst.get_pte_value(pml4, VirtAddr(addr as u64));
-            let present = match pte {
-                Some(p) => (p & 1) != 0,
-                None => false,
-            };
+            let present = pte.is_some_and(|p| (p & 1) != 0);
             out_vec[i] = u8::from(present);
             if present {
                 resident += 1;
@@ -1215,11 +1212,8 @@ pub extern "C" fn vma_find(mm_ptr: *const MmStruct, addr: u64) -> u64 {
     }
     // SAFETY: `mm_ptr` 由调用方保证为有效指针; 只读访问
     let mm = unsafe { &*mm_ptr };
-    match mm.find_vma(addr as usize) {
-        Some(vma) => {
-            let flags = vma.flags.bits();
-            ((vma.start as u64) << 32) | flags
-        }
-        None => 0,
-    }
+    mm.find_vma(addr as usize).map_or(0, |vma| {
+        let flags = vma.flags.bits();
+        ((vma.start as u64) << 32) | flags
+    })
 }

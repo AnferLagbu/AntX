@@ -848,16 +848,14 @@ impl PhysicalMemoryManager {
         reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
     )]
     fn test_bit(&self, bit: usize) -> bool {
-        if let Some(bmp) = self.bitmap.get() {
+        self.bitmap.get().map_or(false, |bmp| {
             // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
             let bitmap_size = unsafe {
                 let p = self as *const Self as *const u64;
                 core::ptr::read_volatile(p.add(1) as *const usize)
             };
             BitmapRef::new(bmp).test_bit(bit, bitmap_size)
-        } else {
-            false
-        }
+        })
     }
 
     // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
@@ -879,12 +877,10 @@ impl PhysicalMemoryManager {
             let p = self as *const Self as *const u64;
             core::ptr::read_volatile(p.add(1) as *const usize)
         };
-        let free = if let Some(bmp) = self.bitmap.get() {
-            let f = BitmapRef::new(bmp).count_free(bmp_size);
-            f
-        } else {
-            0
-        };
+        let free = self
+            .bitmap
+            .get()
+            .map_or(0, |bmp| BitmapRef::new(bmp).count_free(bmp_size));
         // 截断到 total (bitmap 在 total_pages 之外可能还有剩余位)
         let extra = (self.bitmap_size.get() * 32).saturating_sub(total) as u32;
         if extra > 0 {
