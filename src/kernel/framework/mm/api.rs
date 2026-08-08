@@ -67,11 +67,9 @@ pub extern "C" fn pmm_init_bitmap(reserved_after_kernel: u64) {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn pmm_alloc_page() -> *mut u8 {
-    let result = match get_pmm().alloc_page() {
-        Some(addr) => addr.0 as *mut u8,
-        None => core::ptr::null_mut(),
-    };
-    result
+    get_pmm()
+        .alloc_page()
+        .map_or(core::ptr::null_mut(), |addr| addr.0 as *mut u8)
 }
 
 /// 释放单个页
@@ -113,10 +111,9 @@ pub extern "C" fn pmm_get_used_pages() -> u64 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn pmm_alloc_pages(count: usize) -> *mut u8 {
-    match get_pmm().alloc_pages(count) {
-        Some(addr) => addr.0 as *mut u8,
-        None => core::ptr::null_mut(),
-    }
+    get_pmm()
+        .alloc_pages(count)
+        .map_or(core::ptr::null_mut(), |addr| addr.0 as *mut u8)
 }
 
 /// 释放多个连续页
@@ -237,10 +234,9 @@ pub fn slab_get_cache_infos(out: &mut [SlabCacheInfo]) -> usize {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn pmm_alloc_huge_page(size_type: PageSize) -> *mut u8 {
-    match get_pmm().alloc_huge_page(size_type) {
-        Some(addr) => addr.0 as *mut u8,
-        None => core::ptr::null_mut(),
-    }
+    get_pmm()
+        .alloc_huge_page(size_type)
+        .map_or(core::ptr::null_mut(), |addr| addr.0 as *mut u8)
 }
 
 /// 释放一个大页
@@ -347,10 +343,9 @@ pub extern "C" fn vmm_ensure_path_user(virt: u64) {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vmm_get_physical(virt: u64) -> u64 {
-    match get_vmm().get_physical(VirtAddr(virt)) {
-        Some(phys) => phys.as_u64(),
-        None => 0,
-    }
+    get_vmm()
+        .get_physical(VirtAddr(virt))
+        .map_or(0, |phys| phys.as_u64())
 }
 
 /// 在指定页表上下文中获取物理地址
@@ -358,10 +353,9 @@ pub extern "C" fn vmm_get_physical(virt: u64) -> u64 {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vmm_get_physical_in_table(pml4: u64, virt: u64) -> u64 {
-    match get_vmm().get_physical_in_pml4(pml4, VirtAddr(virt)) {
-        Some(phys) => phys.as_u64(),
-        None => 0,
-    }
+    get_vmm()
+        .get_physical_in_pml4(pml4, VirtAddr(virt))
+        .map_or(0, |phys| phys.as_u64())
 }
 
 /// 切换到其它页表 (加载 CR3)
@@ -377,10 +371,7 @@ pub extern "C" fn vmm_switch_page_table(cr3: u64) {
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn vmm_create_user_page_table() -> u64 {
-    match get_vmm().create_user_page_table() {
-        Some(pml4) => pml4,
-        None => 0,
-    }
+    get_vmm().create_user_page_table().unwrap_or(0)
 }
 
 /// 在指定页表中映射 (用于用户态)
@@ -440,10 +431,9 @@ pub static kernel_pml4: AtomicU64 = AtomicU64::new(0);
     reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
 )]
 pub extern "C" fn k_malloc(size: usize) -> *mut u8 {
-    match get_kmalloc().allocate(size) {
-        Some(ptr) => ptr as *mut u8,
-        None => core::ptr::null_mut(),
-    }
+    get_kmalloc()
+        .allocate(size)
+        .map_or(core::ptr::null_mut(), |ptr| ptr as *mut u8)
 }
 
 /// 释放 `k_malloc` 分配的内存
@@ -469,10 +459,9 @@ pub extern "C" fn k_free(ptr: *mut u8) {
     reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
 )]
 pub extern "C" fn k_realloc(ptr: *mut u8, size: usize) -> *mut u8 {
-    match get_kmalloc().reallocate(ptr as *mut u8, size) {
-        Some(new_ptr) => new_ptr as *mut u8,
-        None => core::ptr::null_mut(),
-    }
+    get_kmalloc()
+        .reallocate(ptr as *mut u8, size)
+        .map_or(core::ptr::null_mut(), |new_ptr| new_ptr as *mut u8)
 }
 
 /// 初始化内核堆
