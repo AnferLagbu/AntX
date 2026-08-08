@@ -55,17 +55,11 @@ pub fn get_privilege_level(pwm: u64) -> u8 {
     if pwm == 0 {
         return 0; // bootstrap 身份: 最高特权级
     }
-    match identity::find(pwm) {
-        Some(e) => e.privilege_level.load(Ordering::Acquire),
-        None => 0xFF,
-    }
+    identity::find(pwm).map_or(0xFF, |e| e.privilege_level.load(Ordering::Acquire))
 }
 
 pub fn get_creator(pwm: u64) -> u64 {
-    match identity::find(pwm) {
-        Some(e) => e.creator_pwm.load(Ordering::Acquire),
-        None => 0,
-    }
+    identity::find(pwm).map_or(0, |e| e.creator_pwm.load(Ordering::Acquire))
 }
 
 pub fn get_caps(pwm: u64, domain: impl Into<CapDomain>) -> CapBits {
@@ -73,8 +67,5 @@ pub fn get_caps(pwm: u64, domain: impl Into<CapDomain>) -> CapBits {
         return CapBits::ALL; // bootstrap 身份: 全部能力
     }
     let domain = domain.into();
-    match identity::find(pwm) {
-        Some(e) => e.load_caps(domain),
-        None => CapBits::NONE,
-    }
+    identity::find(pwm).map_or(CapBits::NONE, |e| e.load_caps(domain))
 }

@@ -170,10 +170,7 @@ pub extern "C" fn pwm_find(pwm: u64) -> bool {
     reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
 )]
 pub extern "C" fn pwm_find_entry(pwm: u64) -> *const PwmEntry {
-    match identity::find(pwm) {
-        Some(e) => e as *const PwmEntry,
-        None => core::ptr::null(),
-    }
+    identity::find(pwm).map_or(core::ptr::null(), |e| e as *const PwmEntry)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -345,10 +342,7 @@ pub extern "C" fn pwm_try_setuid(target_uid: u32) -> bool {
     reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
 )]
 pub extern "C" fn pwm_get_uid(pwm: u64) -> u32 {
-    match identity::find(pwm) {
-        Some(e) => e.get_uid(),
-        None => 0xFFFFFFFF,
-    }
+    identity::find(pwm).map_or(0xFFFFFFFF, PwmEntry::get_uid)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
@@ -358,10 +352,7 @@ pub extern "C" fn pwm_get_uid(pwm: u64) -> u32 {
     reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
 )]
 pub extern "C" fn pwm_get_gid(pwm: u64) -> u32 {
-    match identity::find(pwm) {
-        Some(e) => e.get_gid(),
-        None => 0xFFFFFFFF,
-    }
+    identity::find(pwm).map_or(0xFFFFFFFF, PwmEntry::get_gid)
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
