@@ -46,27 +46,23 @@ impl Inode for HvfsInode {
 
     fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
         let hvfs = get_hvfs();
-        match hvfs.stat(&self.rel_path, pwm) {
-            Some(obj) => {
-                let st = VfsStat {
-                    node_id: obj.obj_id as u32,
-                    mode: obj.pwm_perm,
-                    size: obj.size as u32,
-                    owner_pwm: obj.owner_pwm,
-                    group_pwm: obj.group_pwm,
-                    perm: obj.pwm_perm,
-                    sensitivity: obj.sensitivity,
-                    file_type: if obj.is_dir() {
-                        VfsFileType::Dir.as_u8()
-                    } else {
-                        VfsFileType::File.as_u8()
-                    },
-                    ..Default::default()
-                };
-                Ok(st)
-            }
-            None => Err(KernelError::FileNotFound),
-        }
+        hvfs.stat(&self.rel_path, pwm).map_or(Err(KernelError::FileNotFound), |obj| {
+            Ok(VfsStat {
+                node_id: obj.obj_id as u32,
+                mode: obj.pwm_perm,
+                size: obj.size as u32,
+                owner_pwm: obj.owner_pwm,
+                group_pwm: obj.group_pwm,
+                perm: obj.pwm_perm,
+                sensitivity: obj.sensitivity,
+                file_type: if obj.is_dir() {
+                    VfsFileType::Dir.as_u8()
+                } else {
+                    VfsFileType::File.as_u8()
+                },
+                ..Default::default()
+            })
+        })
     }
 
     fn truncate(&self, _size: u64, _pwm: u64) -> KernelResult<()> {
@@ -190,27 +186,23 @@ impl crate::kernel::framework::fs::FileSystem for HvfsData {
         rel_path: &str,
         pwm: u64,
     ) -> crate::kernel::framework::fs::KernelResult<crate::kernel::framework::fs::VfsStat> {
-        match self.stat(rel_path, pwm) {
-            Some(obj) => {
-                let st = crate::kernel::framework::fs::VfsStat {
-                    node_id: obj.obj_id as u32,
-                    mode: obj.pwm_perm,
-                    size: obj.size as u32,
-                    owner_pwm: obj.owner_pwm,
-                    group_pwm: obj.group_pwm,
-                    perm: obj.pwm_perm,
-                    sensitivity: obj.sensitivity,
-                    file_type: if obj.is_dir() {
-                        crate::kernel::framework::fs::VfsFileType::Dir.as_u8()
-                    } else {
-                        crate::kernel::framework::fs::VfsFileType::File.as_u8()
-                    },
-                    ..Default::default()
-                };
-                Ok(st)
-            }
-            None => Err(KernelError::FileNotFound),
-        }
+        self.stat(rel_path, pwm).map_or(Err(KernelError::FileNotFound), |obj| {
+            Ok(crate::kernel::framework::fs::VfsStat {
+                node_id: obj.obj_id as u32,
+                mode: obj.pwm_perm,
+                size: obj.size as u32,
+                owner_pwm: obj.owner_pwm,
+                group_pwm: obj.group_pwm,
+                perm: obj.pwm_perm,
+                sensitivity: obj.sensitivity,
+                file_type: if obj.is_dir() {
+                    crate::kernel::framework::fs::VfsFileType::Dir.as_u8()
+                } else {
+                    crate::kernel::framework::fs::VfsFileType::File.as_u8()
+                },
+                ..Default::default()
+            })
+        })
     }
 
     fn fs_chmod(

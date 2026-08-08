@@ -447,10 +447,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_read(self.handle, offset, buf, pwm),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_read(self.handle, offset, buf, pwm)
+        })
     }
 
     fn write(&self, offset: u64, buf: &[u8], pwm: u64) -> KernelResult<usize> {
@@ -463,10 +462,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_write(self.handle, offset, buf, pwm),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_write(self.handle, offset, buf, pwm)
+        })
     }
 
     fn stat(&self, pwm: u64) -> KernelResult<VfsStat> {
@@ -479,10 +477,7 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_stat(&self.rel_path, pwm),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| f.fs_stat(&self.rel_path, pwm))
     }
 
     fn truncate(&self, size: u64, pwm: u64) -> KernelResult<()> {
@@ -495,10 +490,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_truncate(self.handle, size, pwm),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_truncate(self.handle, size, pwm)
+        })
     }
 
     fn seek(&self, offset: i64, whence: VfsSeekWhence, current_offset: u64) -> KernelResult<u64> {
@@ -511,10 +505,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_seek(self.handle, offset, whence, current_offset),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_seek(self.handle, offset, whence, current_offset)
+        })
     }
 
     fn is_dir(&self) -> bool {
@@ -539,10 +532,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_chmod(&self.rel_path, mode, pwm),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_chmod(&self.rel_path, mode, pwm)
+        })
     }
 
     fn chown(&self, owner_pwm: u64, group_pwm: u64, pwm: u64) -> KernelResult<()> {
@@ -555,10 +547,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_chown(&self.rel_path, owner_pwm, group_pwm, pwm),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_chown(&self.rel_path, owner_pwm, group_pwm, pwm)
+        })
     }
 
     fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
@@ -577,10 +568,9 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        match fs {
-            Some(f) => f.fs_pread_inode(self.handle, offset, buf, pwm),
-            None => Err(KernelError::NotInitialized),
-        }
+        fs.map_or(Err(KernelError::NotInitialized), |f| {
+            f.fs_pread_inode(self.handle, offset, buf, pwm)
+        })
     }
 }
 
