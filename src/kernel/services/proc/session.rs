@@ -291,19 +291,13 @@ pub fn proc_setsid() -> i64 {
         return -1;
     }
 
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "Some 分支含 PROCESS_TABLE.with_process 闭包 + .store 副作用, 改 map_or 触发冗余闭包, 保留 match 形式"
-    )]
-    if let Some(sid) = SESSION_MANAGER.create_with_sid(pid, 0) {
+    SESSION_MANAGER.create_with_sid(pid, 0).map_or(-1, |sid| {
         PROCESS_TABLE.with_process(pid, |p| {
             p.session_id.store(sid, Ordering::SeqCst);
             p.pgid.store(pid, Ordering::SeqCst);
         });
         sid as i64
-    } else {
-        -1
-    }
+    })
 }
 
 /// getsid(pid) — 取会话 ID

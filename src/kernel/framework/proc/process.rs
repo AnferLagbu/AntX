@@ -619,18 +619,8 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
-        #[expect(
-            clippy::option_if_let_else,
-            reason = "含 unsafe { nn.as_ref() } + 闭包调用 f(proc_ref) 副作用, 改 map_or/None, |x| Some(...) 触发 unnecessary_map_or; and_then(|x| Some(...)) 触发 unused_and_then; 保留 if let/else 形式"
-        )]
-        match table[pid as usize] {
-            Some(nn) => {
-                // SAFETY: nn is a valid NonNull pointer inserted by insert().
-                let proc_ref = unsafe { nn.as_ref() };
-                Some(f(proc_ref))
-            }
-            None => None,
-        }
+        // SAFETY: nn is a valid NonNull pointer inserted by insert().
+        table[pid as usize].map(|nn| unsafe { nn.as_ref() }).map(f)
     }
 
     pub fn with_process_mut<F, R>(&self, pid: Pid, f: F) -> Option<R>
@@ -641,19 +631,11 @@ impl ProcessTable {
         if pid as usize >= MAX_PROCESSES {
             return None;
         }
-        #[expect(
-            clippy::option_if_let_else,
-            reason = "含 unsafe { nn.as_mut() } + 闭包调用 f(proc_ref) 副作用, 改 map_or/None, |x| Some(...) 触发 unnecessary_map_or; and_then(|x| Some(...)) 触发 unused_and_then; 保留 if let/else 形式"
-        )]
-        match table[pid as usize] {
-            Some(mut nn) => {
-                // SAFETY: nn is a valid NonNull pointer inserted by insert().
-                // Mutex 锁保证独占访问.
-                let proc_ref = unsafe { nn.as_mut() };
-                Some(f(proc_ref))
-            }
-            None => None,
-        }
+        // SAFETY: nn is a valid NonNull pointer inserted by insert().
+        // Mutex 锁保证独占访问.
+        table[pid as usize]
+            .map(|mut nn| unsafe { nn.as_mut() })
+            .map(f)
     }
 
     pub fn remove(&self, pid: Pid) -> Option<*mut Process> {

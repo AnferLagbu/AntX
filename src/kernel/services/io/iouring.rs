@@ -385,10 +385,6 @@ pub fn io_uring_submit(id: u32, sqe: Sqe) -> Result<(), Errno> {
     uring.map_or(Err(Errno::EBADF), |u| u.submit_sqe(sqe))
 }
 
-#[expect(
-    clippy::manual_let_else,
-    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
-)]
 /// 进入 `io_uring` (处理待处理请求 + 可选等待)
 ///
 /// 返回处理的 CQE 数量
@@ -402,50 +398,40 @@ pub fn io_uring_enter(id: u32, to_submit: u32, _min_complete: u32) -> Result<u32
         .find(|u| u.as_ref().map_or(false, |u| u.id == id))
         .and_then(|u| u.as_ref());
 
-    match uring {
-        Some(u) => {
-            // 处理 to_submit 个 SQE
-            let to_process = to_submit.min(u.sq.lock().len());
-            drop(table); // 释放表锁, process_pending 内部获取实例锁
+    // 处理 to_submit 个 SQE
+    let to_process = uring.map_or(0, |u| to_submit.min(u.sq.lock().len()));
+    drop(table); // 释放表锁, process_pending 内部获取实例锁
 
-            // 重新获取 (因为 drop 了 table)
-            let table = URING_TABLE.lock();
-            let uring = table
-                .iter()
-                .find(|u| u.as_ref().map_or(false, |u| u.id == id))
-                .and_then(|u| u.as_ref());
+    // 重新获取 (因为 drop 了 table)
+    process_after_relock(id, to_process)
+}
 
-            #[expect(
-                clippy::option_if_let_else,
-                reason = "嵌套 match Some/None 内含 drop(table)+重新取锁+再 match, 改 map_or 触发借用冲突 (E0505); 闭包借用+drop 同一资源不可行, 保留 match 形式"
-            )]
-            match uring {
-                Some(u) => {
-                    let mut processed = 0u32;
-                    for _ in 0..to_process {
-                        let sqe = match u.consume_sqe() {
-                            Some(s) => s,
-                            None => break,
-                        };
-                        let result = u.execute_op(&sqe);
-                        let cqe = Cqe {
-                            user_data: sqe.user_data,
-                            result,
-                            flags: 0,
-                        };
-                        if u.push_cqe(cqe).is_err() {
-                            let _ = u.submit_sqe(sqe);
-                            break;
-                        }
-                        processed += 1;
-                    }
-                    Ok(processed)
-                }
-                None => Err(Errno::EBADF),
+/// drop(table) 后重新加锁查找并处理 to_process 个 SQE
+fn process_after_relock(id: u32, to_process: u32) -> Result<u32, Errno> {
+    let table = URING_TABLE.lock();
+    let uring = table
+        .iter()
+        .find(|u| u.as_ref().map_or(false, |u| u.id == id))
+        .and_then(|u| u.as_ref());
+    uring.map_or(Err(Errno::EBADF), |u| {
+        let mut processed = 0u32;
+        for _ in 0..to_process {
+            // SAFETY/语义: None 时退出循环是合理 fallback, 等价于 break
+            let Some(sqe) = u.consume_sqe() else { break };
+            let result = u.execute_op(&sqe);
+            let cqe = Cqe {
+                user_data: sqe.user_data,
+                result,
+                flags: 0,
+            };
+            if u.push_cqe(cqe).is_err() {
+                let _ = u.submit_sqe(sqe);
+                break;
             }
+            processed += 1;
         }
-        None => Err(Errno::EBADF),
-    }
+        Ok(processed)
+    })
 }
 
 /// 收割 CQE

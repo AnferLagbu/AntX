@@ -34,22 +34,15 @@ pub extern "C" fn ipc_shm_create(size: u64, perm: i32) -> IpcId {
 pub unsafe extern "C" fn ipc_shm_attach(id: IpcId, addr: *mut *mut u8) -> i32 {
     let ns = super::IPC_NAMESPACE.get_mut();
     let pid = process_get_current_pid();
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "含 unsafe { UserRefMut::new(addr); *out.as_mut() = phys_addr } userptr 副作用, 改 map_or 触发冗余闭包, 保留 match 形式"
-    )]
-    match crate::kernel::services::ipc::shm::shm_attach_safe(ns, id, pid) {
-        Ok(phys_addr) => {
-            if !addr.is_null() {
-                // SAFETY: caller guarantees addr is a valid pointer to
-                // a *mut u8 in user memory.
-                let mut out = unsafe { UserRefMut::<*mut u8>::new(addr) };
-                *out.as_mut() = phys_addr as *mut u8;
-            }
-            0
+    crate::kernel::services::ipc::shm::shm_attach_safe(ns, id, pid).map_or(-1, |phys_addr| {
+        if !addr.is_null() {
+            // SAFETY: caller guarantees addr is a valid pointer to
+            // a *mut u8 in user memory.
+            let mut out = unsafe { UserRefMut::<*mut u8>::new(addr) };
+            *out.as_mut() = phys_addr as *mut u8;
         }
-        Err(_) => -1,
-    }
+        0
+    })
 }
 
 /// FFI: 分离共享内存段

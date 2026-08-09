@@ -184,13 +184,7 @@ pub fn open_by_handle_at_syscall(
 
     // 尝试通过 fs_resolve_inode 获取原生 Inode
     // 如果 FS 未实现, 回退到 LegacyInode
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "fallback 分支含 alloc::string::String::new() + Arc::new + LegacyInode::from_fs_result 构造, 改 map_or 触发冗余闭包, 保留 match 形式"
-    )]
-    let inode: Arc<dyn Inode> = if let Some(inode) = fs.fs_resolve_inode(inode_id, mount_idx) {
-        inode
-    } else {
+    let inode: Arc<dyn Inode> = fs.fs_resolve_inode(inode_id, mount_idx).unwrap_or_else(|| {
         // 回退: 使用 LegacyInode (stat/chmod 等需要路径的操作将不可用)
         let rel_path = alloc::string::String::new();
         Arc::new(
@@ -198,7 +192,7 @@ pub fn open_by_handle_at_syscall(
                 inode_id, mount_idx, 0, &rel_path,
             ),
         )
-    };
+    });
 
     // 通过 stat 获取 file_type (避免硬编码)
     let file_type = inode.stat(pwm).map_or(0, |s| s.file_type);

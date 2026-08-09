@@ -687,15 +687,11 @@ pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
     ICACHE_LOOKUPS.fetch_add(1, Ordering::Relaxed);
 
     let mut icache = ICACHE.lock();
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "含 fetch_add + ref_inc 闭包副作用, 改 map_or(and_then|map) 触发 unused_and_then/unnecessary_map_or 双重 lint; 保留 if let/else 形式"
-    )]
-    if let Some(entry) = icache.lookup(ino) {
+    icache.lookup(ino).map(|entry| {
         ICACHE_HITS.fetch_add(1, Ordering::Relaxed);
         // 增加引用计数
         icache.ref_inc(ino);
-        Some(ICacheResult {
+        ICacheResult {
             ino: entry.ino,
             file_type: entry.file_type,
             perm: entry.perm,
@@ -704,10 +700,8 @@ pub fn icache_lookup(ino: u32) -> Option<ICacheResult> {
             ctime: entry.ctime,
             owner_pwm: entry.owner_pwm,
             group_pwm: entry.group_pwm,
-        })
-    } else {
-        None
-    }
+        }
+    })
 }
 
 /// icache 插入/更新

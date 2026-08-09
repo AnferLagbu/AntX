@@ -1343,11 +1343,7 @@ impl VirtualMemoryManager {
             } else if create {
                 let pmm = get_pmm();
 
-                #[expect(
-                    clippy::option_if_let_else,
-                    reason = "含 unsafe { write_bytes + set_value + huge split (512 entry loop) } 多重副作用, 改 map_or 触发冗余闭包/optional_if_let_else, 保留 match 形式"
-                )]
-                if let Some(page) = pmm.alloc_page() {
+                pmm.alloc_page().map_or(core::ptr::null_mut(), |page| {
                     let page_virt = page.to_virt();
                     let pt = page_virt.0 as *mut PageTableEntry;
                     core::ptr::write_bytes(pt as *mut u8, 0, PAGE_SIZE as usize);
@@ -1395,9 +1391,7 @@ impl VirtualMemoryManager {
                     (*entry).set_value(new_val);
 
                     page_virt.0 as *mut PageTableEntry
-                } else {
-                    core::ptr::null_mut()
-                }
+                })
             } else {
                 core::ptr::null_mut()
             }

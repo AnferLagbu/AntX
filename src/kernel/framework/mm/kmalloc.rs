@@ -515,17 +515,13 @@ impl KernelHeap {
 
         let flags = self.acquire_lock();
 
-        let result = if self.initialized.load(Ordering::Acquire) {
+        let mut result = if self.initialized.load(Ordering::Acquire) {
             self.allocate_first_fit(actual_size)
         } else {
             self.early_allocate(actual_size as usize)
         };
 
-        #[expect(
-            clippy::option_if_let_else,
-            reason = "含 fetch_add + release_lock + compare_exchange_weak 循环 + release_lock 多重副作用, 改 map_or 触发冗余闭包, 保留 match 形式"
-        )]
-        if let Some(ptr) = result {
+        result = result.inspect(|ptr| {
             self.alloc_count.fetch_add(1, Ordering::Relaxed);
             self.total_allocated
                 .fetch_add(actual_size, Ordering::Relaxed);
@@ -543,14 +539,13 @@ impl KernelHeap {
                     Err(p) => peak = p,
                 }
             }
-
-            self.release_lock(&flags);
-            Some(ptr)
-        } else {
+            let _ = ptr;
+        });
+        if result.is_none() {
             self.failed_allocs.fetch_add(1, Ordering::Relaxed);
-            self.release_lock(&flags);
-            None
         }
+        self.release_lock(&flags);
+        result
     }
 
     /// 释放 `k_malloc` 之前分配的内存
