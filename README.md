@@ -2,6 +2,8 @@
 
 QueenX 是一个从零实现的内核，使用 Rust 编写，基于 Asterinas 框内核（Framekernel）架构与范式进行设计与开发。它目前是实验性的，并在此基础上设计了一些独有的实验性功能与特性。
 
+> **English version**: [README.en.md](README.en.md)
+
 ## 项目入口
 
 - **人类开发者 / 阅读者**：请前往 [`docs/explain/`](docs/explain/) 目录查阅开发与架构指引文档。
