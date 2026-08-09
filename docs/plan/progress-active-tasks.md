@@ -41,6 +41,8 @@
 ### 现状 (2026-08-03)
 
 > 本节基于 [future-roadmap.md](./future-roadmap.md) / [ipv6-dual-stack.md](./ipv6-dual-stack.md) / [clippy-pedantic-cleanup.md](./clippy-pedantic-cleanup.md) / [code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md) / [test-compile-issues-2026-07-31.md](./test-compile-issues-2026-07-31.md) 的静态分析 + 源码 grep 验证.
+>
+> **2026-08-09 更新** (`a656c91e`): option_if_let_else 全部根治 (185 → 0) + 10 处永久 expect 兜底全部消除. DECISION-044 nursery 评估结论推翻. stage-engineering-master.md 阶段 17 已同步更新.
 
 - **活跃 plan 文档与实装对齐总览**
   - 描述: 5 份文档中 1 份 (ipv6-dual-stack) 与源码完全对齐, 1 份 (test-compile-issues) 已归档为历史, 3 份 (clippy-pedantic / code-review-2026-08-01 / future-roadmap) 一致性各有差异

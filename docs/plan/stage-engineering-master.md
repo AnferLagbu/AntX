@@ -2,7 +2,7 @@
 
 > QueenX 自研内核的静态检查工程**唯一权威跟踪文档**. 涵盖 clippy pedantic 全量修复 (10591 → 0) + clippy 加严 + clippy.toml 评估 + rustfmt + rustdoc + nursery use_self + CI 阻断位 + 验证门槛 + 后续开发者交接.
 >
-> 已交付状态: 双架构 (x86_64 + aarch64) cargo check 0 warning + clippy `-D pedantic` 0 warning + rustdoc `broken_intra_doc_links` 0 + cargo fmt --check 0 差异 + 三审计全过 + host-tests 838 passed / 0 failed + CI 5 阻断位全部就位.
+> 已交付状态: 双架构 (x86_64 + aarch64) cargo check 0 warning + clippy `-D pedantic` 0 warning + rustdoc `broken_intra_doc_links` 0 + cargo fmt --check 0 差异 + 三审计全过 + host-tests 838 passed / 0 failed + CI 5 阻断位全部就位 + **`option_if_let_else` 185 → 0** + **10 处永久 expect 兜底全部根治** (a656c91e).
 >
 > 本文档**取代** (合并同类项): 原 [clippy-pedantic-cleanup.md](./archive/clippy-pedantic-cleanup.md) 8 个工程计划 (历史快照, 已 DEPRECATED).
 
@@ -266,13 +266,14 @@
   - commit: `fe9ea936` (use_self fix)
   - 状态: [X]
 
-- **阶段 17 (option_if_let_else 评估)**
+- **阶段 17 (option_if_let_else 评估 → 全部根治)**
   - 描述: clippy::option_if_let_else 186 + manual_map_or_else 25 = 211 处修复评估.
   - 方案: 评估结果:
     - `cargo clippy --fix --allow-dirty --allow-staged` 不应用 nursery lint (clippy --fix 仅支持 stable lint)
     - 写 Python 脚本批处理: 实际成本高, 大量含 ref/mut/嵌套语句手工量大, 211 处 ROI 不匹配
     - **决策**: 保留 nursery 211 处 (DECISION-044 nursery 不强制修复), 留作中期手工任务
-  - 状态: [X]
+  - 状态: [X] (阶段 17 评估 [X])
+  - 后续 (2026-08-08/09): **阶段 30 (a656c91e) 推翻评估, 全部根治**. 实际手工拆分 25 批 commit, 净减 339 行, 10 处永久 expect 兜底全部根治 (原 reason 论述站不住脚, 通过 chain .map().map(f) / map_or 闭包 / unwrap_or_else / 拆 helper / .inspect() 等模式全部消除). option_if_let_else 185 → 0, 永久 expect 兜底 10 → 0. 双架构 0 warning 维持. **推翻 DECISION-044 评估结论**.
 
 - **阶段 18 (CI rustdoc 阻断位)**
   - 描述: ci-lint.yml 新增 Job 7 (rustdoc-check), 双架构 `RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc --no-deps` 阻断.
