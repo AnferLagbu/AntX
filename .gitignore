@@ -6,6 +6,18 @@ tmp/
 backup/
 .mimocode/
 
+# ===== 临时文件扩展 =====
+# 通用临时文件 (一些工具链或编辑器会生成)
+*.tmp
+*.temp
+
+# 日志文件 (除 tests/reports/ 已单独覆盖外, 其他路径下的 .log)
+*.log
+
+# Linux coredump 防御 (内核崩溃可能产生)
+core
+core.[0-9]*
+
 # ===== 通用构建产物 =====
 *.o
 *.a
@@ -76,6 +88,7 @@ desktop.ini
 
 # IDE 配置目录
 .idea/
+.vs/
 .vscode/
 *.code-workspace
 *.iml
