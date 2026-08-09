@@ -114,5 +114,4 @@ boot_disk*
 .gdb_pt_*
 
 # ===== 构建缓存 =====
-# 构建架构缓存文件
-.build-arch
+# 构建架构缓存文件已迁移至 build/log/.arch (受 build/ 全局忽略保护, 无需单独规则)

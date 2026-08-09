@@ -98,8 +98,8 @@ all: build/kernel.bin build/kernel.flat
 # 避免外部脚本在 make 完成后还需要二次 objcopy.
 
 # 跨架构构建时自动清理上架构产物, 避免 boot.o 等被新架构误用。
-# 通过 .build-arch 记录上次构建架构 (放在仓库根, 不被 clean 删除), 不匹配时强制 clean.
-ARCH_STAMP := .build-arch
+# 通过 build/log/.arch 记录上次构建架构 (build/log/ 不被 clean 删除), 不匹配时强制 clean.
+ARCH_STAMP := build/log/.arch
 PREVIOUS_ARCH := $(shell cat $(ARCH_STAMP) 2>/dev/null || echo none)
 ifneq ($(PREVIOUS_ARCH), $(ARCH))
 ARCH_CHANGED := 1

@@ -87,7 +87,7 @@ make clean
 
 构建产物位于 `build/`，包括 `kernel.flat` (QEMU 直接加载的 raw 镜像) 与 `kernel.bin` (含符号)。
 
-跨架构切换时，Makefile 通过根目录的 `.build-arch` 文件记录上次构建架构，不匹配时自动 `cargo clean` 并删除 `boot.o` 等架构相关产物，防止误用。
+跨架构切换时，Makefile 通过 `build/log/.arch` 文件记录上次构建架构（受 `build/` 全局忽略保护且 `make clean` 不删除），不匹配时自动 `cargo clean` 并删除 `boot.o` 等架构相关产物，防止误用。
 
 ### 用户态程序
 
