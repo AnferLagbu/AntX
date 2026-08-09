@@ -115,8 +115,9 @@ cargo test -p host-tests           # 等价
 - **Rust nightly** 锁定在 `src/rust/rust-toolchain.toml`
 - **Edition:** 2024 (2026-07-31 起全项目统一; vendored smoltcp 跟随其上游)
 - **目标架构:** x86\_64 (主) + aarch64 (次)
-- **`rustfmt.toml`:** 4 空格缩进, 尾逗号允许
-- **Clippy 配置:** `clippy.toml` (cognitive-complexity-threshold = 25, missing-docs-in-crate-items = true)
+- **`rustfmt.toml`:** `src/rust/rustfmt.toml` (4 空格缩进 + 垂直尾逗号)
+- **Clippy 配置:** `src/rust/clippy.toml` (cognitive-complexity-threshold = 25, missing-docs-in-crate-items = true)
+- **`cargo-deny` 配置:** `src/rust/deny.toml` (许可证/漏洞/版本治理)
 
 ***
 

@@ -164,8 +164,6 @@ make test-smp         # SMP 多核测试
 ├── README.md
 ├── Makefile                 双架构构建入口
 ├── Makefile.ci              本地 CI 目标
-├── clippy.toml              内核级 Clippy 阈值 (cognitive-complexity 25 等)
-├── deny.toml
 ├── ci/                      CI 编排脚本 (build.sh, audit.sh)
 ├── scripts/                 17 个 Python 审计与检查脚本
 ├── tools/                   check_tcb.sh 等辅助
@@ -187,7 +185,11 @@ make test-smp         # SMP 多核测试
 │   │   ├── framework/       TCB (允许 unsafe)
 │   │   └── services/        去特权 (100% safe)
 │   │       └── fs/inode.rs  Plan B: Inode trait + 7 FS 原生实现
-│   ├── rust/                内核 crate queenx
+│   ├── rust/                内核 crate queenx (Cargo workspace 根)
+│   │   ├── Cargo.toml
+│   │   ├── clippy.toml       内核级 Clippy 阈值 (cognitive-complexity 25 等)
+│   │   ├── rustfmt.toml      4 空格缩进 + 垂直尾逗号
+│   │   ├── deny.toml         许可证/漏洞/版本治理
 │   │   ├── src/lib.rs       panic handler + kernel_init() 启动序列
 │   │   └── queenx-tests/    用户态集成测试桩
 │   └── user/                用户态 Rust 程序
