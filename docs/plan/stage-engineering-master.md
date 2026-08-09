@@ -294,8 +294,8 @@
 
 - **中期待办 (4-6 周内可完成)**
   - [x] ~~option_if_let_else 211 处手工重构 (map_or/map_or_else 链式) — DECISION-044 留作中期~~ — **已完成**: 阶段 30 (a656c91e) 推翻评估, 185 → 0 + 10 处永久 expect 兜底全部消除
-  - [x] ~~kernel `#[test]` → host-tests 迁移 (184 个, 解锁 cargo clippy --tests)~~ — **目标间接达成**: 文档原 184 个数字失实 (实测 1354 个 #[test] 跨 166 文件, 含 smoltcp vendored); 但 `cargo clippy --lib --bins --examples --tests` 已能跑 (0 warning 0 error), 解锁目标间接达成. 若需字面迁移 (1354 个), 工作量大不在 lint 修复范围, 留作未来任务
-  - 状态: [X] (两项均完成或间接完成)
+  - [ ] kernel `#[test]` → host-tests 迁移 (1354 个 #[test] 跨 166 文件) — **DECISION-046 维持原状**: 范畴属测试架构工程非静态检查工程; ROI 不匹配 (827 个 qx 自己测试中仅 ~70 个纯算法测试值得迁移, 其余 ~700 个需 mock 失真风险高); 现状完美 (双架构 0 warning / cargo clippy --tests 0 warning). 维持 kernel #[test] 原状, 不推进迁移.
+  - 状态: [~] (选项 A 完成, 选项 B 明确维持)
 
 - **长期待办 (永久保留, 不强制修复)**
   - [ ] QEMU 实际验证 (阶段 7-18 改动均未做运行时验证, 仅静态)
@@ -313,6 +313,11 @@
   - 描述: rustdoc 0.75+ 内部生成 3 个 warning (unclosed HTML tag dyn/OpenFile + could not parse code block) 无源码位置, 是 rustdoc 自身行为非源码问题.
   - 方案: 阻断源码级 broken_intra_doc_links (阶段 15 已清零), 不阻断 -D warnings.
   - 状态: [X]
+
+- **DECISION-046: kernel `#[test]` 维持原状, 不迁移 host-tests** (2026-08-09)
+  - 描述: 中期待办"kernel `#[test]` → host-tests 迁移"范畴属测试架构工程非静态检查工程; 1354 个 #[test] 中 527 个 smoltcp vendored 不动, 827 个 qx 自己测试中仅 ~70 个纯算法 (USB HID/MassStorage/XHCI/Enumerate/Ring 5 文件) 值得迁移, 其余 ~700 个需 mock Mutex/SpinLock/IRQ 上下文, mock 失真风险高.
+  - 方案: 维持 kernel #[test] 原状不迁移. 现状完美: 双架构 cargo check 0 warning / clippy 默认 0 warning / clippy -D pedantic 0 warning / clippy::option_if_let_else 0 唯一位置 / cargo fmt --check 0 差异 / 永久 expect 兜底 0 处 / unfulfilled lint 0 处. 静态检查工程目标已 100% 达成, 不必为迁移而迁移. 若未来有 host-side 调试纯算法测试需求, 可单独抽 USB 一类试点 (5-7 天工作量, 不属于本工程).
+  - 状态: [X] (用户 2026-08-09 授权"保持不迁移 (推荐)")
 
 ### 变更历史
 
