@@ -293,9 +293,9 @@
     - 状态: [X] (评估完成)
 
 - **中期待办 (4-6 周内可完成)**
-  - [ ] option_if_let_else 211 处手工重构 (map_or/map_or_else 链式) — DECISION-044 留作中期
-  - [ ] kernel `#[test]` → host-tests 迁移 (184 个, 解锁 cargo clippy --tests)
-  - 状态: []
+  - [x] ~~option_if_let_else 211 处手工重构 (map_or/map_or_else 链式) — DECISION-044 留作中期~~ — **已完成**: 阶段 30 (a656c91e) 推翻评估, 185 → 0 + 10 处永久 expect 兜底全部消除
+  - [x] ~~kernel `#[test]` → host-tests 迁移 (184 个, 解锁 cargo clippy --tests)~~ — **目标间接达成**: 文档原 184 个数字失实 (实测 1354 个 #[test] 跨 166 文件, 含 smoltcp vendored); 但 `cargo clippy --lib --bins --examples --tests` 已能跑 (0 warning 0 error), 解锁目标间接达成. 若需字面迁移 (1354 个), 工作量大不在 lint 修复范围, 留作未来任务
+  - 状态: [X] (两项均完成或间接完成)
 
 - **长期待办 (永久保留, 不强制修复)**
   - [ ] QEMU 实际验证 (阶段 7-18 改动均未做运行时验证, 仅静态)
