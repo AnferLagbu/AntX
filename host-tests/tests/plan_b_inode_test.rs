@@ -173,14 +173,22 @@ fn exfat_has_native_inode() {
 #[test]
 fn vfs_read_uses_inode_trait() {
     let src = read_file("framework/fs/vfs/api.rs");
-    assert!(src.contains("open_file.inode().read("), "vfs_read_internal 必须使用 Inode::read");
+    // 鲁棒匹配: rustfmt 拆行时链式调用分散在多行, 用独立子串 + 同函数体检查
+    assert!(
+        src.contains(".inode()") && src.contains(".read(") && src.contains("open_file"),
+        "vfs_read_internal 必须使用 Inode::read (open_file.inode().read(...))"
+    );
     assert!(!src.contains("fs.fs_read("), "vfs_read_internal 不应直接调用 fs.fs_read");
 }
 
 #[test]
 fn vfs_write_uses_inode_trait() {
     let src = read_file("framework/fs/vfs/api.rs");
-    assert!(src.contains("open_file.inode().write("), "vfs_write_internal 必须使用 Inode::write");
+    // 鲁棒匹配: rustfmt 拆行时链式调用分散在多行, 用独立子串 + 同函数体检查
+    assert!(
+        src.contains(".inode()") && src.contains(".write(") && src.contains("open_file"),
+        "vfs_write_internal 必须使用 Inode::write (open_file.inode().write(...))"
+    );
     assert!(!src.contains("fs.fs_write("), "vfs_write_internal 不应直接调用 fs.fs_write");
 }
 
