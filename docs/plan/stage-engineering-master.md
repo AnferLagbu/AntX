@@ -382,7 +382,7 @@
 | --- | --- | --- |
 | clippy pedantic 主战场 (历史 8 工程计划) | **已合并到本文档** | 见工程计划 A (原 [clippy-pedantic-cleanup.md](./archive/clippy-pedantic-cleanup.md)) |
 | 活跃任务跟踪基线 | [progress-active-tasks.md](./progress-active-tasks.md) | 工程计划 A (跨文档矛盾) + B (基线) + C (验证门槛) |
-| 8 项 code-review findings | [code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md) | REVIEW-FINDING-024~031 |
+| 8 项 code-review findings | [archive/code-review-findings-2026-08-01.md](./archive/code-review-findings-2026-08-01.md) (历史快照) + [unresolved-issues-2026-08-09.md](./unresolved-issues-2026-08-09.md) 第 3 类 (活跟踪) | REVIEW-FINDING-024~031 |
 | 远期规划 | [future-roadmap.md](./future-roadmap.md) | WASM/IPv6 等 |
 | 双栈改造 (DECISION-032) | [ipv6-dual-stack.md](./ipv6-dual-stack.md) | IPv6/IPv4 双栈 |
 | 写作规范 | [docs/README.md](../README.md) | 文档格式/命名/章节结构 |

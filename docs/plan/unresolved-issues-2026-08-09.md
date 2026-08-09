@@ -153,7 +153,7 @@
 
 ### 3.1 P1 跨文档战略矛盾 (3 项) — ❌ 未修复
 
-> **来源**: `docs/plan/code-review-findings-2026-08-01.md`. 用户 2026-08-01 授权**仅记录不修复**, 状态 `[]`.
+> **来源**: `docs/plan/archive/code-review-findings-2026-08-01.md`. 用户 2026-08-01 授权**仅记录不修复**, 状态 `[]`.
 
 #### REVIEW-FINDING-024: CHANGELOG.md 缺失但 README/AGENTS 多处引用
 
@@ -163,7 +163,7 @@
 | **状态** | ❌ 未修复 (`[]`) |
 | **冲突点** | README.md:11/163/210 + AGENTS.md:48/363 引用不存在的 `docs/CHANGELOG.md` |
 | **方案** | (a) 创建 `docs/CHANGELOG.md` 补记历史; (b) 删除全部 10 处引用 (推荐) |
-| **冲突来源** | progress-active-tasks.md DECISION-038 [X] 标记完成 (删除引用), 但 code-review-findings-2026-08-01.md 仍 `[]` 未同步 |
+| **冲突来源** | progress-active-tasks.md DECISION-038 [X] 标记完成 (删除引用), 但 archive/code-review-findings-2026-08-01.md 仍 `[]` 未同步 |
 | **建议** | 验证 README.md/AGENTS.md 实际是否已无 CHANGELOG.md 引用, 若已修复则同步 code-review 文档状态 |
 
 #### REVIEW-FINDING-025: syscall 编号空间立场两份权威文档互相矛盾
@@ -173,7 +173,7 @@
 | **严重度** | P1 |
 | **状态** | ❌ 未修复 (`[]`) |
 | **冲突点** | `framework/syscall/mod.rs:24-35` 称 "0-299 保留给未来 linuxulator" vs `ref-naming.md §三` 称 "直接使用 Linux syscall 编号" |
-| **方案** | DECISION-037 已选 A (直接 Linux ABI + QX_* 500+ 自由扩展), 但 code-review-findings-2026-08-01.md 仍 `[]` 未同步 |
+| **方案** | DECISION-037 已选 A (直接 Linux ABI + QX_* 500+ 自由扩展), 但 archive/code-review-findings-2026-08-01.md 仍 `[]` 未同步 |
 | **建议** | 验证 `framework/syscall/mod.rs:24-35` 实际是否已更新为直接 Linux ABI 注释, 若已修复则同步 code-review 文档状态 |
 
 #### REVIEW-FINDING-026: framework 反向依赖 services 类型 (userctx.rs re-export)
@@ -327,7 +327,7 @@
 
 ## 📋 文档状态不一致清单 (跨文档矛盾专项)
 
-> **本会话审计发现**: `progress-active-tasks.md` 中 B1-B6 标记 `[X]` 完成, 但 `code-review-findings-2026-08-01.md` 中对应 REVIEW-FINDING 仍 `[]` 未同步. **文档漂移**.
+> **本会话审计发现**: `progress-active-tasks.md` 中 B1-B6 标记 `[X]` 完成, 但 `archive/code-review-findings-2026-08-01.md` 中对应 REVIEW-FINDING 仍 `[]` 未同步. **文档漂移**.
 
 | progress | code-review | 真实状态 | 修复责任 |
 |---|---|---|---|
@@ -374,10 +374,10 @@
 
 - [stage-engineering-master.md](./stage-engineering-master.md) — 静态检查工程权威跟踪
 - [progress-active-tasks.md](./progress-active-tasks.md) — 活跃任务进度
-- [handoff-2026-08-09.md](./handoff-2026-08-09.md) — 本会话交接快照
 - [future-roadmap.md](./future-roadmap.md) — 远期工程 F1-F5
 - [ipv6-dual-stack.md](./ipv6-dual-stack.md) — Phase 6 DHCPv6
-- [code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md) — 8 项 code-review 发现
+- [unresolved-issues-2026-08-09.md](./unresolved-issues-2026-08-09.md) — 未修复问题专项追踪
+- 已归档: [archive/code-review-findings-2026-08-01.md](./archive/code-review-findings-2026-08-01.md), [archive/handoff-2026-08-07.md](./archive/handoff-2026-08-07.md), [archive/handoff-2026-08-09.md](./archive/handoff-2026-08-09.md)
 
 ---
 

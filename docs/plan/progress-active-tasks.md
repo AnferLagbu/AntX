@@ -7,7 +7,7 @@
 ### 背景
 
 - **P1 跨文档战略矛盾根因**
-  - 描述: 2026-08-01 全仓审查 ([code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md)) 识别 8 项发现, 全部 `[]` 未实施. 但其中 3 项属"AGENTS.md 硬规则违反但 CI 未拦截"层级, 阻塞其他 plan 同步工作的有效性
+  - 描述: 2026-08-01 全仓审查 ([archive/code-review-findings-2026-08-01.md](./archive/code-review-findings-2026-08-01.md)) 识别 8 项发现, 全部 `[]` 未实施. 但其中 3 项属"AGENTS.md 硬规则违反但 CI 未拦截"层级, 阻塞其他 plan 同步工作的有效性
   - 方案: 优先收敛 3 个 P1 项 (syscall 编号空间 / CHANGELOG 处置 / userctx 边界), 再推进 P2 待办 (注释漂移 / clippy DECISION-035/036 落地 / IoMem 边界)
   - 状态: []
 
@@ -40,7 +40,7 @@
 
 ### 现状 (2026-08-03)
 
-> 本节基于 [future-roadmap.md](./future-roadmap.md) / [ipv6-dual-stack.md](./ipv6-dual-stack.md) / [clippy-pedantic-cleanup.md](./clippy-pedantic-cleanup.md) / [code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md) / [test-compile-issues-2026-07-31.md](./test-compile-issues-2026-07-31.md) 的静态分析 + 源码 grep 验证.
+> 本节基于 [future-roadmap.md](./future-roadmap.md) / [ipv6-dual-stack.md](./ipv6-dual-stack.md) / [clippy-pedantic-cleanup.md](./archive/clippy-pedantic-cleanup.md) / [archive/code-review-findings-2026-08-01.md](./archive/code-review-findings-2026-08-01.md) / [test-compile-issues-2026-07-31.md](./archive/test-compile-issues-2026-07-31.md) 的静态分析 + 源码 grep 验证.
 >
 > **2026-08-09 更新** (`a656c91e`): option_if_let_else 全部根治 (185 → 0) + 10 处永久 expect 兜底全部消除. DECISION-044 nursery 评估结论推翻. stage-engineering-master.md 阶段 17 已同步更新.
 
@@ -54,7 +54,7 @@
   | future-roadmap.md | 6 项中 1 项完成 | 完全一致 | F1/F2/F3/F4 远期未启动, 与实装吻合 |
   | ipv6-dual-stack.md | Phase 1-5+7-8 完成 | 高度一致 | Phase 6 DHCPv6 远期未启动, 与实装吻合 |
   | clippy-pedantic-cleanup.md | 10591 → 4643 | 部分一致 | DECISION-035/036 已决策但未落地; credo/storage.rs 3 处 expect 未修 |
-  | code-review-findings-2026-08-01.md | 8 项全部 `[]` | 完全一致 | 用户授权仅记录, 无修复动作 |
+  | archive/code-review-findings-2026-08-01.md | 8 项全部 `[]` | 完全一致 | 用户授权仅记录, 已纳入 unresolved-issues-2026-08-09.md 第 3 类跟踪 |
   | test-compile-issues-2026-07-31.md | 9+8 全部已修 | 已归档 | 无待办 |
 
 - **P1 跨文档战略矛盾**
@@ -500,7 +500,7 @@
   | future-roadmap.md | 6 | 1 (WASM WASI) | 5 (F1/F2/F3/F4 + F5) | 完全一致 | 远期未启动, 与实装吻合 |
   | ipv6-dual-stack.md | 9 (D1-D4 + Phase 1-8) | 8 (D1-D4 + Phase 1-5+7-8) | 1 (Phase 6 DHCPv6) | 高度一致 | 与实装完全对齐 |
   | clippy-pedantic-cleanup.md | 7 批 | 4 批 (1-3 + 4 部分) | 3 批 (4 剩余 + 5 指针 + 6 风格) | 部分一致 | DECISION-035/036 决策已登记但未落地 |
-  | code-review-findings-2026-08-01.md | 8 项 | 0 | 8 | 完全一致 | 用户授权仅记录, 无修复 |
+  | archive/code-review-findings-2026-08-01.md | 8 项 | 0 | 8 | 完全一致 | 用户授权仅记录, 已纳入 unresolved-issues-2026-08-09.md |
   | test-compile-issues-2026-07-31.md (已归档) | 9 错误 + 8 pre-existing | 17 | 0 | 已归档 | 无待办 |
 
 - **future-roadmap 6 项详情**
@@ -678,7 +678,7 @@
     - [docs/plan/future-roadmap.md](./future-roadmap.md) — 远期规划 (WASM 已完成)
     - [docs/plan/ipv6-dual-stack.md](./ipv6-dual-stack.md) — DECISION-032 双栈改造
     - [docs/plan/clippy-pedantic-cleanup.md](./clippy-pedantic-cleanup.md) — DECISION-033/035/036
-    - [docs/plan/code-review-findings-2026-08-01.md](./code-review-findings-2026-08-01.md) — 8 项发现 (REVIEW-FINDING-024~031)
+    - [docs/plan/archive/code-review-findings-2026-08-01.md](./archive/code-review-findings-2026-08-01.md) — 8 项发现 (REVIEW-FINDING-024~031)
     - [docs/plan/archive/test-compile-issues-2026-07-31.md](./archive/test-compile-issues-2026-07-31.md) — DECISION-020~027 (2026-08-03 归档)
   - 状态: [X]
 
