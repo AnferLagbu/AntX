@@ -7,7 +7,7 @@ QueenX 是一个从零实现的内核，使用 Rust 编写，基于 Asterinas �
 ## 项目入口
 
 - **人类开发者 / 阅读者**：请前往 [`docs/explain/`](docs/explain/) 目录查阅开发与架构指引文档。
-- **AI / Agent 开发者**：请阅读项目根目录下的 [`AGENTS.md`](AGENTS.md) 并严格遵循其中的规则。
+- **AI / Agent 开发者**：除了阅读 [`docs/explain/`](docs/explain/) 目录下的文档，还需要阅读项目根目录下的 [`AGENTS.md`](AGENTS.md) 并严格遵循其中的规则。
 
 ## 反馈与协作
 
