@@ -249,7 +249,7 @@ criterion_main!(benches);
 | `ioctl_enosys_test.rs` | sys_ioctl 行为契约 | P1-I-39 |
 | `framework_spinlock_migration_test.rs` | framework spin::Mutex 迁移 | P1-I-17 |
 
-## 当前规模 (2026-06-26 规范化后)
+## 当前规模
 
 | 类别 | 数量 | 行数 |
 |------|------|------|
@@ -332,4 +332,4 @@ cargo test -p queenx-host-tests --test audit_comment_language_test
 
 ## 变更历史
 
-- **2026-06-26**: 初始版本. 索引 72 集成测试 + 5 单元测试 + 1 基准 + 命名/头文件/分类/退役/重复处理 5 项规范 (当前)
+- **初始版本**: 索引 72 集成测试 + 5 单元测试 + 1 基准 + 命名/头文件/分类/退役/重复处理 5 项规范 (当前)

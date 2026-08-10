@@ -113,7 +113,7 @@ cargo test -p host-tests           # 等价
 ## 3. 工具链
 
 - **Rust nightly** 锁定在 `src/rust/rust-toolchain.toml`
-- **Edition：** 2024（2026-07-31 起全项目统一；vendored smoltcp 跟随其上游）
+- **Edition：** 2024（vendored smoltcp 跟随其上游）
 - **目标架构：** x86\_64（主）+ aarch64（次）
 - **`rustfmt.toml`：** `src/rust/rustfmt.toml`（4 空格缩进 + 垂直尾逗号）
 - **Clippy 配置：** `src/rust/clippy.toml`（cognitive-complexity-threshold = 25, missing-docs-in-crate-items = true）
@@ -271,7 +271,7 @@ test(integration): DRIVER-2 QEMU virtio-vga 双层验证
 
 ### 8.4 Remote 命名约定
 
-项目使用 Gitee 作为唯一远程仓库，remote 名为 `origin`（2026-07-31 起统一）。
+项目使用 Gitee 作为唯一远程仓库，remote 名为 `origin`。
 
 ```bash
 git remote add origin git@gitee.com:AnferLagbu/QueenX.git
@@ -279,7 +279,7 @@ git push origin main
 git pull origin main --rebase
 ```
 
-**历史归档例外：** `docs/plan/archive/*` 中 git 命令示例保留 `origin` 字面字符串（2026-06-13 历史快照），不得修改。`docs/plan/smoltcp-framekernel-wrapper.md` 中 `git fetch origin` 指 smoltcp 子模块的 origin（非 QueenX remote），不得修改。
+**历史归档例外：** `docs/plan/archive/*` 中 git 命令示例保留 `origin` 字面字符串（历史快照），不得修改。`docs/plan/smoltcp-framekernel-wrapper.md` 中 `git fetch origin` 指 smoltcp 子模块的 origin（非 QueenX remote），不得修改。
 
 ***
 

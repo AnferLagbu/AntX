@@ -1,6 +1,6 @@
 # 工程纪律性规范
 
-> 约束后续新代码的工程规范。已有代码的解耦进度见 docs/plan/engineering-discipline.md。所有开发者（含 AI）提交新代码前必须遵守本文件。创建于 2026-06-18，2026-06-26 按新文档规则重写。
+> 约束后续新代码的工程规范。已有代码的解耦进度见 docs/plan/engineering-discipline.md。所有开发者（含 AI）提交新代码前必须遵守本文件。
 
 ## 这是什么
 - **范围与配套**
@@ -56,7 +56,7 @@
 ## 工作原理
 - **6 层防护机制**
   - 描述：6 层防护
-  - 方案：编译期：services/mod.rs 顶部 #![deny(unsafe_code)] 强制 services 0 unsafe；静态检查：audit_services_boundary + audit_safety_coverage + audit_deadlock_matrix + audit_comment_language + audit_coupling + audit_tcb_ratio + audit_invariants 7 个审计脚本；编译验证：双架构 cargo check 0w0e + clippy 0 warning；测试：host-tests + QEMU 集成测试（miri-tests 已于 2026-06-26 删除，UB 检测由 Rust 编译期 + 7 个审计脚本覆盖）；人工审查：PR review 流程覆盖本规范 13 章节；文档同步：plan/ + explain/ 两层文档自动维护
+  - 方案：编译期：services/mod.rs 顶部 #![deny(unsafe_code)] 强制 services 0 unsafe；静态检查：audit_services_boundary + audit_safety_coverage + audit_deadlock_matrix + audit_comment_language + audit_coupling + audit_tcb_ratio + audit_invariants 7 个审计脚本；编译验证：双架构 cargo check 0w0e + clippy 0 warning；测试：host-tests + QEMU 集成测试；miri-tests 已删除，UB 检测由 Rust 编译期 + 7 个审计脚本覆盖；人工审查：PR review 流程覆盖本规范 13 章节；文档同步：plan/ + explain/ 两层文档自动维护
 
 ## 注意事项
 - **违反铁律即拒收**

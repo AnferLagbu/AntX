@@ -1,6 +1,6 @@
 # 框内核开发与维护指导
 
-> 本文档给本项目（QueenX）维护者与贡献者：在框内核（framework/ + services/）双子树架构下，新代码放哪里，改代码先改哪里，何时两边都改。配套 [explain-framekernel.md](./explain-framekernel.md) 阅读。适用读者：维护 framework/ 与 services/ 的内核开发者，以及首次提 PR 的新贡献者。2026-06-26 按新文档规则重写。
+> 本文档给本项目（QueenX）维护者与贡献者：在框内核（framework/ + services/）双子树架构下，新代码放哪里，改代码先改哪里，何时两边都改。配套 [explain-framekernel.md](./explain-framekernel.md) 阅读。适用读者：维护 framework/ 与 services/ 的内核开发者，以及首次提 PR 的新贡献者。
 
 ## 这是什么
 - **范围与配套**

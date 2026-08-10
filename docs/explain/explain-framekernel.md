@@ -1,6 +1,6 @@
 # 框内核（Framekernel）
 
-> 框内核是 Asterinas 项目（USENIX ATC 2025）提出的 OS 架构，通过"语言层面的内核内特权分离"，用单一地址空间同时获得宏内核性能与微内核级安全。适用读者：维护 framework/ 和 services/ 两个子树的开发者，评估子系统归属（改哪里）与新功能入口的贡献者。2026-06-26 按新文档规则重写。
+> 框内核是 Asterinas 项目（USENIX ATC 2025）提出的 OS 架构，通过"语言层面的内核内特权分离"，用单一地址空间同时获得宏内核性能与微内核级安全。适用读者：维护 framework/ 和 services/ 两个子树的开发者，评估子系统归属（改哪里）与新功能入口的贡献者。
 
 ## 这是什么
 - **框内核定义**
@@ -16,7 +16,7 @@
 ## 为什么这样设计
 - **问题驱动**
   - 描述：Rust OS ≠ Safe OS，需系统性控制 unsafe 扩散
-  - 方案：2024-07-19 CrowdStrike 事件（全球数百万 Windows 蓝屏）内核驱动 OOB 访问，证明商业 OS 巨头也无法靠工程规范根除内存安全漏洞；系统软件 60-70% 高危漏洞根因是内存安全；USENIX ATC 2025 论文统计 unsafe 比例：Linux+RFL 55%（6/111）/ Tock 93%（91/98）/ RedLeaf 62%（36/58）/ Theseus 32%（54/171）；仅仅"用 Rust 写 OS" 不够，必须系统性控制 unsafe
+  - 方案：CrowdStrike 事件（全球数百万 Windows 蓝屏）内核驱动 OOB 访问，证明商业 OS 巨头也无法靠工程规范根除内存安全漏洞；系统软件 60-70% 高危漏洞根因是内存安全；USENIX ATC 论文统计 unsafe 比例：Linux+RFL 55%（6/111）/ Tock 93%（91/98）/ RedLeaf 62%（36/58）/ Theseus 32%（54/171）；仅仅"用 Rust 写 OS" 不够，必须系统性控制 unsafe
 - **替代方案对比**
   - 描述：5 个替代方案与放弃原因
   - 方案：(1) 全 C 内核+沙箱 gVisor：与现有生态兼容，但性能损耗大沙箱本身仍需验证；(2) 全 safe Rust+inline asm：无 unsafe 块，但编译器无法验证硬件交互，等价于"信任所有代码"；(3) 微内核 seL4：TCB 最小已形式化验证，但 IPC 性能损失，不支持富功能 OS；(4) Rust for Linux（混合）：渐进式引入 Rust，但 unsafe 散落，TCB ≈ Linux 全量，失去"安全"卖点；(5) 框内核 Framekernel：宏内核性能 + 微内核级 TCB — 选定
@@ -87,4 +87,4 @@
   - 方案：docs/plan/fix-report-issue1.md（若存在）（进程分配失败回滚修复报告，框内核"safe API 失败回滚"模式样例）
 - **外部参考**
   - 描述：6 个外部参考
-  - 方案：Asterinas 框内核架构（官方书）/ USENIX ATC 2025 论文 PDF / arXiv 预印本 2506.03876 / Kernel Memory Safety Mission Accomplished（Asterinas 博客）/ Asterinas A Rust-Based Framekernel to Reimagine Linux（login 2025-06-17）/ 星绽 OS 登顶 SOSP 框内核的技术解析
+  - 方案：Asterinas 框内核架构（官方书）/ USENIX ATC 论文 PDF / arXiv 预印本 2506.03876 / Kernel Memory Safety Mission Accomplished（Asterinas 博客）/ Asterinas A Rust-Based Framekernel to Reimagine Linux（login）/ 星绽 OS 登顶 SOSP 框内核的技术解析
