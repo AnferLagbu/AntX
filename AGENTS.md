@@ -87,7 +87,6 @@
 | `scripts/audit_volatile_access.py`  | LTO 字段错位防线：volatile 访问检查        | 硬       |
 | `scripts/audit_static_mut.py`       | framework 层 static mut 使用审查            | 硬       |
 | `scripts/audit_public_api_docs.py`  | pub API 中文文档检查（informational）          | 软       |
-| `scripts/audit_dead_code.py`        | dead_code 零容忍                          | 已移除，依赖 Rust 编译器 |
 
 任何一项失败视为本轮未完成。
 
