@@ -127,6 +127,39 @@ make test-host                     # host-tests
 - TCB 占比上升需在 PR 描述中说明原因与后续降低计划.
 - 新增 framework unsafe 块需 review 多名 reviewer.
 
+### 7.3 Remote 操作约定
+
+> **本节是远程 Git 操作（`push` / `pull` / `fetch` / `clone`）的前置规范**.
+
+进行任何远程 Git 操作前，**必须**先查询当前 git 状态信息，遵循用户的实际配置（不预设约定）：
+
+- **查询当前 remote 配置**：`git remote -v` 查看远程仓库 URL 与命名
+- **查询当前分支与上游**：`git branch -vv` + `git status` 查看本地分支与远程跟踪
+- **查询远程默认分支**：`git symbolic-ref refs/remotes/origin/HEAD`（如果配置）或 `git remote show <remote>`
+- **查询未推送提交**：`git log --oneline @{u}..` 查看 ahead 数
+
+**遵循用户喜好**：
+
+- AI **不预设** remote 命名约定（如"必须叫 `origin`"），不预设推送策略（如"必须 rebase"），不预设分支命名（如"必须叫 `main`"）
+- 根据查询结果，**复用用户当前的命名与配置**
+- 若用户未配置某项，**提问**而非假设（见 §12.1）
+
+**禁止行为**：
+
+- ❌ 在未查询状态下硬编码 `origin` / `main` / `git push` / `git pull --rebase` 等命令
+- ❌ 假设远程默认分支是 `main`（可能是 `master` / `develop` 等）
+- ❌ 假设 remote 名称（可能是 `origin` / `upstream` / 其他）
+
+**示例**（流程而非命令模板）：
+
+```
+1. 查询: git remote -v → 确认 remote 名 + URL
+2. 查询: git branch -vv → 确认当前分支 + 上游
+3. 查询: git status → 确认 working tree 干净 + ahead/behind
+4. 提问: 推送策略 (rebase / merge / fast-forward) 与目标分支
+5. 执行: 用户确认后, 按用户实际配置执行 git push
+```
+
 ## 8. 测试规范
 
 - **每个 bug 修复加回归测试**（附 issue 引用）.
