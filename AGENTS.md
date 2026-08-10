@@ -127,10 +127,6 @@ make test-host                     # host-tests
 - TCB 占比上升需在 PR 描述中说明原因与后续降低计划.
 - 新增 framework unsafe 块需 review 多名 reviewer.
 
-### 7.3 Remote 命名约定
-
-项目使用 Gitee 作为唯一远程仓库，remote 名为 `origin`. 见 §12.4.
-
 ## 8. 测试规范
 
 - **每个 bug 修复加回归测试**（附 issue 引用）.
