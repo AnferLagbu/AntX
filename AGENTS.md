@@ -64,7 +64,7 @@ make test-host                     # host-tests
 ## 3. 工具链
 
 - **Rust nightly** 锁定在 `src/rust/rust-toolchain.toml`
-- **Edition：** 2024（vendored smoltcp 跟随其上游）
+- **Edition：** 2024
 - **目标架构：** x86\_64（主）+ aarch64（次）
 - **`rustfmt.toml`：** `src/rust/rustfmt.toml`（4 空格缩进 + 垂直尾逗号）
 - **Clippy 配置：** `src/rust/clippy.toml`（cognitive-complexity-threshold = 25）
