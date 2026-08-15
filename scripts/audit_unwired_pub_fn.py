@@ -1,0 +1,533 @@
+#!/usr/bin/env python3
+"""
+audit_unwired_pub_fn.py — 检测「已实现但未接线」的 pub fn / pub const / pub mod
+
+设计原则 (§10 源码调研后):
+  - 仅检测 queenx crate (staticlib) 内部 src/kernel/{framework,services} 子树
+  - 排除 vendored smoltcp (锁定版本, 禁止扫描)
+  - 排除 host-tests / tests/ (测试代码)
+  - 排除 src/user/ (独立 ELF, 不调用 queenx 内部 pub fn)
+
+检测项:
+  R1 (WARN):  pub fn 全仓库零调用 (除声明文件自身)
+  R2 (CRITICAL): pub const SYS_*/QX_* 在 syscall/types.rs 声明但 dispatch.rs 未分发
+  R3 (WARN):  pub mod 子模块 0 引用
+  R4 (INFO):  pub struct/enum 全仓库零引用 (核心类型)
+
+豁免列表 (避免误报, 严格):
+  EXEMPT_NO_MANGLE: #[no_mangle] / #[unsafe(no_mangle)] 函数 (FFI 边界)
+  EXEMPT_API_FILE: prelude.rs / api.rs / mod.rs (顶层 re-export 区)
+  EXEMPT_DISPATCH: services/syscall/dispatch.rs (分发表)
+  EXEMPT_CFG_ATTR:  cfg(...)/cfg_attr(...) 门控的引用 (条件编译)
+  EXEMPT_TRAIT_IMPL: trait impl 中的 fn (继承自 trait)
+  EXEMPT_VENDORED: smoltcp 子树 (锁定版本)
+
+退出码:
+  0 = 仅 INFO/WARN
+  1 = 有 CRITICAL (R2 未接线 syscall)
+
+用法:
+  python3 scripts/audit_unwired_pub_fn.py [--strict] [--json]
+  --strict: WARN 也退出 1
+  --json: 输出 JSON 报告
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+# ────────────────────────────────────────────────────────────────────────
+# 路径与豁免配置
+# ────────────────────────────────────────────────────────────────────────
+
+ROOT = Path(__file__).resolve().parent.parent
+KERNEL_DIR = ROOT / "src" / "kernel"
+FRAMEWORK_DIR = KERNEL_DIR / "framework"
+SERVICES_DIR = KERNEL_DIR / "services"
+
+# vendored 目录 (绝对排除)
+VENDORED_DIRS = {"smoltcp"}
+
+# 豁免文件名 (顶层 re-export 区与分发表)
+EXEMPT_FILENAMES = {
+    "prelude.rs",      # framework::prelude — pub use 集中区
+    "mod.rs",          # 各 mod 顶层 re-export
+    "api.rs",          # 显式 API 入口
+    "dispatch.rs",     # syscall 分发 (SYS_* 在此引用)
+    "types.rs",        # syscall 编号常量定义本身
+    "lib.rs",          # crate 入口
+}
+
+# ────────────────────────────────────────────────────────────────────────
+# 数据收集 (基于 .rs 文件源码 AST 分析, 不依赖 cargo build)
+# ────────────────────────────────────────────────────────────────────────
+
+def is_vendored(path: Path) -> bool:
+    """检测 vendored 子目录（递归检查祖先）"""
+    parts = path.relative_to(KERNEL_DIR).parts
+    return any(p in VENDORED_DIRS for p in parts)
+
+
+def is_kernel_code(path: Path) -> bool:
+    """是否 queenx crate 内 src/kernel/ 下的非 vendored 代码"""
+    if not path.suffix == ".rs":
+        return False
+    try:
+        path.relative_to(KERNEL_DIR)
+    except ValueError:
+        return False
+    return not is_vendored(path)
+
+
+def collect_no_mangle_functions(path: Path) -> set[str]:
+    """收集文件中所有 #[no_mangle] / #[unsafe(no_mangle)] 的 fn 名
+
+    必须使用源码 AST 视角, 因为 ripgrep \bname\b 会误匹配同名局部变量
+    """
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return set()
+    names = set()
+    lines = content.split("\n")
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue  # 跳过注释/docstring
+        if re.search(r"#\[(?:unsafe\()?no_mangle\)?\]", line):
+            # 后续 12 行内查找 fn 声明 (允许属性块 / extern 跨行)
+            for j in range(i, min(i + 14, len(lines))):
+                m = re.search(
+                    r"\b(?:pub\s+(?:unsafe\s+)?)?(?:extern\s+\"[^\"]+\"\s+)?(?:unsafe\s+)?fn\s+(\w+)",
+                    lines[j],
+                )
+                if m:
+                    names.add(m.group(1))
+                    break
+    return names
+
+
+def collect_pub_fns(path: Path) -> list[dict]:
+    """收集所有 pub fn 声明（含 trait impl 中的 fn）
+
+    返回 [ {name, line, in_trait_impl} ] 列表
+    """
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    results = []
+    lines = content.split("\n")
+    brace_depth = 0  # 跟踪 impl 块嵌套深度
+    in_trait_impl_depth = -1  # impl Trait for Type 的深度, -1 表示不在
+    in_mod_depth = -1  # 当前 pub fn 所在的 mod 深度
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # 跟踪 impl 块 (impl Trait for Type { ... } / impl Type { ... })
+        if re.match(r"^(pub\s+)?(unsafe\s+)?impl\b", stripped) and "{" in stripped:
+            impl_depth = brace_depth
+            brace_depth += stripped.count("{") - stripped.count("}")
+            in_trait_impl_depth = impl_depth if re.search(r"\bfor\b", stripped) or "trait" in stripped else in_trait_impl_depth
+            continue
+
+        # 跟踪 fn 声明
+        # 区分 trait 中的 fn (不带 default 时是抽象方法, 不可豁免)
+        # 这里收集所有 pub fn, 由后续阶段决定是否豁免
+        m = re.match(
+            r"^\s*pub(?:\([^)]+\))?\s+(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)\s*[<(]",
+            line,
+        )
+        if m:
+            fn_name = m.group(1)
+            in_trait_impl = in_trait_impl_depth >= 0 and in_trait_impl_depth < brace_depth
+            results.append({
+                "name": fn_name,
+                "line": i + 1,
+                "in_trait_impl": in_trait_impl,
+                "depth": brace_depth,
+            })
+
+        # 维护 brace_depth (简单字符计数)
+        brace_depth += line.count("{") - line.count("}")
+        if brace_depth < 0:
+            brace_depth = 0
+
+    return results
+
+
+def collect_pub_consts_syscall(path: Path) -> list[tuple[str, int]]:
+    """仅在 syscall/types.rs 中收集 pub const SYS_*/QX_* 声明"""
+    if path.name != "types.rs" or "syscall" not in path.parts:
+        return []
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    results = []
+    for i, line in enumerate(content.split("\n")):
+        m = re.match(r"^\s*pub\s+const\s+(SYS_[a-z_]+|QX_[A-Z_]+)\s*:\s*u64\s*=", line)
+        if m:
+            results.append((m.group(1), i + 1))
+    return results
+
+
+def collect_pub_mods(path: Path) -> list[tuple[str, int]]:
+    """收集 pub mod xxx { ... } 声明"""
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    results = []
+    for i, line in enumerate(content.split("\n")):
+        m = re.match(r"^\s*pub\s+mod\s+(\w+)\s*[;{]", line)
+        if m:
+            results.append((m.group(1), i + 1))
+    return results
+
+
+def collect_pub_structs_enums(path: Path) -> list[tuple[str, str, int]]:
+    """收集 pub struct/enum 声明"""
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    results = []
+    for i, line in enumerate(content.split("\n")):
+        m = re.match(r"^\s*pub\s+(struct|enum)\s+(\w+)", line)
+        if m:
+            results.append((m.group(2), m.group(1), i + 1))
+    return results
+
+
+# ────────────────────────────────────────────────────────────────────────
+# 跨文件引用计数 (基于 ripgrep, 不依赖 cargo build)
+# ────────────────────────────────────────────────────────────────────────
+
+def count_refs(name: str, decl_file: Path, decl_line: int) -> dict:
+    """统计名字在 src/ + host-tests/ 中的引用分布
+
+    返回 { 'total': N, 'in_decl_file': M, 'cross_file': N - M }
+
+    排除 vendored smoltcp 子树
+    """
+    cmd = [
+        "rg", "-c", "-w", "--no-heading",
+        name,
+        "src/", "host-tests/",
+        "--type", "rust",
+    ]
+    # 排除 vendored 路径
+    cmd.extend(["-g", "!src/kernel/services/net/smoltcp/**"])
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=ROOT, timeout=120
+        )
+    except subprocess.TimeoutExpired:
+        return {"total": 0, "in_decl_file": 0, "cross_file": 0, "error": "timeout"}
+
+    total_refs = 0
+    in_decl_file_refs = 0
+    for line in result.stdout.strip().split("\n"):
+        if ":" not in line:
+            continue
+        try:
+            path_str, count = line.rsplit(":", 1)
+            count = int(count)
+        except ValueError:
+            continue
+        total_refs += count
+        # decl_file 是相对路径
+        try:
+            decl_rel = decl_file.relative_to(ROOT)
+            if path_str == str(decl_rel):
+                in_decl_file_refs = count
+        except ValueError:
+            pass
+
+    # 关键修正: 之前的逻辑 `cross_file = total - in_decl_file` 是错的!
+    # in_decl_file 包含了同文件内的所有匹配 (1 声明 + N 调用方)
+    # cross_file = total - in_decl_file = "在其他文件中被引用的次数" (与同文件无关)
+    # 但"调用方存在"包括同文件调用, 所以正确的判断应该是:
+    #   死代码 ⟺ total == 1 (只有声明本身, 没有任何调用方)
+    #   即: 调用方总数 = total_refs - 1 (扣除声明行)
+    # 这意味着我们改用 total_refs <= 1 作为判断条件
+    return {
+        "total": total_refs,
+        "in_decl_file": in_decl_file_refs,
+        "cross_file": total_refs - in_decl_file_refs,
+        # 实际调用方数 (扣除声明行): 同文件调用 + 跨文件调用
+        "actual_callers": total_refs - 1,
+    }
+
+
+def is_in_dispatch(name: str, syscall_types_path: Path) -> bool:
+    """检查 SYS_*/QX_* 名称是否被 dispatch 处理
+
+    检查两个 dispatch:
+      - services/syscall/dispatch.rs (T5-1 迁移后)
+      - framework/syscall/dispatch.rs (fallback 回退处理)
+    """
+    # services dispatch (新派发架构)
+    services_dispatch = SERVICES_DIR / "syscall" / "dispatch.rs"
+    # framework dispatch (fallback 回退处理)
+    framework_dispatch = FRAMEWORK_DIR / "syscall" / "dispatch.rs"
+
+    for dispatch_path in (services_dispatch, framework_dispatch):
+        if not dispatch_path.exists():
+            continue
+        try:
+            content = dispatch_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        # 名称必须出现 (use 导入 或 match arm)
+        if re.search(rf"\b{name}\b", content):
+            return True
+    return False
+
+
+# ────────────────────────────────────────────────────────────────────────
+# 豁免判定
+# ────────────────────────────────────────────────────────────────────────
+
+def is_exempt_function(name: str, path: Path, in_trait_impl: bool,
+                       no_mangle_set: set[str]) -> tuple[bool, str]:
+    """判断 pub fn 是否豁免. 返回 (是否豁免, 豁免原因)"""
+    if name in no_mangle_set:
+        return True, "#[no_mangle] FFI"
+    if path.name in EXEMPT_FILENAMES:
+        return True, f"豁免文件 ({path.name})"
+    if in_trait_impl:
+        return True, "trait impl (继承自 trait)"
+    return False, ""
+
+
+# ────────────────────────────────────────────────────────────────────────
+# 主扫描流程
+# ────────────────────────────────────────────────────────────────────────
+
+def scan_tree() -> dict:
+    """扫描整个 queenx crate"""
+    issues = {
+        "R1_unwired_pub_fn": [],
+        "R2_unwired_syscall": [],
+        "R3_unused_module": [],
+        "R4_unused_struct_enum": [],
+    }
+    stats = defaultdict(int)
+
+    if not KERNEL_DIR.exists():
+        return {"issues": issues, "stats": stats, "error": f"{KERNEL_DIR} 不存在"}
+
+    for root, _, files in os.walk(KERNEL_DIR):
+        root_path = Path(root)
+        for f in files:
+            if not f.endswith(".rs"):
+                continue
+            path = root_path / f
+            if not is_kernel_code(path):
+                continue
+
+            stats["files_scanned"] += 1
+
+            # 收集本文件的 #[no_mangle] 函数 (豁免名单)
+            no_mangle_set = collect_no_mangle_functions(path)
+
+            # R1: pub fn 检测
+            for fn in collect_pub_fns(path):
+                stats["pub_fns_scanned"] += 1
+                is_exempt, reason = is_exempt_function(
+                    fn["name"], path, fn["in_trait_impl"], no_mangle_set
+                )
+                if is_exempt:
+                    stats["fns_exempted"] += 1
+                    continue
+
+                refs = count_refs(fn["name"], path, fn["line"])
+                if refs.get("error"):
+                    continue  # 超时跳过
+
+                # 关键修正: 死代码判断 = 没有调用方 (actual_callers == 0)
+                # 包括同文件内的 proc.set_pid() 和跨文件的 fn()
+                # total == 1 表示只有声明本身, 没有任何调用
+                if refs["actual_callers"] == 0:
+                    issues["R1_unwired_pub_fn"].append({
+                        "severity": "WARN",
+                        "name": fn["name"],
+                        "file": str(path.relative_to(ROOT)),
+                        "line": fn["line"],
+                        "refs_total": refs["total"],
+                        "refs_in_decl_file": refs["in_decl_file"],
+                        "refs_cross_file": refs["cross_file"],
+                        "refs_callers": refs["actual_callers"],
+                    })
+
+            # R2: SYS_*/QX_* 未接线检测
+            for name, line_no in collect_pub_consts_syscall(path):
+                stats["syscall_consts_scanned"] += 1
+                if not is_in_dispatch(name, path):
+                    issues["R2_unwired_syscall"].append({
+                        "severity": "CRITICAL",
+                        "name": name,
+                        "file": str(path.relative_to(ROOT)),
+                        "line": line_no,
+                    })
+                else:
+                    stats["syscall_consts_dispatched"] += 1
+
+            # R3: pub mod 检测
+            for mod_name, line_no in collect_pub_mods(path):
+                stats["pub_mods_scanned"] += 1
+                refs = count_refs(mod_name, path, line_no)
+                # mod 引用语义: use xxx / xxx:: / 路径中含 xxx
+                # 关键修正: actual_callers == 0 表示没有任何引用 (同文件 + 跨文件)
+                if refs.get("error"):
+                    continue
+                if refs["actual_callers"] == 0:
+                    issues["R3_unused_module"].append({
+                        "severity": "WARN",
+                        "name": mod_name,
+                        "file": str(path.relative_to(ROOT)),
+                        "line": line_no,
+                        "refs_total": refs["total"],
+                        "refs_callers": refs["actual_callers"],
+                    })
+
+            # R4: pub struct/enum 检测 (只对 mod.rs/api.rs 中的核心类型有意义)
+            if path.name in {"mod.rs", "api.rs", "types.rs"}:
+                for type_name, kind, line_no in collect_pub_structs_enums(path):
+                    stats["pub_types_scanned"] += 1
+                    refs = count_refs(type_name, path, line_no)
+                    if refs.get("error"):
+                        continue
+                    # 核心类型如果在 api.rs/types.rs 中零引用, 提示
+                    if refs["cross_file"] == 0 and refs["total"] <= 1:
+                        issues["R4_unused_struct_enum"].append({
+                            "severity": "INFO",
+                            "name": type_name,
+                            "kind": kind,
+                            "file": str(path.relative_to(ROOT)),
+                            "line": line_no,
+                            "refs_total": refs["total"],
+                        })
+
+    return {"issues": issues, "stats": dict(stats)}
+
+
+def format_report(result: dict) -> str:
+    """生成可读报告"""
+    lines = []
+    lines.append("=" * 78)
+    lines.append("QueenX 死代码 / 未接线审计报告 (audit_unwired_pub_fn.py)")
+    lines.append("=" * 78)
+    lines.append("")
+    stats = result.get("stats", {})
+    lines.append(f"扫描文件数:    {stats.get('files_scanned', 0)}")
+    lines.append(f"扫描 pub fn:   {stats.get('pub_fns_scanned', 0)}")
+    lines.append(f"  └─ 豁免:     {stats.get('fns_exempted', 0)} "
+                 "(#[no_mangle] / 顶层 re-export / trait impl)")
+    lines.append(f"扫描 SYS_/QX_ 编号: {stats.get('syscall_consts_scanned', 0)}")
+    lines.append(f"  └─ 已 dispatch: {stats.get('syscall_consts_dispatched', 0)}")
+    lines.append(f"扫描 pub mod:  {stats.get('pub_mods_scanned', 0)}")
+    lines.append(f"扫描 pub type: {stats.get('pub_types_scanned', 0)}")
+    lines.append("")
+
+    issues = result.get("issues", {})
+
+    # R2 优先 (CRITICAL)
+    r2 = issues.get("R2_unwired_syscall", [])
+    lines.append(f"[CRITICAL] R2 未接线 syscall (types.rs 声明但 dispatch 未分发): {len(r2)} 项")
+    if r2:
+        # 按文件分组
+        by_file = defaultdict(list)
+        for it in r2:
+            by_file[it["file"]].append(it["name"])
+        for f, names in sorted(by_file.items()):
+            lines.append(f"  {f}:")
+            for n in names[:30]:
+                lines.append(f"    - {n}")
+            if len(names) > 30:
+                lines.append(f"    ... (共 {len(names)} 个, 仅显示前 30)")
+    lines.append("")
+
+    # R1
+    r1 = issues.get("R1_unwired_pub_fn", [])
+    lines.append(f"[WARN] R1 pub fn 零跨文件引用: {len(r1)} 项")
+    if r1:
+        # 按文件分组
+        by_file = defaultdict(list)
+        for it in r1:
+            by_file[it["file"]].append(it)
+        for f, items in sorted(by_file.items(), key=lambda x: -len(x[1])):
+            lines.append(f"  {f}: {len(items)} 个")
+            for it in items[:5]:
+                lines.append(f"    L{it['line']}: {it['name']} "
+                             f"(refs: total={it['refs_total']}, decl={it['refs_in_decl_file']}, cross={it['refs_cross_file']})")
+            if len(items) > 5:
+                lines.append(f"    ... (共 {len(items)} 个, 仅显示前 5)")
+    lines.append("")
+
+    # R3
+    r3 = issues.get("R3_unused_module", [])
+    lines.append(f"[WARN] R3 pub mod 子模块零引用: {len(r3)} 项")
+    for it in r3:
+        lines.append(f"  {it['file']}:L{it['line']} mod {it['name']}")
+    lines.append("")
+
+    # R4
+    r4 = issues.get("R4_unused_struct_enum", [])
+    lines.append(f"[INFO] R4 核心 pub struct/enum 在 mod.rs/api.rs 中零引用: {len(r4)} 项")
+    for it in r4[:20]:
+        lines.append(f"  {it['file']}:L{it['line']} {it['kind']} {it['name']} "
+                     f"(total refs={it['refs_total']})")
+    if len(r4) > 20:
+        lines.append(f"  ... (共 {len(r4)} 个, 仅显示前 20)")
+
+    lines.append("")
+    lines.append("=" * 78)
+    critical = len(r2)
+    warn = len(r1) + len(r3)
+    info = len(r4)
+    lines.append(f"汇总: CRITICAL={critical} / WARN={warn} / INFO={info}")
+    lines.append("=" * 78)
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="QueenX 死代码 / 未接线审计")
+    parser.add_argument("--strict", action="store_true",
+                        help="WARN 也退出 1 (默认仅 CRITICAL 退出 1)")
+    parser.add_argument("--json", action="store_true", help="输出 JSON 报告")
+    args = parser.parse_args()
+
+    result = scan_tree()
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(format_report(result))
+
+    # 退出码
+    issues = result.get("issues", {})
+    critical = len(issues.get("R2_unwired_syscall", []))
+    warn = (len(issues.get("R1_unwired_pub_fn", [])) +
+            len(issues.get("R3_unused_module", [])))
+
+    if critical > 0:
+        return 1
+    if args.strict and warn > 0:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

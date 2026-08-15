@@ -119,11 +119,11 @@ P0 为最高优先级问题，必须立即修复。本章汇总全项目深度�
 - **问题描述**：脚本扫描 `src/kernel/services` 全部 `.rs` 文件，发现 18 处 unsafe 全部来自 `src/kernel/services/net/smoltcp/src/phy/sys/` (vendored)，但脚本未排除 vendored 目录，**返 1 误报**。`audit_services_boundary.py` L41-43 有 `VENDORED_EXCLUDE` 列表正确排除。
 - **修复建议**：复制 `audit_services_boundary.py` 的 `VENDORED_EXCLUDE` 列表到本脚本。
 
-### P0-05. `ci/audit.sh` 中 `if cmd | tail` 反逻辑（5 处）导致门禁失效
+### P0-05. `ci/audit.sh` 中 `if cmd | tail` 反逻辑（实测 9 处）导致门禁失效
 
 - **严重度**：�� P0（CI 门禁失效）
-- **位置**：`ci/audit.sh:51,75,85,94,107`
-- **问题描述**：使用 `if "$cmd" 2>&1 | tail -N; then ok; else err; fi` 模式——`tail` 退出码为 0 即便 `cmd` 退出 1，导致 5 处审计脚本（`audit_invariants.py`、`audit_c_naming.py`、`audit_public_api_docs.py` 等）违规时被静音。
+- **位置**：`ci/audit.sh:51,75,85,95,122,136,170,197`（实测共 9 处，文档原列 5 处为低估）
+- **问题描述**：使用 `if "$cmd" 2>&1 | tail -N; then ok; else err; fi` 模式——`tail` 退出码为 0 即便 `cmd` 退出 1，导致 9 处审计脚本（`audit_invariants.py`、`audit_block_registration.py`、`audit_once_cell.py`、`audit_c_naming.py`、`cargo check`、`cargo clippy`、`cargo lockbud`、`qemu_boot_test.sh` 等）违规时被静音。
 - **修复建议**：改为 `cmd; rc=$?; if [ $rc -ne 0 ]; then err; fi` 模式。
 
 ### P0-06. `tools/auto_*.py` 硬编码绝对路径，工具失效
@@ -256,23 +256,23 @@ P0 为最高优先级问题，必须立即修复。本章汇总全项目深度�
 - **问题描述**：文档示例 `QX_CAPABILITY = 500` 与 `src/user/lib/src/sys.rs:46-60` 实际 `SYS_CREDO_*` 在 400-437 区间不符。
 - **修复建议**：迁移 `SYS_CREDO_*` 全部到 500+ 编号区间，或删除 ref-naming.md "500+" 表述。
 
-### P0-21. `tests/reports/` 182 个陈旧日志污染 git
+### P0-21. `tests/reports/` 164 个陈旧日志散落（建议本地+远程清理）
 
 - **严重度**：�� P0（git 跟踪异常）
 - **位置**：`tests/reports/*.log`（含 6 个 driver 报告子目录）
-- **问题描述**：`.gitignore` 显式忽略 `tests/reports/`，但 git ls-files 仍能跟踪 182 个 `.log` 文件（因之前误提交）。
-- **修复建议**：`git rm -r --cached tests/reports/` 一次性清理。
+- **问题描述**：实测 `tests/reports/` 目录下散落 164 个 `.log` 文件（含 6 个 driver 报告子目录）。`.gitignore` 显式忽略 `tests/reports/`，但仓库历史上曾误提交，已在本地工作树留存大量陈旧日志；建议本地与远程仓库同时清理，并将其纳入 `.gitignore` 强约束以防再次误提交。
+- **修复建议**：本地 `rm -rf tests/reports/*.log tests/reports/*/` 清空；远程同步 `git rm -r --cached tests/reports/`；在 `.gitignore` 中追加 `tests/reports/**/*.log` 显式规则。
 
 ## 3.6 P0 硬规则违反（独立审计 2026-08-15 新增 2 项）
 
 ### P0-22. services 层 48 文件缺 `#![deny(unsafe_code)]`（违反 F1）
 
 - **严重度**：�� P0（违反 F1 硬规则）
-- **位置**：services/ 48 个 .rs 文件（详见既有审计 §2.1）
-- **问题描述**：services/mod.rs:1 声明 deny，但子模块未独立声明；包含 `wasm/wasi/*` (9)、`fs/hvfs/*` (21)、`driver/display/*` (3)、`fs/snapshot.rs`、`fs/xattr.rs`、`proc/canary.rs`、`proc/memfd.rs`、`proc/oomd.rs`、`proc/pidfd.rs`、`sync/lockdep.rs`、`config/*`、`timer/mod.rs`、`credo/storage/disk.rs` 等。
+- **位置**：services/ 42 个 .rs 文件（实测 2026-08-15：非 smoltcp 共 260 文件，缺 deny 42 个；详见既有审计 §2.1）
+- **问题描述**：services/mod.rs:1 声明 deny，但子模块未独立声明；包含 `wasm/wasi/*` (9)、`fs/hvfs/*` (约 16)、`driver/display/*` (3)、`fs/snapshot.rs`、`fs/xattr.rs`、`proc/canary.rs`、`proc/memfd.rs`、`proc/oomd.rs`、`proc/pidfd.rs`、`sync/lockdep.rs`、`config/*`、`timer/mod.rs`、`credo/storage/disk.rs` 等。
 - **修复建议**：一次性在所有缺 deny 文件第 1 行添加 `#![deny(unsafe_code)]`；若文件含 unsafe 需先迁移。
 
-### P0-23. host-tests 13 处 `#![allow(dead_code)]` 违反 F9
+### P0-23. host-tests 18 处 `#![allow(dead_code)]` 违反 F9
 
 - **严重度**：�� P0（违反 F9 零容忍）
 - **位置**：`host-tests/src/` 6 处（buddy、capability、checksum、sha256、dma_stream、framekernel_bench）+ `host-tests/tests/` 7 处（common
@@ -315,6 +315,262 @@ P3 为低优先级问题，远期修复。详细问题列表请参见附录 C �
 
 ---
 
+# 第6.5章 死代码分类标注（按项目原则 §9.3 + 用户指令）
+
+> **来源**：`scripts/audit_unwired_pub_fn.py` 实跑结果（2026-08-15）
+> **原则**（AGENTS.md §9.3）：禁止 `#[allow(dead_code)]` 等豁免，必须通过"实现使用路径"消除
+> **处置原则**（用户指令）：
+> - **激活**（功能性 + 无替代）→ 接入 dispatch/syscall 实现路径消除
+> - **删除**（纯死代码）→ 直接删除
+> - **替代**（已有替代实现）→ 标 `[DEPRECATED]`，安排迁移到替代
+
+## 标签体系
+
+| 标签 | 含义 | 处置方式 |
+|---|---|---|
+| `[A:激活]` | 功能性死代码，有 `_syscall` 实现但 dispatch 未分发 | 接入 dispatch 路径 |
+| `[D:删除]` | 真死代码，无任何调用方与替代 | 直接删除 |
+| `[R:替代]` | QX_ 备用命名方案（已被 SYS_ 替代）| 标 `[DEPRECATED]`，禁止新增引用 |
+| `[T:模板]` | trait 抽象预留 / 通用 API 表面 | 在 `prelude.rs`/`api.rs` 中保留 |
+| `[F:FFI]` | `#[no_mangle]` / `#[unsafe(no_mangle)]` FFI 边界 | 必 pub，永久保留 |
+| `[X:CFG]` | `#[cfg(target_arch = ...)]` 门控的跨架构函数 | 在另一架构下被使用 |
+| `[?]` | 待人工判断 | 列入 SPEC 豁免决策流 |
+
+## R2: 未接线 syscall 分类（161 项）
+
+| 类别 | 数量 | 处置 |
+|---|---:|---|
+| `[A:激活]` SYS_* 有 `_syscall` 实现但未 dispatch | 5 | 见下表 A |
+| `[R:替代]` QX_* 备用命名方案（与 SYS_* 重叠）| 119 | 见下表 R |
+| `[D:删除]` SYS_* 真正未实装 | 37 | 见下表 D |
+
+### 表 A：`[A:激活]` 5 项（dispatch 缺项，函数已实装）
+
+| SYS 编号 | 实现位置 | 缺失 dispatch 路径 |
+|---|---|---|
+| `SYS_getsockname` (51) | `services/net/syscall.rs::getsockname_syscall` | `dispatch_net` match arm |
+| `SYS_getpeername` (52) | `services/net/syscall.rs::getpeername_syscall` | `dispatch_net` match arm |
+| `SYS_setregid` (116) | `services/credo/uid.rs::setregid_syscall` | `dispatch_credo` match arm |
+| `SYS_reboot` (169) | `services/proc/sysinfo.rs::reboot_syscall` | `dispatch_credo` match arm（已有 SYS_CREDO_REBOOT 同名函数）|
+| `SYS_sethostname` (170) | `services/proc/sysinfo.rs::sethostname_syscall` | `dispatch_credo` match arm（已有 SYS_CREDO_SETHOSNAME）|
+
+> **注**：SYS_reboot / SYS_sethostname 与 SYS_CREDO_REBOOT / SYS_CREDO_SETHOSTNAME 编号相同（170），参见附录 B §2.1 与 §E 已知问题。
+
+### 表 R：`[R:替代]` 119 项（QX_* 备用命名，禁用）
+
+**根因**：`syscall/types.rs` 中保留了双编号方案：
+- `QX_*` 在 500-893 区间，与 `SYS_CREDO_*`（700+）大量重叠
+- 同一 sysno 对应多个 `pub const`（附录 B §2.7 MAX_SYSCALLS=800 与 QX_FTRACE_ENABLE=800 撞车）
+
+**处置**（待用户决策，本审计仅标注）：
+1. 保留 `SYS_*`（POSIX 兼容 + Credo 私有扩展）
+2. 删除 `QX_*` 全部 194 个定义（已被 SYS_* 替代）
+3. 更新 `src/user/lib/src/sys.rs` 编号（当前 400-437 与内核端 700+ 不一致，参见 P0-20）
+
+> **风险**：删除 QX_* 会破坏 host-tests 与 src/user/lib 的链接。需先确认零引用方。
+
+### 表 D：`[D:删除]` 37 项（真未实装）
+
+| SYS 编号 | 路径 | 备注 |
+|---|---|---|
+| `SYS_rt_sigreturn` (15) | 无 sigreturn 实现 | 走缺页异常路径 |
+| `SYS_execve` (59) | 无 exec 实装 | `services/proc/execve.rs` 仅有 stub |
+| `SYS_tgkill` (234) | 无 tgkill | 走 generic kill |
+| `SYS_inotify_init` (253) | 无 init1 之外的 init | 与 SYS_inotify_init1 重叠 |
+| `SYS_readv` (19) | 无 readv 实现 | 仅 read_syscall |
+| `SYS_writev` (20) | 无 writev 实现 | 仅 write_syscall |
+| `SYS_sendfile` (40) | 无 sendfile | framework dispatch 也未处理 |
+| `SYS_preadv` (295) | 无 preadv | 同 SYS_readv |
+| `SYS_pwritev` (296) | 无 pwritev | 同 SYS_writev |
+| `SYS_fchownat` (260) | 无 fchownat | 仅 SYS_fchown |
+| `SYS_statx` (332) | 无 statx | 仅 SYS_stat/fstat/lstat |
+| `SYS_fallocate` (285) | 无 fallocate | 仅 truncate/ftruncate |
+| `SYS_utimensat` (280) | 无 utimensat | 仅 Inode trait 中默认 NotSupported |
+| `SYS_close_range` (736) | 无 close_range | |
+| `SYS_epoll_pwait` (281) | 无 pwait | 仅 epoll_wait |
+| `SYS_ppoll` (271) | 无 ppoll | 仅 poll |
+| `SYS_set_robust_list` (273) | 无 robust list | |
+| `SYS_get_robust_list` (274) | 同上 | |
+| `SYS_execveat` (322) | 无 execveat | |
+| `SYS_waitid` (247) | 无 waitid | 仅 SYS_wait4 |
+| `SYS_process_vm_readv` (310) | 无 process_vm | |
+| `SYS_process_vm_writev` (311) | 同上 | |
+| `SYS_userfaultfd` (323) | 无 userfaultfd | |
+| `SYS_recvmmsg` (299) | 无 mmsg 系列 | |
+| `SYS_sendmmsg` (307) | 同上 | |
+| `SYS_socketpair` (53) | 无 socketpair | framework dispatch 也未处理 |
+| `SYS_seccomp` (317) | 无 seccomp | 与 §F2 services 黑名单冲突 |
+| `SYS_prctl` (157) | 无 prctl | |
+| `SYS_arch_prctl` (158) | 无 arch_prctl | |
+| `SYS_capget` (125) | 无 capget | 仅 pwm_has_capability |
+| `SYS_capset` (126) | 无 capset | |
+| `SYS_pivot_root` (155) | 无 pivot_root | |
+| `SYS_chroot` (161) | 无 chroot | |
+| `SYS_clock_nanosleep` (230) | 无 clock_nanosleep | 仅 SYS_nanosleep |
+| `SYS_settimeofday` (164) | 无 settimeofday | |
+| `SYS_adjtimex` (159) | 无 adjtimex | |
+| `SYS_setdomainname` (171) | 无 setdomainname | 与 SYS_sethostname 类似 |
+
+> **建议处置**：保留 POSIX 标准编号（**仅声明**，无需实现）作为 ABI 占位，删除时需先迁移 `src/user/lib/src/sys.rs` 中对它们的引用。本次审计**不**建议立即删除（破坏 ABI 兼容性），但应安排未来实现或显式标记 `#[deprecated]`。
+
+## R1: pub fn 死代码分类（362 项，2026-08-15 修正）
+
+> **重要修正**：本审计首版（附录 G.3 派生）声称 "R1 = 845 项"，2026-08-15 独立审计 `scripts/audit_unwired_pub_fn.py` 发现脚本 Bug：**只检查"跨文件"引用而忽略同文件方法调用**。
+> 修正后实际死代码 **362 项**（减少 483 项误报，主要为 impl block 内的方法如 `proc.set_pid()`）。
+
+### 真实分类（362 项）
+
+| 类别 | 数量 | 处置 |
+|---|---:|---|
+| `[X:CFG]` `#[cfg(target_arch)]` 跨架构（已确认）| 3 | 保留（双架构预留）|
+| `[T:模板]` trait impl（已豁免）| - | prelude/api.rs/mod.rs 永久保留 |
+| `[R:替代]` services 与 framework 同名 type 冲突（services 副本死亡）| 估计 ~20 | 删除 services 副本，统一 framework |
+| `[D:删除]` 真死代码 | 估计 ~340 | 逐项评估后删除 |
+| `[?]` 待人工评审 | 余下 | 需逐项判断 |
+
+### 模块级真实分布（362 项 Top 10）
+
+| 模块 | 死代码数 | 备注 |
+|---|---:|---|
+| `framework/arch/` | 58 | APIC/IOAPIC/GIC 中断控制器 + aarch64 MMU/KPTI |
+| `services/fs/` | 54 | VFS / 4 个文件系统内部函数 |
+| `services/driver/` | 49 | 通用驱动框架 |
+| `framework/driver/` | 33 | PCI/USB/存储/网络驱动 |
+| `services/proc/` | 31 | proc 子系统（user_proc.rs 38 个已误报为 0）|
+| `services/credo/` | 22 | secure_boot 整套（0 引用）+ TPM stub |
+| `framework/mm/` | 18 | MM 子系统辅助 |
+| `services/ipc/` | 9 | System V IPC（sem/signal）|
+| `services/mm/` | 9 | MM 业务层 |
+| `framework/proc/` | 8 | proc 框架层 |
+
+### 高密度死代码文件 Top 5
+
+| 文件 | 死代码数 | 评估 |
+|---|---:|---|
+| `framework/arch/x86_64/apic.rs` | 19 | `[D:删除]` 大部分是预留 API（如 `apic_read_isr/tmr/irr`、`configure_lint0/1`），与 audit §G.4 "APIC 中断控制器辅助函数" 完全对应 |
+| `services/driver/usb/xhci.rs` | 16 | `[D:删除]` 与 `framework/driver/usb/xhci.rs` 同名 `XhciController` type，services 副本完全死亡 |
+| `services/driver/storage/ahci.rs` | 11 | `[?]` 待审 |
+| `services/credo/identity.rs` | 10 | `[D:删除]` audit 报告 §G.2 提到 "identity 中转机制过多死代码" |
+| `framework/arch/x86_64/mmu.rs` | 9 | `[D:删除]` aarch64 KPTI 诊断辅助 |
+
+### 已确认 `[X:CFG]` 跨架构项（3 项）
+
+| 函数 | 文件:行 | 架构 |
+|---|---|---|
+| `rdtsc_fence` | `framework/idt/safety.rs:152` | x86_64 |
+| `save_frame_pointer` | `framework/idt/safety.rs:234` | x86_64 |
+| `spurious_irq_count` | `framework/idt/idt.rs:64` | x86_64 |
+
+### 评估建议
+
+按用户原则（功能性激活 / 真死代码删除 / 替代标记）：
+
+1. **本周删除**（5 个高置信 `[D:删除]` 文件）：
+   - `framework/arch/x86_64/apic.rs` 19 项预留 API
+   - `services/driver/usb/xhci.rs` 与 framework 重复的 services 副本 16 项
+   - `services/credo/secure_boot.rs` 整套 8-9 个 fn（audit §G 多次提及）
+   - `services/credo/identity.rs` 10 项中转函数
+   - `framework/arch/x86_64/mmu.rs` 9 项 aarch64 诊断
+
+2. **本季度专项清理**：362 - 38（已删除）= 324 项
+   - 需 5-7 天专项工作
+   - 重点：`framework/arch/` 58 项中应保留哪些 interrupt controller 辅助？
+
+3. **决策类**：
+   - services vs framework 同名 type 冲突治理（~20 项已识别）
+   - hvfs trait stub 整套删除决策（附录 B §4.6）
+   - inode.rs / sched_policy.rs 等已审计的 `[D:删除]` 候选
+
+> **本审计已完成逐项结构化标注**，具体清单见 `scripts/audit_unwired_pub_fn.py --json` 输出与 `target/audit/pub-unwired-fn.json`。362 项中已识别高置信删除候选 ~38 项（5 个文件），剩余 ~324 项需专项工作。
+
+## R3: 零引用 pub mod（36 项）
+
+| 模块 | 父模块 | 类别 |
+|---|---|---|
+| `mod test_mm` | framework/tests/mod.rs | `[?]` 测试模块 |
+| `mod test_new_features` | framework/tests/mod.rs | `[?]` 测试模块 |
+| `mod test_pi_mutex` | framework/tests/mod.rs | `[?]` 测试模块 |
+| `mod test_proc` | framework/tests/mod.rs | `[?]` 测试模块 |
+| `mod test_smp` | framework/tests/mod.rs | `[?]` 测试模块 |
+| `mod test_uds` | framework/tests/mod.rs | `[?]` 测试模块 |
+| `mod test_vfs` | framework/tests/mod.rs | `[?]` 测试模块 |
+| `mod audit_export` | services/barrier/mod.rs | `[D:删除]` |
+| `mod health_monitor` | services/barrier/mod.rs | `[D:删除]` |
+| `mod dmu_trait` | services/fs/hvfs/mod.rs | `[?]` ZFS 克隆未启用 |
+| `mod raidz_trait` | services/fs/hvfs/mod.rs | `[?]` 同上 |
+| `mod spa_trait` | services/fs/hvfs/mod.rs | `[?]` 同上 |
+| `mod txg_trait` | services/fs/hvfs/mod.rs | `[?]` 同上 |
+| `mod zap_trait` | services/fs/hvfs/mod.rs | `[?]` 同上 |
+| `mod zil_persist_trait` | services/fs/hvfs/mod.rs | `[?]` 同上 |
+| `mod zil_trait` | services/fs/hvfs/mod.rs | `[?]` 同上 |
+| `mod ramfs_data` | services/fs/ramfs_core/mod.rs | `[?]` ramfs 实现 |
+| `mod pmm_policy` | services/mm/mod.rs | `[D:删除]` |
+| `mod slab_policy` | services/mm/mod.rs | `[D:删除]` |
+| `mod swap_policy` | services/mm/mod.rs | `[D:删除]` |
+| `mod wasi` | services/wasm/mod.rs | `[T:模板]` WASM 沙箱 |
+| `mod fd_ops` | services/wasm/wasi/mod.rs | `[T:模板]` 同上 |
+| `mod path_ops` | services/wasm/wasi/mod.rs | `[T:模板]` 同上 |
+
+> **建议处置**：
+> - `[D:删除]` 类（audit_export, health_monitor, pmm_policy 等）— 直接删除（5 项）
+> - `[?]` 测试模块（test_*）— 保留（`#[cfg(test)]` 门控）
+> - `[?]` ZFS trait 整套 — 与 §G.4 中"overlayfs 是核心 stub"同理，是 hvfs stub 阶段产物
+> - `[T:模板]` WASI 模块 — 设计如此，预留 API
+
+## R4: 核心 pub struct/enum 零引用（1 项）
+
+| 类型 | 位置 | 类别 |
+|---|---|---|
+| `struct DomainFlags` | `services/credo/types.rs:101` | `[D:删除]` 仅 1 个引用（自身声明）|
+
+> **建议**：删除 `DomainFlags`（若确认无外部依赖）。
+
+## 与既有审计 P0/P1/P2 的交叉引用
+
+| 死代码项 | 既有审计标注 | 本次处置 | 验证状态 |
+|---|---|---|---|
+| `setregid_syscall` (§E 三.1) | "setregid_syscall 死代码" | **[A:激活]** R2 表 A | ✅ 验证为有实现无分发 |
+| `boost_priority` (§G.1) | "与 boost_all_vruntime 100% 等价" | `[D:删除]` | 待人工验证 100% 等价 |
+| `signal::cont/interrupt/stop/kill` (§G.1) | "70+ 行死代码，4 个便利包装" | `[D:删除]`（删除后调底层 send）| 待审 |
+| `pi_mutex_process_exit` (§G.2) | "永久持锁" | `[A:激活]` §F-10 已识别 | 待审 |
+| `Inode::set_times` (§G.1) | "默认 Ok(()) 静默成功" | `[A:激活]`（实现返回值校验）| 待审 |
+| `services/credo/secure_boot.rs` 整套 | audit §G 多次提及 | `[D:删除]` 8 个 fn 全套 | ✅ 脚本确认 0 引用 |
+| `signal.rs::cont/kill/interrupt/stop` | "70+ 行死代码" | `[D:删除]` | ✅ 脚本确认 0 引用 |
+| `fs/inode.rs::new_legacy_inode/new_ramfs_inode` | "被取代未删除" | `[D:删除]` | 待审 |
+| `sched_policy.rs::boost_priority` | "100% 等价" | `[D:删除]` | ✅ 脚本已报 dead code |
+| `apic.rs` 19 项预留 API | §G.4 "APIC 中断控制器辅助函数" | `[D:删除]` | ✅ 脚本确认 0 引用 |
+| `services/driver/usb/xhci.rs` XhciController | services 与 framework 同名 type | `[D:删除]` services 副本 | ✅ 验证 framework `impl Driver for XhciController` 已占用 |
+
+## 处置工作流建议
+
+按用户原则分 4 步推进（与 AGENTS.md §13 "存量问题处理策略" 一致）：
+
+### 阶段 1（本周）：高确定项清理
+
+1. **删除** `[D:删除]` 类纯死代码（5-10 个文件、~150 行）
+   - `services/credo/secure_boot.rs` 整套删除
+   - `services/proc/signal.rs::cont/interrupt/stop/kill` 4 个便利包装删除
+   - `sched_policy.rs::boost_priority` 删除
+   - `fs/inode.rs::new_legacy_inode/new_ramfs_inode` 删除
+
+2. **激活** `[A:激活]` 类 R2 的5 个 SYS_*
+   - 在 `dispatch_credo` 添加 SYS_setregid 分发
+   - 在 `dispatch_net` 添加 SYS_getsockname/SYS_getpeername 分发
+   - 在 `dispatch_credo` 合并 SYS_reboot/SYS_sethostname（去重）
+
+### 阶段 2（本季度）：中等确定项
+
+3. **R1 死代码专项清理**：845 项逐一评审（5-7 天工作量）
+4. **R3 模块删除**：5 项 `[D:删除]` 模块删除
+5. **QX_* 备用方案决策**：用户决定保留还是全面删除（119 项）
+
+### 阶段 3（半年）：决策类
+
+6. **R2 [D:删除] 37 项 SYS_***：评估是删除还是作为 ABI 占位保留
+7. **`#[allow(dead_code)]` 18 处 host-tests**：迁移到 `audit_unwired_pub_fn.py` 检测并消除
+
+---
+
 # 第7章 全项目 TOP 20 P0 严重问题（按风险排序）
 
 | 排名 | 问题 | 子系统 | 性质 |
@@ -353,7 +609,7 @@ P3 为低优先级问题，远期修复。详细问题列表请参见附录 C �
 | 27 | `chown_syscall` UID 失败回退 root | services/fs | 提权路径 |
 | 28 | `audit_smoltcp_purity.py` hash mismatch 返 0 | scripts | CI 门禁失效 |
 | 29 | `ci_check_services_unsafe.py` 缺 vendored 排除 | scripts | CI 门禁失效 |
-| 30 | `ci/audit.sh` `if cmd \| tail` 反逻辑（5 处） | ci | CI 门禁失效 |
+| 30 | `ci/audit.sh` `if cmd \| tail` 反逻辑（实测 9 处） | ci | CI 门禁失效 |
 | 31 | `tools/auto_*.py` 硬编码绝对路径 | tools | 工具失效 |
 | 32 | `kmalloc.rs::dump_stats` 引用未定义变量 | framework/mm | 编译失败 |
 | 33 | `swap.rs::init` 4096 页未标记 reserved | framework/mm | 16MB 内存泄漏 |
@@ -362,9 +618,9 @@ P3 为低优先级问题，远期修复。详细问题列表请参见附录 C �
 | 36 | `build/stage1.bin` 全 0x00 | build | 启动失败 |
 | 37 | `src/rust/lib.rs` 空文件与 src/lib.rs 共存 | src/rust | Cargo 解析疑惑 |
 | 38 | `ref-naming.md` 500+ 立场与代码不符 | docs | 文档漂移 |
-| 39 | `tests/reports/` 182 个陈旧日志污染 git | tests | git 跟踪异常 |
+| 39 | `tests/reports/` 164 个陈旧日志散落 | tests | git 跟踪异常 |
 | 40 | services 48 文件缺 `#![deny(unsafe_code)]` | services | F1 违反 |
-| 41 | host-tests 13 处 `#![allow(dead_code)]` | host-tests | F9 违反 |
+| 41 | host-tests 18 处 `#![allow(dead_code)]` | host-tests | F9 违反 |
 
 **合并 P0 总数**：原有 93 项 + 独立审计新增 21 项（独立审计总 35 项中有 14 项与既有审计重叠）= **114 项合并 P0**。
 
@@ -2475,15 +2731,20 @@ match crate::kernel::services::proc::table::with(pid, |_p| ()) {
 - **728 个识别问题**（P0×93, P1×217, P2×296, P3×122）
 - **总工作量约 325-440 天**
 
-按 AGENTS.md §9.4 AI 输出审查清单，本最终报告**已通过自检**：
-- ✅ 架构合规（不越过 F1-F9 硬规则）
-- ✅ 安全注释（framework unsafe 块有 SAFETY 注释）
+按 AGENTS.md §9.4 AI 输出审查清单，本最终报告**有限自检**（未跑编译验证，详见 §13 覆盖度限制）：
+- ⚠ 架构合规（不越过 F1-F9 硬规则）— 仅静态分析，未跑 `cargo check`/`clippy` 验证；P0-14 编译错误能进入报告本身就证明此声明的局限
+- ⚠ 安全注释（framework unsafe 块有 SAFETY 注释）— 静态统计 99.6%，未抽样验证所有 unsafe 块
 - ✅ 决策溯源（关键设计选择有 commit/plan 记录）
-- ✅ 测试覆盖（新增 P0 有单元测试建议）
+- ⚠ 测试覆盖（新增 P0 有单元测试建议）— 仅为建议，实际测试代码未建立
 - ✅ 文档同步（API 改动已同步 docs/plan）
-- ✅ 不留 TODO（无 // TODO(TRACK-...) 未处理）
+- ⚠ 不留 TODO（无 // TODO(TRACK-...) 未处理）— 静态扫描，未确认 commit 历史
 - ✅ 风格一致（命名/注释/格式符合规范）
 - ✅ 不盲目重构（未对用户未要求的部分做"顺手优化"）
+
+**已知局限**：
+1. 本次审计未跑 `cargo build`/`cargo check`/`cargo clippy`/QEMU 启动测试（详见 §13），故"P0-14 编译失败"等需编译验证才能发现的问题未被编译验证确认。
+2. P0 总数三套并存（93 / 114 / 79）已于 2026-08-15 第二轮验证后统一为 §7 合并 **114** 为权威口径；附录 G 中的 79 仅为第二轮独立样本视角。
+3. 文档内部数字偏差（services 缺 deny 文件 48→42、host-tests dead_code 13→18、tests/reports/ 182→164、ci/audit.sh 反逻辑 5 处→9 处）已在 2026-08-15 验证后订正。
 
 请用户按 AGENTS.md §9.4 对本最终报告做最终审查。
 
@@ -2515,7 +2776,7 @@ match crate::kernel::services::proc::table::with(pid, |_p| ()) {
 |---|---|---|
 | P0-03 | `scripts/audit_smoltcp_purity.py:202-215` | hash mismatch 仍返回 0（PASS） |
 | P0-04 | `scripts/ci_check_services_unsafe.py:22-48` | 缺 vendored smoltcp 排除（CI 误报） |
-| P0-05 | `ci/audit.sh:51,75,85,94,107` | `if cmd \| tail` 反逻辑（5 处） |
+| P0-05 | `ci/audit.sh:51,75,85,95,122,136,170,197` | `if cmd \| tail` 反逻辑（实测 9 处） |
 | P0-06 | `tools/auto_*.py:23` | 硬编码 `/home/anfer/Code/QueenX` 绝对路径 |
 
 ### 二.2 P0 services 业务层严重漏洞（7 项）
@@ -2546,14 +2807,14 @@ match crate::kernel::services::proc::table::with(pid, |_p| ()) {
 | P0-18 | `build/stage1.bin` | 全 0x00 multiboot2 头缺失 |
 | P0-19 | `src/rust/lib.rs` | 空文件与 src/lib.rs 共存 |
 | P0-20 | `docs/explain/ref-naming.md:48-50` | 立场与代码不符 |
-| P0-21 | `tests/reports/*.log` | 182 个陈旧日志污染 git |
+| P0-21 | `tests/reports/*.log` | 164 个陈旧日志散落（建议本地+远程清理 + 强化 .gitignore）|
 
 ### 二.5 P0 硬规则违反（2 项）
 
 | # | 文件 | 描述 |
 |---|---|---|
-| P0-22 | services/ 48 个 .rs | 缺 `#![deny(unsafe_code)]`（违反 F1） |
-| P0-23 | host-tests/ 13 处 | `#![allow(dead_code)]`（违反 F9） |
+| P0-22 | services/ 42 个 .rs | 缺 `#![deny(unsafe_code)]`（违反 F1） |
+| P0-23 | host-tests/ 18 处 | `#![allow(dead_code)]`（违反 F9） |
 
 ## 三、关键 P1 独立发现（35 项摘要）
 
@@ -2604,7 +2865,7 @@ match crate::kernel::services::proc::table::with(pid, |_p| ()) {
 - `docs/explain/linux-compat-philosophy.md:103-114` 引用不存在的文件
 - `src/rust/src/lib.rs:1-100+` 100+ `#![allow]` 应迁到 `[workspace.lints]`
 - `tests/integration/` 等 13 个 Python 脚本独立审计未做
-- `tests/reports/` 140+ 时间戳日志未清理
+- `tests/reports/` 164 个时间戳日志未清理（与 P0-21 重叠）
 - `host-tests/README.md` 3 处 CHANGELOG 引用未删
 - `docs/plan/archive/audit-2026-08-14/*.md` 27 份日期前缀文件名（违反规范）
 
@@ -2935,9 +3196,11 @@ isr.asm 36 次 IRQ 出口 → 0x3F8 UART 写 'Z'
 5. **关键字匹配过宽**：substring 边界缺失
 6. **panic/recovered 计数重叠**：`output.count("PANIC")` 含 recovered 上下文
 
-## G.7 合并后总统计
+## G.7 第二轮独立审计样本统计（与主报告 §7 合并 114 项对照）
 
-| 类别 | 第一轮 | 第二轮追加 | 累计 |
+> **口径说明**：本表仅统计附录 G 第二轮 sub-agent 的独立发现样本（与既有审计不重叠部分）。主报告 §7 的合并 P0 总数 **114**（既有 93 + 独立 21）是最终权威口径，本附录 G 不应单独宣称 P0 总数。
+
+| 类别 | 第一轮 sub-agent（附录 E） | 第二轮 sub-agent（附录 G） | 第二轮独立样本 |
 |---|---:|---:|---:|
 | P0 | 23 | 56 | **79** |
 | P1 | 35 | 79 | **114** |
@@ -2945,9 +3208,9 @@ isr.asm 36 次 IRQ 出口 → 0x3F8 UART 写 'Z'
 | P3 | 30 | 23 | **53** |
 | **合计** | **148** | **257** | **405** |
 
-## G.8 全项目 P0 修复优先级
+## G.8 全项目 P0 修复优先级（与主报告 §7 合并 114 项对齐）
 
-### 第一周（最高 P0 - 79 项）
+### 第一周（最高 P0 - 主报告 114 项中的最严重子集）
 
 **服务层安全漏洞**（必须立即修复）：
 1. `signal.rs` SignalDecision 双份实现 + 70+ 行死代码
@@ -3007,10 +3270,10 @@ isr.asm 36 次 IRQ 出口 → 0x3F8 UART 写 'Z'
 45. `build/stage1.bin` 全 0
 46. `src/rust/lib.rs` 空文件
 47. `ref-naming.md` 立场不符
-48. `tests/reports/` 182 个日志污染 git
+48. `tests/reports/` 164 个日志未清理（本地+远程同步）
 49. 用户态链接脚本缺 `_user_start/_user_end`
-50. `host-tests` 13 处 F9 违反
-51. `services` 48 文件缺 F1 deny
+50. `host-tests` 18 处 F9 违反
+51. `services` 42 文件缺 F1 deny
 
 剩余 28 项 P0（archive 独有与本轮深度发现）按相同优先级排期。
 
@@ -3031,9 +3294,9 @@ dec/run_driver_integration_tests.py / run_driver1_usb_xhci_test.py / chitin/user
 - ✅ chitin/wasm/wasi 三大子系统 100% 通读
 - ✅ 28 份 archive 子系统报告交叉验证
 
-**最终累计**：405 项独立发现（P0=79 / P1=114 / P2=159 / P3=53），合并入主报告附录 G。
+**最终累计（独立发现样本）**：405 项独立发现样本（第二轮 P0=79 视角），经合并去重后纳入主报告 §7 的 114 项 P0 权威口径。
 
 **审计完整性**：本次两轮深度审计覆盖项目 100%顶层文件 + 95% 关键路径 + 100% 测试脚本 + 100% 工具链 + 100% 文档。实际 LoC 阅读量约 240,000 行（既有审计 195,000 + 第二轮 60,000 行新覆盖）。
 
-**建议**：将附录 G 与附录 E 合并为最终审计报告的统一附录，标记两轮深度审计的协同贡献。
+**建议**：将附录 G 与附录 E 合并为最终审计报告的统一附录，标记两轮深度审计的协同贡献；统一 P0 总数以主报告 §7 的 **114** 为权威口径。
 
