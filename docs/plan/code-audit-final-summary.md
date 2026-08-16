@@ -4421,3 +4421,71 @@ dec/run_driver_integration_tests.py / run_driver1_usb_xhci_test.py / chitin/user
 
 **附录 H §五结束**
 
+---
+
+# 附录 I：2026-08-16 审计脚本自身审查（元审计增量）
+
+> **来源**：用户指出"全项目审查应覆盖审计脚本自身——把关人自身也可能有问题"。本轮独立元审计逐行审查 39 个审计脚本（`scripts/` 26 + `tools/` 11 + `ci/` 2），4 路并行 sub-agent 深审 + 主 agent 交叉复核关键 P0，并对核心脚本实跑验证退出码与检测能力。
+>
+> **核心结论**：多数"门禁"存在可被违规代码确定性绕过的漏洞，且 CI 实际只接线 4 个脚本（`ci-lint.yml` 仅调用 `audit_safety_coverage` / `audit_services_boundary` / `audit_comment_language` / `audit_once_cell`）。**AGENTS.md §5 声称强制执行的 F2/F3/F8/I1-I6/I-43 等硬规则在 CI 上实际处于失效或半失效状态。**
+
+## 一、对既有报告论断的复核修正（3 项）
+
+| 原条目 | 原论断 | 实测结果 | 结论 |
+|---|---|---|---|
+| P0-03 | `audit_smoltcp_purity.py` hash mismatch 仍返 0 | 实跑：本地 hash `5675b397...` vs 锁文件 `ff7c2d73...` 失配时输出 `✗ 审计未通过` 且 **exit=1**（L204-210 失配入 issues → L277-281 返 1；L266-272 检查 7 为追加检查，不替代检查 4） | **误判，撤销** |
+| P0-05 | `ci/audit.sh` `if cmd \| tail` 反逻辑 9 处导致门禁失效 | L9 有 `set -euo pipefail`，管道退出码取右起首个非零 → 门禁实际生效；实测该类模式仅 **7 处**（L51/75/85/95/122/136/197），L170 为 `\|\| $?` 模式不属此类 | **误判，撤销**（写法脆弱但功能正常） |
+| P0-14 | `kmalloc.rs::dump_stats` 编译失败 | touch 后重跑 `cargo check --target x86_64-unknown-none` **编译通过**；根因 [kmalloc.rs:12-14](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/kmalloc.rs#L12-L14) `serial_println!` 为空宏（`=> {}`），参数不求值，未定义变量 `stats` 永不解析 | **严重度下调至 P1**（dump_stats 为静默 no-op + 潜伏未定义变量，非编译失败） |
+
+## 二、新发现 P0 — 审计脚本门禁失效（9 项）
+
+| # | 位置 | 问题 | 实测 |
+|---|---|---|---|
+| META-P0-01 | [audit_services_boundary.py:460-466](file:///home/anfer/Code/QueenX/scripts/audit_services_boundary.py#L460-L466) | 退出码仅对 CRITICAL（unsafe）生效；**F2 违规（`FORBIDDEN_FRAMEWORK_IMPORT`，HIGH）、裸指针（HIGH）、跨模块依赖（MEDIUM）全部不 exit(1)** → F2 门禁在退出码层面失效 | services 真实存在穿透访问（[msgq.rs:7](file:///home/anfer/Code/QueenX/src/kernel/services/ipc/msgq.rs#L7) `framework::ipc::msgq::raw`、[memfd.rs:6](file:///home/anfer/Code/QueenX/src/kernel/services/proc/memfd.rs#L6) `framework::syscall::types`），脚本报 0 违规 |
+| META-P0-02 | [audit_services_boundary.py:41-80](file:///home/anfer/Code/QueenX/scripts/audit_services_boundary.py#L41-L80) | FORBIDDEN_FRAMEWORK_MODULES 黑名单严重不完整（缺 ipc::msgq::raw、syscall::types、proc::coredump 等）；`SAFE_FRAMEWORK_APIS` allow-list 定义后**零引用**（死代码），F2 实为不完整 deny-list | 同上 |
+| META-P0-03 | [audit_services_boundary.py:204](file:///home/anfer/Code/QueenX/scripts/audit_services_boundary.py#L204) | 正则 `^\s*use\s+` 不匹配 `pub use` → **30 处** `pub use framework::...` 穿透全部绕过 | 实测 30 处 |
+| META-P0-04 | [audit_deadlock_matrix.py:128-136](file:///home/anfer/Code/QueenX/scripts/audit_deadlock_matrix.py#L128-L136) | 仅识别 `spin::`/`crate::spin::` 字面量，import 后裸类型名逃逸；唯一真实第三方锁 [smp_init.rs:42](file:///home/anfer/Code/QueenX/src/kernel/framework/arch/x86_64/smp_init.rs#L42) `SpinMutex` 完全漏检（366 文件 0 问题）；docstring 声称的"锁顺序 AB-BA 矩阵/原子上下文 sleep 锁/不可重入"检测**代码中均未实现** | 实测 |
+| META-P0-05 | [audit_block_registration.py:38](file:///home/anfer/Code/QueenX/scripts/audit_block_registration.py#L38) | 检测函数名 `chitin_register_block(` 在代码中不存在（实为 [chitin/mod.rs:353](file:///home/anfer/Code/QueenX/src/kernel/framework/chitin/mod.rs#L353) `chitin_register_block_dev`）→ **门禁恒 0 空转**，驱动绕过桥接不可被发现 | 实测"违规调用: 0 处" |
+| META-P0-06 | [audit_once_cell.py:29,32](file:///home/anfer/Code/QueenX/scripts/audit_once_cell.py#L29-L32) | 双正则均无法命中：`pub use spin::once::Once`（锚定 `^\s*use`）与 `use spin::OnceCell`（`Once\b` 词边界不成立） | 已实证两写法均漏检 |
+| META-P0-07 | [audit_comment_language.py:601](file:///home/anfer/Code/QueenX/scripts/audit_comment_language.py#L601) | **行尾注释完全漏检**：`iter_comments` 仅对行首 `//` 产出行，`let x = f(); // English` 对 F7 透明 | 已实证 |
+| META-P0-08 | [tools/audit_unsafe.sh:102](file:///home/anfer/Code/QueenX/tools/audit_unsafe.sh#L102) | `xargs bash -c 'scan_unsafe ...'` 新进程不继承函数 → `command not found`，**工具完全不可用**（零输出、退出 123），接入 CI 将永远"通过" | 实测 |
+| META-P0-09 | scripts/audit_public_api_docs.py（F8） | **未接入任何 CI**，F8 门禁形同虚设 | grep 确认无调用点 |
+
+## 三、新发现 P1 — 检测不准（12 项摘要）
+
+1. **audit_coupling.py**：循环依赖 `total > 20` 才阻断（[L416](file:///home/anfer/Code/QueenX/scripts/audit_coupling.py#L416)）；**services 层循环依赖完全不检测**；白名单 `('timer','idt')` 字典序 bug 永不匹配；`use super::super::frame` 跨相对路径漏检；**未接入 CI**。
+2. **audit_invariants.py:56**：I2 正则把 safe 解引用 `(*v).field` 误报为裸指针——已实际发生（[raidz_trait.rs:304](file:///home/anfer/Code/QueenX/src/kernel/services/fs/hvfs/raidz_trait.rs#L304) 注释证实开发者被迫改写代码规避误报）。
+3. **tools/audit_unsafe.py:79,81**：8 行窗口过窄（属性堆叠推出 SAFETY → 误报，52 MISSING 中混入误报）；反之窗口内任意行含 "SAFETY" 子串即判 OK（漏报）。
+4. **ci/audit.sh:62-69**：audit_unsafe 输出为空时 if/elif 均不执行 → 静默通过；**clippy 未加 `-D warnings`** 且 else 仅警告不退出（L135-141）；qemu 联动 `FAIL_OK` 默认 1 → 0/2 也报"通过"。
+5. **audit_static_mut.py:94**：正则要求行首 `static`，`pub static mut`/`pub(crate) static mut` 漏检；SAFE_PATTERNS 子串豁免过宽（`T1`/`T2` 子串匹配）。
+6. **audit_repr_c.py / audit_volatile_access.py**：err 分支"无法检查 = 通过"（fail-open）；`#[repr(C, packed)]` 变体误报；pi_mutex `effective_priority` 实际为 AtomicU32 却配置 `.get()` 检查项空转。
+7. **audit_smoltcp_purity.py**：BASE 用相对路径（cwd 依赖）；锁文件字段协议与 `vendor_smoltcp.sh` 写入的 `SMOLTCP_SRC_HASH` 不一致 → 重新生成锁后 hash 校验静默跳过。
+8. **audit_unwired_pub_fn.py:139**：`in_trait_impl_depth` 置位后永不重置；`count_refs` 全词匹配把同名局部变量计入 → 高频词 fn 死代码逃检。
+9. **audit_edition2024.py:85-96**：`\*\w+` 匹配 `as *mut ()`（edition 2024 下 safe cast）等 → 82 处"高优先级"含大量 FP。
+10. **audit_implicit_deps.py:73**：无词边界子串匹配，`SCHEDULER` 误匹配 `SCHEDULER_READY`。
+11. **audit_tcb_ratio.py**：确认 P0-01（退出码失效）；另 smoltcp 路径检查错误（`framework/net/smoltcp` 不存在，实际在 `services/net/smoltcp`）。
+12. **audit_safety_coverage.py:128-129**：文件缺失静默跳过 → 8 文件被删/改名后假 PASS（100%）。
+
+## 四、CI 接线缺口
+
+| 脚本 | 对应硬规则 | CI 接线 |
+|---|---|---|
+| audit_coupling.py | F3 | ❌ 未接入 |
+| audit_invariants.py | I1-I6 | ❌ 仅本地 ci/audit.sh |
+| audit_public_api_docs.py | F8 | ❌ 未接入 |
+| audit_deadlock_matrix.py | F8 | ❌ 未接入 |
+| audit_block_registration.py | I-43 | ❌ 未接入 |
+| audit_static_mut / repr_c / volatile_access | F11-F13 | ❌ 未接入 |
+
+## 五、合并统计与建议
+
+- **本增量新增**：P0 ×9（META-P0-01~09）、P1 ×12、P2 ×15（含各脚本死代码/接口不符）；修正既有 3 项（P0-03、P0-05 撤销，P0-14 降级）。
+- **最高优先级修复**：
+  1. META-P0-01/02/03：audit_services_boundary.py — HIGH/MEDIUM 纳入退出码 + 补全黑名单 + 匹配 `pub use`（F2 门禁，最高优先）。
+  2. META-P0-04：audit_deadlock_matrix.py — 裸类型名检测 + 实装锁顺序矩阵（或如实降级声明）。
+  3. META-P0-05：audit_block_registration.py — 函数名改 `chitin_register_block_dev`。
+  4. 接入 CI：audit_coupling / audit_invariants / audit_public_api_docs / audit_deadlock_matrix。
+  5. 统一 err 分支为 fail-closed（无法检查 = 违规）；废弃 tools/audit_unsafe.sh 或加 `export -f`。
+
+**附录 I 结束**
+
