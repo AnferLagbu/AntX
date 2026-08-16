@@ -108,6 +108,16 @@
   - 方案：启动路径 CR4 写 SMEP/SMAP；检查所有内核→用户指针访问路径满足 SMAP 要求（`stac/clac` 或 `__user` 语义）。
   - 状态：[]
 
+- **H.4.10 aarch64/mod.rs 子模块声明无 cfg 门控（P2-A）**
+  - 描述：`framework/arch/aarch64/mod.rs` 子模块声明无 cfg 门控（如 psci 等仅特定平台存在）。
+  - 方案：按目标平台特性补齐 `#[cfg]` 门控。
+  - 状态：[]
+
+- **H.5.11 Multiboot1/2 声明与实际不符（P2-E）**
+  - 描述：`framework/boot/mod.rs` 同时声明支持 Multiboot1 与 Multiboot2，但实际只支持 Multiboot2。
+  - 方案：删除 Multiboot1 声明或如实降级注释；与 F-15（stage1.asm 校验和）联动。
+  - 状态：[]
+
 - **O-01~O-05 附加关注项**
   - 描述：O-01 `'!'`(0x21) 与 IRQ vector 混淆；O-02 KPTI trampoline 间距未校验；O-03 aarch64 TTBR1_EL1 未处理；O-04 `mov ax, 0x23` 硬编码；O-05 aarch64 psci.rs 缺失读取。
   - 方案：O-01/O-04 随 F-05/F-13 一并处理；O-02 链接脚本加间距断言；O-03 随 F-08；O-05 核实链接脚本符号后补。

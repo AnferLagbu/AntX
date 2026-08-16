@@ -103,6 +103,26 @@
   - 方案：impl 块结束重置深度；引用计数改为符号级（排除同名局部变量）。
   - 状态：[]
 
+- **auto_*.py 硬编码绝对路径（P0-06）**
+  - 描述：[tools/auto_fill_safety.py:23](file:///home/anfer/Code/QueenX/tools/auto_fill_safety.py)、`auto_replace_spin.py:23`、`auto_replace_once.py:19` 三处 `PROJECT_ROOT = Path("/home/anfer/Code/QueenX")` 硬编码，仓库改名/换用户立即失效；`tools/audit_unsafe.py:28` 用 `Path(__file__).resolve().parent.parent` 正确。
+  - 方案：统一改用 `Path(__file__).resolve().parent.parent`。
+  - 状态：[]
+
+- **invariants.py I2 误报 safe 解引用（META-P1）**
+  - 描述：[audit_invariants.py:56](file:///home/anfer/Code/QueenX/scripts/audit_invariants.py) `(?<![\w.,(])\(\*\w+\)\.` 匹配任何 `(*v).field`，对 `&T`/`Box` 的 safe 解引用也命中；已发生实证——[raidz_trait.rs:304](file:///home/anfer/Code/QueenX/src/kernel/services/fs/hvfs/raidz_trait.rs#L304) 注释记载开发者被迫改写正常代码规避误报。
+  - 方案：I2 正则增加"仅当解引用目标为裸指针类型"的上下文判断；`_scan_services` 排除 vendored smoltcp。
+  - 状态：[]
+
+- **edition2024.py 正则缺陷（META-P1）**
+  - 描述：[audit_edition2024.py:85-96](file:///home/anfer/Code/QueenX/scripts/audit_edition2024.py) `\*\w+` 误匹配 `as *mut ()`（edition 2024 下 safe cast）、`&*self`；条件颠倒致以 `*` 开头的真解引用行被跳过；brace_depth 被字符串/注释污染；SKIP_DIRS 完整路径条目无效（smoltcp 实际被扫描）。
+  - 方案：按 unsafe 语义重写匹配；修复条件逻辑与深度跟踪；SKIP_DIRS 改 basename 匹配。
+  - 状态：[]
+
+- **implicit_deps.py 子串匹配误报（META-P1）**
+  - 描述：[audit_implicit_deps.py:73](file:///home/anfer/Code/QueenX/scripts/audit_implicit_deps.py) 无词边界子串匹配，`SCHEDULER` 误匹配 `SCHEDULER_READY`；FRAMEWORK_GLOBALS 硬编码 14 个名字，改名/新增后静默不再检测。
+  - 方案：改用 `\b{name}\b` 词边界；全局名清单改为动态发现。
+  - 状态：[]
+
 ### 验证门槛
 
 - **负测试用例**

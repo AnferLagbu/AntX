@@ -28,6 +28,11 @@
   - 方案：删除空文件，显式 `[lib] path = "src/lib.rs"`。
   - 状态：[]
 
+- **lib.rs 模块结构注释不含 aarch64/chitin/wasm（H.4.11 P2-B）**
+  - 描述：`src/rust/src/lib.rs` 的"模块结构"注释不含 aarch64 + chitin/wasm，与代码现状不符。
+  - 方案：同步模块结构注释。
+  - 状态：[]
+
 - **用户态链接脚本 _user_start/_user_end（P0-17）**
   - 描述：`src/user/link.x`、`link_aarch64.x`、`init/link_aarch64.x` 均无 `_user_start/_user_end` 边界符号，ELF loader 无法获取用户进程内存边界。
   - 方案：见分册 02 工程计划 A F-04（KPTI 布局）一并实施；本分册负责 ELF loader 侧消费验证。

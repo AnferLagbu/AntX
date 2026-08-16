@@ -69,6 +69,26 @@
   - 方案：services 类型迁回 framework，或 api.rs 改经顶层 re-export 访问。
   - 状态：[]
 
+- **Inode::stat 路径级操作（附录 B 4.2）**
+  - 描述：`LegacyInode::stat` 使用 `rel_path`，但 `fs_stat(&rel_path, pwm)` 是路径级操作，违反"Plan B Inode trait 不依赖路径"原则。
+  - 方案：stat 改走 inode 句柄，不依赖路径。
+  - 状态：[]
+
+- **AnonymousInode 错误丢失（附录 B 4.3）**
+  - 描述：`AnonymousInode::read/write` 中 `ANONYMOUS_FS.read_at(...)` 返回 `Option<usize>`，失败仅返回 `Io` 错误，丢失底层原因。
+  - 方案：透传底层错误或映射到 Errno。
+  - 状态：[]
+
+- **AnonymousInode::is_dir 硬编码 false（附录 B 4.5）**
+  - 描述：`is_dir` 硬编码 `false`，但 AnonymousFS 可能有匿名目录 inode 类型。
+  - 方案：inode 类型驱动 is_dir 判断。
+  - 状态：[]
+
+- **LegacyInode::is_dir file_type 未更新（附录 B 4.8）**
+  - 描述：`is_dir` 使用 `self.file_type == Dir.as_u8()`，但 `file_type` 字段未被 chmod/chown 路径更新。
+  - 方案：file_type 由挂载/创建路径维护，chmod/chown 不改类型。
+  - 状态：[]
+
 ## 工程计划 C: namespace 修复
 
 ### 背景
@@ -103,6 +123,26 @@
 - **sys_unshare/sys_setns 未注册 dispatch（附录 B 1.9）**
   - 描述：未注册到 dispatch，调度入口完全断裂。
   - 方案：接线 dispatch（联动分册 05）。
+  - 状态：[]
+
+- **sys_unshare/sys_setns clone_flags 互斥缺失（附录 B 1.5）**
+  - 描述：`sys_unshare`/`sys_setns` 缺少 `clone_flags` 与 `CLONE_NEWUSER` 互斥校验。
+  - 方案：按 Linux 语义补互斥校验。
+  - 状态：[]
+
+- **PidNamespace::alloc_pid 计数漂移（附录 B 1.6）**
+  - 描述：PID 永不重用但 `nr_processes` 无 decrement，计数漂移。
+  - 方案：进程退出时 decrement + PID 回收策略。
+  - 状态：[]
+
+- **map_uid/map_gid 边界（附录 B 1.7）**
+  - 描述：`UserNamespace::map_uid/map_gid` 未考虑 count=0 / 溢出。
+  - 方案：补 count=0 与溢出校验。
+  - 状态：[]
+
+- **next_ephemeral_port 永不自旋回卷（附录 B 1.8）**
+  - 描述：`NetNamespace::next_ephemeral_port` AtomicU16 永不自旋回卷。
+  - 方案：自旋回卷 + 冲突跳过策略。
   - 状态：[]
 
 ### 验证门槛

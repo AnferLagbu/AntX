@@ -33,6 +33,51 @@
   - 方案：统一为 6 参数（a0-a5），或封装参数结构。
   - 状态：[]
 
+- **SyscallRegs 仅 x86_64 专属（附录 B 2.3）**
+  - 描述：`SyscallRegs` 是 x86_64 专属，缺 aarch64 变体，多架构不兼容。
+  - 方案：定义架构无关的 syscall 寄存器抽象（或 cfg 分支）。
+  - 状态：[]
+
+- **SyscallError 废弃别名仍被依赖（附录 B 2.5）**
+  - 描述：`#[deprecated] pub type SyscallError = Errno` 仍被 `SignalError` 等多处链式依赖。
+  - 方案：迁移调用方后移除废弃别名。
+  - 状态：[]
+
+- **SYS_setregid 已定义未处理（附录 B 2.6/3.6）**
+  - 描述：`SYS_setregid` 已定义但 dispatch 完全不处理；`credo/uid.rs::setregid_syscall` 已实现。
+  - 方案：接线 dispatch；`SYS_clone3` 同（见 3.5）。
+  - 状态：[]
+
+- **MAX_SYSCALLS=800 与 QX_FTRACE_ENABLE=800 撞车（附录 B 2.7）**
+  - 描述：`MAX_SYSCALLS = 800` 与 `QX_FTRACE_ENABLE = 800` 编号撞车。
+  - 方案：调整 FTRACE 编号或 MAX_SYSCALLS 上限。
+  - 状态：[]
+
+- **Errno 公共 API 中文文档补全（附录 B 2.9）**
+  - 描述：`Errno::as_ret/from_ret` 未注 `# Errors`，F8 中文文档缺失。
+  - 方案：补 doc 注释（联动 F8 门禁，分册 01）。
+  - 状态：[]
+
+- **QX_* 与 SYS_* 编号不互通（附录 B 2.10）**
+  - 描述：多个 `QX_*` 与 `SYS_*` 编号相同但不互通，用户态 syscall ABI 错位。
+  - 方案：统一编号映射表，消除 ABI 错位（联动 P0-28 三源统一）。
+  - 状态：[]
+
+- **scheduler MAX_QUOTAS/MAX_LIMITS 硬编码（H.4.7 P1-D）**
+  - 描述：`framework/proc/scheduler.rs` `MAX_QUOTAS=32` / `MAX_LIMITS=32` 硬编码上限。
+  - 方案：集中到 `framework/constants/limits.rs` 并注释超限行为（联动 B6.2）。
+  - 状态：[]
+
+- **USER_ADDR_MAX 硬编码（H.5.9 P2-C）**
+  - 描述：`framework/syscall/dispatch.rs` `USER_ADDR_MAX` 硬编码。
+  - 方案：集中到 constants 或 config，与 `USER_ADDR_MIN` 对齐。
+  - 状态：[]
+
+- **syscall/api.rs C-ABI extern 未声明（H.5.10 P2-D）**
+  - 描述：`framework/syscall/api.rs` 大量 C-ABI 函数依赖 `Extern "C"` 链接未显式声明。
+  - 方案：补 `extern "C"` + `#[unsafe(no_mangle)]` 标注。
+  - 状态：[]
+
 ## 工程计划 B: dispatch 分发修复
 
 ### 背景
@@ -79,6 +124,41 @@
   - 方案：改为显式错误传播。
   - 状态：[]
 
+- **dispatch_proc SYS_clone 传 5 参数（附录 B 3.3）**
+  - 描述：`SYS_clone` 调用 `clone_syscall(a0,a1,a2,a3,a4)` 仅 5 参数，syscall ABI 约定 6 参数。
+  - 方案：统一 6 参数传递（联动 SyscallHandler 签名修复）。
+  - 状态：[]
+
+- **SYS_CREDO_PROC_SLEEP 单位换算硬编码（附录 B 3.4）**
+  - 描述：dispatch_credo 中 `SYS_CREDO_PROC_SLEEP` 单位换算硬编码 `1_000_000`。
+  - 方案：常量化并注释单位约定。
+  - 状态：[]
+
+- **SYS_clone 与 SYS_clone3 编号处理被忽略（附录 B 3.5）**
+  - 描述：`SYS_clone` 与 `SYS_clone3` 都映射到 `clone_syscall(a0..a4)`，编号相同处理被忽略。
+  - 方案：区分 clone/clone3 语义分发。
+  - 状态：[]
+
+- **时间类 syscall 拆分到 fs 模块（附录 B 3.8）**
+  - 描述：`SYS_gettimeofday` 走 `info::gettimeofday_syscall` 但 `SYS_clock_gettime` 走 `fs::file_ops::clock_gettime_syscall`，时间相关被拆分到 fs。
+  - 方案：归位到统一时间模块。
+  - 状态：[]
+
+- **dispatch_proc 死代码分支（附录 B 3.9）**
+  - 描述：`dispatch_proc` 末尾 `_ => return None` 但 `Some(match num { ... })` 整体返回，死代码分支。
+  - 方案：删除冗余分支或修正控制流。
+  - 状态：[]
+
+- **register_services_dispatch 失败静默（附录 B 3.10）**
+  - 描述：`register_services_dispatch` 失败时仅 `log_info` 不 panic，可能掩盖启动错误。
+  - 方案：启动期失败改 panic 或显式错误传播。
+  - 状态：[]
+
+- **dispatch.rs 入口诊断代码污染（H.5.2 P0-32）**
+  - 描述：`framework/syscall/dispatch.rs` 入口诊断代码污染（与 P0-16 isr.asm 同性质）。
+  - 方案：诊断代码 `#[cfg(feature = "debug_syscall")]` 隔离，生产构建不包含（DECISION-H14）。
+  - 状态：[]
+
 ## 工程计划 C: 进程子系统修复
 
 ### 背景
@@ -113,6 +193,16 @@
 - **SYS_exit_group 与 SYS_exit 共享 handler（H.4.4 P1-A）**
   - 描述：线程组语义违反，`exit_group` 应结束整个线程组。
   - 方案：分离 handler，exit_group 遍历线程组终止。
+  - 状态：[]
+
+- **sched_policy vruntime 处理（附录 B 5.2/5.3/5.4/5.5/5.6/5.7/5.8/5.9）**
+  - 描述：CfsRunQueue `enqueue` 新进程 vruntime 被钳制到 min_vr（5.2）；`dequeue` 依赖调用方传正确 vruntime 易错（5.3）；`pick_next_priority` 枚举变体与数组不一致（5.4）；`nice_to_weight`/`weight_to_nice` 边界硬编码（5.5）；`DlRunQueue::total_utilization` 用 u64 逻辑错误风险（5.6）；`calc_vruntime_delta` 未考虑 MIN_GRANULARITY（5.7）；`time_slice_for(Idle) => u32::MAX` 可能调度死循环（5.8）；`register_default_policy` 失败静默（5.9）。
+  - 方案：按 5.2~5.9 逐项修正调度语义；Idle 时间片设有限值；policy 注册失败显式处理。
+  - 状态：[]
+
+- **signal 补漏（附录 B 6.1/6.4/6.5/6.6/6.7/6.8）**
+  - 描述：`Signal::NONE`(0) 发送路径未检查 PID 0 特例（6.1）；`default_action` 与 `default_for` 重复且硬编码编号（6.4）；`pick_next_signal` 未处理 RT 信号范围（6.5）；`send` 用 `with(pid, |_p| ())` 丢弃结果可读性差（6.6）；`rt_sigprocmask_syscall` 缺 set 指针合法性校验（6.7）；`register_standard_signal_policy` 重复注册不 panic（6.8）。
+  - 方案：PID 0 特例处理；default_action 单源化；RT 范围扩展；指针校验；注册重复检查。
   - 状态：[]
 
 ### 验证门槛
