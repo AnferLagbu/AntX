@@ -24,8 +24,8 @@
   - 状态：[]
 
 - **access_syscall 忽略 mode（P0-09）**
-  - 描述：[access.rs:46-61](file:///home/anfer/Code/QueenX/src/kernel/services/fs/access.rs#L46-L61) mode（R_OK=4/W_OK=2/X_OK=1）仅范围校验后忽略，`access(path, W_OK)` 对只读文件返回 0。
-  - 方案：接 `vfs_check_access(path, pwm, mode)` 按 rwx 位判断；doc 注释同步修正。
+  - 描述：[access.rs:46-61](file:///home/anfer/Code/QueenX/src/kernel/services/fs/access.rs#L46-L61) mode（R_OK=4/W_OK=2/X_OK=1）仅范围校验后忽略，`access(path, W_OK)` 对只读文件返回 0。实测 framework 层**无任何 rwx 判断 API**（`vfs_check_access` 不存在），权限检查是能力制（ramfs/hvfs 用 `pwm_has_capability(FS_CAP_READ/WRITE)`）；`VfsStat.mode` 存在但可靠性分 FS（exfat 恒 777、多数 fs_chmod 是 stub）。
+  - 方案：**与现有 open/read/write 路径对齐**——复用能力制检查：`R_OK→FS_CAP_READ`、`W_OK→FS_CAP_WRITE`、`X_OK→FS_CAP_EXEC`（按 credo 能力域定义），`F_OK` 保持存在性检查；与 ramfs/hvfs 既有语义一致、0 新 framework 代码。**决策点**：若要求严格 mode 位语义，需先修复各 FS 的 chmod/mode 真实性（exfat 恒 777 等），工作量大，建议作为后续独立任务。
   - 状态：[]
 
 ## 工程计划 B: VFS 与 inode 修复

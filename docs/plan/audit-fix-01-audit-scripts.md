@@ -25,7 +25,7 @@
 
 - **services_boundary.py 黑名单补全 + allow-list 落地（META-P0-02）**
   - 描述：FORBIDDEN_FRAMEWORK_MODULES 缺 `ipc::msgq::raw`、`syscall::types`、`proc::coredump` 等，实测 services 穿透访问未被报；`SAFE_FRAMEWORK_APIS`（allow-list）定义后零引用。
-  - 方案：将 F2 改为基于 SAFE_FRAMEWORK_APIS 的 allow-list（services 只允许 import 白名单内的 framework 顶层 API），或补全 deny-list 至与 `audit_coupling.py` 的 INTERNAL_PATTERNS 对齐。
+  - 方案：**定死为 allow-list**——`SAFE_FRAMEWORK_APIS` 已含全部 framework 顶层 API，services 只允许 import 白名单内的 `framework::<顶层模块>`，其余一律违规。deny-list 补全无法根治（新内部模块仍会漏）。
   - 状态：[]
 
 - **services_boundary.py 匹配 pub use（META-P0-03）**
@@ -35,7 +35,7 @@
 
 - **deadlock_matrix.py 裸类型名检测 + 锁顺序矩阵（META-P0-04）**
   - 描述：[audit_deadlock_matrix.py:128-136](file:///home/anfer/Code/QueenX/scripts/audit_deadlock_matrix.py) 仅识别 `spin::`/`crate::spin::` 字面量；实测唯一第三方锁 `SpinMutex`（smp_init.rs:42）完全逃逸（366 文件 0 问题）；docstring 声称的"锁顺序 AB-BA 矩阵/原子上下文 sleep 锁/不可重入"检测代码中未实现。
-  - 方案：阶段 A 增加"import 解析"收集裸类型名；实现锁顺序矩阵构建与 AB-BA 环检测；未实现的声明改为如实降级。
+  - 方案：阶段 A 增加"import 解析"收集裸类型名；**锁顺序矩阵选择"如实降级"**——当前代码无第三方锁顺序登记体系，AB-BA 环检测需先建立锁顺序声明机制，列为后续增强；本期将 docstring 声明与实现对齐（只声明已实现的检测项）。
   - 状态：[]
 
 - **block_registration.py 检测函数名修正（META-P0-05）**
@@ -50,12 +50,12 @@
 
 - **comment_language.py 行尾注释检测（META-P0-07）**
   - 描述：[audit_comment_language.py:601](file:///home/anfer/Code/QueenX/scripts/audit_comment_language.py) 的 `iter_comments` 仅对行首 `//` 产出行，`let x = f(); // English text`（行尾注释）对 F7 透明。
-  - 方案：对非注释行做"行内 `//` 拆分"，提取行尾注释进入检测流；需避免误判 URL/字符串内 `//`。
+  - 方案：实现逐字符状态机（区分字符串/字符字面量/块注释/行注释），对每个 `//` 注释提取正文进检测流；状态机同时剥除 `https?://` URL 前缀与字符串内 `//`，避免误判。
   - 状态：[]
 
-- **audit_unsafe.sh 修复或废弃（META-P0-08）**
+- **audit_unsafe.sh 废弃（META-P0-08）**
   - 描述：[tools/audit_unsafe.sh:102](file:///home/anfer/Code/QueenX/tools/audit_unsafe.sh) `xargs bash -c 'scan_unsafe ...'` 新进程不继承函数，实测零输出、退出 123，工具不可用。
-  - 方案：加 `export -f scan_unsafe`；或废弃该脚本，统一使用 `tools/audit_unsafe.py`。
+  - 方案：**定死为废弃**该脚本，统一使用 `tools/audit_unsafe.py`；在 tools/ 中标记 DEPRECATED 并移除 CI/文档引用。
   - 状态：[]
 
 - **public_api_docs.py 接入 CI（META-P0-09）**
@@ -65,7 +65,7 @@
 
 - **tcb_ratio.py 退出码恢复（P0-01）**
   - 描述：[audit_tcb_ratio.py:215-221](file:///home/anfer/Code/QueenX/scripts/audit_tcb_ratio.py) `sys.exit(1)` 被注释，TCB 58.1% 超标仍 exit 0。
-  - 方案：恢复 `sys.exit(1)`；同时修正 smoltcp 路径检查（实际在 `services/net/smoltcp`，非 `framework/net/smoltcp`）。
+  - 方案：恢复退出码但增加**过渡参数**——默认 `--soft`（超标仅告警 exit 0，CI 可过），显式 `--enforce` 时超标 exit 1；CI 的 TCB job 待 TCB 降至 <30% 后切换 `--enforce`。同步修正 smoltcp 路径检查（实际在 `services/net/smoltcp`，非 `framework/net/smoltcp`）。
   - 状态：[]
 
 - **safety_coverage.py 全量扫描（P0-02）**
@@ -110,7 +110,7 @@
 
 - **invariants.py I2 误报 safe 解引用（META-P1）**
   - 描述：[audit_invariants.py:56](file:///home/anfer/Code/QueenX/scripts/audit_invariants.py) `(?<![\w.,(])\(\*\w+\)\.` 匹配任何 `(*v).field`，对 `&T`/`Box` 的 safe 解引用也命中；已发生实证——[raidz_trait.rs:304](file:///home/anfer/Code/QueenX/src/kernel/services/fs/hvfs/raidz_trait.rs#L304) 注释记载开发者被迫改写正常代码规避误报。
-  - 方案：I2 正则增加"仅当解引用目标为裸指针类型"的上下文判断；`_scan_services` 排除 vendored smoltcp。
+  - 方案：**I2 检测范围限定到 framework 层**——services 已有 `#![deny(unsafe_code)]`（分册 09 补齐后）天然无裸指针，文本级判断"裸指针类型"不可靠且无必要；`_scan_services` 移除 I2 或仅保留 I4 用户内存代理检查。
   - 状态：[]
 
 - **edition2024.py 正则缺陷（META-P1）**

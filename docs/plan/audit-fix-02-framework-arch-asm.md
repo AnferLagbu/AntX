@@ -94,8 +94,8 @@
   - 状态：[]
 
 - **F-16 enter_user_asm wbinvd/屏障 + TLB flush（H）**
-  - 描述：`enter_user_asm` 缺 `swapgs` 与 `iretq` 之间的 `wbinvd`/屏障，CR3 切换未 flush TLB。
-  - 方案：按实际 KPTI 需求补 `mov cr3` 后屏障与 TLB flush 策略。
+  - 描述：`enter_user_asm` 缺 `swapgs` 与 `iretq` 之间的 `wbinvd`/屏障，CR3 切换未 flush TLB。实测评估：**PCIDE 关闭（默认）时"缺 TLB flush"不成立**（`mov cr3` 本身全量冲刷 TLB 且为串行化指令）；仅在 **PCIDE 开启（KPTI+INVPCID 路径）时成立**——enter_user_asm L593 把裸 user_cr3（PCID=0）写入 `USER_PML4_OFF`，与 kpti.rs 的 `cr3_with_pcid(..., PCID_USER=2)` 设计不一致，内核 PCID-1 TLB 条目在用户态执行期间残留。
+  - 方案：仅 PCIDE 开启路径修复——`mov cr3` 前按 PCID 语义编码（`or eax, PCID_USER`，与 kpti.rs 对齐），必要时切换后 `invpcid`（kpti.rs L66-97 已有原语）；默认关闭路径不补 wbinvd。
   - 状态：[]
 
 - **P0-16 isr.asm 诊断代码隔离**
@@ -104,8 +104,8 @@
   - 状态：[]
 
 - **TOP 20 #17 SMEP/SMAP 启用**
-  - 描述：全局 CR4 写入仅 PAE/OSFXSR/PCIDE/CET，未设置 SMEP（bit 20）/SMAP（bit 21），用户态可执行内核代码。
-  - 方案：启动路径 CR4 写 SMEP/SMAP；检查所有内核→用户指针访问路径满足 SMAP 要求（`stac/clac` 或 `__user` 语义）。
+  - 描述：全局 CR4 写入仅 PAE/OSFXSR/PCIDE/CET，未设置 SMEP（bit 20）/SMAP（bit 21）。实测用户内存代理点**集中**：`copy_user.rs` 5 个函数（copy_from_user/copy_to_user/copy_string_from_user/clear_user/strlen_user）经异常表恢复；`userptr.rs` 2 个函数（write_struct_to_user/read_struct_from_user，L216-245）用 `write_unaligned/read_unaligned` **直接访问用户地址、不经异常恢复**——SMAP 开启前必补。
+  - 方案：① `cpu/mod.rs` CR4 初始化加 bit 20+21（一处）；② `copy_user.rs` 复制段前后加 `stac/clac`（或 AC-flag 包装）；③ `userptr.rs` 2 函数补 `stac/clac`；④ 异常表/缺页处理处理 SMAP 下 EFLAGS.AC 语义。KPTI 已按 SMEP 兼容设计（kpti.rs:350-362），无结构性阻碍。
   - 状态：[]
 
 - **H.4.10 aarch64/mod.rs 子模块声明无 cfg 门控（P2-A）**

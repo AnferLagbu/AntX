@@ -23,14 +23,14 @@
   - 方案：从 ACPI/设备树或引导信息获取 ECAM 基址，消除硬编码常量。
   - 状态：[]
 
-- **PCI 配置空间 SMP 并发无锁（TOP 20 #13）**
-  - 描述：PCI 配置空间访问无锁，多核并发配置冲突。
-  - 方案：配置访问统一加锁（IrqSpinLock），中断上下文安全。
+- **MSI_VECTOR_COUNT 评估与超限处理（TOP 20 #15）**
+  - 描述：`MSI_VECTOR_COUNT=64`（0x40-0x7F，msi.rs:88-90）。实测当前驱动规模（msi_enable 每设备 1 向量、msix_enable 少量设备）**64 向量够用**；IDT 0x80-0xFF 仍有富余空间；`msi_alloc_vector` 位图分配本身无锁且正确。
+  - 方案：**不盲目扩容**——保留 64，改为"超限行为显式化"：`msi_alloc_vector` 满时返回显式错误（ENOSPC 类）而非回绕/静默；预留常量注释说明扩容点（IDT 0x80 起始）；评估多队列驱动（NVMe/VirtIO 多队列）接入时再扩容。
   - 状态：[]
 
-- **MSI_VECTOR_COUNT=64 扩容（TOP 20 #15）**
-  - 描述：`MSI_VECTOR_COUNT=64` 严重不足（多设备/多队列场景）。
-  - 方案：评估实际可用向量数（含 IOAPIC 范围），扩容并加超限行为说明。
+- **PCI 配置空间 SMP 并发无锁（TOP 20 #13）**
+  - 描述：`pci/mod.rs` 6 个 config 函数（read/write_config_byte/word/dword，L193-317）直接 PIO（x86_64）/volatile 访问（aarch64 ECAM），无任何锁；write 系列为 **read-modify-write 三连 PIO**，并发会丢位。
+  - 方案：在 6 个 config 函数内部 PIO 序列前后持一把全局 `PCI_CONFIG_LOCK`（`IrqSpinLock`，中断上下文安全）；aarch64 ECAM 路径同样纳入；改动面 = 1 个 static + 6 函数各 2 行，全部调用方（hotplug/msi/api）无需改动。
   - 状态：[]
 
 ## 工程计划 B: 网络、控制台与 lib 修复

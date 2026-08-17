@@ -28,14 +28,14 @@
   - 方案：实现 `pmm.reserve_range(base, size)`（含 bitmap 标记 + 边界校验），并补充 host-tests。
   - 状态：[]
 
-- **COW 物理页泄漏（H.4.3 P0-30）**
-  - 描述：framework/mm/cow.rs COW 物理页泄漏，fork 场景 refcount 未正确管理。
-  - 方案：审计 cow_ref/dec_ref 的原子操作与 fork/exit 路径配对；补 COW 引用计数 host-tests。
+- **pmm 自引用读取相邻字段（H.4.5 P1-B）**
+  - 描述：framework/mm/pmm.rs 中 `set_bit`/`clear_bit`/`test_bit`/`count_free_pages`（L808-879）用 `self as *const Self as *const u64` + 硬编码 `p.add(1)` 读相邻字段 `bitmap_size`；L793 注释记载 LTO 曾把 `self.bitmap_size.get()` 错位到 `self.failed_allocs`。
+  - 方案：将 4 处替换为 `core::ptr::addr_of!(self.bitmap_size)`（与既有 `buddy_meta_ref` L928 / `buddy_heads_ref` L953 修复模式一致）；不拆分字段。
   - 状态：[]
 
-- **pmm 自引用读取相邻字段（H.4.5 P1-B）**
-  - 描述：framework/mm/pmm.rs 自引用读取相邻字段，LTO 下脆弱。
-  - 方案：改用明确的 `core::ptr::addr_of!` + 偏移，或拆分字段访问；补 `audit_volatile_access.py` 覆盖（分册 01 修复后）。
+- **COW 物理页泄漏（H.4.3 P0-30）**
+  - 描述：framework/mm/cow.rs 引用计数经 `IrqSpinLock<BTreeMap<u64,u32>>`；实测 `cow_dec_ref` 生产调用点仅 `cow_handle_fault`（L322）1 处，**exit/munmap 的 `destroy_page_table`（vmm_x86_64.rs:1062-1129）不遍历 leaf PTE、不调 dec** → 未写即退出的共享页引用永不归零，物理页泄漏属实。
+  - 方案：在 `destroy_page_table` 遍历 leaf PTE，对存在于 COW_REFS 的共享页调 `cow_dec_ref`，返回 true 则 `free_page`；注意锁序（COW_REFS 与 VMM_LOCK 统一在持 VMM_LOCK 下操作）；修复 `cow_handle_fault` 锁内判定+锁外执行的 TOCTOU（判定与映射在同一临界区）；补 fork-exit 共享页计数 host-tests。
   - 状态：[]
 
 ## 工程计划 B: 同步与中断修复
@@ -55,13 +55,13 @@
   - 状态：[]
 
 - **audit.rs GLOBAL_AUDIT static mut（TOP 20 #11）**
-  - 描述：`GLOBAL_AUDIT`（credo/audit.rs:91）为 `pub(crate) static mut`，多核并发写入撕裂。
-  - 方案：改 `AtomicU64`/`IrqSpinLock` 包装；或 `static mut` 迁移为 `OnceLock`（分册 09 死代码/static mut 治理联动）。
+  - 描述：`GLOBAL_AUDIT`（credo/audit.rs:91）为 `pub(crate) static mut`（256 项 AuditLog 数组结构，非计数器）；实测写是常态、读（dump）极少，仅 2 处 unsafe 访问（raw::log/raw::dump L109-118），调用方均在非中断的 credo 服务栈。
+  - 方案：定死为 `IrqSpinLock<AuditLog>` 包装（`AtomicU64` 不适用——是结构体数组非计数器；OnceLock 不适用——需可变写）。改动面 = static 定义 + 2 个 raw 函数体（约 10-15 行），顺带消除无锁环形写的读者撕裂。
   - 状态：[]
 
 - **recovery_domain_register Box::leak（TOP 20 #12）**
-  - 描述：framework/barrier 中 `recovery_domain_register` 用 `Box::leak`，内存永久泄漏。
-  - 方案：改用静态注册表 + `try_reserve` 或预分配槽位。
+  - 描述：framework/barrier/api.rs:44-53 `Box::leak` 泄漏 `RecoveryDomain`（单域约 10-12KB，`'static` 永不复用）；注册表天然上限 `MAX_RECOVERY_DOMAINS=32`，注册点仅 4 处且均在启动期。
+  - 方案：定死为静态预分配——`static RECOVERY_DOMAINS: [IrqSpinLock<Option<RecoveryDomain>>; 32]`（约 320-400KB .bss）；`RecoveryDomain::new` 改造为 `const fn`（参照既有 `RECOVERY_MANAGER: IrqSpinLock<RecoveryManager> = IrqSpinLock::new(RecoveryManager::new())` 模式）。
   - 状态：[]
 
 - **do_softirq 全局 running（TOP 20 #14）**

@@ -33,9 +33,9 @@
   - 方案：统一为 6 参数（a0-a5），或封装参数结构。
   - 状态：[]
 
-- **SyscallRegs 仅 x86_64 专属（附录 B 2.3）**
-  - 描述：`SyscallRegs` 是 x86_64 专属，缺 aarch64 变体，多架构不兼容。
-  - 方案：定义架构无关的 syscall 寄存器抽象（或 cfg 分支）。
+- **SyscallRegs 零使用死代码（附录 B 2.3）**
+  - 描述：`SyscallRegs`（types.rs:999-1017）为纯 x86_64 寄存器布局，**全仓零实际使用**（aarch64 用 `ExceptionFrame.x0-x6`）；仅定义处与两处文档注释出现。
+  - 方案：按 F9 死代码原则删除（无 cfg 分支价值），或保留则加 `#[cfg(target_arch = "x86_64")]` 门控；不做"架构无关抽象"（无使用方、无收益）。
   - 状态：[]
 
 - **SyscallError 废弃别名仍被依赖（附录 B 2.5）**
@@ -48,9 +48,9 @@
   - 方案：接线 dispatch；`SYS_clone3` 同（见 3.5）。
   - 状态：[]
 
-- **MAX_SYSCALLS=800 与 QX_FTRACE_ENABLE=800 撞车（附录 B 2.7）**
-  - 描述：`MAX_SYSCALLS = 800` 与 `QX_FTRACE_ENABLE = 800` 编号撞车。
-  - 方案：调整 FTRACE 编号或 MAX_SYSCALLS 上限。
+- **MAX_SYSCALLS=800 撞车（附录 B 2.7）**
+  - 描述：`MAX_SYSCALLS=800` 与 `QX_FTRACE_ENABLE=800` 撞车；实测 **MAX_SYSCALLS 从未用作 dispatch 数组/边界**（dispatch 全为 match，无 SYSCALL_TABLE），撞车无运行时影响，仅常量语义误导。
+  - 方案：将 `MAX_SYSCALLS` 调整为 900（覆盖 QX 扩展区）并加 `const { assert!(...) }` 编译期断言，或改注释明确"非 dispatch 上限"；不改 FTRACE 编号。
   - 状态：[]
 
 - **Errno 公共 API 中文文档补全（附录 B 2.9）**
@@ -110,9 +110,9 @@
   - 状态：[]
 
 - **dispatch 参数传递仅支持 x86_64（H.5.7 P1-J）**
-  - 描述：syscall 入口参数传递仅支持 x86_64，aarch64 未覆盖。
-  - 方案：实现 aarch64 参数传递路径（或确认 exception.rs 独立路径并修正声明）。
-  - 状态：[]
+  - 描述：~~syscall 入口参数传递仅支持 x86_64，aarch64 未覆盖~~ **已裁决不采纳（DECISION-H27）**：实测 aarch64 走 `exception.rs::svc_handler`（L456-491）用 `ExceptionFrame.x0-x6` 独立提取参数，与 dispatch.rs 的 x86_64 读取解耦，二者只汇合于架构无关的 `syscall_dispatch(num, a0..a5)`。
+  - 方案：关闭本条，不做修改；仅核对 `syscall_dispatch_from_frame` 的 `#[cfg(target_arch = "x86_64")]` 门控完整性。
+  - 状态：[X]
 
 - **dispatch_other 直调 framework::syscall::api（附录 B 3.2）**
   - 描述：`dispatch_other` 直接调用 `framework::syscall::api::*`，违反 F2 黑名单。

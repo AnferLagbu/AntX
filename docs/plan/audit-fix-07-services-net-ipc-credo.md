@@ -44,9 +44,9 @@
   - 方案：短期 fail-closed（无真实验证时拒绝签名）；长期引入 curve25519 验证库。
   - 状态：[]
 
-- **cred 子系统完全无加密原语（H.3.1 P0-24）**
-  - 描述：cred 子系统无加密原语，密码存储/会话完整性无保障。
-  - 方案：登记密码哈希（argon2/sha256+盐）原语需求，评估 TCB 影响后实施。
+- **cred 子系统加密原语缺口（H.3.1 P0-24）**
+  - 描述：实测**密码存储侧非缺口**——`framework/credo/identity.rs:28-53` 已是 SHA-256 加盐 + 32768 轮拉伸 + 常数时间比较（`constant_time_eq`），csprng 生成盐；真实缺口为：① `services/credo/sha256.rs:112` 返回 **48 字节**（PWM_HASH_LEN）但只填充前 32 字节（异常签名）；② `secure_boot.rs` Ed25519 `verify` 占位（见上条）；③ 无 AES/ChaCha/HMAC/KDF 对称原语（中期路线）。
+  - 方案：① 修复 sha256 返回 32 字节标准输出或明确文档化前 32 字节语义（低优先）；② Ed25519 真实验证（上条 fail-closed→库）；③ 对称加密原语登记为中期独立任务（评估 TCB 影响后实施）。
   - 状态：[]
 
 ## 工程计划 C: IPC / wasm / barrier

@@ -75,15 +75,35 @@
 
 ### 待办
 
-- **host-tests 与内核解耦处理（H.3.6 P0-26）**
-  - 描述：host-tests 与内核完全解耦，测试覆盖率虚标（838 passed 不反映内核状态）。
-  - 方案：每份 host-test 标注覆盖的内核模块与真实接线；建立内核↔测试映射表；缺接线的测试显式标记。
+- **host-tests 与内核解耦根治（H.3.6 P0-26）**
+  - 描述：host-tests 与内核完全解耦（838 passed 不反映内核状态），根因是"纯算法与平台机制未分离"——内核 no_std/裸机，host 侧无法引用内核源码，只能重建平行实现。经用户决策（DECISION-052），采用**路线 C 彻底根治**：内核 crate 增加 `host-test` feature + framework std 桩，host-tests 直接引用内核 services 真实源码，消除全部 7 处平行实现。
+  - 方案：详见 [eliminate-parallel-implementations.md](./eliminate-parallel-implementations.md)（工程计划 A 宿主基建 / B framework std 桩 / C 迁移删除）；本条目作为该工程的承接登记。
   - 状态：[]
+  - 详情：根治完成前，本文档其余 host-tests 相关条目的"标注覆盖映射表"仍为过渡手段。
 
-- **host-tests/src/hvfs/ 平行实装消除（H.3.7 P0-27）**
-  - 描述：host-tests/src/hvfs/ 平行实装使 G.4 P0-29/30/31 隐性双倍严重。
-  - 方案：平行实装合并回内核源码引用（消除双源），或标注为独立参考实现。
+- **host-tests/src/hvfs/ 平行实装差异登记（H.3.7 P0-27）**
+  - 描述：实测 `host-tests/src/hvfs/`（19 文件 ~6,000 行）与内核 `services/fs/hvfs/`（29 文件 ~12,000 行）**不是同一实现的双份拷贝，而是两套独立实现的平行演化**。测试版不验证内核真实代码，838 项 host-tests 通过无法为内核 hvfs 提供正确性背书。
+  - 方案：登记以下差异，作为合并实施（下条）的输入。
   - 状态：[]
+  - 详情：
+    - **架构差异**：内核版含 8 个 trait 抽象（arc/dmu/raidz/spa/txg/zap/zil/zil_persist `_trait.rs`，策略-机制分离，checksum 经 `Checksum` trait 支持 mock 注入）；测试版无 trait 层、拍平实现，核心为单一 `hvfs.rs`(1596 行)。内核版 `hvfs_data.rs`(1881) + `hvfs_inode.rs`(424) + `hvfs.rs`(47) 拆分；测试版集中单文件。
+    - **磁盘布局不兼容（最严重）**：`HvDva`（块指针）字段序不同——内核版 `offset(u64), asize(u32), vdev_id(u16), gang(u8), _pad[1]`；测试版 `vdev_id(u16), offset(u64), asize(u32), gang(bool), _pad[3]`。字段序 + `gang` 类型（u8 vs bool）均不同，测试验证的磁盘格式与内核不兼容。
+    - **功能缺失（测试版）**：缺 `hotplug_add_disk`/`hotplug_remove_disk`（热插拔）、`chown_ext`（与 credo 集成）、`zil_persist.rs`（ZIL 持久化）、`hvfs_inode.rs` 拆分。
+    - **命名漂移**：`mount_drive`→`mount_disk`、`format_drive`→`format_disk`。
+    - **实现漂移**：同名文件 diff 巨大——`bp.rs` 170 处、`dedup.rs` 153 处、`checksum.rs` 87 处；checksum 的 SHA-256 内核版走 `framework::credo::sha256`，测试版为独立实现。
+    - **安全/合规**：内核版 `#![deny(unsafe_code)]`（0 unsafe）；测试版 `#![allow(unused_variables, unused_assignments)]`（违反 F9 零容忍）+ `ffi.rs` unsafe extern 垫片模拟内核 API。
+
+- **host-tests/src/hvfs/ 合并回内核源码引用（H.3.7 P0-27 实施）**
+  - 描述：消除平行双源，使 host-tests 直接引用内核 `services/fs/hvfs` 真实实现。**完成标准 = `host-tests/src/hvfs/` 下全部 19 个平行实现文件删除**（双源彻底消除），测试用例（tests/ 226 处引用）保留并改指内核实现。**不能简单 diff 合并**（两套架构不同），须以内核版（含 trait 层）为基准逐步对齐。
+  - 方案：
+    0. **前置依赖（阻塞项）**：内核 host 可编译基建（H.3.6 P0-26 根治，DECISION-052）——见 [eliminate-parallel-implementations.md](./eliminate-parallel-implementations.md) 工程计划 A/B；内核 hvfs 经 `host-test` feature 暴露 host 可编译入口，否则平行实现无法被替代、删除无从谈起；
+    1. **先统一 `HvDva` 布局**：以内核版字段序为准（`offset, asize, vdev_id, gang(u8), _pad[1]`），否则布局依赖测试（块指针序列化）无意义；
+    2. **迁移不变量类测试**：checksum 自洽、raidz 恢复、snapshot 语义等不依赖布局的测试，改为调用内核 API（经 host 可编译入口）；
+    3. **对齐命名与 API**：测试版 `mount_disk`/`format_disk` 改回 `mount_drive`/`format_drive`，补齐 `hotplug_*`/`chown_ext` 的测试覆盖或显式标注缺失；
+    4. **删除平行实现**：`host-tests/src/hvfs/` 19 文件随测试迁移完成逐批删除，删除前确认 tests/ 无残留 `queenx_host_tests::hvfs` 引用；`ffi.rs` 垫片同步清理；
+    5. 桩机制处理：`hvfs_mock.rs` 的虚拟内核树**保留**（属测试基建，非被测对象），内核实现经其 kernel 树暴露；内核版 trait 抽象保持不动。
+  - 状态：[]
+  - 详情：若前置依赖（步骤 0）短期无法完成，**降级方案**为——为每个测试文件标注"覆盖内核模块 + 接线状态"，缺接线的显式标记；但删除平行实现仍是目标，不允许以"标注独立参考实现"替代，也不允许保留任何 `#![allow(unused_variables, unused_assignments)]` 豁免（违反 F9）。
 
 - **Makefile 跨架构清理（ISSUE-TOOL-001）**
   - 描述：`build/boot.o` 残留上次 aarch64 产物导致 x86_64 链接报错。
