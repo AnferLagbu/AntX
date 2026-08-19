@@ -6,7 +6,7 @@
 //!
 //! 历史: 2026-06 之前 v2.7 状态评估已过时, 当前 Phase 2.4 网络栈收尾
 //! 已完成, IPv4/IPv6 双栈支持 (DECISION-032) 已实装. 详细进度见
-//! docs/plan/progress-active-tasks.md.
+//! 进度跟踪文档 (docs/plan/progress-active-tasks.md).
 
 use crate::kernel::framework::net_socket as fw_net_socket;
 use crate::kernel::framework::sync::{Mutex, OnceLock};
