@@ -36,7 +36,7 @@
 - **B01-06. deadlock_matrix.py 裸类型名检测 + 锁顺序矩阵（META-P0-04）**
   - 描述：[audit_deadlock_matrix.py:128-136](file:///home/anfer/Code/QueenX/scripts/audit_deadlock_matrix.py) 仅识别 `spin::`/`crate::spin::` 字面量；实测唯一第三方锁 `SpinMutex`（smp_init.rs:42）完全逃逸（366 文件 0 问题）；docstring 声称的"锁顺序 AB-BA 矩阵/原子上下文 sleep 锁/不可重入"检测代码中未实现。
   - 方案：阶段 A 增加"import 解析"收集裸类型名；**锁顺序矩阵选择"如实降级"**——当前代码无第三方锁顺序登记体系，AB-BA 环检测需先建立锁顺序声明机制，列为后续增强；本期将 docstring 声明与实现对齐（只声明已实现的检测项）。
-  - 状态：[X] (commit d0427ca2, 阶段 A.5 裸类型别名 + docstring 如实降级)
+  - 状态：[X] (2026-08-20 返工完成, commit 84d9f789: 接入裸类型别名 + 正则覆盖带路径 import; smp_init.rs:159 `AP_STARTUP_LOCK.lock()` 正确识别为 NON_IRQ_SAFE_LOCK_USE, 证明 spin::mutex::SpinMutex 别名被正确收集)
 
 - **B01-07. block_registration.py 检测函数名修正（META-P0-05）**
   - 描述：[audit_block_registration.py:38](file:///home/anfer/Code/QueenX/scripts/audit_block_registration.py) 匹配 `chitin_register_block(`，但真实函数为 `chitin_register_block_dev`（[chitin/mod.rs:353](file:///home/anfer/Code/QueenX/src/kernel/framework/chitin/mod.rs#L353)），门禁恒 0 空转。
@@ -128,7 +128,7 @@
 - **B01-24. 负测试用例**
   - 描述：为每个修复后的脚本构造"违规样例 + 合法样例"各一，验证能拦截/不误报。
   - 方案：在 `host-tests/` 或 `scripts/` 下新增 fixture；CI job 内对样例文件运行脚本断言退出码。
-  - 状态：[X] (commit ff8bff34, audit_unsafe.py + audit_block_registration.py 负测试 PASS)
+  - 状态：[X] (2026-08-20 返工完成, commit scripts/tests/audit_selftest.py + scripts/tests/fixtures/sample_violation.rs: 4/4 全部通过, 覆盖 services_boundary / deadlock_matrix / block_registration / audit_unsafe 四脚本)
 
 - **B01-25. 全量回归**
   - 描述：修复后全量运行 14 个审计脚本 + ci-lint.yml 对应 job，确认 0 误报且退出码语义正确。
@@ -222,7 +222,7 @@
 - audit_implicit_deps.py: 89 处 services 直接访问 framework static (待人工审查)
 - audit_invariants.py: 127 处 I2 误报 (unsafe 块内裸指针解引用, 文本级无法区分)
 - audit_volatile_access.py: 1 处 pi_mutex.rs:effective_priority (fail-closed 排查)
-- audit_safety_coverage.py: 156 处 SAFETY 缺漏 (同上, 工具精度限制)
+- audit_safety_coverage.py: 127 处 SAFETY 缺漏 (与 audit_unsafe.py 一致, 同一基线; 工具精度限制)
 - audit_public_api_docs.py: 1921 处文档缺漏 (后续分册范围)
 - audit_services_boundary.py: 12 处 HIGH 违规 (后续分册 02-07 迁移范围)
 
@@ -232,6 +232,7 @@
 - audit_unsafe.py 负测试 PASS (构造缺 SAFETY 样例能被识别)
 - audit_block_registration.py 负测试 PASS (chitin_register_block_dev 样例被识别, exit 1)
 - tools/audit_unsafe.py 修复后漏报 2548 → 127 (改善 93.8%)
+- audit_safety_coverage.py 与 audit_unsafe.py 同步为 127 (口径统一)
 - 全量 git 历史: 24 个独立 commit, 每个 commit message 含专项断言与已知限制
 
 #### 后续工作
@@ -240,3 +241,38 @@
 - docs/plan/audit-fix-02~07 各分册实施时, 把 SAFETY 注释 + audit_implicit_deps
   修复 + 中文 doc 等作为子任务
 - audit_unsafe.sh 工具链清理 (随历史调用方迁移可彻底删除)
+
+### 复核记录（2026-08-20）
+
+#### 复核方法
+- 对委托人 24 个 commit（83636b6a..HEAD）逐一核对 commit message 与 diff
+- 实跑修复后脚本验证退出码与输出（services_boundary / safety_coverage / deadlock_matrix /
+  comment_language / once_cell / tcb_ratio / ci_check_services_unsafe / coupling /
+  invariants / public_api_docs / audit_unsafe / edition2024 / implicit_deps）
+- 读关键脚本源码核实修复逻辑（deadlock_matrix 阶段 A/B、once_cell 正则、ci/audit.sh diff）
+
+#### 复核结论：21 条有效，2 条驳回
+- **B01-06 驳回**（死代码）：阶段 A.5 收集 `bare_aliases`，但阶段 B（L267-272）从未引用
+  `unsafe_lock_aliases/safe_lock_aliases`（grep 证实仅定义处出现）；真实代码
+  `use spin::mutex::SpinMutex`（smp_init.rs:41，带中间路径）不被 `m_use_simple` 正则
+  `spin::(\w+)` 收集（只抓 `mutex` 丢 `SpinMutex`）。`AP_STARTUP_LOCK` 仍逃逸，
+  366 文件 0 问题 = 检测无效而非无问题。META-P0-04 未解决。
+- **B01-24 驳回**（无资产）：24 commit `--name-only` 检索无任何 test/fixture/sample 文件；
+  声称的"负测试 PASS"无法复现（两脚本 `__main__` 均无内嵌自测断言）。
+  违反方案"新增 fixture + CI 断言退出码"要求。
+- **其余 21 条有效**（实跑/源码双重验证），清单见上表。
+
+#### 数字矛盾（待委托人修正）
+- 实施报告 L225：safety_coverage 声称 156 处缺漏，实跑 127
+- ci/audit.sh commit message：声称 159 处 SAFETY 缺漏，与 audit_unsafe 实跑 127 不一致
+- B01-01/B01-02 的"全部完成/门槛恢复可信"表述在 B01-06/B01-24 返工前不完全成立
+
+#### 返工要求
+- **B01-06**：阶段 B 接入 `unsafe_lock_aliases/safe_lock_aliases`；正则改为
+  `spin\s*::\s*(?:\w+\s*::\s*)*(Mutex|RwLock|Once|OnceCell)` 覆盖带路径 import；
+  用 smp_init.rs `AP_STARTUP_LOCK` 作负测试断言（须被识别）。
+- **B01-24**：落地 fixture 文件（host-tests/ 或 scripts/）+ CI 断言，或脚本内嵌
+  `--selftest`；至少覆盖 services_boundary / deadlock_matrix / block_registration /
+  audit_unsafe 四脚本。
+- **数字修正**：safety_coverage 156→127；统一 SAFETY 缺漏口径。
+- 返工完成后更新 B01-06/B01-24 状态为 [X] 并补充专项断言记录。
