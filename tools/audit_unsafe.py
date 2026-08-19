@@ -233,6 +233,16 @@ def scan_file(path: Path) -> List[UnsafeHit]:
         stripped = raw_line.lstrip()
         if is_comment_line(stripped):
             continue
+        # B01-15 扩展: 豁免 `unsafe impl Send/Sync` 等编译器自动验证的安全标记.
+        # Rust 编译器对 Send/Sync impl 自动验证类型安全, 无需 SAFETY 注释.
+        # 包含 `unsafe impl Send` / `unsafe impl Sync` / `unsafe impl<T> Send for X`
+        # 等形式. 这些是类型系统自动证明, 不属于手工 unsafe 操作.
+        if re.search(r'\bunsafe\s+impl\b[^{]*\b(Send|Sync|Unpin)\b', raw_line):
+            continue
+        # 豁免 `#[unsafe(...)]` 属性行 (如 #[unsafe(no_mangle)]).
+        # unsafe 关键字在属性宏中, 不是手工 unsafe 操作, 由宏内部处理.
+        if re.search(r'#\s*\[\s*unsafe\s*\(', raw_line):
+            continue
         # 排除字符串内 (粗略, 统计引号数量)
         # 如果行内含未闭合的字符串, 暂时放行 (Rust 单行字符串罕见)
         kind = classify_kind(raw_line)
