@@ -33,9 +33,11 @@ ALLOWED_FILES = {
     Path('src/kernel/framework/chitin/proto_block.rs'),
 }
 
-# 匹配 `chitin_register_block(` 调用 (排除 chitin_register_with_ops / chitin_register_char 等)
+# 匹配 `chitin_register_block_dev(` 调用 (排除 chitin_register_with_ops / chitin_register_char 等)
 # 严格匹配完整函数名 + 左括号, 避免误报相似前缀
-PATTERN = re.compile(r'\bchitin_register_block\s*\(')
+# B01-07 修复: 真实函数名是 chitin_register_block_dev (见 framework/chitin/mod.rs:353),
+# 此前正则写的是 chitin_register_block (缺 _dev), 与真实函数名不匹配, 门禁恒 0 空转.
+PATTERN = re.compile(r'\bchitin_register_block_dev\s*\(')
 
 
 def main() -> int:
