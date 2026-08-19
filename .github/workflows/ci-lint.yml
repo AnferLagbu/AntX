@@ -230,3 +230,77 @@ jobs:
             exit 1
           fi
           echo "✅ rustdoc --no-deps 源码级 link 0 错误 (x86_64 + aarch64)"
+
+  # ========================================================================
+  # Job 8: audit_coupling 模块耦合度审计 (B01-18 接入 CI)
+  # ========================================================================
+  audit-coupling:
+    name: 模块耦合度审计 (F3 跨子系统耦合)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行耦合度审计
+        run: |
+          mkdir -p build/log
+          COUPLING_OUT=$(python3 scripts/audit_coupling.py 2>&1 || true)
+          echo "$COUPLING_OUT" | tee build/log/audit_coupling.txt | tail -20
+          # B01-18: 退出码语义 (HIGH/severe_circular > 0 时 fail)
+          COUPLING_RC=${PIPESTATUS[0]}
+          if [ "$COUPLING_RC" -ne 0 ]; then
+            echo "::error::模块耦合度审计失败 (HIGH 跨子系统访问 / 严重循环依赖)"
+            echo "--- Top 跨子系统访问 ---"
+            grep -A 3 'HIGH' build/log/audit_coupling.txt | head -20
+            exit 1
+          fi
+          echo "✅ 模块耦合度审计通过 (无严重循环 / 无跨子系统访问)"
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coupling-audit-report
+          path: build/log/audit_coupling.txt
+          retention-days: 14
+
+  # ========================================================================
+  # Job 9: audit_invariants 6 条安全不变式审计 (B01-18 接入 CI)
+  # ========================================================================
+  audit-invariants:
+    name: 6 条安全不变式审计 (I1-I6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行 6 条安全不变式审计
+        run: |
+          mkdir -p build/log
+          INVARIANTS_OUT=$(python3 scripts/audit_invariants.py 2>&1 || true)
+          echo "$INVARIANTS_OUT" | tee build/log/audit_invariants.txt | tail -12
+          # B01-18: 退出码语义 (total_violations > 0 时 fail)
+          INVARIANTS_RC=${PIPESTATUS[0]}
+          if [ "$INVARIANTS_RC" -ne 0 ]; then
+            echo "::error::6 条安全不变式存在违反"
+            echo "--- 违规详情 ---"
+            grep -A 1 '^  ✗' build/log/audit_invariants.txt | head -20
+            exit 1
+          fi
+          echo "✅ 6 条安全不变式全部满足"
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invariants-audit-report
+          path: build/log/audit_invariants.txt
+          retention-days: 14
