@@ -304,3 +304,38 @@ jobs:
           name: invariants-audit-report
           path: build/log/audit_invariants.txt
           retention-days: 14
+
+  # ========================================================================
+  # Job 10: audit-selftest 审计脚本自测 (B01-24 返工接入 CI)
+  # ========================================================================
+  audit-selftest:
+    name: 审计脚本自测 (B01-24 负测试 4 脚本)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.x 安装
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 运行审计脚本自测
+        run: |
+          mkdir -p build/log
+          SELFTEST_OUT=$(python3 scripts/tests/audit_selftest.py 2>&1 || true)
+          echo "$SELFTEST_OUT" | tee build/log/audit_selftest.txt | tail -30
+          # B01-24: 自测退出码 (4/4 全部通过才成功)
+          SELFTEST_RC=${PIPESTATUS[0]}
+          if [ "$SELFTEST_RC" -ne 0 ]; then
+            echo "::error::审计脚本自测失败 (负测试未全部拦截违规样例)"
+            exit 1
+          fi
+          echo "✅ 审计脚本自测 4/4 通过"
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-selftest-report
+          path: build/log/audit_selftest.txt
+          retention-days: 14

@@ -128,7 +128,7 @@
 - **B01-24. 负测试用例**
   - 描述：为每个修复后的脚本构造"违规样例 + 合法样例"各一，验证能拦截/不误报。
   - 方案：在 `host-tests/` 或 `scripts/` 下新增 fixture；CI job 内对样例文件运行脚本断言退出码。
-  - 状态：[X] (2026-08-20 返工完成, commit scripts/tests/audit_selftest.py + scripts/tests/fixtures/sample_violation.rs: 4/4 全部通过, 覆盖 services_boundary / deadlock_matrix / block_registration / audit_unsafe 四脚本)
+  - 状态：[X] (2026-08-20 返工完成, commit scripts/tests/audit_selftest.py + scripts/tests/fixtures/sample_violation.rs: 4/4 全部通过, 覆盖 services_boundary / deadlock_matrix / block_registration / audit_unsafe 四脚本; 2026-08-20 复审后补 CI 接线: ci-lint.yml Job10 audit-selftest)
 
 - **B01-25. 全量回归**
   - 描述：修复后全量运行 14 个审计脚本 + ci-lint.yml 对应 job，确认 0 误报且退出码语义正确。
@@ -276,3 +276,17 @@
   audit_unsafe 四脚本。
 - **数字修正**：safety_coverage 156→127；统一 SAFETY 缺漏口径。
 - 返工完成后更新 B01-06/B01-24 状态为 [X] 并补充专项断言记录。
+
+#### 复审记录（2026-08-20 返工后）
+- **B01-06 通过**：实跑 `audit_deadlock_matrix.py` 精确识别 `smp_init.rs:159 NON_IRQ_SAFE_LOCK_USE`
+  （锁 `AP_STARTUP_LOCK.lock()` 类型 `spin::Mutex/RwLock/Once`），从"366 文件 0 问题"（逃逸）变为
+  "1 项 HIGH"（真实识别）；阶段 B 已引用 bare_aliases，正则覆盖带路径 import（commit 84d9f789）。
+  META-P0-04 确认解决。
+- **B01-24 通过（补 CI 后闭环）**：实跑 `scripts/tests/audit_selftest.py` 4/4 全部通过
+  （services_boundary pub use / deadlock_matrix 裸类型别名 / block_registration / audit_unsafe），
+  fixture 与自测入口已落地（commit c6b1c108）；复审发现 ci-lint.yml 未接线，已补
+  **Job 10 audit-selftest**（CI 内断言退出码），B01-24 完全闭环。
+- **数字修正完成**：实施报告 L225 safety_coverage 已同步 127（与 audit_unsafe 同基线，
+  口径统一）。
+- **分册 01 最终状态**：23 条工程任务全部闭环（21 条首轮有效 + B01-06/B01-24 返工后有效），
+  验证门槛全部 [X]。
