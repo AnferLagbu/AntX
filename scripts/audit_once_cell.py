@@ -25,11 +25,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BASE = PROJECT_ROOT / "src" / "kernel" / "services"
 
-# 匹配 "use spin::Once" / "use spin::{...Once...}" / "use spin::once::Once"
-USE_SPIN_ONCE = re.compile(r"^\s*use\s+spin\s*::\s*(?:once\s*::\s*)?Once\b|\buse\s+spin\s*::\s*\{[^}]*\bOnce\b[^}]*\}")
+# B01-08 修复: 正则支持 `pub use spin::Once` / `use spin::OnceCell` / `use spin::once::Once`
+# 等形式. 原正则锚定 `^\s*use` 不匹配 `pub use`, `Once\b` 词边界不命中 `OnceCell`.
+USE_SPIN_ONCE = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+(?:crate::)?spin\s*::\s*(?:once\s*::\s*)?(?:Once|OnceCell)\b"
+    r"|^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+spin\s*::\s*\{[^}]*\b(?:Once|OnceCell)\b[^}]*\}"
+)
 
-# 匹配代码行内的 `spin::Once` (排除注释)
-SPIN_ONCE_IN_CODE = re.compile(r"[^/]\bspin\s*::\s*Once\b|\bspin\s*::\s*Once\b[^/]")
+# 匹配代码行内的 `spin::Once` / `spin::OnceCell` (排除注释)
+SPIN_ONCE_IN_CODE = re.compile(
+    r"[^/]\bspin\s*::\s*OnceCell?\b|\bspin\s*::\s*OnceCell?\b[^/]"
+)
 
 
 def main() -> int:
