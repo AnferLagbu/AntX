@@ -1,168 +1,134 @@
 #!/usr/bin/env python3
 """
-M6.1 SAFETY 完备性审计脚本 — 8 类 TCB 安全 API (v2 — 改进检测规则)
+M6.1 SAFETY 完备性审计脚本 — framework 全量 SAFETY 覆盖
 
-检查规则 (修正后):
-  (1) unsafe 块 (unsafe {): 8 行内必须有 // SAFETY: 注释
-  (2) unsafe fn: 上方 50 行内必须有 // SAFETY: 或 # SAFETY 段
-      (允许穿透 impl 块、pub struct、mod 边界, 但不跨过 fn 体闭合)
-  (3) unsafe impl Send/Sync: 上面 1-5 行内 // SAFETY: 注释
+修复 B01-13: 原脚本仅扫描硬编码 8 文件, 报告 53/53=100% 覆盖掩盖了剩余 2547 处
+unsafe 块. 现改为动态发现 framework/mod.rs 中所有 pub mod, 全量扫描.
+
+检测函数委托给 tools/audit_unsafe.py (B01-15 已修复), 保持一致.
 
 退出码: 0 = 100% 覆盖, 1 = 有缺失
 """
 
+import argparse
 import os
 import re
 import sys
+from pathlib import Path
 
-FILES = ['frame', 'vmspace', 'usermode', 'userctx', 'iomem', 'ioport', 'irqline', 'dma_buf']
-BASE = 'src/kernel/framework'
+BASE = Path('src/kernel/framework')
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# 复用 B01-15 修复后的 audit_unsafe.py
+sys.path.insert(0, str(PROJECT_ROOT / 'tools'))
+import audit_unsafe  # noqa: E402
 
-# 最大向上搜索行数 (覆盖深度嵌套的 docstring)
-MAX_LOOKBACK = 50
 
+def discover_modules(base: Path) -> list[str]:
+    """从 framework/mod.rs 的 pub mod 声明动态发现所有 .rs 模块.
 
-def _scan_backward(lines, ln, max_lookback, require_safety):
-    """向后扫描行查找 SAFETY 注释, 直到遇到非注释/非空代码行停止.
-
-    Args:
-        lines: 文件所有行 (0-indexed)
-        ln: 当前行 (1-indexed)
-        max_lookback: 最多向上查找多少行
-        require_safety: 是否要求 'SAFETY' 字符串; False 则只检测是否仅为注释
-
-    Returns:
-        (found_safety, hit_non_comment_code)
+    解析 `pub mod <name>;` 和 `pub mod <name> { ... };` 两种形式.
+    返回模块相对路径列表 (相对于 base), 例如 ['mm', 'mm/pmm', ...].
     """
-    # j 是 0-indexed 行号, 起始为 ln-2 (即 ln 行的前一行)
-    for j in range(ln - 2, max(ln - 1 - max_lookback, -1), -1):
-        if j < 0:
-            break
-        pl = lines[j].strip()
-        if not pl:
-            continue
-        if 'SAFETY' in pl and require_safety:
-            return True, False
-        # 注释行: // (行内), /// (docstring), /* */ (块), * (块中间)
-        if pl.startswith('//') or pl.startswith('*') or pl.startswith('///') or pl.startswith('/*'):
-            continue
-        # 遇到非注释代码, 停止
-        return False, True
-    # 范围内都是注释/空行, 但没找到 SAFETY
-    return False, False
+    mod_rs = base / 'mod.rs'
+    if not mod_rs.exists():
+        return []
+    content = mod_rs.read_text(encoding='utf-8', errors='replace')
+    # 匹配 pub mod xxx; 或 pub mod xxx { ... }
+    mods: set[str] = set()
+    for m in re.finditer(r'pub\s+mod\s+(\w+)\s*[;{]', content):
+        mods.add(m.group(1))
+    return sorted(mods)
 
 
-def has_safety_nearby(lines, ln, lcontent):
-    """向前查找 SAFETY 注释, 支持 docstring 穿透."""
+def collect_rs_files(base: Path, modules: list[str]) -> list[Path]:
+    """从模块列表收集所有 .rs 文件路径.
 
-    # ===== 规则 1: unsafe { 块 — 8 行内必须 // SAFETY: =====
-    if re.search(r'\bunsafe\s*\{', lcontent):
-        found, _ = _scan_backward(lines, ln, 8, require_safety=True)
-        return found
-
-    # ===== 规则 2: unsafe fn — 上方 MAX_LOOKBACK 行内 // SAFETY: 或 # SAFETY =====
-    if re.search(r'\bunsafe\s+fn\b', lcontent):
-        # 允许穿透 #[cfg(...)] / #[allow(...)] 等属性 (它们不属于 SAFETY 屏障)
-        for j in range(ln - 2, max(ln - 1 - MAX_LOOKBACK, -1), -1):
-            if j < 0:
-                break
-            pl = lines[j].strip()
-            if not pl:
-                continue
-            if 'SAFETY' in pl:
-                return True
-            # 注释行 (//, ///, /*, *)
-            if pl.startswith('//') or pl.startswith('*') or pl.startswith('///') or pl.startswith('/*'):
-                continue
-            # 属性行 #[cfg]/#[allow] 属于非 SAFETY 屏障, 允许穿透
-            if pl.startswith('#['):
-                continue
-            # 跨过了 Rust 代码, 停止
-            return False
-        return False
-
-    # ===== 规则 3: unsafe impl Send/Sync — 上面 1-5 行内 // SAFETY: =====
-    if re.search(r'\bunsafe\s+impl\b', lcontent):
-        # 先看上面 1-5 行, 但允许穿透 #[cfg] 等属性和连续的 unsafe impl
-        consecutive_unsafe_impls = 0
-        for j in range(ln - 2, max(ln - 1 - 5, -1), -1):
-            if j < 0:
-                break
-            pl = lines[j].strip()
-            if not pl:
-                continue
-            if 'SAFETY' in pl:
-                return True
-            # 允许穿透 #[cfg(...)] 等属性
-            if pl.startswith('#['):
-                continue
-            # 允许穿透连续的 unsafe impl (Send/Sync 对)
-            if re.search(r'\bunsafe\s+impl\b', pl):
-                consecutive_unsafe_impls += 1
-                if consecutive_unsafe_impls <= 2:
-                    continue
-                return False
-            # 普通注释行: 跳过
-            if pl.startswith('//') or pl.startswith('*') or pl.startswith('///') or pl.startswith('/*'):
-                continue
-            # 遇到非注释代码: 停止
-            return False
-        return False
-
-    return False
+    对于简单模块 (e.g. 'mm'), 包含 mod.rs 和子目录所有 .rs.
+    对于嵌套模块 (e.g. 'mm'), 子目录递归包含.
+    """
+    files: set[Path] = set()
+    files.add(base / 'mod.rs')  # 顶层 mod.rs 始终包含
+    for mod in modules:
+        mod_dir = base / mod
+        mod_rs = mod_dir / 'mod.rs'
+        if mod_rs.exists():
+            files.add(mod_rs)
+        # 子目录下所有 .rs
+        if mod_dir.is_dir():
+            for rs in mod_dir.rglob('*.rs'):
+                files.add(rs)
+    return sorted(files)
 
 
 def main():
+    parser = argparse.ArgumentParser(description='QueenX SAFETY 注释覆盖审计')
+    parser.add_argument('--missing-only', action='store_true',
+                        help='只输出缺 SAFETY 的位置 (每行: file:line:kind:code)')
+    args = parser.parse_args()
+
+    if not BASE.exists():
+        print(f'ERROR: {BASE} 不存在', file=sys.stderr)
+        sys.exit(2)
+
+    modules = discover_modules(BASE)
+    files = collect_rs_files(BASE, modules)
+    # 过滤掉 arch/ 子目录 (架构特定, 与 SAFETY 主题无关)
+    # SAFETY 主题针对 framework TCB 主线, 不针对每架构 asm
+    # 但保留 arch/*/mod.rs 以监控
+    if not files:
+        print('ERROR: 未发现任何 .rs 模块', file=sys.stderr)
+        sys.exit(2)
+
+    # 使用 audit_unsafe.py 的扫描函数 (B01-15 修复后的核心)
     total_unsafe = 0
     total_covered = 0
-    all_gaps = []
+    all_gaps: list[tuple[str, int, str, str]] = []  # (file, line, kind, code)
 
-    print("=" * 78)
-    print("M6.1 SAFETY 完备性审计 — 8 类 TCB 安全 API (v2)")
-    print("=" * 78)
-    print(f"  {'文件':12s} | {'unsafe':>7s} | {'SAFETY':>7s} | 状态")
-    print("-" * 78)
-
-    for f in FILES:
-        path = f"{BASE}/{f}.rs"
-        if not os.path.exists(path):
-            continue
-        with open(path) as fh:
-            content = fh.read()
-        lines = content.splitlines()
-
-        unsafe_lines = []
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            # 跳过注释行 (包括 //, ///, /*, *)
-            if stripped.startswith('//') or stripped.startswith('*') or stripped.startswith('/*'):
-                continue
-            if re.search(r'\bunsafe\b', line):
-                unsafe_lines.append((i, line.rstrip()))
-
-        covered = 0
-        uncovered = []
-        for ln, lcontent in unsafe_lines:
-            if has_safety_nearby(lines, ln, lcontent):
-                covered += 1
+    for path in files:
+        # scan_file 需要绝对路径以满足 relative_to PROJECT_ROOT
+        abs_path = path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+        hits = audit_unsafe.scan_file(abs_path)
+        for hit in hits:
+            total_unsafe += 1
+            if hit.has_safety:
+                total_covered += 1
             else:
-                uncovered.append((ln, lcontent[:80]))
+                all_gaps.append((hit.file, hit.line, hit.kind, hit.code))
+                if args.missing_only:
+                    print(f'{hit.file}\t{hit.line}\t{hit.kind}\t{hit.code[:80]}')
 
-        total_unsafe += len(unsafe_lines)
-        total_covered += covered
-        status = "✓ 完整" if not uncovered else f"✗ {len(uncovered)} 处缺失"
-        print(f"  {f + '.rs':12s} | {len(unsafe_lines):>7d} | {covered:>7d} | {status}")
-        for ln, lc in uncovered:
-            all_gaps.append((f, ln, lc))
-            print(f"    缺失: {f}.rs:{ln}: {lc}")
+    if args.missing_only:
+        # CI 模式下输出 TSV 后直接 exit
+        if all_gaps:
+            sys.exit(1)
+        sys.exit(0)
 
-    print("-" * 78)
-    pct = (total_covered / total_unsafe * 100) if total_unsafe > 0 else 100
-    print(f"  {'总计':12s} | {total_unsafe:>7d} | {total_covered:>7d} | {pct:.1f}% 覆盖")
+    # 人类可读报告
+    print("=" * 78)
+    print("M6.1 SAFETY 完备性审计 — framework 全量 (B01-13 修复)")
+    print("=" * 78)
+    print(f"  扫描模块: {len(modules)} 个 (从 framework/mod.rs 动态发现)")
+    print(f"  扫描文件: {len(files)} 个 .rs")
+    print(f"  unsafe 引用: {total_unsafe}")
+    print(f"  SAFETY 覆盖: {total_covered} ({total_covered * 100 // max(total_unsafe, 1)}%)")
+    print(f"  缺 SAFETY: {len(all_gaps)}")
     print("=" * 78)
 
     if all_gaps:
-        print(f"\n❌ M6.1 失败: {len(all_gaps)} 处 SAFETY 缺失")
+        # 按文件分组
+        by_file: dict[str, list[tuple[int, str, str]]] = {}
+        for f, ln, kind, code in all_gaps:
+            by_file.setdefault(f, []).append((ln, kind, code))
+        # Top 5 缺漏最多文件
+        top5 = sorted(by_file.items(), key=lambda x: -len(x[1]))[:5]
+        for f, items in top5:
+            print(f"  ✗ {f}: {len(items)} 处缺漏")
+            for ln, kind, code in items[:3]:
+                print(f"    L{ln} ({kind}): {code[:60]}")
+            if len(items) > 3:
+                print(f"    ... 共 {len(items)} 处")
+        print()
+        print(f"❌ M6.1 失败: {len(all_gaps)} 处 SAFETY 缺失 (详见 --missing-only)")
         return 1
     else:
         print("\n✓ M6.1 通过: 100% SAFETY 覆盖")
