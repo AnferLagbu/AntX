@@ -38,6 +38,9 @@ FRAMEWORK_BASE = Path('src/kernel/framework')
 #   framework::proc_elf (Elf)
 #
 # 禁止直接访问的内部模块 (实现细节):
+# B01-04 修复: 补全缺失项 — ipc::msgq::raw / syscall::types / proc::coredump
+# 等, 实测 services 穿透访问未被报; 同时新增 mm::errno / driver::idt::irq_trait /
+# debug::ebpf / debug::opcode / debug::fnv1a_32 / debug::TraceEvent 等反向依赖点.
 FORBIDDEN_FRAMEWORK_MODULES = [
     # 同步原语 implementation details (应通过 services/sync/* 代理)
     'framework::sync::raw',
@@ -77,6 +80,38 @@ FORBIDDEN_FRAMEWORK_MODULES = [
     # 日志/控制台底层
     'framework::klog::raw',
     'framework::console::raw',
+    # IPC 内部
+    'framework::ipc::msgq::raw',
+    # syscall 内部 (类型/API 应通过 services/syscall 顶层)
+    'framework::syscall::types',
+    # proc 内部 (coredump 应通过 services/proc 顶层)
+    'framework::proc::coredump',
+    # mm 内部 errno (应走 services::error)
+    'framework::errno',
+    # driver 内部 — 子模块应在 framework/driver/mod.rs 顶层 glob re-export
+    'framework::driver::idt::irq_trait',
+    # debug 内部 — services 应通过 services/debug 顶层
+    'framework::debug::ebpf',
+    'framework::debug::opcode',
+    'framework::debug::fnv1a_32',
+    'framework::debug::TraceEvent',
+    'framework::debug::EVENT_SIZE',
+    'framework::debug::FTRACE_BUF_CAP',
+    'framework::debug::KgdbRegs',
+    'framework::debug::KgdbSerial',
+    'framework::debug::bpf_init',
+    'framework::debug::bpf_is_initialized',
+    'framework::debug::bpf_subsystem',
+    'framework::debug::sys_bpf',
+    'framework::debug::BpfProgType',
+    # arch::cet_* (proc/shadow_stack 反向依赖)
+    'framework::arch::cet_init',
+    'framework::arch::cet_is_initialized',
+    'framework::arch::cet_subsystem',
+    'framework::arch::sys_cet',
+    # userctx / usermode (syscall 直接访问)
+    'framework::userctx::UserContext',
+    'framework::usermode',
 ]
 
 # services 应该通过的安全 API
@@ -197,11 +232,13 @@ def check_forbidden_imports(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
             lines = f.readlines()
+
     except Exception:
         return issues
 
-    # 导入模式
-    use_pattern = re.compile(r'^\s*use\s+(.*?);')
+    # 导入模式 (B01-05: 支持 `use` / `pub use` 两种形式)
+    # 匹配 `use foo::bar;` 或 `pub use foo::bar;` 或 `pub(crate) use foo::bar;`
+    use_pattern = re.compile(r'^\s*(pub(?:\([^)]*\))?\s+)?use\s+(.*?);')
     # 路径模式 (在 use 语句中)
 
     for lineno_1, line in enumerate(lines, start=1):
@@ -212,7 +249,7 @@ def check_forbidden_imports(filepath):
         m = use_pattern.match(line)
         if not m:
             continue
-        import_path = m.group(1)
+        import_path = m.group(2)
 
         for forbidden in FORBIDDEN_FRAMEWORK_MODULES:
             if forbidden in import_path:
@@ -399,39 +436,51 @@ def check_services_inter_module_deps():
     }
 
     for mod in modules:
-        mod_dir = BASE / mod
-        for rs_file in sorted(mod_dir.rglob('*.rs')):
-            try:
-                with open(rs_file, 'r', encoding='utf-8', errors='replace') as f:
-                    for lineno, line in enumerate(f, 1):
-                        stripped = line.strip()
-                        if stripped.startswith('//') or stripped.startswith('/*'):
-                            continue
-                        m = re.match(r'^\s*use\s+(.*?);', line)
-                        if not m:
-                            continue
-                        import_path = m.group(1)
-                        for other_mod in modules:
-                            if other_mod == mod:
+            mod_dir = BASE / mod
+            for rs_file in sorted(mod_dir.rglob('*.rs')):
+                try:
+                    with open(rs_file, 'r', encoding='utf-8', errors='replace') as f:
+                        for lineno, line in enumerate(f, 1):
+                            stripped = line.strip()
+                            if stripped.startswith('//') or stripped.startswith('/*'):
                                 continue
-                            pattern = f'services::{other_mod}'
-                            if pattern in import_path:
-                                if (mod, other_mod) not in ALLOWED_INTER_DEPS:
-                                    issues.append({
-                                        'file': str(rs_file),
-                                        'line': lineno,
-                                        'severity': 'MEDIUM',
-                                        'type': 'UNLISTED_INTER_MODULE_DEP',
-                                        'message': f'services::{mod} 依赖 services::{other_mod} 未在白名单中, 需审查合理性',
-                                        'code': line.strip()[:200],
-                                    })
-            except Exception:
-                continue
+                            # B01-05: 支持 `use` / `pub use` 两种形式
+                            m = re.match(r'^\s*(pub(?:\([^)]*\))?\s+)?use\s+(.*?);', line)
+                            if not m:
+                                continue
+                            import_path = m.group(2)
+                            for other_mod in modules:
+                                if other_mod == mod:
+                                    continue
+                                pattern = f'services::{other_mod}'
+                                if pattern in import_path:
+                                    if (mod, other_mod) not in ALLOWED_INTER_DEPS:
+                                        issues.append({
+                                            'file': str(rs_file),
+                                            'line': lineno,
+                                            'severity': 'MEDIUM',
+                                            'type': 'UNLISTED_INTER_MODULE_DEP',
+                                            'message': f'services::{mod} 依赖 services::{other_mod} 未在白名单中, 需审查合理性',
+                                            'code': line.strip()[:200],
+                                        })
+                except Exception:
+                    continue
 
     return issues
 
 
 def main():
+    # B01-03: 退出码升级 — HIGH/MEDIUM 违规也应阻断 CI
+    # 通过 --strict-medium 启用 MEDIUM 阻断 (默认仅阻断 CRITICAL + HIGH)
+    # --strict-medium 设计: MEDIUM (services 间非白名单依赖) 默认仅警告,
+    # 但允许 CI 严格模式开启. 这样新代码不会因历史遗留触发 CI 失败,
+    # 但 CI 可选择性开启.
+    import argparse
+    parser = argparse.ArgumentParser(description='QueenX services→framework 边界审计')
+    parser.add_argument('--strict-medium', action='store_true',
+                        help='MEDIUM 级别违规也触发 exit 1')
+    args = parser.parse_args()
+
     if not BASE.exists():
         print(f'ERROR: {BASE} not found', file=sys.stderr)
         sys.exit(2)
@@ -457,9 +506,20 @@ def main():
         }, f, ensure_ascii=False, indent=2)
     print(f'\nJSON 报告保存至: {json_path}')
 
+    # B01-03: 退出码 — CRITICAL 必阻断, HIGH 必阻断,
+    # MEDIUM 仅在 --strict-medium 时阻断
     critical = sum(1 for i in issues if i['severity'] == 'CRITICAL')
+    high = sum(1 for i in issues if i['severity'] == 'HIGH')
+    medium = sum(1 for i in issues if i['severity'] == 'MEDIUM')
+
     if critical > 0:
         print(f'\n>>> {critical} 个 CRITICAL 违规 (services 包含 unsafe) <<<')
+        sys.exit(1)
+    if high > 0:
+        print(f'\n>>> {high} 个 HIGH 违规 (services 访问 framework 内部) <<<')
+        sys.exit(1)
+    if medium > 0 and args.strict_medium:
+        print(f'\n>>> {medium} 个 MEDIUM 违规 (--strict-medium 启用) <<<')
         sys.exit(1)
 
     print(f'\n>>> services 边界检查通过 <<<')
