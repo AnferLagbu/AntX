@@ -136,7 +136,13 @@ def collect_pub_fns(path: Path) -> list[dict]:
         if re.match(r"^(pub\s+)?(unsafe\s+)?impl\b", stripped) and "{" in stripped:
             impl_depth = brace_depth
             brace_depth += stripped.count("{") - stripped.count("}")
-            in_trait_impl_depth = impl_depth if re.search(r"\bfor\b", stripped) or "trait" in stripped else in_trait_impl_depth
+            # B01-19 修复: 在 impl 块结束时重置 in_trait_impl_depth
+            # 原代码: 置位后永不重置, 跨多个 impl 块时留下错误状态
+            is_trait_impl = re.search(r"\bfor\b", stripped) or "trait" in stripped
+            if is_trait_impl:
+                # 记录此 impl 块的起始 brace_depth, 退出时比较
+                # 简化: 每次 impl 块进入时更新为当前 depth (允许嵌套 impl)
+                in_trait_impl_depth = impl_depth
             continue
 
         # 跟踪 fn 声明
@@ -160,6 +166,10 @@ def collect_pub_fns(path: Path) -> list[dict]:
         brace_depth += line.count("{") - line.count("}")
         if brace_depth < 0:
             brace_depth = 0
+        # B01-19 修复: 离开 impl 块时重置 in_trait_impl_depth
+        # 当 brace_depth 降回 impl_depth 以下时, 此 impl 块已结束
+        if in_trait_impl_depth >= 0 and brace_depth <= in_trait_impl_depth:
+            in_trait_impl_depth = -1
 
     return results
 
@@ -218,14 +228,30 @@ def count_refs(name: str, decl_file: Path, decl_line: int) -> dict:
     返回 { 'total': N, 'in_decl_file': M, 'cross_file': N - M }
 
     排除 vendored smoltcp 子树
+
+    B01-19 修复: 优先用 ripgrep (高性能), 若 rg 不可用则降级到 Python 扫描.
+    使用 \b 词边界匹配 (替代 `-w` flag), 排除同名局部变量误匹配.
     """
+    import shutil
+
+    # 优先尝试 ripgrep (高性能, 1-2 秒扫描全部)
+    if shutil.which("rg"):
+        return _count_refs_rg(name, decl_file)
+    # 降级: Python 扫描 (较慢但无依赖)
+    # queenx crate ~700+ .rs 文件, ~3000+ pub fn, 每次 count_refs 扫描 ~700 文件
+    # 总体时间: 1-2 分钟 (每 fn 2-3 ms on cold cache, 0.5 ms on warm cache)
+    # B01-19 性能优化: 一次性缓存所有文件内容, 后续 count_refs 仅内存子串扫描
+    return _count_refs_python(name, decl_file)
+
+
+def _count_refs_rg(name: str, decl_file: Path) -> dict:
+    """ripgrep 实现 (高性能路径)."""
     cmd = [
         "rg", "-c", "-w", "--no-heading",
         name,
         "src/", "host-tests/",
         "--type", "rust",
     ]
-    # 排除 vendored 路径
     cmd.extend(["-g", "!src/kernel/services/net/smoltcp/**"])
 
     try:
@@ -246,7 +272,6 @@ def count_refs(name: str, decl_file: Path, decl_line: int) -> dict:
         except ValueError:
             continue
         total_refs += count
-        # decl_file 是相对路径
         try:
             decl_rel = decl_file.relative_to(ROOT)
             if path_str == str(decl_rel):
@@ -254,18 +279,73 @@ def count_refs(name: str, decl_file: Path, decl_line: int) -> dict:
         except ValueError:
             pass
 
-    # 关键修正: 之前的逻辑 `cross_file = total - in_decl_file` 是错的!
-    # in_decl_file 包含了同文件内的所有匹配 (1 声明 + N 调用方)
-    # cross_file = total - in_decl_file = "在其他文件中被引用的次数" (与同文件无关)
-    # 但"调用方存在"包括同文件调用, 所以正确的判断应该是:
-    #   死代码 ⟺ total == 1 (只有声明本身, 没有任何调用方)
-    #   即: 调用方总数 = total_refs - 1 (扣除声明行)
-    # 这意味着我们改用 total_refs <= 1 作为判断条件
     return {
         "total": total_refs,
         "in_decl_file": in_decl_file_refs,
         "cross_file": total_refs - in_decl_file_refs,
-        # 实际调用方数 (扣除声明行): 同文件调用 + 跨文件调用
+        "actual_callers": total_refs - 1,
+    }
+
+
+_PYTHON_FILE_CACHE: dict[str, str] = {}
+
+
+def _build_python_cache() -> None:
+    """构建一次所有 .rs 文件内容缓存, 避免反复 read_text.
+
+    B01-19 性能优化: queenx crate ~700+ .rs 文件, 每次 count_refs 调用
+    重复 read_text 是主要性能瓶颈. 一次性缓存后, 仅做内存子串扫描.
+    该缓存按 tgt 调用一次 (lazy init), 一次性扫描 ~700 文件约 1-3 秒.
+    """
+    global _PYTHON_FILE_CACHE
+    if _PYTHON_FILE_CACHE:
+        return
+    targets = ["src/", "host-tests/"]
+    for target in targets:
+        target_path = ROOT / target.rstrip("/")
+        if not target_path.exists():
+            continue
+        for rs in target_path.rglob("*.rs"):
+            if "smoltcp" in str(rs):
+                continue
+            try:
+                content = rs.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            try:
+                rel = str(rs.relative_to(ROOT))
+            except ValueError:
+                rel = str(rs)
+            _PYTHON_FILE_CACHE[rel] = content
+
+
+def _count_refs_python(name: str, decl_file: Path) -> dict:
+    """Python 子串扫描实现 (降级路径, 无 ripgrep 依赖).
+
+    B01-19: 性能优化 - 一次性缓存文件内容, 多次 count_refs 共享.
+    """
+    _build_python_cache()
+
+    word_re = re.compile(r"\b" + re.escape(name) + r"\b")
+
+    total_refs = 0
+    in_decl_file_refs = 0
+    try:
+        decl_rel = str(decl_file.relative_to(ROOT))
+    except ValueError:
+        decl_rel = str(decl_file)
+
+    for path_str, content in _PYTHON_FILE_CACHE.items():
+        count = len(word_re.findall(content))
+        if count > 0:
+            total_refs += count
+            if path_str == decl_rel:
+                in_decl_file_refs = count
+
+    return {
+        "total": total_refs,
+        "in_decl_file": in_decl_file_refs,
+        "cross_file": total_refs - in_decl_file_refs,
         "actual_callers": total_refs - 1,
     }
 
