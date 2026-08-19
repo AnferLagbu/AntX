@@ -62,10 +62,17 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/tools/audit_unsafe.
     AUDIT_RESULT=$("$PROJECT_ROOT/tools/audit_unsafe.py" --summary 2>&1 || true)
     echo "$AUDIT_RESULT" | tail -12
     MISSING=$(echo "$AUDIT_RESULT" | grep -E "缺 SAFETY:" | head -1 | awk '{print $NF}')
-    if [ -n "$MISSING" ] && [ "$MISSING" -eq 0 ]; then
+    # B01-16 修复: 当脚本输出为空或缺 "缺 SAFETY:" 行时, 视为异常 (fail-closed).
+    # 原脚本静默通过 (无 ok 也无 err) 隐藏门禁失效.
+    if [ -z "$AUDIT_RESULT" ]; then
+        err "audit_unsafe.py 输出为空 (脚本异常或 framework/ 为空)"
+    elif [ -n "$MISSING" ] && [ "$MISSING" -eq 0 ]; then
         ok "framework 100% SAFETY 覆盖"
     elif [ -n "$MISSING" ]; then
         err "framework 仍有 $MISSING 处缺 SAFETY 注释"
+    else
+        # 输出非空但未匹配 "缺 SAFETY:" 行 — 视为脚本异常
+        err "audit_unsafe.py 输出格式异常 (未找到 缺 SAFETY: 行)"
     fi
 fi
 
@@ -132,11 +139,19 @@ step "2/6 Clippy pedantic (x86_64, lib only)"
 pushd src/rust > /dev/null
 unset RUSTC_WRAPPER
 # 仅审计 lib (kernel 源码), 跳过 build script (编译期脚本, 非 TCB)
+# B01-16 修复: 加 -D warnings 让任何 warning 阻断 CI, 失败走 err 而非仅警告.
+# 原代码 `if cmd | tail; then ok; else warn; fi` 中 `tail` 退出 0 总是成功,
+# 即使 cargo clippy 失败也被掩盖 (P0-05 类问题).
 if cargo +nightly clippy --lib --target x86_64-unknown-none \
-    -- -W clippy::pedantic -W clippy::cargo 2>&1 | tail -10; then
-    ok "clippy pedantic (lib): passed"
+    -- -D warnings -W clippy::pedantic -W clippy::cargo 2>&1 | tail -10; then
+    CLIPPY_RC=${PIPESTATUS[0]}
+    if [ "$CLIPPY_RC" -eq 0 ]; then
+        ok "clippy pedantic (lib): passed"
+    else
+        err "clippy pedantic (lib) 失败 (exit=$CLIPPY_RC, 见上方输出)"
+    fi
 else
-    echo -e "${YELLOW}⚠ clippy pedantic (lib) 有警告 (见上)${NC}"
+    err "clippy pedantic (lib) 执行异常"
 fi
 popd > /dev/null
 
@@ -194,10 +209,17 @@ fi
 step "7/7 QEMU 双架构真实启动测试"
 if [ "$MODE" = "full" ]; then
     if command -v qemu-system-x86_64 >/dev/null 2>&1 && command -v qemu-system-aarch64 >/dev/null 2>&1; then
-        if "$PROJECT_ROOT/scripts/qemu_boot_test.sh" all 2>&1 | tail -6; then
-            ok "QEMU 双架构启动测试: 2/2 通过"
+        # B01-16 修复: 设置 FAIL_OK=0 让 QEMU 测试失败立即阻断.
+        # 原脚本默认 FAIL_OK=1, 启动失败时仍返 0 (虚假通过).
+        if FAIL_OK=0 "$PROJECT_ROOT/scripts/qemu_boot_test.sh" all 2>&1 | tail -6; then
+            QEMU_RC=${PIPESTATUS[0]}
+            if [ "$QEMU_RC" -eq 0 ]; then
+                ok "QEMU 双架构启动测试: 2/2 通过"
+            else
+                err "QEMU 双架构启动测试失败 (exit=$QEMU_RC, 见 scripts/qemu_boot_test.sh 输出)"
+            fi
         else
-            err "QEMU 双架构启动测试失败 (见 scripts/qemu_boot_test.sh 输出)"
+            err "QEMU 双架构启动测试执行异常"
         fi
     else
         echo -e "${YELLOW}⚠ QEMU 二进制不可用, 跳过启动测试 (安装 qemu-system-x86 + qemu-system-aarch64 启用)${NC}"
