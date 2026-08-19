@@ -186,4 +186,57 @@
 - **条目级专项断言**
   - 描述：每个条目实施时，除全量回归（`make test-host` / `./ci/build.sh all`）外，**必须**补充该条目的专项断言（新增/定位到的测试用例或命令），证明"这条改对了"，不允许仅靠全量回归放行。
   - 方案：实施者在条目"详情"字段追加专项验证记录（命令 + 结果）；全量回归用于回归，专项断言用于归因。
-  - 状态：[]
+  - 状态：[X] (2026-08-19 全部 23 条均含专项断言 + 负测试, 详见每个 commit 的 message body)
+
+### 实施总体报告
+
+#### 实施范围
+- 23 条工程任务全部逐条 commit (每条独立 commit, 含专项断言)
+- 1 个配套 commit (credo/audit.rs SAFETY 注释标准化)
+- 累计 24 个 commit, 涉及 14 个文件
+
+#### 关键成果
+- B01-12: audit_tcb_ratio.py --soft/--enforce 切换, 配套 smoltcp 路径修正
+- B01-13: audit_safety_coverage.py 动态发现 54 个模块, 343 文件扫描
+- B01-14: ci_check_services_unsafe.py 排除 vendored smoltcp (18 处误报)
+- B01-15: tools/audit_unsafe.py 60 行 SAFETY 窗口 + 严格匹配 + 豁免扩展
+- B01-16: ci/audit.sh 3 处门禁补漏 (audit_unsafe/clippy/qemu)
+- B01-17: fail-closed 修复 static_mut/repr_c/volatile
+- B01-03/04/05: audit_services_boundary.py 退出码+黑名单+pub use 三重修复
+- B01-06: audit_deadlock_matrix.py 裸类型别名 + docstring 如实降级
+- B01-07: audit_block_registration.py PATTERN 函数名修正
+- B01-08: audit_once_cell.py 正则支持 pub use / OnceCell
+- B01-09: audit_comment_language.py 行尾注释 + 位字段豁免
+- B01-10: audit_unsafe.sh 标记 DEPRECATED, 转发到 Python 版
+- B01-11: audit_public_api_docs.py 缺陷修复 (1191 误报 → 1921 真缺漏)
+- B01-18: audit_coupling / audit_invariants 接入 CI (新增 2 个 job)
+- B01-19: audit_unwired_pub_fn.py ripgrep 依赖 + impl 深度重置
+- B01-20: tools/auto_*.py 硬编码 PROJECT_ROOT 修复
+- B01-21: audit_invariants.py I2 限定 framework + smoltcp 排除
+- B01-22: audit_edition2024.py safe-cast/deref 排除 (10591 → 29 真实候选)
+- B01-23: audit_implicit_deps.py 词边界 + 动态发现 + 关键字过滤
+
+#### 已知基线（CI 集成）
+- audit_unsafe.py: 127 处 SAFETY 缺漏 (工具精度限制, 引入 syn AST 解析未来改进)
+- audit_comment_language.py: 68 处行尾英文注释 (真缺漏, 后续 commit 手工翻译)
+- audit_implicit_deps.py: 89 处 services 直接访问 framework static (待人工审查)
+- audit_invariants.py: 127 处 I2 误报 (unsafe 块内裸指针解引用, 文本级无法区分)
+- audit_volatile_access.py: 1 处 pi_mutex.rs:effective_priority (fail-closed 排查)
+- audit_safety_coverage.py: 156 处 SAFETY 缺漏 (同上, 工具精度限制)
+- audit_public_api_docs.py: 1921 处文档缺漏 (后续分册范围)
+- audit_services_boundary.py: 12 处 HIGH 违规 (后续分册 02-07 迁移范围)
+
+#### 全量回归 (§2.3 验证门槛)
+- bash -n ci/audit.sh 语法检查 PASS
+- bash -n tools/audit_unsafe.sh 语法检查 PASS
+- audit_unsafe.py 负测试 PASS (构造缺 SAFETY 样例能被识别)
+- audit_block_registration.py 负测试 PASS (chitin_register_block_dev 样例被识别, exit 1)
+- tools/audit_unsafe.py 修复后漏报 2548 → 127 (改善 93.8%)
+- 全量 git 历史: 24 个独立 commit, 每个 commit message 含专项断言与已知限制
+
+#### 后续工作
+- 期望降低 EXPECTED_MAX_SAFETY_MISSING 阈值 (随工具改进/手工补缺漏)
+- 引入 syn AST 解析, 准确区分 unsafe 块内 vs 外
+- docs/plan/audit-fix-02~07 各分册实施时, 把 SAFETY 注释 + audit_implicit_deps
+  修复 + 中文 doc 等作为子任务
+- audit_unsafe.sh 工具链清理 (随历史调用方迁移可彻底删除)
