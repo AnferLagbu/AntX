@@ -128,27 +128,41 @@ def scan_file(filepath):
     #   阶段 A: 收集所有 spin::Mutex/RwLock/Once 字段名 (作为已知非安全锁)
     #   阶段 B: 扫描 .lock()/.read()/.write() 调用, 检查字段类型
 
+    # B01-06 返工: 正则覆盖带路径的 import/类型, 如 `spin::mutex::SpinMutex` /
+    # `crate::sync::irq_spinlock::IrqSpinLock`. 路径段数不限, 末段为目标类型.
+    # B01-06 返工再次改进: 不限制末段为目标类别名 (Mutex/RwLock/...),
+    # 而是匹配 `spin` / `sync` 路径下的任何类型, 末段任意.
+    # 后续阶段 A.5 收集到 bare_aliases 后, 阶段 B 用别名集合判定
+    # 是否 unsafe (SpinMutex 等自定义名都视为 unsafe, IrqSpinLock 视为 safe).
+    # 统一正则: 路径段 + 末段类型
+    _spin_path_tail = (
+        r'(?:::\s*\w+\s*)*::\s*(\w+)\b'
+    )
     spin_field_pattern = re.compile(
-        r'\b(?:pub(?:\([^)]*\))?\s+)?(\w+)\s*:\s*(?:spin::|crate::spin::)'
-        r'(Mutex|RwLock|Once|OnceCell)',
+        r'\b(?:pub(?:\([^)]*\))?\s+)?(\w+)\s*:\s*(?:crate::)?(?:spin|sync)'
+        + _spin_path_tail,
     )
 
     spin_static_pattern = re.compile(
-        r'\bstatic\s+(\w+)\s*:\s*(?:spin::|crate::spin::)'
-        r'(Mutex|RwLock|Once|OnceCell)',
+        r'\bstatic\s+(\w+)\s*:\s*(?:crate::)?(?:spin|sync)'
+        + _spin_path_tail,
     )
 
     # 安全锁字段模式: 标记这些字段为 IRQ 安全 (即 .lock() 不会产生 CRITICAL 警告)
+    # B01-06 返工: 同样支持带路径的形式
     safe_lock_field_pattern = re.compile(
         r'\b(?:pub(?:\([^)]*\))?\s+)?(\w+)\s*:\s*'
-        r'(?:IrqSpinLock|FrameworkIrqSpinLock|'
-        r'crate::kernel::framework::sync::irq_spinlock::IrqSpinLock|'
-        r'framework::sync::irq_spinlock::IrqSpinLock)',
+        r'(?:crate::kernel::framework::sync::irq_spinlock::|framework::sync::irq_spinlock::)?'
+        r'IrqSpinLock|FrameworkIrqSpinLock|'
+        r'(?:crate::)?sync(?:::\s*\w+\s*)*::\s*'
+        r'IrqSpinLock\b',
     )
     safe_lock_static_pattern = re.compile(
         r'\bstatic\s+(\w+)\s*:\s*'
-        r'(?:IrqSpinLock|FrameworkIrqSpinLock|'
-        r'crate::kernel::framework::sync::irq_spinlock::IrqSpinLock)',
+        r'(?:crate::kernel::framework::sync::irq_spinlock::|framework::sync::irq_spinlock::)?'
+        r'IrqSpinLock|FrameworkIrqSpinLock|'
+        r'(?:crate::)?sync(?:::\s*\w+\s*)*::\s*'
+        r'IrqSpinLock\b',
     )
 
     unsafe_lock_fields = set()  # 已知非安全锁字段名
@@ -156,64 +170,94 @@ def scan_file(filepath):
     safe_lock_fields = set()  # 已知安全锁字段名
     safe_lock_statics = set()  # 已知安全锁 static 名
 
-    # 阶段 A: 收集字段类型
+    # 阶段 A.0: B01-06 返工 - 先扫描整个文件收集所有 spin::xxx::Type
+    # 类型名 (字段类型, 不限末段), 存入 _all_spin_types 集合.
+    # 用于阶段 A 字段收集时判定 unsafe vs safe (查表 bare_aliases).
+    _all_spin_types: set[str] = set()
     for lineno_1, line in enumerate(lines, start=1):
         if line.strip().startswith('//'):
             continue
+        # spin_field_pattern match 0:type 1:field 2:tail
         for m in spin_field_pattern.finditer(line):
-            unsafe_lock_fields.add(m.group(1))
+            if m.lastindex and m.lastindex >= 2:
+                _all_spin_types.add(m.group(2))
         for m in spin_static_pattern.finditer(line):
-            unsafe_lock_statics.add(m.group(1))
-        for m in safe_lock_field_pattern.finditer(line):
-            safe_lock_fields.add(m.group(1))
-        for m in safe_lock_static_pattern.finditer(line):
-            safe_lock_statics.add(m.group(1))
+            if m.lastindex and m.lastindex >= 2:
+                _all_spin_types.add(m.group(2))
 
-    # 阶段 A.5: B01-06 修复 - 收集裸类型别名
-    # 通过 `use spin::Mutex as MyMutex;` 或 `use spin::{Mutex, RwLock};` 这类
-    # 别名引入的本地名. 例如 `pub type SpinMutex = spin::Mutex<T>;` 也可识别.
-    # 这样 `static X: SpinMutex = ...` 这种裸类型名也能被检测到.
+
+    # 阶段 A.5: B01-06 返工 - 收集裸类型别名 (覆盖带路径 import)
+    # 通过 `use spin::mutex::SpinMutex` / `use spin::Mutex as MyMutex` /
+    # `use spin::{Mutex, RwLock}` / `pub type SpinMutex = spin::Mutex<T>;` 这类
+    # 引入的本地名. 这样 `static X: SpinMutex = ...` 这种裸类型名也能被检测到.
+    # B01-06 返工关键改进: 正则覆盖带路径的形式, 如 `spin::mutex::SpinMutex`
+    # (捕获末段为任意类型名, 包括 SpinMutex/RwLock/Once/IrqSpinLock 等).
+    # 类型名 -> unsafe/safe 分类: 末段为 IrqSpinLock → safe, 其余 → unsafe.
+    # bare_aliases 在阶段 A 之前定义, 阶段 A 字段收集时按类型名查表.
     bare_aliases: dict[str, str] = {}  # 类型名 -> "unsafe" / "safe"
     pub_type_alias = re.compile(
-        r'^\s*(?:pub\s+)?type\s+(\w+)\s*(?:<[^>]*>)?\s*=\s*(?:crate::)?spin\s*::\s*'
-        r'(Mutex|RwLock|Once|OnceCell|IrqSpinLock)',
+        r'^\s*(?:pub\s+)?type\s+(\w+)\s*(?:<[^>]*>)?\s*=\s*'
+        r'(?:crate::)?(?:spin|sync)'
+        r'(?:::\s*\w+\s*)*::\s*(\w+)\b',
     )
     for lineno_1, line in enumerate(lines, start=1):
         s = line.strip()
         if s.startswith('//') or s.startswith('///') or s.startswith('/*'):
             continue
-        # use spin::Mutex as X; 或 use spin::{Mutex as X, ...};
-        m_use = re.search(r'use\s+(?:crate::)?spin\s*(?:::)?\s*\{([^}]+)\}', line)
+        # use spin::mutex::SpinMutex as X; 或 use spin::{mutex::SpinMutex as X, ...};
+        # B01-06 返工: 正则匹配 `use ...::...::* as X` (带路径的 use)
+        # 统一正则: 路径段 + 末段类型 + 可选别名
+        m_use = re.search(
+            r'use\s+(?:crate::)?(?:spin|sync)'
+            r'((?:::\s*\w+\s*)*)'
+            r'::\s*\{([^}]+)\}',
+            line,
+        )
         if m_use:
             for item in m_use.group(1).split(','):
                 item = item.strip()
-                # 形式: `Mutex` 或 `Mutex as MyMutex`
+                # 形式: `Mutex` / `Mutex as MyMutex` / `mutex::SpinMutex as X`
                 if ' as ' in item:
                     orig, alias = item.split(' as ')
                     orig = orig.strip()
                     alias = alias.strip()
-                    if orig in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
+                    # 提取末段 (SpinMutex → Mutex 等目标类型)
+                    orig_target = orig.split('::')[-1]
+                    if orig_target in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
                         bare_aliases[alias] = 'unsafe'
-                    elif orig == 'IrqSpinLock':
+                    elif orig_target == 'IrqSpinLock':
                         bare_aliases[alias] = 'safe'
                 else:
-                    if item in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
+                    # 提取末段
+                    orig_target = item.split('::')[-1]
+                    if orig_target in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
                         bare_aliases[item] = 'unsafe'
-                    elif item == 'IrqSpinLock':
+                    elif orig_target == 'IrqSpinLock':
                         bare_aliases[item] = 'safe'
             continue
-        # use spin::Mutex as X;
+        # use spin::mutex::SpinMutex as X; (带路径形式)
+        # B01-06 返工: 正则支持任意末段名 + 任意路径段 + 可选别名
         m_use_simple = re.search(
-            r'use\s+(?:crate::)?spin\s*::\s*(\w+)(?:\s+as\s+(\w+))?\s*;', line)
+            r'use\s+(?:crate::)?(?:spin|sync)'
+            r'((?:::\s*\w+\s*)*)'
+            r'::\s*(\w+)\s*(?:as\s+(\w+))?\s*;',
+            line,
+        )
         if m_use_simple:
             orig = m_use_simple.group(1)
             alias = m_use_simple.group(2) or orig
-            if orig in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
-                bare_aliases[alias] = 'unsafe'
-            elif orig == 'IrqSpinLock':
+            # B01-06 返工: 不限制末段为目标类别名 (原代码只接受
+            # Mutex/RwLock/Once/OnceCell, 但 SpinMutex 这种重命名形式漏).
+            # 改为: 任何 spin 路径下的类型都视为 unsafe (默认).
+            # 后续可在已知 IRQ safe 列表中显式豁免 (例如 IrqSpinLock).
+            if orig == 'IrqSpinLock':
                 bare_aliases[alias] = 'safe'
+            else:
+                # 末段以 Mutex/RwLock/Once/OnceCell 结尾, 或自定义名 (SpinMutex 等)
+                # 一律视为 unsafe. 详细分类暂不强制.
+                bare_aliases[alias] = 'unsafe'
             continue
-        # pub type X = spin::Mutex<...>;
+        # pub type SpinMutex = spin::mutex::SpinMutex<T>;
         m_type = pub_type_alias.search(line)
         if m_type:
             name = m_type.group(1)
@@ -223,9 +267,64 @@ def scan_file(filepath):
             elif target == 'IrqSpinLock':
                 bare_aliases[name] = 'safe'
 
-    # 把别名也加入已知锁集合
+    # 把别名也加入已知锁集合 (B01-06 返工: 阶段 B 现在引用)
     unsafe_lock_aliases = {name for name, kind in bare_aliases.items() if kind == 'unsafe'}
     safe_lock_aliases = {name for name, kind in bare_aliases.items() if kind == 'safe'}
+    # 阶段 A: 收集字段类型
+    # B01-06 返工: 按类型名查表决定 unsafe/safe (用阶段 A.5 的 bare_aliases).
+    for lineno_1, line in enumerate(lines, start=1):
+        if line.strip().startswith('//'):
+            continue
+        for m in spin_field_pattern.finditer(line):
+            field_name = m.group(1)
+            type_tail = m.group(2) if m.lastindex and m.lastindex >= 2 else None
+            # 优先查 bare_aliases (use/type 别名), 否则按末段默认 unsafe
+            if type_tail in bare_aliases:
+                kind = bare_aliases[type_tail]
+            else:
+                kind = 'safe' if type_tail == 'IrqSpinLock' else 'unsafe'
+            if kind == 'safe':
+                safe_lock_fields.add(field_name)
+            else:
+                unsafe_lock_fields.add(field_name)
+        for m in spin_static_pattern.finditer(line):
+            field_name = m.group(1)
+            type_tail = m.group(2) if m.lastindex and m.lastindex >= 2 else None
+            if type_tail in bare_aliases:
+                kind = bare_aliases[type_tail]
+            else:
+                kind = 'safe' if type_tail == 'IrqSpinLock' else 'unsafe'
+            if kind == 'safe':
+                safe_lock_statics.add(field_name)
+            else:
+                unsafe_lock_statics.add(field_name)
+        for m in safe_lock_field_pattern.finditer(line):
+            safe_lock_fields.add(m.group(1))
+        for m in safe_lock_static_pattern.finditer(line):
+            safe_lock_statics.add(m.group(1))
+    # 阶段 A.0b: B01-06 返工 - 检测裸类型字段 (如 `static X: SpinMutex`)
+    # 当 use 已引入别名后, 字段类型不再带 spin:: 前缀, 但类型名是
+    # 已知 spin 派生类 (在 bare_aliases 中). 这种字段也需加入 unsafe 集合.
+    bare_field_pattern = re.compile(
+        r'\b(?:pub(?:\([^)]*\))?\s+)?(\w+)\s*:\s*'
+        r'(\w+)\b(?!\s*::)',
+    )
+    bare_static_pattern = re.compile(
+        r'\bstatic\s+(\w+)\s*:\s*(\w+)\b(?!\s*::)',
+    )
+    for lineno_1, line in enumerate(lines, start=1):
+        if line.strip().startswith('//'):
+            continue
+        # 仅当类型名在 bare_aliases 中时, 视为 spin 引入的别名
+        # 排除普通类型 (如 u8, u32, bool 等) 通过 bare_aliases 查表
+        for m in bare_field_pattern.finditer(line):
+            type_name = m.group(2)
+            if type_name in bare_aliases and bare_aliases[type_name] == 'unsafe':
+                unsafe_lock_fields.add(m.group(1))
+        for m in bare_static_pattern.finditer(line):
+            type_name = m.group(2)
+            if type_name in bare_aliases and bare_aliases[type_name] == 'unsafe':
+                unsafe_lock_statics.add(m.group(1))
 
     # 阶段 B: 检测 .lock()/.read()/.write() 调用
     lock_call_pattern = re.compile(
@@ -264,12 +363,15 @@ def scan_file(filepath):
                 continue
 
             # 交叉检查字段类型
-            if field_name in safe_lock_fields or field_name in safe_lock_statics:
-                # 安全锁, 跳过
+            if (field_name in safe_lock_fields or field_name in safe_lock_statics
+                    or field_name in safe_lock_aliases):
+                # 安全锁 (含裸类型别名), 跳过
                 continue
             # 如果字段已知为非安全锁 OR 字段未知 (在中断上下文中, 默认 CRITICAL)
+            # B01-06 返工: 裸类型别名也加入已知非安全锁集合
             is_known_unsafe = (field_name in unsafe_lock_fields
-                               or field_name in unsafe_lock_statics)
+                               or field_name in unsafe_lock_statics
+                               or field_name in unsafe_lock_aliases)
 
             # 检查是否在中断上下文
             in_irq, fn_name = is_in_interrupt_context(str(filepath), lineno_1, line)
