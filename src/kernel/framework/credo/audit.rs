@@ -38,7 +38,7 @@ impl AuditLog {
     pub fn log(&self, pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
         let now = super::bootstrap::pwm_now();
         let idx = self.count.fetch_add(1, Ordering::AcqRel) % AUDIT_CAPACITY;
-        // SAFETY rationale: count 已 fetch_add, 后续写不会改变 idx; AuditEntry 不含
+        // SAFETY: count 已 fetch_add, 后续写不会改变 idx; AuditEntry 不含
         // 重入锁, 多核并发写不同 idx 不会数据竞争; 若 idx 相同 (环形覆盖) 也是
         // 单字节字段级别的无锁覆盖, 接受最后写入语义。
         let entry = &self.entries[idx] as *const AuditEntry as *mut AuditEntry;
