@@ -127,6 +127,20 @@ def module_breakdown(directory: Path) -> dict:
 
 
 def main():
+    # B01-12: --soft/--enforce 切换.
+    # 当前 TCB 实际 58.1%, 远超 30% 软目标. CI 需避免 hard fail (会阻塞所有 PR),
+    # 采用过渡设计:
+    # - 默认 (无 flag / --soft): 仅警告, exit 0
+    # - --enforce: 严格阈值, TCB >= 30% exit 1
+    # 未来 TCB < 30% 后, CI job 切换 --enforce.
+    import argparse
+    parser = argparse.ArgumentParser(description='QueenX TCB 度量')
+    parser.add_argument('--soft', action='store_true', default=True,
+                        help='仅警告 (默认)')
+    parser.add_argument('--enforce', action='store_true',
+                        help='严格阈值, 超标 exit 1')
+    args = parser.parse_args()
+
     fw_loc_raw = count_loc_raw(FRAMEWORK)
     sv_loc_raw = count_loc_raw(SERVICES)
     fw_loc = count_loc(FRAMEWORK)
@@ -211,11 +225,12 @@ def main():
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"\nJSON report: {json_path}")
 
-    # 退出码
+    # 退出码 (B01-12)
     if tcb_ratio >= TCB_TARGET_RATIO:
         print(f"\n⚠  TCB ratio ({tcb_ratio:.1f}%) exceeds target (<{TCB_TARGET_RATIO:.0f}%)")
-        # 不以超标退出, 仅警告
-        # sys.exit(1)
+        if args.enforce:
+            sys.exit(1)
+        # --soft: 仅警告, exit 0 (默认)
 
     print("\n✓ TCB report generated")
     sys.exit(0)
