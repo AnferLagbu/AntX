@@ -156,7 +156,8 @@ def main():
     # smoltcp / tests 排除后的自研 TCB
     # count_loc / count_loc_raw 已通过 _should_exclude 排除 smoltcp 和 tests,
     # fw_loc 即为自研非测试 effective 行数
-    smoltcp_dir = FRAMEWORK / 'net' / 'smoltcp'
+    # B01-12 修复: smoltcp 从 framework/net/ 迁移到 services/net/ (决策 3-B, 2026-06-24).
+    smoltcp_dir = SERVICES / 'net' / 'smoltcp'
     smoltcp_loc = count_loc_raw(smoltcp_dir, apply_exclusions=False) if smoltcp_dir.is_dir() else 0
     smoltcp_loc_eff = count_loc(smoltcp_dir, apply_exclusions=False) if smoltcp_dir.is_dir() else 0
     tests_dir = FRAMEWORK / 'tests'
