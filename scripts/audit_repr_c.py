@@ -50,10 +50,14 @@ def find_repr_c(filename, struct_name):
 def main():
     violations = []
     ok = []
+    errors = []  # B01-17: fail-closed, err 分支视为违规
     for name, path, risk in CRITICAL_STRUCTS:
         found, err = find_repr_c(path, name)
         if err:
-            print(f"  ⚠ {name}: {err}")
+            # B01-17 修复: fail-closed 原则. err 分支不再放行, 视为违规.
+            # "文件不存在" 或 "struct 未找到" 都意味着无法验证, 应阻断 CI.
+            print(f"  ⚠ {name}: {err} (fail-closed: 视为违规)")
+            errors.append((name, risk, path))
         elif found:
             ok.append((name, risk))
         else:
@@ -62,11 +66,16 @@ def main():
     print(f"=== audit_repr_c: 检查 {len(CRITICAL_STRUCTS)} 个关键 struct ===")
     print(f"  ✓ repr(C) 已加: {len(ok)}")
     print(f"  ✗ repr(C) 缺失: {len(violations)}")
+    if errors:
+        print(f"  ✗ 无法验证 (fail-closed): {len(errors)}")
     for name, risk, path in violations:
         print(f"    ✗ {name} ({risk}) — {path}")
+    for name, risk, path in errors:
+        print(f"    ⚠ {name} ({risk}) — {path} [fail-closed]")
 
-    if violations:
-        print("\n⚠ 存在未加 repr(C) 的 LTO 高风险 struct")
+    # B01-17: violations 或 errors 任一非空即视为违规
+    if violations or errors:
+        print("\n⚠ 存在未加 repr(C) 的 LTO 高风险 struct (或无法验证)")
         sys.exit(1)
     else:
         print("\n✓ audit_repr_c 通过")

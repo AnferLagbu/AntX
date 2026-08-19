@@ -99,10 +99,15 @@ def check_field_access(filename, field_name, ref_name):
 
 def main():
     all_violations = []
+    all_errors = []
     for filename, field, ref_name in RISKY_FIELDS:
         violations, err = check_field_access(filename, field, ref_name)
         if err:
+            # B01-17 修复: fail-closed 原则. err 分支不再放行, 视为违规.
+            # 例如: 文件不存在 / 未找到 Ref 访问 / 未找到直接访问 → 视为
+            # "无法验证 = 违规", 强制开发者确保访问模式可见.
             print(f"  ⚠ {filename}:{field}: {err}")
+            all_errors.append((filename, field, err))
         elif violations:
             all_violations.extend([(filename, field, lv) for lv in violations])
         else:
@@ -110,11 +115,17 @@ def main():
             print(f"  ✓ {filename}:{field}: 已用 {access_desc} 访问")
 
     print(f"=== audit_volatile_access: 检查 {len(RISKY_FIELDS)} 个高风险字段 ===")
-    if all_violations:
-        print(f"  ✗ {len(all_violations)} 处非 volatile 访问:")
-        for fn, field, (line, text) in all_violations:
-            print(f"    ✗ {fn}:{line} — self.{field}.get()")
-        print("\n⚠ 存在 LTO 错位风险")
+    # B01-17: fail-closed. err 或 violations 任一非空即视为违规
+    if all_violations or all_errors:
+        if all_violations:
+            print(f"  ✗ {len(all_violations)} 处非 volatile 访问:")
+            for fn, field, (line, text) in all_violations:
+                print(f"    ✗ {fn}:{line} — self.{field}.get()")
+        if all_errors:
+            print(f"  ✗ {len(all_errors)} 处 fail-closed 错误 (无法验证):")
+            for fn, field, err in all_errors:
+                print(f"    ✗ {fn}:{field}: {err}")
+        print("\n⚠ 存在 LTO 错位风险 (或无法验证访问模式)")
         sys.exit(1)
     else:
         print("✓ audit_volatile_access 通过")

@@ -16,6 +16,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src/kernel/framework")
 
 # 已知安全的 static mut 使用 (框架基础设施, 有外部锁保护或初始化后独占)
+# B01-17 修复: 改为精确匹配 (而非子串). 仅列出真正可能出现的 static mut 名名,
+# 移除"范围/唯一所有者/变量在/访问"等中文注释词 (不应作为豁免匹配).
 SAFE_PATTERNS = [
     "GLOBAL_PMM",        # OnceLock 保护
     "GLOBAL_KMALLOC",    # 内部锁
@@ -33,6 +35,7 @@ SAFE_PATTERNS = [
     "L1_IDMAP",          # MMU 初始化独占
     "L2_DEVICE",         # MMU 初始化独占
     "TTBR1",             # MMU 初始化独占
+    "TTBR1_L1",          # MMU 初始化独占 (L1 页表)
     "AP_PER_CPU",        # SMP 初始化独占
     "SERIAL_PORTS",      # 初始化独占
     "VGA_DRIVER",        # 初始化独占
@@ -69,10 +72,6 @@ SAFE_PATTERNS = [
     "UDP_TX_BUFS",       # smoltcp 缓冲池
     "UDP_RX_METAS",      # smoltcp 缓冲池
     "UDP_TX_METAS",      # smoltcp 缓冲池
-    "范围",              # 注释上下文
-    "唯一所有者",         # 注释上下文
-    "变量在",            # 注释上下文
-    "访问",              # 注释上下文
     "MockBlockDevice",   # 测试 mock
     "TEST_TIMER",        # hrtimer 测试专用
     "T1",                # hrtimer 测试专用
@@ -91,11 +90,13 @@ def main():
             with open(fpath, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
             # 搜索 static mut 声明 (排除注释中的 static mut 文本)
-            for m in re.finditer(r'^\s*static\s+mut\s+(\w+)', content, re.MULTILINE):
-                name = m.group(1)
+            # B01-17 修复: 支持 `pub(crate) static mut` / `pub static mut` 形式,
+            # 且 SAFE_PATTERNS 改为精确匹配 (避免子串误匹配)
+            for m in re.finditer(r'^\s*(pub(?:\([^)]*\))?\s+)?static\s+mut\s+(\w+)', content, re.MULTILINE):
+                name = m.group(2)
                 line_no = content[:m.start()].count('\n') + 1
-                # 检查是否在已知安全列表中
-                is_safe = any(s in name for s in SAFE_PATTERNS)
+                # 检查是否在已知安全列表中 (精确匹配, 而非子串)
+                is_safe = name in SAFE_PATTERNS
                 if not is_safe:
                     violations.append((rel_path, line_no, name))
 
