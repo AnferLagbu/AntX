@@ -1,17 +1,32 @@
 #!/usr/bin/env bash
-# QueenX/QueenX Framework Unsafe 块 SAFETY 注释自动审计
+# ⚠ DEPRECATED (B01-10, 2026-08-19)
 #
-# 扫描 framework/ 下所有 *.rs 文件, 列出每个 unsafe 块的位置 + 上方 5 行内
-# 是否含 SAFETY 注释, 输出一份诚实基线报告。
+# QueenX/QueenX Framework Unsafe 块 SAFETY 注释自动审计 (Bash 实现).
 #
-# 用法:
+# 本脚本已废弃, 统一使用 Python 实现:
+#   python3 tools/audit_unsafe.py                  # 人类可读
+#   python3 tools/audit_unsafe.py --machine        # TSV
+#   python3 tools/audit_unsafe.py --missing-only   # 只列缺 SAFETY
+#   python3 tools/audit_unsafe.py --summary        # 统计
+#
+# 废弃原因 (B01-10):
+#   1. 原脚本 `xargs bash -c 'scan_unsafe "$@"'` 调用方式导致函数不继承,
+#      工具实测返 0 但零输出 (scan_unsafe 函数未定义).
+#   2. 工具精度低于 Python 版 (5 行窗口 vs 60 行窗口 + 严格 SAFETY 匹配).
+#   3. Python 版支持 --summary / --machine / --missing-only 等更多输出格式.
+#
+# 保留本脚本的过渡说明: 仍可调用, 但会转发到 Python 版并打印废弃警告.
+# CI/文档引用清理: scripts/requirements.sh 与 tools/auto_fill_safety.py
+# 已切换至 Python 版. 历史调用方请迁移.
+#
+# 原 Bash 用法 (保留为参考):
 #   bash tools/audit_unsafe.sh                  # 人类可读表格
 #   bash tools/audit_unsafe.sh --machine        # TSV (便于管道)
 #   bash tools/audit_unsafe.sh --missing-only   # 只列缺 SAFETY 的
 #   bash tools/audit_unsafe.sh --summary        # 统计数字
 #
-# 退出码:
-#   0 = 审计完成 (不强制有/无 SAFETY 注释, 仅为状态报告)
+# 退出码 (与 Python 版一致):
+#   0 = 审计完成
 #   2 = 内部错误
 
 set -euo pipefail
@@ -19,18 +34,14 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-FW_DIR="src/kernel/framework"
+# B01-10 修复: 转发到 Python 实现 (避免 xargs bash -c 函数不继承问题)
+echo "⚠ DEPRECATED: tools/audit_unsafe.sh 已废弃, 转发到 Python 版 tools/audit_unsafe.py" >&2
+echo "  新用法: python3 tools/audit_unsafe.py [OPTIONS]" >&2
+echo "  本 Bash 调用: tools/audit_unsafe.sh $*" >&2
+echo "" >&2
 
-MODE="human"
-case "${1:-}" in
-    --machine)      MODE="machine" ;;
-    --missing-only) MODE="missing" ;;
-    --summary)      MODE="summary" ;;
-    --help|-h)
-        sed -n '3,21p' "$0" | sed 's/^# *//'
-        exit 0
-        ;;
-esac
+# 参数翻译: --missing-only / --machine / --summary 直接透传
+exec python3 "$PROJECT_ROOT/tools/audit_unsafe.py" "$@"
 
 if [ ! -d "$FW_DIR" ]; then
     echo "ERROR: $FW_DIR 不存在" >&2
