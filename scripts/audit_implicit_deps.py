@@ -41,45 +41,86 @@ ALLOWED_PATTERNS = [
 ]
 
 def find_framework_globals():
-    """查找 framework 中实际定义的全局变量"""
+    """查找 framework 中实际定义的全局变量.
+
+    B01-23 修复: FRAMEWORK_GLOBALS 改为动态发现 (扫描 framework/ 全部
+    `static [mut] NAME:` 与 `static NAME: TYPE` 声明). 原硬编码 14
+    项名字静态列表, 改名/新增后静默不再检测.
+    """
+    # 关键字过滤 (避免 `Self` / `usize` / `u32` 等被误作为全局变量名)
+    RUST_KEYWORDS = {
+        'Self', 'self', 'static', 'const', 'let', 'mut', 'ref', 'pub',
+        'use', 'fn', 'struct', 'enum', 'trait', 'impl', 'mod', 'crate',
+        'super', 'as', 'in', 'if', 'else', 'for', 'while', 'loop', 'match',
+        'return', 'break', 'continue', 'true', 'false', 'usize', 'u8', 'u16',
+        'u32', 'u64', 'u128', 'isize', 'i8', 'i16', 'i32', 'i64', 'i128',
+        'f32', 'f64', 'bool', 'char', 'str', 'String', 'Vec', 'Option',
+        'Result', 'Box', 'Rc', 'Arc', 'Cell', 'RefCell',
+    }
+
     globals_found = set()
+    # 静态模式: `static [mut] NAME: TYPE` 或 `static NAME: TYPE`
+    # NAME 必须是合法 Rust 标识符 (且非关键字)
+    static_pattern = re.compile(
+        r'\bstatic\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*'
+        r'(?::\s*[A-Za-z][\w:<> ,]*)?\s*[=;{]'
+    )
     for rust_file in FRAMEWORK_BASE.rglob('*.rs'):
         if 'smoltcp' in str(rust_file):
             continue
-        with open(rust_file, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                for global_name in FRAMEWORK_GLOBALS:
-                    if f'static mut {global_name}' in line or f'static {global_name}:' in line:
-                        globals_found.add(global_name)
+        try:
+            with open(rust_file, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    m = static_pattern.search(line)
+                    if m:
+                        name = m.group(1)
+                        if name in RUST_KEYWORDS:
+                            continue
+                        globals_found.add(name)
+        except (OSError, UnicodeDecodeError):
+            continue
+    # 与原静态列表合并 (兜底, 防止动态发现漏检)
+    for name in FRAMEWORK_GLOBALS:
+        globals_found.add(name)
     return globals_found
 
+
 def scan_services(framework_globals):
-    """扫描 services 层对 framework 全局状态的引用"""
+    """扫描 services 层对 framework 全局状态的引用.
+
+    B01-23 修复: `global_name in line` 子串匹配误判.
+    - `SCHEDULER` 误匹配 `SCHEDULER_READY` 等包含子串
+    - 改用 `\\b{name}\\b` 词边界, 排除子串误命中
+    """
     violations = []
-    
+
     for rust_file in SERVICES_BASE.rglob('*.rs'):
         if 'smoltcp' in str(rust_file):
             continue
-            
-        with open(rust_file, 'r', encoding='utf-8', errors='ignore') as f:
-            lines = f.read().split('\n')
-            
-            for line_num, line in enumerate(lines, 1):
-                stripped = line.strip()
-                if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
-                    continue
-                
-                for global_name in framework_globals:
-                    if global_name in line:
-                        is_allowed = any(re.search(pattern, line) for pattern in ALLOWED_PATTERNS)
-                        if not is_allowed:
-                            violations.append({
-                                'file': str(rust_file),
-                                'line': line_num,
-                                'global': global_name,
-                                'code': line.strip(),
-                            })
-    
+
+        try:
+            with open(rust_file, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.read().split('\n')
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        for line_num, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+                continue
+
+            for global_name in framework_globals:
+                # B01-23: 词边界匹配, 避免 SCHEDULER 误匹配 SCHEDULER_READY
+                if re.search(r'\b' + re.escape(global_name) + r'\b', line):
+                    is_allowed = any(re.search(pattern, line) for pattern in ALLOWED_PATTERNS)
+                    if not is_allowed:
+                        violations.append({
+                            'file': str(rust_file),
+                            'line': line_num,
+                            'global': global_name,
+                            'code': line.strip(),
+                        })
+
     return violations
 
 def main():
