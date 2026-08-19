@@ -2,13 +2,16 @@
 """
 M6.2 死锁检测矩阵扫描脚本 — 锁顺序/中断上下文/不可重入函数分析 (v1)
 
-检查规则:
+实际检查项 (B01-06 如实降级后):
   (1) 扫描所有 spin::Mutex / spin::RwLock / spin::Once 使用点
   (2) 检测在中断上下文 (IDT handler、ISR、irq handler) 中使用的锁
   (3) 标记非中断安全的锁 (应为 IrqSpinLock 而非 spin::Mutex)
-  (4) 扫描锁的获取顺序, 检测潜在 AB-BA 死锁
+  (4) 扫描裸类型锁名 (如 `SpinMutex` / `MyMutex` 等, 通过 import 解析收集)
   (5) 检测 sleep 锁 (Mutex) 在原子上下文的使用
-  (6) 检测不可重入函数中的锁使用
+
+未实现项 (本期不在范围内, 留作未来增强):
+  - AB-BA 死锁环检测: 需先建立锁顺序声明机制 (如 lockdep-style annotation)
+  - 不可重入函数检测: 需 Rust 类型系统级分析
 
 退出码: 0 = 无严重风险, 1 = 有高风险 (中断上下文非安全锁)
 """
@@ -165,6 +168,64 @@ def scan_file(filepath):
             safe_lock_fields.add(m.group(1))
         for m in safe_lock_static_pattern.finditer(line):
             safe_lock_statics.add(m.group(1))
+
+    # 阶段 A.5: B01-06 修复 - 收集裸类型别名
+    # 通过 `use spin::Mutex as MyMutex;` 或 `use spin::{Mutex, RwLock};` 这类
+    # 别名引入的本地名. 例如 `pub type SpinMutex = spin::Mutex<T>;` 也可识别.
+    # 这样 `static X: SpinMutex = ...` 这种裸类型名也能被检测到.
+    bare_aliases: dict[str, str] = {}  # 类型名 -> "unsafe" / "safe"
+    pub_type_alias = re.compile(
+        r'^\s*(?:pub\s+)?type\s+(\w+)\s*(?:<[^>]*>)?\s*=\s*(?:crate::)?spin\s*::\s*'
+        r'(Mutex|RwLock|Once|OnceCell|IrqSpinLock)',
+    )
+    for lineno_1, line in enumerate(lines, start=1):
+        s = line.strip()
+        if s.startswith('//') or s.startswith('///') or s.startswith('/*'):
+            continue
+        # use spin::Mutex as X; 或 use spin::{Mutex as X, ...};
+        m_use = re.search(r'use\s+(?:crate::)?spin\s*(?:::)?\s*\{([^}]+)\}', line)
+        if m_use:
+            for item in m_use.group(1).split(','):
+                item = item.strip()
+                # 形式: `Mutex` 或 `Mutex as MyMutex`
+                if ' as ' in item:
+                    orig, alias = item.split(' as ')
+                    orig = orig.strip()
+                    alias = alias.strip()
+                    if orig in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
+                        bare_aliases[alias] = 'unsafe'
+                    elif orig == 'IrqSpinLock':
+                        bare_aliases[alias] = 'safe'
+                else:
+                    if item in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
+                        bare_aliases[item] = 'unsafe'
+                    elif item == 'IrqSpinLock':
+                        bare_aliases[item] = 'safe'
+            continue
+        # use spin::Mutex as X;
+        m_use_simple = re.search(
+            r'use\s+(?:crate::)?spin\s*::\s*(\w+)(?:\s+as\s+(\w+))?\s*;', line)
+        if m_use_simple:
+            orig = m_use_simple.group(1)
+            alias = m_use_simple.group(2) or orig
+            if orig in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
+                bare_aliases[alias] = 'unsafe'
+            elif orig == 'IrqSpinLock':
+                bare_aliases[alias] = 'safe'
+            continue
+        # pub type X = spin::Mutex<...>;
+        m_type = pub_type_alias.search(line)
+        if m_type:
+            name = m_type.group(1)
+            target = m_type.group(2)
+            if target in ('Mutex', 'RwLock', 'Once', 'OnceCell'):
+                bare_aliases[name] = 'unsafe'
+            elif target == 'IrqSpinLock':
+                bare_aliases[name] = 'safe'
+
+    # 把别名也加入已知锁集合
+    unsafe_lock_aliases = {name for name, kind in bare_aliases.items() if kind == 'unsafe'}
+    safe_lock_aliases = {name for name, kind in bare_aliases.items() if kind == 'safe'}
 
     # 阶段 B: 检测 .lock()/.read()/.write() 调用
     lock_call_pattern = re.compile(
