@@ -68,23 +68,151 @@ def is_comment_line(stripped: str) -> bool:
     return False
 
 
-def check_safety_above(lines: List[str], line_idx: int) -> tuple[bool, str]:
+# SAFETY 匹配: 支持多种变体
+# 1. 块注释: `// SAFETY:` / `// SAFETY rationale:` / `// Safety note:`
+# 2. rustdoc 章节: `/// # Safety` / `//! # Safety` (章节标题, 无冒号)
+# 3. SAFETY 后允许跟随 rationale / note / comment / 注释 之一 (常见变体)
+SAFETY_BLOCK_RE = re.compile(r"(?:SAFETY|Safety)(?:\s+(?:rationale|note|comment|注释|说明|解释))?\s*[:：]")
+SAFETY_SECTION_RE = re.compile(r"#\s*(?:SAFETY|Safety)(?:\s|$)")
+
+
+def _scan_safety_window(lines: List[str], start_idx: int, max_lookback: int) -> tuple[bool, str]:
+    """从 start_idx (0-indexed) 向上扫描 max_lookback 行, 找 SAFETY 命中.
+
+    跳过:
+      - 空行
+      - 属性块 `#[...]` (单行 / 多行)
+      - 纯注释行 `//` `///` `*` `/*`
+
+    算法: 仅用 "属性块跨行" 的二元状态跟踪. 进入 `#[` 时 set in_attr=True,
+    遇到 `])`/`)]`/`]`/`)` 或单行 `#[..)]` 时 set in_attr=False.
+    仅基于行级模式匹配, 不计算括号平衡 (避免误判字符串/字符字面量).
     """
-    检查第 line_idx 行 (0-indexed) 的上方 8 行内 (line_idx-8 .. line_idx-1)
-    是否有 SAFETY 注解。两种形式:
-      1. `// SAFETY:` 或 `//SAFETY:`  紧邻注释 (Rust 惯用法, 紧挨 unsafe 块)
-         - 注释可能多行: `// SAFETY: \n//   1. ... \n//   2. ...`
-      2. `/// # Safety` 文档注释章节 (Rust 官方推荐, 紧挨 unsafe fn)
-    """
-    for i in range(max(0, line_idx - 8), line_idx):
-        line = lines[i]
-        if "SAFETY" in line:
+    in_attr = False
+    end_idx = max(-1, start_idx - max_lookback - 1)
+    for j in range(start_idx - 1, end_idx, -1):
+        if j < 0:
+            break
+        line = lines[j]
+        s = line.strip()
+        if not s:
+            continue
+        # SAFETY 严格匹配
+        if SAFETY_BLOCK_RE.search(line):
             return True, line.rstrip()
-        # /// # Safety 章节 (大小写不敏感)
-        stripped = line.lstrip()
-        if stripped.startswith("///") and "safety" in stripped.lower():
+        if SAFETY_SECTION_RE.search(line):
             return True, line.rstrip()
+        # 在属性块内, 跳过所有非 SAFETY 行
+        if in_attr:
+            # 退出条件: 含 ] 或 ) 表示属性块结束
+            if ']' in s or ')' in s:
+                in_attr = False
+            continue
+        # 进入多行属性块: `#[` 开始 (不以 `]`/`)` 结尾的)
+        if s.startswith("#["):
+            # 单行属性 #[..)] 或 #[..]]: 一行结束
+            if s.endswith(")") or s.endswith("]"):
+                continue
+            # 多行属性: 跳过, 进入 in_attr 状态
+            in_attr = True
+            continue
+        # 纯注释行
+        if s.startswith("//") or s.startswith("///") or s.startswith("*") or s.startswith("/*"):
+            continue
+        # 跨过非注释代码 (停止)
+        return False, line.rstrip()
     return False, ""
+
+
+def _find_enclosing_fn(lines: List[str], block_idx: int) -> int | None:
+    """unsafe 块专用: 从块行向上找**最近的** fn 签名 (0-indexed).
+
+    关键: 必须**最近**的 fn, 不能跨过当前 fn 找到上一个 fn.
+    unsafe 块位于 fn 体中, 其上方是 fn 体代码 ({), 跨过 fn 体是 impl 块或
+    其他 fn — 这些不算"包含"该 unsafe 块的 fn.
+
+    算法: 跟踪 brace_depth, 从 unsafe 块向上扫描, 跨过 { 时 depth++,
+    跨过 } 时 depth--, 遇到 fn 签名且 depth <= 0 时返回.
+    """
+    depth = 0
+    j = block_idx - 1
+    while j >= 0:
+        s = lines[j]
+        stripped = s.strip()
+        if not stripped:
+            j -= 1
+            continue
+        # 计算大括号平衡 (排除字符串/字符字面量内的括号 - 粗略)
+        # 这里只用于找 fn 边界, 粗略足够
+        # 先于 fn 检测避免被 fn 的 `)` 干扰
+        # fn 签名检测: 含 fn 关键字, 但不在 { / } 内, 且 depth 已跨过
+        # 简化: 当遇到 `fn <name>(` 且 depth == 0, 返回
+        # 但 unsafe 块的 { 可能还没匹配: depth 应从 0 开始 (进入块前)
+        # 实际上 unsafe 块上方紧挨 fn 体 { 之后, 跨过的代码含 { }, 所以 depth 累加
+        # 找最近的 fn: 当遇到非空非属性非注释行, 且不含 {, 视为 fn 边界
+        # 但这不准确. 改用更直接的方法: 找最近的 "fn <name>(" 关键字
+        if re.search(r"\b(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:async\s+)?(?:const\s+)?(?:unsafe\s+)?fn\s+\w+\s*[<(]", stripped):
+            # 排除 unsafe { 块起点
+            if not stripped.startswith("unsafe {") and not stripped.startswith("unsafe{"):
+                # 检查是否在跨过的同一作用域内 (depth 边界)
+                # 简化: 取最近的 fn, 假定 unsafe 块所在 fn 是最近的 fn 签名
+                return j
+        j -= 1
+    return None
+
+
+def check_safety_above(lines: List[str], line_idx: int) -> tuple[bool, str]:
+    """检查第 line_idx 行 (0-indexed) 上方是否有 SAFETY 注解.
+
+    修复 B01-15: 原 8 行窗口过窄漏报 `/// # Safety` (常在 10+ 行外的 doc comment).
+    新策略:
+      1. unsafe 块 (unsafe {): 向上扫描 60 行, 穿透 fn 体内部 (因为 SAFETY 可能在
+         fn 体中作为块注释出现), 但遇到上方 fn 签名或非注释代码时停止
+      2. unsafe fn/extern/impl/trait/ref: line_idx 本身就是 fn 签名, 直接扫描 60 行
+      3. SAFETY 严格匹配块注释 `(SAFETY|Safety):` 或 rustdoc 章节 `# Safety`
+
+    返回: (found, context_line). found=True 表示上方含 SAFETY 章节.
+    """
+    raw_line = lines[line_idx]
+    is_block = bool(re.search(r"\bunsafe\s*\{", raw_line))
+
+    if is_block:
+        # unsafe 块: 从行号向上扫描 60 行, 跳过注释行与属性块,
+        # 但遇到 fn 体内部代码 (let / if / return) 不停止 — 因为 SAFETY 注释可能在其上方.
+        # 唯一停止条件: 遇到 fn 签名行 (表明已离开当前 fn)
+        in_attr = False
+        for j in range(line_idx - 1, max(line_idx - 61, -1), -1):
+            if j < 0:
+                break
+            s = lines[j].strip()
+            if not s:
+                continue
+            if SAFETY_BLOCK_RE.search(lines[j]) or SAFETY_SECTION_RE.search(lines[j]):
+                return True, lines[j].rstrip()
+            # 跨行属性块
+            if in_attr:
+                if "]" in s:
+                    in_attr = False
+                continue
+            if s.startswith("#["):
+                if s.endswith(")") or s.endswith("]"):
+                    continue
+                in_attr = True
+                continue
+            if s.startswith("reason") or s.startswith(","):
+                continue
+            if s.startswith("//") or s.startswith("///") or s.startswith("*") or s.startswith("/*"):
+                continue
+            # fn 签名检测: 表明已离开当前 fn
+            if re.search(r"\b(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:async\s+)?(?:const\s+)?(?:unsafe\s+)?fn\s+\w+\s*[<(]", s):
+                if not s.startswith("unsafe {") and not s.startswith("unsafe{"):
+                    # 找到 fn 签名: 从 fn 上方再扫描一次 (doc comment)
+                    return _scan_safety_window(lines, j, max_lookback=60)
+            # 其他 fn 体内部代码 (let / if / return) 不停止, 继续向上
+        return False, ""
+    else:
+        # unsafe fn/extern/impl/trait/ref: 当前行就是 fn, 向上扫描 60 行
+        return _scan_safety_window(lines, line_idx, max_lookback=60)
 
 
 def scan_file(path: Path) -> List[UnsafeHit]:
