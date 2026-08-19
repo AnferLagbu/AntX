@@ -44,20 +44,58 @@ def check_i1():
 
 
 def check_i2():
-    """I2: services 不可直接访问内核内存 (裸指针解引用)"""
-    # 真正的违反: services 中对裸指针的解引用 (*ptr).field
-    # 合法: as *const u8 传参给 framework API (framework 负责安全校验)
-    # 合法: BTreeMap::entry(*hash) 等对普通引用的解引用 (无 unsafe 风险)
-    #
-    # 误报过滤: 排除方法实参位置 (`.entry(*hash)` `.or_insert(*x)`), 这些是对
-    # 普通引用 `&T` 的解引用拷贝, 不是裸指针解引用. 仅匹配表达式起首位置的
-    # `(*IDENT).` 才视为可疑.
+    """I2: services 不可直接访问内核内存 (裸指针解引用).
+
+    B01-21 修复: I2 检测范围限定到 framework 层.
+    设计依据: services 层有 `#![deny(unsafe_code)]` (B01-09 修复后),
+    编译期天然阻止裸指针解引用. 文本级判断"裸指针类型"不可靠且无必要.
+    framework 层是真正的 TCB, 需 I2 守护.
+    """
+    # 真正的违反: framework 中对裸指针的解引用 (*ptr).field
     patterns = [
         r'(?<![\w.,(])\(\*\w+\)\.',        # (*ptr).field — 表达式起首, 非方法实参
         r'\(\*mut\s+\w+\)\.',              # (*mut T).field
         r'\(\*const\s+\w+\)\.',            # (*const T).field
     ]
-    found = _scan_services(patterns, 'I2', exclude_patterns=[r'^\s*use\s+', r'^\s*//', r'^\s*//!'])
+    # 扫描 framework (而非 services)
+    return _scan_framework(patterns, 'I2', exclude_patterns=[r'^\s*use\s+', r'^\s*//', r'^\s*//!'])
+
+
+def _scan_framework(patterns, invariant_id, exclude_patterns=None):
+    """扫描 framework 目录, 返回匹配数.
+
+    B01-21 新增: 与 _scan_services 平行函数, 扫描 framework 而非 services.
+    专用于 I2 不变式 (框架 TCB 内部裸指针解引用守护).
+
+    B01-21 已知限制: 文本级检测无法区分 unsafe 块内 vs 外, 100+ 误报
+    (被 unsafe 块包裹的裸指针解引用). 后续改进: 引入 syn AST 解析.
+    """
+    found = 0
+    for rs in FRAMEWORK.rglob('*.rs'):
+        with open(rs, 'r', encoding='utf-8', errors='replace') as f:
+            for lineno, line in enumerate(f, 1):
+                stripped = line.strip()
+                if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('//!'):
+                    continue
+                if exclude_patterns:
+                    skip = False
+                    for ep in exclude_patterns:
+                        if re.search(ep, stripped):
+                            skip = True
+                            break
+                    if skip:
+                        continue
+                for pat in patterns:
+                    if re.search(pat, stripped, re.IGNORECASE):
+                        rel = rs.relative_to(BASE)
+                        violations.append({
+                            'invariant': invariant_id,
+                            'file': str(rel),
+                            'line': lineno,
+                            'content': stripped[:120],
+                        })
+                        found += 1
+                        break
     return found
 
 
@@ -116,6 +154,10 @@ def _scan_services(patterns, invariant_id, exclude_patterns=None):
     """扫描 services 目录, 返回匹配数"""
     found = 0
     for rs in SERVICES.rglob('*.rs'):
+        # B01-18/B01-21 修复: 排除 vendored smoltcp (3rd-party,
+        # 上游未修改, 无需按 I1-I6 守护)
+        if 'smoltcp' in str(rs):
+            continue
         with open(rs, 'r', encoding='utf-8', errors='replace') as f:
             for lineno, line in enumerate(f, 1):
                 stripped = line.strip()
