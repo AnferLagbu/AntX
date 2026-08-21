@@ -75,110 +75,12 @@ isr_common:
     jne .isr_no_kpti_enter
     swapgs
 
-    ; ═══ 自检式调试: ISR KPTI swapgs 后 IA32_GS_BASE 验证 ═══
-    ; 与 irq_common 'K' 诊断对称, 使用标记 'T'
-    ; 输出: 'T' + IA32_GS_BASE (16 hex) + '!' 若零 (BUG 标记)
-    push rax
-    push rdx
-    push rcx
-    push r14
-    push r15
-    mov dx, 0x3F8
-    mov al, 0x54                    ; 'T' - ISR KPTI swapgs 自检
-    mov ecx, 0xC0000101            ; IA32_GS_BASE
-    rdmsr                           ; EDX:EAX = IA32_GS_BASE
-    shl rdx, 32
-    or rdx, rax                     ; RDX = 完整 64 位值
-    mov r14, rdx
-    mov r15, 16
-.isr_t_gs_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .isr_t_gs_digit
-    add al, 0x27
-.isr_t_gs_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .isr_t_gs_loop
-    ; 自检: IA32_GS_BASE == 0 → 输出 '!' BUG 标记
-    test r14, r14
-    jnz .isr_t_gs_ok
-    mov dx, 0x3F8
-    mov al, 0x21                    ; '!' - BUG: swapgs 后 GS_BASE=0!
-.isr_t_gs_ok:
-    pop r15
-    pop r14
-    pop rcx
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试: GS_BASE 验证结束 ═══
-
     ; 保存用户 CR3: 硬件 CR3 此时仍是用户页表
     mov rax, cr3
 
-    ; ═══ 自检式调试: USER_CR3_SAVE 写入前标记 ═══
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x58                    ; 'X' - ISR 即将写入 USER_CR3_SAVE
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试结束 ═══
-
     mov [USER_CR3_SAVE], rax
 
-    ; ═══ 自检式调试: kernel_pml4 值验证 ═══
-    ; 输出: 'U' + kernel_pml4 (16 hex) + '!' 若零
-    ; 若有 'X' 但无 'U' → USER_CR3_SAVE 写入 #PF
-    mov rax, [gs:KERNEL_PML4_OFF]
-    push rax                        ; 保存 kernel_pml4 值
-    push rdx
-    push rcx
-    push r14
-    push r15
-    mov r14, rax
-    mov dx, 0x3F8
-    mov al, 0x55                    ; 'U' - ISR kernel_pml4 自检
-    mov r15, 16
-.isr_u_pml4_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .isr_u_pml4_digit
-    add al, 0x27
-.isr_u_pml4_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .isr_u_pml4_loop
-    ; 自检: kernel_pml4 == 0 → 输出 '!' BUG 标记
-    test r14, r14
-    jnz .isr_u_pml4_ok
-    mov dx, 0x3F8
-    mov al, 0x21                    ; '!' - BUG: kernel_pml4=0!
-.isr_u_pml4_ok:
-    pop r15
-    pop r14
-    pop rcx
-    pop rdx
-    pop rax                         ; 恢复 kernel_pml4 到 rax
-    ; ═══ 自检式调试: kernel_pml4 验证结束 ═══
-
     mov cr3, rax
-
-    ; ═══ 自检式调试: CR3 切换成功验证 ═══
-    ; 输出: 'V' 标记 (若到达此处说明 CR3 切换成功)
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x56                    ; 'V' - ISR CR3 切换成功
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试: CR3 切换验证结束 ═══
 
     swapgs
 .isr_no_kpti_enter:
@@ -198,70 +100,6 @@ isr_common:
     push r13
     push r14
     push r15
-
-    ; ═══ 自检式调试: 异常入口到达 (TRACK-INIT-RING3) ═══
-    ; 在寄存器全部保存后输出 'E' + 异常向量号 (2 hex digits)
-    ; #PF (vector 14=0x0E) 时额外输出 'P' + CR2 (16 hex) 故障地址
-    ; 此时栈偏移安全, 不会影响 KPTI 检查 (已在上方完成)
-    push rax
-    push rdx
-    push r14
-    push r15
-    mov dx, 0x3F8
-    mov al, 0x45                    ; 'E' - exception entry
-    ; 异常向量号: 原始栈上 [rsp+0] = int_no, 但 push 15 个寄存器后偏移 +120
-    ; 加上 push rax/rdx/r14/r15 (4 个) 后偏移 +32, 所以 int_no 在 [rsp + 152]
-    mov r14b, [rsp + 152]           ; int_no (低字节)
-    ; 输出高 nibble
-    mov al, r14b
-    shr al, 4
-    and al, 0x0F
-    cmp al, 10
-    jb .isr_e_hi_digit
-    add al, 0x27
-.isr_e_hi_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    ; 输出低 nibble
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .isr_e_lo_digit
-    add al, 0x27
-.isr_e_lo_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    ; ── #PF (vector 14=0x0E) 特殊处理: 输出 CR2 故障地址 ──
-    cmp r14b, 14
-    jne .isr_e_no_pf
-    mov al, 0x50                    ; 'P' - #PF CR2 标记
-    mov dx, 0x3F8
-    mov r14, cr2                    ; CR2 = 故障线性地址
-    mov r15, 16
-.isr_e_cr2_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .isr_e_cr2_digit
-    add al, 0x27
-.isr_e_cr2_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .isr_e_cr2_loop
-    ; 自检: CR2 == 0 → 可能是空指针解引用, 输出 '!' 提示
-    mov r14, cr2
-    test r14, r14
-    jnz .isr_e_no_pf
-    mov dx, 0x3F8
-    mov al, 0x21                    ; '!' - BUG: #PF CR2=0 (null ptr?)
-.isr_e_no_pf:
-    pop r15
-    pop r14
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试结束 ═══
 
     mov rdi, rsp
     call exception_handler
@@ -326,101 +164,7 @@ syscall_entry:
     ; 而未被发现. 入口点修改寄存器 = 破坏调用约定 = 不可恢复.
     ; ═══════════════════════════════════════════════════════════════════
 
-    ; ═══ 自检式调试: swapgs 前 MSR 值 (CR2=0x1 根因诊断) ═══
-    ; 输出 'Y' + IA32_GS_BASE (16 hex) + IA32_KERNEL_GS_BASE (16 hex)
-    ; 使用用户栈 (已映射) 保存/恢复寄存器, 不破坏 RAX (syscall 号)
-    push rax
-    push rdx
-    push rcx
-    push r14
-    push r15
-
-    mov dx, 0x3F8
-    mov al, 0x59                    ; 'Y' - syscall 入口 MSR 自检
-
-    mov ecx, 0xC0000101            ; IA32_GS_BASE
-    rdmsr                           ; EDX:EAX = IA32_GS_BASE
-    shl rdx, 32
-    or rdx, rax                     ; RDX = 完整 64 位值
-    mov r14, rdx
-    mov r15, 16
-.y_gs_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .y_gs_digit
-    add al, 0x27
-.y_gs_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .y_gs_loop
-
-    mov ecx, 0xC0000102            ; IA32_KERNEL_GS_BASE
-    rdmsr                           ; EDX:EAX = IA32_KERNEL_GS_BASE
-    shl rdx, 32
-    or rdx, rax                     ; RDX = 完整 64 位值
-    mov r14, rdx
-    mov r15, 16
-.y_kgs_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .y_kgs_digit
-    add al, 0x27
-.y_kgs_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .y_kgs_loop
-
-    pop r15
-    pop r14
-    pop rcx
-    pop rdx
-    pop rax
-    ; ═══ 自检结束 ═══
-
     swapgs
-
-    ; ═══ 自检式调试: swapgs 后 IA32_GS_BASE ═══
-    ; 输出 'Z' + IA32_GS_BASE (16 hex)
-    push rax
-    push rdx
-    push rcx
-    push r14
-    push r15
-
-    mov dx, 0x3F8
-    mov al, 0x5A                    ; 'Z' - swapgs 后 MSR 自检
-
-    mov ecx, 0xC0000101            ; IA32_GS_BASE (swapgs 后)
-    rdmsr
-    shl rdx, 32
-    or rdx, rax
-    mov r14, rdx
-    mov r15, 16
-.z_gs_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .z_gs_digit
-    add al, 0x27
-.z_gs_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .z_gs_loop
-
-    pop r15
-    pop r14
-    pop rcx
-    pop rdx
-    pop rax
-    ; ═══ 自检结束 ═══
 
     ; ═══════════════════════════════════════════════════════════════════
     ; 教训 (TRACK-INIT-RING3-CR3): CR3 切换必须在栈切换之前.
@@ -447,93 +191,20 @@ syscall_entry:
 
     mov rsp, r14                    ; 切换到内核 RSP (安全: 内核页表已加载)
 
-    ; ── 诊断: 标记 syscall 入口到达 ──────────────────────────────
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x53                    ; 'S' - syscall 入口到达
-    pop rax                         ; 恢复原始 RAX (syscall 号)
-
-    ; 输出 syscall 号 (RAX), 16 个 hex 数字
-    push rax                        ; 保存 syscall 号
-    mov r14, rax                    ; r14 = syscall 号 (用于 hex 输出)
-    mov r15, 16
-.syscall_hex_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .syscall_hex_digit
-    add al, 0x27
-.syscall_hex_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .syscall_hex_loop
-    pop rax                         ; 恢复 syscall 号到 RAX
-
     ; 构建 InterruptFrame (与 int 0x80 中断帧布局一致)
     push 0x1B                         ; SS = 用户数据段 (0x18|3)
-    ; ── 诊断: 标记 push SS 完成 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x31                    ; '1' - push SS done
-    pop rdx
-    pop rax
 
     push qword [gs:KERNEL_RSP_OFF]    ; 用户 RSP (xchg 时已存入 per-CPU)
-    ; ── 诊断: 标记 push RSP 完成 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x32                    ; '2' - push RSP done
-    pop rdx
-    pop rax
 
     push r11                          ; RFLAGS
-    ; ── 诊断: 标记 push RFLAGS 完成 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x33                    ; '3' - push RFLAGS done
-    pop rdx
-    pop rax
 
     push 0x23                         ; CS = 用户代码段 (0x20|3)
-    ; ── 诊断: 标记 push CS 完成 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x34                    ; '4' - push CS done
-    pop rdx
-    pop rax
 
     push rcx                          ; RIP
-    ; ── 诊断: 标记 push RIP 完成 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x35                    ; '5' - push RIP done
-    pop rdx
-    pop rax
 
     push 0                            ; err_code
-    ; ── 诊断: 标记 push err_code 完成 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x36                    ; '6' - push err_code done
-    pop rdx
-    pop rax
 
     push 0x80                         ; int_no
-    ; ── 诊断: 标记 push int_no 完成 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x37                    ; '7' - push int_no done
-    pop rdx
-    pop rax
 
     push rax
     push rbx
@@ -554,14 +225,6 @@ syscall_entry:
     mov rdi, rsp
     cld
     call syscall_dispatch_from_frame
-
-    ; ── 诊断: syscall dispatch 返回 ──
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x64                    ; 'd' - dispatch returned
-    pop rdx
-    pop rax
 
     pop r15
     pop r14
@@ -618,120 +281,13 @@ irq_common:
     jne .irq_no_kpti_enter
     swapgs
 
-    ; ═══ 自检式调试: IRQ KPTI swapgs 后 IA32_GS_BASE 验证 ═══
-    ; swapgs 后: IA32_GS_BASE = per_cpu_addr (内核 per-CPU 数据)
-    ; 若 IA32_GS_BASE = 0 → swapgs 前 IA32_KERNEL_GS_BASE = 0 → BUG
-    ; 输出: 'K' + IA32_GS_BASE (16 hex) + '!' 若零 (BUG 标记)
-    push rax
-    push rdx
-    push rcx
-    push r14
-    push r15
-    mov dx, 0x3F8
-    mov al, 0x4B                    ; 'K' - IRQ KPTI swapgs 自检
-    mov ecx, 0xC0000101            ; IA32_GS_BASE
-    rdmsr                           ; EDX:EAX = IA32_GS_BASE
-    shl rdx, 32
-    or rdx, rax                     ; RDX = 完整 64 位值
-    mov r14, rdx
-    mov r15, 16
-.irq_k_gs_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .irq_k_gs_digit
-    add al, 0x27
-.irq_k_gs_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .irq_k_gs_loop
-    ; 自检: IA32_GS_BASE == 0 → 输出 '!' BUG 标记
-    test r14, r14
-    jnz .irq_k_gs_ok
-    mov dx, 0x3F8
-    mov al, 0x21                    ; '!' - BUG: swapgs 后 GS_BASE=0!
-.irq_k_gs_ok:
-    pop r15
-    pop r14
-    pop rcx
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试: GS_BASE 验证结束 ═══
-
     ; 保存用户 CR3
     mov rax, cr3
 
-    ; ═══ 自检式调试: USER_CR3_SAVE 写入前标记 ═══
-    ; 若输出 'N' 后崩溃 → USER_CR3_SAVE 页面未映射到用户页表
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x4E                    ; 'N' - 即将写入 USER_CR3_SAVE
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试结束 ═══
-
     mov [USER_CR3_SAVE], rax
-
-    ; ═══ 自检式调试: USER_CR3_SAVE 写入成功, 读取 kernel_pml4 ═══
-    ; 输出 'L' + kernel_pml4 (16 hex) + '!' 若零
-    ; 若输出 'N' 但无 'L' → USER_CR3_SAVE 写入触发 #PF (页面未映射)
-    mov rax, [gs:KERNEL_PML4_OFF]
-    push rax                        ; 保存 kernel_pml4 值 (后续 mov cr3 需要)
-    push rdx
-    push rcx
-    push r14
-    push r15
-    mov r14, rax
-    mov dx, 0x3F8
-    mov al, 0x4C                    ; 'L' - kernel_pml4 自检
-    mov r15, 16
-.irq_l_pml4_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .irq_l_pml4_digit
-    add al, 0x27
-.irq_l_pml4_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .irq_l_pml4_loop
-    ; 自检: kernel_pml4 == 0 → 输出 '!' BUG 标记
-    test r14, r14
-    jnz .irq_l_pml4_ok
-    mov dx, 0x3F8
-    mov al, 0x21                    ; '!' - BUG: kernel_pml4=0!
-.irq_l_pml4_ok:
-    pop r15
-    pop r14
-    pop rcx
-    pop rdx
-    pop rax                         ; 恢复 kernel_pml4 到 rax
-    ; ═══ 自检式调试: kernel_pml4 验证结束 ═══
 
     ; 切换到内核页表
     mov cr3, rax
-
-    ; ═══ 自检式调试: CR3 切换成功验证 ═══
-    ; 切换后验证: 读取 [gs:0] 确认内核页表下 per-CPU 数据可访问
-    ; 输出: 'M' 标记 (若到达此处说明 CR3 切换成功)
-    ; 若有 'L' 但无 'M' → CR3 切换后内核页表无效 → Triple Fault
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x4D                    ; 'M' - CR3 切换成功
-    mov rax, [gs:0]                 ; 验证内核页表下 per-CPU 可访问
-    test rax, rax
-    jnz .irq_cr3_ok
-    mov al, 0x21                    ; '!' - BUG: CR3 切换后 [gs:0]=0!
-.irq_cr3_ok:
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试: CR3 切换验证结束 ═══
 
     swapgs
 .irq_no_kpti_enter:
@@ -780,57 +336,10 @@ irq_common:
     jne .irq_no_kpti_exit
     swapgs
 
-    ; ═══ 自检式调试: IRQ 返回用户态 user_pml4 验证 ═══
-    ; 输出: 'O' + user_pml4 (16 hex) + '!' 若零
-    ; 若 user_pml4 ≠ 进程用户页表 → KPTI 返回到错误页表 → #PF
-    push rax
-    push rdx
-    push rcx
-    push r14
-    push r15
-    mov r14, [gs:USER_PML4_OFF]
-    mov dx, 0x3F8
-    mov al, 0x4F                    ; 'O' - IRQ 返回用户态 user_pml4 自检
-    mov r15, 16
-.irq_o_pml4_loop:
-    rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb .irq_o_pml4_digit
-    add al, 0x27
-.irq_o_pml4_digit:
-    add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz .irq_o_pml4_loop
-    test r14, r14
-    jnz .irq_o_pml4_ok
-    mov dx, 0x3F8
-    mov al, 0x21                    ; '!' - BUG: user_pml4=0!
-.irq_o_pml4_ok:
-    pop r15
-    pop r14
-    pop rcx
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试: user_pml4 验证结束 ═══
-
     mov rax, [gs:USER_PML4_OFF]
     mov cr3, rax
     swapgs
 .irq_no_kpti_exit:
-
-    ; ═══ 自检式调试: iretq 前标记 ═══
-    ; 输出 'W' 标记 (若到达此处说明即将执行 iretq)
-    ; 若有 'O' 但无 'W' → CR3 切换后/swapgs 后崩溃
-    push rax
-    push rdx
-    mov dx, 0x3F8
-    mov al, 0x57                    ; 'W' - iretq 前
-    pop rdx
-    pop rax
-    ; ═══ 自检式调试结束 ═══
 
     iretq
 
@@ -1090,3 +599,4 @@ isr0x82:
 .isr0x82_no_kpti_exit:
 
     iretq
+

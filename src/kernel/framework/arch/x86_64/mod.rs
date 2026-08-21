@@ -473,49 +473,11 @@ enter_user_asm:
     // 参数: rdi=entry, rsi=stack, rdx=arg, rcx=user_cr3, r8=kstack
     cli
 
-    // ── 诊断: enter_user_asm 入口处 GS_BASE ──
-    // 在任何操作之前读取 IA32_GS_BASE, 验证从 Rust 到汇编的 GS 状态
-    push rax
-    push rdx
-    push rcx
-    mov dx, 0x3F8
-    mov al, 0x50                   // 'P' - enter_user_asm 入口 GS_BASE
-    mov ecx, 0xC0000101            // IA32_GS_BASE
-    rdmsr                           // EDX:EAX = IA32_GS_BASE
-    mov r14, rax
-    mov r15, 16
-99: rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb 98f
-    add al, 0x27
-98: add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz 99b
-    pop rcx
-    pop rdx
-    pop rax
-    // ── 诊断结束 ──
-
-    // 诊断点 1: 进入 enter_user_asm
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x41                    // 'A' - 标记进入 enter_user_asm
-    pop rax
-
     // 保存 user_cr3 到 rax (在清除寄存器前)
     mov rax, rcx
 
     // 保存 entry 到 r12 (在清除寄存器前)
     mov r12, rdi
-
-    // 诊断点 2: 准备切换到用户栈
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x42                    // 'B' - 准备切换 RSP 到用户栈
-    pop rax
 
     // 清除寄存器 (防止泄露内核信息到用户态)
     // 注意：rax 保存 user_cr3，稍后用于切换 CR3
@@ -532,12 +494,6 @@ enter_user_asm:
     // 切换到用户栈 (CPL=0, 仍可访问高半区)
     mov rsp, r8
 
-    // 诊断点 3: 已切换到用户栈, 构建 iretq 帧
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C' - 已切换 RSP, 构建 iretq 帧
-    pop rax
-
     // 在用户栈构建 iretq 帧
     // ⚠ 关键修复 (TRACK-INIT-RING3):
     // iretq 帧必须在用户栈上, 而非内核栈.
@@ -549,27 +505,12 @@ enter_user_asm:
     // gdt.rs pub const SELECTOR_USER_DATA 同步 (host-tests 校验).
     push 0x1B    // SS (用户数据段)
     
-    // 诊断点 C1: SS 已 push
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C1' - SS pushed
-    pop rax
     
     push r8             // RSP (用户栈, 当前 RSP 值)
     
-    // 诊断点 C2: RSP 已 push
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C2' - RSP pushed
-    pop rax
     
     push 0x202          // RFLAGS (IF 位)
     
-    // 诊断点 C3: RFLAGS 已 push
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C3' - RFLAGS pushed
-    pop rax
     
     # P2.B + F-13 (DECISION-051 simplified): CS = user code segment (DPL=3).
     # Byte length matches original push 0x23 (2 bytes), avoiding label offset redef.
@@ -577,19 +518,9 @@ enter_user_asm:
     # synced with gdt.rs pub const SELECTOR_USER_CODE (host-tests verifies).
     push 0x23    // CS (user code segment)
     
-    // 诊断点 C4: CS 已 push
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C4' - CS pushed
-    pop rax
     
     push r12            // RIP (用户入口, 使用保存的 r12)
     
-    // 诊断点 C5: RIP 已 push, iretq 帧构建完成
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C5' - RIP pushed, frame complete
-    pop rax
 
     // ═══ 关键修复 (TRACK-INIT-RING3): 更新 SyscallPerCpu.user_pml4 ═══
     // 中断/异常返回路径使用 [gs:USER_PML4_OFF] 切换回用户页表.
@@ -607,41 +538,6 @@ enter_user_asm:
     //           → mov gs, cx (IA32_GS_BASE 保持 0, IA32_KERNEL_GS_BASE 不受影响)
     swapgs
 
-    // ═══ 自检式调试: 验证 swapgs 后 IA32_KERNEL_GS_BASE 非零 ═══
-    // swapgs 后: IA32_GS_BASE=0, IA32_KERNEL_GS_BASE=per_cpu_addr
-    // 若 IA32_KERNEL_GS_BASE=0 → swapgs 前两个 MSR 都为 0 → BUG
-    // 输出: 'Q' + 16 hex digits + ('!' 若 BUG)
-    push rax
-    push rdx
-    push rcx
-    mov dx, 0x3F8
-    mov al, 0x51                   // 'Q' - swapgs 后自检
-    mov ecx, 0xC0000102            // IA32_KERNEL_GS_BASE
-    rdmsr                          // EDX:EAX = IA32_KERNEL_GS_BASE
-    shl rdx, 32
-    or rdx, rax                    // RDX = 完整 64 位值
-    mov r14, rdx
-    mov r15, 16
-97: rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb 96f
-    add al, 0x27
-96: add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz 97b
-    // 自检: IA32_KERNEL_GS_BASE == 0 → 输出 '!' BUG 标记
-    test r14, r14
-    jnz 95f
-    mov dx, 0x3F8
-    mov al, 0x21                   // '!' - BUG: swapgs 后 KERNEL_GS_BASE=0!
-95: pop rcx
-    pop rdx
-    pop rax
-    // ═══ 自检式调试结束 ═══
-
     // 加载用户态段寄存器 (必须在 mov cr3 之前!).
     // 原因: mov ds/es/fs/gs 需要读取 GDT, GDT 在高半区.
     // 切换 CR3 到用户页表后, 高半区未映射, 无法访问 GDT → #PF.
@@ -652,70 +548,14 @@ enter_user_asm:
     mov cx, 0x1B
     mov ds, cx
     
-    // 诊断点 C6: DS 已加载
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C6' - DS loaded
-    pop rax
     
     mov es, cx
     
-    // 诊断点 C7: ES 已加载
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C7' - ES loaded
-    pop rax
     
     mov fs, cx
 
-    // 诊断点 C8: FS 已加载
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C8' - FS loaded
-    pop rax
-
     mov gs, cx
     
-    // 诊断点 C9: GS 已加载, 段寄存器全部加载完成
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x43                    // 'C9' - GS loaded, all segments ready
-    pop rax
-
-    // ═══ 自检式调试: 验证 mov gs 后 IA32_KERNEL_GS_BASE 仍非零 ═══
-    // mov gs, cx 可能将 GDT 描述符 base(=0) 写入 IA32_GS_BASE,
-    // 但 IA32_KERNEL_GS_BASE 不受影响. 若为 0 → BUG
-    // 输出: 'R' + 16 hex digits + ('!' 若 BUG)
-    push rax
-    push rdx
-    push rcx
-    mov dx, 0x3F8
-    mov al, 0x52                   // 'R' - mov gs 后自检
-    mov ecx, 0xC0000102            // IA32_KERNEL_GS_BASE
-    rdmsr                          // EDX:EAX = IA32_KERNEL_GS_BASE
-    shl rdx, 32
-    or rdx, rax                    // RDX = 完整 64 位值
-    mov r14, rdx
-    mov r15, 16
-94: rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb 93f
-    add al, 0x27
-93: add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz 94b
-    // 自检: IA32_KERNEL_GS_BASE == 0 → 输出 '!' BUG 标记
-    test r14, r14
-    jnz 92f
-    mov dx, 0x3F8
-    mov al, 0x21                   // '!' - BUG: mov gs 后 KERNEL_GS_BASE=0!
-92: pop rcx
-    pop rdx
-    pop rax
-    // ═══ 自检式调试结束 ═══
 
     // ⚠ 关键修复 (TRACK-INIT-RING3):
     // 直接 fall-through 到 trampoline 后续代码.
@@ -723,11 +563,6 @@ enter_user_asm:
     // 高半区 VMA 已在用户页表中映射 (map_text_region_in_user_pml4),
     // 切换 CR3 后 CPU 仍可继续执行.
     
-    // 诊断点 D: 即将切换 CR3
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x44                    // 'D' - about to switch CR3
-    pop rax
 
     // ⚠ 关键修复 (TRACK-INIT-RING3):
     // 切换 CR3 到用户页表.
@@ -735,71 +570,6 @@ enter_user_asm:
     // 高半区 VMA 已在用户页表中映射, 切换后 CPU 可继续执行.
     mov cr3, rax
     
-    // 诊断点 F: CR3 已切换, 即将执行 iretq
-    // 注意: 此时已在用户页表, 但低半区有映射, 可以继续执行
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x46                    // 'F' - CR3 switched, about to iretq
-    pop rax
-
-    // ═══ 自检式调试: 输出 iretq 帧关键值 (hex) ═══
-    // 输出 'G' 标记
-    mov r14, rax
-    mov rax, 0x47
-    mov dx, 0x3F8
-    mov rax, r14
-    // 输出 RIP (r12 = 用户入口地址), 16 个 hex 数字
-    mov r14, r12
-    mov r15, 16
-99: rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb 98f
-    add al, 0x27
-98: add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz 99b
-    // 输出 'H' 标记
-    mov r14, rax
-    mov rax, 0x48
-    mov dx, 0x3F8
-    mov rax, r14
-    // 输出 RSP (当前栈指针 = iretq 帧地址)
-    mov r14, rsp
-    mov r15, 16
-99: rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb 98f
-    add al, 0x27
-98: add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz 99b
-    // 输出 'I' 标记
-    mov r14, rax
-    mov rax, 0x49
-    mov dx, 0x3F8
-    mov rax, r14
-    // 输出 CR3 (rax = user_cr3)
-    mov r14, rax
-    mov r15, 16
-99: rol r14, 4
-    mov al, r14b
-    and al, 0x0F
-    cmp al, 10
-    jb 98f
-    add al, 0x27
-98: add al, 0x30
-    mov dx, 0x3F8
-    dec r15
-    jnz 99b
-    // 恢复 rax = user_cr3 (r14 在最后一次 hex 输出后 = 0)
-    mov rax, r14
-    // ═══ 自检式调试结束 ═══
 
     // 清除 rax (防止泄露)
     xor eax, eax
@@ -917,3 +687,4 @@ impl SystemArch for X8664 {
 // ── Arch: 超 trait (空 body) ─────────────────────────────────────────
 
 impl Arch for X8664 {}
+

@@ -70,3 +70,55 @@ fn diagnostic_out_total_removed_count() {
     const TOTAL_REMOVED: usize = 1 + 28 + 42;
     assert_eq!(TOTAL_REMOVED, 71, "P3.A 累计删除 out dx, al 数量");
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// 2026-08-21 阻塞项根治后追加: 直接读取内核源码验证诊断残留清零.
+// 替代早期"自证"式常量断言 (审查记录指出测试有效性弱).
+// 0x3F8 在本两文件中的唯一用途是诊断输出 (COM1 调试串口由 Rust uart 驱动处理),
+// 故断言清零即可覆盖诊断代码物理删除的最终结果.
+// ────────────────────────────────────────────────────────────────────────────
+
+fn kernel_src_path(rel: &str) -> std::path::PathBuf {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    std::path::Path::new(manifest).join("..").join(rel)
+}
+
+#[test]
+fn isr_asm_has_no_serial_diagnostic_remnants() {
+    let path = kernel_src_path("src/kernel/framework/boot/isr.asm");
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("读取 {} 失败: {}", path.display(), e));
+    assert!(
+        !content.contains("0x3F8"),
+        "isr.asm 残留诊断常量 0x3F8 (阻塞项根治要求清零)"
+    );
+}
+
+#[test]
+fn mod_rs_has_no_serial_diagnostic_remnants() {
+    let path = kernel_src_path("src/kernel/framework/arch/x86_64/mod.rs");
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("读取 {} 失败: {}", path.display(), e));
+    assert!(
+        !content.contains("0x3F8"),
+        "mod.rs 残留诊断常量 0x3F8 (阻塞项根治要求清零)"
+    );
+}
+
+#[test]
+fn isr_asm_preserves_syscall_frame_and_dispatch() {
+    // 整块删除诊断时不得误删结构化代码 (早期实验 clean4 曾误删 syscall 帧构建 +
+    // dispatch, 仅编译通过、逻辑残废). 此处断言关键结构仍存在.
+    let path = kernel_src_path("src/kernel/framework/boot/isr.asm");
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("读取 {} 失败: {}", path.display(), e));
+    for (needle, desc) in [
+        ("call syscall_dispatch_from_frame", "syscall 分派调用"),
+        ("push 0x1B", "SS 帧字段"),
+        ("push 0x23", "CS 帧字段"),
+        ("push 0x80", "int_no 帧字段"),
+        ("mov cr3, r12", "KPTI 内核页表切换"),
+    ] {
+        assert!(content.contains(needle), "isr.asm 缺失结构化代码: {} ({})", needle, desc);
+    }
+}
