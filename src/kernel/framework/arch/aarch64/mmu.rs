@@ -258,18 +258,25 @@ unsafe fn set_mair(val: u64) {
     }
 }
 
-/// 启用 MMU: 设置 SCTLR_EL1.M (bit 0)
-/// 暂不启用缓存 (C bit 2, I bit 12), 后续单独处理
+/// 启用 MMU: 设置 SCTLR_EL1.M (bit 0) + C (bit 2) + I (bit 12)
+/// P3.B + F-11: 同时启用 D-cache 与 I-cache. ARM ARM 强烈建议启用 MMU 时
+/// 同时启用 C/I cache 以避免 speculative 访问绕过 MMU (CVE 防御).
+/// 历史版本注释 "暂不启用缓存, 后续单独处理" — 本次落地一并启用.
 #[inline(never)]
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn enable_mmu() {
     unsafe {
         // ARM ARM D5.10.2: 启用 MMU 前需要 DSB 确保所有之前操作可见,
         // 启用后需要 ISB 使 MMU 对后续指令生效.
+        // bit 0 = M (MMU enable), bit 2 = C (D-cache), bit 12 = I (I-cache).
+        // 立即数值 1 | 4 | 4096 = 4101; LLVM inline asm 不支持复杂表达式,
+        // 故展开为 3 步 orr (MOV + ORR 链). 修复 F-11.
         core::arch::asm!(
             "dsb sy",
             "mrs x0, sctlr_el1",
-            "orr x0, x0, #1",    // Set M bit
+            "orr x0, x0, #1",          // M bit
+            "orr x0, x0, #4",          // C bit
+            "orr x0, x0, #(1 << 12)",  // I bit (4096)
             "msr sctlr_el1, x0",
             "isb",
             out("x0") _,

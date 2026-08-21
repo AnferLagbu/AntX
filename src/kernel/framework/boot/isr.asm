@@ -51,12 +51,6 @@ isr%1:
 global irq%1
 irq%1:
     cli
-    ; ── 最小诊断: 标记 IRQ 到达 ──
-    push rax
-    mov dx, 0x3F8
-    mov al, 0x5A                   ; 'Z' - IRQ 入口到达
-    out dx, al
-    pop rax
     push 0
     push %2
     jmp irq_common
@@ -91,7 +85,6 @@ isr_common:
     push r15
     mov dx, 0x3F8
     mov al, 0x54                    ; 'T' - ISR KPTI swapgs 自检
-    out dx, al
     mov ecx, 0xC0000101            ; IA32_GS_BASE
     rdmsr                           ; EDX:EAX = IA32_GS_BASE
     shl rdx, 32
@@ -108,7 +101,6 @@ isr_common:
 .isr_t_gs_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .isr_t_gs_loop
     ; 自检: IA32_GS_BASE == 0 → 输出 '!' BUG 标记
@@ -116,7 +108,6 @@ isr_common:
     jnz .isr_t_gs_ok
     mov dx, 0x3F8
     mov al, 0x21                    ; '!' - BUG: swapgs 后 GS_BASE=0!
-    out dx, al
 .isr_t_gs_ok:
     pop r15
     pop r14
@@ -133,7 +124,6 @@ isr_common:
     push rdx
     mov dx, 0x3F8
     mov al, 0x58                    ; 'X' - ISR 即将写入 USER_CR3_SAVE
-    out dx, al
     pop rdx
     pop rax
     ; ═══ 自检式调试结束 ═══
@@ -152,7 +142,6 @@ isr_common:
     mov r14, rax
     mov dx, 0x3F8
     mov al, 0x55                    ; 'U' - ISR kernel_pml4 自检
-    out dx, al
     mov r15, 16
 .isr_u_pml4_loop:
     rol r14, 4
@@ -164,7 +153,6 @@ isr_common:
 .isr_u_pml4_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .isr_u_pml4_loop
     ; 自检: kernel_pml4 == 0 → 输出 '!' BUG 标记
@@ -172,7 +160,6 @@ isr_common:
     jnz .isr_u_pml4_ok
     mov dx, 0x3F8
     mov al, 0x21                    ; '!' - BUG: kernel_pml4=0!
-    out dx, al
 .isr_u_pml4_ok:
     pop r15
     pop r14
@@ -189,7 +176,6 @@ isr_common:
     push rdx
     mov dx, 0x3F8
     mov al, 0x56                    ; 'V' - ISR CR3 切换成功
-    out dx, al
     pop rdx
     pop rax
     ; ═══ 自检式调试: CR3 切换验证结束 ═══
@@ -223,7 +209,6 @@ isr_common:
     push r15
     mov dx, 0x3F8
     mov al, 0x45                    ; 'E' - exception entry
-    out dx, al
     ; 异常向量号: 原始栈上 [rsp+0] = int_no, 但 push 15 个寄存器后偏移 +120
     ; 加上 push rax/rdx/r14/r15 (4 个) 后偏移 +32, 所以 int_no 在 [rsp + 152]
     mov r14b, [rsp + 152]           ; int_no (低字节)
@@ -237,7 +222,6 @@ isr_common:
 .isr_e_hi_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     ; 输出低 nibble
     mov al, r14b
     and al, 0x0F
@@ -247,13 +231,11 @@ isr_common:
 .isr_e_lo_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     ; ── #PF (vector 14=0x0E) 特殊处理: 输出 CR2 故障地址 ──
     cmp r14b, 14
     jne .isr_e_no_pf
     mov al, 0x50                    ; 'P' - #PF CR2 标记
     mov dx, 0x3F8
-    out dx, al
     mov r14, cr2                    ; CR2 = 故障线性地址
     mov r15, 16
 .isr_e_cr2_loop:
@@ -266,7 +248,6 @@ isr_common:
 .isr_e_cr2_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .isr_e_cr2_loop
     ; 自检: CR2 == 0 → 可能是空指针解引用, 输出 '!' 提示
@@ -275,7 +256,6 @@ isr_common:
     jnz .isr_e_no_pf
     mov dx, 0x3F8
     mov al, 0x21                    ; '!' - BUG: #PF CR2=0 (null ptr?)
-    out dx, al
 .isr_e_no_pf:
     pop r15
     pop r14
@@ -357,7 +337,6 @@ syscall_entry:
 
     mov dx, 0x3F8
     mov al, 0x59                    ; 'Y' - syscall 入口 MSR 自检
-    out dx, al
 
     mov ecx, 0xC0000101            ; IA32_GS_BASE
     rdmsr                           ; EDX:EAX = IA32_GS_BASE
@@ -375,7 +354,6 @@ syscall_entry:
 .y_gs_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .y_gs_loop
 
@@ -395,7 +373,6 @@ syscall_entry:
 .y_kgs_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .y_kgs_loop
 
@@ -418,7 +395,6 @@ syscall_entry:
 
     mov dx, 0x3F8
     mov al, 0x5A                    ; 'Z' - swapgs 后 MSR 自检
-    out dx, al
 
     mov ecx, 0xC0000101            ; IA32_GS_BASE (swapgs 后)
     rdmsr
@@ -436,7 +412,6 @@ syscall_entry:
 .z_gs_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .z_gs_loop
 
@@ -476,7 +451,6 @@ syscall_entry:
     push rax
     mov dx, 0x3F8
     mov al, 0x53                    ; 'S' - syscall 入口到达
-    out dx, al
     pop rax                         ; 恢复原始 RAX (syscall 号)
 
     ; 输出 syscall 号 (RAX), 16 个 hex 数字
@@ -493,7 +467,6 @@ syscall_entry:
 .syscall_hex_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .syscall_hex_loop
     pop rax                         ; 恢复 syscall 号到 RAX
@@ -505,7 +478,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x31                    ; '1' - push SS done
-    out dx, al
     pop rdx
     pop rax
 
@@ -515,7 +487,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x32                    ; '2' - push RSP done
-    out dx, al
     pop rdx
     pop rax
 
@@ -525,7 +496,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x33                    ; '3' - push RFLAGS done
-    out dx, al
     pop rdx
     pop rax
 
@@ -535,7 +505,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x34                    ; '4' - push CS done
-    out dx, al
     pop rdx
     pop rax
 
@@ -545,7 +514,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x35                    ; '5' - push RIP done
-    out dx, al
     pop rdx
     pop rax
 
@@ -555,7 +523,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x36                    ; '6' - push err_code done
-    out dx, al
     pop rdx
     pop rax
 
@@ -565,7 +532,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x37                    ; '7' - push int_no done
-    out dx, al
     pop rdx
     pop rax
 
@@ -594,7 +560,6 @@ syscall_entry:
     push rdx
     mov dx, 0x3F8
     mov al, 0x64                    ; 'd' - dispatch returned
-    out dx, al
     pop rdx
     pop rax
 
@@ -664,7 +629,6 @@ irq_common:
     push r15
     mov dx, 0x3F8
     mov al, 0x4B                    ; 'K' - IRQ KPTI swapgs 自检
-    out dx, al
     mov ecx, 0xC0000101            ; IA32_GS_BASE
     rdmsr                           ; EDX:EAX = IA32_GS_BASE
     shl rdx, 32
@@ -681,7 +645,6 @@ irq_common:
 .irq_k_gs_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .irq_k_gs_loop
     ; 自检: IA32_GS_BASE == 0 → 输出 '!' BUG 标记
@@ -689,7 +652,6 @@ irq_common:
     jnz .irq_k_gs_ok
     mov dx, 0x3F8
     mov al, 0x21                    ; '!' - BUG: swapgs 后 GS_BASE=0!
-    out dx, al
 .irq_k_gs_ok:
     pop r15
     pop r14
@@ -707,7 +669,6 @@ irq_common:
     push rdx
     mov dx, 0x3F8
     mov al, 0x4E                    ; 'N' - 即将写入 USER_CR3_SAVE
-    out dx, al
     pop rdx
     pop rax
     ; ═══ 自检式调试结束 ═══
@@ -726,7 +687,6 @@ irq_common:
     mov r14, rax
     mov dx, 0x3F8
     mov al, 0x4C                    ; 'L' - kernel_pml4 自检
-    out dx, al
     mov r15, 16
 .irq_l_pml4_loop:
     rol r14, 4
@@ -738,7 +698,6 @@ irq_common:
 .irq_l_pml4_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .irq_l_pml4_loop
     ; 自检: kernel_pml4 == 0 → 输出 '!' BUG 标记
@@ -746,7 +705,6 @@ irq_common:
     jnz .irq_l_pml4_ok
     mov dx, 0x3F8
     mov al, 0x21                    ; '!' - BUG: kernel_pml4=0!
-    out dx, al
 .irq_l_pml4_ok:
     pop r15
     pop r14
@@ -766,12 +724,10 @@ irq_common:
     push rdx
     mov dx, 0x3F8
     mov al, 0x4D                    ; 'M' - CR3 切换成功
-    out dx, al
     mov rax, [gs:0]                 ; 验证内核页表下 per-CPU 可访问
     test rax, rax
     jnz .irq_cr3_ok
     mov al, 0x21                    ; '!' - BUG: CR3 切换后 [gs:0]=0!
-    out dx, al
 .irq_cr3_ok:
     pop rdx
     pop rax
@@ -835,7 +791,6 @@ irq_common:
     mov r14, [gs:USER_PML4_OFF]
     mov dx, 0x3F8
     mov al, 0x4F                    ; 'O' - IRQ 返回用户态 user_pml4 自检
-    out dx, al
     mov r15, 16
 .irq_o_pml4_loop:
     rol r14, 4
@@ -847,14 +802,12 @@ irq_common:
 .irq_o_pml4_digit:
     add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz .irq_o_pml4_loop
     test r14, r14
     jnz .irq_o_pml4_ok
     mov dx, 0x3F8
     mov al, 0x21                    ; '!' - BUG: user_pml4=0!
-    out dx, al
 .irq_o_pml4_ok:
     pop r15
     pop r14
@@ -875,7 +828,6 @@ irq_common:
     push rdx
     mov dx, 0x3F8
     mov al, 0x57                    ; 'W' - iretq 前
-    out dx, al
     pop rdx
     pop rax
     ; ═══ 自检式调试结束 ═══

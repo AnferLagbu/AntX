@@ -113,23 +113,45 @@ impl InterruptArch for Aarch64 {
         daif as usize
     }
 
-    /// 恢复 DAIF。
+    /// 恢复完整 DAIF 屏蔽位 (D/A/I/F).
     ///
-    /// 仅恢复 IRQ 屏蔽位 (DAIF bit 7), 不恢复 D/A/F 位。
-    /// 使用 `msr daifset`/`msr daifclr` 而非 `msr daif` 以避免
-    /// `msr daif, Xt` 在 QEMU aarch64 上的挂起问题。
+    /// P3.C + F-14: 历史版本仅恢复 IRQ (bit 7), 不恢复 D/A/F 位,
+    /// 与 x86_64 RFLAGS 完整保存/恢复不对称. 本版本恢复 4 位完整 DAIF,
+    /// 使用 4 次 `msr daifclr, #imm` / `msr daifset, #imm` 立即数指令组合
+    /// (QEMU 上 `msr daif, Xt` 会挂起, 拆分避免该问题).
+    ///
+    /// DAIF 位布局 (msr daifclr/daifset 立即数):
+    ///   bit 0 = D (Debug mask),  bit 1 = A (SError mask),
+    ///   bit 2 = I (IRQ mask),    bit 3 = F (FIQ mask).
     #[inline(always)]
     fn interrupt_restore(flags: usize) {
-        // SAFETY: msr daifset/daifclr 是立即数指令, 无内存副作用。
-        // flags 由 interrupt_disable 保存, 仅 bit 7 (IRQ) 有效。
+        // SAFETY: msr daifset/daifclr 是立即数指令, 无内存副作用.
+        // flags 由 interrupt_disable 保存的完整 DAIF (低 8 位有效).
         let daif = flags as u64;
-        if (daif & (1 << 7)) == 0 {
-            // 原始 DAIF 中 IRQ 是启用的, 恢复启用
-            unsafe {
-                asm!("msr daifclr, #2");
-            }
+        // F (FIQ) — bit 3 in immediate
+        if (daif & (1 << 9)) == 0 {
+            unsafe { asm!("msr daifclr, #8"); }
+        } else {
+            unsafe { asm!("msr daifset, #8"); }
         }
-        // 原始 DAIF 中 IRQ 是禁用的, 保持禁用 (no-op)
+        // A (SError) — bit 2 in immediate
+        if (daif & (1 << 8)) == 0 {
+            unsafe { asm!("msr daifclr, #4"); }
+        } else {
+            unsafe { asm!("msr daifset, #4"); }
+        }
+        // I (IRQ) — bit 1 in immediate
+        if (daif & (1 << 7)) == 0 {
+            unsafe { asm!("msr daifclr, #2"); }
+        } else {
+            unsafe { asm!("msr daifset, #2"); }
+        }
+        // D (Debug) — bit 0 in immediate
+        if (daif & (1 << 6)) == 0 {
+            unsafe { asm!("msr daifclr, #1"); }
+        } else {
+            unsafe { asm!("msr daifset, #1"); }
+        }
     }
 
     /// 启用 IRQ (msr daifclr)。
