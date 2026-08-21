@@ -213,6 +213,7 @@ pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
 /// Safe 包装: 向用户空间写入一个 Copy 结构体.
 ///
 /// 内部先 `validate_user_buf` 验证, 再 `ptr::write_unaligned` 写入.
+/// P4.B.5: SMAP 保护下用 stac/clac 包裹 `write_unaligned` (Linux 内核惯用模式).
 pub fn write_struct_to_user<T: Copy>(dst_ptr: u64, src: &T) -> bool {
     if dst_ptr == 0 {
         return false;
@@ -223,13 +224,21 @@ pub fn write_struct_to_user<T: Copy>(dst_ptr: u64, src: &T) -> bool {
     }
     // SAFETY: validate_user_buf 已验证 dst_ptr 指向的 user 缓冲
     // 至少有 size_of::<T>() 字节可写, 且 src 持有有效 T 值.
-    unsafe { core::ptr::write_unaligned(dst_ptr as *mut T, *src) };
+    // P4.B.5: SMAP 启用时, write_unaligned 必须 stac/clac 包裹.
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!("stac", options(nomem, nostack, preserves_flags));
+        core::ptr::write_unaligned(dst_ptr as *mut T, *src);
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!("clac", options(nomem, nostack, preserves_flags));
+    }
     true
 }
 
 /// Safe 包装: 从用户空间读取一个 Copy 结构体.
 ///
 /// 内部先 `validate_user_buf` 验证, 再 `ptr::read_unaligned` 读取.
+/// P4.B.5: SMAP 保护下用 stac/clac 包裹 `read_unaligned`.
 pub fn read_struct_from_user<T: Copy>(src_ptr: u64, dst: &mut T) -> bool {
     if src_ptr == 0 {
         return false;
@@ -240,6 +249,13 @@ pub fn read_struct_from_user<T: Copy>(src_ptr: u64, dst: &mut T) -> bool {
     }
     // SAFETY: validate_user_buf 已验证 src_ptr 指向的 user 缓冲
     // 至少有 size_of::<T>() 字节可读.
-    *dst = unsafe { core::ptr::read_unaligned(src_ptr as *const T) };
+    // P4.B.5: SMAP 启用时, read_unaligned 必须 stac/clac 包裹.
+    unsafe {
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!("stac", options(nomem, nostack, preserves_flags));
+        *dst = core::ptr::read_unaligned(src_ptr as *const T);
+        #[cfg(target_arch = "x86_64")]
+        core::arch::asm!("clac", options(nomem, nostack, preserves_flags));
+    }
     true
 }

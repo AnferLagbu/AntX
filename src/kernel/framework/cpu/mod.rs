@@ -238,6 +238,12 @@ bitflags::bitflags! {
         const RDTSCP      = 1 << 91;  // 64+27
         /// LM (Long Mode) - x86-64 支持!
         const LM          = 1 << 93;  // 64+29
+        // P4.B.1: SMEP/SMAP (CPUID Leaf7 ECX bit20/21) - 启用后拒绝 Ring 0 执行/访问用户页.
+        // bit 20/21 在 CpuFeatures 中已被 leaf1 ECX (1<<20= SSE4.1 检测等) + leaf0x80000001 EDX 等占用,
+        // 故使用 bit 30/31 (leaf7 ECX bit 30/31 未被任何现有 feature 检测, 安全).
+        // CpuFeatures bitflags 是 CPU feature 抽象层, 与 CPUID 寄存器 bit 不强制 1:1.
+        const SMEP        = 1 << 30;
+        const SMAP        = 1 << 31;
         /// SVM (AMD-V 虚拟化) 支持
         const SVM         = 1 << 94;  // 64+30
         const _3DNOWEXT   = 1 << 95;  // 64+31
@@ -1139,7 +1145,7 @@ fn collect_features(
 
     // ====== 高级 Leaf 7 Sub-leaf 0: 高级特性 (EBX) ======
     if max_leaf >= 7 {
-        let (_, ebx, _, _) = cpuid::cpuid(7, 0);
+        let (_, ebx, ecx, _) = cpuid::cpuid(7, 0);
 
         let mut feat = CpuFeatures::empty();
         if ebx & (1 << 0) != 0 {
@@ -1171,6 +1177,15 @@ fn collect_features(
         }
         if ebx & (1 << 29) != 0 {
             feat.insert(CpuFeatures::SHA);
+        }
+        // P4.B.2: SMEP/SMAP (CPUID Leaf7 ECX bit20/21).
+        // SMEP = Supervisor Mode Execution Prevention: Ring 0 不能执行 USER 页.
+        // SMAP = Supervisor Mode Access Prevention: Ring 0 不能访问 USER 页 (除非 stac).
+        if ecx & (1 << 20) != 0 {
+            feat.insert(CpuFeatures::SMEP);
+        }
+        if ecx & (1 << 21) != 0 {
+            feat.insert(CpuFeatures::SMAP);
         }
 
         features_out.insert(feat);
@@ -1361,13 +1376,23 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
         return Err("CPU does not support MSR");
     }
 
-    // 启用 SSE/SSE2 (设置 CR4.OSFXSR + CR4.OSXMMEXCPT)
+    // 启用 SSE/SSE2 + SMEP/SMAP (设置 CR4.OSFXSR + OSXMMEXCPT + 可选 SMEP/SMAP)
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     unsafe {
         let cr4: u64;
         core::arch::asm!("mov {0}, cr4", out(reg) cr4, options(nostack, nomem));
 
-        let new_cr4 = cr4 | (1 << 9) | (1 << 10); // OSFXSR + OSXMMEXCPT
+        // bit 9 = OSFXSR, bit 10 = OSXMMEXCPT (SSE/SSE2 必需).
+        // P4.B.3: bit 20 = SMEP (Ring 0 拒绝执行 USER 页), bit 21 = SMAP (Ring 0 拒绝访问 USER 页).
+        // SMAP 启用后, 所有用户内存代理点 (copy_user.rs 5 函数 + userptr.rs 2 函数)
+        // 必须用 stac/clac 包裹用户访问. 见 DECISION-054.
+        let mut new_cr4 = cr4 | (1 << 9) | (1 << 10);
+        if features.contains(CpuFeatures::SMEP) {
+            new_cr4 |= 1 << 20;
+        }
+        if features.contains(CpuFeatures::SMAP) {
+            new_cr4 |= 1 << 21;
+        }
         core::arch::asm!("mov cr4, {0}", in(reg) new_cr4, options(nostack, nomem, preserves_flags));
     }
 

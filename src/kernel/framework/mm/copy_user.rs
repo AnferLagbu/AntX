@@ -38,6 +38,38 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[cfg(test)]
 use super::PAGE_SIZE;
 
+// P4.B.4: SMAP 启用 (CR4.SMAP=1) 后, Ring 0 访问 USER 页触发 #PF.
+// stac (Set AC Flag) 临时取消 SMAP 保护, clac (Clear AC Flag) 恢复.
+// 仅 x86_64 指令, aarch64 无对应. cfg 门控避免跨架构编译失败.
+/// SAFETY: 调用方保证在 user 内存访问区间内调用, 配对 `smap_end`.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn smap_begin() {
+    unsafe {
+        core::arch::asm!("stac", options(nomem, nostack, preserves_flags));
+    }
+}
+
+/// SAFETY: 与 `smap_begin` 配对, 恢复 SMAP 保护.
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+unsafe fn smap_end() {
+    unsafe {
+        core::arch::asm!("clac", options(nomem, nostack, preserves_flags));
+    }
+}
+
+// aarch64 上 SMAP 不存在, 提供 no-op stub 以满足统一调用点.
+// SAFETY: no-op, 不会执行任何特权操作, 调用方配对语义不变.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+unsafe fn smap_begin() {}
+
+// SAFETY: no-op, 不会执行任何特权操作, 调用方配对语义不变.
+#[cfg(not(target_arch = "x86_64"))]
+#[inline(always)]
+unsafe fn smap_end() {}
+
 /// 用户态地址最大值 (规范形式)
 const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_F000;
 
@@ -293,7 +325,10 @@ pub fn copy_from_user(kernel_dst: &mut [u8], user_src: u64, len: usize) -> Resul
 
         let (_recovery_label, old_recovery) = setup_recovery();
 
+        // P4.B.4: SMAP 保护下访问用户内存.
+        smap_begin();
         core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, len);
+        smap_end();
 
         let faulted = teardown_recovery(old_recovery);
 
@@ -347,7 +382,10 @@ pub fn copy_to_user(user_dst: u64, kernel_src: &[u8], len: usize) -> Result<usiz
 
         let (_recovery_label, old_recovery) = setup_recovery();
 
+        // P4.B.4: SMAP 保护下写入用户内存.
+        smap_begin();
         core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, len);
+        smap_end();
 
         let faulted = teardown_recovery(old_recovery);
 
@@ -379,6 +417,9 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
 
         let (_recovery_label, old_recovery) = setup_recovery();
 
+        // P4.B.4: SMAP 保护下逐字节读取用户字符串.
+        // stac/clac 严格配对: 无论 break 还是正常退出都执行 clac.
+        smap_begin();
         for i in 0..max_len {
             let byte = core::ptr::read_volatile(ptr.add(i));
             if byte == 0 {
@@ -386,6 +427,7 @@ pub fn copy_string_from_user(user_str: u64, max_len: usize) -> Result<alloc::str
             }
             bytes.push(byte);
         }
+        smap_end();
 
         let faulted = teardown_recovery(old_recovery);
 
@@ -423,7 +465,10 @@ pub fn clear_user(user_ptr: u64, len: usize) -> Result<usize, ()> {
 
         let (_recovery_label, old_recovery) = setup_recovery();
 
+        // P4.B.4: SMAP 保护下写入用户内存.
+        smap_begin();
         core::ptr::write_bytes(ptr, 0, len);
+        smap_end();
 
         let faulted = teardown_recovery(old_recovery);
 
@@ -453,6 +498,8 @@ pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
 
         let (_recovery_label, old_recovery) = setup_recovery();
 
+        // P4.B.4: SMAP 保护下逐字节读取用户字符串.
+        smap_begin();
         let mut found_len = None;
         for i in 0..max_len {
             let byte = core::ptr::read_volatile(ptr.add(i));
@@ -461,6 +508,7 @@ pub fn strlen_user(user_str: u64, max_len: usize) -> Result<usize, ()> {
                 break;
             }
         }
+        smap_end();
 
         let faulted = teardown_recovery(old_recovery);
 
