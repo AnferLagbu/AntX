@@ -61,6 +61,13 @@ pub const SELECTOR_USER_CODE: u16 = 0x20;
 /// TSS 选择子 (低32位)
 pub const SELECTOR_TSS: u16 = 0x28;
 
+// P2.B + F-13 (DECISION-051): GDT 选择子单一来源策略.
+// 双重单一来源: Rust 端 pub const 是 Rust 代码单一来源; x86_64.ld
+// ABSOLUTE 符号是汇编代码单一来源. 二者数值必须一致. 未来 GDT 重排
+// 需同时修改 gdt.rs 与 x86_64.ld (DECISION-051 已登记).
+// 不在 Rust 端用 #[link_name] 导出: 链接器符号名仍受 Rust mangling
+// 影响, 实践上不稳定; 直接用链接脚本 ABSOLUTE 更简洁可靠.
+
 // ============================================================================
 // 位域定义 (Access Byte + Granularity)
 // ============================================================================

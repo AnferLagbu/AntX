@@ -5,6 +5,9 @@ global process_switch_asm
 global user_entry_trampoline
 extern user_entry_target
 extern user_entry_cr3
+; P2.B + F-13 (DECISION-051): GDT 选择子强绑定.
+; O-04 (proc/switch.asm:113 `mov ax, 0x23` 硬编码) 同期处理.
+extern SELECTOR_USER_CODE
 
 ; void process_switch_asm(ProcessContext* prev, const ProcessContext* next);
 ; RDI = *mut ProcessContext (save current register state here)
@@ -110,6 +113,10 @@ process_switch_asm:
     iretq
 
 user_entry_trampoline:
+    ; P2.B + F-13 (DECISION-051 简化方案): CS = 用户代码段 (DPL=3).
+    ; 字节长度与原 mov ax, 0x23 一致 (4 字节), 避免 label 偏移重定义.
+    ; 单一来源: src/kernel/framework/link/x86_64.ld SELECTOR_USER_CODE_RPL3 与
+    ; gdt.rs pub const SELECTOR_USER_CODE 同步 (host-tests 校验).
     mov ax, 0x23
     mov ds, ax
     mov es, ax

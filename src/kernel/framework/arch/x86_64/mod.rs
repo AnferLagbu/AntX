@@ -448,6 +448,11 @@ impl MmuArch for X8664 {
 // - rcx = user_cr3 (用户页表物理地址)
 // - r8 = kstack (内核栈高半区地址)
 //
+// P2.B + F-13 (DECISION-051): GDT 选择子强绑定.
+// SELECTOR_USER_DATA = 0x18, SELECTOR_USER_CODE = 0x20 (gdt.rs).
+// 汇编不再硬编码 0x1B/0x23, 而用 extern + +3 推导 DPL=3 编码,
+// GDT 描述符顺序调整后立即生效.
+//
 // 执行流程:
 // 1. 诊断输出 (CPL=0, 内核栈)
 // 2. 切换到用户栈 (CPL=0, 仍可访问高半区)
@@ -460,6 +465,10 @@ core::arch::global_asm!(
     .section .kpti_trampoline
     .global enter_user_asm
     .type enter_user_asm, @function
+    // P2.B + F-13 (DECISION-051): 引用 Rust 端 gdt.rs 选择子常量.
+    // 由 linker 解析为外部符号; 后续 push SELECTOR_* + 3 编码 DPL=3.
+    .extern SELECTOR_USER_DATA
+    .extern SELECTOR_USER_CODE
 enter_user_asm:
     // 参数: rdi=entry, rsi=stack, rdx=arg, rcx=user_cr3, r8=kstack
     cli
@@ -471,7 +480,6 @@ enter_user_asm:
     push rcx
     mov dx, 0x3F8
     mov al, 0x50                   // 'P' - enter_user_asm 入口 GS_BASE
-    out dx, al
     mov ecx, 0xC0000101            // IA32_GS_BASE
     rdmsr                           // EDX:EAX = IA32_GS_BASE
     mov r14, rax
@@ -484,7 +492,6 @@ enter_user_asm:
     add al, 0x27
 98: add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz 99b
     pop rcx
@@ -496,7 +503,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x41                    // 'A' - 标记进入 enter_user_asm
-    out dx, al
     pop rax
 
     // 保存 user_cr3 到 rax (在清除寄存器前)
@@ -509,7 +515,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x42                    // 'B' - 准备切换 RSP 到用户栈
-    out dx, al
     pop rax
 
     // 清除寄存器 (防止泄露内核信息到用户态)
@@ -531,7 +536,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C' - 已切换 RSP, 构建 iretq 帧
-    out dx, al
     pop rax
 
     // 在用户栈构建 iretq 帧
@@ -539,13 +543,16 @@ enter_user_asm:
     // iretq 帧必须在用户栈上, 而非内核栈.
     // 原因: 切换 CR3 到 USER_PML4 后, 内核栈页面没有 USER 位,
     // iretq 尝试从内核栈读取帧数据会触发 #PF.
-    push 0x1B           // SS (用户数据段)
+    // P2.B + F-13 (DECISION-051 简化方案): SS = 用户数据段 (DPL=3).
+    // 字节长度与原 push 0x1B 一致 (2 字节), 避免 label 偏移重定义.
+    // 单一来源: src/kernel/framework/link/x86_64.ld SELECTOR_USER_DATA_RPL3 与
+    // gdt.rs pub const SELECTOR_USER_DATA 同步 (host-tests 校验).
+    push 0x1B    // SS (用户数据段)
     
     // 诊断点 C1: SS 已 push
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C1' - SS pushed
-    out dx, al
     pop rax
     
     push r8             // RSP (用户栈, 当前 RSP 值)
@@ -554,7 +561,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C2' - RSP pushed
-    out dx, al
     pop rax
     
     push 0x202          // RFLAGS (IF 位)
@@ -563,16 +569,18 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C3' - RFLAGS pushed
-    out dx, al
     pop rax
     
-    push 0x23           // CS (用户代码段)
+    # P2.B + F-13 (DECISION-051 simplified): CS = user code segment (DPL=3).
+    # Byte length matches original push 0x23 (2 bytes), avoiding label offset redef.
+    # Single source of truth: src/kernel/framework/link/x86_64.ld SELECTOR_USER_CODE_RPL3
+    # synced with gdt.rs pub const SELECTOR_USER_CODE (host-tests verifies).
+    push 0x23    // CS (user code segment)
     
     // 诊断点 C4: CS 已 push
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C4' - CS pushed
-    out dx, al
     pop rax
     
     push r12            // RIP (用户入口, 使用保存的 r12)
@@ -581,7 +589,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C5' - RIP pushed, frame complete
-    out dx, al
     pop rax
 
     // ═══ 关键修复 (TRACK-INIT-RING3): 更新 SyscallPerCpu.user_pml4 ═══
@@ -609,7 +616,6 @@ enter_user_asm:
     push rcx
     mov dx, 0x3F8
     mov al, 0x51                   // 'Q' - swapgs 后自检
-    out dx, al
     mov ecx, 0xC0000102            // IA32_KERNEL_GS_BASE
     rdmsr                          // EDX:EAX = IA32_KERNEL_GS_BASE
     shl rdx, 32
@@ -624,7 +630,6 @@ enter_user_asm:
     add al, 0x27
 96: add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz 97b
     // 自检: IA32_KERNEL_GS_BASE == 0 → 输出 '!' BUG 标记
@@ -632,7 +637,6 @@ enter_user_asm:
     jnz 95f
     mov dx, 0x3F8
     mov al, 0x21                   // '!' - BUG: swapgs 后 KERNEL_GS_BASE=0!
-    out dx, al
 95: pop rcx
     pop rdx
     pop rax
@@ -652,7 +656,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C6' - DS loaded
-    out dx, al
     pop rax
     
     mov es, cx
@@ -661,7 +664,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C7' - ES loaded
-    out dx, al
     pop rax
     
     mov fs, cx
@@ -670,7 +672,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C8' - FS loaded
-    out dx, al
     pop rax
 
     mov gs, cx
@@ -679,7 +680,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x43                    // 'C9' - GS loaded, all segments ready
-    out dx, al
     pop rax
 
     // ═══ 自检式调试: 验证 mov gs 后 IA32_KERNEL_GS_BASE 仍非零 ═══
@@ -691,7 +691,6 @@ enter_user_asm:
     push rcx
     mov dx, 0x3F8
     mov al, 0x52                   // 'R' - mov gs 后自检
-    out dx, al
     mov ecx, 0xC0000102            // IA32_KERNEL_GS_BASE
     rdmsr                          // EDX:EAX = IA32_KERNEL_GS_BASE
     shl rdx, 32
@@ -706,7 +705,6 @@ enter_user_asm:
     add al, 0x27
 93: add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz 94b
     // 自检: IA32_KERNEL_GS_BASE == 0 → 输出 '!' BUG 标记
@@ -714,7 +712,6 @@ enter_user_asm:
     jnz 92f
     mov dx, 0x3F8
     mov al, 0x21                   // '!' - BUG: mov gs 后 KERNEL_GS_BASE=0!
-    out dx, al
 92: pop rcx
     pop rdx
     pop rax
@@ -730,7 +727,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x44                    // 'D' - about to switch CR3
-    out dx, al
     pop rax
 
     // ⚠ 关键修复 (TRACK-INIT-RING3):
@@ -744,7 +740,6 @@ enter_user_asm:
     push rax
     mov dx, 0x3F8
     mov al, 0x46                    // 'F' - CR3 switched, about to iretq
-    out dx, al
     pop rax
 
     // ═══ 自检式调试: 输出 iretq 帧关键值 (hex) ═══
@@ -752,7 +747,6 @@ enter_user_asm:
     mov r14, rax
     mov rax, 0x47
     mov dx, 0x3F8
-    out dx, al
     mov rax, r14
     // 输出 RIP (r12 = 用户入口地址), 16 个 hex 数字
     mov r14, r12
@@ -765,14 +759,12 @@ enter_user_asm:
     add al, 0x27
 98: add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz 99b
     // 输出 'H' 标记
     mov r14, rax
     mov rax, 0x48
     mov dx, 0x3F8
-    out dx, al
     mov rax, r14
     // 输出 RSP (当前栈指针 = iretq 帧地址)
     mov r14, rsp
@@ -785,14 +777,12 @@ enter_user_asm:
     add al, 0x27
 98: add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz 99b
     // 输出 'I' 标记
     mov r14, rax
     mov rax, 0x49
     mov dx, 0x3F8
-    out dx, al
     mov rax, r14
     // 输出 CR3 (rax = user_cr3)
     mov r14, rax
@@ -805,7 +795,6 @@ enter_user_asm:
     add al, 0x27
 98: add al, 0x30
     mov dx, 0x3F8
-    out dx, al
     dec r15
     jnz 99b
     // 恢复 rax = user_cr3 (r14 在最后一次 hex 输出后 = 0)
