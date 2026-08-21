@@ -113,10 +113,14 @@ context_switch_asm:
     msr  ttbr0_el1, x2
     isb
 
+    // P1.B + F-07: ARM ARM 规定 SPSR/ELR 写入后必须 isb 才能 eret,
+    // 否则 CPU 可能用旧值 eret 导致上下文错位. 同步插入 isb.
     ldr  x2, [x1, #112]
     msr  spsr_el1, x2
+    isb
     ldr  x2, [x1, #120]
     msr  elr_el1, x2
+    isb
 
     // 恢复 FPU/SIMD 状态 (V0-V31, FPCR, FPSR)
     add  x2, x1, #144
@@ -136,11 +140,14 @@ context_switch_asm:
     ldp  q26, q27, [x2, #416]
     ldp  q28, q29, [x2, #448]
     ldp  q30, q31, [x2, #480]
-    // FPCR 和 FPSR 从 fpu_state[62] 和 fpu_state[63] 恢复
+    // P1.B + F-07: FPCR/FPSR 修改后必须 isb 同步才能生效,
+    // 否则 eret 切换 PSTATE 时 FPU 控制位可能延后生效.
     ldr  x2, [x1, #640]
     msr  fpcr, x2
+    isb
     ldr  x2, [x1, #648]
     msr  fpsr, x2
+    isb
 
     // eret 恢复 SPSR_EL1 → PSTATE (含 DAIF), 无需显式 msr daif.
     eret

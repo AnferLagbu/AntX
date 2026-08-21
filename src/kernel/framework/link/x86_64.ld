@@ -114,6 +114,25 @@ SECTIONS
     
     . = ALIGN(4096);
     _kernel_end = .;
-    _kernel_size = _kernel_end - _kernel_text_vma;
-    _kernel_end_phys = _kernel_text_lma + _kernel_size;
+    /* P2.B + F-13 (DECISION-051): 为汇编端 extern 强制定义 GDT 选择子常量符号.
+     * 同时定义 DPL=3 编码的 USER 选择子 (RPL=3), 汇编 `push` 直接引用,
+     * 避免 `+3` 表达式被 Rust inline asm 解析器误报 (DECISION-051).
+     * 单一来源: gdt.rs pub const SELECTOR_USER_DATA/CODE 值必须与此同步;
+     * 未来若 GDT 重排, 需同时修改此处 + gdt.rs. */
+    SELECTOR_USER_DATA      = ABSOLUTE(0x18);
+    SELECTOR_USER_CODE      = ABSOLUTE(0x20);
+    SELECTOR_USER_DATA_RPL3 = ABSOLUTE(0x18 | 3);
+    SELECTOR_USER_CODE_RPL3 = ABSOLUTE(0x20 | 3);
+    SELECTOR_KERNEL_CODE    = ABSOLUTE(0x08);
+    SELECTOR_KERNEL_DATA    = ABSOLUTE(0x10);
+    SELECTOR_TSS            = ABSOLUTE(0x28);
+    /* P1.D + F-03: Distinguish VMA vs LMA semantics.
+     * Historically _kernel_size = VMA_end - VMA_text_start (numerically equal to LMA range
+     * because VMA-LMA offset is constant 0xFFFF800001000000 on x86_64).
+     * Explicit both flavors; _kernel_size aliases _kernel_size_lma so callers using
+     * loader semantics get the LMA value (matches what bootloader copies). */
+    _kernel_size_vma = _kernel_end - _kernel_text_vma;
+    _kernel_size_lma = _kernel_end - _kernel_text_lma;
+    _kernel_size = _kernel_size_lma;
+    _kernel_end_phys = _kernel_text_lma + _kernel_size_lma;
 }

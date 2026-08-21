@@ -55,5 +55,9 @@ SECTIONS
 
     . = ALIGN(4096);
     _kernel_end = .;
-    _kernel_size = _kernel_end - _kernel_start;
+    /* P1.D + F-03: Distinguish VMA/LMA semantics (both equal on aarch64
+     * because VMA == LMA in the low-half kernel mapping region). */
+    _kernel_size_vma = _kernel_end - _kernel_start;
+    _kernel_size_lma = _kernel_end - _kernel_start;
+    _kernel_size = _kernel_size_lma;
 }

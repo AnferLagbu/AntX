@@ -52,6 +52,9 @@ el3_entry:
     adr  x0, el2_entry
     msr  elr_el3, x0
 
+    // P1.C + F-06: ARM ARM 建议 eret 前 isb 同步 SPSR/ELR/SCR 写入,
+    // 否则 CPU 可能用旧 SCR 值 eret 导致 EL2 配置未生效.
+    isb
     eret
 
 // ============================================================
@@ -77,8 +80,21 @@ el2_entry:
     orr  x0, x0, #(1 << 1)  // EL1PCTEN
     msr  cnthctl_el2, x0
 
+    // P1.C + F-06: 显式清零 EL1 MAIR/TCR 影子寄存器,
+    // 防御 reset value 与 arch spec 不一致. eret 到 EL1 后 EL1 内核
+    // mmu::init() 会立即覆盖, 此处仅为清理 + 防御性文档.
+    msr  mair_el1, xzr
+    msr  tcr_el1, xzr
+
+    // P1.C + F-06: 显式清零 VTTBR_EL2 (禁用 stage-2 translation),
+    // ARMv8.1+ PE 默认可能在 EL2 用 stage-2. QEMU virt 不开 stage-2,
+    // 但实硬件 (某些 SoC) 默认值可能不同, 显式声明意图.
+    msr  vttbr_el2, xzr
+
     // SCTLR_EL1: 清除 (将进行配置)
     msr  sctlr_el1, xzr
+    // 同步上述所有 EL1 影子寄存器 + EL2 配置 (ARM ARM 建议 eret 前 isb)
+    isb
 
     // 设置 SPSR_EL2: EL=EL1h, DAIF masked
     mov  x0, #0x3c5         // M[3:0]=0101 (EL1h), DAIF=1111 (all masked)
@@ -88,6 +104,9 @@ el2_entry:
     adr  x0, el1_entry
     msr  elr_el2, x0
 
+    // P1.C + F-06: ARM ARM 建议 eret 前 isb 同步 SPSR/ELR/HCR 写入,
+    // EL1 配置 (CPACR_EL1/CNTHCTL_EL2/SCTLR_EL1) 必须 eret 前同步.
+    isb
     eret
 
 // ============================================================

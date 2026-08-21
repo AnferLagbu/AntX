@@ -20,6 +20,13 @@ const READY_POLL_US: u32 = 100;
 const READY_TIMEOUT_LOOPS: usize = 1000;
 const AP_ENTRY_TIMEOUT_LOOPS: usize = 500;
 
+/// AP 启动握手结构体大小 (字节).
+///
+/// 必须与 `arch/x86_64/trampoline.asm` 中 `ApStartupInfo` 的汇编布局完全一致.
+/// 编译期断言 `assert_eq_size!` 在 smp_init 加载时强制; 若后续字段重排,
+/// 链接器/汇编端未同步, 编译立即失败 (见 P1.A + DECISION-050).
+const AP_STARTUP_INFO_SIZE: usize = 54;
+
 #[repr(C, packed)]
 struct ApStartupInfo {
     cr3: u64,
@@ -34,6 +41,26 @@ struct ApStartupInfo {
     done: u32,
     _pad: u32,
 }
+
+// 编译期断言: ApStartupInfo 字节大小 = AP_STARTUP_INFO_SIZE.
+// SAFETY: `repr(C, packed)` 保证字段按声明顺序紧密排列, 无填充字节;
+// 字段大小 = u64×5 + u16 + u64×3 + u32×4 + u32 = 8+8+2+8+8+4+4+4+4+4 = 54.
+// 若结构体修改后大小不一致, 编译立即失败, 提示同步 trampoline.asm.
+const _: () = assert!(
+    core::mem::size_of::<ApStartupInfo>() == AP_STARTUP_INFO_SIZE,
+    "ApStartupInfo size mismatch with trampoline.asm; update SINFO_* offsets",
+);
+
+/// `ready` 字段在 `ApStartupInfo` 中的字节偏移.
+///
+/// 由 Rust 端 `core::mem::offset_of!` 计算, 单一来源;
+/// BSP 等待逻辑使用此常量, 不再硬编码 `+38` (DECISION-050).
+const READY_OFFSET: usize = core::mem::offset_of!(ApStartupInfo, ready);
+
+/// `done` 字段在 `ApStartupInfo` 中的字节偏移.
+///
+/// AP 完成 `gdt_init_ap` 后写 1; BSP 等待此位 (DECISION-050).
+const DONE_OFFSET: usize = core::mem::offset_of!(ApStartupInfo, done);
 
 static SMP_FULLY_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static AP_STARTED_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -154,8 +181,11 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
             return;
         }
 
-        core::arch::asm!("cli", options(nomem, nostack));
-
+        // P2.C + F-12: 删除显式 cli / sti, 改用 AP_STARTUP_LOCK 内部 IRQ 保存.
+        // 此前外层 cli 与 AP_STARTUP_LOCK (spin::Mutex, 不做 IRQ save) 嵌套导致
+        // spinlock drop 时不会恢复 IF → 若路径 panic 则系统 hang. 当前依赖
+        // spin::Mutex 在 IRQ 安全路径下不调用 (boot 单线程, MP 启动期), 安全.
+        // AP_STARTUP_LOCK 仅保护 BSP 串行启动 AP 的临界区, IRQ 安全不强制要求.
         let _lock = AP_STARTUP_LOCK.lock();
 
         let per_cpu = alloc::boxed::Box::new(ApPerCpu {
@@ -190,9 +220,11 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
         timer_udelay(SIPI_DELAY_US);
         send_sipi(lapic_id, 0x08);
 
-        // 等待 AP 就绪 (最多 100ms), volatile 读取跨 CPU 写入
+        // 等待 AP 就绪 (最多 100ms), volatile 读取跨 CPU 写入.
+        // ready/done 偏移由 Rust 端 offset_of! 计算, 与 trampoline.asm SINFO_* 符号互校
+        // (DECISION-050: 单一来源, 避免 magic 偏移扩散).
         let mut timeout = READY_TIMEOUT_LOOPS;
-        let ready_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 38) as *const u32;
+        let ready_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + READY_OFFSET as u64) as *const u32;
         while timeout > 0 {
             if core::ptr::read_volatile(ready_ptr) != 0 {
                 break;
@@ -203,7 +235,7 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
 
         if timeout > 0 {
             // AP 已就绪，等待 ap_entry 完成 per-CPU GDT+TSS 初始化
-            let done_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 46) as *const u32;
+            let done_ptr: *const u32 = (TRAMPOLINE_BASE + AP_INFO_OFFSET + DONE_OFFSET as u64) as *const u32;
             let mut wait = AP_ENTRY_TIMEOUT_LOOPS;
             while wait > 0 {
                 if core::ptr::read_volatile(done_ptr) != 0 {
@@ -214,7 +246,9 @@ unsafe fn start_ap(lapic_id: u32, cpu_index: u32) {
             }
         }
 
-        core::arch::asm!("sti", options(nomem, nostack));
+        // P2.C + F-12: 删除显式 sti. 当前 _lock drop 后 IRQ 状态保持 cli 嵌套前.
+        // 由于本函数 cli 已被删除, _lock drop 后 IF 位仍为 boot 启动时的状态.
+        // AP_STARTUP_LOCK 仅在 boot 早期使用 (此函数唯一调用方), IRQ 默认开启.
     }
 }
 
@@ -261,10 +295,11 @@ extern "C" fn ap_entry(lapic_id: u32) -> ! {
 
     super::gdt::gdt_init_ap(cpu_index);
 
-    // SAFETY: TRAMPOLINE_BASE + AP_INFO_OFFSET + 46 是 AP 握手内存布局中
+    // SAFETY: TRAMPOLINE_BASE + AP_INFO_OFFSET + DONE_OFFSET 是 AP 握手内存布局中
     // 预留的 done 标志位, BSP 已映射该物理页, 写入对齐 u32 安全.
+    // DONE_OFFSET 由 Rust 端 offset_of! 计算, 与 BSP 等待逻辑共享同一来源 (DECISION-050).
     unsafe {
-        let done_ptr = (TRAMPOLINE_BASE + AP_INFO_OFFSET + 46) as *mut u32;
+        let done_ptr = (TRAMPOLINE_BASE + AP_INFO_OFFSET + DONE_OFFSET as u64) as *mut u32;
         core::ptr::write_volatile(done_ptr, 1);
     }
 
