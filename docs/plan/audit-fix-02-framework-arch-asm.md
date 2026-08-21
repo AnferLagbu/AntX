@@ -262,7 +262,7 @@
     - **x86_64**：`kpti.rs:333-338` `USER_PML4[256..512] = KERNEL_PML4[256..512]` 完整复制内核高半区；`kpti.rs:350-380` 整个 `.text` 映射进用户页表（PRESENT only）。用户态 CR3 含完整内核映射，仅靠 PTE 无 USER 位 → Meltdown 侧信道防御（KPTI 核心价值）未实现，内核布局完整泄露。
     - **aarch64**：`kpti_aarch64.rs:158-167` `TRAMP_TTBR1` 复制 L0[256..511] 完整高半区（注释自认"后续优化: 仅复制异常向量表所在 L1 条目, 其余置零"）；`arch/aarch64/mod.rs:272-310` `enter_user` 只切 TTBR0，**未调用 kpti_exit_to_user** → 首次进入 EL0 时 TTBR1 仍为完整内核页表。
     - **根治路径**：aarch64 近期（trampoline 最小化 + enter_user 激活，工程量小）；x86_64 中长期（KPTI trampoline section 重构，异常入口迁移到独立 section，用户页表只映射该 section + 必需数据页，Linux `.entry.text` 模式）。
-  - 状态：[]（重新打开，返工项）
+  - 状态：[X]（2026-08-21 用户决策：**留作独立工程，不在本分册返工范围**，单独立项跟踪；分册 2 视为"已识别并登记"，详见遗留项）
 
 - **B02-40. P4.B SMEP/SMAP 启用**（DECISION-054 推进）
   - 描述：
@@ -332,7 +332,7 @@
 | P3.A.3 | isr.asm 42 处 `out dx, al` 单行删除 | [X]（DECISION-055 替换方案） |
 | P3.B | aarch64 enable_mmu C/I cache 3 步链 | [X] |
 | P3.C | aarch64 interrupt_restore 4 位 DAIF | [X] |
-| P4.A | KPTI 三件套（F-08/F-10/F-16）完整化 | []（2026-08-21 复核修正：半 KPTI，重新打开，返工项） |
+| P4.A | KPTI 三件套（F-08/F-10/F-16）完整化 | [X]（2026-08-21 复核修正：半 KPTI 已识别登记，留作独立工程，单独立项跟踪） |
 | P4.B | SMEP/SMAP 启用 | [X] |
 
 #### 新增 host-tests
@@ -437,11 +437,15 @@
 >
 > 遗留项（如实登记，不虚标）：
 > - B02-25 Ring 3 往返完整验证受 x86_64 e1000 挂起已知基线限制，待网络栈修复后补跑
-> - **B02-39 KPTI 完整化（返工项）**：复核修正——两架构 KPTI 均为半实现（x86_64
+> - **B02-39 KPTI 完整化（独立工程）**：复核修正——两架构 KPTI 均为半实现（x86_64
 >   USER_PML4 完整复制内核高半区 + 整个 .text 映射进用户页表；aarch64 TRAMP_TTBR1
 >   完整复制 + enter_user 未激活切换），Meltdown 侧信道防御未实现。根治：aarch64
 >   trampoline 最小化 + enter_user 激活（近期），x86_64 KPTI trampoline section
->   重构（中长期，Linux `.entry.text` 模式）。详见 B02-39 条目。
+>   重构（中长期，Linux `.entry.text` 模式）。**用户决策：留作独立工程单独立项**，
+>   不在本分册返工范围。详见 B02-39 条目。
+> - **F7 违规残留（返工项）**：`mod.rs:519` `// CS (user code segment)` 为分册 2
+>   KPTI 修复 commit 引入的英文注释（audit_comment_language 68/70 中残留 1 处，
+>   'C5'/'F' 已随 2026-08-21 诊断删除消除），需改中文注释闭合 F7。
 > - 脚本 `/tmp/clean_isr_diag.py`、`/tmp/apply_clean_mod.py` 为一次性验证工具，
 >   未纳入 scripts/ 仓库（如后续需可复现可迁移）
 > - **预存缺陷（构建系统）**：Makefile `.arch` 跨架构清理机制在
