@@ -256,9 +256,13 @@
 
 #### Phase 4（修订方案，DECISION-054，单开 PR）
 
-- **B02-39. P4.A KPTI 三件套（F-08/F-10/F-16）— 推迟到未来防御**
-  - 描述：调研发现 KPTI 三件套在当前实现中**已正确**：F-08 由 `exception.rs` 6 处 adrp+ldr+cbz+dsb+msr+isb 重复展开完成 TTBR1 切换；F-10 由 `switch.asm` 调度 CR3 切换范围限定（调度阶段保持内核 CR3）；F-16 由 `kpti.rs:569 map_text_page` 不设 PTE G 位防御（依赖 `mov cr3` 隐式刷新所有 non-global TLB）。未来 per-process CR3（fork）实现时需重新审视 F-10 + F-16。
-  - 状态：[X]（2026-08-20 调研落地，推迟实施）
+- **B02-39. P4.A KPTI 三件套（F-08/F-10/F-16）— 复核修正为不完善，重新打开**
+  - 描述（原调研）：KPTI 三件套在当前实现中**已正确**：F-08 由 `exception.rs` 6 处 adrp+ldr+cbz+dsb+msr+isb 重复展开完成 TTBR1 切换；F-10 由 `switch.asm` 调度 CR3 切换范围限定（调度阶段保持内核 CR3）；F-16 由 `kpti.rs:569 map_text_page` 不设 PTE G 位防御（依赖 `mov cr3` 隐式刷新所有 non-global TLB）。未来 per-process CR3（fork）实现时需重新审视 F-10 + F-16。
+  - **复核修正（2026-08-21 审查后）**：原"已正确"结论**不成立**——只验证了汇编切换存在（表层），未检查页表**内容**是否真隔离。两架构 KPTI 均为"半 KPTI"（页表名目隔离 + U/S 位权限，映射面未缩小）：
+    - **x86_64**：`kpti.rs:333-338` `USER_PML4[256..512] = KERNEL_PML4[256..512]` 完整复制内核高半区；`kpti.rs:350-380` 整个 `.text` 映射进用户页表（PRESENT only）。用户态 CR3 含完整内核映射，仅靠 PTE 无 USER 位 → Meltdown 侧信道防御（KPTI 核心价值）未实现，内核布局完整泄露。
+    - **aarch64**：`kpti_aarch64.rs:158-167` `TRAMP_TTBR1` 复制 L0[256..511] 完整高半区（注释自认"后续优化: 仅复制异常向量表所在 L1 条目, 其余置零"）；`arch/aarch64/mod.rs:272-310` `enter_user` 只切 TTBR0，**未调用 kpti_exit_to_user** → 首次进入 EL0 时 TTBR1 仍为完整内核页表。
+    - **根治路径**：aarch64 近期（trampoline 最小化 + enter_user 激活，工程量小）；x86_64 中长期（KPTI trampoline section 重构，异常入口迁移到独立 section，用户页表只映射该 section + 必需数据页，Linux `.entry.text` 模式）。
+  - 状态：[]（重新打开，返工项）
 
 - **B02-40. P4.B SMEP/SMAP 启用**（DECISION-054 推进）
   - 描述：
@@ -328,7 +332,7 @@
 | P3.A.3 | isr.asm 42 处 `out dx, al` 单行删除 | [X]（DECISION-055 替换方案） |
 | P3.B | aarch64 enable_mmu C/I cache 3 步链 | [X] |
 | P3.C | aarch64 interrupt_restore 4 位 DAIF | [X] |
-| P4.A | KPTI 三件套（F-08/F-10/F-16）推迟 | [X]（DECISION-054，已正确） |
+| P4.A | KPTI 三件套（F-08/F-10/F-16）完整化 | []（2026-08-21 复核修正：半 KPTI，重新打开，返工项） |
 | P4.B | SMEP/SMAP 启用 | [X] |
 
 #### 新增 host-tests
@@ -386,6 +390,7 @@
 - **B02-42（isr.asm cfg 门控）**：局部 label 向前引用 + NASM `label-redef-late`，
   根治不可行，需 KPTI 入口段宏重写；实际用单行物理删除（42 处）替代（DECISION-055）
 - **B02-39（P4.A KPTI 三件套）**：调研"当前已正确"，推迟到未来 per-process CR3 强化
+  ⚠ 2026-08-21 复核修正：**"已正确"结论不成立**（半 KPTI），已重新打开为返工项，详见 B02-39 条目
 - **结论**：B02-41/42 的 [X] 属"替代方案落地"，根治（cfg 门控）是遗留项；
   isr.asm 残留 41 处 `mov dx, 0x3F8` 包装行（防 label-redef-late）即根治未完成的直接后果。
   建议汇总归入 unresolved-issues-2026-08-09.md"未来防御"跟踪，避免归档后丢失。
@@ -432,7 +437,11 @@
 >
 > 遗留项（如实登记，不虚标）：
 > - B02-25 Ring 3 往返完整验证受 x86_64 e1000 挂起已知基线限制，待网络栈修复后补跑
-> - B02-39 per-process CR3 强化维持推迟（调研确认当前 KPTI 已正确）
+> - **B02-39 KPTI 完整化（返工项）**：复核修正——两架构 KPTI 均为半实现（x86_64
+>   USER_PML4 完整复制内核高半区 + 整个 .text 映射进用户页表；aarch64 TRAMP_TTBR1
+>   完整复制 + enter_user 未激活切换），Meltdown 侧信道防御未实现。根治：aarch64
+>   trampoline 最小化 + enter_user 激活（近期），x86_64 KPTI trampoline section
+>   重构（中长期，Linux `.entry.text` 模式）。详见 B02-39 条目。
 > - 脚本 `/tmp/clean_isr_diag.py`、`/tmp/apply_clean_mod.py` 为一次性验证工具，
 >   未纳入 scripts/ 仓库（如后续需可复现可迁移）
 > - **预存缺陷（构建系统）**：Makefile `.arch` 跨架构清理机制在
