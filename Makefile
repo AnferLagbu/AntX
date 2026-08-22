@@ -119,7 +119,7 @@ arch-switch-clean:
 ASM_OBJS := build/boot.o build/entry.o build/isr.o build/switch.o build/arch/x86_64/trampoline.o
 $(ASM_OBJS): arch-switch-clean
 endif
-$(shell echo $(ARCH) > $(ARCH_STAMP))
+$(shell mkdir -p $(LOG_DIR) && echo $(ARCH) > $(ARCH_STAMP))
 
 # ====== x86_64 Rust user programs ======
 ifeq ($(ARCH),x86_64)
