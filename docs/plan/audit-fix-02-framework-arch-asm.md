@@ -263,6 +263,7 @@
     - **aarch64**：`kpti_aarch64.rs:158-167` `TRAMP_TTBR1` 复制 L0[256..511] 完整高半区（注释自认"后续优化: 仅复制异常向量表所在 L1 条目, 其余置零"）；`arch/aarch64/mod.rs:272-310` `enter_user` 只切 TTBR0，**未调用 kpti_exit_to_user** → 首次进入 EL0 时 TTBR1 仍为完整内核页表。
     - **根治路径**：aarch64 近期（trampoline 最小化 + enter_user 激活，工程量小）；x86_64 中长期（KPTI trampoline section 重构，异常入口迁移到独立 section，用户页表只映射该 section + 必需数据页，Linux `.entry.text` 模式）。
   - 状态：[X]（2026-08-21 用户决策：**留作独立工程，不在本分册返工范围**，单独立项跟踪；分册 2 视为"已识别并登记"，详见遗留项）
+  - 独立工程文档：[kpti-complete-project.md](./kpti-complete-project.md)（KPTI-01~12 分阶段方案 + DECISION-056/057）
 
 - **B02-40. P4.B SMEP/SMAP 启用**（DECISION-054 推进）
   - 描述：
