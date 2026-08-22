@@ -512,11 +512,11 @@ enter_user_asm:
     push 0x202          // RFLAGS (IF 位)
     
     
-    # P2.B + F-13 (DECISION-051 simplified): CS = user code segment (DPL=3).
-    # Byte length matches original push 0x23 (2 bytes), avoiding label offset redef.
-    # Single source of truth: src/kernel/framework/link/x86_64.ld SELECTOR_USER_CODE_RPL3
-    # synced with gdt.rs pub const SELECTOR_USER_CODE (host-tests verifies).
-    push 0x23    // CS (user code segment)
+    # P2.B + F-13 (DECISION-051 简化方案): CS = 用户代码段 (DPL=3).
+    # 字节长度与原始 push 0x23 (2 字节) 一致, 避免 label 偏移重定义.
+    # 单一来源: src/kernel/framework/link/x86_64.ld SELECTOR_USER_CODE_RPL3
+    # 与 gdt.rs pub const SELECTOR_USER_CODE 同步 (host-tests 校验).
+    push 0x23    // CS (用户代码段)
     
     
     push r12            // RIP (用户入口, 使用保存的 r12)
