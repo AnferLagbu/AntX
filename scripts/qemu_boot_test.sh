@@ -72,6 +72,59 @@ boot_and_check() {
 }
 
 # ---------------------------------------------------------------------------
+# 架构同步: 确保 build/ 中间产物架构 + .arch 戳记与目标一致
+# 防止 qemu_boot_test.sh 跑 aarch64 后, .arch 残留 aarch64 但开发者
+# 下次手敲 make ARCH=x86_64 增量构建报 EM 183 错误 (AArch64 产物误用).
+# 解决: 脚本每次跑测试前主动检测 + 同步 .arch 戳记.
+# 参数: $1=目标架构 (x86_64 / aarch64)
+# 返回: 0 = 已同步 (无操作或重建成功), 1 = 重建失败
+# ---------------------------------------------------------------------------
+sync_make_state() {
+    local target_arch="$1"
+    local arch_stamp="$LOG_DIR/.arch"
+    local prev_arch=""
+    [ -f "$arch_stamp" ] && prev_arch="$(cat "$arch_stamp" 2>/dev/null || echo none)"
+
+    # 检查中间 .o 产物是否与目标架构一致 (使用 file 命令)
+    local asm_objs="build/boot.o build/entry.o build/isr.o build/switch.o build/arch/x86_64/trampoline.o"
+    local need_rebuild=0
+
+    if [ "$prev_arch" != "$target_arch" ]; then
+        info "[$target_arch] .arch 戳记不匹配 ($prev_arch → $target_arch), 强制重建"
+        need_rebuild=1
+    else
+        # .arch 一致但仍要校验 .o 产物 (防止外部 rm 与 .arch 失同步)
+        for obj in $asm_objs; do
+            if [ -f "$obj" ]; then
+                local obj_arch=""
+                if file "$obj" | grep -q "x86-64"; then
+                    obj_arch="x86_64"
+                elif file "$obj" | grep -q "ARM aarch64\|aarch64"; then
+                    obj_arch="aarch64"
+                fi
+                if [ "$obj_arch" != "" ] && [ "$obj_arch" != "$target_arch" ]; then
+                    warn "[$target_arch] 中间产物 $obj 架构 ($obj_arch) 与目标不符, 强制重建"
+                    need_rebuild=1
+                    break
+                fi
+            fi
+        done
+    fi
+
+    if [ "$need_rebuild" = "1" ]; then
+        rm -f $asm_objs build/kernel.bin build/kernel.flat build/kernel.map build/stage1.bin
+        rm -f build/user/*.bin 2>/dev/null || true
+        if ! make ARCH="$target_arch" all 2>&1 | tail -3; then
+            err "[$target_arch] make ARCH=$target_arch 失败"
+            return 1
+        fi
+        # Makefile 会在解析时写 .arch, 此处再次校验
+        [ -f "$arch_stamp" ] || echo "$target_arch" > "$arch_stamp"
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # 测试: 全部架构
 # ---------------------------------------------------------------------------
 RESULT=0
@@ -82,11 +135,9 @@ if [ "$ARCH" = "all" ] || [ "$ARCH" = "x86_64" ]; then
     TESTED=$((TESTED+1))
     info "=== x86_64 QEMU 真实启动 ==="
 
-    if [ ! -f build/kernel.flat ] || file build/kernel.flat | grep -q "ARM aarch64\|aarch64"; then
-        warn "build/kernel.flat 不是 x86_64, 重新构建..."
-        rm -f build/kernel.bin build/kernel.flat build/boot.o build/entry.o build/isr.o build/switch.o build/arch/x86_64/trampoline.o
-        make ARCH=x86_64 all 2>&1 | tail -3 || true
-    fi
+    # 架构同步: 确保 build/ 中间产物 + .arch 戳记与 x86_64 一致
+    # (防止 aarch64 测试残留导致 EM 183 报错)
+    sync_make_state "x86_64" || RESULT=1
 
     if [ ! -f build/kernel.flat ]; then
         err "x86_64 kernel.flat 缺失, 跳过测试"
@@ -118,11 +169,9 @@ if [ "$ARCH" = "all" ] || [ "$ARCH" = "aarch64" ]; then
     TESTED=$((TESTED+1))
     info "=== aarch64 QEMU 真实启动 ==="
 
-    if [ ! -f build/kernel.flat ] || file build/kernel.flat | grep -q "x86-64\|COM"; then
-        warn "build/kernel.flat 不是 aarch64, 重新构建..."
-        rm -f build/kernel.bin build/kernel.flat build/boot.o
-        make ARCH=aarch64 all 2>&1 | tail -3 || true
-    fi
+    # 架构同步: 确保 build/ 中间产物 + .arch 戳记与 aarch64 一致
+    # (防止 x86_64 测试残留导致 EM 183 反向误用)
+    sync_make_state "aarch64" || RESULT=1
 
     if [ ! -f build/kernel.flat ]; then
         err "aarch64 kernel.flat 缺失, 跳过测试"
