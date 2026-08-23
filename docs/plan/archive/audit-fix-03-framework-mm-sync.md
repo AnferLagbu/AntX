@@ -1,6 +1,6 @@
 # 审计修复分册 03：framework 内存、同步与中断
 
-> 修复 framework/mm（kmalloc/swap/cow/pmm）、framework/sync（pi_mutex/audit）、framework/timer、framework/irq 与 klog 的审计缺陷。来源：[code-audit-final-summary.md](./code-audit-final-summary.md) 第 3.4 节 + 第 7 章 TOP 20 + 附录 H（H.4.2/H.4.3/H.4.5/H.5.5）+ 附录 C framework-mm/sync/timer/irq 报告。
+> 修复 framework/mm（kmalloc/swap/cow/pmm）、framework/sync（pi_mutex/audit）、framework/timer、framework/irq 与 klog 的审计缺陷。来源：[code-audit-final-summary.md](../code-audit-final-summary.md) 第 3.4 节 + 第 7 章 TOP 20 + 附录 H（H.4.2/H.4.3/H.4.5/H.5.5）+ 附录 C framework-mm/sync/timer/irq 报告。
 
 ## 工程计划 A: 内存子系统修复
 
@@ -45,7 +45,7 @@
 - **B03-07. 同步/中断 P0 集中**
   - 描述：pi_mutex_process_exit 空实现（永久持锁）、GLOBAL_AUDIT static mut 多核撕裂、do_softirq 全局 running、timer tick 内存序、recovery_domain_register Box::leak。
   - 方案：按持锁→内存序→泄漏顺序修复。
-  - 状态：[]
+  - 状态：[X]（2026-08-23 归档收尾：5 项缺陷已由 B03-08~13 全部承接完成）
 
 ### 待办
 
@@ -84,7 +84,7 @@
 ### 背景
 
 - **B03-14. cpu/剩余模块 P0 引用**
-  - 描述：framework/cpu 单文件 1554 行 + SAFETY + 溢出；framework 顶层散文件 SMEP/SMAP、IoMem 溢出、帧验证；framework/tests 永久关中断、持锁执行、物理地址硬编码。详见 [附录 C 报告索引](./code-audit-final-summary.md) 与 [archive 子系统报告](./archive/audit-2026-08-14/)。
+  - 描述：framework/cpu 单文件 1554 行 + SAFETY + 溢出；framework 顶层散文件 SMEP/SMAP、IoMem 溢出、帧验证；framework/tests 永久关中断、持锁执行、物理地址硬编码。详见 [附录 C 报告索引](../code-audit-final-summary.md) 与 [archive 子系统报告](./audit-2026-08-14/)。
   - 方案：以 archive 子系统报告为准提取详细 P0/P1 条目，逐项登记后实施。
   - 状态：[X]
 

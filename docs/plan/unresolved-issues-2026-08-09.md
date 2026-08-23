@@ -32,8 +32,9 @@
 | 本会话刻意维持 | 3 | 决策登记 | ⏸️ DECISION |
 | 构建/工具问题 | 3 | 工具 | ❌ 未提交 |
 | 审计基线待清零 (2026-08-23) | 2 | F2×12 + F7×67 | ❌ 无分册负责 |
+| 分册 3 归档遗留 (2026-08-23) | 3 | 遗留×3 | ❌ 待下轮 |
 | lint 副作用 (已修复) | 2 | — | 🔄 已修复 |
-| **总计** | **~67 项** | — | — |
+| **总计** | **~70 项** | — | — |
 
 ---
 
@@ -63,6 +64,39 @@
 | **分册覆盖核查（2026-08-23）** | 分册 03-09 无英文注释翻译条目；分册 01 声称"后续 commit 手工翻译"未落实；分册 09 仅覆盖 F1/F9/F2/D8 死代码，无 F7 条目 |
 | **建议方案** | 单独立项批量翻译（脚本列清单 → 逐文件人工翻译 → 审计 0 违规）或并入分册 09 收尾 |
 | **来源** | archive/audit-fix-01 L221 + archive/audit-fix-02 L342 |
+
+---
+
+## 🔵 第 0B 类：分册 3 归档遗留（2026-08-23 归档登记）
+
+> 分册 3（[archive/audit-fix-03-framework-mm-sync.md](./archive/audit-fix-03-framework-mm-sync.md)）归档时核查出 3 项"方案承诺未完全落地"的遗留，登记防止归档后丢失追踪。分册 3 主修复（B03-01~28）均已实装并通过验证门槛（双架构编译 0w0e + host-tests + 审计无回归）。
+
+### B03-LEGACY-001: COW TOCTOU（cow_handle_fault 锁内判定+锁外执行）
+
+| 字段 | 数据 |
+|---|---|
+| **来源** | archive/audit-fix-03 B03-06（方案明确"TOCTOU 修复留作下轮独立 PR（与 fork-exit host-tests 一并）"） |
+| **位置** | `framework/mm/cow.rs` `cow_handle_fault` |
+| **问题** | 锁内判定 COW 页 + 锁外执行映射，存在 TOCTOU 窗口（多核并发下共享页状态可能变化） |
+| **建议方案** | 判定与映射放入同一临界区（持 VMM_LOCK 下操作）；补 fork-exit 共享页引用计数 host-tests |
+
+### B03-LEGACY-002: pmm/swap host-tests 缺口
+
+| 字段 | 数据 |
+|---|---|
+| **来源** | archive/audit-fix-03 B03-04 + DECISION-050（"host-tests 留作下批补"、"pmm::find_contig_range host-tests + 回滚路径测试"） |
+| **位置** | `framework/mm/pmm.rs::find_contig_range`/`reserve_range`、`swap.rs::deinit` |
+| **现状** | 代码实装完成（swap init 改 find_contig_range + reserve_range，deinit 走 unreserve_range 回滚），双架构编译 + 全量验证通过；但 host-tests 无对应用例 |
+| **建议方案** | 补 find_contig_range 连续范围扫描、reserve_range 重叠拒绝、deinit unreserve 回滚路径测试 |
+
+### B03-LEGACY-003: 多核 tick 计数器内存序测试
+
+| 字段 | 数据 |
+|---|---|
+| **来源** | archive/audit-fix-03 B03-12（方案"补多核 tick 测试"） |
+| **位置** | `framework/timer/tick.rs` `TICK_COUNT`（fetch_add 已从 Relaxed 改 AcqRel） |
+| **现状** | 代码 Ordering 修复完成（516a64d6），host-tests 无多核用例（host 单核难以覆盖） |
+| **建议方案** | QEMU SMP kernel_test 补多核 tick 可见性测试，或按 ROE（Return-On-Effort）说明豁免 |
 
 ---
 
@@ -318,11 +352,11 @@
 
 | 字段 | 数据 |
 |---|---|
-| **状态** | ❌ 未修复 |
+| **状态** | 🔄 已修复 (commit `3a1fba9b`) |
 | **现象** | `build/boot.o` 残留上次 aarch64 编译产物, x86_64 链接时 ld 报错 "Relocations in generic ELF" |
-| **临时处理** | 手动 `rm -f build/boot.o` |
-| **建议方案** | Makefile `all` 目标加入自动清理异架构产物, 或增加 `make clean-arch` 目标 |
-| **工作量** | 估计 0.5 天 |
+| **根因** | Makefile L122 解析期无条件覆写 `.arch` 戳记, `make test-host` 等无链接 make 也会清掉戳记, 导致下次同 ARCH 链接误用残留的异架构 boot.o |
+| **修复** | 戳记写入移至 `arch-switch-clean` 配方, 仅真实跨架构切换时更新; 已回归验证 aarch64→test-host→x86_64 序列 (2026-08-23) |
+| **建议方案** | （已实施）Makefile `all` 目标自动清理异架构产物 |
 
 ### ISSUE-TOOL-002: x86_64 kernel.flat 陈旧未自动重建
 
@@ -413,6 +447,10 @@
 
 ## 变更历史
 
+- **2026-08-23**: 分册 3 归档登记
+  - 新增第 0B 类"分册 3 归档遗留"3 项（COW TOCTOU / pmm-swap host-tests 缺口 / 多核 tick 测试）
+  - ISSUE-TOOL-001（Makefile 跨架构清理）标记已修复（commit 3a1fba9b，戳记写入移至 arch-switch-clean 配方）
+  - 总览计数 ~67 → ~70
 - **2026-08-09**: 创建本文档 (审计触发: 用户问题"未被修复的问题有哪些?")
   - 来源: 本会话对所有静态 + 动态 + 文档 + 源码的全面审计
   - 产出: 65 项未修复问题分类登记
