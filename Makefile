@@ -99,6 +99,9 @@ all: build/kernel.bin build/kernel.flat
 
 # 跨架构构建时自动清理上架构产物, 避免 boot.o 等被新架构误用。
 # 通过 build/log/.arch 记录上次构建架构 (build/log/ 不被 clean 删除), 不匹配时强制 clean.
+# 修复: 戳记写入必须在 arch-switch-clean 配方内 (仅真实跨架构切换时更新).
+# 原实现在解析期无条件覆写戳记, `make test-host` 等不产生架构产物的目标也会
+# 把戳记改成默认 ARCH, 导致下次同 ARCH 链接误用残留的异架构 boot.o (EM 不符).
 ARCH_STAMP := build/log/.arch
 PREVIOUS_ARCH := $(shell cat $(ARCH_STAMP) 2>/dev/null || echo none)
 ifneq ($(PREVIOUS_ARCH), $(ARCH))
@@ -114,12 +117,13 @@ arch-switch-clean:
 	@cd src/rust && cargo clean >/dev/null 2>&1 || true
 	@cd src/user && cargo clean >/dev/null 2>&1 || true
 	@rm -f build/user/*.bin
+	@echo $(ARCH) > $(ARCH_STAMP)
 # 挂到所有 asm .o 目标, 强制 clean 后重新评估 .o 的依赖图
 # (clean 在 make 评估图后执行, .o 文件存在与否需要重新触发)
 ASM_OBJS := build/boot.o build/entry.o build/isr.o build/switch.o build/arch/x86_64/trampoline.o
 $(ASM_OBJS): arch-switch-clean
 endif
-$(shell mkdir -p $(LOG_DIR) && echo $(ARCH) > $(ARCH_STAMP))
+$(shell mkdir -p $(LOG_DIR))
 
 # ====== x86_64 Rust user programs ======
 ifeq ($(ARCH),x86_64)
