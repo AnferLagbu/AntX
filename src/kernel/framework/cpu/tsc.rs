@@ -26,6 +26,11 @@ pub fn read_tsc() -> u64 {
 ///
 /// 比 `read_tsc()` 慢, 但结果更精确。
 /// 适用于性能测量场景。
+///
+/// # B03-19 修复
+/// 当前实现与 `read_tsc` 相同 (均走 `crate::arch!(timestamp())`), 无
+/// `mfence`/`lfence` 序列化指令。文档"更精确"描述与实现不一致, 标记为已知
+/// 偏差。下次重写 CPU 时序子系统时实装真正的序列化版本。
 #[inline(always)]
 pub fn read_tsc_serialized() -> u64 {
     crate::arch!(timestamp())
@@ -39,6 +44,10 @@ pub fn read_tsc_serialized() -> u64 {
 ///
 /// # Returns
 /// 近似纳秒数
+///
+/// # B03-19 修复
+/// 使用 `checked_mul` 防 u64 溢出。理论上 4GHz × 24h × 1000 ≈ 3.5×10¹⁷ 仍
+/// 远小于 u64::MAX (≈1.8×10¹⁹), 但防御性写法成本极低, 避免极端情况下溢出。
 #[inline]
 pub fn cycles_to_nanoseconds(tsc_cycles: u64, tsc_freq_mhz: u64) -> u64 {
     if tsc_freq_mhz == 0 {
@@ -46,7 +55,11 @@ pub fn cycles_to_nanoseconds(tsc_cycles: u64, tsc_freq_mhz: u64) -> u64 {
     }
 
     // nanoseconds = cycles * 1000 / frequency_MHz
-    (tsc_cycles * 1000) / tsc_freq_mhz
+    // SAFETY: 乘法可能溢出 u64, 用 checked_mul 返回 u64::MAX 作为饱和值。
+    match tsc_cycles.checked_mul(1000) {
+        Some(product) => product / tsc_freq_mhz,
+        None => u64::MAX,
+    }
 }
 
 /// 将纳秒转换为 TSC 周期 (近似值)
@@ -56,5 +69,9 @@ pub fn nanoseconds_to_cycles(ns: u64, tsc_freq_mhz: u64) -> u64 {
         return ns;
     }
 
-    (ns * tsc_freq_mhz) / 1000
+    // B03-19: checked_mul 防 u64 溢出。
+    match ns.checked_mul(tsc_freq_mhz) {
+        Some(product) => product / 1000,
+        None => u64::MAX,
+    }
 }

@@ -68,6 +68,18 @@ impl IrqLine {
     ///
     /// # 安全约束
     /// - handler 必须在中断上下文安全 (无 sleep, 无 Mutex, 快速返回)。
+    ///
+    /// # B03-23 严禁持锁同步原语名单 (含 IrqSpinLock/Mutex/Semaphore)
+    /// 中断上下文持锁 = 同 CPU 中断重入死锁。`on_interrupt` 内部不含编译
+    /// 期强制, 完全靠以下文档约束:
+    /// 1. 不调任何 Mutex/Semaphore (无论是 std::sync::Mutex 还是 kernel::sync::IrqSpinLock/Mutex)
+    /// 2. 不调任何同步原语的 `lock()`
+    /// 3. 不调 `schedule()` / `yield()` (可能持 sched lock)
+    /// 4. 不分配内存 (kmalloc/GFP_KERNEL)
+    /// 5. 不睡眠 (sleep/yield)
+    ///
+    /// 若需延迟处理, 通过 `raise_softirq()` 提交到底半部执行。
+    ///
     /// # Errors
     /// ISR 注册失败时返回 Err。
     pub fn on_interrupt(&mut self, handler: InterruptHandler) -> Result<(), &'static str> {

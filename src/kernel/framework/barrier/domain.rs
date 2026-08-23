@@ -49,7 +49,9 @@ unsafe impl Send for RecoveryDomain {}
 unsafe impl Sync for RecoveryDomain {}
 
 impl RecoveryDomain {
-    pub fn new(id: u64) -> Self {
+    /// B03-10: 改造为 const fn, 支持静态预分配 (消除 Box::leak 泄漏)。
+    /// IrqSpinLock::new / Atomic*::new 已是 const, 所有字段可在 const 上下文初始化。
+    pub const fn new(id: u64) -> Self {
         Self {
             id,
             state: AtomicU32::new(DomainState::Active as u32),

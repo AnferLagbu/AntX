@@ -32,7 +32,13 @@ pub struct RacyCell<T> {
 // SAFETY: RacyCell 的 Sync 安全性由调用方保证(外部同步或 per-CPU 访问)。
 // 这与 UnsafeCell 不同——UnsafeCell 不实现 Sync 是为了强制编译器检查,
 // 但内核中许多全局状态确实需要 Sync 特性(例如 static 变量)。
-unsafe impl<T> Sync for RacyCell<T> {}
+//
+// B03-24 根治 (2026-08-23): 加 `T: Send` 约束 — Sync 类型必须可安全跨线程
+// 引用 (Send 是必要条件), 无约束会让非 Send 数据 (如含裸指针的容器) 被强制
+// Sync → 跨线程共享裸指针 UB。配套改动: services/ipc 的 `NonNull<Message>`
+// 链表指针改 `AtomicPtr<Message>` (safe Send), 使 IpcNamespace/DynIpcNamespace
+// 满足 `T: Send`。Rust 1.98+ 的 `NonNull<T>` 已是显式 `!Send`, 无法直接使用。
+unsafe impl<T: Send> Sync for RacyCell<T> {}
 
 impl<T> RacyCell<T> {
     /// 创建新的 `RacyCell`

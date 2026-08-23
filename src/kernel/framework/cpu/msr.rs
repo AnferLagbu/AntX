@@ -2,6 +2,21 @@
 //!
 //! 提供 safe wrapper for RDMSR/WRMSR instructions.
 
+// B03-16 拆分: MSR 常量集中于此 (自 `cpu/mod.rs` 迁出)。
+// 内核其他子系统 (arch/x86_64, proc/user_proc) 各自维护本地等价常量,
+// 本文件常量供 `cpu` 模块内初始化路径使用。
+
+/// `IA32_EFER` MSR 地址 — SYSCALL/SYSRET 与 NX 位控制
+pub(crate) const IA32_EFER: u32 = 0xC0000080;
+/// `IA32_EFER.SCE` — 启用 SYSCALL/SYSRET 指令
+pub(crate) const EFER_SCE: u64 = 1 << 0;
+/// `IA32_STAR` — SYSCALL 目标 CS/SS 和 SYSRET 基址
+pub(crate) const IA32_STAR: u32 = 0xC0000081;
+/// `IA32_LSTAR` — SYSCALL 入口点 (64-bit 模式)
+pub(crate) const IA32_LSTAR: u32 = 0xC0000082;
+/// `IA32_SFMASK` — SYSCALL 期间清零的标志位
+pub(crate) const IA32_SFMASK: u32 = 0xC0000084;
+
 /// 读取 64 位 MSR 寄存器
 ///
 /// # Arguments
@@ -75,6 +90,12 @@ pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -
             return -1;
         }
 
+        // B03-17 修复: 对齐校验. 之前仅 `is_null()` 检查, 未对齐的 *mut u32
+        // 在 aarch64 (4 字节对齐) / RISC-V 上触发 data abort.
+        if !(low as usize).is_multiple_of(4) || !(high as usize).is_multiple_of(4) {
+            return -1;
+        }
+
         let value = read_msr(msr);
         *low = value as u32;
         *high = (value >> 32) as u32;
@@ -92,9 +113,34 @@ pub unsafe extern "C" fn cpu_read_msr(msr: u32, low: *mut u32, high: *mut u32) -
 /// `msr` 是合法的 MSR 索引. 非法索引将触发 #GP 异常.
 pub unsafe extern "C" fn cpu_write_msr(msr: u32, low: u32, high: u32) -> i32 {
     unsafe {
+        // B03-17 修复: MSR 合法性预检. 之前非法 MSR 触发 #GP 后仍返回 0,
+        // 假设成功 — 静默掩盖了 #GP 异常. 现对已知保留 MSR 范围 (含 IA32/FAM6+
+        // 标准 MSR 0..0x1FFF + 扩展 0xC0000000..0xC0001FFF) 允许, 其他返回 -1.
+        // 严格白名单需完整 MSR 表, 当前采用"保留范围"宽校验 + 注释说明.
+        if !is_msr_likely_valid(msr) {
+            return -1;
+        }
         write_msr(msr, (u64::from(high) << 32) | u64::from(low));
         0
     }
+}
+
+/// B03-17: MSR 范围宽校验. 严格白名单需 CPU 型号特定表, 当前采用
+/// 保留区间判定 (IA32 0..0x1FFF, EFER/STAR/LSTAR/SFMASK 等 0xC0000000+,
+/// AMD 扩展 0xC0010000+). 不在区间内视为非法, 返回 false.
+fn is_msr_likely_valid(msr: u32) -> bool {
+    // IA32 架构 MSR: 0..0x1FFF (含 TSC/APIC/SYSCFG 等)
+    if msr < 0x2000 {
+        return true;
+    }
+    // AMD K8/K10/MSR: 0xC0000000..0xC0001FFF + 0xC0010000..0xC0011FFF
+    if (0xC0000000..0xC0002000).contains(&msr)
+        || (0xC0010000..0xC0012000).contains(&msr)
+    {
+        return true;
+    }
+    // 其他范围视为非法 (vmx/svm 特权 MSR, 型号特定 MSR 等)
+    false
 }
 
 /// FFI 兼容: 读取 64 位 MSR

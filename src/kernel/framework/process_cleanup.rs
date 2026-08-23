@@ -30,6 +30,10 @@ pub unsafe fn register_process_cleanup(func: ProcessCleanupFn) {
 ///
 /// 若 chitin 未注册回调, 则静默跳过.
 pub fn notify_process_exit(pid: u32) {
+    // B03-08 返工: 进程退出时强制释放该进程持有的所有 PI Mutex,
+    // 防止"持锁进程退出 → 锁永久不释放 → 后续获取者死锁" (TOP 20 #6).
+    crate::kernel::framework::sync::pi_mutex::pi_mutex_process_exit(pid);
+
     let ptr = PROCESS_CLEANUP_FN.load(Ordering::Acquire);
     if !ptr.is_null() {
         // SAFETY: ptr 由 register_process_cleanup 注册, 是有效的 ProcessCleanupFn 函数指针.

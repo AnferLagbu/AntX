@@ -37,10 +37,12 @@ impl AliasRegistry {
         }
     }
 
-    fn check_conflict(&self, phys: u64, len: usize) -> Option<&'static str> {
+    fn check_conflict(&self, phys: u64, end: u64) -> Option<&'static str> {
         for i in 0..self.count {
             let (b, l, name) = self.entries[i];
-            let end = phys.saturating_add(len as u64);
+            // B03-22: 已有 entries 的 l 也可能溢出, 用 saturating_add 但
+            // 当发生溢出时 (result 钳到 u64::MAX) 跳过范围比较, 视为冲突
+            // (因为溢出范围不可信)。
             let existing_end = b.saturating_add(l as u64);
             if phys < existing_end && end > b {
                 return Some(name);
@@ -49,13 +51,20 @@ impl AliasRegistry {
         None
     }
 
-    fn register(&mut self, phys: u64, len: usize, name: &'static str) -> Result<(), &'static str> {
+    fn register_checked(
+        &mut self,
+        phys: u64,
+        end: u64,
+        name: &'static str,
+    ) -> Result<(), &'static str> {
         if self.count >= MAX_MMIO_MAPPINGS {
             return Err("MMIO alias registry full");
         }
-        if let Some(_conflict) = self.check_conflict(phys, len) {
+        if let Some(_conflict) = self.check_conflict(phys, end) {
             return Err("MMIO region overlaps existing region");
         }
+        // 存储 (phys, len) 但 end 已被 checked_add 校验不溢出
+        let len = (end - phys) as usize;
         self.entries[self.count] = (phys, len, name);
         self.count += 1;
         Ok(())
@@ -104,10 +113,18 @@ impl IoMem {
             return Err("IoMem: phys must be 4-byte aligned");
         }
 
+        // B03-22 修复: 溢出检查. 之前未检查 `phys + len` 是否溢出 u64,
+        // 溢出回绕 0 绕过后续所有范围检查 (I5 不变式违反)。
+        let end = phys
+            .as_u64()
+            .checked_add(len as u64)
+            .ok_or("IoMem: phys + len overflows u64")?;
+
         // SAFETY: 别名注册在 Mutex 保护下, 无竞争。
         {
             let mut reg = ALIAS_REGISTRY.lock();
-            reg.register(phys.as_u64(), len, name)?;
+            // 使用已校验的 `end` 而非 phys + len (可能溢出)
+            reg.register_checked(phys.as_u64(), end, name)?;
         }
 
         let virt_addr = phys_to_virt(phys.as_u64()) as *mut u8;

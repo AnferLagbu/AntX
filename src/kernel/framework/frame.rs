@@ -125,8 +125,27 @@ impl Frame {
     }
 
     /// 转换为内核可访问的虚拟地址
+    ///
+    /// # B03-26 警告
+    /// 返回 `*mut u8` 无生命周期绑定, Frame Drop 后指针悬挂。
+    /// 优先使用 `as_virt_slice()` 安全 API (生命周期绑定 `&self`)。
+    /// 仅在 FFI / DMA 等需要 raw pointer 的场景保留。
     pub fn as_virt_ptr(&self) -> *mut u8 {
         crate::kernel::framework::mm::phys_to_virt(self.phys.as_u64()) as *mut u8
+    }
+
+    /// B03-26: 安全 API — 返回生命周期绑定 `&self` 的可变字节切片。
+    /// Frame Drop 后切片自动失效, 防止悬挂指针 (I1 安全不变式)。
+    pub fn as_virt_slice(&mut self) -> &mut [u8] {
+        let ptr = self.as_virt_ptr();
+        // SAFETY: Frame 拥有物理页, phys_to_virt 返回唯一内核映射 VA。
+        // `&mut self` 保证独占借用, Frame 生命周期内指针有效。
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                ptr,
+                crate::kernel::framework::mm::PAGE_SIZE as usize,
+            )
+        }
     }
 
     /// 零填充帧内容

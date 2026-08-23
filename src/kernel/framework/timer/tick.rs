@@ -157,8 +157,12 @@ pub fn is_initialized() -> bool {
     reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
 )]
 pub fn on_timer_interrupt() {
-    // 递增 tick 计数
-    TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+    // B03-12: tick 计数器 fetch_add 从 Relaxed 改为 AcqRel。
+    // AcqRel 保证 (a) 本 CPU 之前写入对其他 CPU 可见 (Release),
+    //          (b) 读到其他 CPU 的最新 tick 值 (Acquire)。
+    // 之前 Relaxed 写 + Acquire 读 不能跨 CPU 严格同步 (Acquire 仅与 Release 配对),
+    // 多核下其他 CPU 读到的 tick 可能滞后于实际中断计数。
+    TICK_COUNT.fetch_add(1, Ordering::AcqRel);
 
     // 更新 PIT 内部状态 (x86_64 only)
     #[cfg(target_arch = "x86_64")]

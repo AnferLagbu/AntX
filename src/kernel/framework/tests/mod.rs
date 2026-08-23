@@ -119,7 +119,10 @@ impl TestRunner {
         Self::serial_print(b" test cases registered\n");
         Self::serial_print(b"========================================\n\n");
 
-        crate::arch!(interrupt_disable());
+        // B03-15 修复: interrupt_disable() 返回 usize 保存旧 flags,
+        // 测试循环后调 interrupt_restore(flags) 恢复原状态。
+        // 之前循环结束后无 re-enable, 测试结束中断永久全关。
+        let saved_flags = crate::arch!(interrupt_disable());
 
         for i in 0..total {
             let tc = reg.cases[i];
@@ -182,6 +185,11 @@ impl TestRunner {
             Self::serial_print(b" skipped)\n");
         }
         Self::serial_print(b"========================================\n");
+
+        // B03-15: 恢复中断状态 (而非保持 disable 状态)。
+        // SAFETY: saved_flags 由 interrupt_save() 获取, 与 interrupt_disable()
+        // 配套使用恢复原状态。
+        crate::arch!(interrupt_restore(saved_flags));
     }
 
     fn serial_print(s: &[u8]) {

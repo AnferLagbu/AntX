@@ -59,26 +59,27 @@ pub mod raw {
             self.0
         }
 
-        /// 读 `next` 字段 (侵入式链表)
+        /// 读 `next` 字段 (侵入式链表) — 返回裸指针 (null = 无后继)
         #[inline(always)]
         #[expect(
             clippy::inline_always,
             reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
         )]
-        pub fn next(&self) -> Option<NonNull<Message>> {
+        pub fn next(&self) -> *mut Message {
             // SAFETY: 调用方保证 self 指向有效 Message。
-            unsafe { (*self.0.as_ptr()).next }
+            // B03-24: Message.next 为 AtomicPtr, 队列操作在持锁下执行, Relaxed 足够.
+            unsafe { (*self.0.as_ptr()).next.load(core::sync::atomic::Ordering::Relaxed) }
         }
 
-        /// 写 `next` 字段
+        /// 写 `next` 字段 (null = 无后继)
         #[inline(always)]
         #[expect(
             clippy::inline_always,
             reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
         )]
-        pub fn set_next(&self, next: Option<NonNull<Message>>) {
+        pub fn set_next(&self, next: *mut Message) {
             // SAFETY: 同上, self 必须是有效 Message。
-            unsafe { (*self.0.as_ptr()).next = next }
+            unsafe { (*self.0.as_ptr()).next.store(next, core::sync::atomic::Ordering::Relaxed) }
         }
 
         /// 获取 &Message 引用

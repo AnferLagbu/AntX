@@ -202,10 +202,17 @@ pub fn validate_user_ptr(ptr: u64) -> bool {
 }
 
 /// 验证用户态缓冲区 [ptr, ptr+len) 是否完全在用户空间.
+///
+/// # B03-21 修复
+/// 之前 `len == 0` 直接 `return true`, `validate_user_buf(0, 0)` 返回 true
+/// 但 0 是 NULL 指针, 绕过 NULL 检查。现在 `len == 0` 时仍校验 `ptr != 0`。
+/// 语义: 零长度缓冲区只接受 NULL 之外的合法用户指针 (与 Linux copy_from_user
+/// 行为一致 — 长度 0 时仍要求非 NULL 指针)。
 #[inline]
 pub fn validate_user_buf(ptr: u64, len: u64) -> bool {
     if len == 0 {
-        return true;
+        // 零长度但要求 ptr 非 NULL (避免 (NULL, 0) 绕过校验)
+        return ptr != 0;
     }
     validate_user_ptr(ptr) && ptr + len <= USER_ADDR_MAX
 }

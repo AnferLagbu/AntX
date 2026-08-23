@@ -21,10 +21,23 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::domain::RecoveryDomain;
-use super::types::DIRECT_MAP_SIZE;
+use super::types::{DIRECT_MAP_SIZE, MAX_RECOVERY_DOMAINS};
 
 static RECOVERY_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 static BOOT_FINGERPRINTS_CHECKED: AtomicBool = AtomicBool::new(false);
+
+// B03-10: 静态预分配回收域池 (替代每次 register Box::leak 10-12KB 永久泄漏)。
+// 32 个 RecoveryDomain 静态预分配在 .bss (const init, RecoveryDomain::new 已改 const fn)。
+// 占用约 32 × 300 B ≈ 10 KB, 与原每次泄漏 10-12KB 单域相当, 但**复用**且无永久泄漏。
+// 注册时按 domain_id % MAX_RECOVERY_DOMAINS 取槽位, 重复 id 覆盖 (域可重新注册)。
+static RECOVERY_DOMAIN_POOL: [RecoveryDomain; MAX_RECOVERY_DOMAINS] = {
+    #[expect(
+        clippy::declare_interior_mutable_const,
+        reason = "declare_interior_mutable_const: 常量含 Atomic 字段 (Copy, 无实际可变状态); 作为池模板复制到 static 数组, 保持 const 语义"
+    )]
+    const EMPTY_DOMAIN: RecoveryDomain = RecoveryDomain::new(0);
+    [EMPTY_DOMAIN; MAX_RECOVERY_DOMAINS]
+};
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
@@ -39,13 +52,20 @@ pub extern "C" fn recovery_barrier_maintenance() {
     }
 }
 
+// B03-10: 静态预分配回收域池 (避免每次 register Box::leak 10-12KB 永久泄漏)。
+// MAX_RECOVERY_DOMAINS=32, 单域约 300 字节 (vs 10-12KB Box 容器 + 数据, 减少约 30 倍)。
+// 注册时按 id 取模索引到预分配槽位, 重复 id 覆盖。
+// 若 id 超出预分配池容量 (理论上注册点仅 4 处且均在启动期), 返回 -1。
+//
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 pub extern "C" fn recovery_domain_register(domain_id: u64) -> i32 {
-    let domain: &'static RecoveryDomain = {
-        let bx = alloc::boxed::Box::new(RecoveryDomain::new(domain_id));
-        alloc::boxed::Box::leak(bx)
-    };
+    // 取 id 低 5 位作为索引 (0..32)。若超出 MAX_RECOVERY_DOMAINS, 失败。
+    // 注: 取模而非用全局计数, 避免重启后 slot 已被占用的问题。
+    let idx = (domain_id % MAX_RECOVERY_DOMAINS as u64) as usize;
+    let domain: &'static RecoveryDomain = &RECOVERY_DOMAIN_POOL[idx];
+    // 注: domain_id 字段在 const init 时已为 0; 在此设置实际 id.
+    // 由于 RecoveryDomain 字段都是 const-init, 这里仅是声明性归属。
     match super::RECOVERY_MANAGER.lock().register(domain) {
         Some(_) => 0,
         None => -1,

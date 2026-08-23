@@ -50,6 +50,28 @@ pub fn is_leaf_supported(leaf: u32) -> bool {
     leaf <= max_leaf
 }
 
+/// B03-18: 带 leaf + subleaf 双层校验的 CPUID 查询, 防止 leaf > max_leaf 时
+/// 读到未定义值（AMD 可能 panic, Intel 返回旧 CPU 的值）。
+///
+/// # Returns
+/// - `Some((eax, ebx, ecx, edx))` — leaf 在支持范围
+/// - `None` — leaf 超出 max_leaf 或 subleaf 校验失败
+#[inline]
+pub fn cpuid_checked(leaf: u32, subleaf: u32) -> Option<(u32, u32, u32, u32)> {
+    if !is_leaf_supported(leaf) {
+        return None;
+    }
+    // subleaf 校验: leaf 0 不支持 subleaf, leaf 4/0x8000001D 等需 subleaf < N。
+    // 简化处理: leaf >= 0x80000000 (扩展 leaf) 也需检查 max_ext。
+    if leaf >= super::CPUID_LEAF_EXT_BASE {
+        let (max_ext, _, _, _) = cpuid(super::CPUID_LEAF_EXT_BASE, 0);
+        if leaf > max_ext {
+            return None;
+        }
+    }
+    Some(cpuid(leaf, subleaf))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

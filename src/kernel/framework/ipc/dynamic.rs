@@ -23,6 +23,8 @@ use super::types::{
 use crate::kernel::framework::mm::PAGE_SIZE;
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
+use core::ptr::NonNull;
+use core::sync::atomic::AtomicPtr;
 
 /// === Message 原始指针特权封装 (Framekernel 模式) ===
 ///
@@ -45,10 +47,11 @@ pub(crate) mod raw {
             Self(nn)
         }
 
-        /// 读取 `next` 字段 (侵入式链表)
-        pub fn next(&self) -> Option<NonNull<Message>> {
+        /// 读取 `next` 字段 (侵入式链表) — 返回裸指针 (null = 无后继)
+        pub fn next(&self) -> *mut Message {
             // SAFETY: self 来自 `from_non_null`, 指向有效 Message。
-            unsafe { (*self.0.as_ptr()).next }
+            // B03-24: Message.next 为 AtomicPtr, 队列操作在持锁下执行, Relaxed 足够.
+            unsafe { (*self.0.as_ptr()).next.load(core::sync::atomic::Ordering::Relaxed) }
         }
 
         /// 通过 `Box::from_raw` 释放, 触发 Drop
@@ -186,8 +189,8 @@ impl DynIpcNamespace {
         let mq = MsgQueue {
             id,
             owner: owner_pid,
-            head: None,
-            tail: None,
+            head: AtomicPtr::new(core::ptr::null_mut()),
+            tail: AtomicPtr::new(core::ptr::null_mut()),
             count: 0,
             max_msgs,
             max_size,
@@ -209,10 +212,11 @@ impl DynIpcNamespace {
 
         let mq = queues.remove(pos);
 
-        let mut cur = mq.head;
-        while let Some(msg_nn) = cur {
-            // SAFETY: msg_nn 是经 Box::into_raw 分配的 Box<Message> 派生出的有效指针.
+        let mut cur = mq.head.load(core::sync::atomic::Ordering::Relaxed);
+        while !cur.is_null() {
+            // SAFETY: cur 是经 Box::into_raw 分配的 Box<Message> 派生出的有效指针.
             // 消息链表只在持有 msg_queues 锁时被修改.
+            let msg_nn = unsafe { NonNull::new_unchecked(cur) };
             let msg_ref = unsafe { MessageRef::from_non_null(msg_nn) };
             cur = msg_ref.next();
             // SAFETY: msg_nn 由 Box::into_raw 分配, 此处重新构造 Box 以

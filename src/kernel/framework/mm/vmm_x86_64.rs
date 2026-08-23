@@ -1072,6 +1072,15 @@ impl VirtualMemoryManager {
 
         // SAFETY: 遍历 4 级释放页表.
         // 仅用户空间项 (0..255); 内核项共享.
+        //
+        // B03-06 修复: COW 共享页引用计数处理。
+        // clone_user_page_table_cow_inner 在 fork 时对每个被共享的物理页调
+        // cow_inc_ref, 父子各 +1 → 计数 2。若子进程立即 exit 且未触发 COW fault,
+        // cow_dec_ref 从未被调用 → 物理页引用计数永不归零 → 物理页泄漏。
+        // 根治: 在 destroy_page_table 遍历 leaf PTE 时对每个用户数据页调
+        // cow_dec_ref, 返回 true 时 pmm.free_page 释放。锁序: VMM_LOCK 已持有,
+        // 在持锁状态下调 cow_dec_ref (内部 IrqSpinLock<COW_REFS> 嵌套),
+        // 禁止倒置 — 即禁止先取 COW_REFS 再取 VMM_LOCK。
         unsafe {
             let pml4_ptr = pml4_virt.0 as *mut PageTableEntry;
 
@@ -1099,6 +1108,25 @@ impl VirtualMemoryManager {
 
                                 if pde.is_present() && !pde.is_huge() {
                                     let pt_phys = pde.frame().as_u64();
+                                    let pt_virt = PhysAddr(pt_phys).to_virt();
+                                    let pt = pt_virt.0 as *mut PageTableEntry;
+
+                                    // B03-06: 遍历 leaf PTE 释放用户数据物理页
+                                    // (仅 4KB 页, 排除 huge page).
+                                    for l in 0..512usize {
+                                        // SAFETY: pt.add(l) within the 4KB PT page
+                                        let pte = &*pt.add(l);
+                                        if pte.is_present() {
+                                            let user_phys = pte.frame().as_u64();
+                                            // cow_dec_ref 锁序: VMM_LOCK 已持有,
+                                            // 内部 IrqSpinLock<COW_REFS> 嵌套.
+                                            if crate::kernel::framework::mm::cow::cow_dec_ref(user_phys) {
+                                                // 引用计数归零: 释放物理页
+                                                pmm.free_page(PhysAddr(user_phys));
+                                            }
+                                        }
+                                    }
+
                                     pmm.free_page(PhysAddr(pt_phys));
                                 }
                             }

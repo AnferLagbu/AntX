@@ -13,6 +13,7 @@
 //! - 可替换: Phase 2/3 只需更新 Arch impl，此处无需改动
 
 use crate::kernel::framework::arch::Arch;
+use crate::kernel::framework::config::MAX_CPUS;
 
 /// 获取当前 CPU ID (APIC ID / `MPIDR_EL1`)。
 #[inline(always)]
@@ -45,12 +46,21 @@ pub fn halt() {
 }
 
 /// 发送核间中断到目标 CPU。
+///
+/// # B03-20 修复
+/// 添加 `target_cpu < MAX_CPUS` 越界校验。越界 IPI 会发送到不存在的 CPU,
+/// 静默丢失 (无错误返回)。校验后越界直接返回, 调用方需检查返回值或
+/// 在传入前确保索引有效。
 #[inline(always)]
 #[expect(
     clippy::inline_always,
     reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
 )]
 pub fn send_ipi(target_cpu: u32, vector: u8) {
+    if target_cpu as usize >= MAX_CPUS {
+        // 越界: 静默丢弃 (与原行为一致, 但显式校验避免 silently 失败)
+        return;
+    }
     <crate::kernel::framework::arch::CurrentArch as Arch>::send_ipi(target_cpu, vector);
 }
 

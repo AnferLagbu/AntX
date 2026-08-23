@@ -38,7 +38,7 @@
 //! 2026-06-08 初始化, 2026-06-29 扩展 v2.1
 //! 关联 DECISION-009/010/011/012 (DECISION-012: 等待者动态重算)
 
-use alloc::collections::VecDeque;
+use alloc::collections::{BTreeMap, VecDeque};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, Ordering};
 
@@ -47,21 +47,73 @@ use crate::kernel::framework::sync::IrqSpinLock;
 use crate::kernel::framework::sync::{LockClassDesc, LockClassId, LockKind};
 
 // ============================================================================
-// v2.5: 鲁棒 mutex — 进程退出时强制释放所有 PI Mutex
+// v2.5: 鲁棒 mutex — 进程退出时强制释放所有 PI Mutex (DECISION-049 方案 D)
+// 返工 (2026-08-23 审查): 原 `&'static dyn ProcessMutexHandle` 注册表方案
+// 不适配运行时创建的 PiMutex (非 'static 实例无法注册, 注册表恒空 = no-op)。
+// 最终方案: "持有登记表 + 类型擦除函数指针"。
+// - lock 成功时 (try_lock 快路径) 与移交路径 (do_unlock 转交 next_pid) 登记
+//   (mutex 地址, 非泛型退出分派). 分派经固定布局前缀访问, 对任意 T (含 ?Sized) 兼容.
+// - 正常 unlock 不摘除 (残留条目由进程退出时整体 remove 清理; process_exit
+//   幂等, 已释放锁为 no-op, 仅少量内存残留, 可接受)
+// - 进程退出时按 pid 取出列表逐个强制解锁
 // ============================================================================
 
-/// PI Mutex 全局注册表 — 记录最近创建的 PI Mutex 指针 (用 usize 值存储, 避免 *mut 问题)
-static PI_MUTEX_REGISTRY: crate::kernel::framework::sync::IrqSpinLock<alloc::vec::Vec<usize>> =
-    crate::kernel::framework::sync::IrqSpinLock::new(alloc::vec::Vec::new());
+/// 进程退出时强制解锁的类型擦除分派: `(mutex 地址, pid) -> 是否释放`。
+/// 非泛型: 经固定布局前缀访问 `data` 之前的字段, 无需运行时类型信息。
+///
+/// # Safety
+/// 该函数指针必须来自 `track_hold` 登记 (与 `HeldLock.ptr` 配对),
+/// `ptr` 必须是指向存活 `PiMutex<T>` 的地址 (生命周期由持有登记表保证).
+type ExitDispatch = unsafe fn(usize, u32) -> bool;
 
-/// 进程退出回调: 遍历所有已注册 PI Mutex, 对持有该 PID 的 mutex 执行 `force_unlock`
+/// 一条持有记录: 互斥锁地址 + 退出分派函数。
+struct HeldLock {
+    ptr: usize,
+    dispatch: ExitDispatch,
+}
+
+/// 持有登记表: pid → 该进程当前/曾经持有的 PI Mutex 列表。
+/// - lock 成功时登记; 进程退出时按 pid 取出并逐个强制解锁, 然后整体移除。
+/// - 锁序: 走 IrqSpinLock (屏蔽中断), 不嵌套其他锁。
+static PI_MUTEX_HELD: IrqSpinLock<BTreeMap<u32, alloc::vec::Vec<HeldLock>>> =
+    IrqSpinLock::new(BTreeMap::new());
+
+/// 类型擦除分派: 经固定布局前缀访问, 强制解锁持锁进程的 PI Mutex。
+///
+/// `PiMutex<T>` 中 `data` 之前的字段 (`inner`/`holder_base_priority`/`protocol`/
+/// `ceiling`, debug 下含 `lockdep_class`) 布局与 `T` 无关, 因此以 `PiMutex<u8>`
+/// 重建引用只触碰前缀字段, 不读取 `data`, 对任意 `T` 布局兼容。
+///
+/// # Safety
+/// `ptr` 必须是登记时写入的 PiMutex<T> 地址。生命周期由持有登记表保证:
+/// 仅持锁期间登记 (对象存活); 进程退出时对象仍存活 (持锁进程).
+unsafe fn pi_mutex_exit_dispatch(ptr: usize, pid: u32) -> bool {
+    // SAFETY: 见函数级说明; `force_unlock_for_exit` 不触碰 `data` 字段.
+    let m = unsafe { &*(ptr as *const PiMutex<u8>) };
+    m.force_unlock_for_exit(pid)
+}
+
+/// 登记持有关系 (lock 成功时调用): 记录 (自身地址, 类型擦除 dispatch) 到当前 pid。
+fn track_hold<T: ?Sized>(lock: &PiMutex<T>, pid: u32) {
+    let entry = HeldLock {
+        // ?Sized 时为宽指针, 先转瘦指针取数据地址再转 usize
+        ptr: lock as *const PiMutex<T> as *const u8 as usize,
+        dispatch: pi_mutex_exit_dispatch,
+    };
+    PI_MUTEX_HELD.lock().entry(pid).or_default().push(entry);
+}
+
+/// 进程退出回调: 遍历该 pid 登记的 PI Mutex, 强制解锁 (持有者已退出)。
+/// 由 process 层在进程退出路径调用 (见 `process_cleanup.rs` 接线)。
 pub fn pi_mutex_process_exit(pid: u32) {
-    PI_MUTEX_REGISTRY.lock().iter().for_each(|&raw_usize| {
-        if raw_usize != 0 {
-            let _ = raw_usize;
-            let _ = pid;
+    let held = PI_MUTEX_HELD.lock().remove(&pid);
+    if let Some(list) = held {
+        for h in list {
+            // SAFETY: h.ptr 在登记时有效且对象存活 (持锁期间保证);
+            // process_exit 幂等 (释放后 holder 变 PID_NONE, 重复调用 no-op).
+            unsafe { (h.dispatch)(h.ptr, pid) };
         }
-    });
+    }
 }
 
 // ============================================================================
@@ -334,6 +386,9 @@ impl<T: ?Sized> PiMutex<T> {
             self.holder_base_priority
                 .store(my_base_priority, Ordering::Release);
 
+            // B03-08 返工: 登记持有关系 (进程退出时据此强制解锁)
+            track_hold(self, my_pid);
+
             // Lockdep: 通知锁获取
             #[cfg(debug_assertions)]
             crate::kernel::framework::sync::acquire(
@@ -507,6 +562,28 @@ impl<T: ?Sized> PiMutex<T> {
         let _ = my_pid;
     }
 
+    /// B03-08 + DECISION-049: 进程退出时强制释放锁 (检查特定 pid 是否持锁)。
+    ///
+    /// 与 `force_unlock` 的差异:
+    /// - `force_unlock`: 跳过 holder 检查, 无条件释放 (用于测试)
+    /// - `force_unlock_for_exit`: 检查 holder == pid, 仅在持锁进程退出时调用
+    ///
+    /// 由类型擦除分派 `pi_mutex_exit_dispatch` 在进程退出时调用。
+    ///
+    /// # 幂等保证
+    /// 同 pid 多次调用不会重复释放 (因为第一次释放后 holder 变 PID_NONE)。
+    /// 不同 pid 调用是 no-op。
+    pub fn force_unlock_for_exit(&self, pid: u32) -> bool {
+        if self.inner.holder.load(Ordering::Acquire) != pid {
+            return false;
+        }
+        if !self.inner.locked.load(Ordering::Acquire) {
+            return false;
+        }
+        self.do_unlock();
+        true
+    }
+
     /// 释放锁的实际逻辑 (从 `unlock_internal` 提取, 避免重复)
     fn do_unlock(&self) {
         let my_pid = self.inner.holder.load(Ordering::Acquire);
@@ -573,6 +650,10 @@ impl<T: ?Sized> PiMutex<T> {
         // 修正: 重新赋值
         self.holder_base_priority
             .store(next_base_prio, Ordering::Release);
+
+        // B03-08 返工: 移交路径不走 try_lock, 需为 next_pid 显式登记持有关系
+        // (原持有者 my_pid 的残留条目由进程退出时整体 remove 清理, 幂等 no-op).
+        track_hold(self, next_pid);
 
         // v2.2: 如果有捐赠链, 传递给下一个持有者
         // 链式: C→B→A, 当 A unlock M1, B 成为 holder, B 的链是 [C]

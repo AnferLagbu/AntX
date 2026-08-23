@@ -135,6 +135,10 @@ struct SwapArea {
     used_count: u64,
     /// Swap 数据存储区虚拟地址 (预留内存)
     storage_virt: u64,
+    /// B03-03: swap 存储区物理基址 (用于 deinit 时 unreserve)
+    storage_phys: PhysAddr,
+    /// B03-03: swap 存储区字节数
+    storage_size: usize,
     /// 是否已初始化
     initialized: bool,
 }
@@ -145,6 +149,8 @@ impl SwapArea {
             bitmap: [SlotState::Free as u8; SWAP_MAX_SLOTS],
             used_count: 0,
             storage_virt: 0,
+            storage_phys: PhysAddr(0),
+            storage_size: 0,
             initialized: false,
         }
     }
@@ -157,39 +163,70 @@ impl SwapArea {
             return true;
         }
 
-        // 分配存储区域: SWAP_MAX_SLOTS 个 4KB 页
+        // B03-03 + DECISION-050: 改用 find_contig_range + reserve_range
+        // 走 PMM "reserved 独占" 语义, 不走 alloc_page 簿记 (避免永久泄漏).
+        // swap slot_addr 假设物理连续 (storage_virt + slot * PAGE_SIZE),
+        // 因此必须保证基址连续范围.
         let pmm_inst = pmm::get_pmm();
-        let mut virt_base = 0u64;
+        let swap_bytes = SWAP_MAX_SLOTS * PAGE_SIZE as usize;
 
-        // 使用连续分配 (简化实现)
-        for i in 0..SWAP_MAX_SLOTS {
-            match pmm_inst.alloc_page() {
-                Some(phys) => {
-                    if i == 0 {
-                        virt_base = phys.to_virt().0;
-                    }
-                    // 清零
-                    let v = phys.to_virt();
-                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                    unsafe {
-                        core::ptr::write_bytes(v.0 as *mut u8, 0, PAGE_SIZE as usize);
-                    }
-                }
-                None => {
-                    // 分配失败, 回滚已分配的页
-                    return false;
-                }
-            }
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        let Some(phys_base) = pmm_inst.find_contig_range(swap_bytes) else {
+            crate::klog_warn!(
+                Swap,
+                "[SWAP] init: no {} MB contig range (degraded mode)",
+                swap_bytes / (1024 * 1024)
+            );
+            return false;
+        };
+
+        if let Err(e) = pmm_inst.reserve_range(phys_base, swap_bytes) {
+            crate::klog_warn!(
+                Swap,
+                "[SWAP] init: reserve_range failed: {}",
+                e
+            );
+            return false;
+        }
+
+        // 清零存储区
+        let virt_base = phys_base.to_virt().0;
+        // SAFETY: virt_base 指向 reserve_range 保证独占的连续物理范围
+        unsafe {
+            core::ptr::write_bytes(virt_base as *mut u8, 0, swap_bytes);
         }
 
         self.storage_virt = virt_base;
+        self.storage_phys = phys_base;
+        self.storage_size = swap_bytes;
         self.initialized = true;
         crate::klog_info!(
             Swap,
-            "[SWAP] Initialized: {} slots ({} MB)",
+            "[SWAP] Initialized: {} slots ({} MB) at phys 0x{:X}",
             SWAP_MAX_SLOTS,
-            SWAP_MAX_SLOTS * PAGE_SIZE as usize / (1024 * 1024)
+            swap_bytes / (1024 * 1024),
+            phys_base.as_u64()
         );
+        true
+    }
+
+    /// B03-03 回滚路径: unreserve 存储区, 恢复 PMM 簿记 (供测试与将来热卸载).
+    /// 当前未在生产路径调用 (swap 无卸载场景), 但保证函数可用于 host-tests。
+    fn deinit(&mut self) -> bool {
+        if !self.initialized {
+            return true;
+        }
+        // 清零自身状态
+        self.storage_virt = 0;
+        self.initialized = false;
+        // unreserve: 重置 PMM 簿记 (注意 reserve_range 已 set_bit, 需反向 clear_bit)
+        let pmm_inst = pmm::get_pmm();
+        if let Err(e) = pmm_inst.unreserve_range(self.storage_phys, self.storage_size) {
+            crate::klog_warn!(Swap, "[SWAP] deinit: unreserve_range failed: {}", e);
+            return false;
+        }
+        self.storage_phys = PhysAddr(0);
+        self.storage_size = 0;
         true
     }
 
@@ -524,6 +561,19 @@ pub fn swap_init() -> bool {
     // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
     let area = unsafe { &mut *SWAP.area.get() };
     area.init()
+}
+
+/// B03-03 + DECISION-050: swap 子系统卸载/回滚入口
+///
+/// 释放 swap 存储区回 PMM 池 (unreserve_range), 清零状态。
+/// 当前生产路径无调用方 (swap 是持久子系统), 但保证可用于:
+/// - host-tests 的 init/deinit 配对测试
+/// - 将来 swap 模块热卸载
+pub fn swap_deinit() -> bool {
+    let _guard = SWAP.lock.lock();
+    // SAFETY: `SWAP` 由调用方保证为有效指针; 只读访问
+    let area = unsafe { &mut *SWAP.area.get() };
+    area.deinit()
 }
 
 /// 换出页面: 将物理页写入 swap, 返回 swap entry

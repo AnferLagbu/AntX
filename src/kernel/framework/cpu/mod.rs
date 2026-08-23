@@ -26,10 +26,11 @@
 //! cpu/
 //! ├── mod.rs          # 类型定义 + 公共API + FFI导出
 //! ├── cpuid.rs        # CPUID 指令封装
-//! ├── msr.rs          # MSR 寄存器操作
+//! ├── msr.rs          # MSR 寄存器操作 + MSR 常量
 //! ├── tsc.rs          # TSC 时间戳校准
 //! ├── cache.rs        # 缓存信息检测
-//! └── topology.rs     # 多核拓扑检测
+//! ├── topology.rs     # 多核拓扑检测
+//! └── feature.rs      # 特性标志集 + 特性收集
 //! ```
 
 // 子模块声明
@@ -37,6 +38,7 @@ pub mod arch;
 pub mod cache;
 #[cfg(target_arch = "x86_64")]
 pub mod cpuid;
+mod feature;
 #[cfg(target_arch = "x86_64")]
 pub mod msr;
 pub mod topology;
@@ -46,6 +48,10 @@ pub mod tsc;
 // 公共 API 导出 (便捷访问) — 避免跨子系统直接访问 cpu 内部子模块
 // ============================================================================
 pub use tsc::{cycles_to_nanoseconds, read_tsc, read_tsc_serialized};
+// B03-16 拆分: 类型定义迁入子模块, 顶层 re-export 保持公共 API 不变.
+pub use cache::CacheInfo;
+pub use feature::CpuFeatures;
+pub use topology::TopologyInfo;
 
 // ============================================================================
 // 常量定义 (编译时常量)
@@ -81,7 +87,14 @@ pub enum CpuVendor {
     Transmeta = 4,
     /// QEMU/KVM 虚拟化
     Qemu = 5,
-    /// 未知厂商
+    /// 未知厂商 (兜底)
+    ///
+    /// B03-16 语义明确化: 未识别厂商时, 所有厂商特定 CPUID 分支均跳过,
+    /// 检测走保守默认值路径 (缓存: L1 32KB/L2 256KB 默认, 见 `cache::detect_cache`;
+    /// 拓扑: 按逻辑线程数回退, 见 `topology::detect_topology`;
+    /// TSC: 1GHz 经验值, 见 `calibrate_tsc`).
+    /// `is_virtualized()` 对 Unknown 返回 true 是保守假设 (VMware 等未收录厂商),
+    /// 初始化后调用方应以 `features` 位 (VMX/SVM) 为准.
     Unknown = 255,
 }
 
@@ -131,212 +144,6 @@ impl CpuVendor {
     )]
     pub const fn is_virtualized(&self) -> bool {
         matches!(self, Self::Qemu | Self::Unknown) // Unknown 可能是VMware等
-    }
-}
-
-bitflags::bitflags! {
-    /// CPU 特性标志集
-    ///
-    /// 包含 x86/x86-64 所有重要特性位。
-    /// 通过 CPUID 不同 leaf 收集。
-    ///
-    /// # Example
-    /// ```ignore
-    /// let features = CpuFeatures::empty();
-    /// features.set(CpuFeatures::SSE, true);
-    /// assert!(features.contains(CpuFeatures::SSE));
-    /// ```
-    #[derive(Debug, Clone, Copy, Default)]
-    pub struct CpuFeatures: u128 {  // u128 支持最多128个特性标志
-
-        // ====== 基础特性 (Leaf 1 EDX, bits 0-31) ======
-
-        /// FPU (浮点单元) 可用
-        const FPU         = 1 << 0;
-        /// DE (调试扩展) 支持
-        const DE          = 1 << 2;
-        /// PSE (页面大小扩展) 支持
-        const PSE         = 1 << 3;
-        /// TSC (时间戳计数器) 可用
-        const TSC         = 1 << 4;
-        /// MSR (模型特定寄存器) 支持
-        const MSR         = 1 << 5;
-        /// PAE (物理地址扩展) 支持
-        const PAE         = 1 << 6;
-        /// MCE (机器检查异常) 支持
-        const MCE         = 1 << 7;
-        /// CMPXCHG8B 指令支持
-        const CX8         = 1 << 8;
-        /// APIC (本地APIC) 支持
-        const APIC        = 1 << 9;
-        /// SEP (快速系统调用) 支持
-        const SEP         = 1 << 11;
-        /// MTRR (内存类型范围寄存器) 支持
-        const MTRR        = 1 << 12;
-        /// PGE (全局页面启用) 支持
-        const PGE         = 1 << 13;
-        /// MCA (机器检查架构) 支持
-        const MCA         = 1 << 14;
-        /// CMOV (条件移动指令) 支持
-        const CMOV        = 1 << 15;
-        /// PAT (页属性表) 支持
-        const PAT         = 1 << 16;
-        /// PSE-36 (36位页面支持) 支持
-        const PSE36       = 1 << 17;
-        /// CLFLUSH 指令支持
-        const CLFLUSH     = 1 << 19;
-        /// MMX 指令支持
-        const MMX         = 1 << 23;
-        /// FXSAVE/FXRSTOR 指令支持
-        const FXSR        = 1 << 24;
-        /// SSE (流SIMD扩展) 支持
-        const SSE         = 1 << 25;
-        /// SSE2 支持
-        const SSE2        = 1 << 26;
-        /// HTT (超线程技术) 支持
-        const HTT         = 1 << 28;
-
-        // ====== 基础扩展特性 (Leaf 1 ECX, bits 32-63, 映射到 +32) ======
-
-        const SSE3        = 1 << 32;
-        const MONITOR     = 1 << 35;
-        /// VMX (Intel VT-x 虚拟化) 支持
-        const VMX         = 1 << 37;
-        /// SMX (Intel 安全模式扩展)
-        const SMX         = 1 << 38;
-        const EST         = 1 << 39;
-        const TM2         = 1 << 40;
-        const SSSE3       = 1 << 41;
-        const CID         = 1 << 42;
-        const CX16        = 1 << 45;
-        const XTPR        = 1 << 46;
-        const PDCM        = 1 << 47;
-        const PCID        = 1 << 49;
-        const SSE41       = 1 << 51;
-        const SSE42       = 1 << 52;
-        const X2APIC      = 1 << 53;
-        const MOVBE       = 1 << 54;
-        const POPCNT      = 1 << 55;
-        const AES         = 1 << 57;
-        const XSAVE       = 1 << 58;
-        const OSXSAVE     = 1 << 59;
-        /// AVX (高级向量扩展) 支持
-        const AVX         = 1 << 60;
-        /// RDRAND (硬件随机数生成器)
-        const RDRAND      = 1 << 62;
-
-        // ====== 扩展特性 (Leaf 80000001 EDX, 映射到 +64) ======
-
-        /// SYSCALL/SYSRET 指令支持 (AMD64必需)
-        const SYSCALL     = 1 << 75;  // 64+11
-        /// NX bit (No-Execute) 支持
-        const NX          = 1 << 84;  // 64+20
-        const MMXEXT      = 1 << 86;  // 64+22
-        const FFXSR       = 1 << 88;  // 64+24
-        /// 1GB 大页面支持
-        const PAGE1GB     = 1 << 90;  // 64+26
-        const RDTSCP      = 1 << 91;  // 64+27
-        /// LM (Long Mode) - x86-64 支持!
-        const LM          = 1 << 93;  // 64+29
-        // P4.B.1: SMEP/SMAP (CPUID Leaf7 ECX bit20/21) - 启用后拒绝 Ring 0 执行/访问用户页.
-        // bit 20/21 在 CpuFeatures 中已被 leaf1 ECX (1<<20= SSE4.1 检测等) + leaf0x80000001 EDX 等占用,
-        // 故使用 bit 30/31 (leaf7 ECX bit 30/31 未被任何现有 feature 检测, 安全).
-        // CpuFeatures bitflags 是 CPU feature 抽象层, 与 CPUID 寄存器 bit 不强制 1:1.
-        const SMEP        = 1 << 30;
-        const SMAP        = 1 << 31;
-        /// SVM (AMD-V 虚拟化) 支持
-        const SVM         = 1 << 94;  // 64+30
-        const _3DNOWEXT   = 1 << 95;  // 64+31
-        const _3DNOW      = 1 << 96;  // 64+32
-
-        // ====== 高级特性 (Leaf 7 EBX, 映射到 +96) ======
-
-        const FSGSBASE    = 1 << 96;
-        const BMI1        = 1 << 97;
-        const HLE         = 1 << 98;
-        /// AVX2 支持
-        const AVX2        = 1 << 99;
-        const BMI2        = 1 << 100;
-        const ERMS        = 1 << 101;
-        const INVPCID     = 1 << 102;
-        const RTM         = 1 << 103;
-        const MPX         = 1 << 104;
-        /// AVX-512 Foundation
-        const AVX512F     = 1 << 105;
-        const AVX512DQ    = 1 << 106;
-        const RDSEED      = 1 << 107;
-        const ADX         = 1 << 108;
-        const AVX512IFMA  = 1 << 109;
-        const CLWB        = 1 << 110;
-        /// CLFLUSHOPT (优化缓存行刷写) 支持 — CPUID Leaf 7 EBX bit 23
-        const CLFLUSHOPT  = 1 << 115;
-        const AVX512CD    = 1 << 111;
-        /// SHA (SHA-1/SHA-256) 指令
-        const SHA         = 1 << 112;
-        const AVX512BW    = 1 << 113;
-        const AVX512VL    = 1 << 114;
-    }
-}
-
-impl CpuFeatures {
-    /// 检查是否为 Intel 处理器 (基于特性组合判断)
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub const fn is_intel_style(&self) -> bool {
-        self.contains(Self::VMX) && !self.contains(Self::SVM)
-    }
-
-    /// 检查是否为 AMD 处理器
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub const fn is_amd_style(&self) -> bool {
-        self.contains(Self::SVM) && !self.contains(Self::VMX)
-    }
-
-    /// 检查是否支持 x86-64 长模式
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub const fn supports_64bit(&self) -> bool {
-        self.contains(Self::LM)
-    }
-
-    /// 检查是否支持 SIMD 向量指令
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub fn supports_simd(&self) -> bool {
-        self.contains(Self::SSE | Self::SSE2)
-    }
-
-    /// 检查是否支持 AVX/AVX2
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub fn supports_avx(&self) -> bool {
-        self.contains(Self::AVX | Self::AVX2)
-    }
-
-    /// 检查是否支持虚拟化扩展
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub fn supports_virtualization(&self) -> bool {
-        self.contains(Self::VMX | Self::SVM)
     }
 }
 
@@ -448,84 +255,6 @@ impl CpuSignature {
         buf[i] = (step % 10) + b'0';
 
         buf
-    }
-}
-
-/// 缓存配置信息
-#[derive(Debug, Clone, Copy, Default)]
-#[repr(C)]
-pub struct CacheInfo {
-    /// L1 数据缓存大小 (bytes)
-    pub l1d_size: u32,
-    /// L1 指令缓存大小 (bytes)
-    pub l1i_size: u32,
-    /// L2 统一缓存大小 (bytes)
-    pub l2_size: u32,
-    /// L3 缓存大小 (bytes, 0表示不存在)
-    pub l3_size: u32,
-    /// L1 数据关联度 (路数, 如 4-way)
-    pub l1d_associativity: u8,
-    /// L2 关联度
-    pub l2_associativity: u8,
-    /// L3 关联度 (0表示不存在或全相联)
-    pub l3_associativity: u8,
-    /// 缓存行大小 (bytes, 通常 64)
-    pub cache_line_size: u16,
-}
-
-impl CacheInfo {
-    /// 获取总缓存容量 (L1+L2+L3, bytes)
-    #[inline]
-    pub const fn total_size(&self) -> u64 {
-        self.l1d_size as u64 + self.l1i_size as u64 + self.l2_size as u64 + self.l3_size as u64
-    }
-
-    /// 检查是否有 L3 缓存
-    #[inline]
-    pub const fn has_l3(&self) -> bool {
-        self.l3_size > 0
-    }
-}
-
-/// 多核拓扑信息
-#[derive(Debug, Clone, Copy, Default)]
-#[repr(C)]
-pub struct TopologyInfo {
-    /// 物理核心数 (每个 CPU 插槽)
-    pub physical_cores: u8,
-    /// 逻辑线程总数 (含超线程)
-    pub logical_threads: u8,
-    /// 本地 APIC ID
-    pub apic_id: u8,
-    /// 是否启用超线程
-    pub hyperthreading_enabled: bool,
-    /// 是否为 BSP (Bootstrap Processor, 启动处理器)
-    pub is_bsp: bool,
-}
-
-impl TopologyInfo {
-    /// 获取每物理核心的逻辑线程数
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub const fn threads_per_core(&self) -> u8 {
-        if self.physical_cores > 0 && self.logical_threads >= self.physical_cores {
-            self.logical_threads / self.physical_cores
-        } else {
-            1
-        }
-    }
-
-    /// 检查是否为单核 CPU
-    #[inline]
-    #[expect(
-        clippy::trivially_copy_pass_by_ref,
-        reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-    )]
-    pub const fn is_single_core(&self) -> bool {
-        self.physical_cores <= 1 && self.logical_threads <= 1
     }
 }
 
@@ -696,7 +425,7 @@ pub extern "C" fn cpu_init() -> i32 {
     );
 
     // Step 3: 收集特性
-    collect_features(
+    self::feature::collect_features(
         &mut info.features,
         &mut info.brand_string,
         &mut info.max_standard_leaf,
@@ -704,7 +433,7 @@ pub extern "C" fn cpu_init() -> i32 {
     );
 
     // Step 4: 检测缓存
-    detect_cache(
+    self::cache::detect_cache(
         &mut info.cache,
         info.max_standard_leaf,
         info.max_ext_leaf,
@@ -712,7 +441,7 @@ pub extern "C" fn cpu_init() -> i32 {
     );
 
     // Step 5: 探测拓扑
-    detect_topology(
+    self::topology::detect_topology(
         &mut info.topology,
         &info.signature,
         &info.features,
@@ -982,386 +711,6 @@ fn get_signature(sig_out: &mut CpuSignature, apic_id_out: &mut u8, logical_cores
     *apic_id_out = ((ebx >> 24) & 0xFF) as u8;
 }
 
-/// 收集 CPU 特性标志 (多个 CPUID leaf)
-#[cfg(target_arch = "x86_64")]
-#[expect(
-    clippy::too_many_lines,
-    reason = "函数体超 100 行 (复杂度阈值); 拆分需追改调用链且增加间接层, 当前任务优先 expect 兑底"
-)]
-fn collect_features(
-    features_out: &mut CpuFeatures,
-    brand_out: &mut [u8; BRAND_STRING_LEN],
-    max_std_out: &mut u32,
-    max_ext_out: &mut u32,
-) {
-    // 清空特性位图
-    *features_out = CpuFeatures::empty();
-
-    // ====== 标准 Leaf 0: 获取支持的 leaf 范围 ======
-    let (max_leaf, _, _, _) = cpuid::cpuid(0, 0);
-    *max_std_out = max_leaf;
-
-    // ====== 标准 Leaf 1: 基础特性 (EDX + ECX) ======
-    if max_leaf >= 1 {
-        let (_, _, ecx, edx) = cpuid::cpuid(1, 0);
-
-        // 解析 EDX (bits 0-31)
-        let mut feat = CpuFeatures::empty();
-        if edx & (1 << 0) != 0 {
-            feat.insert(CpuFeatures::FPU);
-        }
-        if edx & (1 << 2) != 0 {
-            feat.insert(CpuFeatures::PSE);
-        }
-        if edx & (1 << 3) != 0 {
-            feat.insert(CpuFeatures::TSC);
-        }
-        if edx & (1 << 5) != 0 {
-            feat.insert(CpuFeatures::MSR);
-        }
-        if edx & (1 << 6) != 0 {
-            feat.insert(CpuFeatures::PAE);
-        }
-        if edx & (1 << 9) != 0 {
-            feat.insert(CpuFeatures::APIC);
-        }
-        if edx & (1 << 11) != 0 {
-            feat.insert(CpuFeatures::SEP);
-        }
-        if edx & (1 << 15) != 0 {
-            feat.insert(CpuFeatures::CMOV);
-        }
-        if edx & (1 << 19) != 0 {
-            feat.insert(CpuFeatures::CLFLUSH);
-        }
-        if edx & (1 << 23) != 0 {
-            feat.insert(CpuFeatures::MMX);
-        }
-        if edx & (1 << 24) != 0 {
-            feat.insert(CpuFeatures::FXSR);
-        }
-        if edx & (1 << 25) != 0 {
-            feat.insert(CpuFeatures::SSE);
-        }
-        if edx & (1 << 26) != 0 {
-            feat.insert(CpuFeatures::SSE2);
-        }
-        if edx & (1 << 28) != 0 {
-            feat.insert(CpuFeatures::HTT);
-        }
-
-        // 解析 ECX (bits 32-63)
-        if ecx & (1 << 0) != 0 {
-            feat.insert(CpuFeatures::SSE3);
-        }
-        if ecx & (1 << 5) != 0 {
-            feat.insert(CpuFeatures::VMX);
-        }
-        if ecx & (1 << 6) != 0 {
-            feat.insert(CpuFeatures::SMX);
-        }
-        if ecx & (1 << 9) != 0 {
-            feat.insert(CpuFeatures::SSSE3);
-        }
-        if ecx & (1 << 19) != 0 {
-            feat.insert(CpuFeatures::SSE41);
-        }
-        if ecx & (1 << 20) != 0 {
-            feat.insert(CpuFeatures::SSE42);
-        }
-        if ecx & (1 << 21) != 0 {
-            feat.insert(CpuFeatures::X2APIC);
-        }
-        if ecx & (1 << 23) != 0 {
-            feat.insert(CpuFeatures::POPCNT);
-        }
-        if ecx & (1 << 25) != 0 {
-            feat.insert(CpuFeatures::AES);
-        }
-        if ecx & (1 << 26) != 0 {
-            feat.insert(CpuFeatures::XSAVE);
-        }
-        if ecx & (1 << 27) != 0 {
-            feat.insert(CpuFeatures::OSXSAVE);
-        }
-        if ecx & (1 << 28) != 0 {
-            feat.insert(CpuFeatures::AVX);
-        }
-        if ecx & (1 << 30) != 0 {
-            feat.insert(CpuFeatures::RDRAND);
-        }
-
-        features_out.insert(feat);
-    }
-
-    // ====== 扩展 Leaf 80000000: 获取扩展范围 ======
-    let (max_ext, _, _, _) = cpuid::cpuid(CPUID_LEAF_EXT_BASE, 0);
-    *max_ext_out = max_ext;
-
-    // ====== 扩展 Leaf 80000001: 扩展特性 (EDX + ECX) ======
-    if max_ext >= 0x8000_0001 {
-        let (_, _, ecx, edx) = cpuid::cpuid(0x8000_0001, 0);
-
-        let mut feat = CpuFeatures::empty();
-        if edx & (1 << 11) != 0 {
-            feat.insert(CpuFeatures::SYSCALL);
-        }
-        if edx & (1 << 20) != 0 {
-            feat.insert(CpuFeatures::NX);
-        }
-        if edx & (1 << 26) != 0 {
-            feat.insert(CpuFeatures::PAGE1GB);
-        }
-        if edx & (1 << 27) != 0 {
-            feat.insert(CpuFeatures::RDTSCP);
-        }
-        if edx & (1 << 29) != 0 {
-            feat.insert(CpuFeatures::LM);
-        }
-
-        if ecx & (1 << 0) != 0 { /* LAHF_LM */ }
-        if ecx & (1 << 5) != 0 { /* ABM */ }
-        if ecx & (1 << 6) != 0 { /* SSE4A */ }
-
-        features_out.insert(feat);
-
-        // 品牌字符串 (Leaf 80000002~4)
-        if max_ext >= 0x8000_0004 {
-            let (a, b, c, d) = cpuid::cpuid(0x8000_0002, 0);
-            brand_out[0..16].copy_from_slice(&[a, b, c, d].map(u32::to_le_bytes).concat());
-
-            let (a, b, c, d) = cpuid::cpuid(0x8000_0003, 0);
-            brand_out[16..32].copy_from_slice(&[a, b, c, d].map(u32::to_le_bytes).concat());
-
-            let (a, b, c, d) = cpuid::cpuid(0x8000_0004, 0);
-            brand_out[32..48].copy_from_slice(&[a, b, c, d].map(u32::to_le_bytes).concat());
-
-            brand_out[47] = 0; // null 终止
-        } else {
-            brand_out[..7].copy_from_slice(b"Generic");
-            brand_out[7] = 0;
-        }
-    }
-
-    // ====== 高级 Leaf 7 Sub-leaf 0: 高级特性 (EBX) ======
-    if max_leaf >= 7 {
-        let (_, ebx, ecx, _) = cpuid::cpuid(7, 0);
-
-        let mut feat = CpuFeatures::empty();
-        if ebx & (1 << 0) != 0 {
-            feat.insert(CpuFeatures::FSGSBASE);
-        }
-        if ebx & (1 << 3) != 0 {
-            feat.insert(CpuFeatures::BMI1);
-        }
-        if ebx & (1 << 5) != 0 {
-            feat.insert(CpuFeatures::AVX2);
-        }
-        if ebx & (1 << 8) != 0 {
-            feat.insert(CpuFeatures::BMI2);
-        }
-        if ebx & (1 << 9) != 0 {
-            feat.insert(CpuFeatures::ERMS);
-        }
-        if ebx & (1 << 16) != 0 {
-            feat.insert(CpuFeatures::AVX512F);
-        }
-        if ebx & (1 << 21) != 0 {
-            feat.insert(CpuFeatures::AVX512IFMA);
-        }
-        if ebx & (1 << 24) != 0 {
-            feat.insert(CpuFeatures::CLWB);
-        }
-        if ebx & (1 << 23) != 0 {
-            feat.insert(CpuFeatures::CLFLUSHOPT);
-        }
-        if ebx & (1 << 29) != 0 {
-            feat.insert(CpuFeatures::SHA);
-        }
-        // P4.B.2: SMEP/SMAP (CPUID Leaf7 ECX bit20/21).
-        // SMEP = Supervisor Mode Execution Prevention: Ring 0 不能执行 USER 页.
-        // SMAP = Supervisor Mode Access Prevention: Ring 0 不能访问 USER 页 (除非 stac).
-        if ecx & (1 << 20) != 0 {
-            feat.insert(CpuFeatures::SMEP);
-        }
-        if ecx & (1 << 21) != 0 {
-            feat.insert(CpuFeatures::SMAP);
-        }
-
-        features_out.insert(feat);
-    }
-}
-
-/// 检测缓存配置 (Intel: Leaf 4, AMD: Leaf 80000005/6)
-#[cfg(target_arch = "x86_64")]
-// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
-#[expect(clippy::cast_possible_truncation)]
-#[expect(
-    clippy::similar_names,
-    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
-)]
-fn detect_cache(cache_out: &mut CacheInfo, max_std: u32, max_ext: u32, vendor: CpuVendor) {
-    // 设置默认保守值
-    *cache_out = CacheInfo {
-        l1d_size: 32 * 1024,  // 32KB
-        l1i_size: 32 * 1024,  // 32KB
-        l2_size: 256 * 1024,  // 256KB
-        l3_size: 0,           // 不确定
-        l1d_associativity: 4, // 4-way
-        l2_associativity: 8,  // 8-way
-        l3_associativity: 0,
-        cache_line_size: 64, // 标准 x86-64
-    };
-
-    // Intel: 使用 Deterministic Cache Parameter (Leaf 4)
-    if vendor == CpuVendor::Intel && max_std >= 4 {
-        for subleaf in 0..=3u32 {
-            // 通常前几个subleaf包含L1/L2/L3
-            let (eax, ebx, ecx, _) = cpuid::cpuid(4, subleaf);
-
-            let cache_type = eax & 0x1F;
-            if cache_type == 0 {
-                break;
-            } // 无更多缓存
-
-            let cache_level = (eax >> 5) & 0x7;
-            let line_part = (ebx & 0xFFF) + 1;
-            let assoc = ((ebx >> 12) & 0x3FF) + 1;
-            let sets = ecx + 1;
-            let size = sets * assoc * line_part * ((ebx >> 22) + 1);
-
-            match (cache_type, cache_level) {
-                (1, 1) => cache_out.l1d_size = size, // L1 Data
-                (2, 1) => cache_out.l1i_size = size, // L1 Instruction
-                (3, 2) => {
-                    // L2 Unified
-                    cache_out.l2_size = size;
-                    cache_out.l2_associativity = assoc as u8;
-                }
-                (3, 3) => {
-                    // L3 Unified
-                    cache_out.l3_size = size;
-                    cache_out.l3_associativity = assoc as u8;
-                }
-                _ => {}
-            }
-        }
-    }
-    // AMD: 使用扩展缓存信息 (Leaf 80000005/6)
-    else if vendor == CpuVendor::Amd && max_ext >= 0x8000_0006 {
-        // L1 数据/指令缓存 (Leaf 80000005)
-        let (_, _, ecx_l1, edx_l1) = cpuid::cpuid(0x8000_0005, 0);
-        cache_out.l1d_size = (ecx_l1 >> 24) * 1024; // KB → Bytes
-        cache_out.l1i_size = (edx_l1 >> 24) * 1024;
-
-        // L2 Unified (Leaf 80000006)
-        let (_, _, ecx_l2, _) = cpuid::cpuid(0x8000_0006, 0);
-        cache_out.l2_size = (ecx_l2 >> 16) * 1024;
-
-        // L3 (Leaf 80000008, 可选)
-        if max_ext >= 0x8000_0008 {
-            let (_, _, ecx_l3, _) = cpuid::cpuid(0x8000_0008, 0);
-            let l3_size_kb = (ecx_l3 >> 18) * 512; // 单位: 512KB
-            if l3_size_kb > 0 {
-                cache_out.l3_size = l3_size_kb * 1024; // KB → Bytes
-            }
-        }
-    }
-
-    // 获取缓存行大小 (几乎所有 x86-64 都是 64 字节)
-    if max_std >= 1 {
-        let (_, ebx, _, _) = cpuid::cpuid(1, 0);
-        cache_out.cache_line_size = (8 * ((ebx >> 8) & 0xFF)) as u16;
-    }
-
-    // 最终安全检查
-    if cache_out.cache_line_size == 0 {
-        cache_out.cache_line_size = 64;
-    }
-}
-
-/// 探测多核拓扑 (Intel: Leaf 0xB, AMD: Leaf 80000008)
-#[cfg(target_arch = "x86_64")]
-// 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
-#[expect(clippy::cast_possible_truncation)]
-#[expect(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "trivially_copy_pass_by_ref: 小类型传引用而非值是 API 约定 (如 impl trait); 当前优先 expect"
-)]
-fn detect_topology(
-    topo_out: &mut TopologyInfo,
-    _sig: &CpuSignature,
-    feat: &CpuFeatures,
-    max_std: u32,
-    max_ext: u32,
-    vendor: CpuVendor,
-) {
-    topo_out.is_bsp = true; // 我们总是运行在 BSP 上
-    topo_out.hyperthreading_enabled =
-        feat.contains(CpuFeatures::HTT) && topo_out.logical_threads > 1;
-
-    // Intel: 扩展拓扑 Leaf (0xB)
-    if vendor == CpuVendor::Intel && max_std >= 0xB {
-        let (_, ebx, ecx, _) = cpuid::cpuid(0xB, 0);
-
-        if ebx != 0 {
-            let logical_per_pkg = (ebx & 0xFFFF) as u16;
-            let cores_per_pkg = (ecx & 0xFF) as u8;
-
-            if cores_per_pkg > 0 {
-                topo_out.physical_cores = cores_per_pkg;
-
-                if logical_per_pkg as u8 > cores_per_pkg {
-                    topo_out.hyperthreading_enabled = true;
-                }
-            }
-        }
-    }
-    // AMD: 核心计数 (Leaf 80000008)
-    else if vendor == CpuVendor::Amd && max_ext >= 0x8000_0008 {
-        let (_, _, ecx, _) = cpuid::cpuid(0x8000_0008, 0);
-        let nc = (ecx & 0xFF) as u8; // NC = CoreCount - 1
-
-        if nc > 0 {
-            topo_out.physical_cores = nc + 1;
-        }
-    }
-    // 回退: 假设无超线程
-    else if topo_out.hyperthreading_enabled {
-        // 有超线程但无法确定物理核心数, 假设 2 threads/core
-        topo_out.physical_cores = topo_out.logical_threads / 2;
-        if topo_out.physical_cores == 0 {
-            topo_out.physical_cores = 1;
-        }
-    } else {
-        topo_out.physical_cores = topo_out.logical_threads;
-    }
-
-    // 安全边界检查
-    if topo_out.physical_cores == 0 {
-        topo_out.physical_cores = 1;
-    }
-    if topo_out.logical_threads < topo_out.physical_cores {
-        topo_out.logical_threads = topo_out.physical_cores;
-    }
-}
-
-/// `IA32_EFER` MSR 地址
-#[cfg(target_arch = "x86_64")]
-const IA32_EFER: u32 = 0xC0000080;
-/// `IA32_EFER.SCE` — 启用 SYSCALL/SYSRET 指令
-#[cfg(target_arch = "x86_64")]
-const EFER_SCE: u64 = 1 << 0;
-/// `IA32_STAR` — SYSCALL 目标 CS/SS 和 SYSRET 基址
-#[cfg(target_arch = "x86_64")]
-const IA32_STAR: u32 = 0xC0000081;
-/// `IA32_LSTAR` — SYSCALL 入口点 (64-bit 模式)
-#[cfg(target_arch = "x86_64")]
-const IA32_LSTAR: u32 = 0xC0000082;
-/// `IA32_SFMASK` — SYSCALL 期间清零的标志位
-#[cfg(target_arch = "x86_64")]
-const IA32_SFMASK: u32 = 0xC0000084;
-
 #[cfg(target_arch = "x86_64")]
 // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
 unsafe extern "C" {
@@ -1414,19 +763,19 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             // 启用 SYSCALL 指令 (设置 EFER.SCE)
-            let efer = self::msr::read_msr(IA32_EFER);
-            self::msr::write_msr(IA32_EFER, efer | EFER_SCE);
+            let efer = self::msr::read_msr(self::msr::IA32_EFER);
+            self::msr::write_msr(self::msr::IA32_EFER, efer | self::msr::EFER_SCE);
 
             // STAR: [63:48] = SYSRET 用户基址 (0x10), [47:32] = SYSCALL 内核 CS (0x08)
             // SYSCALL: CS = 0x08 (内核代码), SS = 0x10 (内核数据)
             // SYSRET:  CS = (0x10+16)|3 = 0x23 (用户代码), SS = 0x10+8 = 0x18 (用户数据)
             let star = (0x10u64 << 48) | (0x08u64 << 32);
-            self::msr::write_msr(IA32_STAR, star);
+            self::msr::write_msr(self::msr::IA32_STAR, star);
 
             // LSTAR: 64 位 syscall 入口点 (高半部分地址, KPTI 用户页表只映射高半区)
             let entry_addr = syscall_entry as *const () as u64;
             let entry_hi = entry_addr + crate::kernel::framework::mm::KERNEL_BASE as u64;
-            self::msr::write_msr(IA32_LSTAR, entry_hi);
+            self::msr::write_msr(self::msr::IA32_LSTAR, entry_hi);
 
             // SFMASK: 进入内核时清除 IF (bit 9) 以禁用中断
             #[expect(
@@ -1434,7 +783,7 @@ fn init_msr(features: &CpuFeatures) -> Result<(), &'static str> {
                 reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
             )]
             const SFMASK_IF: u64 = 1 << 9;
-            self::msr::write_msr(IA32_SFMASK, SFMASK_IF);
+            self::msr::write_msr(self::msr::IA32_SFMASK, SFMASK_IF);
         }
     }
 

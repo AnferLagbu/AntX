@@ -8,7 +8,7 @@
 //! 纯数据定义 (IPC 类型/信号/管道/共享内存/消息队列/信号量), 0 unsafe.
 //! framework 仅保留 re-export.
 
-use core::ptr::NonNull;
+use core::sync::atomic::AtomicPtr;
 
 /// IPC 资源 ID 类型 (全局唯一标识符)
 pub type IpcId = u32;
@@ -377,8 +377,8 @@ pub struct Message {
     pub size: u64,
     /// 消息数据
     pub data: [u8; MSG_MAX_SIZE],
-    /// 下一条消息 (链表)
-    pub next: Option<NonNull<Self>>,
+    /// 下一条消息 (侵入式链表, AtomicPtr 保证 Send/Sync; 队列操作在持锁下执行, Relaxed 足够)
+    pub next: AtomicPtr<Message>,
 }
 
 impl Message {
@@ -388,7 +388,7 @@ impl Message {
             sender: 0,
             size: 0,
             data: [0u8; MSG_MAX_SIZE],
-            next: None,
+            next: AtomicPtr::new(core::ptr::null_mut()),
         }
     }
 }
@@ -401,10 +401,10 @@ pub struct MsgQueue {
     /// 所有者 PID
     pub owner: u32,
 
-    /// 队列头指针
-    pub head: Option<NonNull<Message>>,
+    /// 队列头指针 (AtomicPtr: B03-24 根治, 使 IpcNamespace 满足 Send)
+    pub head: AtomicPtr<Message>,
     /// 队列尾指针
-    pub tail: Option<NonNull<Message>>,
+    pub tail: AtomicPtr<Message>,
     /// 当前消息数
     pub count: u32,
     /// 最大消息数
@@ -428,8 +428,8 @@ impl MsgQueue {
         Self {
             id: 0,
             owner: 0,
-            head: None,
-            tail: None,
+            head: AtomicPtr::new(core::ptr::null_mut()),
+            tail: AtomicPtr::new(core::ptr::null_mut()),
             count: 0,
             max_msgs: MSG_QUEUE_MAX_MSGS,
             max_size: MSG_MAX_SIZE as u32,
@@ -479,7 +479,9 @@ impl Semaphore {
 
 /// IPC 命名空间 (全局资源容器)
 ///
-/// 存储所有 IPC 资源的静态数组
+/// 存储所有 IPC 资源的静态数组。
+/// 内部 NonNull 链表指针仅在持锁时访问 (Mutex 保护每个数组元素),
+/// 故 IPC 命名空间整体可安全跨线程传递。
 #[derive(Debug)]
 pub struct IpcNamespace {
     /// 管道数组

@@ -86,6 +86,13 @@ macro_rules! klog_ffi {
             format_args!($($arg)*),
         );
         if cursor > 0 {
+            // B03-13: 显式 NUL 终止 + 长度封顶, 防止 C ABI 读越界。
+            // 之前仅 `if cursor > 0` 调 ffi, 无 NUL 终止; 若 cursor == 255
+            // (格式化恰好填满 buf), ffi_fn 读 buf[255] 后继续读栈残留 (UB)。
+            // 修复: 写入 buf[cursor] = 0; 同时 cursor 封顶 255 留 1 字节给 NUL。
+            let len = if cursor >= 255 { 255 } else { cursor };
+            // SAFETY: len < 256, buf[len] 索引在 [0, 255] 范围内
+            unsafe { buf[len] = 0; }
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe { $ffi_fn(buf.as_ptr()); }
         }

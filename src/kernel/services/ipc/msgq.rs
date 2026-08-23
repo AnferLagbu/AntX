@@ -8,6 +8,8 @@ use crate::kernel::framework::ipc::msgq::raw::{self, MessageRef};
 use crate::kernel::framework::ipc::types::{
     IpcId, IpcNamespace, MSG_MAX_SIZE, MSG_QUEUE_MAX_MSGS, MsgQueue,
 };
+use core::ptr::NonNull;
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 /// 查找空闲消息队列槽位
 pub fn msgq_find_free(namespace: &mut IpcNamespace) -> Option<&mut MsgQueue> {
@@ -43,8 +45,8 @@ pub fn msgq_create_safe(
     *next_id += 1;
 
     mq.owner = current_pid;
-    mq.head = None;
-    mq.tail = None;
+    mq.head = AtomicPtr::new(core::ptr::null_mut());
+    mq.tail = AtomicPtr::new(core::ptr::null_mut());
     mq.count = 0;
     mq.max_msgs = MSG_QUEUE_MAX_MSGS;
     mq.max_size = MSG_MAX_SIZE as u32;
@@ -104,7 +106,7 @@ pub fn msgq_send_safe(
     msg_ref.type_ = type_;
     msg_ref.sender = u64::from(current_pid);
     msg_ref.size = size as u64;
-    msg_ref.next = None;
+    msg_ref.next.store(core::ptr::null_mut(), Ordering::Relaxed);
 
     // 复制数据 (如果有)
     if let Some(src) = data {
@@ -114,15 +116,17 @@ pub fn msgq_send_safe(
     }
 
     // 入队 (尾插法)
-    if mq.tail.is_none() {
-        mq.head = Some(msg_nn.as_non_null());
-        mq.tail = Some(msg_nn.as_non_null());
+    let msg_ptr = msg_nn.as_non_null().as_ptr();
+    if mq.tail.load(Ordering::Relaxed).is_null() {
+        mq.head.store(msg_ptr, Ordering::Relaxed);
+        mq.tail.store(msg_ptr, Ordering::Relaxed);
     } else {
-        // SAFETY: else 分支保证 mq.tail 为 Some
-        let tail_nn = mq.tail.expect("msgq: tail 应为 Some");
+        // 队列非空: 取尾节点链接新消息
+        let tail_ptr = mq.tail.load(Ordering::Relaxed);
+        let tail_nn = NonNull::new(tail_ptr).expect("msgq: tail 应为非空");
         let tail_ref = MessageRef::from_some(tail_nn);
-        tail_ref.set_next(Some(msg_nn.as_non_null()));
-        mq.tail = Some(msg_nn.as_non_null());
+        tail_ref.set_next(msg_ptr);
+        mq.tail.store(msg_ptr, Ordering::Relaxed);
     }
     mq.count += 1;
 
@@ -158,18 +162,18 @@ pub fn msgq_recv_safe(
     };
 
     // 检查队列是否为空
-    if mq.head.is_none() {
+    if mq.head.load(Ordering::Relaxed).is_null() {
         return Err(-2);
     }
 
     // 出队 (头删法)
-    // SAFETY: 上方已检查 mq.head 为 Some
-    let msg_nn = mq.head.expect("msgq: head 应为 Some");
+    let head_ptr = mq.head.load(Ordering::Relaxed);
+    let msg_nn = NonNull::new(head_ptr).expect("msgq: head 应为非空");
     let msg_ref = MessageRef::from_some(msg_nn);
-    mq.head = msg_ref.next();
+    mq.head.store(msg_ref.next(), Ordering::Relaxed);
 
-    if mq.head.is_none() {
-        mq.tail = None;
+    if mq.head.load(Ordering::Relaxed).is_null() {
+        mq.tail.store(core::ptr::null_mut(), Ordering::Relaxed);
     }
     mq.count -= 1;
 
@@ -220,9 +224,12 @@ pub fn msgq_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), 
     };
 
     // 释放所有剩余消息
-    while let Some(msg_nn) = mq.head {
+    let mut head_ptr = mq.head.load(Ordering::Relaxed);
+    while !head_ptr.is_null() {
+        let msg_nn = NonNull::new(head_ptr).expect("msgq_destroy: head 应为非空");
         let msg_ref = MessageRef::from_some(msg_nn);
-        mq.head = msg_ref.next();
+        head_ptr = msg_ref.next();
+        mq.head.store(head_ptr, Ordering::Relaxed);
         msg_ref.free();
     }
 

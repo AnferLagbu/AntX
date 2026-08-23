@@ -27,7 +27,9 @@ unsafe impl Send for UndoLog {}
 unsafe impl Sync for UndoLog {}
 
 impl UndoLog {
-    pub fn new() -> Self {
+    /// B03-10: 改 const fn 支持静态预分配。
+    /// UndoLog 字段全为 const-init (数组 + u32 + null_mut 指针), 无运行时依赖。
+    pub const fn new() -> Self {
         Self {
             entries: [UndoEntry {
                 generation: 0,

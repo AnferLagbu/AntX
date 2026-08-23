@@ -86,9 +86,10 @@ impl AuditLog {
     }
 }
 
-// SAFETY: 仅在 audit 子系统串行访问下使用, AuditLog 内部使用 fetch_add 计数
-// 多核写不同 idx 不会数据竞争. 集中在此处访问以隔离 static mut 范围.
-pub(crate) static mut GLOBAL_AUDIT: AuditLog = AuditLog::new();
+// B03-09: GLOBAL_AUDIT 改用 IrqSpinLock<AuditLog> 包装, 消除 static mut 多核撕裂。
+// 写作常态, dump 读少, IrqSpinLock 持锁时间短 (< 微秒), 适合此场景。
+pub(crate) static GLOBAL_AUDIT: crate::kernel::framework::sync::IrqSpinLock<AuditLog> =
+    crate::kernel::framework::sync::IrqSpinLock::new(AuditLog::new());
 
 pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
     raw::log(pwm, action, target_pwm, domain, caps);
@@ -99,21 +100,19 @@ pub fn dump() {
 }
 
 // ============================================================================
-// 特权子模块 (Framekernel raw): 集中 static mut GLOBAL_AUDIT 访问
+// 特权子模块 (Framekernel raw): 集中 GLOBAL_AUDIT 访问
 // ============================================================================
 
 pub(crate) mod raw {
     use super::{AuditAction, GLOBAL_AUDIT};
 
-    /// 记录一条审计项 (使用 `&mut` 互斥访问)
+    /// 记录一条审计项 (IrqSpinLock 保护)
     pub fn log(pwm: u64, action: AuditAction, target_pwm: u64, domain: u64, caps: u64) {
-        // SAFETY: static mut 唯一所有者, 调用方串行或由 audit 自身保证.
-        // AuditLog::log 内部使用 fetch_add 计数, 多核写不同 idx 不会数据竞争。
-        unsafe { GLOBAL_AUDIT.log(pwm, action, target_pwm, domain, caps) }
+        GLOBAL_AUDIT.lock().log(pwm, action, target_pwm, domain, caps);
     }
 
     pub fn dump() {
-        // SAFETY: 同上, dump 只读取, 安全。
-        unsafe { GLOBAL_AUDIT.dump() }
+        // 持有锁时长 = 整个 dump 期间; 若 dump 量大可改为快照方式
+        GLOBAL_AUDIT.lock().dump();
     }
 }

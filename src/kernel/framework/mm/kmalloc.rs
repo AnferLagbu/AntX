@@ -689,21 +689,25 @@ impl KernelHeap {
 
     /// 打印堆统计
     pub fn dump_stats(&self) {
-        let _stats = self.get_stats();
-        serial_println!("=== Kmalloc Statistics ===");
-        serial_println!(
-            "Heap Range:     0x{:X} - 0x{:X}",
+        let stats = self.get_stats();
+        // B03-02 修复: 改用 crate::klog_info! 走真实 klog 路径, 替代空宏 serial_println!.
+        // 调用方: mm/api.rs::kmalloc_dump_stats (FFI 入口) + mm/mechanism.rs re-export.
+        crate::klog_info!(
+            Memory,
+            "=== Kmalloc Statistics === Heap Range: 0x{:X} - 0x{:X} \
+             Total Allocated: {} KB, Total Freed: {} KB, Current Usage: {} KB, \
+             Peak Usage: {} KB, Alloc Count: {}, Free Count: {}, Failed Allocs: {} \
+             =========================",
             stats.heap_start.0,
-            stats.heap_end.0
+            stats.heap_end.0,
+            stats.total_allocated / 1024,
+            stats.total_freed / 1024,
+            stats.current_usage / 1024,
+            stats.peak_usage / 1024,
+            stats.alloc_count,
+            stats.free_count,
+            stats.failed_allocs
         );
-        serial_println!("Total Allocated: {} KB", stats.total_allocated / 1024);
-        serial_println!("Total Freed:    {} KB", stats.total_freed / 1024);
-        serial_println!("Current Usage:   {} KB", stats.current_usage / 1024);
-        serial_println!("Peak Usage:      {} KB", stats.peak_usage / 1024);
-        serial_println!("Alloc Count:    {}", stats.alloc_count);
-        serial_println!("Free Count:     {}", stats.free_count);
-        serial_println!("Failed Allocs:  {}", stats.failed_allocs);
-        serial_println!("=========================");
     }
 
     /// 校验堆完整性 (调试用)

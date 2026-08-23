@@ -27,6 +27,8 @@
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+use crate::kernel::framework::config::MAX_CPUS;
+
 const MAX_SOFTIRQS: usize = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,32 +81,64 @@ struct SoftirqState {
 // 在 softirq 处理期 (中断上下文, 单线程) 读取.
 unsafe impl Sync for SoftirqState {}
 
-static SOFTIRQ: SoftirqState = SoftirqState {
-    pending: AtomicU64::new(0),
-    handlers: UnsafeCell::new([None; MAX_SOFTIRQS]),
-    running: AtomicBool::new(false),
+/// B03-11: 每 CPU 独立的 softirq 状态 — 让多核并行处理 softirq 而非全局锁。
+/// 每个 CPU 有独立的 pending 位图 + handlers + running 标记。
+/// `running` 防止同一 CPU 上的 softirq 重入（仍需保留）。
+/// `pending` per-CPU 化后, 各 CPU 独立排程自己的软中断。
+static SOFTIRQ: [SoftirqState; MAX_CPUS] = {
+    #[expect(
+        clippy::declare_interior_mutable_const,
+        reason = "declare_interior_mutable_const: 常量含 Atomic/UnsafeCell 字段; 作为每 CPU 状态模板复制到 static 数组, 保持 const 语义"
+    )]
+    const INIT: SoftirqState = SoftirqState {
+        pending: AtomicU64::new(0),
+        handlers: UnsafeCell::new([None; MAX_SOFTIRQS]),
+        running: AtomicBool::new(false),
+    };
+    [INIT; MAX_CPUS]
 };
 
+#[inline]
+fn current_cpu_id() -> usize {
+    crate::arch!(cpu_id()) as usize
+}
+
 pub fn open_softirq(nr: SoftirqVec, handler: SoftirqHandler) {
-    // SAFETY: `SOFTIRQ` 由调用方保证为有效指针; 只读访问
-    let handlers = unsafe { &mut *SOFTIRQ.handlers.get() };
-    handlers[nr.to_idx()] = Some(handler);
+    // B03-11: handlers 在所有 CPU 槽位都注册 (启动期单线程)。
+    for state in &SOFTIRQ {
+        // SAFETY: 启动期单线程, 无竞争访问同一槽位
+        let handlers = unsafe { &mut *state.handlers.get() };
+        handlers[nr.to_idx()] = Some(handler);
+    }
 }
 
 #[inline]
 pub fn raise_softirq(nr: SoftirqVec) {
-    SOFTIRQ
-        .pending
-        .fetch_or(1u64 << nr.to_idx(), Ordering::Release);
+    let cpu = current_cpu_id();
+    if cpu < MAX_CPUS {
+        SOFTIRQ[cpu]
+            .pending
+            .fetch_or(1u64 << nr.to_idx(), Ordering::Release);
+    }
+    // CPU id 越界: 静默丢弃 (启动期 cpu_local 尚未初始化)
 }
 
 #[inline]
 pub fn raise_softirq_mask(mask: u64) {
-    SOFTIRQ.pending.fetch_or(mask, Ordering::Release);
+    let cpu = current_cpu_id();
+    if cpu < MAX_CPUS {
+        SOFTIRQ[cpu].pending.fetch_or(mask, Ordering::Release);
+    }
 }
 
 pub fn do_softirq() {
-    if SOFTIRQ
+    let cpu = current_cpu_id();
+    if cpu >= MAX_CPUS {
+        return;
+    }
+    let state = &SOFTIRQ[cpu];
+
+    if state
         .running
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
         .is_err()
@@ -112,11 +146,11 @@ pub fn do_softirq() {
         return;
     }
 
-    // SAFETY: `SOFTIRQ` 由调用方保证为有效指针; 只读访问
-    let handlers = unsafe { &*SOFTIRQ.handlers.get() };
+    // SAFETY: handlers 在启动期已注册 (open_softirq 同步到所有 CPU), 运行时只读
+    let handlers = unsafe { &*state.handlers.get() };
 
     loop {
-        let pending = SOFTIRQ.pending.swap(0, Ordering::AcqRel);
+        let pending = state.pending.swap(0, Ordering::AcqRel);
         if pending == 0 {
             break;
         }
@@ -135,17 +169,27 @@ pub fn do_softirq() {
         crate::arch!(interrupt_disable());
     }
 
-    SOFTIRQ.running.store(false, Ordering::Release);
+    state.running.store(false, Ordering::Release);
 }
 
 #[inline]
 pub fn in_softirq() -> bool {
-    SOFTIRQ.running.load(Ordering::Acquire)
+    let cpu = current_cpu_id();
+    if cpu < MAX_CPUS {
+        SOFTIRQ[cpu].running.load(Ordering::Acquire)
+    } else {
+        false
+    }
 }
 
 #[inline]
 pub fn pending_softirq() -> bool {
-    SOFTIRQ.pending.load(Ordering::Acquire) != 0
+    let cpu = current_cpu_id();
+    if cpu < MAX_CPUS {
+        SOFTIRQ[cpu].pending.load(Ordering::Acquire) != 0
+    } else {
+        false
+    }
 }
 
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作

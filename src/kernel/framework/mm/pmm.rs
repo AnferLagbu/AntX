@@ -673,6 +673,170 @@ impl PhysicalMemoryManager {
         self.release_lock(&flags);
     }
 
+    /// B03-04: 标记物理地址范围为已用 (反向声明) — 用于 swap/persistent buffer 等
+    /// 子系统在初始化后声明其占有的物理内存, 防止被 PMM 二次分配。
+    ///
+    /// # 调用契约
+    /// - `base` 必须对齐到 `PAGE_SIZE` 边界
+    /// - `size` 必须 > 0 且为 `PAGE_SIZE` 整数倍
+    /// - 范围 `[base, base+size)` 必须全部在 PMM 管理的物理 RAM 内
+    /// - 调用方负责不与 kernel reserved / bitmap / buddy-meta 区重叠
+    ///   (启动期 init_bitmap 已预留; 运行时新增子系统的预留需自行避让)
+    /// - 不可对已分配/已预留的页调本函数 (会破坏 PMM 簿记; 若需共享,
+    ///   由调用方加互斥而非依赖本函数)
+    ///
+    /// # Errors
+    /// `base` 未对齐 / `size` 为 0 或非页对齐 / 范围越界 / 页已分配时返回 Err。
+    pub fn reserve_range(&self, base: PhysAddr, size: usize) -> Result<(), &'static str> {
+        if size == 0 {
+            return Err("PMM reserve_range: zero size");
+        }
+        if !base.as_u64().is_multiple_of(PAGE_SIZE as u64) {
+            return Err("PMM reserve_range: base not page-aligned");
+        }
+        if !size.is_multiple_of(PAGE_SIZE as usize) {
+            return Err("PMM reserve_range: size not page-aligned");
+        }
+
+        let start_pfn = phys_to_page(base.as_u64()) as usize;
+        let npages = size / PAGE_SIZE as usize;
+        let end_pfn = start_pfn.checked_add(npages).ok_or("PMM reserve_range: overflow")?;
+        let total_pages = self.info.get().total_pages as usize;
+        if end_pfn > total_pages {
+            return Err("PMM reserve_range: range exceeds PMM size");
+        }
+
+        let flags = self.acquire_lock();
+        // 拒绝范围与已分配页重叠 (避免 PMM 簿记破坏)
+        for i in start_pfn..end_pfn {
+            if self.test_bit(i) {
+                self.release_lock(&flags);
+                return Err("PMM reserve_range: range overlaps allocated/reserved page");
+            }
+        }
+        // 标记 reserved
+        for i in start_pfn..end_pfn {
+            self.set_bit(i);
+        }
+        self.stats_alloc(npages as u64);
+        self.release_lock(&flags);
+
+        klog_pmm!(
+            "[PMM] Reserved range: base=0x{:X} size={} ({} pages, {} KB)",
+            base.as_u64(),
+            size,
+            npages,
+            (npages * PAGE_SIZE as usize) / 1024
+        );
+        Ok(())
+    }
+
+    /// B03-03 + DECISION-050: 撤销 `reserve_range` 的簿记, 释放预留范围回 PMM 池。
+    ///
+    /// # 调用契约
+    /// - `base`/`size` 必须与之前的 `reserve_range` 调用严格对应
+    /// - 仅对 **reserved** 簿记的页可调 (即 reserve_range 而非 alloc_page 拿的页)
+    /// - 调用方负责确保该范围不再被任何子系统使用 (语义同步)
+    /// - 不可撤销 `alloc_page` 拿的页 (会破坏 PMM 簿记, 那是 `free_page` 的范畴)
+    ///
+    /// # Errors
+    /// `base` 未对齐 / `size` 非页对齐 / 范围越界 / 页未处于 reserved 状态时返回 Err。
+    pub fn unreserve_range(&self, base: PhysAddr, size: usize) -> Result<(), &'static str> {
+        if size == 0 {
+            return Err("PMM unreserve_range: zero size");
+        }
+        if !base.as_u64().is_multiple_of(PAGE_SIZE as u64) {
+            return Err("PMM unreserve_range: base not page-aligned");
+        }
+        if !size.is_multiple_of(PAGE_SIZE as usize) {
+            return Err("PMM unreserve_range: size not page-aligned");
+        }
+
+        let start_pfn = phys_to_page(base.as_u64()) as usize;
+        let npages = size / PAGE_SIZE as usize;
+        let end_pfn = start_pfn.checked_add(npages).ok_or("PMM unreserve_range: overflow")?;
+        let total_pages = self.info.get().total_pages as usize;
+        if end_pfn > total_pages {
+            return Err("PMM unreserve_range: range exceeds PMM size");
+        }
+
+        let flags = self.acquire_lock();
+        // 校验范围全部处于 reserved 簿记 (set_bit == 1); 若有 free 页, 拒绝
+        for i in start_pfn..end_pfn {
+            if !self.test_bit(i) {
+                self.release_lock(&flags);
+                return Err("PMM unreserve_range: range contains non-reserved page");
+            }
+        }
+        // 撤销簿记
+        for i in start_pfn..end_pfn {
+            self.clear_bit(i);
+        }
+        self.stats_free(npages as u64);
+        self.release_lock(&flags);
+
+        klog_pmm!(
+            "[PMM] Unreserved range: base=0x{:X} size={} ({} pages, {} KB)",
+            base.as_u64(),
+            size,
+            npages,
+            (npages * PAGE_SIZE as usize) / 1024
+        );
+        Ok(())
+    }
+
+    /// B03-03: 扫描 bitmap 找连续 `size` 字节的物理范围, 返回对齐基址。
+    ///
+    /// 用于 swap / 持久化 buffer 等需要**大块连续物理内存**的子系统.
+    /// 不调 buddy allocator (buddy 上限 2MB 不满足 16MB+ 需求), 直接扫描 bitmap.
+    ///
+    /// # 调用契约
+    /// - `size` 必须 > 0 且为 `PAGE_SIZE` 整数倍
+    /// - 调用方拿到基址后应立即 `reserve_range(base, size)` 声明 reserved,
+    ///   否则后续 alloc 可能踩用
+    /// - 返回的基址**未**标记为 allocated/reserved (仅查找), 由调用方负责簿记
+    ///
+    /// # Returns
+    /// `Some(PhysAddr)` 找到连续范围, 基址对齐 PAGE_SIZE;
+    /// `None` 无足够连续内存.
+    // 有意窄化: 显式收窄, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
+    pub fn find_contig_range(&self, size: usize) -> Option<PhysAddr> {
+        if size == 0 || !size.is_multiple_of(PAGE_SIZE as usize) {
+            return None;
+        }
+
+        let flags = self.acquire_lock();
+        let result = (|| -> Option<PhysAddr> {
+            let total_pages = self.info.get().total_pages as usize;
+            let npages = size / PAGE_SIZE as usize;
+
+            let mut pfn = 0usize;
+            while pfn + npages <= total_pages {
+                // 跳过已分配页
+                if self.test_bit(pfn) {
+                    pfn += 1;
+                    continue;
+                }
+
+                // 寻找连续 npages 空闲段起点
+                let run_start = pfn;
+                let mut run_len = 0usize;
+                while pfn < total_pages && !self.test_bit(pfn) && run_len < npages {
+                    pfn += 1;
+                    run_len += 1;
+                }
+
+                if run_len >= npages {
+                    return Some(PhysAddr(page_to_phys(run_start as u64)));
+                }
+            }
+            None
+        })();
+        self.release_lock(&flags);
+        result
+    }
+
     pub fn alloc_huge_page(&self, size_type: PageSize) -> Option<PhysAddr> {
         match size_type {
             PageSize::Size4K => self.alloc_page(),
@@ -795,87 +959,57 @@ impl PhysicalMemoryManager {
     // 运行时 cmp 与 failed_allocs 实际值 (~0x3FF) 比较, 几乎总通过 jae,
     // 导致巨大 page index 的 set_bit 不被跳过, 越界写入触发 #PF.
     //
-    // 修复: 通过 raw pointer 直接读 self.bitmap_size, 强制 LTO 看到
-    // 真实字段偏移, 不可错位. volatile read 防止任何 caching.
-    #[expect(
-        clippy::ptr_as_ptr,
-        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
-    )]
-    #[expect(
-        clippy::ref_as_ptr,
-        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
-    )]
+    // B03-05 修复: 用 `core::ptr::addr_of!(self.bitmap_size)` 获取真实字段地址,
+    // 强制编译器在 LTO 之前解析出正确偏移, 消除 `p.add(1)` 硬编码假设.
+    // (与既有 buddy_meta_ref / buddy_heads_ref 修复模式一致)
     fn set_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
             // SAFETY: bitmap 已 init 时 self.bitmap_size 也是已 set 的有效值.
-            // #[repr(C)] 保证字段布局: bitmap(offset 0, 8B) → bitmap_size(offset 8, 8B)
-            // LTO 曾错位 self.bitmap_size.get() → self.failed_allocs, 用 raw pointer 绕过.
+            // addr_of! 保证读到真实字段, 不可被 LTO 错位.
+            // volatile read 防止任何 caching.
             let bitmap_size = unsafe {
-                let p = self as *const Self as *const u64;
-                core::ptr::read_volatile(p.add(1) as *const usize)
+                let field_ptr = core::ptr::addr_of!(self.bitmap_size);
+                // SAFETY: bitmap 已 init 时 self.bitmap_size 是已 set 的有效值;
+                // addr_of! 读到真实字段, Cell::get 提取内部 usize, volatile 防止 caching.
+                core::ptr::read_volatile(field_ptr).get()
             };
             BitmapRef::new(bmp).set_bit(bit, bitmap_size);
         }
     }
 
-    // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
-    #[expect(
-        clippy::ptr_as_ptr,
-        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
-    )]
-    #[expect(
-        clippy::ref_as_ptr,
-        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
-    )]
+    // B03-05: 同上 (见 set_bit 注释)
     fn clear_bit(&self, bit: usize) {
         if let Some(bmp) = self.bitmap.get() {
-            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
+            // SAFETY: 同 set_bit, addr_of! 治根 + Cell::get + volatile read.
             let bitmap_size = unsafe {
-                let p = self as *const Self as *const u64;
-                core::ptr::read_volatile(p.add(1) as *const usize)
+                let field_ptr = core::ptr::addr_of!(self.bitmap_size);
+                core::ptr::read_volatile(field_ptr).get()
             };
             BitmapRef::new(bmp).clear_bit(bit, bitmap_size);
         }
     }
 
-    // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
-    #[expect(
-        clippy::ptr_as_ptr,
-        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
-    )]
-    #[expect(
-        clippy::ref_as_ptr,
-        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
-    )]
+    // B03-05: 同上 (见 set_bit 注释)
     fn test_bit(&self, bit: usize) -> bool {
         self.bitmap.get().map_or(false, |bmp| {
-            // SAFETY: 指针操作在有效范围内，调用方保证指针有效性
+            // SAFETY: 同 set_bit, addr_of! 治根 + Cell::get + volatile read.
             let bitmap_size = unsafe {
-                let p = self as *const Self as *const u64;
-                core::ptr::read_volatile(p.add(1) as *const usize)
+                let field_ptr = core::ptr::addr_of!(self.bitmap_size);
+                core::ptr::read_volatile(field_ptr).get()
             };
             BitmapRef::new(bmp).test_bit(bit, bitmap_size)
         })
     }
 
-    // 2026-07-01: 同样防止 LTO 错位 (见 set_bit 注释)
+    // B03-05: 同上 (见 set_bit 注释)
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
-    #[expect(
-        clippy::ptr_as_ptr,
-        reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
-    )]
-    #[expect(
-        clippy::ref_as_ptr,
-        reason = "ref_as_ptr: &T as *const T 是已知安全 (Rust 2024 可用 &raw const; 当前优先 expect"
-    )]
     fn count_free_pages(&self) -> u64 {
         let total = self.info.get().total_pages as usize;
-        // SAFETY: bitmap 已 init 时 self.bitmap_size 有效
-        // #[repr(C)] 保证字段布局: bitmap(offset 0, 8B) → bitmap_size(offset 8, 8B)
+        // SAFETY: bitmap 已 init 时 self.bitmap_size 有效; addr_of! 治根.
         let bmp_size = unsafe {
-            let p = self as *const Self as *const u64;
-            core::ptr::read_volatile(p.add(1) as *const usize)
+            let field_ptr = core::ptr::addr_of!(self.bitmap_size);
+            core::ptr::read_volatile(field_ptr).get()
         };
         let free = self
             .bitmap
