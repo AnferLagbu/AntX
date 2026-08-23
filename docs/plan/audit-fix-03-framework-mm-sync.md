@@ -113,7 +113,7 @@
 - **B03-19. cpu/tsc.rs 溢出与序列化（P0/P1）**
   - 描述：`cycles_to_nanoseconds`（tsc.rs:42-50）`tsc_cycles * 1000` 可溢出 u64（4GHz 运行 24h 达 3.5×10¹⁷）；`read_tsc_serialized` 与 `read_tsc` 实现相同（tsc.rs:28-32），无 mfence/lfence 序列化，与文档"更精确"不符。
   - 方案：`checked_mul(1000).unwrap_or(u64::MAX) / freq`；实装序列化版本或修正文档。
-  - 状态：[X]
+  - 状态：[X] **2026-08-23 follow-up 实装序列化版本**：`CoreArch`/`Arch` 新增 `timestamp_serialized()`（默认委托 `timestamp()`），x86_64 覆写为 `lfence`+`rdtsc`（参照 Linux `rdtsc_ordered`，顺带修正原 timestamp() SAFETY 中"rdtsc 是序列化指令"的错误表述），aarch64 覆写为 `isb`+`mrs cntpct_el0`；`read_tsc_serialized()` 改走 `arch!(timestamp_serialized())`，文档与实现一致。转换函数（`cycles_to_nanoseconds`/`nanoseconds_to_cycles`）改用 u128 中间值 `mul_div_saturating`，中间乘法溢出不再误返回 u64::MAX，仅在最终结果超 u64::MAX 时饱和（纯防御，正常输入行为不变）。
 
 - **B03-20. cpu/arch.rs send_ipi 越界（P1）**
   - 描述：`send_ipi`（arch.rs:46-55）不验证 CPU 索引在 `MAX_CPUS` 范围，越界 IPI 丢失。
