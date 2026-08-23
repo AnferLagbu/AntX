@@ -1,6 +1,6 @@
 # 审计修复分册 02：framework 架构与汇编
 
-> 修复 framework/arch（x86_64 + aarch64）、boot 汇编、链接脚本与用户态入口的缺陷，含附录 A 汇编/链接脚本 16 项 + P0-16 + TOP 20 架构相关项。来源：[code-audit-final-summary.md](./code-audit-final-summary.md) 附录 A + 第 3.4 节 + 第 7 章。
+> 修复 framework/arch（x86_64 + aarch64）、boot 汇编、链接脚本与用户态入口的缺陷，含附录 A 汇编/链接脚本 16 项 + P0-16 + TOP 20 架构相关项。来源：[code-audit-final-summary.md](../code-audit-final-summary.md) 附录 A + 第 3.4 节 + 第 7 章。
 
 ## 工程计划 A: 汇编与链接脚本修复
 
@@ -9,12 +9,12 @@
 - **B02-01. 汇编/链接脚本为独立深审域**
   - 描述：附录 A 对 boot 汇编、arch 汇编、x86_64.ld / link.x 逐行审计，产出 16 项缺陷（2 项 C0 + 7 项 H + 5 项 M + 2 项 L）与 5 项关注项。
   - 方案：按 C0/H/M/L 顺序修复，每项改动后跑 QEMU 双架构启动测试。
-  - 状态：[]
+  - 状态：[X]（2026-08-23 收尾：审计域背景说明，16 项缺陷已由 B02-03~25 按 C0/H/M/L 全部承接完成）
 
 - **B02-02. 架构安全不变式关联**
   - 描述：I1（CPU 状态保护）/I3（用户态 CPU 状态经 framework）直接依赖本分册修复；aarch64 KPTI 不完整属 Meltdown 级风险（TOP 20 #3）。
   - 方案：KPTI 相关项（F-04/F-08/F-10）单开 PR 处理。
-  - 状态：[]
+  - 状态：[X]（2026-08-23 收尾：I1/I3 由本分册 B02-03~25 修复保障；KPTI 相关项已擢升独立工程 [kpti-complete-project.md](../kpti-complete-project.md)）
 
 ### 待办（最终状态：全部 [X]，映射到 Phase 1-4 项）
 
@@ -144,13 +144,13 @@
 
 - 卡点：`[USER] SELF-CHECK: calling enter_user_asm...` 之后无任何输出。init `_start` 第一动作 `print_char(b'X')` = `fs_write` syscall = `svc #0`，未返回。
 - 归因修正：委托人原根因"`enter_user` 未激活 TTBR1 切换"与卡死**无直接因果**——未激活时 TTBR1 保持完整内核页表（全映射），功能上更宽松，不会导致卡死。真实卡点位于 eret 后第一个 SVC 的陷入路径（handle_el0_sync → KERNEL_TTBR1 切换 → svc_handler 及其依赖）。
-- 归属：KPTI 完整化工程 [kpti-complete-project.md](./kpti-complete-project.md) **Phase 0（KPTI-03 入口依赖矩阵）调研范围**，卡点定位纳入依赖清单枚举；验收归 KPTI-06（aarch64 验证）/ KPTI-09 / KPTI-12。
+- 归属：KPTI 完整化工程 [kpti-complete-project.md](../kpti-complete-project.md) **Phase 0（KPTI-03 入口依赖矩阵）调研范围**，卡点定位纳入依赖清单枚举；验收归 KPTI-06（aarch64 验证）/ KPTI-09 / KPTI-12。
 
 **问题 2：x86_64 init_all 探测阻塞（独立问题，另行登记）**
 
 - 卡点：`init_all()` 内部 `[DISPLAY] OK: 1024x768x32` 之后无后续日志（PCI 总线后续探测），处于内核启动早期（未进用户态，CPU 全程 KERNEL_PML4）。
 - 归因修正：与 KPTI / Ring3 **无关**。委托人原根因"KPTI 半实现 + init_all 内部某子系统探测阻塞"混淆了两独立问题。
-- 归属：独立工程 [x86-init-probe-project.md](./x86-init-probe-project.md)（X86IP-01~06 + DECISION-058），不在 KPTI 工程与本分册范围。
+- 归属：独立工程 [x86-init-probe-project.md](../x86-init-probe-project.md)（X86IP-01~06 + DECISION-058），不在 KPTI 工程与本分册范围。
 
 **Ring3 完整往返验证状态**：
 
@@ -167,7 +167,7 @@
 - **DECISION-048**
   - 描述：KPTI 完整化（F-04/F-08/F-10 + TOP 20 #3）单开 PR，与其余汇编项隔离。
   - 方案：风险最高的改动独立审查、独立回滚面。
-  - 状态：[]
+  - 状态：[X]（2026-08-23 收尾：KPTI 完整化已由独立工程 [kpti-complete-project.md](../kpti-complete-project.md) 承接）
 
 - **DECISION-049**
   - 描述：audit-fix-02 实施顺序按 P1→P4 推进，每 Phase 完工跑 §2.3 5 条验证门槛（双架构 cargo check + clippy -D pedantic + 三审计 + host-tests + QEMU）。
@@ -187,12 +187,12 @@
 - **DECISION-052**
   - 描述：F-05/F-09 诊断代码 cfg 门控方案使用单一 feature gate `debug_isr`（Rust 端 `#[cfg(feature = "debug_isr")]` + NASM 端 `%ifdef DEBUG_ISR`）。
   - 方案：默认 release 构建不编译诊断代码（占用 ~150 处 `out 0x3F8, al` 指令 + ~9 处 enter_user_asm 自检点）；调试构建保留全部诊断信息。Rust 端 feature 在 Cargo.toml 通过 [features] default = [] 添加。
-  - 状态：[]（P3.A 实施后登记）
+  - 状态：[X]（2026-08-23 收尾：cfg 门控方案被 DECISION-055 实际方案（物理删除 71 处 `out dx, al`）替代，B02-41/42 已根治登记）
 
 - **DECISION-053**
   - 描述：F-16 enter_user_asm CR3 切换 TLB 处理方案采用"仅 PCIDE 开启路径修复 + 默认关闭路径保留"。
   - 方案：实测 PCIDE 默认关闭时 `mov cr3` 隐式刷新所有 non-global TLB 条目；当前 .text PTE 不设 G 位，依赖 G=0 防御。仅 PCIDE 开启路径（与 kpti.rs L66-97 已有原语一致）做 `mov cr3` 前按 PCID 语义编码 + 必要时 invpcid。不引入 `wbinvd`（与 PCIDE 语义冲突 + 性能差）。
-  - 状态：[]（P4 阶段实施后登记）
+  - 状态：[X]（2026-08-23 收尾：调研确认 PCIDE 默认关闭时 `mov cr3` 隐式刷新 non-global TLB，`.text` PTE 不设 G 位防御有效；PCIDE 开启路径留待 KPTI 独立工程 per-process CR3 阶段）
 
 - **DECISION-054** (2026-08-20 用户授权)
   - 描述：Phase 4 重构方案。Phase 4.A (KPTI 完整化 F-08/F-10/F-16) 推迟（当前实现已正确：F-08 由 exception.rs 6 处重复展开，F-10 由调度 CR3 切换范围限定，F-16 由 PTE G=0 防御；未来 per-process CR3 实现时再强化）。Phase 4.B (SMEP/SMAP) 推进根治方案。
@@ -292,7 +292,7 @@
     - **aarch64**：`kpti_aarch64.rs:158-167` `TRAMP_TTBR1` 复制 L0[256..511] 完整高半区（注释自认"后续优化: 仅复制异常向量表所在 L1 条目, 其余置零"）；`arch/aarch64/mod.rs:272-310` `enter_user` 只切 TTBR0，**未调用 kpti_exit_to_user** → 首次进入 EL0 时 TTBR1 仍为完整内核页表。
     - **根治路径**：aarch64 近期（trampoline 最小化 + enter_user 激活，工程量小）；x86_64 中长期（KPTI trampoline section 重构，异常入口迁移到独立 section，用户页表只映射该 section + 必需数据页，Linux `.entry.text` 模式）。
   - 状态：[X]（2026-08-21 用户决策：**留作独立工程，不在本分册返工范围**，单独立项跟踪；分册 2 视为"已识别并登记"，详见遗留项）
-  - 独立工程文档：[kpti-complete-project.md](./kpti-complete-project.md)（KPTI-01~12 分阶段方案 + DECISION-056/057）
+  - 独立工程文档：[kpti-complete-project.md](../kpti-complete-project.md)（KPTI-01~12 分阶段方案 + DECISION-056/057）
 
 - **B02-40. P4.B SMEP/SMAP 启用**（DECISION-054 推进）
   - 描述：

@@ -1,6 +1,6 @@
 # x86_64 init_all 探测阻塞根治工程（独立工程）
 
-> 来源：[audit-fix-02-framework-arch-asm.md](./audit-fix-02-framework-arch-asm.md) B02-25 调研根因问题 2（2026-08-23 审查拆开登记）。
+> 来源：[audit-fix-02-framework-arch-asm.md](./archive/audit-fix-02-framework-arch-asm.md) B02-25 调研根因问题 2（2026-08-23 审查拆开登记）。
 > 与 KPTI 完整化工程（[kpti-complete-project.md](./kpti-complete-project.md)）、分册 2 均无归属关系——启动早期问题，CPU 全程 KERNEL_PML4。
 
 ## 工程计划 A: 现状与定位

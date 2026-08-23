@@ -1,6 +1,6 @@
 # KPTI 完整化工程（原 B02-39，独立工程）
 
-> 从 [audit-fix-02-framework-arch-asm.md](./audit-fix-02-framework-arch-asm.md) B02-39 擢升为独立工程（2026-08-21 用户决策）。
+> 从 [audit-fix-02-framework-arch-asm.md](./archive/audit-fix-02-framework-arch-asm.md) B02-39 擢升为独立工程（2026-08-21 用户决策）。
 > 来源：审计附录 A F-04/F-08/F-10/F-16 + TOP 20 #3 + [code-audit-final-summary.md](./code-audit-final-summary.md)。
 > 复核结论：两架构 KPTI 均为"半 KPTI"（页表名目隔离 + U/S 位权限，映射面未缩小），Meltdown 侧信道防御未实现。
 
