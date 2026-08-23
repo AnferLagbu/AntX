@@ -133,6 +133,37 @@
   - 方案：跑 `host-tests` 中 usermode 相关用例 + QEMU Ring 3 到达日志。
   - 状态：[X]（2026-08-21：启动路径 KPTI 验证通过——双架构启动全程无异常，isr.asm/syscall_entry 的 KPTI 切换（USER_CR3_SAVE/kernel_pml4/swapgs）路径正常。x86_64 Ring 3 到达日志受 e1000 挂起已知基线（qemu_boot_test.sh 注释 v2.3 待修复）限制停在 display init，用户态陷入/返回的完整往返验证留待网络栈修复后补跑）
 
+#### B02-25 调研根因（2026-08-21 追加，用户决策仅文档登记）
+
+**Ring3 完整往返真实根因（双架构实测，qemu_boot_test.sh 默认 25s timeout）**：
+
+| 架构 | QEMU 25s timeout 卡点 | 60s timeout 行为 | 根因 |
+|---|---|---|---|
+| x86_64 | `init_all()` 内部某处，`[DISPLAY] OK: 1024x768x32` 之后无后续日志（停在 PCI 总线后续探测） | 未实测（脚本检测 `Entering Ring 3` 在 25s timeout 始终未达到） | KPTI 半实现 + init_all 内部某子系统探测阻塞 |
+| aarch64 | `enter_user_asm` 内部某处，停在 `[USER] SELF-CHECK: calling enter_user_asm...` 之后 | 60s timeout 进入 EL0 但未看到用户态回内核日志 | KPTI 半实现（enter_user 未激活 TTBR1 切换）+ eret 后异常陷入未触发 |
+
+**双架构共同根因**：KPTI 完整化未完成。
+- x86_64 `kpti.rs:333-338 USER_PML4[256..512] = KERNEL_PML4[256..512]` 完整复制内核高半区；`kpti.rs:350-380` 整个 `.text` 映射进用户页表。
+- aarch64 `kpti_aarch64.rs:158-167 TRAMP_TTBR1` 复制完整 L0[256..511]；`arch/aarch64/mod.rs:272-310 enter_user` 只切 TTBR0 未激活 trampoline。
+
+**关键观测**：
+1. **e1000 挂起不是根因**：脚本 L148 用 `-nic none` 隔离 e1000 后 x86_64 仍卡在 display probe 之后。
+2. **25s timeout 不是根因**：aarch64 在 60s timeout 下到达 EL0，但仍卡在 enter_user_asm 内部。Ring3 完整"陷入+返回"往返需更长时间或根本性 KPTI 修复。
+3. **host-tests 已有静态契约**：`usermode_ring3_test.rs` 验证 enter_user_mode 签名、参数传递、架构分支 — 覆盖编译期契约，**不覆盖运行时 KPTI 切换**。
+
+**根治路径（用户决策：仅文档登记，不修代码）**：
+
+完整根治必须按 [kpti-complete-project.md](./kpti-complete-project.md) Phase 0-3 实施，跨多文件大型改动：
+
+- **Phase 0（KPTI-03）**：枚举 x86_64 与 aarch64 入口依赖内存矩阵
+- **Phase 1（aarch64 近期，KPTI-04/05/06）**：TRAMP_TTBR1 最小化 + enter_user 激活切换
+- **Phase 2（x86_64 中长期，KPTI-07/08/09）**：USER_PML4 收敛到 trampoline 区域（`_kernel_text_start ~ _kpti_trampoline_end`）
+- **Phase 3（KPTI-10/11/12）**：每进程页表统一 + host-tests 页表内容断言 + QEMU 完整回归
+
+**分册2不实施根治的原因**：B02-25 仅要求"启动路径 KPTI 验证通过 + Ring3 到达"（已完成），完整往返验证归入 KPTI 完整化独立工程（KPTI-09/KPTI-12 验收项）。
+
+**返回用户决策**：2026-08-21 用户明确决定"仅文档登记返回"，不在分册2 范围内修代码。后续根治动作需单独立项（kpti-complete-project.md）。
+
 ### 决策记录
 
 - **DECISION-048**
