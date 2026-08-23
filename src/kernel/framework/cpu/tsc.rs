@@ -24,16 +24,30 @@ pub fn read_tsc() -> u64 {
 
 /// 读取 TSC 并附带序列化 (防止乱序执行)
 ///
-/// 比 `read_tsc()` 慢, 但结果更精确。
-/// 适用于性能测量场景。
+/// 比 `read_tsc()` 慢, 但结果更精确: 确保先前指令全部完成后才读数。
+/// 适用于性能测量场景 (如 TSC 频率校准)。
 ///
-/// # B03-19 修复
-/// 当前实现与 `read_tsc` 相同 (均走 `crate::arch!(timestamp())`), 无
-/// `mfence`/`lfence` 序列化指令。文档"更精确"描述与实现不一致, 标记为已知
-/// 偏差。下次重写 CPU 时序子系统时实装真正的序列化版本。
+/// # 实现 (2026-08-23 实装, B03-19 follow-up)
+/// 走 `crate::arch!(timestamp_serialized())`:
+/// - x86_64: `lfence` + `rdtsc` (参照 Linux `rdtsc_ordered`)
+/// - aarch64: `isb` + `mrs cntpct_el0`
 #[inline(always)]
 pub fn read_tsc_serialized() -> u64 {
-    crate::arch!(timestamp())
+    crate::arch!(timestamp_serialized())
+}
+
+/// 乘除辅助 (128 位中间值): 先乘后除, 避免 u64 中间乘法溢出。
+///
+/// 相比 `checked_mul` 饱和方案, 仅在**最终结果**超 u64::MAX 时才饱和截断
+/// (物理上不可达的防御), 中间乘法溢出不再误返回 u64::MAX。
+#[inline]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "cast_possible_truncation: 已先 min(u64::MAX) 饱和, 截断不可能发生; 当前优先 expect"
+)]
+fn mul_div_saturating(value: u64, mul: u64, div: u64) -> u64 {
+    let product = u128::from(value) * u128::from(mul);
+    (product / u128::from(div)).min(u128::from(u64::MAX)) as u64
 }
 
 /// 将 TSC 周期转换为纳秒 (近似值)
@@ -46,20 +60,14 @@ pub fn read_tsc_serialized() -> u64 {
 /// 近似纳秒数
 ///
 /// # B03-19 修复
-/// 使用 `checked_mul` 防 u64 溢出。理论上 4GHz × 24h × 1000 ≈ 3.5×10¹⁷ 仍
-/// 远小于 u64::MAX (≈1.8×10¹⁹), 但防御性写法成本极低, 避免极端情况下溢出。
+/// u128 中间值乘法, 中间溢出不再饱和; 仅在最终结果超 u64::MAX 时截断
+/// (理论上 4GHz 运行 ~146 年才可达, 纯防御)。
 #[inline]
 pub fn cycles_to_nanoseconds(tsc_cycles: u64, tsc_freq_mhz: u64) -> u64 {
     if tsc_freq_mhz == 0 {
         return tsc_cycles; // 无法转换, 返回原值
     }
-
-    // nanoseconds = cycles * 1000 / frequency_MHz
-    // SAFETY: 乘法可能溢出 u64, 用 checked_mul 返回 u64::MAX 作为饱和值。
-    match tsc_cycles.checked_mul(1000) {
-        Some(product) => product / tsc_freq_mhz,
-        None => u64::MAX,
-    }
+    mul_div_saturating(tsc_cycles, 1000, tsc_freq_mhz)
 }
 
 /// 将纳秒转换为 TSC 周期 (近似值)
@@ -68,10 +76,6 @@ pub fn nanoseconds_to_cycles(ns: u64, tsc_freq_mhz: u64) -> u64 {
     if tsc_freq_mhz == 0 {
         return ns;
     }
-
-    // B03-19: checked_mul 防 u64 溢出。
-    match ns.checked_mul(tsc_freq_mhz) {
-        Some(product) => product / 1000,
-        None => u64::MAX,
-    }
+    // B03-19: u128 中间值防 u64 乘法溢出。
+    mul_div_saturating(ns, tsc_freq_mhz, 1000)
 }
