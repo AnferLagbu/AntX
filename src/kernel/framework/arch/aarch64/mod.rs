@@ -60,6 +60,25 @@ impl CoreArch for Aarch64 {
         cnt
     }
 
+    /// 序列化时间戳读取: `isb` 上下文同步屏障后读计数器。
+    ///
+    /// 用于精确时间测量 (TSC 频率校准等), 比 `timestamp()` 慢。
+    #[inline(always)]
+    fn timestamp_serialized() -> u64 {
+        let cnt: u64;
+        // SAFETY: isb 是上下文同步屏障 (不声明 nomem, 阻止编译器重排),
+        // mrs cntpct_el0 是只读系统寄存器; 序列保证读数不早于先前指令.
+        unsafe {
+            asm!(
+                "isb",
+                "mrs {}, cntpct_el0",
+                out(reg) cnt,
+                options(nostack, preserves_flags)
+            );
+        }
+        cnt
+    }
+
     /// CPU 暂停等待中断 (wfi)。
     #[inline(always)]
     fn halt() {

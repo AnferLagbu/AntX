@@ -60,14 +60,40 @@ impl CoreArch for X8664 {
     fn timestamp() -> u64 {
         let lo: u32;
         let hi: u32;
-        // SAFETY: rdtsc 是序列化指令, 写 EAX/EDX; 声明 nostack/nomem/preserves_flags
-        // 防止编译器在指令间重排或溢出状态.
+        // SAFETY: rdtsc 不是序列化指令 (不等待先前指令完成), 仅写 EAX/EDX;
+        // 声明 nostack/nomem/preserves_flags 防止编译器在指令间重排或溢出状态.
+        // 需要"先序完成"语义的精确测量请用 `timestamp_serialized()`.
         unsafe {
             core::arch::asm!(
                 "rdtsc",
                 out("eax") lo,
                 out("edx") hi,
                 options(nostack, nomem, preserves_flags)
+            );
+        }
+        (u64::from(hi) << 32) | u64::from(lo)
+    }
+
+    /// 序列化时间戳读取: `lfence` 确保先前指令全部完成后 `rdtsc` 才执行。
+    ///
+    /// 用于精确时间测量 (TSC 频率校准等), 比 `timestamp()` 慢。
+    #[inline(always)]
+    #[expect(
+        clippy::inline_always,
+        reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
+    )]
+    fn timestamp_serialized() -> u64 {
+        let lo: u32;
+        let hi: u32;
+        // SAFETY: lfence 排序先前 load/store (不声明 nomem, 作为编译器内存屏障),
+        // rdtsc 写 EAX/EDX; 序列保证读数不早于先前指令. 参照 Linux rdtsc_ordered.
+        unsafe {
+            core::arch::asm!(
+                "lfence",
+                "rdtsc",
+                out("eax") lo,
+                out("edx") hi,
+                options(nostack, preserves_flags)
             );
         }
         (u64::from(hi) << 32) | u64::from(lo)

@@ -105,6 +105,15 @@ pub trait CoreArch {
     fn cpu_id() -> u32;
     /// 获取高精度时间戳 (rdtsc / mrs `cntpct_el0`)。
     fn timestamp() -> u64;
+    /// 序列化时间戳读取 — 确保先前指令全部完成后才读数。
+    ///
+    /// 用于精确时间测量 (如 TSC 频率校准), 比 `timestamp()` 慢。
+    /// 默认实现与 `timestamp()` 相同; 架构在有专用序列化手段时覆写:
+    /// - x86_64: `lfence` + `rdtsc`
+    /// - aarch64: `isb` + `mrs cntpct_el0`
+    fn timestamp_serialized() -> u64 {
+        Self::timestamp()
+    }
     /// 暂停 CPU 直到下一次中断 (hlt / wfi)。
     fn halt();
     /// 全内存屏障 (mfence / dsb sy)。
@@ -222,6 +231,9 @@ pub trait Arch: CoreArch + InterruptArch + MmuArch + SystemArch {
     }
     fn timestamp() -> u64 {
         <Self as CoreArch>::timestamp()
+    }
+    fn timestamp_serialized() -> u64 {
+        <Self as CoreArch>::timestamp_serialized()
     }
     fn halt() {
         <Self as CoreArch>::halt();
