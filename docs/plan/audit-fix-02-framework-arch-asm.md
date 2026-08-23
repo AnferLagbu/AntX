@@ -131,38 +131,36 @@
 - **B02-25. KPTI 回归**
   - 描述：KPTI 相关改动验证用户态陷入/返回路径与 syscall 入口页表切换。
   - 方案：跑 `host-tests` 中 usermode 相关用例 + QEMU Ring 3 到达日志。
-  - 状态：[X]（2026-08-21：启动路径 KPTI 验证通过——双架构启动全程无异常，isr.asm/syscall_entry 的 KPTI 切换（USER_CR3_SAVE/kernel_pml4/swapgs）路径正常。x86_64 Ring 3 到达日志受 e1000 挂起已知基线（qemu_boot_test.sh 注释 v2.3 待修复）限制停在 display init，用户态陷入/返回的完整往返验证留待网络栈修复后补跑）
+  - 状态：[X]（2026-08-21：启动路径 KPTI 验证通过——双架构启动全程无异常，isr.asm/syscall_entry 的 KPTI 切换（USER_CR3_SAVE/kernel_pml4/swapgs）路径正常。x86_64 启动路径停在 display init（init_all 探测阻塞，独立问题，见下方"B02-25 调研根因"问题 2）；用户态完整"陷入+返回"往返归入 KPTI 独立工程（问题 1，KPTI-09/KPTI-12 验收项））
 
-#### B02-25 调研根因（2026-08-21 追加，用户决策仅文档登记）
+#### B02-25 调研根因（2026-08-21 追加；2026-08-23 审查修正：两问题拆开登记）
 
-**Ring3 完整往返真实根因（双架构实测，qemu_boot_test.sh 默认 25s timeout）**：
+**实测结论（双架构 QEMU 日志分析，推翻两个旧推断）**：
 
-| 架构 | QEMU 25s timeout 卡点 | 60s timeout 行为 | 根因 |
-|---|---|---|---|
-| x86_64 | `init_all()` 内部某处，`[DISPLAY] OK: 1024x768x32` 之后无后续日志（停在 PCI 总线后续探测） | 未实测（脚本检测 `Entering Ring 3` 在 25s timeout 始终未达到） | KPTI 半实现 + init_all 内部某子系统探测阻塞 |
-| aarch64 | `enter_user_asm` 内部某处，停在 `[USER] SELF-CHECK: calling enter_user_asm...` 之后 | 60s timeout 进入 EL0 但未看到用户态回内核日志 | KPTI 半实现（enter_user 未激活 TTBR1 切换）+ eret 后异常陷入未触发 |
+1. **e1000 挂起不是根因**：脚本 L148 已用 `-nic none` 隔离 e1000，x86_64 仍卡在 display probe 之后。
+2. **25s timeout 不是根因**：aarch64 在 60s timeout 下进入 EL0，但仍无用户态回内核日志。
 
-**双架构共同根因**：KPTI 完整化未完成。
-- x86_64 `kpti.rs:333-338 USER_PML4[256..512] = KERNEL_PML4[256..512]` 完整复制内核高半区；`kpti.rs:350-380` 整个 `.text` 映射进用户页表。
-- aarch64 `kpti_aarch64.rs:158-167 TRAMP_TTBR1` 复制完整 L0[256..511]；`arch/aarch64/mod.rs:272-310 enter_user` 只切 TTBR0 未激活 trampoline。
+**问题 1：aarch64 用户态首个 SVC 陷入路径卡死（Ring3 往返，归入 KPTI 工程）**
 
-**关键观测**：
-1. **e1000 挂起不是根因**：脚本 L148 用 `-nic none` 隔离 e1000 后 x86_64 仍卡在 display probe 之后。
-2. **25s timeout 不是根因**：aarch64 在 60s timeout 下到达 EL0，但仍卡在 enter_user_asm 内部。Ring3 完整"陷入+返回"往返需更长时间或根本性 KPTI 修复。
-3. **host-tests 已有静态契约**：`usermode_ring3_test.rs` 验证 enter_user_mode 签名、参数传递、架构分支 — 覆盖编译期契约，**不覆盖运行时 KPTI 切换**。
+- 卡点：`[USER] SELF-CHECK: calling enter_user_asm...` 之后无任何输出。init `_start` 第一动作 `print_char(b'X')` = `fs_write` syscall = `svc #0`，未返回。
+- 归因修正：委托人原根因"`enter_user` 未激活 TTBR1 切换"与卡死**无直接因果**——未激活时 TTBR1 保持完整内核页表（全映射），功能上更宽松，不会导致卡死。真实卡点位于 eret 后第一个 SVC 的陷入路径（handle_el0_sync → KERNEL_TTBR1 切换 → svc_handler 及其依赖）。
+- 归属：KPTI 完整化工程 [kpti-complete-project.md](./kpti-complete-project.md) **Phase 0（KPTI-03 入口依赖矩阵）调研范围**，卡点定位纳入依赖清单枚举；验收归 KPTI-06（aarch64 验证）/ KPTI-09 / KPTI-12。
 
-**根治路径（用户决策：仅文档登记，不修代码）**：
+**问题 2：x86_64 init_all 探测阻塞（独立问题，另行登记）**
 
-完整根治必须按 [kpti-complete-project.md](./kpti-complete-project.md) Phase 0-3 实施，跨多文件大型改动：
+- 卡点：`init_all()` 内部 `[DISPLAY] OK: 1024x768x32` 之后无后续日志（PCI 总线后续探测），处于内核启动早期（未进用户态，CPU 全程 KERNEL_PML4）。
+- 归因修正：与 KPTI / Ring3 **无关**。委托人原根因"KPTI 半实现 + init_all 内部某子系统探测阻塞"混淆了两独立问题。
+- 归属：独立工程 [x86-init-probe-project.md](./x86-init-probe-project.md)（X86IP-01~06 + DECISION-058），不在 KPTI 工程与本分册范围。
 
-- **Phase 0（KPTI-03）**：枚举 x86_64 与 aarch64 入口依赖内存矩阵
-- **Phase 1（aarch64 近期，KPTI-04/05/06）**：TRAMP_TTBR1 最小化 + enter_user 激活切换
-- **Phase 2（x86_64 中长期，KPTI-07/08/09）**：USER_PML4 收敛到 trampoline 区域（`_kernel_text_start ~ _kpti_trampoline_end`）
-- **Phase 3（KPTI-10/11/12）**：每进程页表统一 + host-tests 页表内容断言 + QEMU 完整回归
+**Ring3 完整往返验证状态**：
 
-**分册2不实施根治的原因**：B02-25 仅要求"启动路径 KPTI 验证通过 + Ring3 到达"（已完成），完整往返验证归入 KPTI 完整化独立工程（KPTI-09/KPTI-12 验收项）。
+- 完整"陷入+返回"往返需问题 1 解决后方可验证，归入 KPTI 独立工程（KPTI-09/KPTI-12 验收项）。
+- B02-25 状态 [X] 保持（启动路径 KPTI 验证仍通过），完整往返验证不在本分册范围。
+- host-tests 已有静态契约：`usermode_ring3_test.rs` 验证 enter_user_mode 签名、参数传递、架构分支 — 覆盖编译期契约，**不覆盖运行时 KPTI 切换**（维持委托人记录）。
 
-**返回用户决策**：2026-08-21 用户明确决定"仅文档登记返回"，不在分册2 范围内修代码。后续根治动作需单独立项（kpti-complete-project.md）。
+**分册2不实施根治的原因**：B02-25 仅要求"启动路径 KPTI 验证通过 + Ring3 到达"（已完成），完整往返验证归入 KPTI 完整化独立工程。
+
+**用户决策**：2026-08-21 用户明确决定"仅文档登记返回"，不在分册2 范围内修代码。后续根治动作需单独立项（kpti-complete-project.md）。
 
 ### 决策记录
 
@@ -336,7 +334,7 @@
 - **双架构 clippy -D warnings**：x86_64 + aarch64 双架构 0 warning
 - **make ARCH=x86_64/aarch64**：链接 + objcopy 全部通过
 - **host-tests**：870 passed / 0 failed（基线 854 + P4.B 新增 8 + P3.A 新增 5 + 2026-08-21 阻塞项根治新增 3 个源码验证测试）
-- **QEMU 双架构真实启动**（2026-08-21 阻塞项根治时补跑）：x86_64 + aarch64 均启动通过（VFS ready + Network Subsystem Ready），全程无 SMAP/SMEP/#PF/panic 异常；x86_64 Ring 3 到达日志受 e1000 挂起已知基线限制（见 B02-25 状态注记）
+- **QEMU 双架构真实启动**（2026-08-21 阻塞项根治时补跑）：x86_64 + aarch64 均启动通过（VFS ready + Network Subsystem Ready），全程无 SMAP/SMEP/#PF/panic 异常；x86_64 启动路径停在 display init（init_all 探测阻塞，独立问题）；用户态完整往返归入 KPTI 独立工程（见"B02-25 调研根因"）
 - **核心审计脚本**：
   - audit_services_boundary：12 个 HIGH 违规（预存基线 META-P0-01，与本次改动无关）
   - audit_safety_coverage：127 处 SAFETY 缺漏（基线，与 audit.sh `EXPECTED_MAX_SAFETY_MISSING=127` 一致，本次新增 smap_begin/smap_end 4 处已补 SAFETY 注释）
@@ -468,7 +466,7 @@
 > - 诊断恢复路径（调试期）：klog + perf trace + QEMU GDB 断点（分册 2 既有约定）
 >
 > 遗留项（如实登记，不虚标）：
-> - B02-25 Ring 3 往返完整验证受 x86_64 e1000 挂起已知基线限制，待网络栈修复后补跑
+> - B02-25 用户态完整往返验证归入 KPTI 独立工程（问题 1：aarch64 首个 SVC 陷入路径卡死，KPTI-03 调研 + KPTI-09/KPTI-12 验收；见"B02-25 调研根因"）
 > - **B02-39 KPTI 完整化（独立工程）**：复核修正——两架构 KPTI 均为半实现（x86_64
 >   USER_PML4 完整复制内核高半区 + 整个 .text 映射进用户页表；aarch64 TRAMP_TTBR1
 >   完整复制 + enter_user 未激活切换），Meltdown 侧信道防御未实现。根治：aarch64

@@ -21,7 +21,7 @@
 ### 前置调研（Phase 0）
 
 - **KPTI-03. 入口路径内存依赖清单（Phase 0）**
-  - 描述：枚举 x86_64（isr/irq/syscall/int 0x80）与 aarch64（EL0 sync/irq/svc）入口在 CR3/TTBR 切换前访问的全部代码页/数据页/栈页。
+  - 描述：枚举 x86_64（isr/irq/syscall/int 0x80）与 aarch64（EL0 sync/irq/svc）入口在 CR3/TTBR 切换前访问的全部代码页/数据页/栈页。**含 aarch64 用户态首个 SVC 陷入路径卡死定位**（来源：分册 2 B02-25 调研根因问题 1——init `_start` 第一动作 `print_char` = `fs_write` = `svc #0` 未返回，卡点在 handle_el0_sync → KERNEL_TTBR1 切换 → svc_handler 路径）。
   - 方案：逐入口静态分析汇编（isr.asm / mod.rs enter_user_asm / exception.rs global_asm），输出"入口 → 依赖内存"矩阵。已知起点：x86 依赖 USER_CR3_SAVE（.bss）+ SyscallPerCpu（per-CPU）+ GDT/IDT/TSS（用户态中断 CPU 硬件访问）+ TSS.RSP0/IST 内核栈页（CPU 在用户 CR3 下推帧）；aarch64 依赖异常向量表页 + KERNEL_TTBR1 数据页 + SP_EL1 内核栈页。
   - 状态：[]
 
@@ -58,6 +58,7 @@
   - 描述：QEMU x86_64 Ring 3 + syscall/中断往返 + 隔离断言。
   - 方案：`./scripts/qemu_boot_test.sh x86_64`（含 Ring 3 到达，顺带闭合分册 2 B02-25）；host-tests 断言进程用户页表不含内核 `.text`/`.data` 映射。
   - 状态：[]
+  - **前置依赖**：x86_64 到达 Ring 3 需 [x86-init-probe-project.md](./x86-init-probe-project.md)（X86IP-06）先解决 init_all 启动阻塞；Phase 1（aarch64）与 Phase 2 代码实施不受影响，仅 x86_64 侧 QEMU 验证被阻塞。
 
 ### 每进程一致性与强化验证（Phase 3）
 
