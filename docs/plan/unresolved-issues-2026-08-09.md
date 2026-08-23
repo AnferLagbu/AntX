@@ -31,8 +31,38 @@
 | 远期工程 | 6 | 远期 | ❌ 未启动 |
 | 本会话刻意维持 | 3 | 决策登记 | ⏸️ DECISION |
 | 构建/工具问题 | 3 | 工具 | ❌ 未提交 |
+| 审计基线待清零 (2026-08-23) | 2 | F2×12 + F7×67 | ❌ 无分册负责 |
 | lint 副作用 (已修复) | 2 | — | 🔄 已修复 |
-| **总计** | **~65 项** | — | — |
+| **总计** | **~67 项** | — | — |
+
+---
+
+## 🔵 第 0 类：审计基线待清零（2026-08-23 追加，无分册负责）
+
+> 两类审计基线违规**无任何分册（03-09）明确负责修复**，登记防止委派遗漏。
+> 分册 01 声称"12 处 HIGH 后续分册 02-07 迁移范围"与"68 处行尾英文注释后续 commit 手工翻译"均未落实为具体条目。
+
+### BASELINE-F2-012: audit_services_boundary 12 处 HIGH（services 访问 framework 内部）
+
+| 字段 | 数据 |
+|---|---|
+| **规则** | F2（services 禁止访问 framework 内部模块），META-P0-01 识别 |
+| **数量** | 12 处 HIGH（黑名单补全后识别，commit 4ba454ab） |
+| **文件** | `services/debug/ebpf_verifier.rs`、`debug/mod.rs`、`io/iouring.rs`、`ipc/msgq.rs`、`mm/madvise_mlock.rs`、`proc/coredump.rs`、`proc/memfd.rs`、`proc/pidfd.rs`、`syscall/dispatch.rs`、`syscall/mod.rs` |
+| **分册覆盖核查（2026-08-23）** | 分册 03-09 无条目明确负责修复这些文件的 F2 边界违规（各分册条目只修功能/逻辑，如 B05-32 pidfd、B07-18 ebpf）；分册 09 B09-11/12/13 的"F2 治理"仅覆盖 **framework→services 反向依赖（D8）**，方向相反不覆盖本项 |
+| **建议方案** | 单独立项或并入 services 分册收尾：逐文件改走 framework 顶层 re-export 公共 API（audit_services_boundary 黑名单合规） |
+| **来源** | archive/audit-fix-01 L227 + archive/audit-fix-02 L339/394 |
+
+### BASELINE-F7-067: audit_comment_language 67 处违规（F7 中文注释强制）
+
+| 字段 | 数据 |
+|---|---|
+| **规则** | F7（中文注释强制），70 → 67（2026-08-21 诊断删除 -2，2026-08-22 F7 修复 -1） |
+| **数量** | 67 处，涉及 34 个文件 |
+| **分布** | framework 全树英文注释（acpi/uart/gic/mmu/edid 等，见 `audit_comment_language.py` 输出） |
+| **分册覆盖核查（2026-08-23）** | 分册 03-09 无英文注释翻译条目；分册 01 声称"后续 commit 手工翻译"未落实；分册 09 仅覆盖 F1/F9/F2/D8 死代码，无 F7 条目 |
+| **建议方案** | 单独立项批量翻译（脚本列清单 → 逐文件人工翻译 → 审计 0 违规）或并入分册 09 收尾 |
+| **来源** | archive/audit-fix-01 L221 + archive/audit-fix-02 L342 |
 
 ---
 
