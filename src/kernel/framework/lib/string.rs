@@ -34,6 +34,12 @@
 // 字符串操作函数 (String Operations)
 // ============================================================================
 
+/// `strlen` 上限常量 (防御深度)
+///
+/// 实际有效路径仅 FFI 测试调用; 上限避免恶意指针读到 #PF。
+/// B04-07: 1024 足以覆盖内核内部任何合法字符串 (路径名 ≤ 256, 命令行 ≤ 256)。
+const STRLEN_MAX: usize = 1024;
+
 /// 计算字符串长度 (C 风格 FFI 接口)
 ///
 /// # Arguments
@@ -54,7 +60,8 @@ pub unsafe extern "C" fn strlen(s: *const i8) -> usize {
         let mut len = 0;
         let mut ptr = s;
 
-        while *ptr != 0 {
+        // B04-07: 加 MAX_CSTR_LEN 上限 (DECISION-060), 防御恶意指针无上界读取。
+        while *ptr != 0 && len < STRLEN_MAX {
             len += 1;
             ptr = ptr.add(1);
         }

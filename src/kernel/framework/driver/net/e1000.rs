@@ -29,17 +29,25 @@ use alloc::vec::Vec;
 static POLL_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // ============================================================================
-// 从 services 层重新导出 (保持公共 API 兼容)
+// B04-19: 描述符结构 + 常量已从 services 上移至 framework::driver::net::dma_ring.
+// 反向依赖解除 (框架不再 use services).
 // ============================================================================
 
-pub use crate::kernel::services::driver::net::e1000::{
-    E1000_ICR_LSC, E1000_ICR_RXDMT0, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_RDT,
+pub use crate::kernel::framework::driver::net::dma_ring::{
     E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000_RXD_ERR_CE, E1000_RXD_ERR_RXE,
-    E1000_RXD_ERR_SE, E1000_RXD_ERR_SEQ, E1000_RXD_STAT_DD, E1000_TX_RING_SIZE, E1000_TXD_CMD_EOP,
-    E1000_TXD_CMD_IFCS, E1000_TXD_CMD_RS, E1000_TXD_STAT_DD, E1000RxDesc, E1000TxDesc,
+    E1000_RXD_ERR_SE, E1000_RXD_ERR_SEQ, E1000_RXD_STAT_DD, E1000_TX_RING_SIZE,
+    E1000_TXD_CMD_EOP, E1000_TXD_CMD_IFCS, E1000_TXD_CMD_RS, E1000_TXD_STAT_DD, E1000RxDesc,
+    E1000TxDesc,
 };
 
-// 从 services 层导入安全驱动逻辑
+// services/driver/net/e1000 的常量 (寄存器偏移/中断原因) 仍在 services 层
+// (属于驱动业务配置, 非硬件 DMA 格式). 显式 use 而非通配以控制耦合面.
+use crate::kernel::services::driver::net::e1000::{
+    E1000_ICR_LSC, E1000_ICR_RXDMT0, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_RDT,
+};
+
+// 从 services 层导入安全驱动逻辑 (E1000Driver/E1000Io 仍属 services 层, 因为它们
+// 仅做 safe 业务逻辑; framework 仅持有 E1000Device 包装 + DMA ring 底层).
 use crate::kernel::services::driver::net::e1000::E1000Driver;
 #[cfg(not(feature = "kernel_test"))]
 use crate::kernel::services::driver::net::e1000::E1000Io;
@@ -81,8 +89,13 @@ impl TxRing {
         reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
     )]
     pub fn alloc(count: usize) -> Option<Self> {
+        // B04-17: count == 0 时 kmalloc_align(0, 16) 返回非 null ZERO_SIZE_PTR,
+        // 后续 (*desc_ptr.add(i)) 解引用越过分配边界 → 任意内存读/写。
+        if count == 0 {
+            return None;
+        }
         let size = core::mem::size_of::<E1000TxDesc>() * count;
-        // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器; size > 0, align = 16 (2^4)。
+        // SAFETY: count > 0 ⇒ size > 0, kmalloc_align 分配 16 字节对齐的 size 字节。
         let ptr = unsafe { kmalloc_align(size as u64, 16) };
         if ptr.is_null() {
             return None;
@@ -178,8 +191,13 @@ impl RxRing {
         reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐; 当前优先 expect"
     )]
     pub fn alloc(count: usize, buf_size: usize) -> Option<Self> {
+        // B04-17: count == 0 或 buf_size == 0 时 kmalloc_align 返回 ZERO_SIZE_PTR,
+        // 后续解引用越过分配边界 → 任意内存读/写。
+        if count == 0 || buf_size == 0 {
+            return None;
+        }
         let size = core::mem::size_of::<E1000RxDesc>() * count;
-        // SAFETY: kmalloc_align 是 C-ABI 内核堆分配器。
+        // SAFETY: count > 0 ⇒ size > 0, kmalloc_align 分配 16 字节对齐的 size 字节。
         let ptr = unsafe { kmalloc_align(size as u64, 16) };
         if ptr.is_null() {
             return None;

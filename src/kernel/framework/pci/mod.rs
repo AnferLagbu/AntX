@@ -37,6 +37,8 @@
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
 use alloc::vec::Vec;
 use core::fmt;
+#[cfg(target_arch = "aarch64")]
+use core::sync::atomic::AtomicU64;
 
 pub mod api;
 pub mod hotplug;
@@ -63,6 +65,16 @@ mod port_io {
     }
 }
 
+// ============================================================================
+// B04-05 + B04-20: PCI 配置空间并发锁
+//
+// PIO 端口 0xCF8/0xCFC 是全局单例, ECAM 窗口在 aarch64 上也是单一映射;
+// 并发执行 read-modify-write 会丢位。
+// 解决方案: 全局 IrqSpinLock<()>, 公开 API 入口持锁, 内部 _locked 系列不持锁
+// (供 parse_bars 等嵌套调用使用, 避免死锁)。
+// ============================================================================
+static PCI_CONFIG_LOCK: Mutex<()> = Mutex::new(());
+
 // ── Constants ──
 
 #[cfg(target_arch = "x86_64")]
@@ -70,11 +82,16 @@ const PCI_CONFIG_ADDR: u16 = 0xCF8;
 #[cfg(target_arch = "x86_64")]
 const PCI_CONFIG_DATA: u16 = 0xCFC;
 
-/// aarch64 下的 ECAM 基址.
+/// aarch64 下的 ECAM 基址 (默认).
 /// QEMU virt aarch64 (无 highmem): 0x3F000000
+/// 真实 ARM 服务器: 从 ACPI MCFG 表或设备树 `bus-range` 获取.
 /// 该值必须与 MMU identity 映射保持同步.
 #[cfg(target_arch = "aarch64")]
-const ECAM_BASE: u64 = 0x3F00_0000;
+const DEFAULT_ECAM_BASE: u64 = 0x3F00_0000;
+
+/// aarch64 下的 ECAM 基址 (运行时, 可由 init_with_ecam 覆盖).
+#[cfg(target_arch = "aarch64")]
+static ECAM_BASE: AtomicU64 = AtomicU64::new(DEFAULT_ECAM_BASE);
 
 const PCI_MAX_BUS: u8 = 255;
 const PCI_MAX_DEV: u8 = 32;
@@ -173,11 +190,23 @@ static PCI_INITIALIZED: core::sync::atomic::AtomicBool = core::sync::atomic::Ato
     reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
 )]
 fn ecam_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u64 {
-    ECAM_BASE
+    ECAM_BASE.load(core::sync::atomic::Ordering::Relaxed)
         | ((bus as u64) << 20)
         | (((dev & 0x1F) as u64) << 15)
         | (((func & 0x07) as u64) << 12)
         | (offset as u64 & 0xFFF)
+}
+
+/// B04-03: 设置 ECAM 基址 (从 ACPI MCFG / 设备树获取)
+#[cfg(target_arch = "aarch64")]
+pub fn set_ecam_base(base: u64) {
+    ECAM_BASE.store(base, core::sync::atomic::Ordering::Release);
+}
+
+/// B04-03: 获取当前 ECAM 基址
+#[cfg(target_arch = "aarch64")]
+pub fn get_ecam_base() -> u64 {
+    ECAM_BASE.load(core::sync::atomic::Ordering::Acquire)
 }
 
 /// 计算 x86 端口 I/O 配置空间地址.
@@ -191,6 +220,13 @@ fn make_config_addr(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
 }
 
 pub fn read_config_byte(bus: u8, dev: u8, func: u8, offset: u8) -> u8 {
+    // B04-05: 全局持锁防止多 CPU 并发访问 PIO/ECAM 端口。
+    let _guard = PCI_CONFIG_LOCK.lock();
+    read_config_byte_locked(bus, dev, func, offset)
+}
+
+/// B04-05: 已持锁版本, 供 parse_bars 等嵌套调用使用, 避免 IrqSpinLock 不可重入死锁。
+fn read_config_byte_locked(bus: u8, dev: u8, func: u8, offset: u8) -> u8 {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
@@ -210,6 +246,11 @@ pub fn read_config_byte(bus: u8, dev: u8, func: u8, offset: u8) -> u8 {
 }
 
 pub fn read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
+    let _guard = PCI_CONFIG_LOCK.lock();
+    read_config_word_locked(bus, dev, func, offset)
+}
+
+fn read_config_word_locked(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
@@ -229,6 +270,11 @@ pub fn read_config_word(bus: u8, dev: u8, func: u8, offset: u8) -> u16 {
 }
 
 pub fn read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
+    let _guard = PCI_CONFIG_LOCK.lock();
+    read_config_dword_locked(bus, dev, func, offset)
+}
+
+fn read_config_dword_locked(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
@@ -247,6 +293,11 @@ pub fn read_config_dword(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
 }
 
 pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
+    let _guard = PCI_CONFIG_LOCK.lock();
+    write_config_byte_locked(bus, dev, func, offset, val);
+}
+
+fn write_config_byte_locked(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
@@ -272,6 +323,11 @@ pub fn write_config_byte(bus: u8, dev: u8, func: u8, offset: u8, val: u8) {
 }
 
 pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
+    let _guard = PCI_CONFIG_LOCK.lock();
+    write_config_word_locked(bus, dev, func, offset, val);
+}
+
+fn write_config_word_locked(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
@@ -297,6 +353,11 @@ pub fn write_config_word(bus: u8, dev: u8, func: u8, offset: u8, val: u16) {
 }
 
 pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
+    let _guard = PCI_CONFIG_LOCK.lock();
+    write_config_dword_locked(bus, dev, func, offset, val);
+}
+
+fn write_config_dword_locked(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
     #[cfg(target_arch = "x86_64")]
     {
         let addr = make_config_addr(bus, dev, func, offset);
@@ -318,26 +379,32 @@ pub fn write_config_dword(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
 
 // ── BAR parsing ──
 
-// 有意窄化: 显式收窄, 调用方保证值域
-#[expect(clippy::cast_possible_truncation)]
 fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
+    // B04-05: parse_bars 内部调用 _locked 系列, 入口仍需持锁以防外层
+    // 并发修改 BAR 导致扫描结果不一致 (持有期间整个 BAR 列表冻结)。
+    let _guard = PCI_CONFIG_LOCK.lock();
+    parse_bars_locked(bus, dev, func)
+}
+
+/// B04-05: 已持锁版本, parse_bars 通过此函数在持锁状态下访问 _locked PCI API。
+fn parse_bars_locked(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
     let mut bars = [PciBar::empty(); 6];
     let mut count = 0;
     let mut i = 0;
 
     while i < 6 {
         let offset = REG_BAR0 + (i as u8) * 4;
-        let bar_lo = read_config_dword(bus, dev, func, offset);
+        let bar_lo = read_config_dword_locked(bus, dev, func, offset);
         if bar_lo == 0 || bar_lo == 0xFFFF_FFFF {
             i += 1;
             continue;
         }
 
         // 写全 1 以确定 BAR 尺寸
-        write_config_dword(bus, dev, func, offset, 0xFFFF_FFFF);
-        let size_mask = read_config_dword(bus, dev, func, offset);
+        write_config_dword_locked(bus, dev, func, offset, 0xFFFF_FFFF);
+        let size_mask = read_config_dword_locked(bus, dev, func, offset);
         // 恢复原值
-        write_config_dword(bus, dev, func, offset, bar_lo);
+        write_config_dword_locked(bus, dev, func, offset, bar_lo);
 
         if bar_lo & 1 != 0 {
             // I/O BAR
@@ -353,11 +420,11 @@ fn parse_bars(bus: u8, dev: u8, func: u8) -> ([PciBar; 6], usize) {
             if mem_type == 0x02 {
                 // 64 位 BAR: 占用两个槽位
                 bars[count].is_64bit = true;
-                let bar_hi = read_config_dword(bus, dev, func, offset + 4);
+                let bar_hi = read_config_dword_locked(bus, dev, func, offset + 4);
                 bars[count].base_addr = u64::from(bar_lo & !0x0Fu32) | (u64::from(bar_hi) << 32);
-                write_config_dword(bus, dev, func, offset + 4, 0xFFFF_FFFF);
-                let hi_mask = read_config_dword(bus, dev, func, offset + 4);
-                write_config_dword(bus, dev, func, offset + 4, bar_hi);
+                write_config_dword_locked(bus, dev, func, offset + 4, 0xFFFF_FFFF);
+                let hi_mask = read_config_dword_locked(bus, dev, func, offset + 4);
+                write_config_dword_locked(bus, dev, func, offset + 4, bar_hi);
                 let size = (!(u64::from(size_mask & !0x0Fu32) | (u64::from(hi_mask) << 32)))
                     .wrapping_add(1);
                 bars[count].size = size;

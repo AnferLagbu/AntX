@@ -36,6 +36,9 @@
 ///
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn outb(port: u16, value: u8) {
+    // SAFETY: 调用方保证 `port` 是内核态可访问的有效 I/O 端口; value 任意 u8。
+    // arch!() 委托给 <CurrentArch as Arch>::outb, 内部汇编执行特权指令;
+    // 外层 unsafe 函数已声明 SAFETY 契约 (见 docstring)。
     crate::arch!(outb(port, value));
 }
 
@@ -50,6 +53,8 @@ pub unsafe fn outb(port: u16, value: u8) {
 ///
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn inb(port: u16) -> u8 {
+    // SAFETY: 调用方保证 `port` 是内核态可访问的有效 I/O 端口;
+    // 读操作返回 CPU 端口值到 u8 (截断高 8 位), 无其他副作用。
     crate::arch!(inb(port))
 }
 
@@ -66,6 +71,8 @@ pub unsafe fn inb(port: u16) -> u8 {
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn outw(port: u16, value: u16) {
     unsafe {
+        // SAFETY: 调用方保证 `port` 是内核态可访问的有效 I/O 端口 (字宽 16-bit);
+        // options(nomem, nostack, preserves_flags) 正确声明 out 指令的副作用范围。
         core::arch::asm!(
             "out dx, ax",
             in("dx") port,
@@ -88,6 +95,8 @@ pub unsafe fn outw(port: u16, value: u16) {
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn inw(port: u16) -> u16 {
     unsafe {
+        // SAFETY: 调用方保证 `port` 是内核态可访问的有效 I/O 端口 (字宽 16-bit);
+        // in 指令仅返回端口值到指定寄存器, 无其他副作用。
         let value: u16;
         core::arch::asm!(
             "in ax, dx",
@@ -110,6 +119,8 @@ pub unsafe fn inw(port: u16) -> u16 {
 ///
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn outl(port: u16, value: u32) {
+    // SAFETY: 调用方保证 `port` 是内核态可访问的有效 I/O 端口 (双字 32-bit);
+    // arch!() 委托给 <CurrentArch as Arch>::outl, value 任意 u32。
     crate::arch!(outl(port, value));
 }
 
@@ -120,6 +131,8 @@ pub unsafe fn outl(port: u16, value: u32) {
 ///
 /// `port` 必须是当前特权级 (Ring 0) 可访问的有效 I/O 端口地址.
 pub unsafe fn inl(port: u16) -> u32 {
+    // SAFETY: 调用方保证 `port` 是内核态可访问的有效 I/O 端口 (双字 32-bit);
+    // 读操作返回 CPU 端口值, 无其他副作用。
     crate::arch!(inl(port))
 }
 

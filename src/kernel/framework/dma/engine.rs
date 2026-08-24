@@ -12,6 +12,7 @@ use super::{
 use crate::kernel::framework::mm::{PageFlags, PhysAddr, VirtAddr};
 use crate::kernel::framework::mm::{pmm_alloc_pages_phys, pmm_free_pages_phys};
 use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use crate::kernel::framework::sync::OnceLock;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 pub struct DmaEngine {
@@ -149,9 +150,13 @@ impl DmaEngine {
 
         let mut mappings = self.mappings.lock();
 
+        // B04-15: 双键定位 (cpu_addr + size) 防止多个 mapping 共享 cpu_addr 时
+        // 释放错页. 旧实现只按 cpu_addr 匹配, 可能误删同地址其他 mapping.
+        // 注: 严格来说 size 是派生字段 (等于 dma_addr 区间大小); 仍保留 size
+        //      作为一致性校验参数, 防止 size 不匹配导致页数计算错误.
         let phys_addr = mappings
             .iter()
-            .find(|m| m.cpu_addr == cpu_addr && m.is_coherent)
+            .find(|m| m.cpu_addr == cpu_addr && m.is_coherent && m.size == size)
             .map(|m| m.dma_addr);
 
         let pages = (size as u64).div_ceil(PAGE_SIZE);
@@ -160,7 +165,7 @@ impl DmaEngine {
             pmm_free_pages_phys(phys, pages as usize);
         }
 
-        mappings.retain(|m| m.cpu_addr != cpu_addr);
+        mappings.retain(|m| !(m.cpu_addr == cpu_addr && m.size == size && m.is_coherent));
 
         drop(mappings);
 
@@ -194,7 +199,8 @@ impl DmaEngine {
         }
 
         let pages = (size as u64).div_ceil(PAGE_SIZE);
-        let virt = alloc_mmio_virt(size);
+        // B04-13: alloc_mmio_virt 现在返回 Option (分配失败/区间耗尽).
+        let virt = alloc_mmio_virt(size)?;
 
         let flags = PageFlags::PRESENT
             | PageFlags::WRITABLE
@@ -211,6 +217,8 @@ impl DmaEngine {
                     let unmap_virt = VirtAddr(virt.0 + j * PAGE_SIZE);
                     get_vmm().unmap_page(unmap_virt);
                 }
+                // B04-13: 失败时回收 MMIO 区间, 避免泄漏.
+                crate::kernel::framework::dma::free_mmio_virt(virt);
                 return None;
             }
         }
@@ -232,6 +240,9 @@ impl DmaEngine {
 
         let mut regions = self.mmio_regions.lock();
         regions.retain(|(v, _, _)| *v != virt_addr);
+
+        // B04-13: 同步回收 MMIO_ALLOC 区间, 保持两个索引一致.
+        crate::kernel::framework::dma::free_mmio_virt(virt_addr);
     }
 
     // =============== 流式 DMA 映射 ===============
@@ -320,12 +331,14 @@ impl DmaEngine {
 
     // =============== 缓存同步 ===============
 
-    #[expect(
-        clippy::unused_self,
-        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
-    )]
     /// 为设备访问同步 (CPU → Device)
-    pub fn sync_for_device(&self, _mapping: &DmaMapping, _offset: usize, _size: usize) {
+    pub fn sync_for_device(&self, mapping: &DmaMapping, _offset: usize, _size: usize) {
+        // B04-11: 非一致性设备需要刷写 CPU 缓存. 一致性设备仅需屏障.
+        if !mapping.is_coherent {
+            let addr = VirtAddr(mapping.cpu_addr.0 + _offset as u64);
+            // offset 后的 size 区间 → 直接刷整 cache line 区间
+            self.cache_flush(addr, _size);
+        }
         Self::barrier_device();
     }
 
@@ -419,12 +432,12 @@ impl DmaEngine {
         // 架构相关缓存刷新
         #[cfg(target_arch = "x86_64")]
         {
-            // x86_64: 多数平台 DMA 一致, 使用内存栅栏即可.
-            // 对非一致性设备, 按 cache line 刷写:
+            // x86_64: 按 cache line 刷写 (CLFLUSHOPT/CLFLUSH).
             // - CLFLUSHOPT (Leaf 7 EBX bit 23): 可乱序执行, 性能更优
             // - CLFLUSH (Leaf 1 EDX bit 19): 串行化, 兼容性好
-            let need_flush = false; // TODO(TRACK-1F2A45): 由 DmaStream 的 coherent 属性决定
-            if need_flush {
+            // B04-11: 调用方已根据 mapping.is_coherent 判定需要刷写.
+            // 这里总是刷写 (调用方决策), 避免在此函数重复检查.
+            {
                 let cache_line = CACHE_LINE_SIZE;
                 let start = addr.0 & !(cache_line - 1);
                 let end = addr.0 + size as u64;
@@ -449,8 +462,6 @@ impl DmaEngine {
                     }
                     line += cache_line;
                 }
-                core::sync::atomic::fence(Ordering::SeqCst);
-            } else {
                 core::sync::atomic::fence(Ordering::SeqCst);
             }
         }
@@ -566,27 +577,45 @@ impl DmaEngine {
     }
 }
 
-// 全局 DMA Engine 实例
-static GLOBAL_DMA: Mutex<DmaEngine> = Mutex::new(DmaEngine::new());
+// B04-10: 用 OnceLock 提供 `&'static DmaEngine`, 内部锁自管, 消除嵌套锁。
+// 旧方案 `Mutex<DmaEngine>` + 内部 `Mutex<Vec>`:
+//   1. `shutdown` 持外层 → 取 `mmio_regions` 内层: 单线程 OK, 多线程跨 CPU 死锁
+//   2. `submit_transfer → ioremap` (engine.rs:218) 持外层 → 取 `mappings` 内层: 同上
+// 新方案: `OnceLock<DmaEngine>` 一次性初始化, 公开 API 返回 `&'static DmaEngine`
+// (内部 `Mutex<Vec>` 各自加锁, 不需要外层锁, 彻底消除嵌套死锁)。
+// 注意: P1-I-17 契约禁止 framework 使用第三方 `spin::Once`, 此处使用项目自研
+// `framework::sync::OnceLock`. 调用方原本 `let dma = get_dma();` 仍兼容, 因为
+// OnceLock 返回 `&'static DmaEngine` 引用, 方法调用语法一致。
+static GLOBAL_DMA: OnceLock<DmaEngine> = OnceLock::new();
 
-/// 获取全局 DMA Engine 的锁守卫
-///
-/// 返回 `IrqSpinLockGuard`，持有期间可安全调用 `DmaEngine` 的所有方法。
-/// 由于 `DmaEngine` 内部已有 Mutex 保护，此处锁守卫仅消除 static mut 的 aliasing UB。
-pub fn get_dma() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, DmaEngine> {
-    GLOBAL_DMA.lock()
+/// 初始化全局 DMA Engine (在 boot 早期调用, 否则 get_dma() 触发 lazy init)
+pub fn init_dma_engine() {
+    let _ = GLOBAL_DMA.get_or_init(|slot| {
+        slot.write(DmaEngine::new());
+    });
 }
 
-/// 获取全局 DMA Engine 的可变锁守卫 (与 `get_dma` 相同语义)
+/// 获取全局 DMA Engine 的不可变引用
 ///
-/// 保留此函数以兼容现有调用方，实际返回与 `get_dma` 相同的锁守卫。
-pub fn get_dma_mut() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, DmaEngine> {
-    GLOBAL_DMA.lock()
+/// 返回 `&'static DmaEngine`, 调用方通过 `&engine.method()` 访问.
+pub fn get_dma() -> &'static DmaEngine {
+    GLOBAL_DMA.get_or_init(|slot| {
+        slot.write(DmaEngine::new());
+    })
 }
 
-/// FFI 层使用的访问器
-pub(crate) fn dma() -> crate::kernel::framework::sync::IrqSpinLockGuard<'static, DmaEngine> {
-    GLOBAL_DMA.lock()
+/// 获取全局 DMA Engine 的可变引用 (与 `get_dma` 相同语义)
+pub fn get_dma_mut() -> &'static DmaEngine {
+    GLOBAL_DMA.get_or_init(|slot| {
+        slot.write(DmaEngine::new());
+    })
+}
+
+/// FFI 层使用的访问器 (兼容旧接口名, 返回 `&'static DmaEngine`)
+pub(crate) fn dma() -> &'static DmaEngine {
+    GLOBAL_DMA.get_or_init(|slot| {
+        slot.write(DmaEngine::new());
+    })
 }
 
 // =============== DMA 传输引擎 ===============
@@ -648,9 +677,15 @@ pub fn submit_transfer(
         let src_virt = ioremap(src.0, size)?;
         let dst_virt = ioremap(dst.0, size)?;
 
+        // B04-12: 复制完成后必须 iounmap, 否则 MMIO 虚拟地址区间永不回收.
+        // 注: 实际同步 DMA 需要硬件通道完成回调后释放; 当前实现为内存复制近似,
+        //      复制完成即刻释放.
         core::ptr::copy_nonoverlapping(src_virt as *const u8, dst_virt as *mut u8, size);
 
         DmaEngine::barrier_device();
+
+        // B04-12: iounmap 解除映射, 同时回收 MMIO 虚拟地址区间.
+        ioremap_unmap_pair(src, dst, size);
     }
 
     Some(0)
@@ -683,4 +718,14 @@ pub fn submit_transfer_async(
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
 unsafe fn ioremap(phys: u64, size: usize) -> Option<u64> {
     dma().ioremap(PhysAddr(phys), size).map(|v| v.0)
+}
+
+/// B04-12: 解除 submit_transfer 中创建的 src/dst 临时映射并回收 MMIO 区间.
+///
+/// 当前实现是同步内存复制近似 (真实硬件 DMA 应通过中断回调触发释放);
+/// 复制完成即刻解除映射, 避免 MMIO 虚拟地址区间泄漏。
+// SAFETY: 调用方保证 `src/dst/size` 与之前 ioremap 的参数一致 (区间大小相同).
+unsafe fn ioremap_unmap_pair(src: PhysAddr, dst: PhysAddr, size: usize) {
+    dma().iounmap(VirtAddr(src.0), size);
+    dma().iounmap(VirtAddr(dst.0), size);
 }

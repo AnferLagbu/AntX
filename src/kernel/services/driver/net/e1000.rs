@@ -108,44 +108,13 @@ const E1000_RAH_AV: u32 = 1 << 31;
 const E1000_TIMEOUT: u32 = 100000;
 
 // ============================================================================
-// DMA 环大小常量 (framework 层也使用)
+// B04-19: 描述符结构 + DMA 环大小常量已上移到 framework::driver::net::dma_ring.
+// 本文件 (services) re-export 以保持公共 API 兼容.
 // ============================================================================
 
-/// TX 描述符环大小
-pub const E1000_TX_RING_SIZE: usize = 64;
-/// RX 描述符环大小
-pub const E1000_RX_RING_SIZE: usize = 128;
-/// RX 缓冲区大小
-pub const E1000_RX_BUFFER_SIZE: usize = 2048;
-
-// ============================================================================
-// 描述符结构体 (硬件格式, repr(C))
-// ============================================================================
-
-/// E1000 TX 描述符 (16 字节, 与硬件 DMA 格式一致)
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct E1000TxDesc {
-    pub addr: u64,
-    pub length: u16,
-    pub cso: u8,
-    pub cmd: u8,
-    pub status: u8,
-    pub css: u8,
-    pub special: u16,
-}
-
-/// E1000 RX 描述符 (16 字节, 与硬件 DMA 格式一致)
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct E1000RxDesc {
-    pub addr: u64,
-    pub length: u16,
-    pub checksum: u16,
-    pub status: u8,
-    pub errors: u8,
-    pub special: u16,
-}
+pub use crate::kernel::framework::driver::net::dma_ring::{
+    E1000_RX_BUFFER_SIZE, E1000_RX_RING_SIZE, E1000RxDesc, E1000TxDesc,
+};
 
 // ============================================================================
 // 描述符状态/命令常量

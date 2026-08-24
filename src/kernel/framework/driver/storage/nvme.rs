@@ -69,45 +69,13 @@ const NVME_REG_ACQ: usize = 0x30; // u64: Admin CQ 基地址
 const NVME_DB_BASE: usize = 0x1000;
 
 // ============================================================================
-// NVMe 寄存器定义
+// NVMe 寄存器位域常量 (供后续寄存器读写逻辑引用, 模块级)
 // ============================================================================
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C, packed)]
-pub struct NvmeControllerRegisters {
-    pub cap: u64,   // 控制器能力
-    pub vs: u32,    // 版本
-    pub intms: u32, // 中断掩码设置
-    pub intmc: u32, // 中断掩码清除
-    pub cc: u32,    // 控制器配置
-    pub rsvd1: u32,
-    pub csts: u32,   // 控制器状态
-    pub nssr: u32,   // NVM 子系统复位
-    pub aqa: u32,    // Admin 队列属性
-    pub asq: u64,    // Admin 提交队列基地址
-    pub acq: u64,    // Admin 完成队列基地址
-    pub cmbloc: u32, // 控制器内存缓冲区位置
-    pub cmbsz: u32,  // 控制器内存缓冲区大小
-    pub rsvd2: [u32; 8],
-    pub bpinfo: u32, // 启动分区信息
-    pub bprsel: u32, // 启动分区读选择
-    pub bpmbl: u64,  // 启动分区内存缓冲位置
-    pub rsvd3: [u64; 38],
-    // 门铃寄存器紧随其后
-}
 
 /// `NVMe` 控制器能力寄存器 (CAP) 位域 — `NVMe` 规范 §3.1.1
 ///
-/// 当前代码直接使用 `(regs.cap >> 32) & 0xF` 读取 DSTRD.
-/// 完整位域定义供参考:
-/// - MQES    `[0:15]`:  最大队列条目数
-/// - CQR     `[16]`:    支持 NVMe-MI
-/// - AMS     `[17:18]`: 仲裁机制
-/// - TO      `[24:31]`: 超时 (500ms 单位)
-/// - DSTRD   `[32:35]`: 门铃步长 (2^n)
-/// - CSS     `[37:44]`: 命令集支持
-/// - MPSMIN  `[48:51]`: 最小内存页大小
-/// - MPSMAX  `[52:55]`: 最大内存页大小
+/// 当前代码通过 `io.read32(NVME_REG_CAP)` 直接读取偏移 (见下方常数).
+/// 这里仅提供位域常量参考.
 mod cap {}
 
 /// `NVMe` 控制器配置寄存器 (CC) 位域 — `NVMe` 规范 §3.1.5
@@ -128,6 +96,16 @@ mod cc {
 mod csts {
     pub const RDY: u32 = 1 << 0;
 }
+
+// ============================================================================
+// B04-18: NvmeControllerRegisters packed 结构删除说明
+//
+// 旧 `#[repr(C, packed)] pub struct NvmeControllerRegisters` 含 u64 字段,
+// 在 aarch64 上触发 data abort (未对齐访问) 且允许编译器优化掉 volatile 读.
+// 全文件 grep 确认该结构体未被任何代码引用 (仅 caps 注释中提到),
+// F9 死代码零容忍: 删除结构体, 寄存器访问统一通过 io.read32/write32 + NVME_REG_* 偏移常量.
+// 如未来需要整体寄存器读取, 改用 `read_volatile` 逐字段 (不再用 packed struct).
+// ============================================================================
 
 // ============================================================================
 // NVMe 命令定义

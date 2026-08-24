@@ -203,6 +203,11 @@ pub fn get_exception_recovery() -> Option<u64> {
 }
 
 /// 检查指针是否在合法的用户空间范围内
+///
+/// B04-14: `USER_ADDR_MAX = 0x0000_7FFF_FFFF_F000` 已天然排除内核高半区
+/// (含 `MMIO_VIRT_BASE = 0xFFFF9000_00000000+` DMA 代理区), 用户态无法
+/// 通过 copy_from/to_user 访问外设 MMIO 寄存器. 此函数是 I4 (用户内存代理)
+/// 与 I5/I6 (外设 DMA/MMIO) 不变式的唯一交叉检查点.
 #[inline]
 pub fn is_user_ptr(ptr: u64) -> bool {
     ptr > 0 && ptr < USER_ADDR_MAX

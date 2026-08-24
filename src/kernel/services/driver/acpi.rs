@@ -34,9 +34,10 @@ pub fn has_madt() -> bool {
 /// 是否解析过 FADT (电源管理)
 #[inline]
 pub fn has_fadt() -> bool {
-    // 真实实现: 框架层维护 has_fadt 标志, services 调用
-    // 简化: FADT 解析由 parse_fadt 私有 fn 触发, 通过 get_acpi_features 查询
-    true
+    // B04-21: 委托 framework::arch::acpi::has_fadt(), 替代原硬编码 `true`.
+    // 旧实现未查询框架层 → 即使未解析 FADT 也返回 true, 电源管理走 ACPI 路径
+    // → 可能空指针 deref PM1a_CNT 寄存器.
+    crate::kernel::framework::arch::acpi::has_fadt()
 }
 
 /// 是否解析过 HPET (高精度事件定时器)

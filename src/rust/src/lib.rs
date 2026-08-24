@@ -635,7 +635,10 @@ pub extern "C" fn kernel_init() {
 
         // 10. Network (smoltcp + 网卡驱动)
         {
-            crate::kernel::framework::net::init::qx_net_init();
+            // SAFETY: qx_net_init 是 unsafe extern "C" FFI, 由启动流程串行调用.
+            unsafe {
+                crate::kernel::framework::net::init::qx_net_init();
+            }
             crate::klog_boot_info!("Network subsystem initialized");
         }
 

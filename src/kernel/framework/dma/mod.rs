@@ -8,6 +8,8 @@
 
 use crate::kernel::framework::mm::get_vmm;
 use crate::kernel::framework::mm::{CACHE_LINE_SIZE, KERNEL_BASE, PAGE_SIZE, PhysAddr, VirtAddr};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use alloc::collections::BTreeMap;
 use core::ptr::{self};
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -181,14 +183,69 @@ fn virt_to_phys(virt: *const u8) -> u64 {
         .map_or(0, |p| p.0)
 }
 
-/// MMIO virtual address allocator
-static MMIO_NEXT: AtomicU64 = AtomicU64::new(MMIO_VIRT_BASE);
+/// MMIO 虚拟地址区间分配器 (B04-13)
+///
+/// 旧实现 `AtomicU64::fetch_add` 单调递增永不回收, 同一 `(virt, phys, size)` 可被多次
+/// ioremap 导致多虚拟地址映射同一物理地址, 同时 `mmio_regions` Vec 单调增长 → 泄漏 + OOM。
+/// 新实现: `BTreeMap<VirtAddr, RegionInfo>` 记录已分配区间, 分配时检测区间占用,
+/// `free_mmio_virt` 回收并支持后续复用。
+static MMIO_ALLOC: Mutex<BTreeMap<VirtAddr, MmioRegion>> = Mutex::new(BTreeMap::new());
 
-fn alloc_mmio_virt(size: usize) -> VirtAddr {
-    let pages = (size as u64).div_ceil(PAGE_SIZE);
-    let aligned_pages = pages.max(1);
-    let addr = MMIO_NEXT.fetch_add(aligned_pages * PAGE_SIZE, Ordering::Relaxed);
-    VirtAddr(addr)
+/// MMIO 区间信息
+///
+/// 仅存储 size; 虚拟地址是 BTreeMap 的 key, 物理地址由 `DmaEngine::mmio_regions`
+/// 单独跟踪 (此处不重复, 避免冗余).
+#[derive(Clone, Copy, Debug)]
+struct MmioRegion {
+    /// 区间长度 (字节)
+    size: usize,
+}
+
+/// 分配 MMIO 虚拟地址 (B04-13)
+///
+/// 在 `MMIO_VIRT_BASE` 之上线性扫描空闲区间分配. 分配失败返回 None.
+fn alloc_mmio_virt(size: usize) -> Option<VirtAddr> {
+    if size == 0 {
+        return None;
+    }
+    let pages = (size as u64).div_ceil(PAGE_SIZE).max(1);
+    let alloc_size = pages * PAGE_SIZE;
+
+    let mut regions = MMIO_ALLOC.lock();
+    // BTreeMap 默认按 key 排序, 收集 (virt, size) 对.
+    let sorted: alloc::vec::Vec<(VirtAddr, usize)> = regions
+        .iter()
+        .map(|(v, r)| (*v, r.size))
+        .collect();
+
+    // 在 MMIO_VIRT_BASE 之上扫描空闲区间.
+    let mut cursor = MMIO_VIRT_BASE;
+    for (v, sz) in &sorted {
+        if cursor + alloc_size <= v.0 {
+            // 找到足够大的空洞
+            let result = VirtAddr(cursor);
+            regions.insert(result, MmioRegion { size: alloc_size as usize });
+            return Some(result);
+        }
+        // 跳过当前已分配区间
+        let end = v.0 + *sz as u64;
+        if end > cursor {
+            cursor = end;
+        }
+    }
+
+    // 末尾追加
+    let result = VirtAddr(cursor);
+    regions.insert(result, MmioRegion { size: alloc_size as usize });
+    Some(result)
+}
+
+/// 释放 MMIO 虚拟地址 (B04-13)
+///
+/// 与 `DmaEngine::iounmap` 配套使用. 调用方保证已 `unmap_page` 全部页.
+pub(crate) fn free_mmio_virt(virt: VirtAddr) {
+    let mut regions = MMIO_ALLOC.lock();
+    regions.remove(&virt);
 }
 
 // 重导出 engine 类型

@@ -579,6 +579,13 @@ struct Fadt {
 static FADT_ADDR: AtomicU64 = AtomicU64::new(0);
 static FADT_FOUND: AtomicBool = AtomicBool::new(false);
 
+/// 是否已解析 FADT (B04-21)
+/// services 层委托此 API 替代硬编码 `true`.
+#[inline]
+pub fn has_fadt() -> bool {
+    FADT_FOUND.load(core::sync::atomic::Ordering::Acquire)
+}
+
 /// FADT 解析
 fn parse_fadt(fadt_ptr: u64) {
     // SAFETY: `fadt_ptr` 指向已验证有效的 ACPI/BIOS 表头 (长度 ≥ sizeof(Fadt)); 只读访问
