@@ -15,7 +15,7 @@
 
 - **B04-02. MSI-X 实装（TOP 20 #8）**
   - 描述：framework/pci MSI-X 实装未完成，NVMe/VirtIO 无法工作。
-  - 方案：集成 NVMe/VirtIO 驱动（决策点 D3）；实现 MSI-X table/PBA 配置与 irq 路由。
+  - 方案：**决策点 D3 已裁决（2026-08-23 用户选"一次性完整接入"）**：实现 MSI-X table/PBA 配置与 irq 路由 + 向量分配，并完整接入 NVMe/VirtIO 驱动；QEMU 验证中断路径（`-nic none` 仅禁用网卡，不影响 VirtIO 块/NVMe 验证）。DECISION-061。
   - 状态：[]
 
 - **B04-03. ECAM_BASE 硬编码（TOP 20 #9）**
@@ -46,7 +46,7 @@
 
 - **B04-07. strlen 无上界循环（TOP 20 #1）**
   - 描述：[lib/string.rs:48-64](file:///home/anfer/Code/QueenX/src/kernel/framework/lib/string.rs#L48-L64) `while *ptr != 0` 无上界，恶意指针 → 任意内存读 / #PF。
-  - 方案：添加 `if len > MAX_CSTR_LEN { break }` 上限（决策点 D1）；内核内部尽量改走 `strlen_safe`。
+  - 方案：**决策点 D1 已裁决（2026-08-23 用户选"按推荐方案"）**：strlen 加 `if len > MAX_CSTR_LEN { break }` 上限；内核内部调用点改走 `strlen_safe`。DECISION-060。
   - 状态：[]
 
 - **B04-08. gfx_console fb 裸指针（TOP 20 #16）**
@@ -56,7 +56,7 @@
 
 - **B04-09. framework/net 单文件过大与句柄重用**
   - 描述：framework/net 存在单文件 >1000 行（违反简单优先）与句柄重用（u32::MAX 句柄冲突）。
-  - 方案：大文件拆分（决策点 D6）；句柄分配改自增+冲突检测。
+  - 方案：**决策点 D6 已裁决（2026-08-23 用户选"与 B04-19 合并"）**：net 单文件拆分与 e1000 TxRing 拆分合并处理，一次理顺 framework net 边界；句柄分配改自增+冲突检测。DECISION-062。
   - 状态：[]
 
 - **B04-10. dma/engine.rs GLOBAL_DMA 嵌套锁（P0）**
@@ -106,7 +106,7 @@
 
 - **B04-19. driver e1000 framework/services 双向依赖（F3，P0）**
   - 描述：`driver/net/e1000.rs:35-43` framework TxRing（unsafe）与 services E1000Driver（safe）双向依赖，语义循环依赖，services 不能独立测试。
-  - 方案：TxRing 抽到独立子模块 `framework/driver/net/dma_ring.rs`，明确 framework（ring 抽象）/services（驱动业务）分层。
+  - 方案：TxRing 抽到独立子模块 `framework/driver/net/dma_ring.rs`，明确 framework（ring 抽象）/services（驱动业务）分层。**与 B04-09 合并处理（决策点 D6 已裁决，2026-08-23）**：一次理顺 framework net/driver 边界。
   - 状态：[]
 
 - **B04-20. driver bus/pci.rs SMP 并发扫描（P0）**
@@ -130,3 +130,20 @@
   - 描述：strlen 改造后跑 string 相关 host-tests。
   - 方案：`make test-host`。
   - 状态：[]
+
+### 决策记录
+
+- **DECISION-060**
+  - 描述：B04-07 strlen 无上界循环采用审计推荐方案（决策点 D1）。
+  - 方案：strlen 加 `MAX_CSTR_LEN` 上限 `break`；内核内部调用点改走 `strlen_safe`。用户 2026-08-23 选"按推荐方案（上限+改造）"，放弃"仅加上限"（避免后续追改调用点）。
+  - 状态：[X]
+
+- **DECISION-061**
+  - 描述：B04-02 MSI-X 实装范围采用"一次性完整接入"（决策点 D3）。
+  - 方案：实现 MSI-X table/PBA 配置与 irq 路由 + 向量分配，并完整接入 NVMe/VirtIO 驱动；QEMU 验证中断路径（`-nic none` 仅禁用网卡，不影响 VirtIO 块/NVMe 验证）。用户 2026-08-23 选"一次性完整接入"，放弃"框架优先分步"与"仅框架驱动另册"（MSI-X 无驱动验证属空转）。
+  - 状态：[X]
+
+- **DECISION-062**
+  - 描述：B04-09 framework/net 单文件拆分采用"与 B04-19 合并"（决策点 D6）。
+  - 方案：net 单文件拆分与 e1000 TxRing 拆分（`framework/driver/net/dma_ring.rs`）合并处理，一次理顺 framework net 边界；句柄分配改自增+冲突检测。用户 2026-08-23 选"与 B04-19 合并"。
+  - 状态：[X]
