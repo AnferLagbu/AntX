@@ -40,17 +40,14 @@ pub use crate::kernel::framework::driver::net::dma_ring::{
     E1000TxDesc,
 };
 
-// services/driver/net/e1000 的常量 (寄存器偏移/中断原因) 仍在 services 层
-// (属于驱动业务配置, 非硬件 DMA 格式). 显式 use 而非通配以控制耦合面.
-use crate::kernel::services::driver::net::e1000::{
-    E1000_ICR_LSC, E1000_ICR_RXDMT0, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_RDT,
+// B04-AUDIT-005 #4 v2 修复 (2026-08-24): E1000Driver 整体上移 framework.
+// E1000Io + 寄存器常量 + E1000Driver 业务逻辑 + E1000Device 全部在 framework 层.
+// services 仅保留描述符状态/命令常量 + re-export shim (services/driver/net/e1000.rs).
+// 严格 framekernel 单向数据流: framework 不依赖 services.
+use crate::kernel::framework::driver::net::e1000_io::{
+    E1000_ICR_LSC, E1000_ICR_RXDMT0, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_RDT, E1000Driver,
+    E1000Io,
 };
-
-// 从 services 层导入安全驱动逻辑 (E1000Driver/E1000Io 仍属 services 层, 因为它们
-// 仅做 safe 业务逻辑; framework 仅持有 E1000Device 包装 + DMA ring 底层).
-use crate::kernel::services::driver::net::e1000::E1000Driver;
-#[cfg(not(feature = "kernel_test"))]
-use crate::kernel::services::driver::net::e1000::E1000Io;
 
 // ============================================================================
 // 虚拟地址 → 物理地址转换
@@ -606,14 +603,17 @@ impl E1000Device {
                         // SAFETY: 写回命令寄存器。
                         unsafe { pci_write_config_dword(bus, dev_idx, func, 0x04, cmd) };
 
-                        // 创建安全 MMIO 访问器 (services 层)
-                        let io = match crate::kernel::services::driver::net::e1000::E1000Io::new(
+                        // 创建安全 MMIO 访问器 (framework::e1000_io 层)
+                        // B04-AUDIT-005 #4: 错误类型从 services::KernelError 变为
+                        // framework::E1000IoError (避免 framework→services 反向依赖).
+                        // 在 framework 边界用 match 自行处理.
+                        let io = match E1000Io::new(
                             PhysAddr::new(self.mmio_phys),
                             128 * 1024, // E1000 BAR0 is 128KB
                         ) {
                             Ok(m) => m,
-                            Err(e) => {
-                                klog_err!(Net, "e1000: E1000Io::new failed: {}", e);
+                            Err(_e) => {
+                                klog_err!(Net, "e1000: E1000Io::new failed (IoMem 映射)");
                                 return Err(DriverError::HardwareError);
                             }
                         };

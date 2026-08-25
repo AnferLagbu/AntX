@@ -407,6 +407,10 @@ pub struct NvmeController {
     iomem: Option<IoMem>, // MMIO region handle (safe access proxy)
     db_stride: u32,       // 门铃步长
 
+    /// B04-02 MSI-X 启用状态: Some(vector) 表示已通过 MSI-X 启用中断,
+    /// None 表示未启用 (走 poll 或 INTx).
+    pub irq_vector: Option<u8>,
+
     // Admin 队列 (DMA 分配的 SQ/CQ)
     admin_sq_dma: QueueDma,
     admin_cq_dma: QueueDma,
@@ -441,6 +445,7 @@ impl NvmeController {
         Self {
             mmio_phys: mmio_base as u64,
             iomem: None,
+            irq_vector: None,
             db_stride: 0,
             admin_sq_dma: QueueDma {
                 virt: VirtAddr(0),
@@ -1147,6 +1152,24 @@ impl Driver for NvmeController {
 // ============================================================================
 
 impl NvmeController {
+    /// B04-02 MSI-X 接入: 为 NVMe 控制器启用 MSI-X.
+    ///
+    /// 调用 `framework::pci::msi::msix_enable` 启用 MSI-X 中断, 并存储分配的
+    /// 向量号到 `irq_vector`. 调用方 (`storage_init`) 在 controller init 后,
+    /// 用 vector 注册 IDT ISR.
+    ///
+    /// # Errors
+    ///
+    /// 设备无 MSI-X capability 或向量耗尽时返回 None.
+    pub fn enable_msix(&mut self, dev: &crate::kernel::framework::pci::PciDevice) -> Option<u8> {
+        use crate::kernel::framework::pci::msi;
+        // 启用 MSI-X, 请求 1 个向量 (NVMe 单 Admin CQ 中断)
+        let config = msi::msix_enable(dev, 1)?;
+        self.irq_vector = Some(config.base_vector);
+        // 启用 MSI-X 中断掩码清除 (已由 msix_enable 完成)
+        Some(config.base_vector)
+    }
+
     /// 使能指定中断向量
     ///
     /// 通过写入 INTMS 寄存器使能指定中断。

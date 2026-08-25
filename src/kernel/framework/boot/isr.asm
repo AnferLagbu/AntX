@@ -1,3 +1,4 @@
+; B07 MSI-X: vector 0x80-0x9F (irq80-127, MSI 第二段)
 ; =============================================================================
 ; isr.asm — x86_64 中断服务程序汇编 stub
 ;
@@ -460,6 +461,54 @@ irq_stub 76, 124
 irq_stub 77, 125
 irq_stub 78, 126
 irq_stub 79, 127
+irq_stub 80, 128
+irq_stub 81, 129
+irq_stub 82, 130
+irq_stub 83, 131
+irq_stub 84, 132
+irq_stub 85, 133
+irq_stub 86, 134
+irq_stub 87, 135
+irq_stub 88, 136
+irq_stub 89, 137
+irq_stub 90, 138
+irq_stub 91, 139
+irq_stub 92, 140
+irq_stub 93, 141
+irq_stub 94, 142
+irq_stub 95, 143
+irq_stub 96, 144
+irq_stub 97, 145
+irq_stub 98, 146
+irq_stub 99, 147
+irq_stub 100, 148
+irq_stub 101, 149
+irq_stub 102, 150
+irq_stub 103, 151
+irq_stub 104, 152
+irq_stub 105, 153
+irq_stub 106, 154
+irq_stub 107, 155
+irq_stub 108, 156
+irq_stub 109, 157
+irq_stub 110, 158
+irq_stub 111, 159
+irq_stub 112, 160
+irq_stub 113, 161
+irq_stub 114, 162
+irq_stub 115, 163
+irq_stub 116, 164
+irq_stub 117, 165
+irq_stub 118, 166
+irq_stub 119, 167
+irq_stub 120, 168
+irq_stub 121, 169
+irq_stub 122, 170
+irq_stub 123, 171
+irq_stub 124, 172
+irq_stub 125, 173
+irq_stub 126, 174
+irq_stub 127, 175
 
 ; ── syscall / recovery ─────────────────────────────────────────────────
 extern syscall_dispatch_from_frame

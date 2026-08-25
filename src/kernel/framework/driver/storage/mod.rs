@@ -169,6 +169,29 @@ pub fn storage_init() -> framework::Result<()> {
                 let mut controller = NvmeController::new(mmio_base);
                 match controller.init() {
                     Ok(()) => {
+                        // B07 MSI-X 完整接入: 启用 MSI-X + 注册 ISR.
+                        if let Some(msi_vector) = controller.enable_msix(dev) {
+                            // msi.rs::msix_enable 分配 vector ∈ [MSI_VECTOR_BASE=0x40, 0x40+64).
+                            // IDT 索引 = vector - IRQ_BASE (0x20), 例如 vector=0x40 → irq=32.
+                            let irq = msi_vector - crate::kernel::framework::idt::IRQ_BASE;
+                            if let Err(e) = register_nvme_msix_isr(irq, msi_vector) {
+                                klog_warn!(
+                                    Driver,
+                                    "NVMe: MSI-X ISR register failed on irq {}: {}, falling back to poll",
+                                    irq,
+                                    e
+                                );
+                            } else {
+                                klog_info!(
+                                    Driver,
+                                    "NVMe: MSI-X enabled, vector={}, irq={}",
+                                    msi_vector,
+                                    irq
+                                );
+                            }
+                        } else {
+                            klog_info!(Driver, "NVMe: MSI-X unavailable, using poll mode");
+                        }
                         klog_info!(
                             Driver,
                             "NVMe: {:02X}:{:02X}.{} initialized",
@@ -398,10 +421,48 @@ pub fn nvme_controller_count() -> usize {
     NVME_CONTROLLERS.lock().len()
 }
 
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "保留 Option/Result<()> 包装便于 API 兼容性 (调用方可能 match 或 .unwrap); 移除包装需同步修改调用点, 风险大"
-)]
+#[cfg(target_arch = "x86_64")]
+/// B07 MSI-X 完整接入: NVMe 中断路径 (端到端).
+///
+/// `register_nvme_msix_isr(irq, msi_vector)` 通过 `IdtManager::register_msi_irq`
+/// 注册 NVMe 中断处理, ISR 调用 `handle_interrupt` 处理完成队列并 ack.
+///
+/// # Safety
+///
+/// `frame` 由 IDT 中断入口压栈, 指向保存的寄存器. NVMe ISR 不读取 frame
+/// 内容, 仅作 IDT 签名要求.
+extern "C" fn nvme_msix_irq_handler(_frame: *mut crate::kernel::framework::idt::InterruptFrame) {
+    // B07: handle_irq 已自动 EOI (LAPIC 路径), 这里只需 dispatch 给 controller.
+    let mut controllers = NVME_CONTROLLERS.lock();
+    for ctrl in controllers.iter_mut() {
+        if ctrl.irq_vector.is_some() {
+            let _ = ctrl.handle_interrupt();
+        }
+    }
+}
+
+/// 注册 NVMe MSI-X ISR.
+///
+/// # Errors
+///
+/// `IdtManager::register_msi_irq` 失败 (irq 范围错) 时返回错误.
+#[cfg(target_arch = "x86_64")]
+fn register_nvme_msix_isr(irq: u8, msi_vector: u8) -> Result<(), &'static str> {
+    use crate::kernel::framework::idt::IdtManager;
+    let manager = IdtManager::instance();
+    manager.register_msi_irq(irq, nvme_msix_irq_handler, "nvme-msix")?;
+    // enable_irq 用于 PIC IRQ 路径; MSI vector 不需 enable (LAPIC 已 mask).
+    // 但 IDT 抽象统一要求 enable_irq (否则 vector 被屏蔽). 调用以保持一致性.
+    manager.enable_irq(irq);
+    klog_info!(
+        Driver,
+        "NVMe MSI-X ISR registered: vector={}, irq={}",
+        msi_vector,
+        irq
+    );
+    Ok(())
+}
+
 /// 关机 — 关闭所有存储控制器
 /// # Errors
 /// 任一存储控制器关闭失败时返回 Err。

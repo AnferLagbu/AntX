@@ -86,8 +86,14 @@ const MSIX_CTRL_TSIZE: u16 = 0x07FF;
 
 /// MSI 向量分配起始 (避免与 IRQ 0-31 异常冲突)
 const MSI_VECTOR_BASE: u8 = 0x40;
-/// MSI 向量池大小
-const MSI_VECTOR_COUNT: u8 = 64;
+/// MSI 向量池大小 (vector 0x40-0x9F = 96 vectors, irq32-irq127)
+///
+/// 约束链: IDT MSI stub 仅编程 vector 0x40-0x9F (isr.asm + idt/mod.rs),
+/// `register_msi_irq` 校验 irq ∈ [32,128) (idt.rs)。vector = 0x40 + bit,
+/// 若 bit ≥ 96 则 vector ≥ 0xA0 → irq ≥ 128 → register_msi_irq 拒绝,
+/// 分配出的 vector 不可用。故 COUNT 必须 ≤ 96 (与 IDT stub 精确一致)。
+/// 委托人所列 128 与 IDT 不一致 (2026-08-25 接手修复), 扩展 IDT stub 时同步上调。
+const MSI_VECTOR_COUNT: u8 = 96;
 
 /// 全局 MSI 向量分配位图
 static MSI_VECTORS: AtomicU32 = AtomicU32::new(0);

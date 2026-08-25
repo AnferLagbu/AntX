@@ -157,8 +157,8 @@ pub(crate) struct IdtState {
     /// 异常处理函数指针表
     /// `x86_64` 上 wrapper 函数(asm stub 跳转)用 `extern "C"`,等价于平台 sysv64 ABI
     pub handlers: [Option<extern "C" fn(*mut InterruptFrame)>; IDT_ENTRIES],
-    /// IRQ 描述符扩展信息
-    pub irq_descriptors: [IrqDescriptor; 16],
+    /// IRQ 描述符扩展信息 (B07: 16 → 128, 覆盖 MSI vector 32-127)
+    pub irq_descriptors: [IrqDescriptor; 128],
 }
 
 impl Default for IdtState {
@@ -173,7 +173,7 @@ impl Default for IdtState {
                 call_count: core::sync::atomic::AtomicU64::new(0),
                 error_count: core::sync::atomic::AtomicU64::new(0),
             }
-        }; 16];
+        }; 128];
 
         Self {
             entries: [IdtEntry::default(); IDT_ENTRIES],
@@ -354,13 +354,17 @@ impl IdtManager {
         Ok(())
     }
 
-    /// 编程 MSI 向量 IDT 条目 (向量 0x40-0x7F)
+    /// 编程 MSI 向量 IDT 条目 (向量 0x40-0x9F)
     ///
-    /// MSI 向量范围 0x40-0x7F 对应 irq16-irq79 (`MSI_VECTOR_BASE=0x40`).
+    /// MSI 向量范围 0x40-0x9F 对应 irq16-irq127 (`MSI_VECTOR_BASE=0x40`),
+    /// 共 112 个 stub.
     /// 这些 IDT 条目使用与传统 IRQ 相同的 `irq_common` 入口.
+    /// 当前 IDT stub 实际覆盖 0x40-0x9F (irq16-irq127),
+    /// 而 `MSI_VECTOR_COUNT=128` 超出此范围 (0xA0-0xBF), 驱动需在 alloc
+    /// 后验证落入实际 stub 范围.
     // 有意窄化: 硬件字段宽度, 寄存器/MMIO 定义保证
     #[expect(clippy::cast_possible_truncation)]
-    pub fn init_msi_idt(&self, msi_table: &[u64; 64]) {
+    pub fn init_msi_idt(&self, msi_table: &[u64; 112]) {
         let mut state = self.state.lock();
         for (i, &handler_addr) in msi_table.iter().enumerate() {
             let vector = 0x40 + i as u8;
@@ -372,7 +376,7 @@ impl IdtManager {
                 IDT_TYPE_INTERRUPT,
             );
         }
-        crate::klog_info!(Kernel, "IDT: MSI vectors 0x40-0x7F programmed");
+        crate::klog_info!(Kernel, "IDT: MSI vectors 0x40-0x9F programmed (112 stubs)");
     }
 
     #[expect(
@@ -428,7 +432,11 @@ impl IdtManager {
 
     /// 注册 IRQ 处理函数
     /// # Errors
-    /// IRQ 编号大于等于 16 时返回 Err。
+    /// IRQ 编号大于等于 128 时返回 Err。
+    ///
+    /// B07 MSI-X: 范围扩展到 128 项 (irq 0-127). 传统 PIC IRQ 0-15 (vector 32-47)
+    /// 与 MSI vector 32-127 (vector 64-175, 即 MSI 0x40-0x9F) 共用同一数组.
+    /// MSI-X 用户应使用 `register_msi_irq` (绕过 8259 spurious 检测).
     pub fn register_irq(
         &self,
         irq: u8,
@@ -436,7 +444,7 @@ impl IdtManager {
         name: &'static str,
         flags: u32,
     ) -> Result<(), &'static str> {
-        if irq >= 16 {
+        if irq >= 128 {
             return Err("Invalid IRQ number");
         }
 
@@ -464,15 +472,38 @@ impl IdtManager {
         Ok(())
     }
 
+    /// 注册 MSI-X IRQ 处理函数
+    ///
+    /// 与 `register_irq` 区别:
+    /// - irq 范围扩展到 32-127 (MSI vector 0x40-0x9F)
+    /// - 不进行 8259 spurious 检测 (MSI 不走 8259)
+    /// - EOI 走 LAPIC (APIC 已初始化时), 兜底走 8259 EOI
+    /// # Errors
+    /// IRQ 编号大于等于 128 或小于 32 时返回 Err。
+    pub fn register_msi_irq(
+        &self,
+        irq: u8,
+        handler: extern "C" fn(*mut InterruptFrame),
+        name: &'static str,
+    ) -> Result<(), &'static str> {
+        if irq >= 128 {
+            return Err("Invalid MSI IRQ number");
+        }
+        if irq < 32 {
+            return Err("MSI irq must be >= 32 (vector 0x40+); use register_irq for PIC IRQ");
+        }
+        self.register_irq(irq, handler, name, 0)
+    }
+
     /// 注销 IRQ 处理函数
     /// # Errors
-    /// IRQ 编号大于等于 16 时返回 Err。
+    /// IRQ 编号大于等于 128 时返回 Err。
     pub fn unregister_irq(
         &self,
         irq: u8,
         handler: extern "C" fn(*mut InterruptFrame),
     ) -> Result<(), &'static str> {
-        if irq >= 16 {
+        if irq >= 128 {
             return Err("Invalid IRQ number");
         }
 
@@ -692,6 +723,45 @@ impl IdtManager {
     /// 处理 IRQ
     pub fn handle_irq(&self, frame: *mut InterruptFrame, vector: u8) {
         let irq = vector - IRQ_BASE;
+
+        // B07 MSI-X: irq >= 16 走 MSI 路径 (irq 16-31 为预留, 32-63 为 MSI vector).
+        // MSI 不走 8259 PIC, 不需 spurious 检测, EOI 走 LAPIC.
+        if irq >= 16 {
+            // MSI 分支: vector 0x40-0x7F (irq 32-63) 由 LAPIC 直接投递,
+            // 不经过 8259A. 跳过 spurious 检测, 直接查 handler 表.
+            self.stats.record_irq(irq);
+
+            let handler_opt = {
+                let state = self.state.lock();
+                let handler = state.irq_descriptors[irq as usize].handler;
+                if let Some(desc) = state.irq_descriptors.get(irq as usize) {
+                    desc.call_count.fetch_add(1, Ordering::Relaxed);
+                }
+                handler
+            };
+
+            if let Some(handler) = handler_opt {
+                // SAFETY: 调用方保证指针/类型有效
+                unsafe {
+                    handler(frame);
+                }
+            }
+
+            // MSI EOI: LAPIC 路径 (send_eoi 内已检查 APIC init)
+            self.send_eoi(irq);
+
+            crate::kernel::framework::irq::do_softirq();
+
+            // 信号投递 (同传统 IRQ 路径)
+            // SAFETY: frame 有效
+            unsafe {
+                let f = &*frame;
+                if f.cs & 0x3 == 0x3 {
+                    crate::kernel::framework::proc::do_signal_deliver(frame);
+                }
+            }
+            return;
+        }
 
         if irq < 16 {
             // I-25: legacy 8259A PIC 假性 IRQ 检测.

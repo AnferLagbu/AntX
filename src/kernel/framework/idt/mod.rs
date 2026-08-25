@@ -190,7 +190,7 @@ pub extern "C" fn idt_init() -> i32 {
         fn irq13();
         fn irq14();
         fn irq15();
-        // MSI 向量 stub (0x40-0x7F → irq16-irq79)
+        // MSI 向量 stub (0x40-0x9F → irq16-irq127)
         fn irq16();
         fn irq17();
         fn irq18();
@@ -255,6 +255,55 @@ pub extern "C" fn idt_init() -> i32 {
         fn irq77();
         fn irq78();
         fn irq79();
+        // MSI 向量 stub 续 (0x80-0x9F → irq80-irq127)
+        fn irq80();
+        fn irq81();
+        fn irq82();
+        fn irq83();
+        fn irq84();
+        fn irq85();
+        fn irq86();
+        fn irq87();
+        fn irq88();
+        fn irq89();
+        fn irq90();
+        fn irq91();
+        fn irq92();
+        fn irq93();
+        fn irq94();
+        fn irq95();
+        fn irq96();
+        fn irq97();
+        fn irq98();
+        fn irq99();
+        fn irq100();
+        fn irq101();
+        fn irq102();
+        fn irq103();
+        fn irq104();
+        fn irq105();
+        fn irq106();
+        fn irq107();
+        fn irq108();
+        fn irq109();
+        fn irq110();
+        fn irq111();
+        fn irq112();
+        fn irq113();
+        fn irq114();
+        fn irq115();
+        fn irq116();
+        fn irq117();
+        fn irq118();
+        fn irq119();
+        fn irq120();
+        fn irq121();
+        fn irq122();
+        fn irq123();
+        fn irq124();
+        fn irq125();
+        fn irq126();
+        fn irq127();
         fn syscall_handler();
         fn isr0x82();
     }
@@ -332,8 +381,8 @@ pub extern "C" fn idt_init() -> i32 {
             addr!(irq15),
         ];
 
-        // MSI 向量 stub 表 (0x40-0x7F → irq16-irq79)
-        let msi_table: [u64; 64] = [
+        // MSI 向量 stub 表 (0x40-0x9F → irq16-irq127, 112 个 stub)
+        let msi_table: [u64; 112] = [
             addr!(irq16),
             addr!(irq17),
             addr!(irq18),
@@ -398,6 +447,54 @@ pub extern "C" fn idt_init() -> i32 {
             addr!(irq77),
             addr!(irq78),
             addr!(irq79),
+            addr!(irq80),
+            addr!(irq81),
+            addr!(irq82),
+            addr!(irq83),
+            addr!(irq84),
+            addr!(irq85),
+            addr!(irq86),
+            addr!(irq87),
+            addr!(irq88),
+            addr!(irq89),
+            addr!(irq90),
+            addr!(irq91),
+            addr!(irq92),
+            addr!(irq93),
+            addr!(irq94),
+            addr!(irq95),
+            addr!(irq96),
+            addr!(irq97),
+            addr!(irq98),
+            addr!(irq99),
+            addr!(irq100),
+            addr!(irq101),
+            addr!(irq102),
+            addr!(irq103),
+            addr!(irq104),
+            addr!(irq105),
+            addr!(irq106),
+            addr!(irq107),
+            addr!(irq108),
+            addr!(irq109),
+            addr!(irq110),
+            addr!(irq111),
+            addr!(irq112),
+            addr!(irq113),
+            addr!(irq114),
+            addr!(irq115),
+            addr!(irq116),
+            addr!(irq117),
+            addr!(irq118),
+            addr!(irq119),
+            addr!(irq120),
+            addr!(irq121),
+            addr!(irq122),
+            addr!(irq123),
+            addr!(irq124),
+            addr!(irq125),
+            addr!(irq126),
+            addr!(irq127),
         ];
 
         match manager.init(

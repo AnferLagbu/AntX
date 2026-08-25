@@ -635,7 +635,10 @@ pub extern "C" fn kernel_init() {
 
         // 10. Network (smoltcp + 网卡驱动)
         {
-            // SAFETY: qx_net_init 是 unsafe extern "C" FFI, 由启动流程串行调用.
+            // SAFETY: qx_net_init 签名是 `pub extern "C" fn`, 函数本身非 unsafe,
+            // 但 Rust 调用任何 extern "C" 函数必须包 unsafe 块 (FFI 调用约定: 调用方
+            // 负责确保跨边界 ABI 兼容性). 此处由启动流程串行调用 (BSP 单线程阶段),
+            // 满足 extern "C" 调用语义: 无 panic 跨边界传播、无不变量跨边界依赖.
             unsafe {
                 crate::kernel::framework::net::init::qx_net_init();
             }

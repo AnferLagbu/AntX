@@ -35,6 +35,16 @@ impl Driver for PciBusDriver {
 /// 调用内核 PCI 模块执行总线扫描和设备枚举,
 /// 然后将 PCI 总线注册到 Chitin 框架。
 /// 返回发现的设备数量。
+///
+/// # 并发约束 (B04-AUDIT-005 #3)
+///
+/// 本函数**必须在 BSP 单线程阶段调用** (AP 未启动). 调用方 `driver::init_all()`
+/// 由 `src/rust/src/lib.rs` 启动序列串行调用, 此时 AP 尚未启动. 即使 AP 启动后
+/// 并发触发 PCI 扫描, `framework::pci::init()` 入口的 `PCI_INITIALIZED` 原子检查
+/// + `DEVICE_LIST` 内部 `IrqSpinLock` 保证扫描与查询的并发安全.
+///
+/// 调用方契约: 不得在 SMP 启动后并发调用本函数. 如需运行时重新扫描, 应通过
+/// `pci::scan_all_buses()` 单独加锁调用.
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]
 // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定

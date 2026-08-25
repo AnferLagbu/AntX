@@ -588,12 +588,10 @@ impl DmaEngine {
 // OnceLock 返回 `&'static DmaEngine` 引用, 方法调用语法一致。
 static GLOBAL_DMA: OnceLock<DmaEngine> = OnceLock::new();
 
-/// 初始化全局 DMA Engine (在 boot 早期调用, 否则 get_dma() 触发 lazy init)
-pub fn init_dma_engine() {
-    let _ = GLOBAL_DMA.get_or_init(|slot| {
-        slot.write(DmaEngine::new());
-    });
-}
+// 注: 早期版本曾提供 `pub fn init_dma_engine()` 作为显式 boot 期初始化入口.
+// 但 `get_dma/get_dma_mut/dma` 三个访问器内部已用 `get_or_init` 实现 lazy init,
+// 显式入口属于冗余 API 且无调用方 (审核员 2026-08-24 指出).
+// B04-AUDIT-005 #7: 删除冗余 API, 保留 lazy init 单一路径.
 
 /// 获取全局 DMA Engine 的不可变引用
 ///
