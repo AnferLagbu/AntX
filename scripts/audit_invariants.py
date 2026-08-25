@@ -21,7 +21,6 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 SERVICES = BASE / 'src' / 'kernel' / 'services'
-FRAMEWORK = BASE / 'src' / 'kernel' / 'framework'
 TARGET_DIR = BASE / 'target' / 'audit'
 
 violations = []
@@ -46,57 +45,28 @@ def check_i1():
 def check_i2():
     """I2: services 不可直接访问内核内存 (裸指针解引用).
 
-    B01-21 修复: I2 检测范围限定到 framework 层.
-    设计依据: services 层有 `#![deny(unsafe_code)]` (B01-09 修复后),
-    编译期天然阻止裸指针解引用. 文本级判断"裸指针类型"不可靠且无必要.
-    framework 层是真正的 TCB, 需 I2 守护.
+    B01-25 修复: I2 检测范围回归 services 层.
+    设计依据: I2 不变式 (AGENTS.md §4.2) 语义为 "内核内存不可被 services
+    非法访问", 守护对象是 services, 而非 framework. framework 是合法 TCB,
+    裸指针解引用是其职责 (127 处全部位于 unsafe 块内), 其安全由 F4
+    (audit_safety_coverage.py SAFETY 100% 覆盖) 守护, 不属 I2 范畴.
+
+    历史: B01-21 (commit c00e9e55) 将 I2 范围误改为 framework 层, 产生
+    127 处误报 (framework 合法 unsafe 解引用). B01-25 恢复扫描 services,
+    消除误报. services 层 `#![deny(unsafe_code)]` (B01-09) 编译期保证
+    无裸指针, 本检查作为纵深防御 (防未来某天移除 deny).
+
+    注: 原 B01-21 前误报 (services/fs/hvfs/raidz_trait.rs:304 对 `&T`/
+    `Box` safe 解引用误报) 已由当前 pattern 负向前瞻排除方法实参
+    位置解决, 实测 services 0 违规.
     """
-    # 真正的违反: framework 中对裸指针的解引用 (*ptr).field
+    # 真正的违反: services 中对裸指针的解引用 (*ptr).field
     patterns = [
         r'(?<![\w.,(])\(\*\w+\)\.',        # (*ptr).field — 表达式起首, 非方法实参
         r'\(\*mut\s+\w+\)\.',              # (*mut T).field
         r'\(\*const\s+\w+\)\.',            # (*const T).field
     ]
-    # 扫描 framework (而非 services)
-    return _scan_framework(patterns, 'I2', exclude_patterns=[r'^\s*use\s+', r'^\s*//', r'^\s*//!'])
-
-
-def _scan_framework(patterns, invariant_id, exclude_patterns=None):
-    """扫描 framework 目录, 返回匹配数.
-
-    B01-21 新增: 与 _scan_services 平行函数, 扫描 framework 而非 services.
-    专用于 I2 不变式 (框架 TCB 内部裸指针解引用守护).
-
-    B01-21 已知限制: 文本级检测无法区分 unsafe 块内 vs 外, 100+ 误报
-    (被 unsafe 块包裹的裸指针解引用). 后续改进: 引入 syn AST 解析.
-    """
-    found = 0
-    for rs in FRAMEWORK.rglob('*.rs'):
-        with open(rs, 'r', encoding='utf-8', errors='replace') as f:
-            for lineno, line in enumerate(f, 1):
-                stripped = line.strip()
-                if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('//!'):
-                    continue
-                if exclude_patterns:
-                    skip = False
-                    for ep in exclude_patterns:
-                        if re.search(ep, stripped):
-                            skip = True
-                            break
-                    if skip:
-                        continue
-                for pat in patterns:
-                    if re.search(pat, stripped, re.IGNORECASE):
-                        rel = rs.relative_to(BASE)
-                        violations.append({
-                            'invariant': invariant_id,
-                            'file': str(rel),
-                            'line': lineno,
-                            'content': stripped[:120],
-                        })
-                        found += 1
-                        break
-    return found
+    return _scan_services(patterns, 'I2', exclude_patterns=[r'^\s*use\s+', r'^\s*//', r'^\s*//!'])
 
 
 def check_i3():

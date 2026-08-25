@@ -67,6 +67,39 @@
 
 ---
 
+## 🔵 第 0A 类：审计脚本门禁修复登记（2026-08-25 追加）
+
+> 2026-08-25 修复 audit_invariants.py 误报与 CI fail-open 门禁失效，登记修复依据与验证结果。
+
+### AUDIT-TOOL-001: audit_invariants.py I2 误报 127 处（已修复）
+
+| 字段 | 数据 |
+|---|---|
+| **根因** | B01-21（commit c00e9e55）将 I2 检测范围从 services 改为 framework——**方向性错误**。I2 不变式（AGENTS.md §4.2）语义为"内核内存不可被 **services** 非法访问"，守护对象是 services；framework 是合法 TCB，裸指针解引用是其职责（127 处全部位于 unsafe 块内），其安全由 F4（audit_safety_coverage.py SAFETY 100%）守护，不属 I2 范畴 |
+| **修复** | B01-25：I2 恢复扫描 services（实测 0 违规），删除 `_scan_framework` 与 `FRAMEWORK` 变量 |
+| **验证** | 脚本 6 项不变式全 PASS + 退出码 0；构造临时 services 违规探针验证 I2 仍能捕获（检测能力未退化） |
+| **状态** | [X]（2026-08-25，commit 见 git log） |
+
+### AUDIT-TOOL-002: ci-lint.yml audit-invariants job fail-open（已修复）
+
+| 字段 | 数据 |
+|---|---|
+| **根因** | `INVARIANTS_OUT=$(python3 scripts/audit_invariants.py 2>&1 || true)` —— `|| true` 使命令替换退出码恒为 0，后续 `${PIPESTATUS[0]}` 恒为 0，CI 永不因违规失败（fail-open） |
+| **修复** | 移除 `|| true`，改用 `set +e` / 显式捕获 `$?` 判断 |
+| **验证** | bash 模拟非零退出码时门禁正确捕获（RC=7 → FAIL） |
+| **状态** | [X]（2026-08-25） |
+
+### AUDIT-TOOL-003: ci-lint.yml audit-coupling job 同模式 fail-open（已修复）
+
+| 字段 | 数据 |
+|---|---|
+| **根因** | 与 AUDIT-TOOL-002 同模式：`COUPLING_OUT=$(python3 scripts/audit_coupling.py 2>&1 || true)`，`|| true` 掩盖退出码 |
+| **修复** | 与 AUDIT-TOOL-002 同样修复（移除 `|| true` + 显式捕获 `$?`），2026-08-25 与 AUDIT-TOOL-002 一并提交 |
+| **验证** | audit_coupling.py 当前返回 0（通过），修复后退出码可真实传递至 CI 判断 |
+| **状态** | [X]（2026-08-25） |
+
+---
+
 ## 🔵 第 0B 类：分册 3 归档遗留（2026-08-23 归档登记）
 
 > 分册 3（[archive/audit-fix-03-framework-mm-sync.md](./archive/audit-fix-03-framework-mm-sync.md)）归档时核查出 3 项"方案承诺未完全落地"的遗留，登记防止归档后丢失追踪。分册 3 主修复（B03-01~28）均已实装并通过验证门槛（双架构编译 0w0e + host-tests + 审计无回归）。
