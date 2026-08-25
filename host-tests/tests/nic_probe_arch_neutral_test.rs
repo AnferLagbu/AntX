@@ -7,21 +7,24 @@
 //! 通过源码分析防止后续重构重新引入:
 //!   `#[cfg(target_arch = "x86_64")]` / `#[cfg(target_arch = "aarch64")]`
 //!   在 nic_probe_all 函数体内出现 (这会破坏"一个二进制可在双架构运行").
+//!
+//! B04-09 优化拆分 (2026-08-25): nic_probe_all 随设备探测逻辑移至
+//! `src/kernel/framework/net/init/probe.rs`, 契约扫描路径同步更新.
 
 use std::fs;
 use std::path::Path;
 
 #[test]
 fn test_nic_probe_all_no_arch_mutex() {
-    let init_rs = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let probe_rs = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent().unwrap() // QueenX workspace root
-        .join("src/kernel/framework/net/init.rs");
-    let src = fs::read_to_string(&init_rs)
-        .unwrap_or_else(|e| panic!("无法读取 {}: {}", init_rs.display(), e));
+        .join("src/kernel/framework/net/init/probe.rs");
+    let src = fs::read_to_string(&probe_rs)
+        .unwrap_or_else(|e| panic!("无法读取 {}: {}", probe_rs.display(), e));
 
     // 定位 nic_probe_all 函数体
     let body_start = src.find("fn nic_probe_all()")
-        .expect("net/init.rs 缺少 nic_probe_all");
+        .expect("net/init/probe.rs 缺少 nic_probe_all");
     // body 范围: 直到下一个顶级 `fn ` / `static ` / `unsafe fn` / 文件末尾
     let after = &src[body_start..];
     // 找下一个 `fn ` 顶层的最早位置

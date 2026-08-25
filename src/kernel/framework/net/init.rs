@@ -31,6 +31,17 @@ pub use sockets::*;
 pub(crate) mod dns;
 pub use dns::*;
 
+// B04-09 优化 Step E: 查询/控制 API 拆至 query.rs.
+pub(crate) mod query;
+pub use query::*;
+
+// B04-09 优化 Step F: 设备探测拆至 probe.rs (仅 init 内部使用, 不 re-export).
+pub(crate) mod probe;
+
+// B04-09 优化 Step G: 配置入口 (FFI) 拆至 cmd.rs.
+pub(crate) mod cmd;
+pub use cmd::*;
+
 // ============================================================================
 // 初始化状态管理
 // ============================================================================
@@ -235,82 +246,6 @@ pub unsafe fn poll_network() {
         }
     }
 }
-
-// ============================================================================
-// 多网卡探测 (按优先级依次尝试)
-// ============================================================================
-
-/// # Safety
-///
-/// - 在网络子系统初始化入口被调用, 期间无其他并发探测
-/// - 依赖的 chitin/driver 框架 (`Driver::init`) 自身保证设备独占
-#[cfg(not(feature = "kernel_test"))]
-#[expect(
-    clippy::ptr_as_ptr,
-    reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
-)]
-unsafe fn nic_probe_all() -> Option<ChitinNetDevice> {
-    unsafe {
-        // I-53 修复: 去除编译时架构互斥, 双架构二进制按运行时探测顺序
-        // 尝试 e1000 (PCI 设备) 与 virtio-net (MMIO 设备). 两者驱动代码
-        // 均架构无关, 仅依赖 IoMem / PCI 抽象. QEMU 配置决定哪一个会成功.
-        //
-        // 探测顺序固定: e1000 -> virtio-net. 真实硬件 (e.g. PC 上) e1000
-        // 优先; QEMU virt 上 e1000 探测返回非 0 走 fallthrough 到 virtio.
-        //
-        // 失败: 全部探测返回非 0 / Box::into_raw 失败 / Driver::init 失败.
-
-        // 1) e1000 探测 (PCI 设备, 走 PCI 总线)
-        // aarch64: e1000_probe() 内部安全返回 -1 (无 PCI ECAM)
-        {
-            let probe_result = crate::kernel::framework::driver::e1000_probe();
-            if probe_result == 0 {
-                let mut dev = crate::kernel::framework::driver::e1000_take_device()?;
-                if crate::kernel::framework::driver::Driver::init(&mut *dev).is_err() {
-                    raw::klog_err("e1000: hardware init failed");
-                    return None;
-                }
-                let mac = dev.mac();
-                let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
-                let nic = ChitinNetDevice::new(&E1000_NET_OPS_STATIC, raw_ptr, mac);
-                raw::klog_msg("e1000: probed successfully");
-                return Some(nic);
-            }
-        }
-
-        // 2) virtio-net 探测 (MMIO 设备, 走 virtio 总线, 架构无关)
-        {
-            let probe_result = crate::kernel::framework::driver::virtio_net_probe();
-            if probe_result == 0 {
-                let dev = crate::kernel::framework::driver::virtio_net_take_device()?;
-                let mac = dev.mac;
-                let raw_ptr = alloc::boxed::Box::into_raw(dev) as *mut core::ffi::c_void;
-                let nic = ChitinNetDevice::new(&VIRTIO_NET_OPS_STATIC, raw_ptr, mac);
-                raw::klog_msg("virtio-net: probed successfully");
-                return Some(nic);
-            }
-        }
-
-        None
-    }
-}
-
-#[cfg(not(feature = "kernel_test"))]
-static E1000_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
-    crate::kernel::framework::chitin::NetOps {
-        send: crate::kernel::framework::driver::e1000_net_send,
-        try_receive: crate::kernel::framework::driver::e1000_net_recv,
-        get_mac: crate::kernel::framework::driver::e1000_net_get_mac,
-        handle_irq: Some(crate::kernel::framework::driver::e1000_net_irq),
-    };
-
-static VIRTIO_NET_OPS_STATIC: crate::kernel::framework::chitin::NetOps =
-    crate::kernel::framework::chitin::NetOps {
-        send: crate::kernel::framework::driver::virtio_net_send,
-        try_receive: crate::kernel::framework::driver::virtio_net_recv,
-        get_mac: crate::kernel::framework::driver::virtio_net_get_mac,
-        handle_irq: Some(crate::kernel::framework::driver::virtio_net_irq),
-    };
 
 // ============================================================================
 // 恢复机制 (P2-I-44 完整实现)
@@ -543,7 +478,7 @@ pub extern "C" fn qx_net_init() {
 
         raw::klog_msg("Step1: hardware probe");
 
-        let mut nic = if let Some(n) = nic_probe_all() {
+        let mut nic = if let Some(n) = probe::nic_probe_all() {
             n
         } else {
             let _ = transition_state(InitState::HardwareProbed, InitState::FullyInitialized);
@@ -678,142 +613,7 @@ fn net_tx_softirq_handler() {
     // 此 handler 为多核 + DMA 完成中断模式预留.
 }
 
-// ============================================================================
-// 网络配置入口 (用户态或驱动层调用)
-// ============================================================================
-
-/// 启动 DHCP (异步, 由 timer ISR 驱动 poll 完成)
-///
-/// 调用后 DHCP Discover 会在下一个 timer tick 发出。
-/// 用户态通过 poll/select 或轮询 `NET_CONFIGURED` 等待完成。
-///
-/// # Safety
-/// 调用方保证 NET 已初始化 (通过 `qx_net_init` 注册)，
-/// `NET_READY` 由网络栈在链路就绪后置位。
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
-    unsafe {
-        if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
-            return -1;
-        }
-        poll_network();
-        0
-    }
-}
-
-/// 设置静态 IP (x.x.x.x/prefix, gateway)
-///
-/// 格式: "10.0.2.15/24,10.0.2.2"
-/// 返回 0 成功, -1 失败
-///
-/// # Safety
-/// - `cidr_str` 与 `gw_str` 必须是有效的 C 字符串指针 (NUL 终止),
-///   指向的内存必须在调用期间保持有效。
-/// - 调用方保证 NET 已初始化。
-#[unsafe(no_mangle)]
-// 有意窄化: 显式收窄, 调用方保证值域
-#[expect(clippy::cast_possible_truncation)]
-#[expect(
-    clippy::similar_names,
-    reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
-)]
-#[expect(
-    clippy::manual_let_else,
-    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
-)]
-pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 {
-    unsafe {
-        if !crate::kernel::framework::net::NET_READY.load(Ordering::Acquire) {
-            return -1;
-        }
-
-        let _guard = NET_STATE.lock();
-
-        let stack = match raw::stack_mut() {
-            Some(s) => s,
-            None => return -1,
-        };
-
-        // 解析 CIDR 字符串 "a.b.c.d/prefix"
-        let mut octets = [0u8; 4];
-        let mut prefix = 24u8;
-        let mut parsing_prefix = false;
-        let mut octet_idx = 0usize;
-        let mut current = 0u32;
-
-        let mut ptr = cidr_str;
-        loop {
-            let b = *ptr;
-            if b == 0 {
-                if parsing_prefix {
-                    prefix = current as u8;
-                } else {
-                    octets[octet_idx] = current as u8;
-                }
-                break;
-            }
-            if b == b'/' {
-                octets[octet_idx] = current as u8;
-                parsing_prefix = true;
-                current = 0;
-            } else if b == b'.' && !parsing_prefix {
-                octets[octet_idx] = current as u8;
-                octet_idx += 1;
-                if octet_idx >= 4 {
-                    return -1;
-                }
-                current = 0;
-            } else if b.is_ascii_digit() {
-                current = current * 10 + u32::from(b - b'0');
-            } else {
-                return -1;
-            }
-            ptr = ptr.add(1);
-        }
-
-        let ip = smoltcp::wire::Ipv4Address::new(octets[0], octets[1], octets[2], octets[3]);
-
-        // 解析网关
-        let mut gw_octets = [0u8; 4];
-        let mut gw_idx = 0usize;
-        let mut gw_current = 0u32;
-        let mut gw_ptr = gw_str;
-        loop {
-            let b = *gw_ptr;
-            if b == 0 {
-                gw_octets[gw_idx] = gw_current as u8;
-                break;
-            }
-            if b == b'.' {
-                gw_octets[gw_idx] = gw_current as u8;
-                gw_idx += 1;
-                if gw_idx >= 4 {
-                    return -1;
-                }
-                gw_current = 0;
-            } else if b.is_ascii_digit() {
-                gw_current = gw_current * 10 + u32::from(b - b'0');
-            } else {
-                return -1;
-            }
-            gw_ptr = gw_ptr.add(1);
-        }
-        let gw =
-            smoltcp::wire::Ipv4Address::new(gw_octets[0], gw_octets[1], gw_octets[2], gw_octets[3]);
-
-        let cidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(ip, prefix));
-        stack.iface.update_ip_addrs(|addrs| {
-            addrs.clear();
-            let _ = addrs.push(cidr);
-        });
-        let _ = stack.iface.routes_mut().add_default_ipv4_route(gw);
-
-        crate::kernel::framework::net::NET_CONFIGURED.store(true, Ordering::Release);
-
-        raw::klog_msg("Static IP configured");
-        0
-    }
-}
+// B04-09 优化 Step G: qx_net_start_dhcp / qx_net_static_ip 已移至 cmd.rs.
 
 // ============================================================================
 // 公共 API
@@ -841,143 +641,8 @@ const TOTAL_SLOTS: usize = MAX_SM_FD + MAX_SOCKETS;
 // 原 Align64 对齐优化已通过 NetState 内部字段布局保留.
 // TCP buffer storage (per fd): 由 k_malloc 按需分配, close 时 k_free 归还.
 
-pub fn is_network_initialized() -> bool {
-    crate::kernel::framework::net::NET_READY.load(Ordering::Acquire)
-}
-
-pub fn is_network_configured() -> bool {
-    crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire)
-}
-
-pub fn get_init_state() -> InitState {
-    match G_INIT_STATE.load(Ordering::Acquire) {
-        0 => InitState::Uninitialized,
-        1 => InitState::HardwareProbed,
-        2 => InitState::InterfaceReady,
-        3 => InitState::FullyInitialized,
-        _ => InitState::Failed,
-    }
-}
-
-// ============================================================================
-// D1.1/D1.2 高层 API 底层实现
-// ============================================================================
-
-/// 网络状态快照 (单次原子读, 多字段可能轻微不一致 — 用于观测/debug)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NetStatus {
-    pub state: InitState,
-    pub mac: [u8; 6],
-    pub ipv4: Option<[u8; 4]>,
-    pub gateway: Option<[u8; 4]>,
-    pub dns: [Option<[u8; 4]>; 3],
-    pub dhcp_configured: bool,
-}
-
-impl NetStatus {
-    pub fn capture() -> Self {
-        let mac_raw = G_MAC.load(Ordering::Acquire);
-        let mac = mac_raw.to_be_bytes()[2..8].try_into().unwrap_or([0; 6]);
-        let ipv4 = ipv4_from_atomic(G_IPV4.load(Ordering::Acquire));
-        let gateway = ipv4_from_atomic(G_GATEWAY.load(Ordering::Acquire));
-        let dns = [
-            ipv4_from_atomic(G_DNS[0].load(Ordering::Acquire)),
-            ipv4_from_atomic(G_DNS[1].load(Ordering::Acquire)),
-            ipv4_from_atomic(G_DNS[2].load(Ordering::Acquire)),
-        ];
-        Self {
-            state: get_init_state(),
-            mac,
-            ipv4,
-            gateway,
-            dns,
-            dhcp_configured: crate::kernel::framework::net::NET_CONFIGURED.load(Ordering::Acquire),
-        }
-    }
-}
-
-fn ipv4_from_atomic(v: u32) -> Option<[u8; 4]> {
-    if v == 0 { None } else { Some(v.to_be_bytes()) }
-}
-
-#[expect(
-    clippy::match_same_arms,
-    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
-)]
-/// 主动触发网络初始化 (非阻塞; 失败返回 false)
-///
-/// # 行为
-/// - 状态机 = Uninitialized 时, 直接返回 false (需要先有 chitin 设备注册)
-/// - 状态机 = HardwareProbed/InterfaceReady 时, 启动 DHCP 握手
-/// - 状态机 = `FullyInitialized` 时, 直接返回 true
-/// - 状态机 = Failed 时, 不重试, 返回 false
-pub fn trigger_init() -> bool {
-    match get_init_state() {
-        InitState::FullyInitialized => true,
-        InitState::HardwareProbed | InitState::InterfaceReady => {
-            // DHCP 已经在轮询路径里跑了, 此处仅给上层一个"我已确认"信号
-            true
-        }
-        _ => false,
-    }
-}
-
-/// 查询设备 MAC 地址
-pub fn get_mac_address() -> Option<[u8; 6]> {
-    let raw = G_MAC.load(Ordering::Acquire);
-    if raw == 0 {
-        None
-    } else {
-        let bytes = raw.to_be_bytes();
-        Some([bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]])
-    }
-}
-
-/// 查询当前 IPv4
-pub fn get_ipv4_address() -> Option<[u8; 4]> {
-    ipv4_from_atomic(G_IPV4.load(Ordering::Acquire))
-}
-
-/// 查询默认网关
-pub fn get_default_gateway() -> Option<[u8; 4]> {
-    ipv4_from_atomic(G_GATEWAY.load(Ordering::Acquire))
-}
-
-/// 查询 DNS 服务器列表
-pub fn get_dns_servers() -> [Option<[u8; 4]>; 3] {
-    [
-        ipv4_from_atomic(G_DNS[0].load(Ordering::Acquire)),
-        ipv4_from_atomic(G_DNS[1].load(Ordering::Acquire)),
-        ipv4_from_atomic(G_DNS[2].load(Ordering::Acquire)),
-    ]
-}
-
-/// 显式关闭网络栈 (重置配置 + 状态)
-pub fn shutdown_network() {
-    let _guard = NET_STATE.lock();
-    G_IPV4.store(0, Ordering::Release);
-    G_GATEWAY.store(0, Ordering::Release);
-    G_DNS[0].store(0, Ordering::Release);
-    G_DNS[1].store(0, Ordering::Release);
-    G_DNS[2].store(0, Ordering::Release);
-    crate::kernel::framework::net::NET_CONFIGURED.store(false, Ordering::Release);
-    G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
-    raw::klog_msg("Network shutdown");
-}
-
-/// 重置网络栈状态 (供栏栈 BHR / 异常恢复使用)。
-///
-/// # Safety
-/// - 必须持有 `NET_LOCK` (内部获取)。
-/// - 必须在所有 socket 关闭后调用, 否则可能泄漏资源。
-pub unsafe fn reset_network_state() {
-    let _guard = NET_STATE.lock();
-
-    G_INIT_STATE.store(InitState::Uninitialized as u8, Ordering::Release);
-
-    raw::clear_all();
-    SOCKETS_INITIALIZED.store(false, Ordering::Release);
-}
+// B04-09 优化 Step E: 查询/控制 API (is_network_*/get_*/NetStatus/trigger_init/
+// shutdown_network/reset_network_state) 已移至 query.rs.
 
 // ============================================================================
 // REVAL-W W4.2.3.4 步骤 2: SmoltcpNetStack 桥接 safe API (init 模块顶层)

@@ -57,7 +57,7 @@
 - **B04-09. framework/net 单文件过大与句柄重用**
   - 描述：framework/net 存在单文件 >1000 行（违反简单优先）与句柄重用（u32::MAX 句柄冲突）。
   - 方案：**决策点 D6 已裁决（2026-08-23 用户选"与 B04-19 合并"）**：net 单文件拆分与 e1000 TxRing 拆分合并处理，一次理顺 framework net 边界；句柄分配改自增+冲突检测。DECISION-062。
-  - 状态：[X]（2026-08-24 审核退回 → **2026-08-25 接手实装**：init.rs 2060 行拆分为 init.rs 1191 行 + 4 子模块——raw.rs 638（privileged static mut 访问）、state.rs 120（NetState/InitState/G_* 原子状态）、sockets.rs 75（SOCKET_STORAGE/SOCKET_SET/容量配置）、dns.rs 93（HostEntry/STATIC_HOSTS/dns_resolve）。句柄重用核证无冲突：`u32::MAX` 作哨兵，真实句柄值域 [0, MAX_SOCKETS=1024) << u32::MAX。剩余主体（主流程/NetOps/softirq/栈 API）与子模块强互耦，**2026-08-25 用户决策：拆分止步，不再执着降低 TCB 比例**（见下方 DECISION-070））
+  - 状态：[X]（2026-08-24 审核退回 → **2026-08-25 接手实装**：init.rs 2060 行拆分为 init.rs 1191 行 + 4 子模块——raw.rs 638（privileged static mut 访问）、state.rs 120（NetState/InitState/G_* 原子状态）、sockets.rs 75（SOCKET_STORAGE/SOCKET_SET/容量配置）、dns.rs 93（HostEntry/STATIC_HOSTS/dns_resolve）。句柄重用核证无冲突：`u32::MAX` 作哨兵，真实句柄值域 [0, MAX_SOCKETS=1024) << u32::MAX。**2026-08-25 用户决策：不再执着降低 TCB 比例**（DECISION-070）→ **2026-08-25 优化拆分（用户选方案 B）**：init.rs 856 行 + 7 子模块——新增 probe.rs 84（nic_probe_all/NetOps）、query.rs 158（查询/控制 API）、cmd.rs 124（qx_net_* FFI 配置入口）；dns.rs 126（+parse_cidr 供 cmd 复用，消除 qx_net_static_ip 手写解析）。init.rs 2060→856 行，单文件 >1000 行问题根治）
 
 - **B04-10. dma/engine.rs GLOBAL_DMA 嵌套锁（P0）**
   - 描述：`dma/engine.rs:570` `static GLOBAL_DMA: Mutex<DmaEngine>` 外层锁 + 内部 `Mutex<Vec<DmaMapping>>`/`Mutex<mmio_regions>` 嵌套；`shutdown`（engine.rs:57-68）、`submit_transfer → ioremap`（engine.rs:218）同线程持外层再取内层 → 死锁。
@@ -160,8 +160,8 @@
 
 - **DECISION-070**
   - 描述：B04-09 net 拆分是否继续向"降低 TCB 比例"方向推进。
-  - 方案：**用户 2026-08-25 决策：当前 TCB 已是最优状态，不再执着降低比例，继续拆分得不偿失**。net 拆分目标锁定为可维护性（单文件 >1000 行消除），不以 TCB 占比为指标。拆分止步于当前形态：init.rs 1191 行 + raw/state/sockets/dns 4 子模块。
-  - 状态：[X]（2026-08-25 用户决策登记；B04-09 拆分收尾，不再继续拆 init.rs 剩余主体）
+  - 方案：**用户 2026-08-25 决策：当前 TCB 已是最优状态，不再执着降低比例，继续拆分得不偿失**。net 拆分目标锁定为可维护性（单文件 >1000 行消除），不以 TCB 占比为指标。2026-08-25 用户进一步选**方案 B 完整拆分**：init.rs 856 行 + 7 子模块（raw/state/sockets/dns/probe/query/cmd），单文件 >1000 行根治。
+  - 状态：[X]（2026-08-25 用户决策登记 + 方案 B 实施完成；恢复机制因 F3 循环依赖保留 init.rs 主体，不再继续拆）
 
 ## 审核员审计入口
 
@@ -391,20 +391,34 @@ MSI-X 框架层 `framework::pci::msi::msix_enable` 已实装 (`msi.rs:331`), 但
 - **raw.rs**：孤儿死文件 → 真正作为 raw 子模块引用（`pub(crate) mod raw;`），638 行
 - 关键差异（vs 委托人撤回原因）：拆分时对每个子模块同时用 `pub use state::*` 等 re-export，保持 init 主体与其他调用方（sm_fi.rs / services/net）符号路径不变，避免 89 处编译错误重演
 - 句柄重用核证：`u32::MAX` 作无句柄哨兵，真实 smoltcp 句柄值域 [0, MAX_SOCKETS=1024)，无冲突
-- **2026-08-25 用户决策（DECISION-070）：TCB 已是最优状态，不再执着降低比例**，拆分止步于当前形态
+- **2026-08-25 用户决策（DECISION-070）：TCB 已是最优状态，不再执着降低比例**——拆分目标锁定为可维护性（单文件 >1000 行消除），不以 TCB 占比为指标
+
+#### 优化拆分（2026-08-25, 用户选方案 B 完整拆分）
+
+进一步依赖分析发现 3 个低耦合高内聚区块可独立，且 `qx_net_static_ip` 与 `dns::parse_ipv4_literal` 存在重复解析实现：
+
+- **query.rs（158 行）**：查询/控制 API 拆出——`is_network_initialized` / `is_network_configured` / `get_init_state` / `NetStatus` / `trigger_init` / `get_*` / `shutdown_network` / `reset_network_state`（纯 G_* 原子读，零内部依赖）
+- **probe.rs（84 行）**：设备探测拆出——`nic_probe_all` + `E1000_NET_OPS_STATIC` / `VIRTIO_NET_OPS_STATIC`（自包含）
+- **cmd.rs（124 行）**：配置入口拆出——`qx_net_start_dhcp` / `qx_net_static_ip`（FFI，单向依赖 `poll_network` 不成环）
+- **dns.rs 126 行**：新增 `parse_cidr`（支持可选 /prefix），`cmd.rs::qx_net_static_ip` 复用其 + `parse_ipv4_literal`，消除原 62 行手写解析循环（两段重复实现合一）
+- 恢复机制（net_save/net_restore/net_reset）保持 init.rs：`net_restore → qx_net_init` 与 `qx_net_init 注册 net_restore` 构成双向依赖，拆出即违反 F3 循环依赖，**不可拆**（印证 DECISION-070 判断）
+- 契约测试同步：`nic_probe_arch_neutral_test`（I-53）扫描路径 init.rs → init/probe.rs
 
 #### B04-09 最终状态（2026-08-25）
 
 ```
-framework/net/init.rs       1191 行  (2060 → 拆分后主体)
+framework/net/init.rs       856 行  (2060 → 二次拆分后主体: 主流程+轮询+恢复+桥接)
+framework/net/init/probe.rs   84 行  (nic_probe_all + NetOps static)
+framework/net/init/query.rs  158 行  (查询/控制 API, 纯原子读)
+framework/net/init/cmd.rs    124 行  (qx_net_* FFI 配置入口)
 framework/net/init/raw.rs    638 行  (privileged static mut 访问集中)
 framework/net/init/state.rs  120 行  (NetState/InitState/G_* 原子状态)
 framework/net/init/sockets.rs 75 行  (SOCKET_STORAGE/SOCKET_SET/容量配置)
-framework/net/init/dns.rs     93 行  (HostEntry/STATIC_HOSTS/dns_resolve)
+framework/net/init/dns.rs    126 行  (HostEntry/dns_resolve/parse_ipv4_literal/parse_cidr)
 framework/net/init/sm_fi.rs 1129 行  (既有, 不变)
 ```
 
-init.rs 从 2060 行降至 1191 行，单文件 >1000 行问题缓解（剩 1191 行为主流程 + NetOps + softirq + 栈 API，与子模块强互耦，拆分边际收益为负，经用户确认止步）。
+init.rs 从 2060 行降至 856 行，单文件 >1000 行问题**根治**（而非缓解）。TCB 占比不变（framework 内部重组）。
 
 #### ~~DECISION-067~~（作废：委托人自建，无正式记录，用户未裁决，2026-08-25 接手标注）：B05 net 拆分收尾
 
