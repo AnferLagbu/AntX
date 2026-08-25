@@ -956,7 +956,8 @@ impl NvmeController {
         self.io_cq_phys = cq_phys;
 
         // 创建 I/O Completion Queue (Admin 命令)
-        let cmd_cq = fw_nvme::NvmeCommand::create_cq(IO_QID, cq_phys);
+        // services 层 NVMe 走 polling, irq_vector=0 (MSI-X disable 时合法)
+        let cmd_cq = fw_nvme::NvmeCommand::create_cq(IO_QID, cq_phys, 0);
         if self.submit_admin_cmd(cmd_cq).is_err() {
             slog_warn!(Driver, "创建 I/O CQ 失败");
             return false;

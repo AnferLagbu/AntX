@@ -77,6 +77,8 @@ const MSI_CTRL_64BIT: u16 = 0x0080;
 
 /// MSI-X Enable
 const MSIX_CTRL_ENABLE: u16 = 1 << 15;
+/// MSI-X Function Mask (bit 14). 当为 1 时, 所有 vector 视为 masked.
+const MSIX_CTRL_MASKALL: u16 = 1 << 14;
 /// MSI-X Table Size (bits 0-10)
 const MSIX_CTRL_TSIZE: u16 = 0x07FF;
 
@@ -368,7 +370,11 @@ pub fn msix_enable(dev: &pci::PciDevice, num_vectors: u16) -> Option<MsixConfig>
                 let entry = &mut *table_virt;
                 #[cfg(target_arch = "x86_64")]
                 {
-                    entry.msg_addr_lo = 0xFEE00000; // LAPIC 地址
+                    // MSIX-03 修复: MSI-X addr 应含 destination 字段 (bits 19:12 = LAPIC ID).
+                    // 此前硬编码 0xFEE00000 (dest=0) 在多 LAPIC 系统上不投递 (QEMU 默认
+                    // LAPIC ID=0x01000000 拆 bits 19:12 = 0x10, dest=0 无法匹配任何 CPU).
+                    let lapic_id = crate::kernel::framework::arch::apic::get_id() as u32;
+                    entry.msg_addr_lo = 0xFEE00000 | ((lapic_id & 0xFF) << 12);
                     entry.msg_addr_hi = 0;
                 }
                 #[cfg(target_arch = "aarch64")]
@@ -382,8 +388,11 @@ pub fn msix_enable(dev: &pci::PciDevice, num_vectors: u16) -> Option<MsixConfig>
         }
     }
 
-    // 启用 MSI-X
-    let new_ctrl = ctrl | MSIX_CTRL_ENABLE;
+    // 启用 MSI-X: 清除 MASKALL (bit14) 同时设 ENABLE (bit15).
+    // QEMU 默认 msix_mask_all 把 vector_ctrl maskbit 全置 1, function_masked=true.
+    // 我们已写 Table entry vector_ctrl=0 (unmask), 若不清 MASKALL, QEMU 仍视为 function masked
+    // → msix_notify 跳过投递. 必须 ENABLE=1 且 MASKALL=0.
+    let new_ctrl = (ctrl | MSIX_CTRL_ENABLE) & !MSIX_CTRL_MASKALL;
     pci::write_config_word(
         dev.bus,
         dev.device,

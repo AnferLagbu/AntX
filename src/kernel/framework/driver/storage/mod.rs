@@ -29,6 +29,8 @@ pub use ahci::{AhciController, AhciPort, AtaCommand, H2dFis};
 pub use nvme::{NvmeCommand, NvmeCompletion, NvmeController};
 
 use super::framework::{self, Driver};
+#[cfg(target_arch = "x86_64")]
+use crate::kernel::framework::arch::InterruptArch;
 use crate::kernel::framework::iomem::IoMem;
 #[cfg(target_arch = "x86_64")]
 use crate::kernel::framework::mm::PAGE_SIZE;
@@ -171,7 +173,82 @@ pub fn storage_init() -> framework::Result<()> {
                     Ok(()) => {
                         // B07 MSI-X 完整接入: 启用 MSI-X + 注册 ISR.
                         if let Some(msi_vector) = controller.enable_msix(dev) {
-                            // msi.rs::msix_enable 分配 vector ∈ [MSI_VECTOR_BASE=0x40, 0x40+64).
+                            // MSIX-03: 创建 I/O 队列对 (现在已知 MSI-X vector, 可正确写 cdw11[31:16])
+                            // NVMe vector 字段 = MSI-X Table 数组索引, 与 LAPIC vector 不同.
+                            // 0 → Table[0] entry, 该 entry.msg_data = msi_vector (LAPIC vector).
+                            match controller.create_io_queue(0) {
+                                Ok(()) => {
+                                    crate::klog_info!(Driver, "[MSIX-03][diag] create_io_queue OK");
+                                }
+                                Err(e) => {
+                                    crate::klog_warn!(
+                                        Driver,
+                                        "NVMe: create_io_queue failed after MSI-X enable: {:?}, falling back to poll",
+                                        e
+                                    );
+                                    // I/O 队列失败: 不 push 到控制器表, 不注册 ISR 测试路径
+                                    continue;
+                                }
+                            }
+                            // MSIX-03: 一次性打印 LAPIC + MSI-X 状态 (RFLAGS / SVR / LAPIC ID /
+                            // MSI-X ctrl / Table[0] entry). 是中断路径打通的关键证据.
+                            {
+                                let mut rflags: u64 = 0;
+                                // SAFETY: 只读 RFLAGS
+                                unsafe {
+                                    core::arch::asm!("pushfq; pop {0}", out(reg) rflags, options(nomem));
+                                }
+                                use crate::kernel::framework::pci::msi::pci_find_capability;
+                                let (lapic_id, ctrl, entry_addr, entry_data, entry_vc) =
+                                    if let Some(co) = pci_find_capability(dev, 0x11) {
+                                        let ctrl = crate::kernel::framework::pci::read_config_word(
+                                            dev.bus, dev.device, dev.function, co + 0x02,
+                                        );
+                                        let table_info = crate::kernel::framework::pci::read_config_dword(
+                                            dev.bus, dev.device, dev.function, co + 0x04,
+                                        );
+                                        let tbar = (table_info & 0x07) as usize;
+                                        let toff = (table_info & !0x07) as u64;
+                                        // SAFETY: te 指向设备 MSI-X Table MMIO 区域 (由 msix_enable 刚配置)
+                                        let te =
+                                            (dev.bars[tbar].base_addr + toff) as *const u32;
+                                        let (addr, data, vc) = unsafe {
+                                            (
+                                                core::ptr::read_volatile(te),
+                                                core::ptr::read_volatile(te.add(2)),
+                                                core::ptr::read_volatile(te.add(3)),
+                                            )
+                                        };
+                                        (
+                                            crate::kernel::framework::arch::apic::get_id(),
+                                            ctrl,
+                                            addr,
+                                            data,
+                                            vc,
+                                        )
+                                    } else {
+                                        (
+                                            crate::kernel::framework::arch::apic::get_id(),
+                                            0u16,
+                                            0u32,
+                                            0u32,
+                                            0u32,
+                                        )
+                                    };
+                                crate::klog_info!(
+                                    Driver,
+                                    "[MSIX-03][diag] rflags={:#X} IF={} svr={:#X} lapic_id={} msix ctrl={:#X} entry: addr={:#X} data={} vec_ctrl={:#X}",
+                                    rflags,
+                                    (rflags & 0x200) != 0,
+                                    crate::kernel::framework::arch::apic::apic_read(0xF0),
+                                    lapic_id,
+                                    ctrl,
+                                    entry_addr,
+                                    entry_data,
+                                    entry_vc
+                                );
+                            }
+                            // msi.rs::msix_enable 分配 vector ∈ [MSI_VECTOR_BASE=0x40, 0x40+MSI_VECTOR_COUNT=96).
                             // IDT 索引 = vector - IRQ_BASE (0x20), 例如 vector=0x40 → irq=32.
                             let irq = msi_vector - crate::kernel::framework::idt::IRQ_BASE;
                             if let Err(e) = register_nvme_msix_isr(irq, msi_vector) {
@@ -201,6 +278,55 @@ pub fn storage_init() -> framework::Result<()> {
                         );
                         NVME_CONTROLLERS.lock().push(controller);
                         nvme_found += 1;
+
+                        crate::klog_info!(Driver, "[MSIX-03] pre-test hook entered");
+
+                        // MSIX-03: 受控 MSI-X 中断投递验证 — 开 IF 后经 ISR 路径发 I/O 命令,
+                        // 验证 handle_irq MSI 分支 → LAPIC EOI → ISR → I/O CQ 处理.
+                        // 该 hook 是 MSIX-03/07 端到端验收点: ISR-driven io read 的最终状态
+                        // (Ok 或 Err) 反映 MSI-X 中断路径是否真正打通.
+                        {
+                            // 取刚 push 的控制器原始指针, 释放全局锁后供 ISR 测试使用.
+                            let ctrl_ptr = {
+                                let mut cs = NVME_CONTROLLERS.lock();
+                                cs.last_mut().expect("NVMe controller just pushed")
+                                    as *mut nvme::NvmeController
+                            };
+                            // SAFETY: 单核; 等待期间主上下文暂停于 hlt, ISR 抢占时通过
+                            // NVME_CONTROLLERS 锁重新获取 &mut, 二者不会同时访问.
+                            let ctrl = unsafe { &mut *ctrl_ptr };
+                            if ctrl.irq_vector.is_some() {
+                                // 开 IF 让 LAPIC 能投递 MSI-X 中断.
+                                let _saved_if =
+                                    crate::kernel::framework::arch::CurrentArch::interrupt_disable();
+                                crate::kernel::framework::arch::CurrentArch::interrupt_enable();
+                                // 经 I/O CQ ISR 路径读 ns=1 sector=0 1 扇区:
+                                // 1. 分配 DMA buf
+                                // 2. 构造 Read 命令
+                                // 3. 走 submit_io_command_isr (写 SQ + 敲 SQ doorbell + hlt 等 ISR)
+                                // 4. ISR 由 LAPIC MSI-X (vector=64) 唤醒, 处理 I/O CQ 完成 entry
+                                let r: framework::Result<()> = (|| {
+                                    use crate::kernel::framework::mm::PAGE_SIZE;
+                                    let dma = crate::kernel::framework::dma::get_dma();
+                                    let (bv, bp) = dma
+                                        .alloc_coherent(PAGE_SIZE as usize)
+                                        .ok_or(framework::DriverError::Busy)?;
+                                    let cmd = nvme::NvmeCommand::read(1, 0, 1, bp.0);
+                                    // SAFETY: cmd 引用 valid NvmeCommand, submit_io_command_isr
+                                    // 调用方保证指针/类型有效 (cmd 引用栈上对象, DMA buf 有效)
+                                    let res = unsafe { ctrl.submit_io_command_isr_pub(&cmd) };
+                                    dma.free_coherent(bv, PAGE_SIZE as usize);
+                                    res
+                                })();
+                                // 恢复 boot IF=0
+                                let _ = crate::kernel::framework::arch::CurrentArch::interrupt_disable();
+                                klog_info!(
+                                    Driver,
+                                    "[MSIX-03] ISR-driven io read: {:?}",
+                                    r
+                                );
+                            }
+                        }
                     }
                     Err(e) => {
                         klog_warn!(
@@ -433,6 +559,11 @@ pub fn nvme_controller_count() -> usize {
 /// 内容, 仅作 IDT 签名要求.
 extern "C" fn nvme_msix_irq_handler(_frame: *mut crate::kernel::framework::idt::InterruptFrame) {
     // B07: handle_irq 已自动 EOI (LAPIC 路径), 这里只需 dispatch 给 controller.
+    // MSIX-03: 中断触发计数 — 首次 + 每 1000 次打印, 验证真实 MSI-X 投递路径.
+    let count = NVME_MSIX_IRQ_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+    if count <= 5 || count.is_multiple_of(1000) {
+        crate::klog_info!(Driver, "[NVMe] MSI-X IRQ {} fired (total {})", count, count);
+    }
     let mut controllers = NVME_CONTROLLERS.lock();
     for ctrl in controllers.iter_mut() {
         if ctrl.irq_vector.is_some() {
@@ -440,6 +571,10 @@ extern "C" fn nvme_msix_irq_handler(_frame: *mut crate::kernel::framework::idt::
         }
     }
 }
+
+/// NVMe MSI-X ISR 触发计数 (MSIX-03 验证)
+static NVME_MSIX_IRQ_COUNT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 /// 注册 NVMe MSI-X ISR.
 ///

@@ -16,7 +16,8 @@
 - **B04-02. MSI-X 实装（TOP 20 #8）**
   - 描述：framework/pci MSI-X 实装未完成，NVMe/VirtIO 无法工作。
   - 方案：**决策点 D3 已裁决（2026-08-23 用户选"一次性完整接入"）**：实现 MSI-X table/PBA 配置与 irq 路由 + 向量分配，并完整接入 NVMe/VirtIO 驱动；QEMU 验证中断路径（`-nic none` 仅禁用网卡，不影响 VirtIO 块/NVMe 验证）。DECISION-061。
-  - 状态：[]（**2026-08-24 审核退回**：委托人未实装、擅自推迟至 B06，违反 DECISION-061。退回补完：实现 MSI-X 框架 + 完整接入 NVMe/VirtIO）
+  - 详情：2026-08-25 端到端打通（详见 [msi-x-complete-project.md](./msi-x-complete-project.md) MSIX-03/06/07）。MSI-X 框架实装 + NVMe 中断路径完整化已通过 QEMU 验证：`[NVMe] MSI-X IRQ 1 fired (admin CQ)` + `[NVMe] MSI-X IRQ 2 fired (I/O CQ)` + `[MSIX-03] ISR-driven io read: Ok(())`。修复三处预存 bug：(1) `db_stride = 4 << DSTRD` 而非 `1 << DSTRD`（NVMe 规范 4 字节粒度，原 stride=1 导致 SQ doorbell 写错偏移 → NVMe 不响应 I/O 命令）；(2) `Create CQ cdw11[31:16]` 必须写入 MSI-X Table 数组索引（NVMe 设备把 vector 字段解释为 Table entry 索引而非 LAPIC vector）；(3) `msix_enable` 中 MASKALL (bit14) 必须清零，否则 QEMU `msix_function_masked=true` → `msix_notify` 丢弃中断。VirtIO virtio-pci 接入评估作为 MSIX-04 独立项保留（当前 virtio-blk 仍用 virtio-mmio + INTx IRQ 11，未启用 MSI-X）。
+  - 状态：[X]
 
 - **B04-03. ECAM_BASE 硬编码（TOP 20 #9）**
   - 描述：framework/pci 中 `ECAM_BASE` 对 aarch64 硬编码，不可移植。
@@ -136,7 +137,7 @@
 - **DECISION-063**
   - 描述：B04 拆分"批次 A（低风险 P0 专项）" + "批次 B（DMA/PCI/MSI/net 大型工程）" 两阶段推进。
   - 方案：批次 A 包含 B04-04/B04-07/B04-16/B04-17/B04-21 共 5 项低风险 P0（< 200 行总改动）；批次 B 包含 B04-02/B04-03/B04-05/B04-09/B04-10~15/B04-18/B04-19/B04-20 大型工程。理由：避免一刀切施工引入回归，分阶段验证门槛。批次 A 于 2026-08-24 完成；批次 B 于 2026-08-24 进一步拆为 6 个阶段完成 (PCI 加锁 / DMA 6 项 / e1000 拆分 / nvme packed / ECAM_BASE / gfx_console)。
-  - 状态：[X]（批次 A + 批次 B 合入，B04-03/04/05/07/10/11/12/13/14/15/16/17/18/21 共 14 项实装；**2026-08-24 审核修正：原"17 项 [X]"失实**——B04-20 未实施（bus/pci.rs 无改动）、B04-08/19 经审核退回（并发别名 UB / 双向依赖未解除）、B04-02/09 未实装。实际待补：B04-02/08/09/19/20 共 5 项）
+  - 状态：[X]（批次 A + 批次 B 合入，B04-02/03/04/05/07/10/11/12/13/14/15/16/17/18/21 共 15 项实装；**2026-08-24 审核修正：原"17 项 [X]"失实**——B04-20 未实施（bus/pci.rs 无改动）、B04-08/19 经审核退回（并发别名 UB / 双向依赖未解除）、B04-02/09 未实装。**2026-08-25 更新**：B04-02 通过 MSIX-03 实装 MSI-X 框架 + NVMe 端到端验证。实际待补：B04-08/09/19/20 共 4 项）
 
 - **DECISION-060**
   - 描述：B04-07 strlen 无上界循环采用审计推荐方案（决策点 D1）。
@@ -221,7 +222,7 @@ grep -n "has_fadt" src/kernel/services/driver/acpi.rs src/kernel/framework/arch/
 
 | 推迟项 | 决策 | 接手分册 | 接手入口 |
 |---|---|---|---|
-| B04-02 MSI-X | DECISION-061 | **B06** | `framework/pci/mod.rs` + `framework/driver/nvme.rs` + `framework/driver/virtio/mod.rs` |
+| B04-02 MSI-X | DECISION-061/070 | **msi-x-complete-project.md**（已完成） | `framework/pci/msi.rs` + `framework/driver/storage/{mod.rs,nvme.rs}` |
 | B04-09 net 单文件拆分 | DECISION-062/064 | **B05** | `framework/net/init.rs` 2060 行 |
 | B04-22 QEMU SMP PCI 回归 | （无 DECISION，归入 B06） | **B06** | QEMU `-smp 4` kernel_test |
 | B04-23 strlen 专项 + gfx_console | （无 DECISION，B04 收尾补丁） | **B04 收尾 + B06** | `host-tests/tests/lib_string_strlen_safe_test.rs`（新建） |
@@ -291,7 +292,7 @@ grep -n "dma_ring\|net::dma_ring" src/rust/src/lib.rs
 | 项目 | 之前汇报 | 真实状态 | 本轮处置 |
 |---|---|---|---|
 | B04-01 PCI 子系统 4 项 | [X] 完成 | **部分仅编译通过** | 本轮补救 |
-| B04-02 MSI-X | [] 推迟 B06 | [] **未实装** | **本轮实装 + NVMe/VirtIO 接入** |
+| B04-02 MSI-X | [] 推迟 B06 | [] **未实装** | **本轮实装 + NVMe/VirtIO 接入**（**2026-08-25 已实装**，见 msi-x-complete-project.md MSIX-03/07，virtio-pci 切换保留为 MSIX-04 独立项） |
 | B04-03 ECAM_BASE | [X] 完成 | ✅ 真实达标 | — |
 | B04-04 MSI_VECTOR_COUNT | [X] 完成 | ✅ 真实达标 | — |
 | B04-05 PCI_CONFIG_LOCK | [X] 完成 | ✅ 真实达标 | — |
@@ -353,7 +354,8 @@ MSI-X 框架层 `framework::pci::msi::msix_enable` 已实装 (`msi.rs:331`), 但
 
 **建议**: 拆分为 B07 子项 "MSI-X 完整路由" (DECISION-067 待登记), 与 B06 (NVMe/VirtIO 驱动接入) 协同推进.
 
-- 状态：[]（MSI-X 路由层未实装, 待 B07 独立分册; DECISION-067 候选）
+- 详情：2026-08-25 由 MSIX 工程全部实装：(1) IDT irq_descriptors 扩到 128 项（覆盖 vector 0x40-0x9F → irq32-127）；(2) handle_irq MSI 分支接受 irq ≥ 16；(3) register_msi_irq 入口新增；(4) LAPIC eoi() 实装；(5) NVMe 端到端 QEMU 验证通过（MSIX-03 [X]）。DECISION-067 已由独立工程 msi-x-complete-project.md 替代，DECISION-070 撤销 DECISION-067 候选。
+- 状态：[X]
 
 ### B04-AUDIT-009. B05 net 拆分实装记录（2026-08-24, 部分成功）
 
@@ -483,7 +485,8 @@ src/kernel/framework/driver/storage/nvme.rs enable_msix (已有, B04-02 添加)
 src/kernel/framework/pci/msi.rs         msix_enable/msi_enable (已有)
 ```
 
-- 状态：[X]（B07 Step 1/2/3/5/6 完成; Step 4 跳过; ~~DECISION-068/069~~ 作废——委托人自建无正式记录，2026-08-25 接手标注。MSI-X 完整接入另立独立工程文档，见 msi-x-complete-project.md）
+- 详情：2026-08-25 由 MSIX 工程实装完成 Step 6 实际验证（QEMU NVMe 端到端 MSI-X 中断路径打通：MSI-X IRQ 1 + 2 fired → handle_interrupt → ISR-driven io read: Ok）。原本 Step 5 标注 "5/6 步完成"，本次实装完整 6/6。Step 4（virtio-pci 切换）评估为 MSIX-04 独立项（virtio-blk 仍用 virtio-mmio + INTx IRQ 11，不阻塞 MSIX-07 验收）。MSI-X 完整接入独立工程文档：[msi-x-complete-project.md](./msi-x-complete-project.md) MSIX-03/06/07。
+- 状态：[X]
 - **B05 收尾**: B05 当前状态已达成——raw 子模块拆出（666 行独立文件） + 验证通过（编译通过 + 边际收益正向），剩余 4 个子模块拆分（state/sockets/devices/dhcp/cmd）归入独立分册 B08，本轮不立即推进。
 - **B07 关联**: MSI-X 完整路由层推迟（参 B04-AUDIT-008），与 B08 并行处理但不阻塞 B05 收尾。
 

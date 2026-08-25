@@ -201,6 +201,12 @@ impl IoMem {
             }
             pa += page_2m;
         }
+        crate::klog_info!(
+            Driver,
+            "[IoMem][diag] ensure_mmio_mapped done phys=0x{:X} len=0x{:X}",
+            phys,
+            len
+        );
     }
 
     #[expect(

@@ -593,26 +593,39 @@ static GLOBAL_DMA: OnceLock<DmaEngine> = OnceLock::new();
 // 显式入口属于冗余 API 且无调用方 (审核员 2026-08-24 指出).
 // B04-AUDIT-005 #7: 删除冗余 API, 保留 lazy init 单一路径.
 
+// B04-AUDIT-005 #7 后续 (B04-25 回归修复): 删除 init_dma_engine 后,
+// lazy init 必须同时置位 initialized 标志. 否则 is_initialized() 恒 false,
+// 所有 DMA 驱动 (NVMe/AHCI alloc_admin_queues) 初始化必然失败.
+// 原 get_or_init 仅 write(DmaEngine::new()) (initialized=false) 未调 init(),
+// 导致 QEMU 实测 NVMe "init failed: NotInitialized" (MSIX-03 阻塞).
+
 /// 获取全局 DMA Engine 的不可变引用
 ///
 /// 返回 `&'static DmaEngine`, 调用方通过 `&engine.method()` 访问.
 pub fn get_dma() -> &'static DmaEngine {
     GLOBAL_DMA.get_or_init(|slot| {
-        slot.write(DmaEngine::new());
+        // B04-25: 就地构造后立即 init, 保证 is_initialized() 为 true
+        let engine = DmaEngine::new();
+        engine.init();
+        slot.write(engine);
     })
 }
 
 /// 获取全局 DMA Engine 的可变引用 (与 `get_dma` 相同语义)
 pub fn get_dma_mut() -> &'static DmaEngine {
     GLOBAL_DMA.get_or_init(|slot| {
-        slot.write(DmaEngine::new());
+        let engine = DmaEngine::new();
+        engine.init();
+        slot.write(engine);
     })
 }
 
 /// FFI 层使用的访问器 (兼容旧接口名, 返回 `&'static DmaEngine`)
 pub(crate) fn dma() -> &'static DmaEngine {
     GLOBAL_DMA.get_or_init(|slot| {
-        slot.write(DmaEngine::new());
+        let engine = DmaEngine::new();
+        engine.init();
+        slot.write(engine);
     })
 }
 

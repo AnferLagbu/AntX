@@ -35,6 +35,7 @@ use crate::kernel::framework::iomem::IoMem;
 use crate::kernel::framework::mm::{PAGE_SIZE, PhysAddr, VirtAddr};
 use crate::klog_info;
 use core::ptr;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // NVMe 常量定义
@@ -86,8 +87,9 @@ mod cc {
     pub const CSS_NVM: u32 = 0 << 4;
     pub const MPS_SHIFT: u32 = 7;
     pub const AMS_RR: u32 = 0 << 11;
+    // CC 位域 (与 Linux/QEMU 布局一致): IOSQES bits 19:16, IOCQES bits 23:20
     pub const IOCQES_SHIFT: u32 = 20;
-    pub const IOSQES_SHIFT: u32 = 24;
+    pub const IOSQES_SHIFT: u32 = 16;
 }
 
 /// `NVMe` 控制器状态寄存器 (CSTS) 位域 — `NVMe` 规范 §3.1.7
@@ -145,8 +147,9 @@ pub struct NvmeCommand {
     pub nsid: u32,
     pub cdw2: u32,
     pub cdw3: u32,
-    pub mptr: u64, // PRP1 / SGL entry 1
-    pub prp2: u64, // PRP2 / SGL entry 2
+    pub mptr: u64, // MPTR (metadata 指针, 仅带元数据命令使用)
+    pub prp1: u64, // PRP1
+    pub prp2: u64, // PRP2
     pub cdw10: u32,
     pub cdw11: u32,
     pub cdw12: u32,
@@ -165,6 +168,7 @@ impl NvmeCommand {
             cdw2: 0,
             cdw3: 0,
             mptr: 0,
+            prp1: 0,
             prp2: 0,
             cdw10: 0,
             cdw11: 0,
@@ -188,7 +192,8 @@ impl NvmeCommand {
             nsid,
             cdw2: 0,
             cdw3: 0,
-            mptr: prp1,
+            mptr: 0,
+            prp1,
             prp2: 0,
             cdw10: (slba & 0xFFFFFFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFFFFFF) as u32,
@@ -212,7 +217,8 @@ impl NvmeCommand {
             nsid,
             cdw2: 0,
             cdw3: 0,
-            mptr: prp1,
+            mptr: 0,
+            prp1,
             prp2: 0,
             cdw10: (slba & 0xFFFFFFFF) as u32,
             cdw11: ((slba >> 32) & 0xFFFFFFFF) as u32,
@@ -232,7 +238,8 @@ impl NvmeCommand {
             nsid,
             cdw2: 0,
             cdw3: 0,
-            mptr: prp1,
+            mptr: 0,
+            prp1,
             prp2: 0,
             cdw10: u32::from(cns), // CNS (Controller/Namespace)
             cdw11: 0,
@@ -246,7 +253,13 @@ impl NvmeCommand {
     /// 创建 Create I/O Completion Queue 命令
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
-    pub fn create_cq(qid: u16, cq_phys: u64) -> Self {
+    /// 创建 Create I/O Completion Queue 命令
+    ///
+    /// `irq_vector` 是 MSI-X Table 中的向量索引（0-based，由 NVMe 设备用作
+    /// `msix_notify(pci, vector)` 的索引）。MSI-X enable 后已为该 CQ 分配了
+    /// 一个 IDT 向量，driver 需在 cdw11 高 16 位写入与 MSI-X Table entry 一致的
+    /// 索引；否则 QEMU 投递向量与 IDT 实际入口不对应 → 中断丢失。
+    pub fn create_cq(qid: u16, cq_phys: u64, irq_vector: u16) -> Self {
         Self {
             opcode: NvmeAdminOpcode::CreateCq as u8,
             flags: 0,
@@ -254,10 +267,11 @@ impl NvmeCommand {
             nsid: 0,
             cdw2: 0,
             cdw3: 0,
-            mptr: cq_phys,
+            mptr: 0,
+            prp1: cq_phys,
             prp2: 0,
             cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | u32::from(qid),
-            cdw11: 1, // PC: physically contiguous, IEN: enable
+            cdw11: (u32::from(irq_vector) << 16) | (1 | 2), // [31:16]=vector [2:0]=PC+IEN
             cdw12: 0,
             cdw13: 0,
             cdw14: 0,
@@ -276,7 +290,8 @@ impl NvmeCommand {
             nsid: 0,
             cdw2: 0,
             cdw3: 0,
-            mptr: sq_phys,
+            mptr: 0,
+            prp1: sq_phys,
             prp2: 0,
             cdw10: ((QUEUE_DEPTH as u32 - 1) << 16) | u32::from(qid),
             cdw11: u32::from(cqid) << 16 | 1, // CQID | PC
@@ -426,6 +441,11 @@ pub struct NvmeController {
     io_cid: u16,
     io_phase: u16,
 
+    /// MSIX-03: ISR 处理完成的 admin CQ 条目计数 (handle_interrupt 递增, submit 等待)
+    admin_cq_isr_processed: AtomicU64,
+    /// MSIX-03: ISR 处理完成的 I/O CQ 条目计数
+    io_cq_isr_processed: AtomicU64,
+
     prp_list_virt: VirtAddr,
     prp_list_phys: PhysAddr,
 
@@ -478,6 +498,8 @@ impl NvmeController {
             io_cq_head: 0,
             io_cid: 0,
             io_phase: 1,
+            admin_cq_isr_processed: AtomicU64::new(0),
+            io_cq_isr_processed: AtomicU64::new(0),
             prp_list_virt: VirtAddr(0),
             prp_list_phys: PhysAddr(0),
             namespace_count: 0,
@@ -630,6 +652,41 @@ impl NvmeController {
                     self.write_doorbell(ADMIN_QUEUE_ID, false, new_head);
 
                     if !entry.is_success() {
+                        // 复制 packed struct 字段到局部变量以避免对齐问题
+                        let status_raw = entry.status;
+                        let sqid = entry.sqid;
+                        let sqhd = entry.sqhd;
+                        let sc = entry.status_code();
+                        let cdw10 = cmd.cdw10;
+                        let cdw11 = cmd.cdw11;
+                        let prp1 = cmd.prp1;
+                        let prp2 = cmd.prp2;
+                        let raw = cmd as *const NvmeCommand as *const u64;
+                        crate::klog_ffi!(
+                            klog_ffi_warn,
+                            "[NVMe][diag] admin cmd failed: opcode={:#X} cid={} status_raw={:#X} sc={} sqid={} sqhd={} cdw10={:#X} cdw11={:#X} prp1={:#X} prp2={:#X}",
+                            cmd.opcode,
+                            cid,
+                            status_raw,
+                            sc,
+                            sqid,
+                            sqhd,
+                            cdw10,
+                            cdw11,
+                            prp1,
+                            prp2
+                        );
+                        crate::klog_ffi!(
+                            klog_ffi_warn,
+                            "[NVMe][diag] cmd raw: w0={:#X} w1={:#X} w2={:#X} w3={:#X} w4={:#X} w5={:#X}",
+                            // SAFETY: cmd 是有效的 NvmeCommand 引用 (64 字节), 读取前 48 字节
+                            unsafe { core::ptr::read_unaligned(raw) },
+                            unsafe { core::ptr::read_unaligned(raw.add(1)) },
+                            unsafe { core::ptr::read_unaligned(raw.add(2)) },
+                            unsafe { core::ptr::read_unaligned(raw.add(3)) },
+                            unsafe { core::ptr::read_unaligned(raw.add(4)) },
+                            unsafe { core::ptr::read_unaligned(raw.add(5)) }
+                        );
                         return Err(DriverError::HardwareError);
                     }
                     return Ok(entry);
@@ -637,6 +694,32 @@ impl NvmeController {
 
                 timeout -= 1;
                 if timeout == 0 {
+                    // 诊断: dump IO SQ/CQ 状态
+                    crate::klog_info!(Driver,
+                        "[NVMe][diag] io submit timeout: sq_tail={} cq_head={} cc={:#X} csts={:#X} sqtdbl_off={:#X}",
+                        self.io_sq_tail,
+                        self.io_cq_head,
+                        self.iomem.as_ref().map_or(0, |m| m.read_u32(NVME_REG_CC)),
+                        self.iomem.as_ref().map_or(0, |m| m.read_u32(NVME_REG_CSTS)),
+                        NVME_DB_BASE + (IO_QUEUE_ID as usize * 2 * self.db_stride as usize)
+                    );
+                    // 读 entry 内容
+                    let entry = cq.add(self.io_cq_head as usize).read_volatile();
+                    let sqid = entry.sqid;
+                    let cid = entry.cid;
+                    let status = entry.status;
+                    let sqhd = entry.sqhd;
+                    let entry_phase = status & 1;
+                    crate::klog_info!(Driver,
+                        "[NVMe][diag] CQ[head={}]: sqid={} cid={} status={:#X} sqhd={} phase_io={} entry_phase={}",
+                        self.io_cq_head,
+                        sqid,
+                        cid,
+                        status,
+                        sqhd,
+                        self.io_phase,
+                        entry_phase
+                    );
                     return Err(DriverError::Timeout);
                 }
                 core::hint::spin_loop();
@@ -668,7 +751,8 @@ impl NvmeController {
         // 读取能力: 门铃步长
         let cap = iomem.read_u64(NVME_REG_CAP);
         let dstrd = ((cap >> 32) & 0xF) as u32;
-        self.db_stride = 1 << dstrd;
+        // NVMe 规范: 门铃步长 = 4 << DSTRD (字节). QEMU 默认 DSTRD=0 → stride=4.
+        self.db_stride = 4u32 << dstrd;
 
         // 读取控制器版本 (NVMe 规范 §3.1.2)
         let vs = iomem.read_u32(NVME_REG_VS);
@@ -731,6 +815,28 @@ impl NvmeController {
 
         self.iomem = Some(iomem);
         Ok(())
+    }
+
+    /// MSIX-03: 通过中断路径执行 Identify Controller — 验证 MSI-X → ISR → admin CQ 处理链路。
+    ///
+    /// 与 `identify_controller` 语义相同, 但完成等待依赖 ISR 处理计数而非轮询。
+    /// 调用方必须已启用 MSI-X + 注册 ISR, 且 CPU IF=1 (中断使能)。
+    /// # Errors
+    /// DMA 分配失败或命令超时失败时返回 Err。
+    pub fn identify_controller_isr(&mut self) -> Result<()> {
+        let dma = get_dma();
+        let (ident_virt, ident_phys) = dma
+            .alloc_coherent(PAGE_SIZE as usize)
+            .ok_or(DriverError::Busy)?;
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        unsafe {
+            ptr::write_bytes(ident_virt.0 as *mut u8, 0, PAGE_SIZE as usize);
+        }
+        let cmd = NvmeCommand::identify(0, 1, ident_phys.0);
+        // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+        let result = unsafe { self.submit_admin_command_isr(&cmd) };
+        dma.free_coherent(ident_virt, PAGE_SIZE as usize);
+        result
     }
 
     /// 识别控制器
@@ -849,7 +955,7 @@ impl NvmeController {
         clippy::similar_names,
         reason = "变量名相似表达同族概念 (pd/pt/bm 等); 重命名会破坏阅读连续性, 仅在确实混淆时才人工拆分"
     )]
-    pub fn create_io_queue(&mut self) -> Result<()> {
+    pub fn create_io_queue(&mut self, irq_vector: u16) -> Result<()> {
         self.alloc_io_queues()?;
 
         // 分配 PRP 列表页 (单次命令最大 128 扇区, 所有页表条目可放入一页)
@@ -863,7 +969,8 @@ impl NvmeController {
         }
 
         // 创建 I/O Completion Queue
-        let cmd_cq = NvmeCommand::create_cq(IO_QUEUE_ID, self.io_cq_dma.phys.0);
+        // irq_vector 是 MSI-X Table 中的向量索引 (0-based), 由 NVMe 用作 msix_notify 索引
+        let cmd_cq = NvmeCommand::create_cq(IO_QUEUE_ID, self.io_cq_dma.phys.0, irq_vector);
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
             self.submit_admin_command(&cmd_cq)?;
@@ -929,9 +1036,83 @@ impl NvmeController {
 
                 timeout -= 1;
                 if timeout == 0 {
+                    // 诊断: dump IO SQ/CQ 状态
+                    crate::klog_info!(Driver,
+                        "[NVMe][diag] io submit timeout: sq_tail={} cq_head={} cc={:#X} csts={:#X}",
+                        self.io_sq_tail,
+                        self.io_cq_head,
+                        self.iomem.as_ref().map_or(0, |m| m.read_u32(NVME_REG_CC)),
+                        self.iomem.as_ref().map_or(0, |m| m.read_u32(NVME_REG_CSTS))
+                    );
+                    let entry = cq.add(self.io_cq_head as usize).read_volatile();
+                    let sqid = entry.sqid;
+                    let cid = entry.cid;
+                    let status = entry.status;
+                    let sqhd = entry.sqhd;
+                    let entry_phase = status & 1;
+                    crate::klog_info!(Driver,
+                        "[NVMe][diag] CQ[head={}]: sqid={} cid={} status={:#X} sqhd={} phase_io={} entry_phase={}",
+                        self.io_cq_head, sqid, cid, status, sqhd, self.io_phase, entry_phase
+                    );
                     return Err(DriverError::Timeout);
                 }
                 core::hint::spin_loop();
+            }
+        }
+    }
+
+    /// MSIX-03: 通过中断路径提交 I/O 命令 — 写 SQ + 敲门铃后 hlt 等 ISR 处理完成.
+    /// 调用方必须保证 IF=1, 且对应的 I/O CQ 已在 MSI-X 表中配置 (vector=分配的 vector).
+    /// # Errors
+    /// 超时或队列未初始化时返回 Err。
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须保证 `cmd` 引用有效的 `NvmeCommand`，且调用时 IF=1 (中断开启),
+    /// 对应 I/O CQ 已在 MSI-X Table 中配置有效 entry。否则 hlt 等待永远不会返回。
+    pub unsafe fn submit_io_command_isr_pub(&mut self, cmd: &NvmeCommand) -> Result<()> {
+        unsafe { self.submit_io_command_isr(cmd) }
+    }
+
+    unsafe fn submit_io_command_isr(&mut self, cmd: &NvmeCommand) -> Result<()> {
+        unsafe {
+            if !self.initialized {
+                return Err(DriverError::NotInitialized);
+            }
+            let cid = self.io_cid;
+            self.io_cid = self.io_cid.wrapping_add(1);
+            let sq = self.io_sq_dma.virt.0 as *mut NvmeCommand;
+            let mut entry_cmd = *cmd;
+            entry_cmd.cid = cid;
+            sq.add(self.io_sq_tail as usize).write_volatile(entry_cmd);
+            let new_tail = (self.io_sq_tail + 1) % (QUEUE_DEPTH as u32);
+            self.io_sq_tail = new_tail;
+            self.write_doorbell(IO_QUEUE_ID, true, new_tail);
+            let processed_before = self.io_cq_isr_processed.load(Ordering::Acquire);
+            let mut timeout = 5_000_000u64;
+            loop {
+                if self.io_cq_isr_processed.load(Ordering::Acquire) != processed_before {
+                    return Ok(());
+                }
+                timeout -= 1;
+                if timeout == 0 {
+                    let entry = (self.io_cq_dma.virt.0 as *const NvmeCompletion)
+                        .add(self.io_cq_head as usize)
+                        .read_volatile();
+                    let status = entry.status;
+                    let cid_dbg = entry.cid;
+                    crate::klog_ffi!(
+                        klog_ffi_warn,
+                        "[NVMe][diag] io ISR timeout: head={} phase={} cid={} status={:#X} isr_processed={}",
+                        self.io_cq_head,
+                        self.io_phase,
+                        cid_dbg,
+                        status,
+                        self.io_cq_isr_processed.load(Ordering::Acquire)
+                    );
+                    return Err(DriverError::Timeout);
+                }
+                core::arch::asm!("hlt", options(nomem, nostack));
             }
         }
     }
@@ -975,7 +1156,8 @@ impl NvmeController {
     unsafe fn set_prp_in_cmd(&self, cmd: &mut NvmeCommand, phys_base: u64, byte_count: usize) {
         unsafe {
             let (prp1, prp2) = self.build_prp(phys_base, byte_count);
-            cmd.mptr = prp1;
+            cmd.mptr = 0;
+            cmd.prp1 = prp1;
             cmd.prp2 = prp2;
         }
     }
@@ -1094,13 +1276,13 @@ impl Driver for NvmeController {
             self.identify_namespace(1)?;
         }
 
-        // 创建 I/O 队列对
-        self.create_io_queue()?;
+        // I/O 队列对在 MSI-X enable 后由 storage_init 显式创建
+        // (cdw11[31:16]=irq_vector 必须使用 MSI-X Table 分配的真实向量索引)
 
         self.initialized = true;
         klog_info!(
             Driver,
-            "NVMe: controller fully initialized, {} ns",
+            "NVMe: controller partially initialized, {} ns (I/O queues deferred)",
             self.namespace_count
         );
         Ok(())
@@ -1233,6 +1415,31 @@ impl NvmeController {
             return Ok(());
         }
 
+        // ── 处理 Admin 完成队列 ──
+        // MSIX-03: admin CQ 由 QEMU 默认 IEN=1, 完成时触发 MSI-X; ISR 在此处理并
+        // 递增 admin_cq_isr_processed (供 submit_admin_command_isr 等待).
+        // SAFETY: admin_cq_dma 由 DMA 分配保证有效, admin_cq_head 在有效范围内
+        let acq = self.admin_cq_dma.virt.0 as *const NvmeCompletion;
+        let mut admin_processed = 0u32;
+        loop {
+            // SAFETY: acq 指向有效的 DMA 内存, admin_cq_head < QUEUE_DEPTH
+            let entry = unsafe { acq.add(self.admin_cq_head as usize).read_volatile() };
+            if !entry.is_completed(self.admin_cq_dma.phase) {
+                break;
+            }
+            admin_processed += 1;
+            let new_head = (self.admin_cq_head + 1) % (QUEUE_DEPTH as u32);
+            self.admin_cq_head = new_head;
+            if new_head == 0 {
+                self.admin_cq_dma.phase ^= 1;
+            }
+        }
+        if admin_processed > 0 {
+            self.write_doorbell(ADMIN_QUEUE_ID, false, self.admin_cq_head);
+            self.admin_cq_isr_processed
+                .fetch_add(u64::from(admin_processed), Ordering::Release);
+        }
+
         // 读取 I/O 完成队列
         // SAFETY: io_cq_dma 由 DMA 分配保证有效，io_cq_head 在有效范围内
         let cq = self.io_cq_dma.virt.0 as *const NvmeCompletion;
@@ -1277,6 +1484,8 @@ impl NvmeController {
         if processed > 0 {
             // 敲响 CQ 门铃，通知控制器已完成条目已被处理
             self.write_doorbell(IO_QUEUE_ID, false, self.io_cq_head);
+            self.io_cq_isr_processed
+                .fetch_add(u64::from(processed), Ordering::Release);
 
             crate::klog_ffi!(
                 klog_ffi_info,
@@ -1286,6 +1495,65 @@ impl NvmeController {
         }
 
         Ok(())
+    }
+
+    /// MSIX-03: 通过中断路径提交 admin 命令 — 写入 SQ + 敲门铃后等待 ISR 处理完成
+    /// (而非轮询)。调用方必须保证 IF=1 (中断使能) 且 MSI-X 已注册。
+    ///
+    /// # Errors
+    /// 超时 (ISR 未处理完成) 或队列未初始化时返回 Err。
+    unsafe fn submit_admin_command_isr(&mut self, cmd: &NvmeCommand) -> Result<()> {
+        unsafe {
+            if !self.initialized {
+                return Err(DriverError::NotInitialized);
+            }
+
+            let cid = self.admin_cid;
+            self.admin_cid = self.admin_cid.wrapping_add(1);
+
+            let sq = self.admin_sq_dma.virt.0 as *mut NvmeCommand;
+            let mut entry_cmd = *cmd;
+            entry_cmd.cid = cid;
+            sq.add(self.admin_sq_tail as usize).write_volatile(entry_cmd);
+
+            let new_tail = (self.admin_sq_tail + 1) % (QUEUE_DEPTH as u32);
+            self.admin_sq_tail = new_tail;
+            self.write_doorbell(ADMIN_QUEUE_ID, true, new_tail);
+
+            let processed_before = self.admin_cq_isr_processed.load(Ordering::Acquire);
+            let mut timeout = 5_000_000u64;
+            loop {
+                if self.admin_cq_isr_processed.load(Ordering::Acquire) != processed_before {
+                    return Ok(());
+                }
+                timeout -= 1;
+                if timeout == 0 {
+                    // MSIX-03 diag: 超时 — dump admin CQ 头条目与计数器
+                    // SAFETY: acq 指向有效的 DMA 内存, admin_cq_head < QUEUE_DEPTH
+                    let entry = unsafe {
+                        (self.admin_cq_dma.virt.0 as *const NvmeCompletion)
+                            .add(self.admin_cq_head as usize)
+                            .read_volatile()
+                    };
+                    // 复制 packed struct 字段到局部变量以避免对齐问题
+                    let cid = entry.cid;
+                    let status = entry.status;
+                    let isr_count = self.admin_cq_isr_processed.load(Ordering::Acquire);
+                    crate::klog_ffi!(
+                        klog_ffi_warn,
+                        "[NVMe][diag] admin ISR timeout: head={} phase={} cid={} status={:#X} isr_processed={}",
+                        self.admin_cq_head,
+                        self.admin_cq_dma.phase,
+                        cid,
+                        status,
+                        isr_count
+                    );
+                    return Err(DriverError::Timeout);
+                }
+                // SAFETY: 等待 MSI-X 中断唤醒; IF=1 时 hlt 由中断解除
+                core::arch::asm!("hlt", options(nomem, nostack));
+            }
+        }
     }
 }
 

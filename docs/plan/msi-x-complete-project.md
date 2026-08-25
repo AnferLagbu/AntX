@@ -23,7 +23,8 @@
 - **MSIX-03. QEMU 端到端验证（NVMe 中断路径）**
   - 描述：QEMU `-device nvme` 触发真实 MSI-X 中断，验证 `handle_irq` MSI 分支 → LAPIC EOI → `nvme_msix_irq_handler` → CQ 处理。
   - 方案：`-nic none` 隔离 ISSUE-RT-001；启动参数加 NVMe 设备；klog 观察 `[MSI] Allocated vector` 与中断处理计数；验证命令完成队列（CQ）尾指针推进。
-  - 状态：[]
+  - 详情：2026-08-25 端到端打通。QEMU 启动参数：`qemu-system-x86_64 -serial file:/tmp/nvme.log -display none -no-reboot -m 512 -nic none -kernel build/kernel.flat -device nvme,serial=QM0001,id=nvme0 -drive file=/tmp/nvme_disk.img,if=none,id=nd0 -device nvme-ns,drive=nd0,bus=nvme0`。klog 关键序列：`[MSI-X] Enabled for 00:03.0 vectors=1/65 base_vec=64` → `[MSIX-03][diag] rflags=0x2 IF=false svr=0x1FF lapic_id=0 msix ctrl=0x8040 entry: addr=0xFEE00000 data=64 vec_ctrl=0x0` → `[NVMe] MSI-X IRQ 1 fired (total 1)` (admin CQ 完成中断) → `[NVMe] MSI-X IRQ 2 fired (total 2)` (I/O CQ 完成中断) → `[MSIX-03] ISR-driven io read: Ok(())`。修复三个预存 bug：(1) `db_stride = 4 << DSTRD` 而非 `1 << DSTRD`（NVMe 规范 4 字节粒度），原 stride=1 导致 SQ doorbell 写到错误偏移 → NVMe 不响应 I/O 命令；(2) `Create CQ cdw11[31:16]` 必须写入 MSI-X Table 数组索引（NVMe 设备把 vector 字段解释为 Table entry 索引而非 LAPIC vector），所以 enable_msix 后才能正确构造 Create CQ；(3) `msix_enable` 中 MASKALL (bit14) 必须清零，否则 QEMU `msix_function_masked=true` → `msix_notify` 直接丢弃中断。
+  - 状态：[X]
 
 - **MSIX-04. virtio-pci MSI-X 接入评估**
   - 描述：当前 virtio-blk 用 virtio-mmio（INTx IRQ 11），无 MSI-X。若后续接入 virtio-pci（PCI 传输层），则启用 MSI-X。
@@ -38,14 +39,16 @@
 - **MSIX-06. LAPIC EOI 与 aarch64 路径**
   - 描述：x86_64 `handle_irq` MSI 分支的 `send_eoi`（LAPIC 优先）需在 MSIX-03 实测确认；aarch64 MSI（GIC ITS）当前未实现，需评估是否纳入本工程范围。
   - 方案：MSIX-03 中一并验证 x86 LAPIC EOI；aarch64 GIC ITS MSI 作为独立扩展项评估（若涉及硬件能力超出当前模拟范围，记录豁免）。
-  - 状态：[]
+  - 详情：2026-08-25 通过 MSIX-03 实测 LAPIC EOI：LAPIC SVR=0x1FF (enable) + vector=64 投递 → ISR 抢占 → `nvme_msix_irq_handler` 执行 `handle_interrupt` 后 `send_eoi` (apic_write EOI 寄存器) 退出。x86_64 路径完整。aarch64 GIC ITS MSI 未实装，本工程范围豁免（依赖硬件平台，超出当前模拟器能力）。
+  - 状态：[X]
 
 ### 验证门槛
 
 - **MSIX-07. 端到端验收**
   - 描述：QEMU x86_64 启动 + `-device nvme`，NVMe 控制器初始化走 MSI-X 中断路径，klog 确认 vector 分配 + 中断触发 + CQ 处理。
   - 方案：`scripts/qemu_boot_test.sh` 变体（-nic none + nvme 设备）+ 双架构编译 0w0e + clippy 0 警告。
-  - 状态：[]
+  - 详情：2026-08-25 验收通过。klog 关键序列：`[MSI-X] Enabled base_vec=64` → `[MSIX-03][diag] rflags=0x2 IF=false svr=0x1FF lapic_id=0 msix ctrl=0x8040 entry: addr=0xFEE00000 data=64 vec_ctrl=0x0` → `[NVMe] MSI-X IRQ 1 fired (total 1)` → `[NVMe] MSI-X IRQ 2 fired (total 2)` → `[MSIX-03] ISR-driven io read: Ok(())`。表明：(a) MSI-X enable 成功且配置正确；(b) LAPIC 状态可投递；(c) admin CQ + I/O CQ 完成中断均成功触发 IDT 入口；(d) `nvme_msix_irq_handler` 完成 CQ 处理；(e) `submit_io_command_isr` 在中断路径下成功返回 Ok。
+  - 状态：[X]
 
 ### 决策记录
 
