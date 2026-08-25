@@ -9,6 +9,9 @@ use std::fs;
 use std::path::Path;
 
 const INIT: &str = "src/kernel/framework/net/init.rs";
+// B04-09 (2026-08-25): NetState 结构体定义随拆分移至 init/state.rs,
+// init.rs 经 `pub use state::*` re-export. 契约扫描需同时覆盖两文件.
+const STATE: &str = "src/kernel/framework/net/init/state.rs";
 
 fn read(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -16,10 +19,17 @@ fn read(path: &str) -> String {
     fs::read_to_string(&p).unwrap_or_else(|_| panic!("读 {}", path))
 }
 
+/// 合并读取 init.rs 与 init/state.rs 源码 (NetState 定义所在位置).
+fn read_net_state_sources() -> String {
+    let mut src = read(INIT);
+    src.push_str(&read(STATE));
+    src
+}
+
 #[test]
 fn test_socket_table_in_net_state() {
     // TD-05: SOCKET_TABLE 必须是 NetState 结构体的字段
-    let src = read(INIT);
+    let src = read_net_state_sources();
     assert!(src.contains("socket_table:") || src.contains("socket_table: ["),
         "TD-05: SOCKET_TABLE 必须是 NetState 的字段");
     // 不再有独立的 static mut SOCKET_TABLE
@@ -30,7 +40,7 @@ fn test_socket_table_in_net_state() {
 #[test]
 fn test_fd_types_in_net_state() {
     // TD-05: FD_TYPES 必须是 NetState 结构体的字段
-    let src = read(INIT);
+    let src = read_net_state_sources();
     assert!(src.contains("fd_types:") || src.contains("fd_types: ["),
         "TD-05: FD_TYPES 必须是 NetState 的字段");
     // 不再有独立的 static mut FD_TYPES
@@ -64,7 +74,7 @@ fn test_no_raw_static_mut_access() {
 #[test]
 fn test_net_state_struct_documented() {
     // TD-05: NetState 结构体必须有文档说明
-    let src = read(INIT);
+    let src = read_net_state_sources();
     assert!(src.contains("struct NetState"),
         "TD-05: 必须定义 NetState 结构体");
 }

@@ -1,72 +1,44 @@
-//! NetState 内部访问层 (B05 net 拆分: 从 init.rs 抽出).
+//! 特权子模块 (Framekernel raw): 集中 static mut 访问 (B04-09 拆分 Step A)
 //!
-//! 原内联 `pub(crate) mod raw { ... }` 块 (init.rs:1280-1914, 635 行).
-//! 集中 NetState 的所有内部 accessor, 唯一允许持有 `state::NET_STATE` 锁并
-//! 直接操作 `super` 静态变量的位置. 调用方契约: 必须持锁.
-//!
-//! 拆分原因:
-//! - 单文件 > 1000 行违反简单优先
-//! - raw 是独立内聚模块, 应与 init.rs 主流程分离
-//! - 内联 mod 不能独立测试, 抽出后便于 host-tests 覆盖
+//! 原为 init.rs 内联 `pub(crate) mod raw { ... }` (1281-1914, 634 行).
+//! 抽出为独立文件后, `super` 仍指向 init 模块, 引用方式不变.
+//! 调用方契约: 本模块内所有函数要求调用方持有 `NET_STATE` 锁.
 
-// 引用父模块 (`init`) 暴露的类型/常量. 这些在 init.rs 中是私有 (`use super::...`),
-// 拆分后通过 init.rs 顶层 `pub(super)` 暴露, 或改为本文件内绝对路径.
-// 当前 raw 依赖:
-// - state::NET_STATE/NetState: 在 init.rs 中定义为 `pub(super)` 即可
-// - MAX_SM_FD/TOTAL_SLOTS/TCP_BUF_SIZE/UDP_BUF_SIZE/UDP_META_COUNT: 同样 pub(super)
-// - SOCKET_SET: static mut, 需要 `pub(super) unsafe` 暴露
-// - ChitinNetDevice/NetworkStack/SocketHandle/SocketSet/dhcpv4/tcp/udp: 来自 crate::net / smoltcp
-// - klog_*: 来自 crate::klog
-//
-// 简化策略: 把这些类型直接 use 到 raw.rs, 不依赖 init.rs 的 pub(super).
+    use super::{
+        ChitinNetDevice, MAX_SM_FD, NET_STATE, NetState, NetworkStack, SOCKET_SET, SocketHandle,
+        SocketSet, TCP_BUF_SIZE, TOTAL_SLOTS, UDP_BUF_SIZE, UDP_META_COUNT, dhcpv4, klog_init_msg,
+        klog_net, klog_net_err, tcp, udp,
+    };
 
-use crate::kernel::framework::klog::{klog_init_msg, klog_net, klog_net_err};
-use crate::kernel::framework::net::{ChitinNetDevice, NetworkStack};
-// 从 init 模块拉取 pub(super) 暴露的常量与 static mut.
-// B05 net 拆分: MAX_SM_FD/TCP_BUF_SIZE/UDP_BUF_SIZE/UDP_META_COUNT/TOTAL_SLOTS/NetState/NET_STATE
-// 现位于 init::state 子模块 (而非 init 顶层), 改用 sibling 路径.
-use super::state::{
-    MAX_SM_FD, NET_STATE, NetState, TCP_BUF_SIZE, TOTAL_SLOTS, UDP_BUF_SIZE, UDP_META_COUNT,
-};
-use smoltcp::iface::{SocketHandle, SocketSet};
-use smoltcp::socket::dhcpv4;
-use smoltcp::socket::{tcp, udp};
-
-/// 复制父模块 (init.rs) 暴露的常量, 避免跨文件 pub(super) 路径耦合.
-/// 这些常量在 init.rs 是 private, raw 是 nested mod 共享; 抽出后通过
-/// `pub(crate)` 暴露 (见 init.rs 顶部声明).
-///
-/// 注: 实际值与 init.rs 完全相同. 编译期检查确保不漂移.
-
-    /// 获取 `NetState` 可变引用 (调用方必须持有 `state::NET_STATE` 锁).
+    /// 获取 `NetState` 可变引用 (调用方必须持有 `NET_STATE` 锁).
     ///
     /// # Safety
     ///
-    /// 调用方必须持有 `state::NET_STATE` 的锁 (通过 `lock()` 或 `try_lock()`).
-    /// 返回的引用生命周期为 `'static` (因底层数据在 `static state::NET_STATE` 中),
+    /// 调用方必须持有 `NET_STATE` 的锁 (通过 `lock()` 或 `try_lock()`).
+    /// 返回的引用生命周期为 `'static` (因底层数据在 `static NET_STATE` 中),
     /// 但调用方不得在锁释放后继续使用.
     #[inline(always)]
     unsafe fn state() -> &'static mut NetState {
-        // SAFETY: state::NET_STATE 是 static, 数据永不移动;
+        // SAFETY: NET_STATE 是 static, 数据永不移动;
         // 调用方持有锁保证互斥访问.
-        unsafe { &mut *state::NET_STATE.data_ptr() }
+        unsafe { &mut *NET_STATE.data_ptr() }
     }
 
     /// 安全访问 stack (Framekernel 集中 unsafe 边界)
     pub fn stack_mut() -> Option<&'static mut NetworkStack> {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().stack.as_mut() }
     }
 
     /// 安全访问 device
     pub fn device_mut() -> Option<&'static mut ChitinNetDevice> {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().device.as_mut() }
     }
 
     /// 安全设置 device
     pub fn set_device(d: Option<ChitinNetDevice>) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().device = d;
         }
@@ -74,7 +46,7 @@ use smoltcp::socket::{tcp, udp};
 
     /// 安全设置 stack
     pub fn set_stack(s: Option<NetworkStack>) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().stack = s;
         }
@@ -88,7 +60,7 @@ use smoltcp::socket::{tcp, udp};
 
     /// 安全设置 `dhcp_handle`
     pub fn set_dhcp_handle(h: Option<SocketHandle>) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().dhcp_handle = h;
         }
@@ -96,7 +68,7 @@ use smoltcp::socket::{tcp, udp};
 
     /// 安全清空网络全局状态
     pub fn clear_all() {
-        // SAFETY: 调用方持有 state::NET_STATE 锁, 串行重置流程.
+        // SAFETY: 调用方持有 NET_STATE 锁, 串行重置流程.
         let s = unsafe { state() };
         s.device = None;
         s.stack = None;
@@ -107,18 +79,18 @@ use smoltcp::socket::{tcp, udp};
     // FD_TYPES / SOCKET_TABLE / buffer accessor 函数
     //
     // 集中访问 NetState 中的 FD 表、socket 表和 buffer 指针数组.
-    // 所有函数要求调用方持有 state::NET_STATE 锁.
+    // 所有函数要求调用方持有 NET_STATE 锁.
     // ========================================================================
 
     /// 读取 fd 类型 (0=free, 1=tcp, 2=udp)
     pub fn fd_type(fd: usize) -> u8 {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().fd_types[fd] }
     }
 
     /// 写入 fd 类型
     pub fn set_fd_type(fd: usize, val: u8) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().fd_types[fd] = val;
         }
@@ -126,13 +98,13 @@ use smoltcp::socket::{tcp, udp};
 
     /// 读取 socket handle
     pub fn socket_handle(fd: usize) -> Option<SocketHandle> {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().socket_table[fd] }
     }
 
     /// 写入 socket handle
     pub fn set_socket_handle(fd: usize, val: Option<SocketHandle>) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().socket_table[fd] = val;
         }
@@ -140,13 +112,13 @@ use smoltcp::socket::{tcp, udp};
 
     /// 读取 TCP RX buffer 指针
     pub fn tcp_rx_buf(fd: usize) -> *mut u8 {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().tcp_rx_bufs[fd] }
     }
 
     /// 写入 TCP RX buffer 指针
     pub fn set_tcp_rx_buf(fd: usize, val: *mut u8) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().tcp_rx_bufs[fd] = val;
         }
@@ -154,13 +126,13 @@ use smoltcp::socket::{tcp, udp};
 
     /// 读取 TCP TX buffer 指针
     pub fn tcp_tx_buf(fd: usize) -> *mut u8 {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().tcp_tx_bufs[fd] }
     }
 
     /// 写入 TCP TX buffer 指针
     pub fn set_tcp_tx_buf(fd: usize, val: *mut u8) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().tcp_tx_bufs[fd] = val;
         }
@@ -168,13 +140,13 @@ use smoltcp::socket::{tcp, udp};
 
     /// 读取 UDP RX buffer 指针
     pub fn udp_rx_buf(fd: usize) -> *mut u8 {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().udp_rx_bufs[fd] }
     }
 
     /// 写入 UDP RX buffer 指针
     pub fn set_udp_rx_buf(fd: usize, val: *mut u8) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().udp_rx_bufs[fd] = val;
         }
@@ -182,13 +154,13 @@ use smoltcp::socket::{tcp, udp};
 
     /// 读取 UDP TX buffer 指针
     pub fn udp_tx_buf(fd: usize) -> *mut u8 {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe { state().udp_tx_bufs[fd] }
     }
 
     /// 写入 UDP TX buffer 指针
     pub fn set_udp_tx_buf(fd: usize, val: *mut u8) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁.
+        // SAFETY: 调用方持有 NET_STATE 锁.
         unsafe {
             state().udp_tx_bufs[fd] = val;
         }
@@ -198,9 +170,9 @@ use smoltcp::socket::{tcp, udp};
     ///
     /// # Safety
     ///
-    /// 调用方持有 `state::NET_STATE` 锁; 返回的引用仅在本次 socket 构造期间有效.
+    /// 调用方持有 `NET_STATE` 锁; 返回的引用仅在本次 socket 构造期间有效.
     pub unsafe fn udp_rx_meta(fd: usize) -> &'static mut [udp::PacketMetadata; UDP_META_COUNT] {
-        // SAFETY: 调用方持有 state::NET_STATE 锁, 数据在 static 中.
+        // SAFETY: 调用方持有 NET_STATE 锁, 数据在 static 中.
         unsafe { &mut state().udp_rx_metas[fd] }
     }
 
@@ -208,27 +180,27 @@ use smoltcp::socket::{tcp, udp};
     ///
     /// # Safety
     ///
-    /// 调用方持有 `state::NET_STATE` 锁; 返回的引用仅在本次 socket 构造期间有效.
+    /// 调用方持有 `NET_STATE` 锁; 返回的引用仅在本次 socket 构造期间有效.
     pub unsafe fn udp_tx_meta(fd: usize) -> &'static mut [udp::PacketMetadata; UDP_META_COUNT] {
-        // SAFETY: 调用方持有 state::NET_STATE 锁, 数据在 static 中.
+        // SAFETY: 调用方持有 NET_STATE 锁, 数据在 static 中.
         unsafe { &mut state().udp_tx_metas[fd] }
     }
 
     /// 安全获取 `SocketSet` 指针 (保留为 static mut, 自引用结构)
     pub fn socket_set() -> *mut SocketSet<'static> {
-        // SAFETY: SOCKET_SET 在 init_sockets 后已初始化, 调用方在 state::NET_STATE 锁下.
+        // SAFETY: SOCKET_SET 在 init_sockets 后已初始化, 调用方在 NET_STATE 锁下.
         unsafe { SOCKET_SET.as_mut_ptr() }
     }
 
     /// 安全初始化 sockets
     pub fn init_sockets() {
-        // SAFETY: 调用方持有 state::NET_STATE 锁, 单次初始化.
+        // SAFETY: 调用方持有 NET_STATE 锁, 单次初始化.
         unsafe { super::init_sockets() }
     }
 
     /// 安全处理 DHCP 事件
     pub fn process_dhcp_events(sockets: &mut SocketSet<'_>) {
-        // SAFETY: 调用方持有 state::NET_STATE 锁, sockets 来自本模块的 socket_set().
+        // SAFETY: 调用方持有 NET_STATE 锁, sockets 来自本模块的 socket_set().
         unsafe { super::process_dhcp_events(sockets) }
     }
 
@@ -319,7 +291,7 @@ use smoltcp::socket::{tcp, udp};
     ) -> Option<smoltcp::iface::SocketHandle> {
         use crate::kernel::framework::net::iface_trait::SocketKind;
 
-        // SAFETY: 调用方持有 state::NET_STATE 锁, 整个函数体通过 raw accessor 访问 NetState.
+        // SAFETY: 调用方持有 NET_STATE 锁, 整个函数体通过 raw accessor 访问 NetState.
         unsafe {
             // 1. 校验 slot_idx 范围
             if slot_idx >= TOTAL_SLOTS {
@@ -493,7 +465,7 @@ use smoltcp::socket::{tcp, udp};
     /// - `true`: 关闭成功
     /// - `false`: `slot_idx` 越界或槽位空闲
     pub fn smoltcp_net_stack_socket_close(slot_idx: usize) -> bool {
-        // SAFETY: 调用方持有 state::NET_STATE 锁, 整个函数体通过 raw accessor 访问 NetState.
+        // SAFETY: 调用方持有 NET_STATE 锁, 整个函数体通过 raw accessor 访问 NetState.
         unsafe {
             // 1. 校验 slot_idx 在 SmoltcpNetStack 范围内
             if !(MAX_SM_FD..TOTAL_SLOTS).contains(&slot_idx) {

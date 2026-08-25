@@ -11,6 +11,9 @@ use std::path::Path;
 
 const NET_INIT: &str = "src/kernel/framework/net/init.rs";
 const NET_SM_FI: &str = "src/kernel/framework/net/init/sm_fi.rs";
+// B04-09 (2026-08-25): buffer accessor 与 k_malloc/k_free 逻辑随拆分
+// 移至 init/raw.rs, init.rs 经 `pub use raw::*` 引用.
+const NET_RAW: &str = "src/kernel/framework/net/init/raw.rs";
 
 fn read(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18,10 +21,17 @@ fn read(path: &str) -> String {
     fs::read_to_string(&p).unwrap_or_else(|_| panic!("读 {}", path))
 }
 
+/// 合并读取 init.rs 与 init/raw.rs 源码 (slab 缓冲逻辑所在位置).
+fn read_raw_sources() -> String {
+    let mut src = read(NET_INIT);
+    src.push_str(&read(NET_RAW));
+    src
+}
+
 #[test]
 fn test_buf_access_through_raw_module() {
     // TD-07: 缓冲访问必须通过 raw:: 模块 (NetState 迁移后)
-    let src = read(NET_INIT);
+    let src = read_raw_sources();
     // raw 模块必须提供 tcp_rx_buf / tcp_tx_buf / udp_rx_buf / udp_tx_buf accessor
     for accessor in &["tcp_rx_buf", "tcp_tx_buf", "udp_rx_buf", "udp_tx_buf"] {
         assert!(src.contains(accessor),
@@ -31,7 +41,7 @@ fn test_buf_access_through_raw_module() {
 
 #[test]
 fn test_socket_alloc_uses_kmalloc() {
-    let src = read(NET_INIT);
+    let src = read_raw_sources();
     // TCP 路径必须用 k_malloc(TCP_BUF_SIZE)
     assert!(src.contains("k_malloc(TCP_BUF_SIZE)"),
         "TD-07: smoltcp TCP socket alloc 必须通过 `k_malloc(TCP_BUF_SIZE)` 申请缓冲");
@@ -42,7 +52,7 @@ fn test_socket_alloc_uses_kmalloc() {
 
 #[test]
 fn test_socket_close_uses_kfree() {
-    let src = read(NET_INIT);
+    let src = read_raw_sources();
     // close 路径必须对缓冲调用 k_free
     assert!(src.contains("k_free(raw::tcp_rx_buf") || src.contains("k_free("),
         "TD-07: smoltcp close 路径必须调用 k_free 归还 slab");

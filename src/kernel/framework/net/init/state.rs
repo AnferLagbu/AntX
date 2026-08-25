@@ -1,0 +1,120 @@
+//! 网络初始化状态管理 (B04-09 拆分 Step B, 2026-08-25)
+//!
+//! 原 init.rs 内联定义: `InitState` / `G_INIT_STATE` / `G_*` 配置快照 /
+//! `NetState` / `NET_STATE` / `transition_state` / `set_failed`.
+//! 抽出为独立子模块后, init.rs 通过 `pub use state::*` re-export,
+//! 保持 init 主体与子模块 (raw/sm_fi) 的 `super::NET_STATE` 等引用不变.
+
+use core::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
+
+use crate::kernel::framework::net::{ChitinNetDevice, NetworkStack};
+use crate::kernel::framework::sync::IrqSpinLock as Mutex;
+use smoltcp::iface::SocketHandle;
+use smoltcp::socket::udp;
+
+use super::{TOTAL_SLOTS, UDP_META_COUNT};
+
+// ============================================================================
+// 初始化状态管理
+// ============================================================================
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitState {
+    Uninitialized = 0,
+    HardwareProbed = 1,
+    InterfaceReady = 2,
+    FullyInitialized = 3,
+    Failed = 255,
+}
+
+pub static G_INIT_STATE: AtomicU8 = AtomicU8::new(InitState::Uninitialized as u8);
+
+// 当前网络配置快照 (D1.1/D1.2 高层 API 支撑)
+// 全部为 Atomic, 单字段读写无需 NET_LOCK; 多字段一致性由 NetStatus::capture 原子复制.
+// 未配置时全部 = 0; 0.0.0.0 表示"无".
+// pub: 供 init.rs 主体 (NetStatus::capture 等) 与 `pub use state::*` re-export 访问.
+pub static G_MAC: AtomicU64 = AtomicU64::new(0); // 6 字节大端打包为 u64
+pub static G_IPV4: AtomicU32 = AtomicU32::new(0); // 网络字节序
+pub static G_GATEWAY: AtomicU32 = AtomicU32::new(0); // 网络字节序
+pub static G_DNS: [AtomicU32; 3] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
+
+// ============================================================================
+// 全局网络状态 (NetState 统一结构)
+//
+// 原 12 个 static mut 合并为 NetState, 由 NET_STATE (IrqSpinLock) 保护。
+// poll_network() 使用 try_lock() 避免在 ISR 上下文中阻塞；
+// 其他函数使用 lock() 获取互斥访问。
+// 所有字段访问通过 raw 模块的 accessor 函数, 保证集中 unsafe 边界。
+// ============================================================================
+
+/// 网络子系统全局状态, 集中原 12 个 static mut.
+///
+/// 由 `NET_STATE` (`IrqSpinLock`) 保护, 所有字段访问通过 `raw` 模块 accessor.
+pub struct NetState {
+    pub(crate) device: Option<ChitinNetDevice>,
+    pub(crate) stack: Option<NetworkStack>,
+    pub(crate) dhcp_handle: Option<SocketHandle>,
+    pub(crate) socket_table: [Option<SocketHandle>; TOTAL_SLOTS],
+    pub(crate) fd_types: [u8; TOTAL_SLOTS],
+    pub(crate) tcp_rx_bufs: [*mut u8; TOTAL_SLOTS],
+    pub(crate) tcp_tx_bufs: [*mut u8; TOTAL_SLOTS],
+    pub(crate) udp_rx_bufs: [*mut u8; TOTAL_SLOTS],
+    pub(crate) udp_tx_bufs: [*mut u8; TOTAL_SLOTS],
+    pub(crate) udp_rx_metas: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS],
+    pub(crate) udp_tx_metas: [[udp::PacketMetadata; UDP_META_COUNT]; TOTAL_SLOTS],
+}
+
+// SAFETY: NetState 包含 *mut u8 裸指针, 但所有指针由 k_malloc 分配、
+// 在 NET_STATE (IrqSpinLock) 保护下串行访问, 无跨线程共享裸指针.
+unsafe impl Send for NetState {}
+unsafe impl Sync for NetState {}
+
+impl NetState {
+    #[expect(
+        clippy::large_stack_arrays,
+        reason = "large_stack_arrays: 大栈数组是性能权衡 (避免堆分配); 当前优先 expect"
+    )]
+    pub const fn new() -> Self {
+        Self {
+            device: None,
+            stack: None,
+            dhcp_handle: None,
+            socket_table: [None; TOTAL_SLOTS],
+            fd_types: [0u8; TOTAL_SLOTS],
+            tcp_rx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            tcp_tx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            udp_rx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            udp_tx_bufs: [core::ptr::null_mut(); TOTAL_SLOTS],
+            udp_rx_metas: [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS],
+            udp_tx_metas: [[udp::PacketMetadata::EMPTY; UDP_META_COUNT]; TOTAL_SLOTS],
+        }
+    }
+}
+
+/// 全局网络状态, `IrqSpinLock` 保护 (替代原 `NET_LOCK` + 12 static mut).
+/// `poll_network` 使用 `try_lock()` 避免 ISR 上下文阻塞.
+pub static NET_STATE: Mutex<NetState> = Mutex::new(NetState::new());
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+
+pub fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
+    match G_INIT_STATE.compare_exchange(from as u8, to as u8, Ordering::AcqRel, Ordering::Relaxed) {
+        Ok(_) => Ok(()),
+        Err(current) => {
+            if current == InitState::Failed as u8 {
+                Err(())
+            } else if current >= to as u8 {
+                Ok(())
+            } else {
+                Err(())
+            }
+        }
+    }
+}
+
+pub fn set_failed() {
+    G_INIT_STATE.store(InitState::Failed as u8, Ordering::Release);
+}

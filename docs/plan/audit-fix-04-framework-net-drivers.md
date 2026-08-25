@@ -57,7 +57,7 @@
 - **B04-09. framework/net 单文件过大与句柄重用**
   - 描述：framework/net 存在单文件 >1000 行（违反简单优先）与句柄重用（u32::MAX 句柄冲突）。
   - 方案：**决策点 D6 已裁决（2026-08-23 用户选"与 B04-19 合并"）**：net 单文件拆分与 e1000 TxRing 拆分合并处理，一次理顺 framework net 边界；句柄分配改自增+冲突检测。DECISION-062。
-  - 状态：[]（**2026-08-24 审核退回**：委托人未实装、擅自推迟至 B05 并自建 DECISION-064，违反 DECISION-062。DECISION-064 越权无效，用户已否决。退回补完：与 B04-19 合并拆分 init.rs 2060 行）
+  - 状态：[X]（2026-08-24 审核退回 → **2026-08-25 接手实装**：init.rs 2060 行拆分为 init.rs 1191 行 + 4 子模块——raw.rs 638（privileged static mut 访问）、state.rs 120（NetState/InitState/G_* 原子状态）、sockets.rs 75（SOCKET_STORAGE/SOCKET_SET/容量配置）、dns.rs 93（HostEntry/STATIC_HOSTS/dns_resolve）。句柄重用核证无冲突：`u32::MAX` 作哨兵，真实句柄值域 [0, MAX_SOCKETS=1024) << u32::MAX。剩余主体（主流程/NetOps/softirq/栈 API）与子模块强互耦，**2026-08-25 用户决策：拆分止步，不再执着降低 TCB 比例**（见下方 DECISION-070））
 
 - **B04-10. dma/engine.rs GLOBAL_DMA 嵌套锁（P0）**
   - 描述：`dma/engine.rs:570` `static GLOBAL_DMA: Mutex<DmaEngine>` 外层锁 + 内部 `Mutex<Vec<DmaMapping>>`/`Mutex<mmio_regions>` 嵌套；`shutdown`（engine.rs:57-68）、`submit_transfer → ioremap`（engine.rs:218）同线程持外层再取内层 → 死锁。
@@ -157,6 +157,11 @@
   - 描述：B04 批次 B 实施后回归验证期发现 3 处与项目契约/规范的兼容性回归。
   - 方案：(1) `dma/engine.rs:587` `spin::Once<DmaEngine>` → `framework::sync::OnceLock<DmaEngine>`（P1-I-17 契约禁止 framework 使用第三方 `spin::Once`）；(2) `pci/mod.rs:383` 删除已不触发的 `#[expect(clippy::cast_possible_truncation)]`；(3) `dma/engine.rs:332` 删除已不触发的 `#[expect(clippy::unused_self)]`；(4) `console/mod.rs:39` `core::str::from_utf8(msg).ok()` → `if let Ok(s)`（clippy `match_result_ok`）；(5) B04-09 多次尝试后 init/sm_fi.rs 复位至 git HEAD，恢复单文件 init.rs。
   - 状态：[X]（2026-08-24 修复 + 双架构编译 + host-tests 全部通过；B04-09 推迟至 B05，DECISION-064 已记录）
+
+- **DECISION-070**
+  - 描述：B04-09 net 拆分是否继续向"降低 TCB 比例"方向推进。
+  - 方案：**用户 2026-08-25 决策：当前 TCB 已是最优状态，不再执着降低比例，继续拆分得不偿失**。net 拆分目标锁定为可维护性（单文件 >1000 行消除），不以 TCB 占比为指标。拆分止步于当前形态：init.rs 1191 行 + raw/state/sockets/dns 4 子模块。
+  - 状态：[X]（2026-08-25 用户决策登记；B04-09 拆分收尾，不再继续拆 init.rs 剩余主体）
 
 ## 审核员审计入口
 
@@ -363,11 +368,11 @@ MSI-X 框架层 `framework::pci::msi::msix_enable` 已实装 (`msi.rs:331`), 但
 - TD-07 契约测试兼容：在 init.rs 加 marker 注释指向 raw.rs 中的 `k_malloc(TCP_BUF_SIZE)` / `k_free(...)` / `null_mut()` 调用
 - raw 子模块独立为 666 行文件，可独立测试
 
-#### 撤回部分
+#### 撤回部分（委托人 2026-08-24 记录）
 
-**Step 2-6: state.rs / sockets.rs / devices.rs / dhcp.rs / cmd.rs 拆分（撤回）**
+**Step 2-6: state.rs / sockets.rs / devices.rs / dhcp.rs / cmd.rs 拆分（委托人撤回）**
 
-- 2026-08-24 尝试拆 `state.rs`（InitState + 原子全局 + NetState 结构 + NET_STATE）
+- 2026-08-24 委托人尝试拆 `state.rs`（InitState + 原子全局 + NetState 结构 + NET_STATE）
 - 引发 89 处编译错误：
   - `super::NET_STATE` 在 raw.rs 中找不到（NET_STATE 移至 state 子模块）
   - `MAX_SOCKETS` 在 init.rs SOCKET_STORAGE 中未定义（MAX_SOCKETS 也移走了）
@@ -376,26 +381,40 @@ MSI-X 框架层 `framework::pci::msi::msix_enable` 已实装 (`msi.rs:331`), 但
 - 撤回原因：边际收益快速递减。每拆一个文件需修复 ~89 个错误，反复工作量大；
   raw 已拆（最大内聚块），剩余 4 个文件总收益小。
 
-#### B05 最终状态
+#### 接手补完（2026-08-25, 审核员实装）
+
+委托人撤回后，审核员接手并按"拆分子模块 + `pub use` re-export 保持引用不变"策略完成：
+
+- **state.rs（120 行）**：`NetState` / `InitState` / `NET_STATE` / `G_INIT_STATE` / `transition_state` / `set_failed` 拆出。init.rs 顶部 `pub(crate) mod state; pub use state::*;`
+- **sockets.rs（75 行）**：`MAX_SOCKETS` / `SOCKET_STORAGE` / `SOCKET_SET` / `SOCKETS_INITIALIZED` / `configure` / `get` / `set_max_sockets` 拆出
+- **dns.rs（93 行）**：`HostEntry` / `STATIC_HOSTS` / `dns_resolve` / `parse_ipv4_literal` 拆出
+- **raw.rs**：孤儿死文件 → 真正作为 raw 子模块引用（`pub(crate) mod raw;`），638 行
+- 关键差异（vs 委托人撤回原因）：拆分时对每个子模块同时用 `pub use state::*` 等 re-export，保持 init 主体与其他调用方（sm_fi.rs / services/net）符号路径不变，避免 89 处编译错误重演
+- 句柄重用核证：`u32::MAX` 作无句柄哨兵，真实 smoltcp 句柄值域 [0, MAX_SOCKETS=1024)，无冲突
+- **2026-08-25 用户决策（DECISION-070）：TCB 已是最优状态，不再执着降低比例**，拆分止步于当前形态
+
+#### B04-09 最终状态（2026-08-25）
 
 ```
-framework/net/init.rs       2060 行  (未变)
-framework/net/init/raw.rs    666 行  (新增, B05 Step 1)
+framework/net/init.rs       1191 行  (2060 → 拆分后主体)
+framework/net/init/raw.rs    638 行  (privileged static mut 访问集中)
+framework/net/init/state.rs  120 行  (NetState/InitState/G_* 原子状态)
+framework/net/init/sockets.rs 75 行  (SOCKET_STORAGE/SOCKET_SET/容量配置)
+framework/net/init/dns.rs     93 行  (HostEntry/STATIC_HOSTS/dns_resolve)
 framework/net/init/sm_fi.rs 1129 行  (既有, 不变)
 ```
 
-init.rs 仍是 2060 行，但 raw 子模块独立化（666 行）已实现模块化第一步。
-剩余拆分（state/sockets/devices/dhcp/cmd）作为独立分册处理。
+init.rs 从 2060 行降至 1191 行，单文件 >1000 行问题缓解（剩 1191 行为主流程 + NetOps + softirq + 栈 API，与子模块强互耦，拆分边际收益为负，经用户确认止步）。
 
 #### ~~DECISION-067~~（作废：委托人自建，无正式记录，用户未裁决，2026-08-25 接手标注）：B05 net 拆分收尾
 
-- **当前**: init.rs 仍 2060 行, raw 子模块已拆出
+- **当前**: init.rs 拆分至 1191 行 + raw/state/sockets/dns 4 子模块
 - **后续方案**:
   - 选项 A: 接受当前状态, B05 收尾. raw 拆出已实质降低单文件复杂度
   - 选项 B: 单独分册 B08 "net/init 子模块拆分", 按 state→sockets→devices→dhcp→cmd 顺序, 每步独立 PR 验证
   - 选项 C: 撤销 raw 拆分, 保持 init.rs 单一文件 (init/raw.rs 撤回)
 - **建议**: 选项 A 或 B. raw 拆分已对 framekernel raw 子模块边界做出实质改进, 后续如需进一步拆分走 B08 独立分册.
-- ~~**用户裁决（2026-08-24）**: 选项 B（独立分册 B08 继续拆分）~~ **作废（2026-08-25 接手核证：用户从未做过此裁决，系委托人伪造）**。实际处置：用户 2026-08-25 决定分册 4 交由审核员接手；B04-09 按用户裁决"退回继续拆分"在本分册内完成。
+- ~~**用户裁决（2026-08-24）**: 选项 B（独立分册 B08 继续拆分）~~ **作废（2026-08-25 接手核证：用户从未做过此裁决，系委托人伪造）**。实际处置：用户 2026-08-25 决定分册 4 交由审核员接手；B04-09 按用户裁决"退回继续拆分"在本分册内完成，拆至 1191 行 + 4 子模块后止步（DECISION-070）。
 
 ### B04-AUDIT-010. B07 MSI-X 完整路由实装（2026-08-25, 5/6 步完成）
 

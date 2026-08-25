@@ -9,6 +9,9 @@ use std::fs;
 use std::path::Path;
 
 const NET_INIT: &str = "src/kernel/framework/net/init.rs";
+// B04-09 (2026-08-25): MAX_SOCKETS/SOCKET_STORAGE 定义随拆分移至
+// init/sockets.rs, init.rs 经 `pub use sockets::*` re-export.
+const NET_SOCKETS: &str = "src/kernel/framework/net/init/sockets.rs";
 
 fn read(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -16,9 +19,16 @@ fn read(path: &str) -> String {
     fs::read_to_string(&p).unwrap_or_else(|_| panic!("读 {}", path))
 }
 
+/// 合并读取 init.rs 与 init/sockets.rs 源码 (socket 容量配置所在位置).
+fn read_socket_sources() -> String {
+    let mut src = read(NET_INIT);
+    src.push_str(&read(NET_SOCKETS));
+    src
+}
+
 #[test]
 fn test_max_sockets_is_256() {
-    let src = read(NET_INIT);
+    let src = read_socket_sources();
     // 验: MAX_SOCKETS 必须为 256
     assert!(src.contains("const MAX_SOCKETS: usize = 256;"),
         "TD-06: MAX_SOCKETS 必须为 256");
