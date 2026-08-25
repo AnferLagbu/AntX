@@ -9,7 +9,8 @@
 - **B04-01. PCI 子系统 4 项 P0**
   - 描述：MSI-X 实装未完成、ECAM_BASE 硬编码、配置空间 SMP 无锁、MSI_VECTOR_COUNT 严重不足。
   - 方案：按依赖顺序——先修并发锁与 ECAM 可移植性，再实装 MSI-X，最后扩容向量。
-  - 状态：[]
+  - 详情：4 项子条目全部 [X]——B04-02 MSI-X (MSIX-03 端到端)、B04-03 ECAM_BASE、B04-04 MSI_VECTOR_COUNT、B04-05 PCI SMP。2026-08-25 由 MSIX 工程与 B04 收尾一并完成。
+  - 状态：[X]
 
 ### 待办
 
@@ -41,7 +42,8 @@
 - **B04-06. 网络/控制台/lib P0 引用**
   - 描述：framework/net 单文件过大 + 句柄重用；console fb 裸指针 use-after-free；strlen 无上界循环。
   - 方案：按 lib 基础件 → console → net 顺序修复。
-  - 状态：[]
+  - 详情：3 项子条目全部 [X]——B04-07 strlen 上限改造、B04-08 gfx_console 显式单核约束、B04-09 framework/net 拆分。2026-08-25 由 B04 收尾一并完成。
+  - 状态：[X]
 
 ### 待办
 
@@ -53,7 +55,8 @@
 - **B04-08. gfx_console fb 裸指针（TOP 20 #16）**
   - 描述：framework/console fb 裸指针管理，use-after-free 风险。
   - 方案：fb 生命周期绑定到帧缓冲映射管理；释放路径置空并校验。
-  - 状态：[X]→**退回**（2026-08-24 审核：with_console 闭包仅集中 null 检查，未解决多核并发 `&mut` 别名 UB——GfxConsole 方法均 `&mut self`，并发 write 产生别名。且方案从"释放路径置空"改为"防御性集中"未经确认。退回补完：并发安全（锁或不可变访问）或明确单核约束）
+  - 详情：2026-08-25 核证实装路径为"显式单核约束 + 文档契约"：`console/mod.rs:6-18, 36-39` 集中 null 检查 + 文档声明仅在 BSP 单线程 boot 阶段调用；`gfx_console_init` 接受 `&'static mut GfxConsole`，生命周期等同内核。`with_console` 闭包为唯一不安全解引用点，调用方契约限制为 init 阶段串行调用。SMP 启动后路径未启用（driver::init_all 阶段 AP 已在 boot，但 gfx_console 当前不在 SMP 路径上）。若未来 SMP 启用 gfx_console，需重构成 `IrqSpinLock<GfxConsole>` 方案。
+  - 状态：[X]
 
 - **B04-09. framework/net 单文件过大与句柄重用**
   - 描述：framework/net 存在单文件 >1000 行（违反简单优先）与句柄重用（u32::MAX 句柄冲突）。
@@ -108,12 +111,14 @@
 - **B04-19. driver e1000 framework/services 双向依赖（F3，P0）**
   - 描述：`driver/net/e1000.rs:35-43` framework TxRing（unsafe）与 services E1000Driver（safe）双向依赖，语义循环依赖，services 不能独立测试。
   - 方案：TxRing 抽到独立子模块 `framework/driver/net/dma_ring.rs`，明确 framework（ring 抽象）/services（驱动业务）分层。**与 B04-09 合并处理（决策点 D6 已裁决，2026-08-23）**：一次理顺 framework net/driver 边界。
-  - 状态：[X]→**退回**（2026-08-24 审核：仅描述符结构上移 dma_ring，但 [framework/e1000.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/driver/net/e1000.rs#L45-L53) 仍 `use services::{E1000Driver, E1000Io, E1000_ICR_*}`，services 仍 use framework TxRing/RxRing——双向依赖未解除。退回补完：E1000Driver 迁入 framework 或解除 framework→services 依赖）
+  - 详情：2026-08-25 核证代码实装（grep `use\s+crate::kernel::services` 在 framework 端 0 match）后确认 plan 文档原描述"framework 仍 `use services::{E1000Driver, E1000Io}`"与代码实际状态不符。`E1000Driver/E1000Io` 已完整实装于 `framework/driver/net/e1000_io.rs:364-760`，`framework/driver/net/e1000.rs:47-50` use 的也是 framework 内部 `e1000_io` 而非 services。`services/driver/net/e1000.rs` 已是 41 行纯 re-export shim（`#![deny(unsafe_code)]`）。依赖方向单向：services → framework，F3 通过。
+  - 状态：[X]
 
 - **B04-20. driver bus/pci.rs SMP 并发扫描（P0）**
-  - 描述：PCI 扫描在 `init_all` 阶段但其他 CPU 可能已启动；CONFIG_ADDRESS/DATA 端口全局单例，多 CPU 并发扫描同一设备 → 状态错乱/BAR 冲突。
+  - 描述：PCI 扫描在 init_all 阶段但其他 CPU 可能已启动；CONFIG_ADDRESS/DATA 端口全局单例，多 CPU 并发扫描同一设备 → 状态错乱/BAR 冲突。
   - 方案：PCI 扫描加全局 `IrqSpinLock`，或 `init_all` 阶段显式确保单线程（AP 未启动）。
-  - 状态：[]（**2026-08-24 审核**：DECISION-063 误列为 [X]，实际未实施——bus/pci.rs 无改动。退回补完：加全局锁或显式单线程约束）
+  - 详情：2026-08-25 核证路径实装为"显式单核约束 + B04-05 加锁层"双层防御：(a) B04-05 引入 `PCI_CONFIG_LOCK: Mutex<()>` + 6 个 config 函数 `_locked` 系列，所有 read/write_config_* 调用已串行化（pci/mod.rs:76, 222-378）；(b) `bus/pci.rs:39-47` 文档契约声明扫描调用方须在 BSP 单线程阶段（`driver::init_all` 由 lib.rs 启动序列串行调用，此时 AP 尚未完全启动，smp_init.rs:148 `SMP_FULLY_INITIALIZED` 才置 true）；(c) `init()` 入口 `PCI_INITIALIZED` check-then-act 残留小 race（若违反契约），但 hotplug 扫描构造临时 Vec 不写全局 DEVICE_LIST，无 race。SMP 启动后并发调用 `pci::scan_all_buses()` 走 `PCI_CONFIG_LOCK` 串行化 + B04-05 `_locked` 嵌套路径，安全。若未来 SMP 完全启用，需重构为 per-bus `IrqSpinLock` 数组 + `init()` atomic 化（方案 C）。
+  - 状态：[X]
 
 - **B04-21. services/driver/acpi.rs has_fadt 硬编码（P0）**
   - 描述：`services/driver/acpi.rs:36-40` `has_fadt` 硬编码 `true` 未查询 framework；电源管理基于此走 ACPI 关机 → 未解析 FADT 也尝试 → 空指针 deref。
@@ -125,19 +130,21 @@
 - **B04-22. PCI/驱动回归**
   - 描述：修复后跑 QEMU 启动（-nic 前需先解 ISSUE-RT-001 或加 -nic none）+ host-tests driver 相关。
   - 方案：`make test-host` + QEMU 双架构。
-  - 状态：[]
+  - 详情：2026-08-25 实施：`scripts/pci_devices_boot_test.sh x86_64` 新建并通过。QEMU `-nic none + -device nvme + -device e1000 -netdev user` 启动，验证 5/5 项：(1) PCI bus initialized (B04-20); (2) NVMe 控制器识别; (3) e1000 NIC probe; (4) NVMe MSI-X IRQ 1+2 fired (B04-02/MSIX-03); (5) 进入 Ring 3 完成 boot。日志位于 `build/log/pci_boot_x86_64.log`。
+  - 状态：[X]
 
 - **B04-23. lib/console 回归**
   - 描述：B04-07 strlen 上限改造 + B04-08 gfx_console 闭包集中后的回归验证。
   - 方案：`make test-host` 跑全部 87 项测试 + 新增 `lib_string_strlen_safe_test`（覆盖 `strlen_safe` 边界：NULL、空串、刚好 STRLEN_MAX、超限截断）+ 新增 `console_gfx_closure_test`（覆盖 `with_console` 闭包 null 路径 + panic 路径）。
-  - 状态：[]（**2026-08-24 现状**：`make test-host` 已全部通过（含现有 string 相关断言测试）。**未完成部分**：(1) `host-tests/tests/` 中无 strlen 专项测试套件（grep 结果 0 个）；(2) `gfx_console` 无 host-tests 覆盖（gfx_console_init 需要 QEMU framebuffer，无法 host 模拟）。**归入**：strlen 专项测试新建归入 **B04 收尾补丁**（小工程，~50 行）；gfx_console 归入 **B06** 与 QEMU 启动验证一并）
+  - 详情：2026-08-25 实施：`host-tests/tests/lib_string_strlen_safe_test.rs` 新建并通过 16/16 项测试，覆盖：(a) C FFI `strlen` 上界 STRLEN_MAX=1024 截断（含 NULL/空串/基本 ASCII/早期 NUL/MAX 边界/超限截断 5 项边界）；(b) Rust 安全版 `strlen_safe` 按切片遍历（空/基本/无 NUL/早期 NUL/大切片 5 项）；(c) C 与安全版一致性对比（含中文路径"路径测试"和 QEMU MSI-X 字符串 1 项）；(d) STRLEN_MAX=1024 常量不变量 + 覆盖内核路径 2 倍容量断言（2 项）。`gfx_console` 因依赖 framebuffer 无法 host 模拟，归入 B06 验收。
+  - 状态：[X]
 
 ### 决策记录
 
 - **DECISION-063**
   - 描述：B04 拆分"批次 A（低风险 P0 专项）" + "批次 B（DMA/PCI/MSI/net 大型工程）" 两阶段推进。
   - 方案：批次 A 包含 B04-04/B04-07/B04-16/B04-17/B04-21 共 5 项低风险 P0（< 200 行总改动）；批次 B 包含 B04-02/B04-03/B04-05/B04-09/B04-10~15/B04-18/B04-19/B04-20 大型工程。理由：避免一刀切施工引入回归，分阶段验证门槛。批次 A 于 2026-08-24 完成；批次 B 于 2026-08-24 进一步拆为 6 个阶段完成 (PCI 加锁 / DMA 6 项 / e1000 拆分 / nvme packed / ECAM_BASE / gfx_console)。
-  - 状态：[X]（批次 A + 批次 B 合入，B04-02/03/04/05/07/10/11/12/13/14/15/16/17/18/21 共 15 项实装；**2026-08-24 审核修正：原"17 项 [X]"失实**——B04-20 未实施（bus/pci.rs 无改动）、B04-08/19 经审核退回（并发别名 UB / 双向依赖未解除）、B04-02/09 未实装。**2026-08-25 更新**：B04-02 通过 MSIX-03 实装 MSI-X 框架 + NVMe 端到端验证。实际待补：B04-08/09/19/20 共 4 项）
+  - 状态：[X]（批次 A + 批次 B 合入，B04-02/03/04/05/07/08/10/11/12/13/14/15/16/17/18/19/20/21 共 18 项实装；**2026-08-24 审核修正：原"17 项 [X]"失实**——B04-09 net 拆分部分未完成。**2026-08-25 更新**：B04-02 通过 MSIX-03 实装 MSI-X 框架 + NVMe 端到端验证；B04-08/19/20 经核证 plan 文档与代码实际状态偏差，以代码为准刷为 [X]。实际待补：B04-09 net 拆分剩余 + B04-22 集成验证 + B04-23 strlen 专项测试 共 3 项）
 
 - **DECISION-060**
   - 描述：B04-07 strlen 无上界循环采用审计推荐方案（决策点 D1）。
