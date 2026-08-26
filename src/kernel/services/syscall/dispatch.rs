@@ -27,7 +27,7 @@
 use crate::kernel::framework::syscall::dispatch_trait::{
     SyscallDispatch, register_syscall_dispatch,
 };
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::syscall::Errno;
 
 // ============================================================================
 // 辅助函数
@@ -79,7 +79,7 @@ impl SyscallDispatch for ServicesSyscallDispatch {
         }
 
         // 未匹配的 syscall — 返回 -ENOSYS 让 framework 回退处理
-        -38
+        crate::kernel::services::syscall::types::ENOSYS_RET
     }
 }
 
@@ -187,13 +187,15 @@ fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
 
         // 文件描述符操作
         SYS_pipe => as_ret(crate::kernel::services::fs::io::pipe_syscall(a0)),
-        SYS_pipe2 => as_ret(crate::kernel::services::fs::io::pipe_syscall(a0)),
+        SYS_pipe2 => as_ret(crate::kernel::services::fs::io::pipe2_syscall(
+            a0, a2 as i32,
+        )),
         SYS_dup => as_ret(crate::kernel::services::fs::io::dup_syscall(a0 as i32)),
         SYS_dup2 => as_ret(crate::kernel::services::fs::io::dup2_syscall(
             a0 as i32, a1 as i32,
         )),
-        SYS_dup3 => as_ret(crate::kernel::services::fs::io::dup2_syscall(
-            a0 as i32, a1 as i32,
+        SYS_dup3 => as_ret(crate::kernel::services::fs::io::dup3_syscall(
+            a0 as i32, a1 as i32, a2 as i32,
         )),
         SYS_fcntl => as_ret(crate::kernel::services::fs::io::fcntl_syscall(
             a0 as i32, a1 as i32, a2,
@@ -308,12 +310,12 @@ fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
 /// 进程相关系统调用
 fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
     use crate::kernel::services::syscall::types::{
-        SYS_clone, SYS_exit, SYS_exit_group, SYS_fork, SYS_getpgid, SYS_getpid, SYS_getppid,
-        SYS_getpriority, SYS_getrlimit, SYS_getrusage, SYS_getsid, SYS_gettid, SYS_gettimeofday,
-        SYS_kill, SYS_memfd_create, SYS_nanosleep, SYS_nice, SYS_pidfd_getfd, SYS_pidfd_open,
-        SYS_pidfd_send_signal, SYS_rt_sigaction, SYS_rt_sigprocmask, SYS_sched_getaffinity,
-        SYS_sched_setaffinity, SYS_sched_yield, SYS_setpgid, SYS_setpriority, SYS_setsid,
-        SYS_sysinfo, SYS_uname, SYS_wait4,
+        SYS_clone, SYS_clone3, SYS_exit, SYS_exit_group, SYS_fork, SYS_getpgid, SYS_getpid,
+        SYS_getppid, SYS_getpriority, SYS_getrlimit, SYS_getrusage, SYS_getsid, SYS_gettid,
+        SYS_gettimeofday, SYS_kill, SYS_memfd_create, SYS_nanosleep, SYS_nice, SYS_pidfd_getfd,
+        SYS_pidfd_open, SYS_pidfd_send_signal, SYS_reboot, SYS_rt_sigaction, SYS_rt_sigprocmask,
+        SYS_sched_getaffinity, SYS_sched_setaffinity, SYS_sched_yield, SYS_sethostname, SYS_setpgid,
+        SYS_setpriority, SYS_setsid, SYS_sysinfo, SYS_uname, SYS_wait4,
     };
     let [a0, a1, a2, a3, a4, _a5] = args;
 
@@ -385,9 +387,52 @@ fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_clone => as_ret(crate::kernel::services::proc::clone::clone_syscall(
             a0, a1, a2, a3, a4,
         )),
+        SYS_clone3 => {
+            // clone3(2): 首个参数指向用户空间 `struct clone_args`.
+            // SIMPLIFIED: 仅提取 flags/stack/parent_tid/child_tid/tls 五个字段委托
+            // `clone_syscall`, 忽略 pidfd/set_tid/cgroup/exit_signal 等高级字段;
+            // 影响面: 使用这些高级字段的调用方 (如线程库 clone3 路径) 语义不完整;
+            // 何时需扩展: 完整实现 clone3 (独立 sys_clone3 机制, 支持全部字段) 后替换.
+            #[repr(C)]
+            #[derive(Copy, Clone)]
+            struct CloneArgs {
+                flags: u64,
+                pidfd: u64,
+                child_tid: u64,
+                parent_tid: u64,
+                exit_signal: u64,
+                stack: u64,
+                stack_size: u64,
+                tls: u64,
+            }
+            let mut args = CloneArgs {
+                flags: 0,
+                pidfd: 0,
+                child_tid: 0,
+                parent_tid: 0,
+                exit_signal: 0,
+                stack: 0,
+                stack_size: 0,
+                tls: 0,
+            };
+            if !crate::kernel::framework::syscall::api::read_struct_from_user(a0, &mut args) {
+                return Some(Errno::EFAULT.as_ret());
+            }
+            as_ret(crate::kernel::services::proc::clone::clone_syscall(
+                args.flags,
+                args.stack,
+                args.parent_tid,
+                args.child_tid,
+                args.tls,
+            ))
+        }
         SYS_wait4 => as_ret(crate::kernel::services::proc::wait4::wait4_syscall(
             a0 as i32, a1, a2 as i32,
         )),
+
+        // 系统信息
+        SYS_reboot => crate::kernel::services::proc::sysinfo::reboot_syscall(a0 as i32),
+        SYS_sethostname => crate::kernel::services::proc::sysinfo::sethostname_syscall(a0, a1),
 
         // memfd
         SYS_memfd_create => as_ret(crate::kernel::services::proc::memfd::memfd_create_syscall(
@@ -412,8 +457,9 @@ fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
 /// 网络相关系统调用
 fn dispatch_net(num: u64, args: [u64; 6]) -> Option<i64> {
     use crate::kernel::services::syscall::types::{
-        SYS_accept, SYS_bind, SYS_connect, SYS_getsockopt, SYS_listen, SYS_recvfrom, SYS_recvmsg,
-        SYS_sendmsg, SYS_sendto, SYS_setsockopt, SYS_shutdown, SYS_socket,
+        SYS_accept, SYS_bind, SYS_connect, SYS_getpeername, SYS_getsockname, SYS_getsockopt,
+        SYS_listen, SYS_recvfrom, SYS_recvmsg, SYS_sendmsg, SYS_sendto, SYS_setsockopt,
+        SYS_shutdown, SYS_socket,
     };
     let [a0, a1, a2, a3, a4, a5] = args;
 
@@ -454,6 +500,16 @@ fn dispatch_net(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_getsockopt => as_ret(crate::kernel::services::net::syscall::getsockopt_syscall(
             a0 as i32, a1 as i32, a2 as i32, a3, a4,
         )),
+        SYS_getsockname => {
+            as_ret(crate::kernel::services::net::syscall::getsockname_syscall(
+                a0 as i32, a1, a2,
+            ))
+        }
+        SYS_getpeername => {
+            as_ret(crate::kernel::services::net::syscall::getpeername_syscall(
+                a0 as i32, a1, a2,
+            ))
+        }
 
         _ => return None,
     })
@@ -588,7 +644,7 @@ fn dispatch_credo(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_CREDO_PROC_CPUTIME, SYS_CREDO_PROC_LIST, SYS_CREDO_PROC_SETPRI, SYS_CREDO_PROC_SLEEP,
         SYS_CREDO_REBOOT, SYS_CREDO_REVOKE, SYS_CREDO_SET_PWM, SYS_CREDO_SETHOSTNAME,
         SYS_CREDO_VERIFY_PASSWORD, SYS_getegid, SYS_geteuid, SYS_getgid, SYS_getuid, SYS_setegid,
-        SYS_seteuid, SYS_setgid, SYS_setreuid, SYS_setuid,
+        SYS_seteuid, SYS_setgid, SYS_setregid, SYS_setreuid, SYS_setuid,
     };
     let [a0, a1, a2, a3, _a4, _a5] = args;
 
@@ -611,6 +667,9 @@ fn dispatch_credo(num: u64, args: [u64; 6]) -> Option<i64> {
             a0 as u32,
         )),
         SYS_setreuid => as_ret(crate::kernel::services::credo::uid::setreuid_syscall(
+            a0 as u32, a1 as u32,
+        )),
+        SYS_setregid => as_ret(crate::kernel::services::credo::uid::setregid_syscall(
             a0 as u32, a1 as u32,
         )),
 
@@ -664,7 +723,9 @@ fn dispatch_credo(num: u64, args: [u64; 6]) -> Option<i64> {
             crate::kernel::services::proc::proc_mgmt::credo_proc_cputime_syscall(a0 as u32)
         }
         SYS_CREDO_PROC_SLEEP => {
-            let ns = a0 * 1_000_000;
+            // 单位约定: 输入为毫秒 (Credo 策略), 底层 nanosleep 为纳秒.
+            const MS_TO_NS: u64 = 1_000_000;
+            let ns = a0 * MS_TO_NS;
             as_ret(crate::kernel::services::timer::sleep::nanosleep_syscall(
                 ns, a1,
             ))

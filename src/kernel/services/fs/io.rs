@@ -32,6 +32,24 @@ pub fn pipe_syscall(fds: u64) -> Result<usize, Errno> {
     }
 }
 
+/// pipe2 系统调用安全代理 (支持 `flags`)
+///
+/// `fds` 指向用户空间 i32`[2]` 数组 (8 字节)
+///
+/// # Errors
+/// 当 `fds` 为空指针时返回 `EFAULT`; 其余错误由底层 `sys_pipe2` 以对应 `Errno` 传播.
+pub fn pipe2_syscall(fds: u64, flags: i32) -> Result<usize, Errno> {
+    if fds == 0 {
+        return Err(Errno::EFAULT);
+    }
+    let ret = crate::kernel::framework::syscall::io::sys_pipe2(fds, flags);
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
+}
+
 /// dup 安全代理
 ///
 /// # Errors
@@ -57,6 +75,23 @@ pub fn dup2_syscall(oldfd: i32, newfd: i32) -> Result<usize, Errno> {
         return Err(Errno::EBADF);
     }
     let ret = crate::kernel::framework::syscall::io::sys_dup2(oldfd, newfd);
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(ret as usize)
+    }
+}
+
+/// dup3 安全代理 (支持 `flags`)
+///
+/// # Errors
+/// 当 `oldfd` 或 `newfd` 为负数时返回 `EBADF`; `oldfd == newfd` 时返回 `EINVAL`
+/// (dup3 语义要求两 fd 不同); 其余错误由底层 `sys_dup3` 以对应 `Errno` 传播.
+pub fn dup3_syscall(oldfd: i32, newfd: i32, flags: i32) -> Result<usize, Errno> {
+    if oldfd < 0 || newfd < 0 {
+        return Err(Errno::EBADF);
+    }
+    let ret = crate::kernel::framework::syscall::io::sys_dup3(oldfd, newfd, flags);
     if ret < 0 {
         Err(Errno::from_ret(ret))
     } else {

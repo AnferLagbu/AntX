@@ -12,8 +12,8 @@
 //!
 //! **MLFQ 已退役**: 历史上 MLFQ 的多级反馈队列 (level 0..3 + 时间片 `[10,20,40,80]` ms)
 //! 已完全被 CFS 取代 (注释中保留 "preserved from MLFQ" 仅为历史可追溯性).
-//! `add_to_run_queue` 路径已重定向到 `cfs_enqueue`; `queues[MLFQ_LEVELS]` 字段
-//! 与 `boost_priority` 保留仅作调试读 (`has_runnable`), 不再被任何调度决策读取.
+//! `add_to_run_queue` 路径已重定向到 `cfs_enqueue`; `boost_priority` 死代码已删除
+//! (与 `boost_all_vruntime` 逻辑 100% 等价), 周期性 boost 统一走 `boost_all_vruntime`.
 //!
 //! ## 调度决策链
 //!
@@ -90,7 +90,7 @@ impl PwidQuota {
     }
 }
 
-const MAX_QUOTAS: usize = 32;
+use crate::kernel::framework::constants::limits::{MAX_LIMITS, MAX_QUOTAS};
 
 pub struct PwidLimit {
     pub pwm: u64,
@@ -98,8 +98,6 @@ pub struct PwidLimit {
     pub max_procs: u32,
     pub current: u32,
 }
-
-const MAX_LIMITS: usize = 32;
 
 pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 

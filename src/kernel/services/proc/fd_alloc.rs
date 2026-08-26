@@ -79,11 +79,13 @@ pub enum FdSubsystem {
     Inotify = 4,
     /// timerfd
     TimerFd = 5,
+    /// pidfd (pidfd_open)
+    PidFd = 6,
 }
 
 impl FdSubsystem {
     /// 子系统数量 (用于范围表边界)
-    pub const COUNT: usize = 6;
+    pub const COUNT: usize = 7;
 
     /// 通过下标获取子系统 (用于 `for i in 0..COUNT { ... }`)
     pub fn from_index(i: usize) -> Option<Self> {
@@ -94,6 +96,7 @@ impl FdSubsystem {
             3 => Some(Self::SignalFd),
             4 => Some(Self::Inotify),
             5 => Some(Self::TimerFd),
+            6 => Some(Self::PidFd),
             _ => None,
         }
     }
@@ -155,6 +158,9 @@ impl FdPlan {
     /// `TimerFd` FD 空间 (TD-15: 历史 240 → 1160, 跳出 smoltcp [0, 256))
     pub const TIMER_FD: FdRange = FdRange::new(1160, 16);
 
+    /// `PidFd` FD 空间 (pidfd_open, 2026: 新增)
+    pub const PID_FD: FdRange = FdRange::new(1180, 16);
+
     /// 获取指定子系统的 FD 范围
     pub const fn range_for(sub: FdSubsystem) -> FdRange {
         match sub {
@@ -164,6 +170,7 @@ impl FdPlan {
             FdSubsystem::SignalFd => Self::SIGNAL_FD,
             FdSubsystem::Inotify => Self::INOTIFY,
             FdSubsystem::TimerFd => Self::TIMER_FD,
+            FdSubsystem::PidFd => Self::PID_FD,
         }
     }
 
@@ -175,6 +182,7 @@ impl FdPlan {
         Self::SIGNAL_FD,
         Self::INOTIFY,
         Self::TIMER_FD,
+        Self::PID_FD,
     ];
 
     /// 启动期不变量: 任意两个范围不重叠

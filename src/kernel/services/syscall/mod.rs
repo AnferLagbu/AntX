@@ -5,15 +5,15 @@
 //!
 //! Phase 2.5 syscall 迁移:
 //! - [x] 强类型 `SyscallNumber` 替代裸 u64
-//! - [x] 强类型 `SyscallArgs` 替代 4 个独立 u64 参数
+//! - [x] 强类型 `SyscallArgs` 替代 6 个独立 u64 参数
 //! - [x] 强类型 `SyscallResult<T>` (基于 `Errno`)
 //! - [x] 用户态指针/缓冲区验证
 //! - [x] `UserContext` 入口安全分发
-//! - [x] 处理器注册 API
+//! - [x] 处理器注册 API (dispatch trait, 见 `dispatch.rs`)
 //!
 //! ## 迁移方法
 //!
-//! 1. 内部把 4 个 u64 包装为 `SyscallArgs`, 委托 `framework::usermode::dispatch_syscall`
+//! 1. 通过 `dispatch_trait` 注册 services 层分发策略, framework 回退未迁移 syscall
 //! 2. services 层 0 unsafe — 所有 unsafe 在 framework TCB
 //! 3. 强类型 `SyscallResult<T>` 替代 `i64` 返回码 (POSIX 风格: 负数 = -errno)
 //!
@@ -257,13 +257,6 @@ pub fn dispatch_from_ctx_typed(ctx: &UserContext) -> SyscallResult<u64> {
 }
 
 // ============================================================================
-// 处理器注册
-// ============================================================================
-
-/// Syscall 处理器类型 (C ABI: 4 参, 返回 i64)
-pub type SyscallHandler = fn(u64, u64, u64, u64) -> i64;
-
-// ============================================================================
 // 初始化
 // ============================================================================
 
@@ -273,7 +266,14 @@ pub type SyscallHandler = fn(u64, u64, u64, u64) -> i64;
 /// 此函数仅注册 services 层系统调用分发策略, 不再回调 framework 以避免循环依赖。
 pub fn init() {
     // T-03: 注册 services 层系统调用分发策略
-    let _ = dispatch::register_services_dispatch();
+    // 注册失败说明策略已注册或状态异常, 启动期必须显式处理, 不能静默吞掉.
+    let r = dispatch::register_services_dispatch();
+    if r.is_err() {
+        crate::kernel::framework::klog::log_err(
+            crate::kernel::framework::klog::LogCategory::Boot,
+            format_args!("[SYSCALL] register_services_dispatch FAILED (重复注册?)"),
+        );
+    }
 }
 
 // Re-export

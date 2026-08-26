@@ -24,7 +24,9 @@ use super::types::{
 #[cfg(any(feature = "kernel_test", target_arch = "x86_64"))]
 use super::types::SYS_CREDO_DISK_INSTALL;
 
-const USER_ADDR_MAX: u64 = 0x7FFFFFFFE000;
+/// fb_mmap 目标虚拟地址上界 — 集中定义于 `framework::constants::limits`
+/// (与用户指针校验边界语义不同, 见该常量注释).
+use crate::kernel::framework::constants::limits::FB_MMAP_ADDR_MAX;
 
 /// 用户态寄存器值 → 文件描述符 (i32) 严格转换
 ///
@@ -52,8 +54,8 @@ fn try_flags(a: u64) -> Option<i32> {
 ///
 /// 调用者处于内核上下文. `ptr` 是已校验的用户态字符串指针.
 pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame) {
-    // ═══ 诊断: syscall dispatch 入口 ═══
-    #[cfg(target_arch = "x86_64")]
+    // ═══ 诊断: syscall dispatch 入口 (仅调试构建, 生产不包含) ═══
+    #[cfg(all(target_arch = "x86_64", feature = "debug_syscall"))]
     unsafe {
         core::arch::asm!(
             "push rax",
@@ -77,8 +79,9 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
         let syscall_num = f.rax;
 
         // rt_sigreturn 特殊处理: 需要直接修改 frame, 不走正常 dispatch
+        // Linux x86_64 编号 15 / aarch64 编号 139
         #[cfg(target_arch = "x86_64")]
-        let is_rt_sigreturn = syscall_num == 15;
+        let is_rt_sigreturn = syscall_num == crate::kernel::services::syscall::types::SYS_rt_sigreturn;
         #[cfg(target_arch = "aarch64")]
         let is_rt_sigreturn = syscall_num == 139;
 
@@ -190,7 +193,7 @@ fn syscall_dispatch_impl(num: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, 
 
     // L-01: 优先委托 services 层策略分发
     let svc_ret = super::dispatch_trait::current_syscall_dispatch().dispatch(num, args);
-    if svc_ret != -38 {
+    if svc_ret != crate::kernel::services::syscall::types::ENOSYS_RET {
         return svc_ret;
     }
 
@@ -1099,7 +1102,7 @@ fn sys_fb_mmap(target_vaddr: u64, size: u64, _prot: u64) -> i64 {
     if target_vaddr == 0 || target_vaddr & 0xFFF != 0 {
         return Errno::EINVAL.as_ret();
     }
-    if target_vaddr > USER_ADDR_MAX - size {
+    if target_vaddr > FB_MMAP_ADDR_MAX - size {
         return Errno::EINVAL.as_ret();
     }
 

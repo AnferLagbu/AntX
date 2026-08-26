@@ -87,4 +87,6 @@ netbios = []
 preempt = []
 kaslr = []
 barrier = []
+# syscall 入口诊断串口输出 (仅调试; 生产构建不包含)
+debug_syscall = []
 

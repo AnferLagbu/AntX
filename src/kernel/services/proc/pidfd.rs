@@ -1,13 +1,122 @@
 //! pidfd 系统调用实现
 //!
-//! pidfd_open: 为进程打开一个 pidfd
-//! pidfd_send_signal: 通过 pidfd 发送信号
+//! pidfd_open: 为进程打开一个 pidfd (分配真实 fd, 维护 fd→pid 映射)
+//! pidfd_send_signal: 通过 pidfd 发送信号 (按映射表反查 pid)
 //! pidfd_getfd: 通过 pidfd 获取文件描述符 (需要 OpenFile 系统, 暂存根)
+//!
+//! ## 设计 (B05-32 P0-10 修复)
+//!
+//! 旧实现直接把 pid 当作 fd 返回, 导致:
+//! - pid=1 的进程 pidfd 恒为 1, 与 stdin 冲突
+//! - 同一进程多次 pidfd_open 返回相同 fd (无独立句柄语义)
+//! - 任意进程可对任意 pid 伪造"fd"并注入信号
+//!
+//! 新实现通过 `fd_alloc::alloc_fd(FdSubsystem::PidFd)` 分配独立 fd 编号,
+//! 并维护 `fd → pid` 映射表. 映射表容量与 `FdPlan::PID_FD` 容量一致 (16).
+//!
+//! ## 并发安全
+//!
+//! 映射表用 `Mutex<[(i32, u32); CAP]>` 保护; 槽位复用 (`slot_id` 单调递增)
+//! 防止 ABA 问题.
 
-use crate::kernel::framework::syscall::types::Errno;
+use crate::kernel::framework::proc::fd_alloc::{FdSubsystem, alloc_fd, free_fd, idx_of};
+use crate::kernel::framework::sync::{Mutex, OnceLock};
+use crate::kernel::framework::syscall::Errno;
 
 /// pidfd 标志位
 const PIDFD_NONBLOCK: u32 = 1;
+
+/// 映射表容量 (与 `FdPlan::PID_FD` 容量一致)
+const PIDFD_CAP: usize = 16;
+
+/// `(fd, pid, slot_id)` 映射条目. `slot_id` 单调递增, 用于区分 fd 复用.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PidFdEntry {
+    fd: i32,
+    pid: u32,
+    slot_id: u64,
+}
+
+/// 全局 pidfd → pid 映射表 (OnceLock 延迟初始化, 首个 lock 时创建)
+static PIDFD_MAP: OnceLock<Mutex<[Option<PidFdEntry>; PIDFD_CAP]>> = OnceLock::new();
+
+/// 单调递增槽位号 (用于 fd 复用后区分新旧映射)
+static NEXT_SLOT_ID: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(1);
+
+/// 获取映射表锁 (首次调用时惰性初始化)
+fn pidfd_map() -> &'static Mutex<[Option<PidFdEntry>; PIDFD_CAP]> {
+    // OnceLock::set 是 safe 接口; 首次调用初始化, 后续 get 直接返回.
+    let _ = PIDFD_MAP.set(Mutex::new([None; PIDFD_CAP]));
+    match PIDFD_MAP.get() {
+        Some(m) => m,
+        // set 成功即存在; 理论不可达 (唯一失败场景是并发 set, 此时 get 必 Some)
+        None => unreachable!("pidfd map init"),
+    }
+}
+
+/// 分配一个 pidfd 映射槽位
+///
+/// # Errors
+///
+/// - 进程不存在 → `ESRCH`
+/// - 映射表已满 → `EMFILE`
+fn alloc_entry(pid: u32) -> Result<i32, Errno> {
+    // 先验证进程存在
+    if crate::kernel::framework::proc::PROCESS_TABLE.get(pid).is_none() {
+        return Err(Errno::ESRCH);
+    }
+
+    let fd = alloc_fd(FdSubsystem::PidFd).ok_or(Errno::EMFILE)?;
+    let slot_id = NEXT_SLOT_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+    let mut map = pidfd_map().lock();
+    for entry in map.iter_mut() {
+        if entry.is_none() {
+            *entry = Some(PidFdEntry { fd, pid, slot_id });
+            return Ok(fd);
+        }
+    }
+    // 映射表满 (理论不可达: fd 位图与映射表容量一致, 但防御性处理)
+    free_fd(FdSubsystem::PidFd, fd);
+    Err(Errno::EMFILE)
+}
+
+/// 释放 pidfd 映射 (由 close 路径调用)
+pub fn free_entry(fd: i32) -> bool {
+    let mut map = pidfd_map().lock();
+    for entry in map.iter_mut() {
+        if let Some(e) = entry {
+            if e.fd == fd {
+                *entry = None;
+                let _ = free_fd(FdSubsystem::PidFd, fd);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 通过 pidfd 反查目标 pid
+fn pid_of_fd(fd: i32) -> Option<u32> {
+    let map = pidfd_map().lock();
+    for entry in map.iter() {
+        if let Some(e) = entry {
+            if e.fd == fd {
+                return Some(e.pid);
+            }
+        }
+    }
+    None
+}
+
+/// 检查 fd 是否属于 pidfd 空间
+pub fn is_pidfd_fd(fd: i32) -> bool {
+    matches!(
+        idx_of(fd),
+        Some((FdSubsystem::PidFd, _))
+    )
+}
 
 /// `pidfd_open` — 为进程打开一个 pidfd
 ///
@@ -15,39 +124,37 @@ const PIDFD_NONBLOCK: u32 = 1;
 ///
 /// - flags 含非法位 → `EINVAL`
 /// - 进程不存在 → `ESRCH`
+/// - 映射表已满 → `EMFILE`
 pub fn pidfd_open(pid: u32, flags: u32) -> Result<usize, Errno> {
     if flags & !PIDFD_NONBLOCK != 0 {
         return Err(Errno::EINVAL);
     }
 
-    let table = &crate::kernel::framework::proc::PROCESS_TABLE;
-    if table.get(pid).is_none() {
-        return Err(Errno::ESRCH);
-    }
-
-    Ok(pid as usize)
+    let fd = alloc_entry(pid)?;
+    Ok(fd as usize)
 }
 
 /// `pidfd_send_signal` — 通过 pidfd 发送信号
 ///
 /// # Errors
 ///
-/// - 信号编号不在 1..=64 范围或发送失败 → `EINVAL`
-/// - 进程不存在 → `ESRCH`
+/// - 信号编号不在 1..=64 范围 → `EINVAL`
+/// - pidfd 无效 → `EBADF`
+/// - 目标进程不存在 → `ESRCH`
 pub fn pidfd_send_signal(pidfd: u32, sig: i32, _siginfo: u64, _flags: u32) -> Result<usize, Errno> {
     if !(1..=64).contains(&sig) {
         return Err(Errno::EINVAL);
     }
 
-    let pid = pidfd;
-    let table = &crate::kernel::framework::proc::PROCESS_TABLE;
-    if table.get(pid).is_none() {
-        return Err(Errno::ESRCH);
+    let pid = pid_of_fd(pidfd as i32).ok_or(Errno::EBADF)?;
+
+    // 复用 kill_syscall 的 pid>0 语义 (framework 内部 4 路径分发)
+    let ret = crate::kernel::framework::syscall::api::sys_kill(pid as i32, sig);
+    if ret < 0 {
+        Err(Errno::from_ret(ret))
+    } else {
+        Ok(0)
     }
-
-    crate::kernel::services::proc::signal::kill(pid).map_err(|_| Errno::EINVAL)?;
-
-    Ok(0)
 }
 
 /// `pidfd_getfd` — 通过 pidfd 获取文件描述符

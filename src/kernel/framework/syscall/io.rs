@@ -39,6 +39,19 @@ pub fn sys_pipe(fds: u64) -> i64 {
     0
 }
 
+/// pipe2 系统调用 (支持 flags)
+///
+/// # Safety
+/// `fds` 必须由调用方先通过 `check_user_buf` 验证为可写的用户缓冲区.
+///
+/// SIMPLIFIED: flags (`O_CLOEXEC`/`O_NONBLOCK`) 当前忽略, 语义等同 `pipe`;
+/// 影响面: `pipe2(O_CLOEXEC)` 创建的 fd 不设置 close-on-exec 标志;
+/// 何时需扩展: 在 FD 表实现 close-on-exec 标志后接入 flags 语义.
+pub fn sys_pipe2(fds: u64, flags: i32) -> i64 {
+    let _ = flags;
+    sys_pipe(fds)
+}
+
 // ============================================================================
 // dup
 // ============================================================================

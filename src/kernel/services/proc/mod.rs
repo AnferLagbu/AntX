@@ -131,9 +131,20 @@ pub type ProcResult<T> = Result<T, ProcError>;
 /// 由启动期 `kernel::init` 调用一次。
 pub fn init() {
     // 注册 services 层调度策略 (在 framework 调度器初始化之前)
-    let _ = sched_policy::register_default_policy();
+    // 注册失败显式记录, 不能静默吞掉 (B05-36 5.9).
+    if sched_policy::register_default_policy().is_err() {
+        crate::kernel::framework::klog::log_err(
+            crate::kernel::framework::klog::LogCategory::Boot,
+            format_args!("[PROC] register_default_policy FAILED (重复注册?)"),
+        );
+    }
     // REVAL-1: 注册 services 层信号策略
-    let _ = signal::register_standard_signal_policy();
+    if signal::register_standard_signal_policy().is_err() {
+        crate::kernel::framework::klog::log_err(
+            crate::kernel::framework::klog::LogCategory::Boot,
+            format_args!("[PROC] register_standard_signal_policy FAILED (重复注册?)"),
+        );
+    }
 
     crate::kernel::framework::proc::thread::init();
     crate::kernel::framework::proc::scheduler::init();

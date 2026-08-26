@@ -27,3 +27,24 @@ pub const MAX_LOCK_CLASSES: usize = 64;
 ///
 /// **超限行为**: 同 MAX_LOCK_CLASSES, 静默截断.
 pub const MAX_HELD_LOCKS: usize = 8;
+
+/// 每 PWM 配额表最大条目数 (调度器定额)
+///
+/// **超限行为**: 注册新配额超过上限时返回失败, 调用方按需处理
+/// (`framework::proc::scheduler::Scheduler::register_quota`).
+pub const MAX_QUOTAS: usize = 32;
+
+/// 每 PWM 进程数限制表最大条目数 (调度器限额)
+///
+/// **超限行为**: 同 MAX_QUOTAS, 注册新限制超过上限时返回失败.
+pub const MAX_LIMITS: usize = 32;
+
+/// fb_mmap 目标虚拟地址上界 (仅 `framework::syscall::dispatch::sys_fb_mmap` 使用)
+///
+/// **注意**: 该边界 (`0x7FFFFFFFE000`, 2^39 量级) 是帧缓冲映射专用约束,
+/// **不是**用户指针校验边界. 用户指针校验的真实上界定义于
+/// `framework::userptr` / `framework::mm::copy_user` (`0x7FFF_FFFF_F000`, 2^47).
+/// 两处边界语义不同, 不得混用.
+///
+/// **超限行为**: `sys_fb_mmap` 对 `target_vaddr > 本值 - size` 返回 `EINVAL`.
+pub const FB_MMAP_ADDR_MAX: u64 = 0x7FFFFFFFE000;

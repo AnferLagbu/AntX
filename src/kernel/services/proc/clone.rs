@@ -34,11 +34,14 @@ pub fn clone_syscall(
     tls: u64,
 ) -> Result<usize, Errno> {
     // CLONE_VM + CLONE_THREAD 必须同时设置 CLONE_SIGHAND (POSIX 线程要求)
+    // 注: Rust 中 `&` 优先级高于 `==`, 括号仅为明确语义 (B05-31 审计复核).
     const CLONE_VM: u64 = 0x00000100;
     const CLONE_THREAD: u64 = 0x00010000;
     const CLONE_SIGHAND: u64 = 0x00000800;
 
-    if (flags & CLONE_VM != 0 || flags & CLONE_THREAD != 0) && flags & CLONE_SIGHAND == 0 {
+    if ((flags & CLONE_VM) != 0 || (flags & CLONE_THREAD) != 0)
+        && (flags & CLONE_SIGHAND) == 0
+    {
         return Err(Errno::EINVAL);
     }
 

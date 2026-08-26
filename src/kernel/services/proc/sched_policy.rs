@@ -106,7 +106,6 @@ pub struct CfsRunQueue {
     pub min_vruntime: AtomicU64,
     pub total_weight: AtomicU64,
     pub nr_running: u32,
-    pub last_boost_tick: u64,
 }
 
 impl CfsRunQueue {
@@ -120,7 +119,6 @@ impl CfsRunQueue {
             min_vruntime: AtomicU64::new(0),
             total_weight: AtomicU64::new(0),
             nr_running: 0,
-            last_boost_tick: 0,
         }
     }
 
@@ -184,26 +182,6 @@ impl CfsRunQueue {
 
     pub fn is_empty(&self) -> bool {
         self.nr_running == 0
-    }
-
-    pub fn boost_priority(&mut self, current_tick: u64) {
-        if self.tree.is_empty() {
-            self.last_boost_tick = current_tick;
-            return;
-        }
-
-        let min_vr = self.tree.first_key_value().map_or(0, |(&(vr, _), ())| vr);
-
-        let entries: alloc::vec::Vec<(Pid, u64)> =
-            self.tree.keys().map(|&(vr, pid)| (pid, vr)).collect();
-
-        self.tree.clear();
-        for (pid, _old_vr) in entries {
-            self.tree.insert((min_vr, pid), ());
-        }
-
-        self.min_vruntime.store(min_vr, Ordering::Release);
-        self.last_boost_tick = current_tick;
     }
 
     pub fn boost_all_vruntime(&mut self) {

@@ -39,7 +39,7 @@ pub use sendfile::{
     SPLICE_F_GIFT, SPLICE_F_MORE, SPLICE_F_MOVE, SPLICE_F_NONBLOCK, sys_sendfile, sys_splice,
 };
 pub use types::*;
-pub use types::{Errno, SyscallHandler};
+pub use types::Errno;
 
 // dispatch_trait 公共接口 re-export — T-03 策略-机制分离
 pub use dispatch_trait::{

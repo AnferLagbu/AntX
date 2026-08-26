@@ -102,7 +102,7 @@ pub use sched_ops::*;
 pub use proc_ops::raw;
 
 // fd_alloc 公共接口 re-export — 避免跨子系统直接访问 proc::fd_alloc 内部
-pub use fd_alloc::{FdPlan, FdSubsystem, fd_at, idx_of};
+pub use fd_alloc::{FdPlan, FdSubsystem, alloc_fd, fd_at, free_fd, idx_of};
 
 // madvise_mlock 公共接口 re-export — 避免跨子系统直接访问 proc::madvise_mlock 内部
 pub use madvise_mlock::{

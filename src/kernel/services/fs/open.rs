@@ -145,6 +145,13 @@ pub fn close_syscall(fd: i32) -> Result<usize, Errno> {
     if fd < 0 {
         return Err(Errno::EBADF);
     }
+    // pidfd 不经过 VFS fd_table, 由 pidfd 子系统自行关闭.
+    if crate::kernel::services::proc::pidfd::is_pidfd_fd(fd) {
+        if crate::kernel::services::proc::pidfd::free_entry(fd) {
+            return Ok(0);
+        }
+        return Err(Errno::EBADF);
+    }
     let r = fw::vfs_close(fd as u32);
     if r < 0 {
         Err(Errno::from_ret(i64::from(r)))

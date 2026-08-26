@@ -5,7 +5,7 @@
 //! ## T5-4 迁移记录
 //!
 //! 原属 framework/syscall/types.rs, 2026-06-16 提取到 services.
-//! 纯数据定义 (syscall 编号 + Errno + `SyscallRegs`), 0 unsafe.
+//! 纯数据定义 (syscall 编号 + Errno), 0 unsafe.
 //! framework 仅保留 re-export.
 
 // POSIX errno 命名约定 (EAGAIN/EACCES/...) — 全大写缩写是有意的
@@ -13,17 +13,27 @@
 
 /// Syscall 类型定义和常量
 ///
-/// 编号空间分配 (遵循 queenx-naming-standpoint.md):
+/// 编号空间分配 (DECISION-037 + queenx-naming-standpoint.md):
 ///   0-299   : Linux 兼容编号 (SYS_*), 直接使用 Linux 标准编号
 ///   300-399 : 保留
-///   400-499 : Credo 私有 syscall
+///   400-499 : Credo 私有 syscall (避开 424-452 的 Linux 现代扩展区)
 ///   500-599 : 进程 / 内存 / 文件基础
 ///   600-699 : 网络 / IPC
 ///   700-799 : 设备 / 系统
 ///   800-899 : 扩展
 
 pub const SYSCALL_INT: u8 = 0x80;
-pub const MAX_SYSCALLS: u64 = 800;
+
+/// syscall 编号空间上界 (非 dispatch 数组边界 — dispatch 全为 match, 无 SYSCALL_TABLE).
+///
+/// 覆盖全部 QX_* 扩展区 (0-899), 与 `QX_FTRACE_ENABLE = 800` 等 800 段常量错开,
+/// 避免编号常量语义误导.
+pub const MAX_SYSCALLS: u64 = 900;
+
+/// services 层未处理 syscall 的返回码 (=-ENOSYS), 供 framework 回退处理.
+///
+/// 作为 services→framework 分发回退哨兵, 与 `FallbackSyscallDispatch` 返回值一致.
+pub const ENOSYS_RET: i64 = -38;
 
 // ==================== POSIX 标准 syscall 编号 ====================
 
@@ -170,17 +180,17 @@ pub const SYS_setgid: u64 = 106;
 pub const SYS_geteuid: u64 = 107;
 pub const SYS_getegid: u64 = 108;
 
-pub const SYS_seteuid: u64 = 113;
-pub const SYS_setegid: u64 = 114;
-pub const SYS_setreuid: u64 = 115;
-pub const SYS_setregid: u64 = 116;
+pub const SYS_seteuid: u64 = 597; // QX 私有 (x86_64 无独立 seteuid syscall, 与 QX_SETEUID 同值)
+pub const SYS_setegid: u64 = 598; // QX 私有 (x86_64 无独立 setegid syscall, 与 QX_SETEGID 同值)
+pub const SYS_setreuid: u64 = 113;
+pub const SYS_setregid: u64 = 114;
 
 // 进程组
 pub const SYS_getppid: u64 = 110;
-pub const SYS_getpgid: u64 = 111;
+pub const SYS_getpgid: u64 = 121;
 pub const SYS_setsid: u64 = 112;
-pub const SYS_getsid: u64 = 156;
-pub const SYS_setpgid: u64 = 157;
+pub const SYS_getsid: u64 = 124;
+pub const SYS_setpgid: u64 = 109;
 
 // 进程调度
 pub const SYS_getpriority: u64 = 140;
@@ -188,7 +198,8 @@ pub const SYS_setpriority: u64 = 141;
 
 // 文件同步
 pub const SYS_sync: u64 = 162;
-pub const SYS_fsync: u64 = 170;
+pub const SYS_fsync: u64 = 74;
+pub const SYS_fdatasync: u64 = 75;
 
 // 挂载
 pub const SYS_mount: u64 = 165;
@@ -247,8 +258,9 @@ pub const SYS_clock_getres: u64 = 229;
 pub const SYS_getrandom: u64 = 318;
 
 // NUMA (Linux x86_64 标准编号)
-pub const SYS_get_mempolicy: u64 = 237;
+pub const SYS_mbind: u64 = 237;
 pub const SYS_set_mempolicy: u64 = 238;
+pub const SYS_get_mempolicy: u64 = 239;
 pub const SYS_migrate_pages: u64 = 256;
 pub const SYS_getcpu: u64 = 309;
 
@@ -282,8 +294,8 @@ pub const SYS_open_by_handle_at: u64 = 304;
 pub const SYS_fallocate: u64 = 285;
 pub const SYS_utimensat: u64 = 280;
 pub const SYS_openat: u64 = 257;
-pub const SYS_openat2: u64 = 737;
-pub const SYS_close_range: u64 = 736;
+pub const SYS_openat2: u64 = 437;
+pub const SYS_close_range: u64 = 436;
 
 // FD 扩展 (Linux x86_64 标准编号)
 pub const SYS_dup3: u64 = 292;
@@ -301,8 +313,8 @@ pub const SYS_set_robust_list: u64 = 273;
 pub const SYS_get_robust_list: u64 = 274;
 pub const SYS_pidfd_open: u64 = 434;
 pub const SYS_pidfd_getfd: u64 = 438;
-pub const SYS_pidfd_send_signal: u64 = 724;
-pub const SYS_clone3: u64 = 735;
+pub const SYS_pidfd_send_signal: u64 = 424;
+pub const SYS_clone3: u64 = 435;
 pub const SYS_execveat: u64 = 322;
 pub const SYS_waitid: u64 = 247;
 pub const SYS_process_vm_readv: u64 = 310;
@@ -341,42 +353,52 @@ pub const SYS_reboot: u64 = 169;
 pub const SYS_sethostname: u64 = 170;
 pub const SYS_setdomainname: u64 = 171;
 
-// ==================== Credo 私有 syscall (400+ 不与 POSIX 冲突) ====================
+// ==================== Credo 私有 syscall (400-499, 避开 Linux 424-452) ====================
+//
+// 编号空间: 400-423 + 453-499. 424-452 保留给 Linux 现代扩展 syscall
+// (pidfd_send_signal/io_uring/clone3/close_range/openat2/faccessat2/fchmodat2 等),
+// 避免 QueenX 私有编号与未来 Linux ABI 冲突 (DECISION-037: 500+ 与 Linux 错开).
 
-pub const SYS_CREDO_LOGIN: u64 = 700;
-pub const SYS_CREDO_LOGOUT: u64 = 701;
-pub const SYS_CREDO_CREATE_IDENTITY: u64 = 702;
-pub const SYS_CREDO_DELETE_IDENTITY: u64 = 703;
-pub const SYS_CREDO_IDENTITY_INFO: u64 = 704;
-pub const SYS_CREDO_CHANGE_PASSWORD: u64 = 705;
-pub const SYS_CREDO_VERIFY_PASSWORD: u64 = 706;
-pub const SYS_CREDO_CREATE_FIRST: u64 = 707;
-pub const SYS_CREDO_GRANT: u64 = 711;
-pub const SYS_CREDO_REVOKE: u64 = 712;
-pub const SYS_CREDO_CHECK_CAP: u64 = 713;
-pub const SYS_CREDO_GET_CAPS: u64 = 714;
-pub const SYS_CREDO_GET_PWM: u64 = 715;
-pub const SYS_CREDO_SET_PWM: u64 = 716;
-pub const SYS_CREDO_DISK_LIST: u64 = 720;
-pub const SYS_CREDO_DISK_INFO: u64 = 721;
-pub const SYS_CREDO_DISK_FORMAT: u64 = 722;
-pub const SYS_CREDO_DISK_PARTITION: u64 = 723;
-pub const SYS_CREDO_DISK_INSTALL: u64 = 724;
-pub const SYS_CREDO_FAT_FORMAT: u64 = 725;
-pub const SYS_CREDO_PROC_LIST: u64 = 730;
-pub const SYS_CREDO_PROC_SETPRI: u64 = 731;
-pub const SYS_CREDO_PROC_SLEEP: u64 = 732;
-pub const SYS_CREDO_GETHOSTNAME: u64 = 733;
-pub const SYS_CREDO_SETHOSTNAME: u64 = 734;
-pub const SYS_CREDO_BOOT_CHECK: u64 = 735;
-pub const SYS_CREDO_REBOOT: u64 = 736;
-pub const SYS_CREDO_HOTPLUG_STATUS: u64 = 737;
-pub const SYS_CREDO_PROC_CPUTIME: u64 = 738;
+// ---------- 400-413: 认证 / 身份 ----------
+pub const SYS_CREDO_LOGIN: u64 = 400;
+pub const SYS_CREDO_LOGOUT: u64 = 401;
+pub const SYS_CREDO_CREATE_IDENTITY: u64 = 402;
+pub const SYS_CREDO_DELETE_IDENTITY: u64 = 403;
+pub const SYS_CREDO_IDENTITY_INFO: u64 = 404;
+pub const SYS_CREDO_CHANGE_PASSWORD: u64 = 405;
+pub const SYS_CREDO_VERIFY_PASSWORD: u64 = 406;
+pub const SYS_CREDO_CREATE_FIRST: u64 = 407;
+pub const SYS_CREDO_GRANT: u64 = 408;
+pub const SYS_CREDO_REVOKE: u64 = 409;
+pub const SYS_CREDO_CHECK_CAP: u64 = 410;
+pub const SYS_CREDO_GET_CAPS: u64 = 411;
+pub const SYS_CREDO_GET_PWM: u64 = 412;
+pub const SYS_CREDO_SET_PWM: u64 = 413;
+// 414-419: 保留
 
-// ==================== 帧缓冲设备 ====================
-pub const SYS_FB_OPEN: u64 = 450;
-pub const SYS_FB_MMAP: u64 = 451;
-pub const SYS_FB_RELEASE: u64 = 452;
+// ---------- 420-423: 存储设备 ----------
+pub const SYS_CREDO_DISK_LIST: u64 = 420;
+pub const SYS_CREDO_DISK_INFO: u64 = 421;
+pub const SYS_CREDO_DISK_FORMAT: u64 = 422;
+pub const SYS_CREDO_DISK_PARTITION: u64 = 423;
+
+// ---------- 453-463: 存储扩展 + 进程管理 + 系统信息 (避开 424-452) ----------
+pub const SYS_CREDO_DISK_INSTALL: u64 = 453;
+pub const SYS_CREDO_FAT_FORMAT: u64 = 454;
+pub const SYS_CREDO_PROC_LIST: u64 = 455;
+pub const SYS_CREDO_PROC_SETPRI: u64 = 456;
+pub const SYS_CREDO_PROC_SLEEP: u64 = 457;
+pub const SYS_CREDO_PROC_CPUTIME: u64 = 458;
+pub const SYS_CREDO_GETHOSTNAME: u64 = 459;
+pub const SYS_CREDO_SETHOSTNAME: u64 = 460;
+pub const SYS_CREDO_BOOT_CHECK: u64 = 461;
+pub const SYS_CREDO_REBOOT: u64 = 462;
+pub const SYS_CREDO_HOTPLUG_STATUS: u64 = 463;
+
+// ==================== 帧缓冲设备 (QueenX 私有, 与 QX_FB_* 同值) ====================
+pub const SYS_FB_OPEN: u64 = 720;
+pub const SYS_FB_MMAP: u64 = 721;
+pub const SYS_FB_RELEASE: u64 = 722;
 
 // ============================================================================
 // QueenX 原生 syscall 编号 (500+)
@@ -833,6 +855,7 @@ impl Errno {
         self as i32
     }
 
+    /// 返回 POSIX 负返回码 (`-errno`, syscall 返回值约定)
     pub const fn as_ret(self) -> i64 {
         -(self as i64)
     }
@@ -845,6 +868,10 @@ impl Errno {
     ///
     /// 输入: framework 层返回的负错误码 (如 -ENOMEM)
     /// 输出: 对应的 Errno 枚举值
+    ///
+    /// # Errors
+    ///
+    /// 未知/未定义错误码回退为 `EINVAL`.
     pub fn from_ret(ret: i64) -> Self {
         let errno = (-ret) as u64;
         match errno {
@@ -862,6 +889,7 @@ impl Errno {
             12 => Self::ENOMEM,
             13 => Self::EACCES,
             14 => Self::EFAULT,
+            15 => Self::ENOTBLK,
             16 => Self::EBUSY,
             17 => Self::EEXIST,
             18 => Self::EXDEV,
@@ -872,6 +900,7 @@ impl Errno {
             23 => Self::ENFILE,
             24 => Self::EMFILE,
             25 => Self::ENOTTY,
+            26 => Self::ETXTBSY,
             27 => Self::EFBIG,
             28 => Self::ENOSPC,
             29 => Self::ESPIPE,
@@ -882,86 +911,54 @@ impl Errno {
             34 => Self::ERANGE,
             35 => Self::EDEADLK,
             36 => Self::ENAMETOOLONG,
+            37 => Self::ENOLCK,
             38 => Self::ENOSYS,
             39 => Self::ENOTEMPTY,
             40 => Self::ELOOP,
+            41 => Self::EWOULDBLOCK,
+            42 => Self::ENOMSG,
+            43 => Self::EIDRM,
+            60 => Self::ENOSTR,
+            61 => Self::ENODATA,
+            62 => Self::ETIME,
+            63 => Self::ENOSR,
+            64 => Self::ENONET,
+            71 => Self::EPROTO,
+            74 => Self::EBADMSG,
+            75 => Self::EOVERFLOW,
+            88 => Self::ENOTSOCK,
+            89 => Self::EDESTADDRREQ,
+            90 => Self::EMSGSIZE,
+            91 => Self::EPROTOTYPE,
+            92 => Self::ENOPROTOOPT,
+            93 => Self::EPROTONOSUPPORT,
+            94 => Self::ESOCKTNOSUPPORT,
+            95 => Self::ENOTSUP,
+            96 => Self::EPFNOSUPPORT,
+            97 => Self::EAFNOSUPPORT,
+            98 => Self::EADDRINUSE,
+            99 => Self::EADDRNOTAVAIL,
+            100 => Self::ENETDOWN,
+            101 => Self::ENETUNREACH,
+            102 => Self::ENETRESET,
+            103 => Self::ECONNABORTED,
+            104 => Self::ECONNRESET,
+            105 => Self::ENOBUFS,
+            106 => Self::EISCONN,
+            107 => Self::ENOTCONN,
+            108 => Self::ESHUTDOWN,
+            110 => Self::ETIMEDOUT,
+            111 => Self::ECONNREFUSED,
+            112 => Self::EHOSTDOWN,
+            113 => Self::EHOSTUNREACH,
+            114 => Self::EALREADY,
+            115 => Self::EINPROGRESS,
             _ => Self::EINVAL, // 未知错误码回退到 EINVAL
         }
     }
 }
 
-// ==================== 错误码转换 (兼容旧的 SyscallError 语义) ====================
-
-#[deprecated(note = "use Errno::ENOENT.as_ret() instead")]
-pub type SyscallError = Errno;
-
-#[allow(deprecated)]
-impl SyscallError {
-    #[allow(non_upper_case_globals)]
-    pub const E_PERM: Self = Self::EPERM;
-    pub const E_NOTFOUND: Self = Self::ENOENT;
-    pub const E_NOSYS: Self = Self::ENOSYS;
-    pub const E_INTR: Self = Self::EINTR;
-    pub const E_IO: Self = Self::EIO;
-    pub const E_NOEXEC: Self = Self::ENOEXEC;
-    pub const E_BADFD: Self = Self::EBADF;
-    pub const E_CHILD: Self = Self::ECHILD;
-    pub const E_AGAIN: Self = Self::EAGAIN;
-    pub const E_NOMEM: Self = Self::ENOMEM;
-    pub const E_ACCES: Self = Self::EACCES;
-    pub const E_FAULT: Self = Self::EFAULT;
-    pub const E_BUSY: Self = Self::EBUSY;
-    pub const E_EXIST: Self = Self::EEXIST;
-    pub const E_NOTDIR: Self = Self::ENOTDIR;
-    pub const E_ISDIR: Self = Self::EISDIR;
-    pub const E_INVAL: Self = Self::EINVAL;
-    pub const E_NOSPC: Self = Self::ENOSPC;
-    pub const E_ROFS: Self = Self::EROFS;
-    pub const E_RANGE: Self = Self::ERANGE;
-    pub const E_NAMETOOLONG: Self = Self::ENAMETOOLONG;
-    pub const E_NOTEMPTY: Self = Self::ENOTEMPTY;
-    pub const E_AUTH_INVALID: Self = Self::EPERM;
-    pub const E_AUTH_NOTFOUND: Self = Self::ENOENT;
-    pub const E_AUTH_DISABLED: Self = Self::EPERM;
-    pub const E_AUTH_EXPIRED: Self = Self::EPERM;
-    pub const E_AUTH_PWERR: Self = Self::EACCES;
-    pub const E_AUTH_CAP: Self = Self::EACCES;
-    pub const E_AUTH_DENY: Self = Self::EACCES;
-
-    pub fn as_i64(self) -> i64 {
-        -(self as i64)
-    }
-
-    pub fn from_i64(code: i64) -> Option<Self> {
-        let v = (-code) as i32;
-        match v {
-            1 => Some(Self::EPERM),
-            2 => Some(Self::ENOENT),
-            3 => Some(Self::ESRCH),
-            4 => Some(Self::EINTR),
-            5 => Some(Self::EIO),
-            8 => Some(Self::ENOEXEC),
-            9 => Some(Self::EBADF),
-            10 => Some(Self::ECHILD),
-            11 => Some(Self::EAGAIN),
-            12 => Some(Self::ENOMEM),
-            13 => Some(Self::EACCES),
-            14 => Some(Self::EFAULT),
-            16 => Some(Self::EBUSY),
-            17 => Some(Self::EEXIST),
-            20 => Some(Self::ENOTDIR),
-            21 => Some(Self::EISDIR),
-            22 => Some(Self::EINVAL),
-            28 => Some(Self::ENOSPC),
-            30 => Some(Self::EROFS),
-            34 => Some(Self::ERANGE),
-            36 => Some(Self::ENAMETOOLONG),
-            38 => Some(Self::ENOSYS),
-            39 => Some(Self::ENOTEMPTY),
-            _ => None,
-        }
-    }
-}
+// ==================== Display ====================
 
 impl core::fmt::Display for Errno {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -996,25 +993,107 @@ impl core::fmt::Display for Errno {
 
 // ==================== 辅助类型 ====================
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct SyscallRegs {
-    pub rax: u64,
-    pub rbx: u64,
-    pub rcx: u64,
-    pub rdx: u64,
-    pub rsi: u64,
-    pub rdi: u64,
-    pub rbp: u64,
-    pub r8: u64,
-    pub r9: u64,
-    pub r10: u64,
-    pub r11: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
-    pub r15: u64,
-}
-
-pub type SyscallHandler = fn(u64, u64, u64, u64) -> i64;
 pub type SyscallResult<T> = Result<T, Errno>;
+
+// ============================================================================
+// 编译期唯一性断言 (B05-02 防御)
+//
+// 防止未来新增 syscall 编号时引入重复值, 在编译期即失败.
+// 若新增编号命中下方任一断言, 说明与现有 Linux 或私有编号冲突, 须重新分配.
+// ============================================================================
+
+/// 编译期断言: Linux 兼容编号 (0-299) 内部无重复
+const _: () = {
+    // 所有 Linux 标准编号 (0-299 区段)
+    const LINUX_NUMS: &[u64] = &[
+        SYS_read, SYS_write, SYS_open, SYS_close, SYS_stat, SYS_fstat, SYS_lstat, SYS_poll,
+        SYS_lseek, SYS_mmap, SYS_mprotect, SYS_munmap, SYS_brk, SYS_rt_sigaction,
+        SYS_rt_sigprocmask, SYS_rt_sigreturn, SYS_ioctl, SYS_access, SYS_pipe, SYS_select,
+        SYS_sched_yield, SYS_mremap, SYS_dup, SYS_dup2, SYS_nanosleep, SYS_getitimer, SYS_alarm,
+        SYS_setitimer, SYS_getpid, SYS_socket, SYS_connect, SYS_accept, SYS_sendto, SYS_recvfrom,
+        SYS_sendmsg, SYS_recvmsg, SYS_shutdown, SYS_bind, SYS_listen, SYS_getsockname,
+        SYS_getpeername, SYS_setsockopt, SYS_getsockopt, SYS_clone, SYS_fork, SYS_execve, SYS_exit,
+        SYS_wait4, SYS_kill, SYS_uname, SYS_fcntl, SYS_flock, SYS_fsync, SYS_fdatasync,
+        SYS_truncate, SYS_ftruncate, SYS_getdents, SYS_getcwd, SYS_chdir, SYS_rename, SYS_mkdir,
+        SYS_rmdir, SYS_creat, SYS_link, SYS_unlink, SYS_symlink, SYS_readlink, SYS_chmod,
+        SYS_fchmod, SYS_chown, SYS_fchown, SYS_umask, SYS_gettimeofday, SYS_getrlimit,
+        SYS_getrusage, SYS_sysinfo, SYS_times, SYS_getuid, SYS_getgid, SYS_setuid, SYS_setgid,
+        SYS_geteuid, SYS_getegid, SYS_setreuid, SYS_setregid, SYS_getppid, SYS_getpgid,
+        SYS_setsid, SYS_getsid, SYS_setpgid, SYS_getpriority, SYS_setpriority, SYS_sync,
+        SYS_mount, SYS_umount2, SYS_gettid, SYS_time, SYS_clock_gettime, SYS_exit_group,
+        SYS_tgkill, SYS_futex, SYS_sched_setaffinity, SYS_sched_getaffinity, SYS_epoll_create,
+        SYS_epoll_ctl, SYS_epoll_wait, SYS_eventfd, SYS_eventfd2, SYS_signalfd, SYS_signalfd4,
+        SYS_timerfd_create, SYS_timerfd_settime, SYS_timerfd_gettime, SYS_madvise, SYS_mincore,
+        SYS_mlock, SYS_munlock, SYS_mlockall, SYS_munlockall, SYS_inotify_init,
+        SYS_inotify_add_watch, SYS_inotify_rm_watch, SYS_inotify_init1, SYS_timer_create,
+        SYS_timer_settime, SYS_timer_gettime, SYS_timer_getoverrun, SYS_timer_delete,
+        SYS_clock_getres, SYS_getrandom, SYS_mbind, SYS_set_mempolicy, SYS_get_mempolicy,
+        SYS_migrate_pages, SYS_getcpu, SYS_readv, SYS_writev, SYS_pread64, SYS_pwrite64,
+        SYS_sendfile, SYS_preadv, SYS_pwritev, SYS_preadv2, SYS_pwritev2, SYS_fchmodat,
+        SYS_fchownat, SYS_newfstatat, SYS_unlinkat, SYS_renameat, SYS_renameat2, SYS_linkat,
+        SYS_symlinkat, SYS_readlinkat, SYS_faccessat, SYS_faccessat2, SYS_fchmodat2, SYS_statx,
+        SYS_copy_file_range, SYS_name_to_handle_at, SYS_open_by_handle_at, SYS_fallocate,
+        SYS_utimensat, SYS_openat, SYS_openat2, SYS_close_range, SYS_dup3, SYS_pipe2,
+        SYS_epoll_create1, SYS_epoll_pwait, SYS_epoll_pwait2, SYS_pselect6, SYS_ppoll,
+        SYS_set_robust_list, SYS_get_robust_list, SYS_pidfd_open, SYS_pidfd_getfd,
+        SYS_pidfd_send_signal, SYS_clone3, SYS_execveat, SYS_waitid, SYS_process_vm_readv,
+        SYS_process_vm_writev, SYS_memfd_create, SYS_userfaultfd, SYS_recvmmsg, SYS_sendmmsg,
+        SYS_socketpair, SYS_accept4, SYS_seccomp, SYS_prctl, SYS_arch_prctl, SYS_capget,
+        SYS_capset, SYS_pivot_root, SYS_chroot, SYS_clock_nanosleep, SYS_settimeofday,
+        SYS_adjtimex, SYS_reboot, SYS_sethostname, SYS_setdomainname,
+    ];
+    let mut i = 0;
+    while i < LINUX_NUMS.len() {
+        let mut j = i + 1;
+        while j < LINUX_NUMS.len() {
+            assert!(LINUX_NUMS[i] != LINUX_NUMS[j]);
+            j += 1;
+        }
+        i += 1;
+    }
+};
+
+/// 编译期断言: 私有编号区 (400+, 不含 Linux 兼容区) 内部无重复
+///
+/// 每个逻辑 syscall 只列一个代表值; 下列设计别名 (同编号, 由 dispatch 区分语义)
+/// 已从断言中剔除, 避免误判:
+///   - `SYS_FB_*` == `QX_FB_*` (720-722, 帧缓冲别名)
+///   - `SYS_seteuid`/`SYS_setegid` == `QX_SETEUID`/`QX_SETEGID` (597/598)
+///   - `QX_FCHMODAT` == `QX_FCHOWN` (570) / `QX_PIPE2` == `QX_PIPE` (579)
+///   - `QX_DUP3` == `QX_DUP2` (581) / `QX_SOCKETPAIR` == `QX_SOCKET` (600)
+const _: () = {
+    const PRIVATE_NUMS: &[u64] = &[
+        SYS_CREDO_LOGIN, SYS_CREDO_LOGOUT, SYS_CREDO_CREATE_IDENTITY, SYS_CREDO_DELETE_IDENTITY,
+        SYS_CREDO_IDENTITY_INFO, SYS_CREDO_CHANGE_PASSWORD, SYS_CREDO_VERIFY_PASSWORD,
+        SYS_CREDO_CREATE_FIRST, SYS_CREDO_GRANT, SYS_CREDO_REVOKE, SYS_CREDO_CHECK_CAP,
+        SYS_CREDO_GET_CAPS, SYS_CREDO_GET_PWM, SYS_CREDO_SET_PWM, SYS_CREDO_DISK_LIST,
+        SYS_CREDO_DISK_INFO, SYS_CREDO_DISK_FORMAT, SYS_CREDO_DISK_PARTITION,
+        SYS_CREDO_DISK_INSTALL, SYS_CREDO_FAT_FORMAT, SYS_CREDO_PROC_LIST, SYS_CREDO_PROC_SETPRI,
+        SYS_CREDO_PROC_SLEEP, SYS_CREDO_PROC_CPUTIME, SYS_CREDO_GETHOSTNAME,
+        SYS_CREDO_SETHOSTNAME, SYS_CREDO_BOOT_CHECK, SYS_CREDO_REBOOT, SYS_CREDO_HOTPLUG_STATUS,
+        QX_FB_OPEN, QX_FB_MMAP, QX_FB_RELEASE, QX_SETEUID, QX_SETEGID, QX_UNAME, QX_SYSINFO,
+        QX_GETRLIMIT, QX_SETRLIMIT, QX_GETRUSAGE, QX_CLOCK_GETTIME, QX_GETTIMEOFDAY,
+        QX_NANOSLEEP, QX_ALARM, QX_GETITIMER, QX_SETITIMER, QX_TIME, QX_TIMES, QX_FW_LOAD,
+        QX_FW_GET, QX_FW_GET_INFO, QX_FW_DETACH, QX_TIMER_CREATE, QX_TIMER_SETTIME,
+        QX_TIMER_GETTIME, QX_TIMER_DELETE, QX_TIMER_GETOVERRUN, QX_CLOCK_GETRES, QX_GETRANDOM,
+        QX_GET_CANARY, QX_MADVISE, QX_MLOCK, QX_MUNLOCK, QX_MLOCKALL, QX_MUNLOCKALL, QX_MINCORE,
+        QX_FTRACE_ENABLE, QX_FTRACE_DISABLE, QX_FTRACE_READ, QX_FTRACE_STAT, QX_KGDB_ENTER,
+        QX_SECCOMP, QX_PRCTL, QX_ROUTE_ADD, QX_ROUTE_DEL, QX_ROUTE_QUERY, QX_NF_ADD_RULE,
+        QX_NF_DEL_RULE, QX_IO_URING_SETUP, QX_IO_URING_ENTER, QX_IO_URING_REGISTER,
+        QX_IO_URING_SUBMIT, QX_UNSHARE, QX_SETNS, QX_CGROUP_CREATE, QX_CGROUP_DESTROY,
+        QX_CGROUP_ATTACH, QX_CGROUP_SET_LIMIT, QX_CGROUP_GET_STAT, QX_GET_MEMPOLICY,
+        QX_SET_MEMPOLICY, QX_MIGRATE_PAGES, QX_GETCPU, QX_BPF, QX_PM, QX_SECURE_BOOT, QX_TPM,
+        QX_CET, QX_TICKLESS, QX_TIMESYNC, QX_KEXEC, QX_UEFI, QX_SETXATTR, QX_GETXATTR, QX_LISTXATTR,
+        QX_REMOVEXATTR, QX_SNAPSHOT_CREATE, QX_SNAPSHOT_DESTROY, QX_SNAPSHOT_ROLLBACK,
+        QX_SNAPSHOT_CLONE,
+    ];
+    let mut i = 0;
+    while i < PRIVATE_NUMS.len() {
+        let mut j = i + 1;
+        while j < PRIVATE_NUMS.len() {
+            assert!(PRIVATE_NUMS[i] != PRIVATE_NUMS[j]);
+            j += 1;
+        }
+        i += 1;
+    }
+};

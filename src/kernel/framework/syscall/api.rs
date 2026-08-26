@@ -16,7 +16,7 @@
 //! - `chitin::user_driver` —— 用户态驱动透传
 //!
 //! ## 内部接口
-//! - `types.rs` —— `SyscallHandler` 函数指针类型, Errno, syscall 编号常量
+//! - `types.rs` —— Errno, syscall 编号常量
 //! - `mmap.rs` —— mmap/munmap/mprotect 实现
 //! - `mod.rs` —— `syscall_dispatch()` 核心分发器 (所有 sys_* 实现)
 //!
@@ -31,7 +31,7 @@
 //! - 指针验证: 两次比较, ≤ 5ns
 //! - 覆盖 70+ POSIX syscall + 40+ Credo 私有 syscall
 
-pub use super::types::{Errno, SyscallHandler};
+pub use super::types::Errno;
 
 // ============================================================================
 // QueenX 原生 syscall 编号 (QX_*)
@@ -112,7 +112,9 @@ pub const SYS_exit_group: u64 = 231;
 pub const SYS_futex: u64 = 202;
 pub const SYS_clock_gettime: u64 = 228;
 pub const SYS_CREDO_BASE: u64 = 400;
-pub const MAX_SYSCALLS: u64 = 800;
+
+/// syscall 编号空间上界 (与 `services::syscall::types::MAX_SYSCALLS` 语义一致).
+pub const MAX_SYSCALLS: u64 = 900;
 
 /// 验证用户态指针是否在合法范围内
 pub fn validate_user_ptr(ptr: u64) -> bool {

@@ -42,22 +42,24 @@ pub const SYS_getppid: u64 = 110;
 pub const SYS_sync: u64 = 162;
 pub const SYS_mount: u64 = 165;
 
-// QueenX 私有 syscall (400+)
+// QueenX 私有 syscall (Credo 400-499, 与内核 syscall/types.rs 权威源对齐)
 pub const SYS_CREDO_LOGIN: u64 = 400;
 pub const SYS_CREDO_LOGOUT: u64 = 401;
 pub const SYS_CREDO_CREATE_IDENTITY: u64 = 402;
 pub const SYS_CREDO_CHANGE_PASSWORD: u64 = 405;
 pub const SYS_CREDO_CREATE_FIRST: u64 = 407;
+pub const SYS_CREDO_GET_PWM: u64 = 412;
 pub const SYS_CREDO_DISK_LIST: u64 = 420;
 pub const SYS_CREDO_DISK_INFO: u64 = 421;
 pub const SYS_CREDO_DISK_FORMAT: u64 = 422;
 pub const SYS_CREDO_DISK_PARTITION: u64 = 423;
-pub const SYS_CREDO_DISK_INSTALL: u64 = 424;
-pub const SYS_CREDO_FAT_FORMAT: u64 = 425;
-pub const SYS_CREDO_PROC_LIST: u64 = 430;
-pub const SYS_CREDO_GETHOSTNAME: u64 = 433;
-pub const SYS_CREDO_SETHOSTNAME: u64 = 434;
-pub const SYS_CREDO_REBOOT: u64 = 436;
+pub const SYS_CREDO_DISK_INSTALL: u64 = 453;
+pub const SYS_CREDO_FAT_FORMAT: u64 = 454;
+pub const SYS_CREDO_PROC_LIST: u64 = 455;
+pub const SYS_CREDO_GETHOSTNAME: u64 = 459;
+pub const SYS_CREDO_SETHOSTNAME: u64 = 460;
+pub const SYS_CREDO_REBOOT: u64 = 462;
+pub const SYS_CREDO_HOTPLUG_STATUS: u64 = 463;
 
 // POSIX open flags
 pub const O_RDONLY: i32 = 0;
@@ -160,7 +162,7 @@ pub fn proc_exit(code: i32) -> ! {
         else { unsafe { asm!("wfi", options(nomem, nostack)); } }
     }
 }
-pub fn proc_get_pwm() -> u64                               { unsafe { sys0(415) as u64 } }
+pub fn proc_get_pwm() -> u64                               { unsafe { sys0(SYS_CREDO_GET_PWM) as u64 } }
 pub fn proc_yield()                                        { unsafe { sys0(24); } }
 
 pub fn pipe_create(fds: &mut [i32; 2]) -> i32              { unsafe { sys1(SYS_pipe, fds.as_mut_ptr() as u64) as i32 } }
@@ -238,17 +240,13 @@ pub fn tgkill(tgid: i32, tid: i32, sig: i32) -> i32        { unsafe { sys3(SYS_t
 // 热插拔状态查询
 // ============================================================
 
-pub const SYS_CREDO_HOTPLUG_STATUS: u64 = 437;
-
-pub fn hotplug_status(buf: &mut [u8]) -> i32               { unsafe { sys2(SYS_CREDO_HOTPLUG_STATUS, buf.as_mut_ptr() as u64, buf.len() as u64) as i32 } }
-
 // ============================================================
-// 帧缓冲设备 (FB syscalls 450-452)
+// 帧缓冲设备 (FB syscalls — QueenX 私有, 与内核 720-722 对齐)
 // ============================================================
 
-pub const SYS_FB_OPEN: u64 = 450;
-pub const SYS_FB_MMAP: u64 = 451;
-pub const SYS_FB_RELEASE: u64 = 452;
+pub const SYS_FB_OPEN: u64 = 720;
+pub const SYS_FB_MMAP: u64 = 721;
+pub const SYS_FB_RELEASE: u64 = 722;
 
 #[repr(C)]
 pub struct FbInfo {

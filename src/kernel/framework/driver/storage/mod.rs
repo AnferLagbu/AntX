@@ -573,6 +573,9 @@ extern "C" fn nvme_msix_irq_handler(_frame: *mut crate::kernel::framework::idt::
 }
 
 /// NVMe MSI-X ISR 触发计数 (MSIX-03 验证)
+///
+/// 仅 x86_64 (MSI-X 路径专属, 与 `nvme_msix_irq_handler` 同 cfg).
+#[cfg(target_arch = "x86_64")]
 static NVME_MSIX_IRQ_COUNT: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
