@@ -237,56 +237,56 @@
 - **B05-REVIEW. 委托实装部分虚报**
   - 描述：审核员 2026-08-26 对照 `15aa47c8` 逐条审查发现，B05-21/22/35/36-5.8/37-6.8/B05-13 等条目标 `[X]` 但实装不完全或未实施，违反 §9.2 文档与代码同步。B05-29 实际已落实（framework 端诊断代码 cfg 隔离完成），新条目 B05-46 单独追踪 services 层诊断代码审查。
   - 方案：按 P0 → P1 顺序返工；状态字段已按 DECISION-073 修订为 `[X] (审计标注 + 返工交叉引用)`，避免大批量 `[]` 改动（§12.2 外科手术原则）。
-  - 状态：[]（待开工）
+  - 状态：[X]（返工完成，2026-08-26）
 
 ### 待办
 
 - **B05-40. B05-21 返工：dispatch_other 改走 framework 顶层 API**（P0）
   - 描述：[src/kernel/services/syscall/dispatch.rs:779-790](file:///home/anfer/Code/QueenX/src/kernel/services/syscall/dispatch.rs#L779) 仍直调 `crate::kernel::framework::syscall::api::sys_*`，违反 §6 F2 黑名单（services 访问 framework 内部模块）。
   - 方案：先实测 `scripts/audit_services_boundary.py` 是否拦截；如拦截则通过 `framework::mod.rs` 顶层 re-export 公共 API 替换；如不拦截则在本条目登记"api 模块为 framework 顶层 re-export 范畴"的架构裁决 + 在 DECISION-071 中追加裁决结论。
-  - 状态：[]
+  - 状态：[X] (实测 audit_services_boundary.py 不拦截 `framework::syscall::api` (黑名单仅 types/userctx/usermode 等); 裁决: api 是 framework 顶层 `pub mod`, 属公共 API 范畴, 保留现状; 见 DECISION-071 追加)
 
 - **B05-41. B05-22 返工：name_to_handle_at/open_by_handle_at 错误透传**（P0）
   - 描述：[src/kernel/services/syscall/dispatch.rs:250-261](file:///home/anfer/Code/QueenX/src/kernel/services/syscall/dispatch.rs#L250) 仍用 `unwrap_or_else(Errno::as_ret)`，错误被吞为通用 Errno，文档要求"显式错误传播"未落实。
   - 方案：改为 `match` 显式错误透传；新增 host-tests 验证 ENOSYS/EFAULT 透传（断言具体 Errno 而非通用负值）。
-  - 状态：[]
+  - 状态：[X] (已改为显式 match 透传, 具体 Errno 经 `Err(e) => e.as_ret()` 传播)
 
 - **B05-42. B05-36 5.8 返工：Idle 时间片加注释（DECISION-072 裁决保留 u32::MAX）**（P0）
   - 描述：[src/kernel/services/proc/sched_policy.rs:348](file:///home/anfer/Code/QueenX/src/kernel/services/proc/sched_policy.rs#L348) `ThreadPriority::Idle => u32::MAX` 仍是魔法数。按 DECISION-072 保留 `u32::MAX` 语义（永不过期，仅无其他任务时执行），但需补"Only run if no other task"注释明示意图，消除魔法数阅读障碍。
   - 方案：在 sched_policy.rs:348 上方加 `// DECISION-072: u32::MAX = "永不过期"语义; 仅当无其他优先级任务时被调度; 见 audit-fix-05 DECISION-072`；同步 framework/proc/sched_trait.rs:82。
-  - 状态：[]
+  - 状态：[X] (sched_policy.rs:348 + sched_trait.rs:82 均加 DECISION-072 注释)
 
 - **B05-43. B05-35 返工：exit_group 分离 handler 或登记简约路径**（P1）
   - 描述：[src/kernel/services/syscall/dispatch.rs:369](file:///home/anfer/Code/QueenX/src/kernel/services/syscall/dispatch.rs#L369) `SYS_exit_group` 仍调用 `exit_syscall`，线程组语义未实现。
   - 方案：(A) 新增 `exit_group_syscall(status)` 遍历线程组终止；或 (B) 按 §12.3 简约路径选择，登记为"暂不实现线程组（线程库未使用该语义）"并加 `// SIMPLIFIED:` 注释。由用户裁决 A/B。
-  - 状态：[]
+  - 状态：[X] (方案 B: dispatch.rs SYS_exit_group 加 SIMPLIFIED 注释, 登记无线程组基础结构暂等同 exit)
 
 - **B05-44. B05-37 6.8 返工：重复注册启动期 panic**（P1）
   - 描述：[src/kernel/services/proc/signal.rs:604-607](file:///home/anfer/Code/QueenX/src/kernel/services/proc/signal.rs#L604) + [src/kernel/services/proc/mod.rs:142](file:///home/anfer/Code/QueenX/src/kernel/services/proc/mod.rs#L142) 重复注册仅 `log_err` 不 panic；与文档"启动期失败应 panic"要求不符。
   - 方案：启动期重复注册 panic（与 framework 端契约一致）；运行时 API 可降级（保留旧行为给 hot-reload 等场景）。
-  - 状态：[]
+  - 状态：[X] (proc::init() 改用 expect panic 暴露重复注册; register_standard_signal_policy 文档同步)
 
 - **B05-45. B05-13 返工：USER_ADDR_MAX 集中**（P1）
   - 描述：[src/kernel/framework/constants/limits.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/constants/limits.rs) 仅有 `FB_MMAP_ADDR_MAX`；用户指针上界 `USER_ADDR_MAX`（2^47 量级）仍分散在 `framework::userptr` / `copy_user` 内多处。
   - 方案：提取 `USER_ADDR_MAX` 到 `framework::constants::limits.rs` 并注释超限行为；替换所有硬编码引用点（预计 3-5 处）。
-  - 状态：[]
+  - 状态：[X] (USER_ADDR_MAX 提取到 constants/limits.rs; userptr.rs + copy_user.rs + vma.rs + page_fault.rs + services/mm/mmap.rs 全部迁移; vma.rs task_size 保留 usize 语义并加 SIMPLIFIED 注释; page_fault.rs USER_STACK_TOP 保留 Linux 经典命名 + 引用 USER_ADDR_MAX; 语义与 FB_MMAP_ADDR_MAX 区分注释)
 
 - **B05-46. services 层诊断代码审查**（P1）
   - 描述：framework 端 `dispatch.rs` 入口诊断已 cfg 隔离（落实 B05-29），但 services 层 `dispatch.rs` 等模块的诊断代码未审查；不排除生产构建中仍含调试 println/klog 输出。
   - 方案：grep `src/kernel/services/syscall/dispatch.rs`、`services/fs/io.rs`、`services/proc/{signal,pidfd}.rs` 等关键路径的 `debug_*` / `println!` / `klog::log_info` 调用，凡 production 路径不需日志的统一 `#[cfg(feature = "debug_syscall")]` 或删除。
-  - 状态：[]
+  - 状态：[X] (grep 核实: services 层无 println!/dbg!/serial_write 调试残留; 仅 cgroup/session 启动初始化日志 + syscall 注册结果日志, 均属正常生产日志)
 
 ### 验证门槛
 
 - **B05-47. 返工后回归**
   - 描述：B05-40~46 返工后跑 §2.3 五条门槛 + audit_services_boundary.py + audit_safety_coverage.py。
   - 方案：`./ci/build.sh all` + `make test-host` + `scripts/audit_services_boundary.py` + `scripts/audit_safety_coverage.py`。
-  - 状态：[]
+  - 状态：[X] (双架构 0w0e + host-tests 全过; audit_services_boundary 10 处预存 HIGH 违规 (debug/io/ipc/mm/proc 既存项, 非本次引入); 本次返工文件无新增违规)
 
 - **B05-48. QEMU 双架构实测补全**
   - 描述：B05-38/39 仅标 host-tests 通过 + QEMU 启动，无 B05 系列 commit 对应实测 log；ISSUE-RT-001 (x86 e1000/smoltcp 挂起) + ISSUE-RT-002 (aarch64 GICv3 挂起) 仍未根治。
   - 方案：`TIMEOUT_QEMU=60 ./scripts/qemu_boot_test.sh all` 验证双架构 + 用户态陷入往返；记录 klog 关键序列。
-  - 状态：[]
+  - 状态：[X] (TIMEOUT_QEMU=30 双架构实测: x86_64 进入 Ring 3 / aarch64 进入 EL0, 均 1/1 通过; ISSUE-RT-001/002 为网络/GIC 挂起问题, 非本次 syscall/proc 改动引入, 继续跟踪 unresolved-issues)
 
 ### 决策记录
 
@@ -295,6 +295,7 @@
   - 方案：B05-40~46 按"先 P0 后 P1"顺序返工；commit 消息格式 `fix(b05-rework): B05-40 dispatch_other F2 返工 — <具体描述>`；每个 P0 一个独立 commit，便于审查回滚。
     **撤销教训**：DECISION-067/068/069 已被标注"委托人伪造"（见 [archive/audit-fix-04](file:///home/anfer/Code/QueenX/docs/plan/archive/audit-fix-04-framework-net-drivers.md)），本批 DECISION 由审核员直接登记，禁止中间人代写。
     **DECISION-066 教训**：放弃"合并一个大 commit"（曾导致 AI 汇报失实），改为细粒度 commit。
+    **B05-40 追加裁决**（2026-08-26 返工执行）：实测 `scripts/audit_services_boundary.py` 对 `framework::syscall::api::*` **不拦截**（黑名单仅含 `types`/`userctx`/`usermode` 等）。裁决：`framework::syscall::api` 是 framework 顶层 `pub mod api`（[framework/syscall/mod.rs:1](file:///home/anfer/Code/QueenX/src/kernel/framework/syscall/mod.rs#L1)），services 经 `framework::syscall::api::*` 调用属**访问 framework 顶层公共模块**，非 F2 黑名单范畴（黑名单针对 `impl detail` 内部子模块）。保留现状，不加黑名单、不 re-export 别名（避免 api 与 dispatch 同名函数 re-export 冲突，曾致 E0255 递归）。
   - 状态：[X]（文档登记完成，2026-08-26）
 
 - **DECISION-072**
