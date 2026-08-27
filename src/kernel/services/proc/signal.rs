@@ -282,14 +282,14 @@ pub type SignalResult<T> = Result<T, SignalError>;
 /// # Errors
 ///
 /// - 目标进程不存在(`kill(pid, 0)` 检查) → `NoSuchProcess`
-/// - 信号编号 `>= 64` → `InvalidArgument`
+/// - 信号编号 `> 64` → `InvalidArgument`
 pub fn send(pid: crate::kernel::framework::proc::Pid, sig: Signal) -> SignalResult<()> {
     if sig == Signal::NONE {
         // POSIX: kill(pid, 0) 仅检查进程存在, 不发送
         return crate::kernel::services::proc::table::with(pid, |_p| ())
             .ok_or(SignalError::NoSuchProcess);
     }
-    if sig.0 >= 64 {
+    if sig.0 > 64 {
         return Err(SignalError::InvalidArgument);
     }
     crate::kernel::services::proc::table::signal_set(pid, u32::from(sig.0))
@@ -429,18 +429,19 @@ mod tests {
 
 /// kill 系统调用安全代理
 ///
-/// 验证: 信号编号 0..=31, 目标 pid 接受 POSIX 4 种语义 (pid>0 单进程,
+/// 验证: 信号编号 0..=64 (0 = 检查存在, 1..=31 = 标准信号, 32..=64 = RT 信号),
+///       目标 pid 接受 POSIX 4 种语义 (pid>0 单进程,
 ///        pid=0 同进程组, pid=-1 全部, pid<-1 |pid| 进程组).
 ///
 /// # Errors
 ///
-/// - 信号编号不在 `0..=31` 范围 → `EINVAL`
+/// - 信号编号不在 `0..=64` 范围 → `EINVAL`
 /// - 底层 `sys_kill` 返回负值时转换为对应的 `Errno`
 pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
     use crate::kernel::framework::syscall::Errno;
 
-    // 验证信号编号 (POSIX kill: 0 = 检查存在, 1..=31 = 标准信号)
-    if !(0..=31).contains(&sig) {
+    // 验证信号编号 (POSIX kill: 0 = 检查存在, 1..=64 = 标准 + RT 信号)
+    if !(0..=64).contains(&sig) {
         return Err(Errno::EINVAL);
     }
     // 验证 pid 范围 (POSIX: pid 必须非 0, -1, <-1 之一; pid=0 合法)
@@ -580,7 +581,7 @@ impl SignalDecision for StandardSignalPolicy {
             return None;
         }
         let sig_bit = deliverable.trailing_zeros() as u8;
-        if sig_bit == 0 || sig_bit > 31 {
+        if sig_bit == 0 || sig_bit > 64 {
             return None;
         }
         Some(sig_bit)

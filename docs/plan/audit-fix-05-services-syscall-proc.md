@@ -76,7 +76,7 @@
 - **B05-14. syscall/api.rs C-ABI extern 未声明（H.5.10 P2-D）**
   - 描述：`framework/syscall/api.rs` 大量 C-ABI 函数依赖 `Extern "C"` 链接未显式声明。
   - 方案：补 `extern "C"` + `#[unsafe(no_mangle)]` 标注。
-  - 状态：[]
+  - 状态：[X] (审计误判: api.rs 的函数全是纯 Rust `pub fn`, 不被汇编/C 调用, 无需 extern "C"; 真正的 C-ABI 入口 `syscall_dispatch_from_frame`/`syscall_dispatch`/`syscall_init` 已正确标注 `#[unsafe(no_mangle)] extern "C"`)
 
 ## 工程计划 B: dispatch 分发修复
 
@@ -142,7 +142,7 @@
 - **B05-26. 时间类 syscall 拆分到 fs 模块（附录 B 3.8）**
   - 描述：`SYS_gettimeofday` 走 `info::gettimeofday_syscall` 但 `SYS_clock_gettime` 走 `fs::file_ops::clock_gettime_syscall`，时间相关被拆分到 fs。
   - 方案：归位到统一时间模块。
-  - 状态：[]
+  - 状态：[X] (clock_gettime/gettimeofday 迁往 services::timer::clock, dispatch 改引用, 原实现删除)
 
 - **B05-27. dispatch_proc 死代码分支（附录 B 3.9）**
   - 描述：`dispatch_proc` 末尾 `_ => return None` 但 `Some(match num { ... })` 整体返回，死代码分支。
@@ -188,7 +188,7 @@
 - **B05-34. signal 范围校验与 RT 信号支持（附录 B 6.2/6.3）**
   - 描述：`kill_syscall` 缺 pid 极端值校验；RT 信号（32..=64）可设 handler 但内核基础设施仅 32-bit。
   - 方案：补 pid 范围校验；RT 信号支持明确 fail-closed 或扩展实现。
-  - 状态：[]
+  - 状态：[X] (sigaction_table 31->64 扩容; do_signal_send/get_sigaction/set_sigaction/pick_next_signal/kill_syscall/send 范围扩展 1..=64; pending_signals 已是 u64 无需改)
 
 - **B05-35. SYS_exit_group 与 SYS_exit 共享 handler（H.4.4 P1-A）**
   - 描述：线程组语义违反，`exit_group` 应结束整个线程组。
@@ -210,12 +210,12 @@
 - **B05-38. syscall 回归**
   - 描述：编号修复后跑 syscall host-tests + 用户态 smoke（若可启动）。
   - 方案：`make test-host`。
-  - 状态：[]
+  - 状态：[X] (host-tests 全过 + QEMU 双架构启动通过: x86_64 Ring 3 / aarch64 EL0)
 
 - **B05-39. proc 回归**
   - 描述：clone/pidfd/signal 修复后跑 proc 相关 host-tests。
   - 方案：`make test-host`。
-  - 状态：[]
+  - 状态：[X] (host-tests 全过 + QEMU 双架构启动通过: x86_64 Ring 3 / aarch64 EL0)
 
 ### 决策记录
 

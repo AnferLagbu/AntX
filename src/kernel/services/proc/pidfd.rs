@@ -45,14 +45,18 @@ static NEXT_SLOT_ID: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(1);
 
 /// 获取映射表锁 (首次调用时惰性初始化)
+///
+/// 使用 `OnceLock::set` 而非 `get_or_init` (后者闭包需 unsafe, services 层禁止).
+/// `set` 内部 `call_once` 保证并发安全: 首个线程写入, 其余线程的 `set` 返回
+/// `Err(value)` (Mutex 被 drop, 无泄漏). `call_once` 返回后 `get` 必返回 `Some`.
 fn pidfd_map() -> &'static Mutex<[Option<PidFdEntry>; PIDFD_CAP]> {
-    // OnceLock::set 是 safe 接口; 首次调用初始化, 后续 get 直接返回.
-    let _ = PIDFD_MAP.set(Mutex::new([None; PIDFD_CAP]));
-    match PIDFD_MAP.get() {
-        Some(m) => m,
-        // set 成功即存在; 理论不可达 (唯一失败场景是并发 set, 此时 get 必 Some)
-        None => unreachable!("pidfd map init"),
+    // set 失败 (Err) 表示已初始化, 退回的 Mutex 被 drop; 此时 get 必 Some.
+    if PIDFD_MAP.set(Mutex::new([None; PIDFD_CAP])).is_err() {
+        // 并发场景: 另一个线程已初始化, 继续走 get
     }
+    PIDFD_MAP
+        .get()
+        .expect("pidfd map: OnceLock set 后 get 必 Some (call_once 互斥保证)")
 }
 
 /// 分配一个 pidfd 映射槽位

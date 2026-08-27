@@ -41,7 +41,7 @@ pub use sendfile::{
 pub use types::*;
 pub use types::Errno;
 
-// dispatch_trait 公共接口 re-export — T-03 策略-机制分离
+// dispatch_trait 公共接口 re-export - T-03 策略-机制分离
 pub use dispatch_trait::{
     FallbackSyscallDispatch, SyscallDispatch, current_syscall_dispatch, register_syscall_dispatch,
 };

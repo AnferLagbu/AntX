@@ -184,9 +184,9 @@ pub struct Process {
     /// 信号屏蔽字 (bit i = 信号 i+1 被屏蔽)
     pub blocked_mask: AtomicU64,
 
-    /// 信号处理动作表 (索引 0..=30 对应 SIGHUP..SIGSYS)
+    /// 信号处理动作表 (索引 0..=63 对应 SIGHUP(1)..SIGRTMAX(64); B05-34 RT 信号扩展)
     /// 每项: 0 = `SIG_DFL`, 1 = `SIG_IGN`, 其他 = 用户态 handler 地址
-    pub sigaction_table: Mutex<[u64; 31]>,
+    pub sigaction_table: Mutex<[u64; 64]>,
 
     /// 信号替换栈 (sigaltstack), 0 = 未设置
     pub sigaltstack_addr: AtomicU64,
@@ -323,7 +323,7 @@ impl Process {
             pending_free: AtomicBool::new(false),
             pending_signals: AtomicU64::new(0),
             blocked_mask: AtomicU64::new(0),
-            sigaction_table: Mutex::new([0u64; 31]),
+            sigaction_table: Mutex::new([0u64; 64]),
             sigaltstack_addr: AtomicU64::new(0),
             sigaltstack_size: AtomicU64::new(0),
             sigaltstack_flags: AtomicU32::new(0),

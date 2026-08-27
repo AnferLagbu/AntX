@@ -227,7 +227,7 @@ fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
 
         // 时间与统计
         SYS_clock_gettime => {
-            crate::kernel::services::fs::file_ops::clock_gettime_syscall(a0 as i32, a1)
+            crate::kernel::services::timer::clock::clock_gettime_syscall(a0 as i32, a1)
         }
         SYS_times => as_ret(crate::kernel::services::fs::misc::times_syscall(a0)),
         SYS_time => as_ret(crate::kernel::services::fs::misc::time_syscall(a0)),
@@ -374,7 +374,7 @@ fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
         SYS_sysinfo => crate::kernel::services::proc::sysinfo::sysinfo_syscall(a0),
         SYS_getrlimit => crate::kernel::services::proc::sysinfo::getrlimit_syscall(a0 as i32, a1),
         SYS_uname => as_ret(crate::kernel::services::proc::info::uname_syscall(a0)),
-        SYS_gettimeofday => as_ret(crate::kernel::services::proc::info::gettimeofday_syscall(
+        SYS_gettimeofday => as_ret(crate::kernel::services::timer::clock::gettimeofday_syscall(
             a0,
         )),
 

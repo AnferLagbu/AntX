@@ -3,11 +3,12 @@
 //!
 //! 从 framework/syscall/mod.rs 迁移的策略代码:
 //! - ioctl_syscall: 设备 I/O 控制
-//! - clock_gettime_syscall: 时钟获取
 //! - poll_syscall: 轮询
 //! - chown_syscall: 文件属主修改
 //! - truncate_syscall / ftruncate_syscall: 文件截断
 //! - flock_syscall: BSD 风格文件锁
+//!
+//! 注: clock_gettime 已迁往 services::timer::clock (B05-26 时间归位).
 //!
 //! ## 框内核边界
 //! - 100% safe Rust
@@ -15,9 +16,6 @@
 //! - 无 unsafe, 无裸指针
 
 use crate::kernel::framework::syscall::Errno;
-
-const CLOCK_REALTIME: i32 = 0;
-const CLOCK_MONOTONIC: i32 = 1;
 
 const POLLIN: i16 = 1;
 const POLLOUT: i16 = 4;
@@ -58,42 +56,6 @@ pub fn ioctl_syscall(_fd: i32, request: u64, arg: u64) -> i64 {
         TCGETS => Errno::ENOSYS.as_ret(),
         _ => Errno::ENOTTY.as_ret(),
     }
-}
-
-#[expect(
-    clippy::unreadable_literal,
-    reason = "unreadable_literal: 长数字常量无下划线分隔; 内核硬件常量 (MMIO 地址/位掩码) 已知精确值, 当前优先 expect"
-)]
-/// `clock_gettime(clk_id`, tp) 策略
-pub fn clock_gettime_syscall(clk_id: i32, tp_ptr: u64) -> i64 {
-    if tp_ptr == 0 {
-        return Errno::EINVAL.as_ret();
-    }
-    if clk_id != CLOCK_REALTIME && clk_id != CLOCK_MONOTONIC {
-        return Errno::EINVAL.as_ret();
-    }
-
-    #[repr(C)]
-    #[derive(Copy, Clone)]
-    #[expect(
-        clippy::items_after_statements,
-        reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
-    )]
-    struct Timespec {
-        tv_sec: i64,
-        tv_nsec: i64,
-    }
-
-    let ticks = crate::kernel::framework::syscall::api::get_ticks();
-    let t = Timespec {
-        tv_sec: (ticks / 1000) as i64,
-        tv_nsec: ((ticks % 1000) * 1000000) as i64,
-    };
-
-    if !crate::kernel::framework::syscall::api::write_struct_to_user(tp_ptr, &t) {
-        return Errno::EFAULT.as_ret();
-    }
-    0
 }
 
 /// poll(fds, nfds, timeout) 策略

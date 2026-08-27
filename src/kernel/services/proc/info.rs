@@ -80,24 +80,6 @@ pub fn uname_syscall(buf: u64) -> Result<usize, Errno> {
 }
 
 // ============================================================================
-// gettimeofday
+// gettimeofday -> 已迁往 services::timer::clock (B05-26 时间归位)
 // ============================================================================
 
-/// gettimeofday — 时钟查询
-///
-/// `tv` 指向 struct timeval (`tv_sec` + `tv_usec`, 16 字节)
-///
-/// # Errors
-///
-/// 当 `tv == 0` 时返回 `EFAULT`.
-pub fn gettimeofday_syscall(tv: u64) -> Result<usize, Errno> {
-    if tv == 0 {
-        return Err(Errno::EFAULT);
-    }
-    let ret = crate::kernel::framework::syscall::info::sys_gettimeofday(tv);
-    if ret < 0 {
-        Err(Errno::from_ret(ret))
-    } else {
-        Ok(ret as usize)
-    }
-}

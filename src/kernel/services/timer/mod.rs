@@ -5,6 +5,7 @@
 //!
 //! ## 子模块
 //!
+//! - `clock` — clock_gettime / gettimeofday 时钟查询
 //! - `sleep` — nanosleep 安全代理
 //! - `posix_timer` — POSIX Timer 安全代理
 //! - `timerfd` — timerfd 安全代理
@@ -19,6 +20,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod clock;
 pub mod posix_timer;
 pub mod sleep;
 pub mod tickless;

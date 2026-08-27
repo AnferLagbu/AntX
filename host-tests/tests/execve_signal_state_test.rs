@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 struct FakeProcess {
     pending_signals: AtomicU64,
     blocked_mask: AtomicU64,
-    sigaction_table: [AtomicU64; 31],
+    sigaction_table: [AtomicU64; 64],
 }
 
 impl FakeProcess {
