@@ -182,8 +182,9 @@ pub fn is_uncatchable(sig: u8) -> bool {
 /// - `Err(i32)`: 错误码 (-1: 无效信号, -2: 进程不存在)
 ///
 /// # Errors
-/// 当 `sig` 不在 `1..=64` 范围内时返回 `Err(-1)`; 当目标进程不存在时返回 `Err(-2)`;
+/// 当 `sig` 不在 `1..=63` 范围内时返回 `Err(-1)`; 当目标进程不存在时返回 `Err(-2)`;
 /// 当目标进程处于 `Zombie` 状态 (信号不会被消费) 时返回 `Err(-3)`.
+/// (sig 上限 63 = bit 63, 避开 `1u64 << 64` UB)
 pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
     // 验证信号编号
     if sig == 0 {
@@ -194,7 +195,7 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
             Err(-2)
         };
     }
-    if !(1..=64).contains(&sig) {
+    if !(1..=63).contains(&sig) {
         return Err(-1);
     }
 
@@ -250,7 +251,7 @@ pub fn do_signal_send(pid: Pid, sig: u8) -> Result<(), i32> {
 /// - `Err(-2)`: 未找到任何目标 (ESRCH)
 ///
 /// # Errors
-/// 当 `sig` 不在 `1..=64` 范围内时返回 `Err(-1)`; 当未找到任何匹配的目标进程
+/// 当 `sig` 不在 `1..=63` 范围内时返回 `Err(-1)`; 当未找到任何匹配的目标进程
 /// (或目标均为 `Zombie`) 时返回 `Err(-2)`/`Err(-3)`.
 pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
     // sig=0 仅检查存在, 不发信号
@@ -299,7 +300,7 @@ pub fn do_signal_send_extended(pid: i32, sig: u8) -> Result<usize, i32> {
         };
     }
 
-    if !(1..=64).contains(&sig) {
+    if !(1..=63).contains(&sig) {
         return Err(-1);
     }
 
@@ -401,7 +402,7 @@ fn do_signal_send_inner(pid: u32, sig: u8) -> Result<(), i32> {
 /// 从 pending & ~blocked 中选择, 委托到 `SignalDecision` trait.
 ///
 /// # Returns
-/// - `Some(sig)`: 待投递的信号编号 (1..=64)
+/// - `Some(sig)`: 待投递的信号编号 (1..=63)
 /// - `None`: 无待投递信号
 pub fn signal_pick_next(proc: &super::process::Process) -> Option<u8> {
     let pending = proc.signal_pending_get();
@@ -703,7 +704,7 @@ pub fn set_blocked_mask(pid: Pid, mask: u64) {
 
 /// 获取进程的 sigaction 表项
 pub fn get_sigaction(pid: Pid, sig: u8) -> Option<u64> {
-    if !(1..=64).contains(&sig) {
+    if !(1..=63).contains(&sig) {
         return None;
     }
     let proc_ptr = PROCESS_TABLE.get(pid)?;
@@ -715,7 +716,7 @@ pub fn get_sigaction(pid: Pid, sig: u8) -> Option<u64> {
 
 /// 设置进程的 sigaction 表项, 返回旧值
 pub fn set_sigaction(pid: Pid, sig: u8, action: u64) -> Option<u64> {
-    if !(1..=64).contains(&sig) {
+    if !(1..=63).contains(&sig) {
         return None;
     }
     if is_uncatchable(sig) {

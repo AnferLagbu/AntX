@@ -142,11 +142,11 @@ pub fn pidfd_open(pid: u32, flags: u32) -> Result<usize, Errno> {
 ///
 /// # Errors
 ///
-/// - 信号编号不在 1..=64 范围 → `EINVAL`
+/// - 信号编号不在 1..=63 范围 → `EINVAL`
 /// - pidfd 无效 → `EBADF`
 /// - 目标进程不存在 → `ESRCH`
 pub fn pidfd_send_signal(pidfd: u32, sig: i32, _siginfo: u64, _flags: u32) -> Result<usize, Errno> {
-    if !(1..=64).contains(&sig) {
+    if !(1..=63).contains(&sig) {
         return Err(Errno::EINVAL);
     }
 

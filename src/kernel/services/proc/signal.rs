@@ -282,14 +282,15 @@ pub type SignalResult<T> = Result<T, SignalError>;
 /// # Errors
 ///
 /// - 目标进程不存在(`kill(pid, 0)` 检查) → `NoSuchProcess`
-/// - 信号编号 `> 64` → `InvalidArgument`
+/// - 信号编号 `> 63` → `InvalidArgument`
+/// (sig 上限 63 避开 `1u64 << 64` UB)
 pub fn send(pid: crate::kernel::framework::proc::Pid, sig: Signal) -> SignalResult<()> {
     if sig == Signal::NONE {
         // POSIX: kill(pid, 0) 仅检查进程存在, 不发送
         return crate::kernel::services::proc::table::with(pid, |_p| ())
             .ok_or(SignalError::NoSuchProcess);
     }
-    if sig.0 > 64 {
+    if sig.0 > 63 {
         return Err(SignalError::InvalidArgument);
     }
     crate::kernel::services::proc::table::signal_set(pid, u32::from(sig.0))
@@ -429,19 +430,20 @@ mod tests {
 
 /// kill 系统调用安全代理
 ///
-/// 验证: 信号编号 0..=64 (0 = 检查存在, 1..=31 = 标准信号, 32..=64 = RT 信号),
+/// 验证: 信号编号 0..=63 (0 = 检查存在, 1..=31 = 标准信号, 32..=63 = RT 信号),
 ///       目标 pid 接受 POSIX 4 种语义 (pid>0 单进程,
 ///        pid=0 同进程组, pid=-1 全部, pid<-1 |pid| 进程组).
+/// (sig 上限 63 避开 `1u64 << 64` UB)
 ///
 /// # Errors
 ///
-/// - 信号编号不在 `0..=64` 范围 → `EINVAL`
+/// - 信号编号不在 `0..=63` 范围 → `EINVAL`
 /// - 底层 `sys_kill` 返回负值时转换为对应的 `Errno`
 pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framework::syscall::Errno> {
     use crate::kernel::framework::syscall::Errno;
 
-    // 验证信号编号 (POSIX kill: 0 = 检查存在, 1..=64 = 标准 + RT 信号)
-    if !(0..=64).contains(&sig) {
+    // 验证信号编号 (POSIX kill: 0 = 检查存在, 1..=63 = 标准 + RT 信号)
+    if !(0..=63).contains(&sig) {
         return Err(Errno::EINVAL);
     }
     // 验证 pid 范围 (POSIX: pid 必须非 0, -1, <-1 之一; pid=0 合法)
@@ -458,11 +460,12 @@ pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framewor
 
 /// `rt_sigaction` 系统调用安全代理
 ///
-/// 验证: signum 1..=31 (标准信号) 或 32..=64 (RT信号)
+/// 验证: signum 1..=63 (标准信号) 或 32..=63 (RT信号)
+/// (sig 上限 63 避开 `1u64 << 64` UB)
 ///
 /// # Errors
 ///
-/// - 信号编号不在 `1..=64` 范围或试图操作不可捕获信号(`SIGKILL`/`SIGSTOP`) → `EINVAL`
+/// - 信号编号不在 `1..=63` 范围或试图操作不可捕获信号(`SIGKILL`/`SIGSTOP`) → `EINVAL`
 /// - 底层 `sys_rt_sigaction` 返回负值时转换为对应的 `Errno`
 pub fn rt_sigaction_syscall(
     signum: i32,
@@ -472,7 +475,7 @@ pub fn rt_sigaction_syscall(
     use crate::kernel::framework::syscall::Errno;
 
     // 验证信号编号 (SIGKILL=9 和 SIGSTOP=19 不可捕获)
-    if !(1..=64).contains(&signum) {
+    if !(1..=63).contains(&signum) {
         return Err(Errno::EINVAL);
     }
     if signum == 9 || signum == 19 {
@@ -581,7 +584,9 @@ impl SignalDecision for StandardSignalPolicy {
             return None;
         }
         let sig_bit = deliverable.trailing_zeros() as u8;
-        if sig_bit == 0 || sig_bit > 64 {
+        // sig_bit ∈ [1, 63]: 对应信号 1..=63 (bit 0 = sig 1)
+        // sig=64 对应 bit 63 (不是 64), u8 上限避免 trailing_zeros()=64 UB
+        if sig_bit == 0 || sig_bit >= 64 {
             return None;
         }
         Some(sig_bit)
