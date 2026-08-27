@@ -248,16 +248,22 @@ fn dispatch_fs(num: u64, args: [u64; 6]) -> Option<i64> {
             a4 as usize,
         )),
         SYS_name_to_handle_at => {
-            crate::kernel::services::fs::file_handle::name_to_handle_at_syscall(
+            // 显式错误透传: 具体 Errno 而非通用负值 (B05-41 返工)
+            match crate::kernel::services::fs::file_handle::name_to_handle_at_syscall(
                 a0 as i32, a1, a2 as i32, a3, a4 as u64, a5 as u32,
-            )
-            .unwrap_or_else(super::types::Errno::as_ret)
+            ) {
+                Ok(v) => v,
+                Err(e) => e.as_ret(),
+            }
         }
         SYS_open_by_handle_at => {
-            crate::kernel::services::fs::file_handle::open_by_handle_at_syscall(
+            // 显式错误透传: 具体 Errno 而非通用负值 (B05-41 返工)
+            match crate::kernel::services::fs::file_handle::open_by_handle_at_syscall(
                 a0 as i32, a1, a2 as i32, a3 as u32,
-            )
-            .unwrap_or_else(super::types::Errno::as_ret)
+            ) {
+                Ok(v) => v,
+                Err(e) => e.as_ret(),
+            }
         }
 
         // 扩展属性
@@ -366,6 +372,9 @@ fn dispatch_proc(num: u64, args: [u64; 6]) -> Option<i64> {
         // 进程生命周期
         SYS_fork => crate::kernel::services::proc::lifecycle::fork_syscall(),
         SYS_exit => crate::kernel::services::proc::lifecycle::exit_syscall(a0 as i32),
+        // SIMPLIFIED: exit_group 暂等同 exit (B05-43 返工登记); 影响面: 线程组未实现
+        // 组级终止, 仅结束当前进程; 何时需扩展: 引入 tgid/线程组基础结构后遍历组内
+        // 全部线程终止 (审查 DECISION-071 关联).
         SYS_exit_group => crate::kernel::services::proc::lifecycle::exit_syscall(a0 as i32),
         SYS_sched_yield => crate::kernel::services::proc::lifecycle::sched_yield_syscall(),
 
