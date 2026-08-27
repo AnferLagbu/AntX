@@ -596,7 +596,8 @@ impl SignalDecision for StandardSignalPolicy {
 /// 注册标准信号策略到 framework
 ///
 /// 由 `services::proc::init()` 调用. 只能成功一次, 后续调用返回 `Err(())`.
-/// 重复注册不会导致 panic, 仅记录为可观察结果, 启动期已知安全.
+/// 启动期重复注册由 `proc::init()` 以 panic 暴露 (B05-44 返工);
+/// 本 API 自身仍返回 `Err` 供运行时调用方降级处理.
 ///
 /// # Errors
 ///
