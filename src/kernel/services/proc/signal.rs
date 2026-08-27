@@ -460,7 +460,7 @@ pub fn kill_syscall(pid: i32, sig: i32) -> Result<usize, crate::kernel::framewor
 
 /// `rt_sigaction` 系统调用安全代理
 ///
-/// 验证: signum 1..=63 (标准信号) 或 32..=63 (RT信号)
+/// 验证: signum 1..=31 (标准信号) 或 32..=63 (RT信号)
 /// (sig 上限 63 避开 `1u64 << 64` UB)
 ///
 /// # Errors
