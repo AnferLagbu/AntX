@@ -192,8 +192,7 @@ impl<T> UserRefMut<T> {
 // 用户指针验证 — 从 syscall::raw 提取到统一入口
 // ============================================================================
 
-/// 用户态地址最大值 (规范形式)
-const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_F000;
+use crate::kernel::framework::constants::limits::USER_ADDR_MAX;
 
 /// 验证单个用户态指针是否在合法范围.
 #[inline]

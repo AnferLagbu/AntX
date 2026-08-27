@@ -70,8 +70,7 @@ unsafe fn smap_begin() {}
 #[inline(always)]
 unsafe fn smap_end() {}
 
-/// 用户态地址最大值 (规范形式)
-const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_F000;
+use crate::kernel::framework::constants::limits::USER_ADDR_MAX;
 
 /// 异常表条目 —— 用于缺页恢复
 #[repr(C)]

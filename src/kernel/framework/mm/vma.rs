@@ -423,8 +423,9 @@ impl MmStruct {
             cursor = vma.end;
         }
 
-        // TASK_SIZE: 64 位用户地址空间上限
-        let task_size: usize = 0x0000_7FFF_FFFF_F000;
+        // TASK_SIZE: 64 位用户地址空间上限 (集中于 constants::limits::USER_ADDR_MAX, B05-45)
+        // SIMPLIFIED: usize 转换在 64 位系统下无损; 32 位系统需额外 assert (无 32 位目标, 当前可省略)
+        let task_size: usize = crate::kernel::framework::constants::limits::USER_ADDR_MAX as usize;
 
         if cursor + size <= task_size {
             Some(cursor)

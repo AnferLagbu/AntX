@@ -61,7 +61,9 @@ impl PageFaultInfo {
     }
 }
 
-const USER_STACK_TOP: u64 = 0x0000_7FFF_FFFF_F000;
+// 用户栈顶 (经典 Linux 概念, 等同用户地址空间上限, B05-45 集中)
+// 引用 constants::limits::USER_ADDR_MAX 而非硬编码; 二者语义等价 (栈顶 = 地址空间上限)
+const USER_STACK_TOP: u64 = crate::kernel::framework::constants::limits::USER_ADDR_MAX;
 const USER_STACK_DEFAULT_SIZE: u64 = 0x0080_0000; // 8MB
 const USER_STACK_GUARD_PAGES: u64 = 1; // 1 page guard
 

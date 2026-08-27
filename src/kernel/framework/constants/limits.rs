@@ -42,9 +42,17 @@ pub const MAX_LIMITS: usize = 32;
 /// fb_mmap 目标虚拟地址上界 (仅 `framework::syscall::dispatch::sys_fb_mmap` 使用)
 ///
 /// **注意**: 该边界 (`0x7FFFFFFFE000`, 2^39 量级) 是帧缓冲映射专用约束,
-/// **不是**用户指针校验边界. 用户指针校验的真实上界定义于
-/// `framework::userptr` / `framework::mm::copy_user` (`0x7FFF_FFFF_F000`, 2^47).
+/// **不是**用户指针校验边界. 用户指针校验的真实上界见 `USER_ADDR_MAX`.
 /// 两处边界语义不同, 不得混用.
 ///
 /// **超限行为**: `sys_fb_mmap` 对 `target_vaddr > 本值 - size` 返回 `EINVAL`.
 pub const FB_MMAP_ADDR_MAX: u64 = 0x7FFFFFFFE000;
+
+/// 用户态地址空间上界 (指针校验边界, 2^47 量级)
+///
+/// **注意**: 与 `FB_MMAP_ADDR_MAX` (2^39) 语义不同, 后者仅限帧缓冲映射.
+/// 本值是 `validate_user_ptr` / `validate_user_buf` 的真实上界 (B05-45 集中).
+///
+/// **超限行为**: 指针 ≥ 本值 (或 ptr+len 越过本值) 的用户访问被拒绝,
+/// `validate_user_ptr`/`validate_user_buf` 返回 false.
+pub const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_F000;

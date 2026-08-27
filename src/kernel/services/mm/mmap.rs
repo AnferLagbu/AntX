@@ -172,7 +172,8 @@ fn find_or_allocate_addr(
     addr_hint: u64,
     len_aligned: usize,
 ) -> Result<usize, Errno> {
-    if addr_hint != 0 && addr_hint < 0x0000_7FFF_FFFF_F000 {
+    use crate::kernel::framework::constants::limits::USER_ADDR_MAX;
+    if addr_hint != 0 && addr_hint < USER_ADDR_MAX {
         Ok(addr_hint as usize)
     } else {
         mm.find_free_range(len_aligned).ok_or(Errno::ENOMEM)
