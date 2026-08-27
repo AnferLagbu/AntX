@@ -79,6 +79,7 @@ impl SchedDecision for FallbackPolicy {
             ThreadPriority::High => SCHED_LEVEL_1_QUANTUM,
             ThreadPriority::Normal => SCHED_LEVEL_2_QUANTUM,
             ThreadPriority::Low => SCHED_LEVEL_3_QUANTUM,
+            // DECISION-072: u32::MAX = "永不过期"语义; 仅当无其他优先级任务时被调度
             ThreadPriority::Idle => u32::MAX,
         }
     }
