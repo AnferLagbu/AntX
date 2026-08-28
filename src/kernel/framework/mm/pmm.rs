@@ -396,6 +396,8 @@ pub struct PhysicalMemoryManager {
     buddy_meta: Cell<Option<NonNull<u8>>>,
     /// 双向链表空闲块头, 每个阶数一个
     buddy_heads: UnsafeCell<[*mut FreeNode; MAX_BUDDY_ORDER as usize + 1]>,
+    /// B05-55: reserve 摘除块的暂存 (待位图置位后压回, 防止合并吞掉 reserve 区)
+    buddy_reserve_deferred: UnsafeCell<alloc::vec::Vec<(u64, u64, u64, u64)>>,
 }
 
 // SAFETY: PhysicalMemoryManager 使用 Cell/UnsafeCell 实现内部可变性.
@@ -426,6 +428,7 @@ impl PhysicalMemoryManager {
             failed_allocs: AtomicU64::new(0),
             buddy_meta: Cell::new(None),
             buddy_heads: UnsafeCell::new([core::ptr::null_mut(); MAX_BUDDY_ORDER as usize + 1]),
+            buddy_reserve_deferred: UnsafeCell::new(alloc::vec::Vec::new()),
         }
     }
 
@@ -676,6 +679,9 @@ impl PhysicalMemoryManager {
     /// B03-04: 标记物理地址范围为已用 (反向声明) — 用于 swap/persistent buffer 等
     /// 子系统在初始化后声明其占有的物理内存, 防止被 PMM 二次分配。
     ///
+    /// 与 buddy 空闲链表严格同步: 会从空闲链表摘除所有与范围重叠的块,
+    /// 将不重叠部分重新压回, 避免含已预留页的块滞留在链表中被二次分配。
+    ///
     /// # 调用契约
     /// - `base` 必须对齐到 `PAGE_SIZE` 边界
     /// - `size` 必须 > 0 且为 `PAGE_SIZE` 整数倍
@@ -714,11 +720,8 @@ impl PhysicalMemoryManager {
                 return Err("PMM reserve_range: range overlaps allocated/reserved page");
             }
         }
-        // 标记 reserved
-        for i in start_pfn..end_pfn {
-            self.set_bit(i);
-        }
-        self.stats_alloc(npages as u64);
+        // 摘除空闲链表中重叠的块 + 置位位图 + 更新统计
+        self.buddy_reserve_pfn_range(start_pfn as u64, npages as u64);
         self.release_lock(&flags);
 
         klog_pmm!(
@@ -772,6 +775,8 @@ impl PhysicalMemoryManager {
         for i in start_pfn..end_pfn {
             self.clear_bit(i);
         }
+        // 压回 buddy 空闲链表 (并尝试合并), 保持链表与位图同步
+        self.buddy_free_insert_range(start_pfn as u64, npages as u64);
         self.stats_free(npages as u64);
         self.release_lock(&flags);
 
@@ -869,6 +874,8 @@ impl PhysicalMemoryManager {
                 for i in 0..np {
                     self.clear_bit(start + i);
                 }
+                // 压回 buddy 空闲链表 (并尝试合并), 保持链表与位图同步
+                self.buddy_free_insert_range(start as u64, np as u64);
                 self.total_frees.fetch_add(np as u64, Ordering::Relaxed);
                 self.release_lock(&flags);
             }
@@ -1096,22 +1103,30 @@ impl PhysicalMemoryManager {
 
     /// 尝试将 `order` 处释放的 `pfn` 与其上方的 buddy 合并.
     /// 返回 (`merged_pfn`, `final_order`).
+    ///
+    /// `limit_pfn`: 合并块的上界 (不越过该页号). 用于 reserve 压回时防止
+    /// 合并吞掉已置位的 reserve 区 (B05-55); do_free 等路径传 `total_pages`.
     // 有意窄化: 显式收窄, 调用方保证值域
     #[expect(clippy::cast_possible_truncation)]
     #[expect(
         clippy::manual_let_else,
         reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
     )]
-    fn buddy_try_merge(&self, mut pfn: u64, mut order: u8) -> (u64, u8) {
+    fn buddy_try_merge(&self, mut pfn: u64, mut order: u8, limit_pfn: u64) -> (u64, u8) {
         let meta = match self.buddy_meta_ref() {
             Some(m) => m,
             None => return (pfn, order),
         };
-        let total = self.info.get().total_pages;
+        let total = core::cmp::min(self.info.get().total_pages, limit_pfn);
 
         while order < MAX_BUDDY_ORDER {
             let buddy_pfn = pfn ^ (1u64 << order);
             if buddy_pfn >= total {
+                break;
+            }
+            // 合并块不得越过 limit_pfn: 若 buddy 越界, 停止合并
+            // (buddy_pfn 是更高阶块的起始, 若合并则覆盖 [pfn, pfn+2^(order+1)))
+            if pfn + (1u64 << (order + 1)) > limit_pfn {
                 break;
             }
 
@@ -1196,7 +1211,19 @@ impl PhysicalMemoryManager {
         reason = "cast_ptr_alignment: 指针类型转换对齐假设已知安全 (例如硬件 MMIO 寄存器地址已知对齐); 当前优先 expect"
     )]
     /// 将一个块压入空闲链表头.
+    ///
+    /// # 链表/位图同步 (B05-55)
+    /// 压入前强制将块内所有页的位图清为 0 (空闲).
+    /// 原因: `do_free`/`buddy_free_insert_range` 的 `buddy_try_merge` 向上合并
+    /// 伙伴时只清除原块位图, 伙伴页位图可能残留 =1 (历史分配未同步),
+    /// 若不清除则链表含"在位页" → 二次分配 → 页表/内核数据被覆盖.
+    /// 伙伴必须满足 meta=order (空闲) 才会被合并, 故 push 块不含 reserve 区.
     fn buddy_list_push(&self, pfn: u64, order: u8) {
+        // 强制位图同步: 链表是空闲权威, push 即声明这些页 free
+        let npages = 1u64 << u64::from(order);
+        for i in 0..(npages as usize) {
+            self.clear_bit(pfn as usize + i);
+        }
         let heads = self.buddy_heads_ref();
         let node = pfn_to_virt(pfn) as *mut FreeNode;
         // SAFETY: 空闲页未被使用, 我们拥有其前 16 字节, PMM 锁已持有
@@ -1239,6 +1266,120 @@ impl PhysicalMemoryManager {
             nx.set_prev(core::ptr::null_mut());
         }
         Some(pfn)
+    }
+
+    /// 将 [start_pfn, start_pfn+npages) 范围内已清位图 (free) 的页压回 buddy 空闲链表,
+    /// 并尝试与相邻空闲块合并.
+    ///
+    /// 用于 `unreserve_range` / `free_huge_page` 等把先前摘出 buddy 的页归还回池,
+    /// 保证空闲链表与位图严格同步.
+    /// 调用方必须持有 PMM 锁; 保证范围内各页位图均为 0 (free) 且当前不在空闲链表中.
+    // 有意窄化: 显式收窄, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
+    fn buddy_free_insert_range(&self, start_pfn: u64, npages: u64) {
+        // buddy 元数据未就绪 (早期/未初始化阶段) 时, 不操作空闲链表
+        if self.buddy_meta_ref().is_none() {
+            return;
+        }
+        let end_pfn = start_pfn + npages;
+        let mut cur = start_pfn;
+        while cur < end_pfn {
+            let remaining = end_pfn - cur;
+            // 找 cur 自然对齐且 ≤ remaining 的最大 2 的幂块
+            let mut order =
+                (u64::BITS - 1 - remaining.leading_zeros()).min(u32::from(MAX_BUDDY_ORDER));
+            while order > 0 {
+                let size = 1u64 << order;
+                if cur.is_multiple_of(size) && size <= remaining {
+                    break;
+                }
+                order -= 1;
+            }
+
+            // 与相邻空闲伙伴合并 (伙伴不满足同阶空闲则停), 然后压入空闲链表
+            // limit_pfn = end_pfn: 合并不得越过本范围, 防止吞掉相邻 reserve 区
+            let (merged_pfn, merged_order) = self.buddy_try_merge(cur, order as u8, end_pfn);
+            self.buddy_list_push(merged_pfn, merged_order);
+
+            // 关键修复 (B05-55): 压回的合并块可能比原块大 (向上合并了伙伴).
+            // 必须推进到合并块的末尾, 否则合并块内的页面会被后续迭代再次压入
+            // → 同一物理页在空闲链表中出现两次 → 二次分配 → 页表/内核数据被覆盖.
+            // 原实现 cur += block_size (原阶大小), 在非对齐范围 (如 swap 16MB
+            // reserve 于非 2 的幂对齐基址) 时触发重复压入.
+            cur = merged_pfn + (1u64 << merged_order);
+        }
+    }
+
+    /// 从 buddy 空闲链表摘除与 [start_pfn, start_pfn+npages) 重叠的所有块,
+    /// 将块中不重叠的部分重新压回空闲链表, 然后置位该范围的位图并更新统计.
+    ///
+    /// 用于 `reserve_range` / `buddy_direct_alloc_aligned` 等"位图式"预留:
+    /// 保证空闲链表与位图严格同步, 避免含已分配/预留页的块滞留在空闲链表中,
+    /// 否则 buddy_alloc 分裂时会把已占用页 push 回空闲链表, 写坏其内容.
+    /// 调用方必须持有 PMM 锁; 保证 [start_pfn, ...) 各页位图当前均为 0 (free).
+    // 有意窄化: 显式收窄, 调用方保证值域
+    #[expect(clippy::cast_possible_truncation)]
+    fn buddy_reserve_pfn_range(&self, start_pfn: u64, npages: u64) {
+        let end_pfn = start_pfn + npages;
+        let meta = self.buddy_meta_ref();
+        let mem_size = self.mem_size.get();
+
+        // SAFETY: buddy_reserve_deferred 仅在持有 PMM 锁时访问 (本函数内独占)
+        let deferred: &mut alloc::vec::Vec<(u64, u64, u64, u64)> =
+            unsafe { &mut *self.buddy_reserve_deferred.get() };
+        deferred.clear();
+
+        // 逐阶遍历空闲链表, 摘除与预留范围重叠的块
+        for order in 0..=MAX_BUDDY_ORDER {
+            let heads = self.buddy_heads_ref();
+            let mut node = heads.head(order);
+            while !node.is_null() {
+                let node_phys = (node as u64).wrapping_sub(KERNEL_BASE);
+                // 防御: 校验 node 是否在物理 RAM 范围内
+                #[allow(clippy::absurd_extreme_comparisons)]
+                if node_phys < RAM_BASE || node_phys >= RAM_BASE + mem_size {
+                    break;
+                }
+                // SAFETY: node 是链表中合法的 FreeNode, PMM 锁持有
+                let n = unsafe { FreeNodeRef::new_unchecked(node) };
+                let next = n.next();
+
+                let block_pfn = phys_to_page(node_phys);
+                let block_size = 1u64 << order;
+                if block_pfn < end_pfn && block_pfn + block_size > start_pfn {
+                    // 重叠: 整块摘除, 元数据整块标记为已分配 (防止后续错误合并)
+                    self.buddy_list_remove(block_pfn, order);
+                    if let Some(ref m) = meta {
+                        for i in 0..block_size {
+                            m.write((block_pfn + i) as usize, BUDDY_ALLOCATED);
+                        }
+                    }
+                    // 不重叠部分暂不压回: 待位图置位后再压回,
+                    // 使 buddy_free_insert_range 的合并不会吞掉 reserve 区
+                    // (否则合并块覆盖 [start,end) → 压回后置位图 → 链表含在位页 → 二次分配)
+                    deferred.push((block_pfn, start_pfn, end_pfn, block_size));
+                }
+                node = next;
+            }
+        }
+
+        // 置位位图并更新统计
+        for i in start_pfn as usize..end_pfn as usize {
+            self.set_bit(i);
+        }
+        self.stats_alloc(npages);
+
+        // 位图置位后, 压回不重叠部分 (buddy_try_merge 遇位图=1 的伙伴会停止合并)
+        while let Some((block_pfn, s, e, size)) = deferred.pop() {
+            if block_pfn < s {
+                self.buddy_free_insert_range(block_pfn, s - block_pfn);
+            }
+            let block_end = block_pfn + size;
+            if block_end > e {
+                let right_start = core::cmp::max(block_pfn, e);
+                self.buddy_free_insert_range(right_start, block_end - right_start);
+            }
+        }
     }
 
     /// 指定阶数执行核心分配.
@@ -1357,8 +1498,9 @@ impl PhysicalMemoryManager {
             self.clear_bit(pfn as usize + i);
         }
 
-        // 合并并压入空闲链表
-        let (merged_pfn, merged_order) = self.buddy_try_merge(pfn, order);
+        // 合并并压入空闲链表 (do_free 无范围限制, limit = total_pages)
+        let (merged_pfn, merged_order) =
+            self.buddy_try_merge(pfn, order, self.info.get().total_pages);
         self.buddy_list_push(merged_pfn, merged_order);
         self.stats_free(npages);
     }
@@ -1434,9 +1576,8 @@ impl PhysicalMemoryManager {
                     }
                 }
                 if ok {
-                    for j in 0..count {
-                        self.set_bit(i + j);
-                    }
+                    // 摘除空闲链表中重叠的块 + 置位位图 + 更新统计
+                    self.buddy_reserve_pfn_range(i as u64, count as u64);
                     return Some(PhysAddr(page_to_phys(i as u64)));
                 }
             }

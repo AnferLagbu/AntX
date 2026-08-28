@@ -93,6 +93,33 @@ pub fn clone_user_page_table_cow(parent_pml4: u64) -> Option<u64> {
     let _vmm_flags = vmm_inst.acquire_lock();
     let result = clone_user_page_table_cow_inner(parent_pml4);
     vmm_inst.release_lock(&_vmm_flags);
+    // ⚠ 诊断 (TRACK-INIT-RING3-FORK): 打印 clone 返回值与父/子表 0x400000 PTE.
+    let pml4_v = parent_pml4 + crate::kernel::framework::mm::KERNEL_BASE as u64;
+    // SAFETY: parent_pml4 是已注册用户页表, KERNEL_BASE 恒等映射可达 (诊断).
+    unsafe {
+        let pml4e = core::ptr::read_volatile(pml4_v as *const u64);
+        let pdpt_v = (pml4e & 0x000FFFFFFFFFF000) + crate::kernel::framework::mm::KERNEL_BASE as u64;
+        let pdpte = core::ptr::read_volatile(pdpt_v as *const u64);
+        let pd_v = (pdpte & 0x000FFFFFFFFFF000) + crate::kernel::framework::mm::KERNEL_BASE as u64;
+        let pde = core::ptr::read_volatile((pd_v as *const u64).add(2));
+        let pt_v = (pde & 0x000FFFFFFFFFF000) + crate::kernel::framework::mm::KERNEL_BASE as u64;
+        let pte0 = core::ptr::read_volatile(pt_v as *const u64);
+        let mut child_pte0 = 0u64;
+        if let Some(cr3) = result {
+            let cm4_v = cr3 + crate::kernel::framework::mm::KERNEL_BASE as u64;
+            let cm4e = core::ptr::read_volatile(cm4_v as *const u64);
+            let cpt_v = (cm4e & 0x000FFFFFFFFFF000) + crate::kernel::framework::mm::KERNEL_BASE as u64;
+            let cpdpte = core::ptr::read_volatile(cpt_v as *const u64);
+            let cpd_v = (cpdpte & 0x000FFFFFFFFFF000) + crate::kernel::framework::mm::KERNEL_BASE as u64;
+            let cpde = core::ptr::read_volatile((cpd_v as *const u64).add(2));
+            let cpt_v2 = (cpde & 0x000FFFFFFFFFF000) + crate::kernel::framework::mm::KERNEL_BASE as u64;
+            child_pte0 = core::ptr::read_volatile(cpt_v2 as *const u64);
+        }
+        crate::klog_info!(Kernel,
+            "[COW] clone parent={:#x} result={:?} parent_pte={:#x} child_pte={:#x}",
+            parent_pml4, result, pte0, child_pte0
+        );
+    }
     result
 }
 

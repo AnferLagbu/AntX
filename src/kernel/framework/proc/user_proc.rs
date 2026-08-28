@@ -710,6 +710,14 @@ pub(crate) mod raw {
                 0,
                 core::mem::size_of::<FdTable>(),
             );
+            // TRACK-INIT-RING3-FORK: alloc_kernel_process 清零分配 (不走 Process::new),
+            // 因此 `namespaces` (Mutex<NamespaceSet>) 保持全零 (7 个 NULL Arc).
+            // fork 时 NamespaceSet::fork_from 对 NULL Arc 执行 Arc::clone → 地址 0 递增
+            // 计数 → 溢出 abort (ud2). 必须显式初始化为 init namespace 集合.
+            core::ptr::write(
+                &mut (*kproc_ptr).namespaces,
+                Mutex::new(crate::kernel::framework::proc::NamespaceSet::new_init()),
+            );
         }
     }
 }

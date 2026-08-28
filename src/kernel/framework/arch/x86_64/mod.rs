@@ -278,7 +278,14 @@ impl InterruptArch for X8664 {
                 // LSTAR: syscall 入口点 (高半部分地址, KPTI 用户页表只映射高半区)
                 // 注意: 函数指针返回的是 LMA (低地址), 需要转换为 VMA (高地址)
                 // 链接脚本定义: _kernel_text_vma = 0xFFFF800001000000 + _kernel_text_lma
-                // 因此偏移量 = 0xFFFF800001000000 (不是 KERNEL_BASE)
+                // 但 syscall 路径引用数据 (含 GOT) 时, 链接 VMA 下 RIP-relative 访问
+                // 计算出的地址指向未映射/错误的物理页 (高链接 VMA 区只重映射了 .text,
+                // .data/.bss 仍保留直接映射的错误偏移), 导致 GOT 间接调用 memcpy 读到
+                // 零页 → 跳 0x0 → #UD (TRACK-INIT-RING3-DATA-GOT).
+                // 修复: 使用 KERNEL_BASE (0xFFFF800000000000) 作为高半区基址,
+                // 此时 phys = VA - KERNEL_BASE 由直接映射 (pd_high 大页) 天然正确,
+                // 数据引用 (绝对低地址 + RIP-relative) 全部可达, 且与异常/IRQ 路径
+                // (IDT 门指向 0xFFFF80000012xxxx) 保持一致.
                 // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
                 #[expect(
                     clippy::items_after_statements,
@@ -288,7 +295,7 @@ impl InterruptArch for X8664 {
                     fn syscall_entry();
                 }
                 let entry_lma = syscall_entry as *const () as u64;
-                let entry_hi = entry_lma + 0xFFFF800001000000u64;
+                let entry_hi = entry_lma + 0xFFFF800000000000u64;
                 crate::klog_boot_info!(
                     "[SYSCALL] syscall_entry LMA={:#X}, LSTAR VMA={:#X}",
                     entry_lma,

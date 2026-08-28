@@ -308,15 +308,22 @@ pub struct GdtPtr {
 /// | 0    | kernel_rsp  | KERNEL_RSP_OFF    |
 /// | 8    | kernel_pml4 | KERNEL_PML4_OFF   |
 /// | 16   | user_pml4   | USER_PML4_OFF     |
+/// | 24   | user_rsp    | USER_RSP_OFF      |
+///
+/// `user_rsp` (TRACK-INIT-RING3-SYSCALL-RET): syscall 入口保存当前用户 RSP,
+/// 供 iretq 帧的 RSP 槽位使用. 与 `kernel_rsp` 分离, 避免覆盖 (原实现复用
+/// [gs:0], 导致首次 syscall 后 kernel_rsp 丢失, 后续 syscall 用错内核栈).
 #[repr(C)]
 pub struct SyscallPerCpu {
     pub kernel_rsp: u64,
     pub kernel_pml4: u64,
     pub user_pml4: u64,
+    pub user_rsp: u64,
 }
 
 /// 每个 CPU 独立的 syscall 内核栈大小 (8KB)
-const PER_CPU_SYSCALL_STACK_SIZE: usize = 8192;
+/// ⚠ 实验 (TRACK-INIT-RING3-BISECT): 临时增大到 64KB 验证 syscall 栈溢出.
+const PER_CPU_SYSCALL_STACK_SIZE: usize = 65536;
 
 /// 每个 CPU 独立的 GDT + TSS + IST 栈 + syscall 数据
 ///
@@ -352,6 +359,7 @@ impl PerCpuGdt {
                 kernel_rsp: 0,
                 kernel_pml4: 0,
                 user_pml4: 0,
+                user_rsp: 0,
             },
             syscall_stack: [0u8; PER_CPU_SYSCALL_STACK_SIZE],
             ist0: [0u8; PER_CPU_IST_SIZE],

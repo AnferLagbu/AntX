@@ -20,6 +20,8 @@ struct BuddyAllocator {
     order_map: Vec<u8>,
     total_pages: u64,
     initialized: AtomicBool,
+    // reserve_range/unreserve_range 簿记: 1 = 预留/已用 (与真实 PMM 位图语义一致)
+    reserved: Vec<bool>,
     #[cfg(test)]
     mock_memory: Vec<u8>,
 }
@@ -34,6 +36,7 @@ impl BuddyAllocator {
                 order_map: vec![0; total_pages as usize],
                 total_pages,
                 initialized: AtomicBool::new(true),
+                reserved: vec![false; total_pages as usize],
                 mock_memory: vec![0u8; mock_size],
             }
         }
@@ -43,6 +46,7 @@ impl BuddyAllocator {
             order_map: vec![0; total_pages as usize],
             total_pages,
             initialized: AtomicBool::new(true),
+            reserved: vec![false; total_pages as usize],
         }
     }
 
@@ -129,6 +133,75 @@ impl BuddyAllocator {
             self.om_set(page + i, BUDDY_INTERIOR_USED);
         }
         Some(phys)
+    }
+
+    fn is_reserved(&self, pfn: u64) -> bool {
+        self.reserved.get(pfn as usize).copied().unwrap_or(true)
+    }
+
+    /// 将 [start, start+npages) 空闲页按自然对齐分裂为 buddy 块压入空闲链表.
+    /// 与真实 PMM `buddy_free_insert_range` 的分裂逻辑一致.
+    fn push_free_range(&mut self, start: u64, npages: u64) {
+        let mut cur = start;
+        let mut remaining = npages;
+        while remaining > 0 {
+            let mut order = (u64::BITS - 1 - remaining.leading_zeros()).min(BUDDY_MAX_ORDER as u32);
+            while order > 0 {
+                let size = 1u64 << order;
+                if cur.is_multiple_of(size) && size <= remaining {
+                    break;
+                }
+                order -= 1;
+            }
+            let block_size = 1u64 << order;
+            self.list_push(cur, order as usize);
+            self.om_set(cur, order as u8);
+            cur += block_size;
+            remaining -= block_size;
+        }
+    }
+
+    /// 预留 [start, start+npages): 摘除空闲链表中所有重叠块, 不重叠部分重新压回,
+    /// 并标记 reserved. 与真实 PMM `buddy_reserve_pfn_range` 语义一致.
+    fn reserve_range(&mut self, start: u64, npages: u64) {
+        let end = start + npages;
+        for order in 0..=BUDDY_MAX_ORDER {
+            let mut phys = self.free_lists[order].load(Ordering::Acquire);
+            while phys != 0 {
+                // SAFETY: 测试 mock, phys 始终指向 mock_memory 内合法 FreeNode
+                let next = unsafe { (*self.node_virt(phys)).next };
+                let block_pfn = phys / PAGE_SIZE;
+                let block_size = 1u64 << order;
+                if block_pfn < end && block_pfn + block_size > start {
+                    self.list_remove(phys, order);
+                    // 不重叠部分重新压回
+                    if block_pfn < start {
+                        self.push_free_range(block_pfn, start - block_pfn);
+                    }
+                    let block_end = block_pfn + block_size;
+                    if block_end > end {
+                        let right_start = block_pfn.max(end);
+                        self.push_free_range(right_start, block_end - right_start);
+                    }
+                }
+                phys = next;
+            }
+        }
+        for i in start..end {
+            if (i as usize) < self.reserved.len() {
+                self.reserved[i as usize] = true;
+            }
+        }
+    }
+
+    /// 撤销 reserve_range: 清 reserved 标记, 将范围压回空闲链表.
+    fn unreserve_range(&mut self, start: u64, npages: u64) {
+        for i in start..(start + npages) {
+            if (i as usize) < self.reserved.len() {
+                self.reserved[i as usize] = false;
+            }
+        }
+        self.push_free_range(start, npages);
     }
 }
 
@@ -271,5 +344,93 @@ mod tests {
         buddy.list_push(1, 5);
         buddy.list_push(33, 5);
         assert_ne!(buddy.free_lists[5].load(Ordering::Acquire), 0);
+    }
+
+    // 回归: PMM reserve_range 与 buddy 空闲链表严格同步.
+    // 背景: 早期实现 reserve_range 只 set_bit 位图, 未从空闲链表摘除重叠块,
+    // 导致含已预留/已分配页的块滞留在链表中, buddy_alloc 分裂时把已占用页
+    // push 回空闲链表 → 二次分配 → 覆盖用户代码页 (fork #PF/Triple Fault).
+    #[test]
+    fn buddy_reserve_range_never_hands_out_reserved_pages() {
+        let mut buddy = BuddyAllocator::new(1024);
+        // 一个大 order-9 块覆盖 [1, 513) (mock 以 phys 0 为空链表哨兵, 块头须 ≥ pfn 1)
+        buddy.list_push(1, 9);
+        buddy.om_set(1, 9);
+        // reserve [100, 150) (跨块内部的子范围)
+        buddy.reserve_range(100, 50);
+
+        // 1) 空闲链表任何块都不含 reserved 页
+        for order in 0..=BUDDY_MAX_ORDER {
+            let mut phys = buddy.free_lists[order].load(Ordering::Acquire);
+            while phys != 0 {
+                let pfn = phys / PAGE_SIZE;
+                let block_size = 1u64 << order;
+                for i in 0..block_size {
+                    assert!(
+                        !buddy.is_reserved(pfn + i),
+                        "free list order {} contains reserved pfn {}",
+                        order,
+                        pfn + i
+                    );
+                }
+                // SAFETY: 测试 mock, phys 指向 mock_memory 内合法 FreeNode
+                let next = unsafe { (*buddy.node_virt(phys)).next };
+                phys = next;
+            }
+        }
+
+        // 2) 持续分配, 绝不分到 reserved 页
+        let mut allocated = 0u64;
+        loop {
+            match buddy.alloc_order(0) {
+                Some(phys) => {
+                    let pfn = phys / PAGE_SIZE;
+                    assert!(
+                        !buddy.is_reserved(pfn),
+                        "allocated reserved pfn {}",
+                        pfn
+                    );
+                    allocated += 1;
+                }
+                None => break,
+            }
+        }
+        // 从 [1,513) 中扣除 reserved 的 50 页, 其余全部应能分配
+        assert_eq!(allocated, 512 - 50, "free pages count mismatch");
+    }
+
+    // 回归: unreserve_range 后, 预留页重新进入空闲链表可被分配.
+    #[test]
+    fn buddy_reserve_unreserve_roundtrip() {
+        let mut buddy = BuddyAllocator::new(1024);
+        buddy.list_push(1, 9);
+        buddy.om_set(1, 9);
+        buddy.reserve_range(100, 50);
+        // 分配 [100,150) 之外的页直到耗尽, 均不含 reserved 页
+        loop {
+            match buddy.alloc_order(0) {
+                Some(phys) => assert!(!buddy.is_reserved(phys / PAGE_SIZE)),
+                None => break,
+            }
+        }
+
+        // unreserve 后, [100,150) 应重新可分配
+        buddy.unreserve_range(100, 50);
+        let mut got = 0u64;
+        for _ in 0..50 {
+            match buddy.alloc_order(0) {
+                Some(phys) => {
+                    let pfn = phys / PAGE_SIZE;
+                    assert!(
+                        (100..150).contains(&pfn),
+                        "unreserved alloc returned pfn {} outside [100,150)",
+                        pfn
+                    );
+                    got += 1;
+                }
+                None => break,
+            }
+        }
+        assert_eq!(got, 50, "unreserved range should be fully re-allocatable");
     }
 }

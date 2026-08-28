@@ -323,3 +323,67 @@
 - [stage-engineering-master.md](file:///home/anfer/Code/QueenX/docs/plan/stage-engineering-master.md)：DECISION-066 "AI 汇报失实登记" 教训
 - [progress-active-tasks.md](file:///home/anfer/Code/QueenX/docs/plan/progress-active-tasks.md)：活跃任务进度基线（本返工阶段待登记入活跃任务列表）
 - [unresolved-issues-2026-08-09.md](file:///home/anfer/Code/QueenX/docs/plan/unresolved-issues-2026-08-09.md)：ISSUE-RT-001/002 等运行时阻塞问题（与 B05-48 联动）
+
+---
+
+## 工程计划 E: fork() 返回用户态挂起（init: X→fork→Y 卡在 Y 之前）
+
+> **来源**：2026-08-28 修复 PMM buddy 同步后，QEMU `init`（`print_char('X') → fork() → print_char('Y')`）可推进到 fork 内核侧完成，但父进程不返回用户态打印 `Y`（静默挂起或内核态写 #PF 无限循环）。本计划登记调研结论与修复路线。
+>
+> **⚠ 修正上一轮汇报（B05 分册 07 延续）**：此前报告"fork 后父 kstack 块滞留空闲链表导致二次分配（child_cr3=0x7FF0000）"系**十进制→十六进制换算错误**（134176768 实为 0x7FF6000 而非 0x7FF0000）。实测 child_cr3 是 COW clone 新分配的空闲页（0x7FF6/0x7FF7），**不存在 kstack 二次分配**，PMM 侧无此预存问题。
+
+### 背景
+
+- **B05-49. fork 内核侧完成后父进程不返回用户态**
+  - 描述：QEMU x86_64 实测（带临时 SC-TRACE/FORK-TRACE/PF-TRACE 插桩 + gdb 单步，插桩已清理）：
+    1. `write('X')`、`write('\n')` 两个 syscall 正常往返（`X` 打印）。
+    2. `fork()`（syscall 57，rip=0x400031，返回地址 0x400033）进入 → COW clone 完成（child_cr3=新页）→ `allocate_kernel_stack` 完成 → `copy_kstack` 完成 → `fork complete child_pid=4` → `do_signal_deliver` 完成。
+    3. **gdb 确认 fork 返回路径完全正确**：`iretq` 成功回到用户态 rip=0x400033、rsp=0x7FFF...、cr3=父用户表、rax=4。
+    4. 父进程执行 `0x400038: movb $0x59,(%rsi)`（写 'Y' 到用户栈）触发 **#PF（e=6 = P=0/W=1/U=1，栈页不存在）→ CPU 读 IDT[14] 门（0x2325970）时再 #PF（IDT 页未映射）→ #DF → #TF**（QEMU `-d int` 日志 + gdb 双重确认）。
+  - 方案：根因是 **fork/COW 路径损坏了父进程页表**（见 B05-55），而非返回路径本身。
+  - 状态：[X]（根因已定位，见 B05-55；修复待进行）
+
+- **B05-50. 候选根因 1：`copy_kstack` 偏移/大小错误（确凿 bug，已修）**
+   - 描述：[proc_ops.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/proc_ops.rs) `sys_fork` 原调 `raw::copy_kstack(child.kernel_stack, parent_kstack, 65536)`，即 `copy_nonoverlapping(src=parent_kstack_top, dst=child_kstack_top, 65536)`：
+     - 源从父 kstack **顶**（0xFFFF800007FF4000）向**上**读 64KB（父 kstack 仅 16KB，读越界 48KB 到 phys 0x8004000）。
+     - 目标写子 kstack **顶**（0xFFFF800007F90000）向**上** 64KB（phys 0x7F90000-0x7FA0000），**落在子 kstack 分配区之外**，覆盖该区空闲页/内核数据 → 潜在损坏空闲链表（FreeNode prev/next 存于空闲页首 16 字节）。
+   - 方案：改为从"顶部向下 size"拷贝：`copy_kstack(child_top - size, parent_top - size, size)`，size = `USER_KSTACK_SIZE`（父 kstack 实际大小 16KB），使子进程内核栈初始状态与父一致，且不再越界。
+   - 状态：[X]（已修，2026-08-28：proc_ops.rs sys_fork 改用 `USER_KSTACK_SIZE` 向下偏移拷贝；clippy/aarch64/host-tests/QEMU 均无回归）
+
+- **B05-51. fork 后父用户页（含栈）被 COW 清 WRITABLE**
+  - 描述：[cow.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/cow.rs) COW clone 对父进程所有可写用户页清 WRITABLE。gdb 证实父进程写栈时 **#PF e=6（P=0）**而非 e=7（P=1 只读）—— 栈页是**不存在**而非只读，COW 清 WRITABLE 假设不成立。
+  - 方案：并入 B05-55（父页表被损坏，栈 PDE 直接清零）。
+  - 状态：[X]（已证伪 COW 只读假设，转 B05-55）
+
+- **B05-52. isr.asm 返回路径 `add rsp, KERNEL_BASE`**
+  - 描述：gdb 单步证实返回路径**完全正确**：`rsp=0x30c178(低LMA) → add KERNEL_BASE → 0xFFFF80000030c180`、`mov gs:0x10 → 0x48f3000(父用户表)`、`mov cr3`、`pop rax=4`、`swapgs`、`iretq → 用户 0x400033`。kernel_rsp 确为低 LMA（`syscall_stack.as_ptr()` 返回 LMA），`add rsp,KERNEL_BASE` 语义正确，无溢出（syscall_stack=64KB 足够）。
+  - 方案：关闭本条，不做修改。
+  - 状态：[X]（gdb 2026-08-28 证实返回路径正确）
+
+- **B05-53. 内核态 #PF 不应进 `handle_user_page_fault` 无限循环**
+  - 描述：[handlers.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/idt/handlers.rs) `PageFaultHandler.handle` 用 `(*frame).is_user_mode()`（帧 CS）判用户态。gdb/QEMU 证实本 bug 实际表现为 **#PF→读 IDT 嵌套 #PF→#DF→#TF**（IDT 未映射），而非"误入 handle_user_page_fault 无限循环"——早期观察到的 0xFFFF8000FD2A1220 #PF 洪水是另一偶发表现，主路径是 IDT 未映射的嵌套故障。
+  - 方案：仍然建议防御性修复（内核态访问 `err_code.user==0` 的内核故障直接 Panic 而非走用户态 handler），但需先修 B05-55 主因。
+  - 状态：[]（防御性，B05-55 之后）
+
+- **B05-55. fork/COW 路径损坏父进程页表（主根因，插桩+gdb 证实）**
+  - 描述：gdb 走父页表（cr3=0x48f3000）在 fork 返回后：栈区域 `PDE[511] = 0`（P=0）、IDT 区域 `PTE[0x32] = 0`（P=0）。内核插桩（sys_fork PRE/POST-COW dump）进一步定位：
+    - **IDT 页从未映射进用户页表**（PRE-COW 已 P=0）—— create 阶段独立问题（`create_user_page_table` 的 GDT/IDT/TSS 映射未生效或失效）。
+    - **栈区域在 COW clone 期间被清零**：PRE-COW `pdpte[511]=0x7ff9027, pde[511]=0x7ffa027`（P=1）→ POST-COW 全 0。
+    - **父页表页 0x7ff8000 被双重使用**：SELF-CHECK 时它是 `PD[0]` 页（`PDPTE[0]=0x7ff8007`），PRE-COW 时它又是 `PDPT[255]` 页（`pml4e[255]=0x7ff8027`）—— create 期间同一物理页被两个不同层级页表使用（页表页双重分配 / 误 free 后复用）。
+  - 后果链：COW clone 用含冲突表页的父页表 → 父页表栈区域条目被清零 → 父进程写栈 #PF(e=6,P=0) → CPU 读 IDT[14] 门（0x2325970，IDT 页未映射）→ 嵌套 #PF → #DF → #TF（QEMU 退出，表现为挂起）。
+  - 方案：排查 create/enter 路径页表页的分配/free（为何 0x7ff8000 被 PD[0] 和 PDPT[255] 共用）—— 重点：页表页 free 后未从用户表摘除、PMM free list 与位图同步（疑似与 reserve_range 修复后 free list 状态交互）、`create_user_page_table` 的 IDT 低半区映射为何缺失。需继续 gdb 硬件写监视点或 create 路径插桩定位。
+  - 状态：[]（根因方向已锁定：父页表页双重使用；精确清零指令与 create 侧修复待进行）
+
+### 验证门槛
+
+- **B05-54. fork 返回用户态回归**
+  - 描述：修复后 `init` 应打印 `X`、`Y`（父）+ `Y`（子），无挂起/无限 #PF；连续 5 次 QEMU run 稳定。
+  - 方案：`TIMEOUT_QEMU=15 ./scripts/qemu_boot_test.sh x86_64` 连续 5 次 + grep `^[XY]$` 出现 ≥2 次（父 Y + 子 Y）。
+  - 状态：[]
+
+### 决策记录
+
+- **DECISION-074（已执行方案 B，待继续授权）**
+  - 描述：fork 返回挂起涉及用户**活跃未提交**的 fork/COW WIP，根因多候选（B05-50/51/52）。用户 2026-08-28 裁决选方案 B（gdb 定位返回路径）。
+  - 方案：**B 已执行完毕**——gdb 证实返回路径正确（B05-52 关闭）；主根因是 fork/COW 路径损坏父页表（B05-55：栈 PDE[511] + IDT PTE[0x32] 清零 → 写栈 #PF P=0 → IDT 未映射嵌套 #PF → #DF → #TF）。下一步需继续授权：定位清零指令（gdb 硬件写监视点或 COW clone 插桩），并修 `copy_kstack`（B05-50）。
+  - 状态：[X]（方案 B 定位完成，2026-08-28；修复待继续授权）

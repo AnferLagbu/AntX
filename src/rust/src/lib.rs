@@ -174,7 +174,46 @@ use core::sync::atomic::Ordering;
 fn panic(info: &PanicInfo) -> ! {
     crate::kernel::framework::barrier::PANIC_FLAG.store(true, Ordering::SeqCst);
 
-    let msg = alloc::format!("{info}");
+    // 诊断 (TRACK-INIT-RING3-PANIC): 先直接输出 panic location (file:line),
+    // 绕过 PanicInfo::Display 格式化 (其内部 slice 索引在栈/数据被破坏时
+    // 可能递归 panic → 无法看到原始 panic 点). location 是静态字符串, 不分配.
+    if crate::kernel::framework::klog::KLOG_INIT.load(Ordering::Acquire) {
+        if let Some(loc) = info.location() {
+            crate::kernel::framework::klog::serial_write_bytes(b"\n[PANIC LOC] ");
+            crate::kernel::framework::klog::serial_write_bytes(loc.file().as_bytes());
+            crate::kernel::framework::klog::serial_write_bytes(b":");
+            let mut line_buf = [0u8; 16];
+            let mut idx = 16usize;
+            let mut n = u64::from(loc.line());
+            if n == 0 {
+                line_buf[0] = b'0';
+                idx = 0;
+            } else {
+                while n > 0 && idx > 0 {
+                    idx -= 1;
+                    line_buf[idx] = b'0' + (n % 10) as u8;
+                    n /= 10;
+                }
+            }
+            crate::kernel::framework::klog::serial_write_bytes(&line_buf[idx..]);
+            crate::kernel::framework::klog::serial_write_bytes(b"\n");
+        }
+    }
+
+    // 修复 (TRACK-INIT-RING3-PANIC): 中断上下文 panic 时禁止分配内存.
+    // 原实现 `alloc::format!` 分配 String → k_malloc → KernelHeap IrqSpinLock,
+    // 若 panic 发生在 IRQ 上下文 (如中断路径内存分配) 会递归 panic → 跳 0x0 #UD.
+    // 改用栈缓冲 CursorWriter (framework::klog, 纯 core::fmt 不分配) 格式化消息.
+    let mut msg_buf = [0u8; 256];
+    let mut msg_cursor: usize = 0;
+    let _ = core::fmt::write(
+        &mut crate::kernel::framework::klog::CursorWriter::new(
+            &mut msg_buf,
+            &mut msg_cursor,
+        ),
+        format_args!("{info}"),
+    );
+    let msg: &str = core::str::from_utf8(&msg_buf[..msg_cursor]).unwrap_or("PANIC (fmt failed)");
     let bytes = msg.as_bytes();
     let len = bytes.len().min(127);
     {
@@ -272,36 +311,65 @@ fn panic(info: &PanicInfo) -> ! {
     }
 
     // 2. 图形控制台输出崩溃信息
-    crate::kernel::framework::console::gfx_console_panic_reclaim(&msg);
+    crate::kernel::framework::console::gfx_console_panic_reclaim(msg);
     crate::kernel::framework::console::gfx_console_panic_write("\n--- Register Dump ---\n");
     for i in 0..16 {
         let mut buf = [0u8; 64];
         let mut cursor: usize = 0;
         write_hex_to_buf(&mut buf, &mut cursor, regs[i]);
-        let label = alloc::format!(
-            "  {} = {}\n",
-            core::str::from_utf8(&reg_names[i]).unwrap_or("?? "),
-            core::str::from_utf8(&buf[..cursor]).unwrap_or("?")
+        // 修复 (TRACK-INIT-RING3-PANIC): 原 `alloc::format!` 在中断上下文 panic
+        // 时分配内存 → 递归 panic → 栈破坏. 改用栈缓冲 CursorWriter (不分配).
+        let mut line_buf = [0u8; 64];
+        let mut line_cur = 0usize;
+        let _ = core::fmt::write(
+            &mut crate::kernel::framework::klog::CursorWriter::new(
+                &mut line_buf,
+                &mut line_cur,
+            ),
+            format_args!(
+                "  {} = {}\n",
+                core::str::from_utf8(&reg_names[i]).unwrap_or("?? "),
+                core::str::from_utf8(&buf[..cursor]).unwrap_or("?")
+            ),
         );
-        crate::kernel::framework::console::gfx_console_panic_write(&label);
+        let line = core::str::from_utf8(&line_buf[..line_cur]).unwrap_or("?\n");
+        crate::kernel::framework::console::gfx_console_panic_write(line);
     }
     {
         let mut cr2_str = [0u8; 32];
         let mut cur: usize = 0;
         write_hex_to_buf(&mut cr2_str, &mut cur, cr2);
-        let cr2_line = alloc::format!(
-            "  CR2= {}\n",
-            core::str::from_utf8(&cr2_str[..cur]).unwrap_or("?")
+        let mut line_buf = [0u8; 40];
+        let mut line_cur = 0usize;
+        let _ = core::fmt::write(
+            &mut crate::kernel::framework::klog::CursorWriter::new(
+                &mut line_buf,
+                &mut line_cur,
+            ),
+            format_args!(
+                "  CR2= {}\n",
+                core::str::from_utf8(&cr2_str[..cur]).unwrap_or("?")
+            ),
         );
-        crate::kernel::framework::console::gfx_console_panic_write(&cr2_line);
+        let line = core::str::from_utf8(&line_buf[..line_cur]).unwrap_or("?\n");
+        crate::kernel::framework::console::gfx_console_panic_write(line);
         let mut cr3_str = [0u8; 32];
         let mut c3: usize = 0;
         write_hex_to_buf(&mut cr3_str, &mut c3, cr3_val);
-        let cr3_line = alloc::format!(
-            "  CR3= {}\n",
-            core::str::from_utf8(&cr3_str[..c3]).unwrap_or("?")
+        let mut line_buf2 = [0u8; 40];
+        let mut line_cur2 = 0usize;
+        let _ = core::fmt::write(
+            &mut crate::kernel::framework::klog::CursorWriter::new(
+                &mut line_buf2,
+                &mut line_cur2,
+            ),
+            format_args!(
+                "  CR3= {}\n",
+                core::str::from_utf8(&cr3_str[..c3]).unwrap_or("?")
+            ),
         );
-        crate::kernel::framework::console::gfx_console_panic_write(&cr3_line);
+        let line2 = core::str::from_utf8(&line_buf2[..line_cur2]).unwrap_or("?\n");
+        crate::kernel::framework::console::gfx_console_panic_write(line2);
     }
 
     #[cfg(target_arch = "x86_64")]

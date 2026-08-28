@@ -804,10 +804,14 @@ pub extern "C" fn sys_fork() -> Pid {
         PROCESS_TABLE.with_process(parent_pid, |p| p.kernel_stack.load(Ordering::SeqCst))
     {
         if parent_kstack != 0 {
+            // 拷贝父 kstack 内容到子 kstack: 源/目标都从"顶部向下 size"开始,
+            // 而非从顶部向上 (原实现拷 64KB 到 kstack 顶上方, 越界损坏内存).
+            // size 取父 kstack 实际大小 (USER_KSTACK_SIZE), 使子进程内核栈初始状态与父一致.
+            let kstack_size = super::types::USER_KSTACK_SIZE as usize;
             raw::copy_kstack(
-                child.kernel_stack.load(Ordering::SeqCst),
-                parent_kstack,
-                65536,
+                child.kernel_stack.load(Ordering::SeqCst) - kstack_size as u64,
+                parent_kstack - kstack_size as u64,
+                kstack_size,
             );
             crate::kernel::framework::proc::kernel_stack_write_canary(
                 child.kernel_stack.load(Ordering::SeqCst),

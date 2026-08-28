@@ -81,9 +81,12 @@ isr_common:
 
     mov [USER_CR3_SAVE], rax
 
+    ; 切换到内核页表 (与 syscall_entry 一致: 从 per-CPU 加载内核 PML4)
+    ; 教训 (TRACK-INIT-RING3-ISR): 原实现 mov cr3, rax 写回刚保存的用户
+    ; CR3, 导致异常处理器在用户页表下访问内核静态数据 → #PF → Triple Fault.
+    mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
-
-    swapgs
+    ; 不 swapgs 回来: exception_handler 在内核 GS 下运行 (syscall_entry 模式)
 .isr_no_kpti_enter:
 
     push rax
@@ -128,7 +131,7 @@ isr_common:
     ; ISR stub 推入了 int_no+err_code, 但 add rsp,16 已跳过它们)
     cmp word [rsp+8], 0x23
     jne .isr_no_kpti_exit
-    swapgs
+    ; 此时 GS = 内核 GS (入口已 swapgs 一次), 直接读 per-CPU 用户 PML4
     mov rax, [gs:USER_PML4_OFF]
     mov cr3, rax
     swapgs
@@ -141,9 +144,10 @@ isr_common:
 ;   1. 用户态执行 syscall 指令
 ;   2. CPU 保存 RIP→RCX, RFLAGS→R11, 加载 CS=STAR[47:32], SS=STAR[47:32]+8
 ;   3. swapgs → GS 指向 per-CPU SyscallPerCpu 数据
-;   4. xchg rsp, [gs:0] → 切换到该 CPU 独占的内核栈, 用户 RSP 存入 per-CPU
-;   5. 构建 InterruptFrame, 调用 syscall_dispatch_from_frame
-;   6. iretq 返回用户态
+;   4. mov r14, [gs:0] → 加载内核栈顶 (kernel_rsp); 用户 RSP 存入 [gs:USER_RSP_OFF]
+;   5. 切 CR3 到内核页表 → 切 RSP 到内核栈
+;   6. 构建 InterruptFrame, 调用 syscall_dispatch_from_frame
+;   7. 返回: RSP 转高半区别名 → 切用户页表 → iretq 返回用户态
 ;
 ; SMP 安全: 每个 CPU 有独立的 SyscallPerCpu 和内核栈,
 ; IA32_KERNEL_GS_BASE 在 gdt_init/gdt_init_ap 中分别设置。
@@ -152,6 +156,7 @@ isr_common:
 KERNEL_RSP_OFF  equ 0
 KERNEL_PML4_OFF equ 8
 USER_PML4_OFF   equ 16
+USER_RSP_OFF    equ 24
 
 global syscall_entry
 syscall_entry:
@@ -185,7 +190,10 @@ syscall_entry:
     mov [USER_CR3_SAVE], r12        ; 保存用户 CR3 (USER_CR3_SAVE 在用户页表中已映射)
     pop r12                         ; (b) 恢复用户 R12, 用户栈恢复原状
 
-    mov [gs:r15], rsp               ; 保存用户 RSP (pop r12 后, 即原始值)
+    mov [gs:USER_RSP_OFF], rsp       ; 保存用户 RSP (pop r12 后, 即原始值)
+    ; 注: 保存到独立字段 USER_RSP_OFF, 不覆盖 [gs:KERNEL_RSP_OFF] (kernel_rsp),
+    ; 否则首次 syscall 后 kernel_rsp 丢失, 后续 syscall 用错内核栈
+    ; (TRACK-INIT-RING3-SYSCALL-RET).
 
     mov r12, [gs:KERNEL_PML4_OFF]   ; R12 = 内核 PML4 物理地址
     mov cr3, r12                    ; ← 切换到内核页表 (此后所有访存走内核页表)
@@ -195,7 +203,7 @@ syscall_entry:
     ; 构建 InterruptFrame (与 int 0x80 中断帧布局一致)
     push 0x1B                         ; SS = 用户数据段 (0x18|3)
 
-    push qword [gs:KERNEL_RSP_OFF]    ; 用户 RSP (xchg 时已存入 per-CPU)
+    push qword [gs:USER_RSP_OFF]      ; 用户 RSP (入口时已存入独立字段)
 
     push r11                          ; RFLAGS
 
@@ -266,13 +274,21 @@ syscall_entry:
     ; 教训: mov cr3, rax 会覆盖 RAX, 入口路径有 push/pop rax 保护,
     ; 但退出路径此前遗漏了该保护, 导致所有 syscall 返回值被用户页表
     ; 物理地址覆盖, 表现为用户态看到随机的 "成功" 返回值.
-    push rax                           ; 保护 syscall 返回值
+    ;
+    ; 修复 (TRACK-INIT-RING3-SYSCALL-RET): iretq 帧位于 syscall 内核栈
+    ; (低半区 LMA), 切换到用户页表后该栈不可寻址 → pop rax/iretq #PF.
+    ; 解法: 切换 CR3 前将 RSP 转为高半区直接映射别名 (KERNEL_BASE + RSP),
+    ; 该别名经共享 pd_high 大页在用户页表中已有映射 (supervisor, 无 USER 位),
+    ; 因此 pop/iretq 在用户页表下仍可读取同一物理帧.
+    push rax                           ; 保护 syscall 返回值 (保存到低半区栈)
+    mov rax, 0xFFFF800000000000        ; KERNEL_BASE (rax 即将被覆盖, 值已入栈)
+    add rsp, rax                       ; RSP → 高半区别名 (同一物理栈)
     mov rax, [gs:USER_PML4_OFF]
     mov cr3, rax
-    pop rax                            ; 恢复 syscall 返回值
+    pop rax                            ; 恢复 syscall 返回值 (从高半区别名)
 
     swapgs                            ; 恢复用户 GS 段
-    iretq
+    iretq                             ; iretq 帧从高半区别名读取 (用户表已映射)
 
 ; ── 通用入口: 保存寄存器 → irq_handler ──────────────────────────────────
 ; 栈布局同 isr_common
@@ -288,9 +304,16 @@ irq_common:
     mov [USER_CR3_SAVE], rax
 
     ; 切换到内核页表
+    ; 教训 (TRACK-INIT-RING3-IRQ): 此处必须从 [gs:KERNEL_PML4_OFF] 加载内核
+    ; PML4, 而非 mov cr3, rax (rax 是刚保存的用户 CR3). 原实现写回用户 CR3,
+    ; 导致用户态中断在用户页表下运行 IRQ 处理器 → 访问内核静态数据 #PF →
+    ; 嵌套 #PF → #DF → Triple Fault (init 首个 syscall 前静默崩溃).
+    ; 与 syscall_entry 的 KPTI 切换模式保持一致.
+    mov rax, [gs:KERNEL_PML4_OFF]
     mov cr3, rax
-
-    swapgs
+    ; 不 swapgs 回来: irq_handler 在内核 GS 下运行 (syscall_entry 模式).
+    ; 原实现在此再次 swapgs, 导致 handler 在用户 GS 下访问 per-CPU 错乱
+    ; (tick 等写入低物理地址, 可能破坏用户页表 → 用户态取指 #PF).
 .irq_no_kpti_enter:
 
     push rax
@@ -335,13 +358,11 @@ irq_common:
     ; ISR stub 推入了 int_no+err_code, 但 add rsp,16 已跳过它们)
     cmp word [rsp+8], 0x23
     jne .irq_no_kpti_exit
-    swapgs
-
+    ; 此时 GS = 内核 GS (入口已 swapgs 一次), 直接读 per-CPU 用户 PML4
     mov rax, [gs:USER_PML4_OFF]
     mov cr3, rax
     swapgs
 .irq_no_kpti_exit:
-
     iretq
 
 ; ── 实例化 ──────────────────────────────────────────────────────────────

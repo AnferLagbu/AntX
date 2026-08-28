@@ -100,6 +100,13 @@ process_switch_asm:
     lea rax, [rsi + 144]
     fxrstor [rax]
 
+    ; B05-55 修复: 切到 next 进程用户页表后, 当前栈 (per-CPU syscall_stack,
+    ; 低 LMA) 在用户表中不可寻址. 参照 syscall_entry 返回路径, 将 RSP 转为
+    ; 高半区直接映射别名 (KERNEL_BASE + RSP): 该别名经内核高半区恒等映射
+    ; 在每个用户页表中均可见, push/iretq 才能在同一物理帧上执行.
+    mov rax, 0xFFFF800000000000    ; KERNEL_BASE
+    add rsp, rax
+
     ; Build iretq frame
     push qword [rsi + 128]      ; ss
     push qword [rsi + 64]       ; rsp

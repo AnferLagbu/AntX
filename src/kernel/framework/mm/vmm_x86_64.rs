@@ -762,6 +762,48 @@ impl VirtualMemoryManager {
                 );
             }
 
+            // B05-55 修复: 映射 IST 专用栈页 (TSS.ist[0..4]) 到用户页表.
+            //
+            // 用户态异常/中断 (如 fork 的 COW #PF) 交付时, CPU 在 isr_common
+            // 切换到内核页表**之前**用 TSS.ist[N-1] 栈压入异常帧
+            // (IDT IST=N → TSS ist[N-1]: #DF=ist[0], NMI=ist[1], int 0x82=ist[2],
+            //  #PF=ist[3]). IST 栈是 per-CPU GDT 结构内的独立缓冲区 (低 LMA),
+            // 远离 TSS 结构本身; 原实现仅映射 TSS 2 页, 未映射 IST 栈页,
+            // 导致用户态 #PF (fork 后首次写栈触发 COW) 交付时 CPU 切到未映射的
+            // ist3 → 压栈二次 #PF → #DF → #TF.
+            //
+            // 权限: PRESENT|WRITABLE (不含 USER) — 交付路径 CPL=0, 且不暴露内核栈.
+            const PER_CPU_IST_STACK_SIZE: u64 = 16384;
+            // SAFETY: get_tss_mut 返回当前 CPU 的有效 TSS (BSP 启动期单 CPU 独占).
+            // TSS 是 #[repr(packed)], ist 字段可能未对齐, 用 read_unaligned 拷贝.
+            let tss_ref = unsafe { &*crate::kernel::framework::arch::gdt::get_tss_mut() };
+            let mut ist_tops = [0u64; 4];
+            // SAFETY: tss_ref.ist 为 [u64; 7], 索引 0..4 在界内;
+            // addr_of! 不创建引用, 配合 read_unaligned 避免 packed 错位 UB.
+            unsafe {
+                let ist_ptr = core::ptr::addr_of!(tss_ref.ist) as *const u64;
+                for i in 0..4 {
+                    ist_tops[i] = core::ptr::read_unaligned(ist_ptr.add(i));
+                }
+            }
+            for &ist_top in &ist_tops {
+                if ist_top == 0 {
+                    continue;
+                }
+                let start = (ist_top - PER_CPU_IST_STACK_SIZE) & !(PAGE_SIZE as u64 - 1);
+                let end = ist_top & !(PAGE_SIZE as u64 - 1);
+                let mut ist_addr = start;
+                while ist_addr <= end {
+                    self.map_page_in_table(
+                        pml4_phys.as_u64(),
+                        VirtAddr(ist_addr),
+                        PhysAddr(ist_addr),
+                        PageFlags::PRESENT | PageFlags::WRITABLE,
+                    );
+                    ist_addr += PAGE_SIZE as u64;
+                }
+            }
+
             // 映射内核栈页 (TSS.RSP0) 到用户页表.
             // 注意: RSP0 在 create_user_page_table 调用时可能尚未设置,
             // 实际映射在 enter_user 的 set_kernel_stack 之后完成.
@@ -1413,9 +1455,14 @@ impl VirtualMemoryManager {
                     // 新帧地址 + 标志, 避免 set_frame→set_flags 两步操作中间出现
                     // "帧=新PT, 标志=旧值(含HUGE)" 的瞬时不一致状态.
                     // 单次原子 store 保证 CPU 页表遍历器不会观察到中间态.
-                    // M9 修复: 中间页表页添加 NO_EXECUTE 位, 防止用户态执行页表页代码
+                    // 修复 (TRACK-INIT-RING3-PDE): 中间页表条目禁止设置 NX.
+                    // PDE 的 NX 位语义是"该条目覆盖的整个区域不可执行" (2MB/1GB),
+                    // 原 M9 修复 (16667750) 在此加 NX 意图防"用户态执行页表页",
+                    // 但实际导致用户代码区 (0x400000 所在 PDE) 整体禁执行 →
+                    // 用户态取指 #PF (e=0x15, P=1 U=1 I/D=1). 页表页的安全性由
+                    // "用户页表低半区不映射页表页帧" 保证, 无需中间条目 NX.
                     let new_val = (page.as_u64() & 0x000FFFFFFFFFF000)
-                        | (PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::NX).bits();
+                        | (PageFlags::PRESENT | PageFlags::WRITABLE).bits();
                     (*entry).set_value(new_val);
 
                     page_virt.0 as *mut PageTableEntry
