@@ -150,7 +150,10 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
     // KERNEL_BASE 偏移后得到可访问的内核虚拟地址
     let child_pml4_virt = child_pml4_phys.to_virt().0 as *mut u64;
     unsafe {
-        core::ptr::write_bytes(child_pml4_virt, 0, PAGE_SIZE as usize);
+        // B05-55C 根治: 必须 cast *mut u8, 否则 *mut u64 的 write_bytes 按
+        // count × size_of::<u64>() 清零 32768 字节 (8 页), 覆盖后续物理页
+        // (可能含 parent 页表结构页) → parent 页表被清 → fork 崩溃.
+        core::ptr::write_bytes(child_pml4_virt as *mut u8, 0, PAGE_SIZE as usize);
     }
 
     // SAFETY: kernel_pml4 由 vmm_init 写入, 指向有效页表;
@@ -174,7 +177,8 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
         // SAFETY: 刚分配的页, 通过 KERNEL_BASE 映射有效
         let child_pdpt_virt = child_pdpt_phys.to_virt().0 as *mut u64;
         unsafe {
-            core::ptr::write_bytes(child_pdpt_virt, 0, PAGE_SIZE as usize);
+            // B05-55C 根治: cast *mut u8, 否则清零 8 页覆盖后续物理页
+            core::ptr::write_bytes(child_pdpt_virt as *mut u8, 0, PAGE_SIZE as usize);
         }
 
         let mut child_pml4e = parent_pml4e;
@@ -199,7 +203,8 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
             // SAFETY: 刚分配的页
             let child_pd_virt = child_pd_phys.to_virt().0 as *mut u64;
             unsafe {
-                core::ptr::write_bytes(child_pd_virt, 0, PAGE_SIZE as usize);
+                // B05-55C 根治: cast *mut u8, 否则清零 8 页覆盖后续物理页
+                core::ptr::write_bytes(child_pd_virt as *mut u8, 0, PAGE_SIZE as usize);
             }
 
             let mut child_pdpte = parent_pdpte;
@@ -232,7 +237,8 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
                 let child_pt_virt = child_pt_phys.to_virt().0 as *mut u64;
                 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
                 unsafe {
-                    core::ptr::write_bytes(child_pt_virt, 0, PAGE_SIZE as usize);
+                    // B05-55C 根治: cast *mut u8, 否则清零 8 页覆盖后续物理页
+                    core::ptr::write_bytes(child_pt_virt as *mut u8, 0, PAGE_SIZE as usize);
                 }
 
                 let mut child_pde = parent_pde;

@@ -410,7 +410,13 @@
     3. **本轮排除项（插桩实证）**：parent 结构页 PMM 位图全部=1（FORK-STRUCT free_struct=0，未被误标空闲）；PD 页 0x7ff8000 从未被 `do_free`（FREE-7FF8000 零触发）；COW clone 全部 child alloc（pml4/pdpt/pd/pt）与 parent 结构页无重叠（PT-CHECK/CLONE-ALLOC 无重叠）；COW 清 W 目标未写 PD 页 0x7ff8000（CLW-WRITE-PD 零触发）；`alloc_page` 无越界（ALLOC-OOB 零触发）。
     4. **未定位**：结构页（PD 页 0x7ff8000）被写入坏值 `0xff53f000f000` 的**具体写源**。该值 = 用户地址 `0x7f53f000f000` 的高半区别名，疑似某模块把用户指针/堆指针误写入结构页物理地址。嫌疑方向：boot/init 创建期间 PMM 双重分配某物理页（位图曾=0 后被 alloc，parent 页表 PDE 陈旧指向）；或设备初始化失败路径（日志 `e1000: TX/RX ring alloc failed`）破坏 PMM 簿记。因布局由 `.bss` 大小（USER_CR3_SAVE 地址）决定，插桩改变布局，无法稳定在失败布局下继续插桩。
     5. **结论**：fork 不稳定的根因是**布局敏感的结构页被覆盖**（非 B05-55 已修 5 项缺陷，是独立残余问题）。已登记的 B05-55C 原始嫌疑（PMM 坏页/结构页复用）与之**同源**——即 0xFD27xxxx 坏地址与 0xff53f000f000 坏 PDE 都是"结构页被误当数据页写入"的不同表现。建议专项排查（gdb 内存写断点 watch 0x7ff8000 / PMM 全周期 alloc-free 追踪 / e1000 初始化失败路径）。
-  - 状态：[]（预存，B05-55C 保持待后续；**当前干净代码 `USER_CR3_SAVE=0x2311000` 布局 fork 必失败**，需专项排查后才能稳定 fork；B05-53 已独立落地不受影响）
+  - **B05-55C 补充排查（2026-08-29，第四轮，gdb 定位根因并修复 ✅）**：gdb watch 内存写断点直接抓到写坏 PD 页 `0x7ff8000` 的指令：
+    1. **watch 命中**：`watch *(unsigned long*)0xffff800007ff8000` 在 `clone_user_page_table_cow` 命中，PD[0] 从 `0x7ff9027` 变 `0`（rax=0，清零写）。
+    2. **反汇编定位**：RIP 处为 `rep stos`（`f3 ab`，`ecx=0x2000` DWORD = **32768 字节 = 8 页**），紧接着 `rep movs` 拷贝高半区 256 项——即 **child_pml4 清零范围是 8 页而非 1 页**。
+    3. **根因（铁证）**：cow.rs 的 4 处 `core::ptr::write_bytes(child_X_virt, 0, PAGE_SIZE as usize)` 中，`child_X_virt` 是 `*mut u64`，而 `write_bytes` 的 count 按元素类型计 → `4096 × 8B = 32768B`，**清零 8 页**（`0x7ff7000-0x7fff000`），覆盖 child_pml4 页 + 后续 7 页——**后续页恰是 parent 页表结构页（PD 0x7ff8000 等）** → parent 页表被清 → fork 崩溃。布局敏感的原因：child 分配页与 parent 结构页的相对排布由 `.bss` 大小决定。
+    4. **修复**：4 处 `write_bytes` 指针改 `as *mut u8`（`4096 × 1B = 4096B` = 1 页），与仓库其余 21 处 `write_bytes(..., PAGE_SIZE)` 的 `as *mut u8` 写法一致。
+    5. **验证**：修复后 `USER_CR3_SAVE=0x2311000` 布局（此前必失败）fork **连续 5 次 XYY 稳定**（X + 父Y + 子Y）；双架构 build 0w0e / clippy 0 warning / host-tests 91 套件通过 / deadlock 0 CRITICAL / coupling 通过。
+  - 状态：[X]（2026-08-29 根因定位并修复；此前登记的"偶发 PMM 坏页"与"布局依赖结构页覆盖"实为同一 bug：`write_bytes` `*mut u64` 清零 8 页越界覆盖）
 
 ### 验证门槛
 
