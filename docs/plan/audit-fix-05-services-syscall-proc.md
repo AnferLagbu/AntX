@@ -357,8 +357,23 @@
 
 - **B05-52. isr.asm 返回路径 `add rsp, KERNEL_BASE`**
   - 描述：gdb 单步证实返回路径**完全正确**：`rsp=0x30c178(低LMA) → add KERNEL_BASE → 0xFFFF80000030c180`、`mov gs:0x10 → 0x48f3000(父用户表)`、`mov cr3`、`pop rax=4`、`swapgs`、`iretq → 用户 0x400033`。kernel_rsp 确为低 LMA（`syscall_stack.as_ptr()` 返回 LMA），`add rsp,KERNEL_BASE` 语义正确，无溢出（syscall_stack=64KB 足够）。
-  - 方案：关闭本条，不做修改。
-  - 状态：[X]（gdb 2026-08-28 证实返回路径正确）
+  - 方案：**返回路径的 `add rsp, KERNEL_BASE` 逻辑关闭本条，不做修改**。⚠ 注意：本结论仅限定"返回路径 add rsp 指令"，**不含 isr.asm 入口路径**——入口 CR3 切换（`mov rax,[gs:KERNEL_PML4_OFF]; mov cr3,rax`，从 per-CPU 加载内核页表）是 d8330ef9 的独立修复（commit 第 5 项），见下方"d8330ef9 附带修复登记"段第 5 项。
+  - 状态：[X]（gdb 2026-08-28 证实返回路径正确；入口 per-CPU PML4 切换属 d8330ef9 独立修复，2026-08-29 修订限定范围）
+
+- **d8330ef9 附带修复登记（审核员 2026-08-29 指出 commit message 11 项与 plan 登记不全；按 DECISION-066 教训补登）**
+  - 描述：d8330ef9 commit message 列出 11 项修复，plan 文档此前仅正式登记第 1/2 项（B05-52 返回路径、B05-50 copy_kstack），其余 9 项漏登。逐项补登如下（全部已含于 d8330ef9，2026-08-28 合入 main）：
+    1. **RSP 高半区别名**（switch.asm/isr.asm 返回路径）：切换用户页表后 syscall 栈低 LMA 不可寻址 → RSP 加 KERNEL_BASE 转高半区别名。→ 已由 B05-52 登记。
+    2. **copy_kstack 越界**（proc_ops.rs）：从栈顶向下拷实际大小。→ 已由 B05-50 登记。
+    3. **user_rsp 字段**（gdt.rs）：`SyscallPerCpu` 新增 `user_rsp`（offset 24 = USER_RSP_OFF），syscall 入口用户 RSP 存独立字段，不再覆盖 `kernel_rsp`，避免首次 syscall 后内核栈丢失（TRACK-INIT-RING3-SYSCALL-RET）。
+    4. **LSTAR 地址计算**（arch/x86_64/mod.rs）：syscall_entry 的 LSTAR 改用 KERNEL_BASE 作高半区基址，修复数据段 GOT 引用错误。
+    5. **isr_common 入口 per-CPU PML4**（boot/isr.asm）：入口从 `[gs:KERNEL_PML4_OFF]` 加载内核页表（原 `mov cr3,rax` 写回刚保存的用户 CR3 → 异常处理器在用户页表下访问内核静态数据 → #PF→#TF）。同时修正 swapgs 时序（入口 swapgs 后不换回，handler 在内核 GS 下运行）。
+    6. **IST 栈页映射**（vmm_x86_64.rs）：将 TSS.ist[0..4] 专用栈页映射进用户页表（原仅映射 TSS 2 页），避免用户态 #PF 交付时 ist3 栈未映射 → 二次 #PF → #DF → #TF（TRACK-INIT-RING3-ISR）。
+    7. **PDE NX 移除**（vmm_x86_64.rs）：中间页表条目（PDE）禁止设 NX（原 M9 修复 16667750 加 NX 意图防"用户态执行页表页"，但误使整个 2MB 区域不可执行 → 用户代码区整体不可执行），移除 PDE NX（TRACK-INIT-RING3-PDE）。
+    8. **panic 格式化无堆栈分配**（lib.rs）：移除中断上下文下 panic 格式化路径的堆分配，避免递归 panic。
+    9. **PMM reserve/unreserve 严格同步**（pmm.rs + host-tests/buddy.rs）：实现 reserve_range 从空闲链表摘除重叠块并回插不重叠部分，保证空闲链表与位图同步，避免空闲链表残留已预留页导致二次分配；新增 buddy 集成测试 161 行。
+    10. **fork namespace 初始化**（user_proc.rs）：完善 fork 子进程 namespace 初始化，避免 Arc 克隆空指针 abort。
+    11. **COW 调试日志**（cow.rs）：添加 clone 过程页表调试日志（TRACK-INIT-RING3-FORK）→ **2026-08-29 审核指出为 fork 热路径常驻日志，已按用户裁决删除**（见 B05-55 区段末尾删除记录）。
+  - 状态：[X]（补登完成，2026-08-29；项 11 诊断日志已删除）
 
 - **B05-53. 内核态 #PF 不应进 `handle_user_page_fault` 无限循环**
   - 描述：[handlers.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/idt/handlers.rs) `PageFaultHandler.handle` 用 `(*frame).is_user_mode()`（帧 CS）判用户态。gdb/QEMU 证实本 bug 实际表现为 **#PF→读 IDT 嵌套 #PF→#DF→#TF**（IDT 未映射），而非"误入 handle_user_page_fault 无限循环"——早期观察到的 0xFFFF8000FD2A1220 #PF 洪水是另一偶发表现，主路径是 IDT 未映射的嵌套故障。
@@ -417,13 +432,14 @@
     4. **修复**：4 处 `write_bytes` 指针改 `as *mut u8`（`4096 × 1B = 4096B` = 1 页），与仓库其余 21 处 `write_bytes(..., PAGE_SIZE)` 的 `as *mut u8` 写法一致。
     5. **验证**：修复后 `USER_CR3_SAVE=0x2311000` 布局（此前必失败）fork **连续 5 次 XYY 稳定**（X + 父Y + 子Y）；双架构 build 0w0e / clippy 0 warning / host-tests 91 套件通过 / deadlock 0 CRITICAL / coupling 通过。
   - 状态：[X]（2026-08-29 根因定位并修复；此前登记的"偶发 PMM 坏页"与"布局依赖结构页覆盖"实为同一 bug：`write_bytes` `*mut u64` 清零 8 页越界覆盖）
+  - **B05-55C 清理补充（2026-08-29）**：审核员指出 cow.rs `clone_user_page_table_cow` 外层残留 d8330ef9 添加的 COW 调试日志块（`[COW]` klog，fork 热路径每次执行 8 次 volatile 遍历），且与 B05-49"插桩已清理"措辞矛盾（实为两回事：B05-49 指临时插桩，此块是 d8330ef9 有意调试日志）。**按用户裁决删除该诊断块**（cow.rs `clone_user_page_table_cow` 外层，删除 27 行），fork 回归改为**连续 10 次**验证（见 B05-54）。对应 d8330ef9 附带修复登记第 11 项。
 
 ### 验证门槛
 
 - **B05-54. fork 返回用户态回归**
-  - 描述：修复后 `init` 应打印 `X`、`Y`（父）+ `Y`（子），无挂起/无限 #PF；连续 5 次 QEMU run 稳定。
-  - 方案：`TIMEOUT_QEMU=15 ./scripts/qemu_boot_test.sh x86_64` 连续 5 次 + grep `^[XY]$` 出现 ≥2 次（父 Y + 子 Y）。
-  - 状态：[X]（2026-08-29 验证通过：5 次运行全部 `XYY`，即 X + 父 Y + 子 Y；双架构 build/clippy/host-tests 无回归）
+  - 描述：修复后 `init` 应打印 `X`、`Y`（父）+ `Y`（子），无挂起/无限 #PF；**连续 10 次 QEMU run 稳定**（2026-08-29 删除 cow.rs 诊断日志后由 5 次提升至 10 次）。
+  - 方案：`TIMEOUT_QEMU=15 ./scripts/qemu_boot_test.sh x86_64` **连续 10 次** + grep `^[XY]$` 出现 ≥2 次（父 Y + 子 Y）。
+  - 状态：[X]（2026-08-29 验证通过：删除诊断日志后**连续 10 次运行全部 `XYY`**（X + 父 Y + 子 Y）；双架构 build/clippy/host-tests 无回归）
 
 ### 决策记录
 
