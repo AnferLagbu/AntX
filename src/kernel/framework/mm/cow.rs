@@ -257,7 +257,12 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
                     let parent_phys = parent_pte & 0x000FFFFFFFFFF000;
                     let parent_flags = parent_pte & 0xFFF;
 
-                    if (parent_flags & 2) != 0 {
+                    // B05-55 根治: COW 仅应用于 USER 可写页 (P=1, W=1, U=1).
+                    // 用户页表低半区还含 KPTI 映射的 supervisor 页 (USER_CR3_SAVE,
+                    // SyscallPerCpu, GDT/IDT/TSS, IST 栈, RSP0 栈), 这些页无 USER 位.
+                    // 原实现仅判 W 位, fork 时把这些内核页 WRITABLE 清除 → 用户态异常
+                    // 入口写 USER_CR3_SAVE → 写保护 #PF → 死循环/Triple Fault.
+                    if (parent_flags & 2) != 0 && (parent_flags & 4) != 0 {
                         // SAFETY: 该 PTE 由本函数独占访问 (外层持有 VMM_LOCK)
                         unsafe {
                             let mut pte = parent_pt_virt.add(l).read_volatile();
@@ -275,6 +280,8 @@ fn clone_user_page_table_cow_inner(parent_pml4: u64) -> Option<u64> {
                         // fork: 父子各持引用, count 从 1 变为 2
                         cow_inc_ref(parent_phys);
                     } else {
+                        // supervisor 页 (KPTI 数据/IDT/GDT/IST/RSP0) 或已只读的页:
+                        // 直接共享 PTE 内容, 不参与 COW
                         // SAFETY: 已只读的页直接共享 PTE 内容
                         unsafe {
                             child_pt_virt.add(l).write_volatile(parent_pte);

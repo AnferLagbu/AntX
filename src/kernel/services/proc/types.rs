@@ -216,6 +216,21 @@ pub struct ProcessContext {
     pub fpcr: u64,
     /// aarch64 浮点状态寄存器 (Floating-point Status Register)
     pub fpsr: u64,
+    /// B05-55 修复: 额外 caller-saved 寄存器 (x86_64 调度切换不保存的).
+    ///
+    /// `process_switch_asm` 仅保存/恢复 r15-r12/rbx/rbp/rax/rip/rsp/rflags/cr3/段,
+    /// **不含** rdi/rsi/rdx/rcx/r8-r11. 已运行过的进程返回用户态时, 寄存器来自
+    /// syscall/中断栈上的 InterruptFrame (schedule 后 iretq 恢复), 不受影响.
+    /// 但**首次被调度的进程** (如 fork 的子进程) 由 process_switch_asm 直接 iretq
+    /// 进用户态, 无 InterruptFrame → 这些寄存器是调度器残留. 若用户代码依赖
+    /// fork 返回后 rdi 等保持父进程值 (如 init 的 write 用 fork 前设置的 rdi=1),
+    /// 残留值会导致 syscall 参数错乱 (fd=0 失败).
+    ///
+    /// 由 `proc_save_user_regs` 在每次 syscall 入口保存 (取 InterruptFrame 的
+    /// rdi/rsi/rdx/rcx/r8/r9/r10/r11), fork/clone 复制 context 时继承, 子进程
+    /// 首次切换时由 process_switch_asm 恢复. 布局偏移 672 (fpu_state 144+512,
+    /// fpcr 656, fpsr 664).
+    pub extra_regs: [u64; 8],
 }
 
 impl ProcessContext {
@@ -242,6 +257,7 @@ impl ProcessContext {
             fpu_state: [0; 64],
             fpcr: 0,
             fpsr: 0,
+            extra_regs: [0; 8],
         }
     }
 

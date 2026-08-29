@@ -754,11 +754,17 @@ impl VirtualMemoryManager {
             }
 
             for &page_phys in &pages[..count] {
+                // B05-55 修复: 不用 USER 位. GDT/IDT/TSS 是内核数据, 用户态异常入口
+                // (isr_common 等) 在 CR3 切换前以 CPL=0 访问它们 (读 IDT/IST/RSP0),
+                // supervisor 权限即可. 原实现带 USER 位, 且 tss 范围 (含 SyscallPerCpu
+                // 所在页 0x27b000) 会覆盖 map_kpti_data_pages 的 U=0 映射 → PERCPU 变
+                // USER 可写 → fork COW clone 误清 WRITABLE → 内核写 SyscallPerCpu #PF.
+                // 同时避免向用户态暴露内核 GDT/IDT/TSS 内容 (信息泄漏面).
                 self.map_page_in_table(
                     pml4_phys.as_u64(),
                     VirtAddr(page_phys),
                     PhysAddr(page_phys),
-                    PageFlags::PRESENT | PageFlags::WRITABLE | PageFlags::USER,
+                    PageFlags::PRESENT | PageFlags::WRITABLE,
                 );
             }
 

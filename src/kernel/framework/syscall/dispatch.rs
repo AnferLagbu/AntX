@@ -78,6 +78,18 @@ pub unsafe extern "C" fn syscall_dispatch_from_frame(frame: *mut InterruptFrame)
         let f = &mut *frame;
         let syscall_num = f.rax;
 
+        // B05-55 根治: 每次 syscall 进入, 把用户寄存器保存到当前进程 p.context.
+        // fork/clone 复制 p.context 时即得真实用户状态 (否则 init 等直接进入
+        // 用户态的进程 context 全零, 子进程 iretq 用全零帧 → 未进用户态).
+        // 需在 rt_sigreturn 处理前保存 (sigreturn 之后 frame 被恢复为 signal 帧,
+        // 保存的是恢复后的用户寄存器, 同样正确).
+        {
+            let cur = crate::kernel::framework::proc::SCHEDULER.current().unwrap_or(0);
+            if cur != 0 {
+                crate::kernel::framework::proc::proc_save_user_regs(cur, f);
+            }
+        }
+
         // rt_sigreturn 特殊处理: 需要直接修改 frame, 不走正常 dispatch
         // Linux x86_64 编号 15 / aarch64 编号 139
         #[cfg(target_arch = "x86_64")]

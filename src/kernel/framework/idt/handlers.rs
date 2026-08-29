@@ -23,7 +23,6 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::idt::IdtManager;
 use super::types::{InterruptFrame, get_exception_name};
-use crate::kernel::framework::mm::{KERNEL_TEXT_BASE, USER_ADDR_FLOOR, USER_ADDR_MIN};
 use crate::klog_err;
 use crate::klog_warn;
 
@@ -228,23 +227,17 @@ impl ExceptionHandler for PageFaultHandler {
         }
         match analysis.cause {
             FaultCause::PageNotPresent => {
-                if fault_addr == 0 || fault_addr < USER_ADDR_FLOOR {
-                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                    unsafe {
-                        (*frame).rip += 2;
-                    }
-                    return RecoveryAction::Recovered;
-                }
-
-                if fault_addr > USER_ADDR_MIN && fault_addr < KERNEL_TEXT_BASE {
-                    // SAFETY: 调用方保证指针/类型有效 (详见上下文)
-                    unsafe {
-                        (*frame).rsp += 8;
-                    }
-                    return RecoveryAction::Recovered;
-                }
-
-                // 所有其他内核态 not-present PF → Panic (获取诊断信息)
+                // B05-53 防御: 内核态 not-present #PF 一律 Panic 留现场.
+                //
+                // 原实现有两个静默跳过 hack (fault_addr<USER_ADDR_FLOOR → rip+=2,
+                // USER_ADDR_MIN<addr<KERNEL_TEXT_BASE → rsp+=8), 会掩盖内核故障
+                // (空指针解引用 / copy_from_user 缺页) 并继续执行错误指令, 导致
+                // 数据损坏或二次 #PF 死循环.
+                //
+                // copy_from_user 的异常表/恢复点机制当前未接线 (get_exception_recovery /
+                // mark_exception_occurred 在仓库中无消费方), 缺页时无法跳转恢复点,
+                // 静默跳过只会让未完成的拷贝返回"成功" → 更严重的数据损坏.
+                // 防御: 内核态 #PF 直接 Panic, 暴露故障而非静默继续.
                 RecoveryAction::Panic(PanicInfo::new(
                     "Kernel Page Fault: page not present",
                     14,

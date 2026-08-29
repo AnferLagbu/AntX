@@ -33,6 +33,10 @@ extern SELECTOR_USER_CODE
 ; +128:   ss
 ; +136:   _fpu_pad (8 bytes padding for 16-byte alignment)
 ; +144:   fpu_state[64] (512 bytes, Phase 2: fxsave/fxrstor)
+; +656:   fpcr  (aarch64)
+; +664:   fpsr  (aarch64)
+; +672:   extra_regs[8] (B05-55: rdi/rsi/rdx/rcx/r8/r9/r10/r11, 首次进入用户态
+;                      的进程 (fork 子进程) 由 iretq 前恢复, 见 types.rs)
 
 process_switch_asm:
     cli
@@ -86,6 +90,16 @@ process_switch_asm:
 
     ; Restore segment registers (ds, es, fs, gs)
     ; cs and ss are restored via iretq frame
+    ; B05-55 修复: 调度器上下文 (syscall/中断入口 swapgs 后) GS base=per_cpu,
+    ; KERNEL_GS_BASE=0. 切到用户进程前先 swapgs, 使 KERNEL_GS_BASE=per_cpu —
+    ; 否则用户态异常/中断入口 isr_common/irq_common 的 swapgs 会把 KERNEL_GS_BASE
+    ; (0) 换入 GS base → [gs:KERNEL_PML4_OFF] 访问地址 8 → #PF → 死循环.
+    ; GS base 随后由 mov gs (用户数据段 base=0) 恢复为 0 (用户 GS).
+    ; 仅 next 为用户态 (cs=0x23) 时 swapgs; 内核线程切换 (cs=0x08) 不 swapgs.
+    cmp word [rsi + 88], 0x23
+    jne .no_swapgs_next
+    swapgs
+.no_swapgs_next:
     mov ax, [rsi + 96]
     mov ds, ax
     mov ax, [rsi + 104]
@@ -114,9 +128,31 @@ process_switch_asm:
     push qword [rsi + 88]       ; cs
     push qword [rsi + 56]       ; rip
 
-    ; Restore rax before iretq
+    ; B05-55 修复: 恢复 caller-saved 寄存器 (rdi/rsi/rdx/rcx/r8-r11) — 仅用户态.
+    ; ProcessContext 布局: fpu_state[64] @ 144 (512B), fpcr @ 656, fpsr @ 664,
+    ; extra_regs[8] @ 672 (B05-55 新增, 见 services/proc/types.rs).
+    ; 已运行过的进程返回用户态时, 寄存器由 syscall/中断栈的 InterruptFrame
+    ; (schedule 后 iretq) 覆盖恢复, 此处不影响. 首次被调度的进程 (fork 子进程)
+    ; 用这些继承的寄存器值 (fork 时父进程的 rdi 等) 进入用户态.
+    ; ⚠ 必须放在所有 [rsi] (ProcessContext) 访问之后、iretq 之前, 且恢复 rax
+    ; 之后 (rax 是 fork 返回值, 不能被覆盖).
+    cmp word [rsi + 88], 0x23
+    jne .no_restore_callersaved
+    mov rax, rsi                ; rax 暂存 ctx 指针 (rsi 即将被覆盖)
+    mov rdi, [rax + 672]        ; rdi
+    mov rsi, [rax + 680]        ; rsi (从 [rax+...] 读, rax 保持 ctx)
+    mov rdx, [rax + 688]
+    mov rcx, [rax + 696]
+    mov r8,  [rax + 704]
+    mov r9,  [rax + 712]
+    mov r10, [rax + 720]
+    mov r11, [rax + 728]
+    mov rax, [rax + 48]         ; rax = fork 返回值 (最后恢复)
+    jmp .iretq_now
+.no_restore_callersaved:
+    ; Restore rax before iretq (内核线程切换)
     mov rax, [rsi + 48]
-
+.iretq_now:
     iretq
 
 user_entry_trampoline:

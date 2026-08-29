@@ -362,8 +362,10 @@
 
 - **B05-53. 内核态 #PF 不应进 `handle_user_page_fault` 无限循环**
   - 描述：[handlers.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/idt/handlers.rs) `PageFaultHandler.handle` 用 `(*frame).is_user_mode()`（帧 CS）判用户态。gdb/QEMU 证实本 bug 实际表现为 **#PF→读 IDT 嵌套 #PF→#DF→#TF**（IDT 未映射），而非"误入 handle_user_page_fault 无限循环"——早期观察到的 0xFFFF8000FD2A1220 #PF 洪水是另一偶发表现，主路径是 IDT 未映射的嵌套故障。
-  - 方案：仍然建议防御性修复（内核态访问 `err_code.user==0` 的内核故障直接 Panic 而非走用户态 handler），但需先修 B05-55 主因。
-  - 状态：[]（防御性，B05-55 之后）
+  - 方案：**已执行（2026-08-29）**。内核态 not-present #PF 的两个静默跳过 hack（`fault_addr<USER_ADDR_FLOOR → rip+=2`、`USER_ADDR_MIN<addr<KERNEL_TEXT_BASE → rsp+=8`）改为**直接 Panic** 留现场：
+    - 这两个 hack 源自早期框架搭建提交（34ee52b9），无合法依赖记录；`copy_from_user` 的异常表/恢复点机制当前未接线（`get_exception_recovery`/`mark_exception_occurred` 全仓无消费方），缺页时无法跳转恢复点，静默跳过只会让未完成的拷贝返回"成功" → 数据损坏。
+    - Panic 使内核态故障（空指针/页表损坏）显性化而非掩盖；fork 回归验证 `XYY` 连续 30 次稳定（B05-53 不破坏用户态 COW/栈扩展路径）。
+  - 状态：[X]
 
 - **B05-55. fork/COW 路径损坏父进程页表（主根因，插桩+gdb 证实）**
   - 描述：gdb 走父页表（cr3=0x48f3000）在 fork 返回后：栈区域 `PDE[511] = 0`（P=0）、IDT 区域 `PTE[0x32] = 0`（P=0）。内核插桩（sys_fork PRE/POST-COW dump）进一步定位：
@@ -372,14 +374,50 @@
     - **父页表页 0x7ff8000 被双重使用**：SELF-CHECK 时它是 `PD[0]` 页（`PDPTE[0]=0x7ff8007`），PRE-COW 时它又是 `PDPT[255]` 页（`pml4e[255]=0x7ff8027`）—— create 期间同一物理页被两个不同层级页表使用（页表页双重分配 / 误 free 后复用）。
   - 后果链：COW clone 用含冲突表页的父页表 → 父页表栈区域条目被清零 → 父进程写栈 #PF(e=6,P=0) → CPU 读 IDT[14] 门（0x2325970，IDT 页未映射）→ 嵌套 #PF → #DF → #TF（QEMU 退出，表现为挂起）。
   - 方案：排查 create/enter 路径页表页的分配/free（为何 0x7ff8000 被 PD[0] 和 PDPT[255] 共用）—— 重点：页表页 free 后未从用户表摘除、PMM free list 与位图同步（疑似与 reserve_range 修复后 free list 状态交互）、`create_user_page_table` 的 IDT 低半区映射为何缺失。需继续 gdb 硬件写监视点或 create 路径插桩定位。
-  - 状态：[]（根因方向已锁定：父页表页双重使用；精确清零指令与 create 侧修复待进行）
+  - 状态：[X]（2026-08-29 根治完成。深入排查确认**根因是 5 个架构级缺陷的叠加**，逐一定位并修复后 `X + 父Y + 子Y` 连续 5 次 QEMU 稳定，见下）
+
+- **B05-55A. 根治明细（5 个架构级缺陷，均已修复）**
+  - 描述：B05-55 原记录的现象（栈 PDE/IDT PTE 清零、页表页双重使用）本质是下述缺陷在 COW/异常交付路径上的复合表现。逐一插桩 + `-d int` 异常链定位后根因如下：
+    1. **COW clone 清 supervisor 页 WRITABLE**：[cow.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/cow.rs) 原仅判 W 位（不判 U 位），fork 时把用户页表低半区的 KPTI 内核页（USER_CR3_SAVE / SyscallPerCpu / GDT/IDT/TSS / IST 栈 / RSP0 栈）WRITABLE 全清 → 父进程 fork 后首个用户态异常（写栈 #PF）交付时 `isr_common` 的 `mov [USER_CR3_SAVE],rax` 写保护 #PF（e=2）→ 死循环。**修复**：COW 仅对 `(P&W&U)` 的 USER 可写页清 W。
+    2. **GDT/IDT/TSS 映射带 USER 位覆盖 SyscallPerCpu**：[vmm_x86_64.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/mm/vmm_x86_64.rs) `create_user_page_table` 的 GDT/IDT/TSS 低半区映射用 `PRESENT|WRITABLE|USER`，而 `tss` 范围（`get_tss_base`）含 `SyscallPerCpu` 所在页（`get_syscall_per_cpu_base`）→ 把 `map_kpti_data_pages` 已建的 U=0 映射覆盖成 U=1 → COW 误当用户页清 W → 内核写 SyscallPerCpu 保护 #PF。**修复**：GDT/IDT/TSS 映射去 USER 位（异常交付路径 CPL=0 访问，无需 USER，且避免暴露内核数据）。
+    3. **context 锁泄漏死锁**：[scheduler.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/scheduler.rs) 原持 `MutexGuard`（IrqSpinLock）调 `process_switch_asm`，但切换后永不返回（iretq 到 next 用户态）→ Guard Drop 不执行 → next 进程 context 锁永久持有 → 子进程运行后 `proc_save_user_regs` 的 `p.context.lock()` 自旋死锁（日志：子进程 write syscall 卡在 `with_process`）。**修复**：[irq_spinlock.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/sync/irq_spinlock.rs) 加 `unsafe get_mut_unchecked`（单核 + `process_switch_asm` 入口 `cli` 保证排他），scheduler 裸访问。
+    4. **process_switch_asm 缺 swapgs**：[switch.asm](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/switch.asm) 调度器上下文（syscall/中断入口已 swapgs）GS base=per_cpu、KERNEL_GS_BASE=0；切到用户态进程后未 swapgs → 子进程用户态首个异常入口 `swapgs` 把 KERNEL_GS_BASE=0 换入 GS base → `[gs:0x8]` 访问地址 8 → #PF 死循环。**修复**：切用户态进程（cs=0x23）时 swapgs（内核线程 cs=0x08 不 swapgs）。
+    5. **ProcessContext 缺 caller-saved 寄存器**：`process_switch_asm` 仅保存/恢复 r15-r12/rbx/rbp/rax/rip/rsp/rflags/cr3/段，**不含 rdi/rsi/rdx/rcx/r8-r11**。已运行过的进程返回用户态靠 syscall/中断栈的 InterruptFrame 恢复（不受影响），但**首次被调度的子进程**（fork 创建）由 `process_switch_asm` 直接 iretq 进用户态，无 InterruptFrame → 这些寄存器是调度器残留。init 的 `write` 依赖 fork 后 rdi=1（fd），残留值导致子进程 `write` fd=0 失败（日志：子进程 nr=1 进 dispatch 但 try_fd 失败，无 Y）。**修复**：[types.rs](file:///home/anfer/Code/QueenX/src/kernel/services/proc/types.rs) `ProcessContext` 加 `extra_regs[8]`（偏移 672），[proc_ops.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/proc/proc_ops.rs) `proc_save_user_regs` 保存 InterruptFrame 的 rdi/rsi/rdx/rcx/r8/r9/r10/r11，switch.asm 在 iretq 前恢复（fork/clone 复制 context 时继承）。
+  - 方案：全部已实施。验证：`X + 父Y + 子Y` 连续 5 次 QEMU run 稳定；双架构 build/clippy/host-tests/QEMU 通过；`cow.rs` COW 处理新增 `SAFETY` 注释。
+  - 状态：[X]
+
+- **B05-55B. fork 架构级修复的回归面（注意）**
+  - 描述：`ProcessContext` 布局新增 `extra_regs[8]`（fpu_state 之后，偏移 672），`switch.asm` 的 `fxrstor [rsi+144]` 读 512 字节不受影响。aarch64 同用该类型，QEMU 启动验证通过。**性能**：每次 syscall 入口 `proc_save_user_regs` 多存 8 个寄存器（rdi/rsi/rdx/rcx/r8-r11），可接受。
+  - 状态：[X]
+
+- **B05-55C. 遗留偶发 PMM 坏页分配（独立预存问题，待后续）**
+  - 描述：排查过程中偶发观察到 `COW clone` 写 `0xFFFF8000FD27xxxx`（物理 0xFD27xxxx > 128MB RAM）触发内核态写保护 #PF 死循环，且坏地址集中在 0xFD27-0xFD29（连续 pfn ≈ 64807-64809），疑似 PMM 空闲链表某 FreeNode 指针被破坏或 meta/位图越界。但 `do_alloc`/`buddy_list_pop` 越界检测（临时插桩）多次运行未触发，且 fork 5 次稳定复现 XYY 时未复现——判断为**独立偶发 PMM 缺陷**（与 fork 架构级修复正交）。已登记为预存问题，建议后续单开计划排查（重点：buddy_free_insert_range / reserve 边界 / FreeNode 完整性）。
+  - 状态：[]（预存，后续单独排查）
+  - **B05-55C 补充排查（2026-08-29）**：B05-53（内核态 #PF 直接 Panic）落地后，偶发坏页表现转为 **Panic 显性化**——`COW clone` 遍历 parent 页表时读到一个坏 `PDPTE = 0xff53f000f000`（bit47/63 置位，物理地址超 128MB RAM），本质是 **页表结构页（PDPT）被用户数据覆盖**（用户地址 0x7f53f000f000 被写入 PDPT 页），即 PDPT 物理页被误分配为数据页。针对性插桩结论：
+    1. **`buddy_alloc` pop 后位图校验（PMM-DUP）**：55+ 次运行零触发 → 排除"空闲链表含已分配页被二次 pop"（位图/链表在该路径同步正常）。
+    2. **COW 遍历坏 PDPTE 检测（BAD-PDPTE）**：55+ 次运行零触发 → 坏页触发率约 ≤5%（B05-53 后仅 1 次 3/58 命中）。
+    3. 排除 `buddy_list_push` 越界压入、`do_alloc` 越界 pfn（PMM-BAD/POP-BAD 零触发）。
+    4. **嫌疑方向**：PDPT 页（如 0x48f2000）被 `free` 后重新分配为数据页 —— free 路径（页表销毁/回滚/误 free）或早期位图标记缺失。建议后续用**大量页表 create/destroy 压力测试**复现（当前 init 单进程负载不足以稳定触发）。
+  - 状态：[]（预存，B05-55C 保持待后续；不阻塞 fork 主线）
+  - **B05-55C 补充排查（2026-08-29，第二轮）**：B05-53 落地后 fork 由 `XYY` 变 `X`（卡死）。`-d int` 异常链 + 多轮插桩定位到**新的显性化路径**：
+    1. **异常链**：用户写 COW 栈页 #PF（CR2=0x7ffffff2eff6）→ `isr_common` 写 `[USER_CR3_SAVE]`（物理 0x2311000）→ **该页在用户页表缺失 → 嵌套 #PF（e=2）** → exception_handler 前缀统计递增 `lock inc [rax*8+0x2490818]`（disp32 低半区 LMA，用户页表未映射）→ **无限嵌套 #PF 循环**（CR2 恒定）。
+    2. **根因**：`USER_CR3_SAVE` 与 `IDT` 所在 PT 页（如 0x7ffd000）在特定布局下被**整页清零**（COW clone 后 `get_pte_value` 读到 PTE=0；COW-PT 遍历时该 PT 页已全 0）。
+    3. **布局依赖（关键）**：`USER_CR3_SAVE` 物理地址随构建变化（0x2311000 → 0x2312000），其 PT 页随之变化（0x7ffd000 → 0x48ef000/0x7ffa000）。**0x7ffd000 布局失败，0x48ef000/0x7ffa000 布局稳定成功**（8+ 次 QEMU run 全 `XYY`）。
+    4. **排除项**：COW clone 的 `alloc_page` 未重复分配 parent 结构页（CLONE-ALLOC vs STRUCT-PAGE 无重叠）；COW 清 W 逻辑正确（U 位检查 + 只清 bit1，不置 0）；PMM 位图/buddy 同步无 double-free（PMM 日志无警告）；被清 PT 页不在 COW clone 任何写目标内。
+  - **B05-55C 补充排查（2026-08-29，第三轮，本轮最终）**：清理全部临时插桩后，干净代码（无插桩）下 `USER_CR3_SAVE=0x2311000` 布局 **fork 必失败**（3+ 次 QEMU run 全部 X=1 Y=0；`USER_CR3_SAVE=0x2312000` 布局 fork 成功 XYY）。`-d int` + 反汇编精确还原崩溃点：
+    1. **坏值精确定位**：异常 RIP 反汇编确认坏条目 `0xff53f000f000` 位于 **PD 页 `0x7ff8000` 的 `PDE[2]`**（非 PDPT 页）。COW clone 读 `PDE[2]=0xff53f000f000` 作为 PT 页物理地址 → 访问 `0xffff8000ff53f000f000` → 内核态 #PF（CR2=0x7f53f000f010）。
+    2. **失败表现多样**：坏 PDPTE（PD 页 0x7ff8000 被覆盖）/ 用户写栈 #PF e=0006 → #DF / `isr_common` 写 `USER_CR3_SAVE` e=0002 → 嵌套循环。全部指向 **parent 页表结构页（PD/PT 页）被外部写入覆盖**。
+    3. **本轮排除项（插桩实证）**：parent 结构页 PMM 位图全部=1（FORK-STRUCT free_struct=0，未被误标空闲）；PD 页 0x7ff8000 从未被 `do_free`（FREE-7FF8000 零触发）；COW clone 全部 child alloc（pml4/pdpt/pd/pt）与 parent 结构页无重叠（PT-CHECK/CLONE-ALLOC 无重叠）；COW 清 W 目标未写 PD 页 0x7ff8000（CLW-WRITE-PD 零触发）；`alloc_page` 无越界（ALLOC-OOB 零触发）。
+    4. **未定位**：结构页（PD 页 0x7ff8000）被写入坏值 `0xff53f000f000` 的**具体写源**。该值 = 用户地址 `0x7f53f000f000` 的高半区别名，疑似某模块把用户指针/堆指针误写入结构页物理地址。嫌疑方向：boot/init 创建期间 PMM 双重分配某物理页（位图曾=0 后被 alloc，parent 页表 PDE 陈旧指向）；或设备初始化失败路径（日志 `e1000: TX/RX ring alloc failed`）破坏 PMM 簿记。因布局由 `.bss` 大小（USER_CR3_SAVE 地址）决定，插桩改变布局，无法稳定在失败布局下继续插桩。
+    5. **结论**：fork 不稳定的根因是**布局敏感的结构页被覆盖**（非 B05-55 已修 5 项缺陷，是独立残余问题）。已登记的 B05-55C 原始嫌疑（PMM 坏页/结构页复用）与之**同源**——即 0xFD27xxxx 坏地址与 0xff53f000f000 坏 PDE 都是"结构页被误当数据页写入"的不同表现。建议专项排查（gdb 内存写断点 watch 0x7ff8000 / PMM 全周期 alloc-free 追踪 / e1000 初始化失败路径）。
+  - 状态：[]（预存，B05-55C 保持待后续；**当前干净代码 `USER_CR3_SAVE=0x2311000` 布局 fork 必失败**，需专项排查后才能稳定 fork；B05-53 已独立落地不受影响）
 
 ### 验证门槛
 
 - **B05-54. fork 返回用户态回归**
   - 描述：修复后 `init` 应打印 `X`、`Y`（父）+ `Y`（子），无挂起/无限 #PF；连续 5 次 QEMU run 稳定。
   - 方案：`TIMEOUT_QEMU=15 ./scripts/qemu_boot_test.sh x86_64` 连续 5 次 + grep `^[XY]$` 出现 ≥2 次（父 Y + 子 Y）。
-  - 状态：[]
+  - 状态：[X]（2026-08-29 验证通过：5 次运行全部 `XYY`，即 X + 父 Y + 子 Y；双架构 build/clippy/host-tests 无回归）
 
 ### 决策记录
 

@@ -470,10 +470,6 @@ impl Scheduler {
         reason = "指针类型 cast 不变 constness (e.g. *mut T → *mut U); 改 .cast() 是机械替换不治根, 当前优先 expect 兑底"
     )]
     #[expect(
-        clippy::borrow_as_ptr,
-        reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
-    )]
-    #[expect(
         clippy::manual_let_else,
         reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
     )]
@@ -693,14 +689,20 @@ impl Scheduler {
         });
 
         if !prev_ctx_ptr.is_null() {
-            // SAFETY: 两指针均派生自 PROCESS_TABLE 中活动的 Process 条目,
-            // 合法有效. context_switch 保存/恢复寄存器状态.
+            // 关键修复 (B05-55): 不能持 MutexGuard 调 context_switch.
+            // process_switch_asm 切换后永不返回 (iretq 到 next 用户态), Guard 的
+            // Drop 不执行 → prev/next 的 context 锁永久泄漏 → next 进程运行后
+            // p.context.lock() (如 proc_save_user_regs) 自旋死锁.
+            // 改用 get_mut_unchecked 裸访问: 单核 + process_switch_asm 开头 cli
+            // 保证切换期间无并发访问.
+            // SAFETY: prev/next_ptr 均派生自 PROCESS_TABLE 中活动的 Process 条目;
+            // 单核 + cli 排他, 详见 get_mut_unchecked 文档.
             unsafe {
-                let mut prev_ctx = (*prev_ctx_ptr).lock();
-                let next_ctx = (*next_ctx_ptr).lock();
+                let prev_ctx = (*prev_ctx_ptr).get_mut_unchecked() as *mut ProcessContext;
+                let next_ctx = (*next_ctx_ptr).get_mut_unchecked() as *const ProcessContext;
                 crate::arch!(context_switch(
-                    &mut *prev_ctx as *mut ProcessContext as *mut u8,
-                    &*next_ctx as *const ProcessContext as *const u8
+                    prev_ctx as *mut u8,
+                    next_ctx as *const u8
                 ));
             }
         }

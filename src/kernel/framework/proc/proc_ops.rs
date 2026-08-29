@@ -714,6 +714,60 @@ pub extern "C" fn proc_sleep_ms(ms: u64) {
     SCHEDULER.schedule();
 }
 
+/// 保存当前 syscall 的用户寄存器到进程 `p.context` (B05-55 根治).
+///
+/// # 背景
+/// fork/clone 复制 `p.context`, 但该字段仅由 `process_switch_asm` (调度器切换)
+/// 写入. init 等首个用户进程经 `enter_user_asm` 直接进入用户态, **从未被调度器
+/// 保存过 context**, 故 `p.context` 全零 → 子进程 iretq 用全零帧 → 未进用户态.
+///
+/// # 根治
+/// 在 syscall 入口 (syscall_dispatch_from_frame) 每次调用本函数, 把当前
+/// InterruptFrame (用户寄存器真实状态) 映射到 `p.context`. 这样 fork/clone
+/// 复制的就是最新用户寄存器 (rip=返回地址, rsp=用户栈, cs/ss/rflags 等),
+/// 子进程从正确的用户返回点继续.
+///
+/// ProcessContext 本不含 rdi/rsi/rdx/rcx/r8-r11 (调度切换不保存这些), 但 B05-55
+/// 在 `extra_regs[8]` 中保存它们: 已运行过的进程返回用户态靠 syscall/中断栈的
+/// InterruptFrame 恢复, 首次被调度的子进程 (fork/clone) 由 process_switch_asm
+/// iretq 前从 extra_regs 恢复 (继承 fork 时父进程的 rdi 等). rax 由 fork/clone
+/// 在子 context 上改写为 0.
+pub fn proc_save_user_regs(pid: Pid, f: &crate::kernel::framework::idt::InterruptFrame) {
+    if pid == 0 {
+        return;
+    }
+    // InterruptFrame 字段均为 Copy 值类型, 闭包内直接引用 `f` 读取即可
+    PROCESS_TABLE.with_process(pid, |p| {
+        let mut ctx = p.context.lock();
+        ctx.r15 = f.r15;
+        ctx.r14 = f.r14;
+        ctx.r13 = f.r13;
+        ctx.r12 = f.r12;
+        ctx.rbx = f.rbx;
+        ctx.rbp = f.rbp;
+        ctx.rip = f.rip;
+        ctx.rsp = f.rsp;
+        ctx.rflags = f.rflags;
+        ctx.cr3 = p.cr3.load(Ordering::SeqCst);
+        ctx.cs = f.cs;
+        ctx.ss = f.ss;
+        ctx.ds = 0x1B;
+        ctx.es = 0x1B;
+        ctx.fs = 0x1B;
+        ctx.gs = 0x1B;
+        // B05-55 修复: 保存 caller-saved 寄存器 (调度切换不保存, 供首次被调度
+        // 的子进程继承 fork 时的 rdi 等, 见 ProcessContext::extra_regs 文档).
+        ctx.extra_regs[0] = f.rdi;
+        ctx.extra_regs[1] = f.rsi;
+        ctx.extra_regs[2] = f.rdx;
+        ctx.extra_regs[3] = f.rcx;
+        ctx.extra_regs[4] = f.r8;
+        ctx.extra_regs[5] = f.r9;
+        ctx.extra_regs[6] = f.r10;
+        ctx.extra_regs[7] = f.r11;
+    });
+}
+
 /// fork 系统调用实现 (COW 页表克隆 + namespace 继承)
 // SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
 #[unsafe(no_mangle)]

@@ -139,6 +139,20 @@ impl<T> IrqSpinLock<T> {
         }
     }
 
+    /// 不加锁直接获取内部数据的可变引用 (进程上下文切换专用)。
+    ///
+    /// # Safety
+    ///
+    /// 调用方必须保证调用期间对 `self` 无并发访问。用于 `process_switch_asm`
+    /// 切换路径: 单核 (smp=off) + `process_switch_asm` 入口 `cli` 保证排他。
+    /// 不能使用 `lock()` 获取 Guard 再调 `context_switch`, 因为切换后函数
+    /// 永不返回 (iretq 到 next 用户态), Guard 的 Drop 不执行 → 锁永久泄漏 →
+    /// next 进程运行时 `p.context.lock()` (如 syscall 入口保存寄存器) 自旋死锁。
+    pub unsafe fn get_mut_unchecked(&self) -> &mut T {
+        // SAFETY: 调用方保证无并发访问 (见函数文档)
+        unsafe { &mut *self.data.get() }
+    }
+
     /// 闭包 API: 获取锁, 持有期间屏蔽中断, 执行闭包后自动释放。
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
         let mut guard = self.lock();
