@@ -321,8 +321,10 @@ pub struct SyscallPerCpu {
     pub user_rsp: u64,
 }
 
-/// 每个 CPU 独立的 syscall 内核栈大小 (8KB)
-/// ⚠ 实验 (TRACK-INIT-RING3-BISECT): 临时增大到 64KB 验证 syscall 栈溢出.
+/// 每个 CPU 独立的 syscall 内核栈大小 (64KB, syscall 入口与调度切换共用).
+/// 与内核栈容量惯例对齐 (KERNEL_STACK_SIZE / AP_STACK_SIZE 均为 64KB).
+/// 实证: 8KB 回归测试中 fork 路径三重故障 (脚本 -no-reboot, 日志止于 X),
+/// 64KB 下 fork 连续回归稳定 — d8330ef9 增大栈容量为 fork 必要条件而非临时诊断.
 const PER_CPU_SYSCALL_STACK_SIZE: usize = 65536;
 
 /// 每个 CPU 独立的 GDT + TSS + IST 栈 + syscall 数据
