@@ -26,15 +26,45 @@ jobs:
 
       - name: 运行 SAFETY 注释审计
         run: |
+          mkdir -p build/log
           echo "=== Step 1: SAFETY 注释审计 (M6.1) ==="
-          python3 scripts/audit_safety_coverage.py --missing-only 2>&1 | tee build/log/safety_audit.txt
+          # B01-25 模式: 捕获脚本真实退出码, 修复 `| tee` fail-open (管道退出码 = tee 的 0).
+          set +e
+          SAFETY_OUT=$(python3 scripts/audit_safety_coverage.py --missing-only 2>&1)
+          SAFETY_RC=$?
+          set -e
+          echo "$SAFETY_OUT" | tee build/log/safety_audit.txt
+          if [ "$SAFETY_RC" -ne 0 ]; then
+            echo "::error::SAFETY 注释审计失败 (存在未覆盖的 unsafe 块), 请为每个 unsafe 块补充 // SAFETY: 注释"
+            echo "--- 缺失 SAFETY 的 unsafe 位置 (前 20) ---"
+            echo "$SAFETY_OUT" | head -20
+            exit 1
+          fi
+          echo "✅ SAFETY 注释审计通过 (framework 全部 unsafe 块均有 SAFETY 注释)"
           echo ""
           echo "=== Step 2: services→framework 边界渗透检查 (M6.3) ==="
-          python3 scripts/audit_services_boundary.py 2>&1 | tee build/log/services_boundary.txt
+          # B01-25 模式同上 (B01-03: HIGH 必阻断).
+          set +e
+          BOUNDARY_OUT=$(python3 scripts/audit_services_boundary.py 2>&1)
+          BOUNDARY_RC=$?
+          set -e
+          echo "$BOUNDARY_OUT" | tee build/log/services_boundary.txt | tail -20
+          if [ "$BOUNDARY_RC" -ne 0 ]; then
+            echo "::error::services→framework 边界渗透检查失败 (CRITICAL/HIGH 违规)"
+            echo "--- 违规详情 ---"
+            grep -A 4 'FORBIDDEN\|RAW_POINTER\|CRITICAL\|HIGH' build/log/services_boundary.txt | head -40
+            exit 1
+          fi
+          echo "✅ 边界渗透检查通过 (services 无 framework 内部模块穿透)"
           echo ""
           echo "=== Step 3: 死锁检测矩阵 (M6.2) ==="
-          python3 scripts/audit_deadlock_matrix.py 2>&1 | tee build/log/deadlock_matrix.txt
-          if grep -q "CRITICAL" build/log/deadlock_matrix.txt; then
+          # B01-25 模式: 依赖脚本退出码 (CRITICAL > 0 时 exit 1).
+          set +e
+          DEADLOCK_OUT=$(python3 scripts/audit_deadlock_matrix.py 2>&1)
+          DEADLOCK_RC=$?
+          set -e
+          echo "$DEADLOCK_OUT" | tee build/log/deadlock_matrix.txt | tail -20
+          if [ "$DEADLOCK_RC" -ne 0 ]; then
             echo "::error::检测到 CRITICAL 级别死锁风险, 请修复"
             exit 1
           fi
@@ -48,7 +78,7 @@ jobs:
             build/log/safety_audit.txt
             build/log/services_boundary.txt
             build/log/deadlock_matrix.txt
-            docs/architecture/services-boundary.json
+            target/audit/services-boundary.json
           retention-days: 30
 
   # ========================================================================

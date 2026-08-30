@@ -779,6 +779,10 @@ impl VirtualMemoryManager {
             // ist3 → 压栈二次 #PF → #DF → #TF.
             //
             // 权限: PRESENT|WRITABLE (不含 USER) — 交付路径 CPL=0, 且不暴露内核栈.
+            #[expect(
+                clippy::items_after_statements,
+                reason = "item 紧邻使用点声明以便阅读上下文"
+            )]
             const PER_CPU_IST_STACK_SIZE: u64 = 16384;
             // SAFETY: get_tss_mut 返回当前 CPU 的有效 TSS (BSP 启动期单 CPU 独占).
             // TSS 是 #[repr(packed)], ist 字段可能未对齐, 用 read_unaligned 拷贝.
@@ -1945,6 +1949,7 @@ impl VirtualMemoryManager {
         clippy::inline_always,
         reason = "inline_always: #[inline(always)] 是性能优化 (关键路径/中断处理); 当前优先 expect"
     )]
+    // SAFETY: val 必须指向有效 PML4 页表; 调用方保证页表分配后保持有效.
     unsafe fn write_cr3(&self, val: u64) {
         // SAFETY: val must point to a valid PML4 table; caller guarantees this
         crate::arch!(write_page_table_base(val));

@@ -254,7 +254,7 @@ def check_forbidden_imports(filepath):
         import_path = m.group(2)
 
         for forbidden in FORBIDDEN_FRAMEWORK_MODULES:
-            if forbidden in import_path:
+            if forbidden in import_path and not is_proxy_allowed(filepath, forbidden):
                 issues.append({
                     'file': str(filepath),
                     'line': lineno_1,
@@ -320,6 +320,33 @@ def is_vendored(filepath):
                 return True
     except Exception:
         pass
+    return False
+
+
+# 代理层豁免: services 特定文件作为 framework 公开 API 的代理/转发点,
+# 其自身对 framework 内部模块的 use / pub use 属既定设计, 而非边界穿透.
+# 设计依据: 与 VENDORED_EXCLUDE 同机制的精细白名单 — 仅豁免「文件 + 禁条」组合,
+#           不影响其他文件对该禁条的穿透检测.
+# 条目格式: (文件相对路径, 禁条模块字符串).
+# 来源: B05 审查登记的 5 处代理层自拦截误报 (audit-fix-06).
+PROXY_ALLOWANCE = [
+    # debug 子系统: mod.rs 转发 fnv1a_32, ebpf_verifier 内部引用 BpfProgType/opcode
+    ('src/kernel/services/debug/mod.rs', 'framework::debug::fnv1a_32'),
+    ('src/kernel/services/debug/ebpf_verifier.rs', 'framework::debug::BpfProgType'),
+    ('src/kernel/services/debug/ebpf_verifier.rs', 'framework::debug::opcode'),
+    # ipc 子系统: msgq.rs 转发 raw 层消息类型 (MessageRef)
+    ('src/kernel/services/ipc/msgq.rs', 'framework::ipc::msgq::raw'),
+    # proc 子系统: coredump.rs 代理 framework::proc::coredump
+    ('src/kernel/services/proc/coredump.rs', 'framework::proc::coredump'),
+]
+
+
+def is_proxy_allowed(filepath, forbidden):
+    """判断「文件 + 禁条」组合是否属代理层豁免."""
+    fpath = str(Path(filepath).resolve())
+    for allow_file, allow_forbidden in PROXY_ALLOWANCE:
+        if str(Path(allow_file).resolve()) == fpath and forbidden == allow_forbidden:
+            return True
     return False
 
 

@@ -936,8 +936,8 @@ impl HostController for XhciController {
         //    此处仅记录元数据供 Phase E 第 4 组 Event Ring 处理器查询.
         let _trb = Trb::new(
             urb.buffer as u64,
-            (urb.buffer_length as u32) & 0x0001_FFFF, // TRB status: transfer length (low 17 bits)
-            (u32::from(urb.endpoint) << 16) | (TrbType::Normal as u32) << 10 | 1, // TRB control: endpoint | type | cycle
+            (urb.buffer_length as u32) & 0x0001_FFFF, // TRB 状态 (status): 传输长度 (低 17 位)
+            (u32::from(urb.endpoint) << 16) | (TrbType::Normal as u32) << 10 | 1, // TRB 控制 (control): 端点 | 类型 | cycle 位
         );
 
         // 3. 触发 doorbell (DBOFF + slot * 4).

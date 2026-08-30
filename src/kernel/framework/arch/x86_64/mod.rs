@@ -437,6 +437,8 @@ impl MmuArch for X8664 {
         // SAFETY: 调用方保证 entry/stack/user_cr3/kstack 有效。
         // 通过 FFI 调用汇编实现的 enter_user_asm。
         unsafe {
+            // SAFETY: enter_user_asm 由 global_asm! 定义于 .kpti_trampoline section,
+            // 参数 (entry/stack/user_cr3/kstack) 有效性由上方 SAFETY 保证.
             unsafe extern "C" {
                 fn enter_user_asm(
                     entry: usize,

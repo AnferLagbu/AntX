@@ -30,16 +30,16 @@ const GICD_IIDR: u64 = 0x000C; // Implementer ID
 const GICD_IGROUPR: u64 = 0x0080; // Interrupt Group (0-31)
 const GICD_ISENABLER: u64 = 0x0100; // Interrupt Set-Enable (0-31)
 const GICD_ISPENDR: u64 = 0x0200; // Interrupt Set-Pending
-const GICD_IPRIORITYR: u64 = 0x0400; // Interrupt Priority (8-bit each)
+const GICD_IPRIORITYR: u64 = 0x0400; // 中断优先级 (每路 8 bit)
 const GICD_ITARGETSR: u64 = 0x0800; // Interrupt Target
-const GICD_ICFGR: u64 = 0x0C00; // Interrupt Configuration (level/edge)
+const GICD_ICFGR: u64 = 0x0C00; // 中断配置 (电平/边沿触发)
 
 /// GICR 寄存器偏移 (SGI + PPI)
 const GICR_CTLR: u64 = 0x0000; // Redistributor Control
 const GICR_WAKER: u64 = 0x0014; // Wake
-const GICR_IGROUPR0: u64 = 0x0080; // Group for SGIs/PPIs
-pub const GICR_ISENABLER0: u64 = 0x0100; // Enable for SGIs/PPIs
-const GICR_IPRIORITYR: u64 = 0x0400; // Priority for SGIs/PPIs
+const GICR_IGROUPR0: u64 = 0x0080; // SGI/PPI 中断分组
+pub const GICR_ISENABLER0: u64 = 0x0100; // SGI/PPI 中断使能
+const GICR_IPRIORITYR: u64 = 0x0400; // SGI/PPI 中断优先级
 const GICR_ICFGR1: u64 = 0x0C04; // Configuration for PPIs
 
 /// CPU Interface 寄存器 (系统寄存器, ICC_*)

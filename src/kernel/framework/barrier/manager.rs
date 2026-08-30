@@ -349,6 +349,7 @@ pub(crate) mod raw {
     }
 
     /// 调用域的 rollback 回调 (回滚完成后)
+    // SAFETY: cb 由域所有者注册; 本函数在 unsafe 上下文调用回调, 契约由 framework::barrier::api 维护.
     pub fn invoke_rollback_cb(cb: Option<unsafe fn() -> bool>) {
         if let Some(f) = cb {
             // SAFETY: 同上。

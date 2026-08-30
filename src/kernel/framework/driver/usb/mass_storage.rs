@@ -605,7 +605,7 @@ mod tests {
                 alternate_setting: 0,
                 num_endpoints: 2,
                 interface_class: DeviceClass::MassStorage as u8,
-                interface_subclass: 0x06, // SCSI Transparent Command Set
+                interface_subclass: 0x06, // SCSI 透明命令集 (Transparent Command Set)
                 interface_protocol: 0x50, // BBB
                 interface_index: 0,
             }],

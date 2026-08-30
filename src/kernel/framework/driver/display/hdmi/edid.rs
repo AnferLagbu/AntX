@@ -264,11 +264,11 @@ pub(super) fn fill_mock_edid(edid_data: &mut [u8; EDID_MAX_LENGTH]) {
     // 详细时序 (1920x1080 @ 60Hz)
     let timing_offset = 54;
     edid_data[timing_offset] = 0x69;     // pixel clock low
-    edid_data[timing_offset + 1] = 0x03; // pixel clock high (148.5 MHz)
+    edid_data[timing_offset + 1] = 0x03; // 像素时钟高位 (pixel clock high) (148.5 MHz)
     edid_data[timing_offset + 2] = 0x80; // horizontal active
     edid_data[timing_offset + 3] = 0x98; // horizontal blanking
-    edid_data[timing_offset + 4] = 0x31; // horizontal active/blanking high
-    edid_data[timing_offset + 5] = 0x02; // horizontal blanking high
+    edid_data[timing_offset + 4] = 0x31; // 水平有效/消隐 高位
+    edid_data[timing_offset + 5] = 0x02; // 水平消隐高位
     edid_data[timing_offset + 6] = 0x38; // vertical active
     edid_data[timing_offset + 7] = 0x1D; // vertical blanking
 

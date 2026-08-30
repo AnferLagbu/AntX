@@ -135,7 +135,7 @@ impl HvfsData {
                 if r >= 0 && cfg[0] == b'A' && cfg[1] == b'N' && cfg[2] == b'T' && cfg[3] == b'X' {
                     u32::from_le_bytes([cfg[4], cfg[5], cfg[6], cfg[7]])
                 } else {
-                    16384u32 // BOOT_PART_SECTORS default for blank disk
+                    16384u32 // BOOT_PART_SECTORS 默认值 (空白磁盘)
                 };
             discovered.push((drive, part_start));
         }

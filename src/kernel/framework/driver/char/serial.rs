@@ -63,12 +63,12 @@ const LSR_TRANSMIT_EMPTY: u8 = 0x20; // 发送保持寄存器空
 const FCR_ENABLE_FIFO: u8 = 0xC1; // 启用 FIFO，清除缓冲区
 
 /// MCR 命令
-const MCR_DTR: u8 = 0x01; // Data Terminal Ready
+const MCR_DTR: u8 = 0x01; // 数据终端就绪 (DTR)
 const MCR_RTS: u8 = 0x02; // Request To Send
 const MCR_OUT2: u8 = 0x08; // OUT2 (中断使能)
 
 /// LCR 命令
-const LCR_DLAB: u8 = 0x80; // Divisor Latch Access Bit
+const LCR_DLAB: u8 = 0x80; // 除数锁存访问位 (DLAB)
 
 /// 波特率分频值
 const BAUD_9600: u16 = 12;

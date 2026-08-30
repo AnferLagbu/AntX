@@ -19,14 +19,14 @@ use core::ptr;
 
 /// 页表条目常量
 const PT_TYPE_TABLE: u64 = 0x3; // valid + table descriptor
-const PT_TYPE_BLOCK: u64 = 0x1; // valid + block descriptor
+const PT_TYPE_BLOCK: u64 = 0x1; // 有效位 + 块描述符 (block descriptor)
 const PT_AF: u64 = 1 << 10; // Access Flag
-const PT_ATTR_NORMAL: u64 = (0b0100 << 2) | (0b0100 << 8); // Normal memory, Inner/Outer WBWA
+const PT_ATTR_NORMAL: u64 = (0b0100 << 2) | (0b0100 << 8); // 普通内存, 内/外 WBWA 缓存策略
 const PT_ATTR_DEVICE: u64 = 0; // Device-nGnRnE memory (AttrIndx=0, MAIR[0]=0x44)
 const PT_AP_EL1_RW: u64 = 0 << 6; // EL1 read/write
 const PT_AP_ALL_RW: u64 = 1 << 6; // EL1+EL0 read/write
 
-const L2_BLOCK_SIZE: u64 = 0x200000; // 2MB (L2 block at 4KB granule)
+const L2_BLOCK_SIZE: u64 = 0x200000; // 2MB (4KB 粒度下的 L2 块)
 
 // ============================================================================
 // 页表 (static, BSS)

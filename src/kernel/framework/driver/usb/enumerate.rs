@@ -40,7 +40,7 @@ use alloc::vec::Vec;
 /// - `length`: 期望读取的字节数.
 fn make_get_descriptor_request(desc_type: u8, desc_index: u8, length: u16) -> UsbSetupPacket {
     UsbSetupPacket {
-        request_type: 0x80, // Device-to-Host, Standard
+        request_type: 0x80, // 设备到主机 (Device-to-Host), 标准请求 (Standard)
         request: StandardRequest::GetDescriptor as u8,
         value: (u16::from(desc_type) << 8) | u16::from(desc_index),
         index: 0,
@@ -51,7 +51,7 @@ fn make_get_descriptor_request(desc_type: u8, desc_index: u8, length: u16) -> Us
 /// 构造 `SET_ADDRESS` 请求.
 fn make_set_address_request(address: u8) -> UsbSetupPacket {
     UsbSetupPacket {
-        request_type: 0x00, // Host-to-Device, Standard, Device
+        request_type: 0x00, // 主机到设备 (Host-to-Device), 标准请求, 设备 (Device)
         request: StandardRequest::SetAddress as u8,
         value: u16::from(address),
         index: 0,
@@ -241,7 +241,7 @@ fn mock_get_configuration_descriptor_response() -> Vec<u8> {
     // Configuration Descriptor (9 字节)
     data.extend_from_slice(&[
         9, // length
-        2, // descriptor_type = CONFIGURATION
+        2, // descriptor_type = 配置描述符 (CONFIGURATION)
         25, 0,    // total_length = 25 (9 + 9 + 7)
         1,    // num_interfaces
         1,    // configuration_value
@@ -257,8 +257,8 @@ fn mock_get_configuration_descriptor_response() -> Vec<u8> {
         0,    // alternate_setting
         1,    // num_endpoints
         0x03, // interface_class = HID
-        0x01, // interface_subclass = Boot Interface Subclass
-        0x01, // interface_protocol = Keyboard
+        0x01, // interface_subclass = 启动接口子类 (Boot Interface Subclass)
+        0x01, // interface_protocol = 键盘 (Keyboard)
         0,    // interface_index
     ]);
     // Endpoint Descriptor (7 字节, IN interrupt endpoint)
@@ -437,7 +437,7 @@ mod tests {
     fn test_parse_configuration_descriptor_wrong_type() {
         let mut data = vec![0u8; 25];
         data[0] = 9;
-        data[1] = 1; // wrong: should be 2 (CONFIGURATION)
+        data[1] = 1; // 错误: 应为 2 (配置描述符 CONFIGURATION)
         assert!(parse_configuration_descriptor(&data).is_err());
     }
 
@@ -446,7 +446,7 @@ mod tests {
         let req = make_get_descriptor_request(1, 0, 18);
         assert_eq!(req.request_type, 0x80);
         assert_eq!(req.request, 6); // GetDescriptor
-        assert_eq!(req.value, 1 << 8); // desc_type=DEVICE in high byte
+        assert_eq!(req.value, 1 << 8); // desc_type=设备描述符 (DEVICE), 位于高字节
         assert_eq!(req.length, 18);
     }
 

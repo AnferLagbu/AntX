@@ -544,7 +544,7 @@ mod tests {
 
         // 异常情况: 内核 CS 但用户态 RIP
         let anomalous_frame = InterruptFrame::new_test_frame(0, 0x1221d7, 0x08);
-        assert!(anomalous_frame.is_user_mode()); // RIP-based detection kicks in
+        assert!(anomalous_frame.is_user_mode()); // 基于 RIP 的检测生效
     }
 
     #[test]

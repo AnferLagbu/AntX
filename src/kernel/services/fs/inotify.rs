@@ -129,7 +129,7 @@ impl InotifyEvent {
         }
     }
     /// 事件结构体的固定部分大小 (不含 name)
-    pub const FIXED_SIZE: usize = 16; // wd(4) + mask(4) + cookie(4) + len(4)
+    pub const FIXED_SIZE: usize = 16; // wd/mask/cookie/len 各 4 字节
 
     /// 总大小 (含 name)
     pub const FULL_SIZE: usize = Self::FIXED_SIZE + INOTIFY_MAX_NAME;

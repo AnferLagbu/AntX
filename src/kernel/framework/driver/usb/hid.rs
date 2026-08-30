@@ -104,7 +104,7 @@ pub enum HidProtocol {
 /// `SET_PROTOCOL` / `GET_PROTOCOL` Setup Packet 构造.
 fn make_set_protocol_request(protocol: HidProtocol) -> UsbSetupPacket {
     UsbSetupPacket {
-        request_type: 0x21, // Host-to-Device, Class, Interface
+        request_type: 0x21, // 主机到设备 (Host-to-Device), 类请求 (Class), 接口 (Interface)
         request: 0x0B,      // SET_PROTOCOL
         value: protocol as u16,
         index: 0, // 由调用方填入 Interface number
@@ -607,7 +607,7 @@ mod tests {
                 alternate_setting: 0,
                 num_endpoints: 1,
                 interface_class: DeviceClass::Hid as u8,
-                interface_subclass: 1, // Boot Interface Subclass
+                interface_subclass: 1, // 启动接口子类 (Boot Interface Subclass)
                 interface_protocol: 1, // Keyboard
                 interface_index: 0,
             }],
@@ -643,7 +643,7 @@ mod tests {
         let device = make_test_hid_device();
         let driver = HidDriver::from_usb_device(&device, 0).unwrap();
         let req = driver.set_protocol_setup(HidProtocol::Boot);
-        assert_eq!(req.request_type, 0x21); // Class, Interface, Host-to-Device
+        assert_eq!(req.request_type, 0x21); // 类请求 (Class), 接口 (Interface), 主机到设备
         assert_eq!(req.request, 0x0B); // SET_PROTOCOL
         assert_eq!(req.value, 0); // Boot
         assert_eq!(req.index, 0); // interface 0

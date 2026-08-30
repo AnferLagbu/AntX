@@ -235,12 +235,14 @@ pub(crate) mod raw {
     }
 
     /// 调用恢复注册项的 restore 回调
+    // SAFETY: f 由域所有者注册, 契约由 framework::barrier::recovery 维护.
     pub fn invoke_restore(f: unsafe fn()) {
         // SAFETY: 同上。
         unsafe { f() };
     }
 
     /// 调用恢复注册项的 reset 回调
+    // SAFETY: f 由域所有者注册, 契约由 framework::barrier::recovery 维护.
     pub fn invoke_reset(f: unsafe fn()) {
         // SAFETY: 同上。
         unsafe { f() };

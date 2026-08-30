@@ -28,15 +28,15 @@ pub fn base() -> u64 {
 /// PL011 寄存器偏移
 const UARTDR: u64 = 0x000; // Data Register
 const UARTFR: u64 = 0x018; // Flag Register
-const UARTIBRD: u64 = 0x024; // Integer Baud Rate Divisor
-const UARTFBRD: u64 = 0x028; // Fractional Baud Rate Divisor
-const UARTLCR_H: u64 = 0x02C; // Line Control Register
+const UARTIBRD: u64 = 0x024; // 整数波特率分频值 (Integer Baud Rate Divisor)
+const UARTFBRD: u64 = 0x028; // 小数波特率分频值 (Fractional Baud Rate Divisor)
+const UARTLCR_H: u64 = 0x02C; // 线路控制寄存器 (Line Control Register)
 pub const UARTCR: u64 = 0x030; // Control Register
-const UARTIMSC: u64 = 0x038; // Interrupt Mask Set/Clear
+const UARTIMSC: u64 = 0x038; // 中断掩码设置/清除 (Interrupt Mask Set/Clear)
 
 /// 标志位
-const UARTFR_TXFF: u32 = 1 << 5; // Transmit FIFO Full
-const UARTFR_RXFE: u32 = 1 << 4; // Receive FIFO Empty
+const UARTFR_TXFF: u32 = 1 << 5; // 发送 FIFO 满 (Transmit FIFO Full)
+const UARTFR_RXFE: u32 = 1 << 4; // 接收 FIFO 空 (Receive FIFO Empty)
 
 /// 控制位
 pub const UARTCR_UARTEN: u32 = 1 << 0; // UART Enable

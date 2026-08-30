@@ -695,7 +695,7 @@ impl DpController {
             // 模拟DPCD数据
             data[0] = 0x12; // DPCD rev 1.2
             data[1] = LinkRate::Hbr2 as u8; // 5.4 Gbps
-            data[2] = 0x84; // 4 lanes, enhanced frame
+            data[2] = 0x84; // 4 通道 (lanes), 增强帧模式 (enhanced frame)
             data[3] = 0x01; // downspread supported
             data[4] = 0x00;
             data[5] = 0x01; // 1 sink
@@ -1300,7 +1300,7 @@ mod tests {
         let data = [
             0x12, // rev 1.2
             0x14, // HBR2 (5.4 Gbps)
-            0x84, // 4 lanes, enhanced frame
+            0x84, // 4 通道 (lanes), 增强帧模式 (enhanced frame)
             0x01, // downspread
             0x00, 0x01, // 1 sink
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

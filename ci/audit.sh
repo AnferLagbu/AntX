@@ -57,13 +57,12 @@ fi
 
 # framework 全量 SAFETY 注释覆盖审计
 # quick 模式也会跑 (核心 fail-fast 门禁, 不需要 Lockbud/Miri 等重工具)
-# B01-16 修复 + B01-15 工具精度已知限制:
-# 工具经 B01-15 修复后仍有少量边缘情况无法识别 (FFI / 汇编 / 硬件上下文).
-# 当前基线 = 127 (经 100 行深度扫描验证为误报, 详见 audit-fix-01 §B01-15).
-# 未来持续降低此阈值是 TCB 治理目标.
-EXPECTED_MAX_SAFETY_MISSING=127
+# B01-27 修复: audit_unsafe.py 窗口逻辑缺陷 (属性闭合行/多行属性误报) 已修复,
+# 原 127 处"缺失"中 108 处实为工具误报 (已有 SAFETY 注释但未识别),
+# 真实缺失 20 处已全部补齐, 基线归零 (0 容忍, 任何缺失即 CI 失败).
+EXPECTED_MAX_SAFETY_MISSING=0
 if command -v python3 >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/tools/audit_unsafe.py" ]; then
-    step "0.5/6 Framework SAFETY 注释全量审计 (B01-15 工具修复, 基线 ≤${EXPECTED_MAX_SAFETY_MISSING})"
+    step "0.5/6 Framework SAFETY 注释全量审计 (B01-27 工具修复, 基线 ≤${EXPECTED_MAX_SAFETY_MISSING})"
     AUDIT_RESULT=$("$PROJECT_ROOT/tools/audit_unsafe.py" --summary 2>&1 || true)
     echo "$AUDIT_RESULT" | tail -25
     MISSING=$(echo "$AUDIT_RESULT" | grep -E "缺 SAFETY:" | head -1 | awk '{print $NF}')
@@ -143,12 +142,20 @@ popd > /dev/null
 step "2/6 Clippy pedantic (x86_64, lib only)"
 pushd src/rust > /dev/null
 unset RUSTC_WRAPPER
-# 仅审计 lib (kernel 源码), 跳过 build script (编译期脚本, 非 TCB)
+# B01-28 修复: clippy 命令与 CI (ci-x86.yml clippy-pedantic job) 对齐:
+#   + --release: dev 模式会编译诊断代码 (nvme similar_names 假阳性等), 与 CI 一致用 release
+#   + -A cast_* 四个豁免: DECISION-041 (内核刻意窄化, 显式收窄), CI 亦豁免
+#   + 去掉 -W clippy::cargo: 依赖多版本 bitflags 会误报, CI 未启用
+#   + -D warnings 保留更强门禁 (任何 warning 阻断, 见 B01-16)
 # B01-16 修复: 加 -D warnings 让任何 warning 阻断 CI, 失败走 err 而非仅警告.
 # 原代码 `if cmd | tail; then ok; else warn; fi` 中 `tail` 退出 0 总是成功,
 # 即使 cargo clippy 失败也被掩盖 (P0-05 类问题).
-if cargo +nightly clippy --lib --target x86_64-unknown-none \
-    -- -D warnings -W clippy::pedantic -W clippy::cargo 2>&1 | tail -10; then
+if cargo +nightly clippy --release --lib --bins --examples --target x86_64-unknown-none \
+    -- -D warnings -D clippy::pedantic \
+    -A clippy::cast_possible_truncation \
+    -A clippy::cast_sign_loss \
+    -A clippy::cast_possible_wrap \
+    -A clippy::cast_precision_loss 2>&1 | tail -10; then
     CLIPPY_RC=${PIPESTATUS[0]}
     if [ "$CLIPPY_RC" -eq 0 ]; then
         ok "clippy pedantic (lib): passed"

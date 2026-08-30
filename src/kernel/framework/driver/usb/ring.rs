@@ -141,7 +141,7 @@ impl CommandRing {
             parameter: ring_base,
             status: 0,
             control: (TrbType::Link as u32) << 10
-                | LINK_TRB_TOGGLE_BIT // toggle cycle on link
+                | LINK_TRB_TOGGLE_BIT // 翻转 Link TRB 的 cycle 位
                 | if self.cycle { TRB_CYCLE_BIT } else { 0 },
         };
         // 最后一项是 Link TRB

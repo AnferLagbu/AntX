@@ -100,6 +100,10 @@ pub static NET_STATE: Mutex<NetState> = Mutex::new(NetState::new());
 // 辅助函数
 // ============================================================================
 
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "missing_errors_doc: transition_state 返回 Result<(), ()>; Err 仅表示状态转换被拒绝 (compare_exchange 竞争或非法迁移), 非结构化错误, 语义由调用方按 InitState 自行判定, 当前优先 expect 兑底"
+)]
 pub fn transition_state(from: InitState, to: InitState) -> Result<(), ()> {
     match G_INIT_STATE.compare_exchange(from as u8, to as u8, Ordering::AcqRel, Ordering::Relaxed) {
         Ok(_) => Ok(()),

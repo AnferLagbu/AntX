@@ -713,6 +713,7 @@ impl SchedulerEx {
                 let canary_addr = ks + super::types::KERNEL_STACK_SIZE as u64 - 8;
                 let canary = unsafe { *(canary_addr as *const u64) };
                 if canary != 0xDEADBEEF_CAFEBABE_u64 {
+                    // SAFETY: klog_ffi_info 是 framework 提供的 C ABI 日志接口
                     unsafe extern "C" {
                         fn klog_ffi_info(msg: *const u8);
                     }

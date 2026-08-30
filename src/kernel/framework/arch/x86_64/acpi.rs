@@ -565,7 +565,7 @@ struct Fadt {
     _reserved2: u8,
     flags: u32,
     // ACPI 2.0+ 扩展字段
-    reset_reg: [u8; 12], // Generic Address Structure
+    reset_reg: [u8; 12], // 通用地址结构 (Generic Address Structure)
     reset_value: u8,
     _reserved3: [u8; 3],
     x_firmware_ctrl: u64,
@@ -715,7 +715,7 @@ struct HpetTable {
     _counter_size: u8,
     _reserved1: u8,
     _pci_vendor_id: u16,
-    address: [u8; 12], // Generic Address Structure
+    address: [u8; 12], // 通用地址结构 (Generic Address Structure)
     hpet_number: u8,
     _min_tick: u16,
     _page_protection: u8,

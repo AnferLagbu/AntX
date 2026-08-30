@@ -95,6 +95,10 @@ unsafe fn pi_mutex_exit_dispatch(ptr: usize, pid: u32) -> bool {
 
 /// 登记持有关系 (lock 成功时调用): 记录 (自身地址, 类型擦除 dispatch) 到当前 pid。
 fn track_hold<T: ?Sized>(lock: &PiMutex<T>, pid: u32) {
+    #[expect(
+        clippy::ref_as_ptr,
+        reason = "ref_as_ptr: ?Sized 宽指针需先转瘦指针取数据地址再转 usize 作登记键, 语义已知安全"
+    )]
     let entry = HeldLock {
         // ?Sized 时为宽指针, 先转瘦指针取数据地址再转 usize
         ptr: lock as *const PiMutex<T> as *const u8 as usize,

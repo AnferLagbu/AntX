@@ -418,8 +418,8 @@ struct QueueDma {
 
 /// `NVMe` 控制器驱动
 pub struct NvmeController {
-    mmio_phys: u64,       // PCI BAR0 physical address (for external use)
-    iomem: Option<IoMem>, // MMIO region handle (safe access proxy)
+    mmio_phys: u64,       // PCI BAR0 物理地址 (供外部使用)
+    iomem: Option<IoMem>, // MMIO 区域句柄 (安全访问代理)
     db_stride: u32,       // 门铃步长
 
     /// B04-02 MSI-X 启用状态: Some(vector) 表示已通过 MSI-X 启用中断,
@@ -615,6 +615,8 @@ impl NvmeController {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::similar_names, reason="sqid/sqhd 为 NVMe 队列字段缩写, 语义不同")]
+    #[expect(clippy::ref_as_ptr, reason="cmd 为引用, 取其裸指针地址用于诊断读取")]
     unsafe fn submit_admin_command(&mut self, cmd: &NvmeCommand) -> Result<NvmeCompletion> {
         unsafe {
             // 调试断言: 验证队列类型正确
@@ -743,7 +745,7 @@ impl NvmeController {
         // 初始化 IoMem
         let iomem = IoMem::from_pci_bar(
             PhysAddr(self.mmio_phys),
-            8192, // NVMe BAR0 is typically 8KB+
+            8192, // NVMe BAR0 通常为 8KB+
             "nvme-bar0",
         )
         .map_err(|_| DriverError::HardwareError)?;
@@ -995,6 +997,7 @@ impl NvmeController {
     // SAFETY: 调用方保证指针/类型有效 (详见上下文)
     // 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
     #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::similar_names, reason="sqid/sqhd 为 NVMe 队列字段缩写, 语义不同")]
     unsafe fn submit_io_command(&mut self, cmd: &NvmeCommand) -> Result<()> {
         unsafe {
             // 调试断言: 验证队列类型正确
@@ -1074,6 +1077,8 @@ impl NvmeController {
         unsafe { self.submit_io_command_isr(cmd) }
     }
 
+    // SAFETY: 与 submit_io_command_isr_pub 的 # Safety 契约一致: cmd 引用有效
+    // NvmeCommand, 调用时 IF=1 (中断开启), 对应 I/O CQ 已在 MSI-X Table 配置.
     unsafe fn submit_io_command_isr(&mut self, cmd: &NvmeCommand) -> Result<()> {
         unsafe {
             if !self.initialized {
@@ -1112,7 +1117,8 @@ impl NvmeController {
                     );
                     return Err(DriverError::Timeout);
                 }
-                core::arch::asm!("hlt", options(nomem, nostack));
+                // 等待 MSI-X 中断唤醒; halt 经 arch 抽象 (双架构可用, 无需裸 asm)
+                crate::kernel::framework::cpu::arch::halt();
             }
         }
     }
@@ -1502,6 +1508,8 @@ impl NvmeController {
     ///
     /// # Errors
     /// 超时 (ISR 未处理完成) 或队列未初始化时返回 Err。
+    // SAFETY: cmd 引用有效 NvmeCommand; 调用时 IF=1 (中断开启), MSI-X 已注册,
+    // admin CQ 在 MSI-X Table 中配置有效 entry.
     unsafe fn submit_admin_command_isr(&mut self, cmd: &NvmeCommand) -> Result<()> {
         unsafe {
             if !self.initialized {
@@ -1550,8 +1558,8 @@ impl NvmeController {
                     );
                     return Err(DriverError::Timeout);
                 }
-                // SAFETY: 等待 MSI-X 中断唤醒; IF=1 时 hlt 由中断解除
-                core::arch::asm!("hlt", options(nomem, nostack));
+                // 等待 MSI-X 中断唤醒; halt 经 arch 抽象 (双架构可用, 无需裸 asm)
+                crate::kernel::framework::cpu::arch::halt();
             }
         }
     }

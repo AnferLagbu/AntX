@@ -187,7 +187,7 @@ pub const KERNEL_TEXT_BASE: u64 = 0x40080000;
 pub const PAGE_PRESENT: u64 = 1 << 0;
 pub const PAGE_WRITABLE: u64 = 1 << 1;
 pub const PAGE_USER: u64 = 1 << 2;
-pub const PAGE_HUGE: u64 = 1 << 7; // Huge page flag
+pub const PAGE_HUGE: u64 = 1 << 7; // 大页标志 (huge page)
 pub const PAGE_NX: u64 = 1u64 << 63;
 
 /// 页表索引辅助宏

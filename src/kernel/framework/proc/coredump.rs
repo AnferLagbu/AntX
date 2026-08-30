@@ -204,7 +204,7 @@ fn note_size(namesz: u32, descsz: u32) -> u64 {
 struct CoreSegment {
     start: u64,
     end: u64,
-    flags: u32,     // PF_R | PF_W | PF_X
+    flags: u32,     // 权限标志: PF_R | PF_W | PF_X
     file_size: u64, // 实际写入大小 (可能截断)
 }
 

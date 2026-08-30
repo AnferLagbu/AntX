@@ -4,7 +4,7 @@
 //! 与其他启动参数.
 //!
 //! P2.D + F-15 (B02-22): 实际引导路径是 Multiboot2 (boot.asm `.multiboot2`
-//! section + stage1.asm 16-bit MBR + QEMU `-kernel`).
+//! 段 + stage1.asm 16 位 MBR + QEMU `-kernel` 参数).
 //! Multiboot1 解析代码仅作为兼容层 (boot.asm `.multiboot1` section 让
 //! 老式 GRUB 仍可引导). boot/mod.rs 头注释原"Multiboot1 与 Multiboot2"
 //! 描述未与代码现状对齐. 现状代码保留, 仅调整注释表述.

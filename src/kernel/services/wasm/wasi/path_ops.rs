@@ -52,7 +52,7 @@ fn resolve_path(ctx: &WasiContext, dirfd: u32, path: &str) -> Result<String, Was
 
 /// WASI `o_flags` → VFS flags 映射
 fn wasi_o_flags_to_vfs(o_flags: u32) -> u32 {
-    let mut flags = o_flags & 0x03; // O_RDONLY/WRONLY/RDWR
+    let mut flags = o_flags & 0x03; // 低 2 位: O_RDONLY/O_WRONLY/O_RDWR
     if o_flags & 0x100 != 0 {
         flags |= 0x100;
     } // O_CREAT

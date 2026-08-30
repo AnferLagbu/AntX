@@ -220,7 +220,7 @@ pub struct DomainFailureRecord {
     pub total_failures: AtomicU64,
     pub last_failure_tick: AtomicU64,
     pub downgraded: AtomicU32,
-    pub current_tier: AtomicU32, // 0=full, 1=reduced, 2=quarantine
+    pub current_tier: AtomicU32, // 0=正常, 1=降级, 2=隔离
 }
 
 impl DomainFailureRecord {

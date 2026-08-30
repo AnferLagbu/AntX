@@ -530,7 +530,7 @@ pub(super) unsafe fn map_text_region_in_user_pml4(
         clippy::items_after_statements,
         reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
     )]
-    const FLAGS: u64 = 0x1; // PRESENT only (SMEP-safe)
+    const FLAGS: u64 = 0x1; // 仅 PRESENT 位 (SMEP 安全)
 
     // SAFETY: 调用方保证 user_pml4 有效; text_start/text_end 是合法地址范围;
     // boot 阶段单线程执行, 无并发修改页表. PMM 分配的页已对齐且属于内核.

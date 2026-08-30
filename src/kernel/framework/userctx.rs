@@ -74,7 +74,7 @@ pub struct UserContext {
     pub x17: u64,
     pub x18: u64,
     pub elr_el1: u64,  // exception link register (返回地址)
-    pub spsr_el1: u64, // saved program status register
+    pub spsr_el1: u64, // 已保存的程序状态寄存器 (SPSR)
     pub sp_el0: u64,   // user stack pointer
 }
 

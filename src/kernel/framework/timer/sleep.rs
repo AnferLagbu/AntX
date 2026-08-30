@@ -253,6 +253,7 @@ fn timer_sleep_yield(ms: u64) -> Result<(), i32> {
             clippy::items_after_statements,
             reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
         )]
+        // SAFETY: scheduler_yield_ex 由框架调度器提供, 进程上下文安全调用
         unsafe extern "C" {
             fn scheduler_yield_ex();
         }
@@ -298,6 +299,7 @@ where
         while !condition() {
             // SAFETY: 调用方保证指针/类型有效 (详见上下文)
             unsafe {
+                // SAFETY: scheduler_yield_ex 由框架调度器提供, 进程上下文安全调用
                 unsafe extern "C" {
                     fn scheduler_yield_ex();
                 }
@@ -323,6 +325,7 @@ where
 
         // SAFETY: 调用方保证指针/类型有效 (详见上下文)
         unsafe {
+            // SAFETY: scheduler_yield_ex 由框架调度器提供, 进程上下文安全调用
             unsafe extern "C" {
                 fn scheduler_yield_ex();
             }

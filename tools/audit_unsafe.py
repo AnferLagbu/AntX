@@ -75,6 +75,10 @@ def is_comment_line(stripped: str) -> bool:
 SAFETY_BLOCK_RE = re.compile(r"(?:SAFETY|Safety)(?:\s+(?:rationale|note|comment|注释|说明|解释))?\s*[:：]")
 SAFETY_SECTION_RE = re.compile(r"#\s*(?:SAFETY|Safety)(?:\s|$)")
 
+# 属性块闭合行: 整行仅由右括号组成 (如 `)]` / `],`), 是多行 `#[expect(...)]` 的收尾.
+# 排除 `}` 与普通代码, 避免误判闭包/块结束.
+ATTR_CLOSE_RE = re.compile(r"^[\)\]]+[,;]?$")
+
 
 def _scan_safety_window(lines: List[str], start_idx: int, max_lookback: int) -> tuple[bool, str]:
     """从 start_idx (0-indexed) 向上扫描 max_lookback 行, 找 SAFETY 命中.
@@ -84,9 +88,13 @@ def _scan_safety_window(lines: List[str], start_idx: int, max_lookback: int) -> 
       - 属性块 `#[...]` (单行 / 多行)
       - 纯注释行 `//` `///` `*` `/*`
 
-    算法: 仅用 "属性块跨行" 的二元状态跟踪. 进入 `#[` 时 set in_attr=True,
-    遇到 `])`/`)]`/`]`/`)` 或单行 `#[..)]` 时 set in_attr=False.
-    仅基于行级模式匹配, 不计算括号平衡 (避免误判字符串/字符字面量).
+    算法 (B01-27 修复): 属性块跨行识别改为「闭合行 → 内容 → 开始行」三段状态机,
+    与 Rust 属性实际排版 (结束行在最靠近代码处) 一致:
+      - 向上先遇闭合行 (整行为 `)]` 等) → 进入 in_attr 状态
+      - 属性内容行 (含字符串内 `)`/`]`) 一律跳过, 不再用含 `)` 提前退出
+      - 遇 `#[` 开始行 → 离开属性块, 恢复常规扫描
+    修复前缺陷: ① 闭合行 `)]` 被误判为"非注释代码"直接终止扫描;
+    ② 属性内容行含 `)` 误判属性结束, 吞掉其后真正的 SAFETY 注释.
     """
     in_attr = False
     end_idx = max(-1, start_idx - max_lookback - 1)
@@ -102,19 +110,17 @@ def _scan_safety_window(lines: List[str], start_idx: int, max_lookback: int) -> 
             return True, line.rstrip()
         if SAFETY_SECTION_RE.search(line):
             return True, line.rstrip()
-        # 在属性块内, 跳过所有非 SAFETY 行
+        # 属性块内部: 向上找开始行 `#[`
         if in_attr:
-            # 退出条件: 含 ] 或 ) 表示属性块结束
-            if ']' in s or ')' in s:
+            if s.startswith("#["):
                 in_attr = False
             continue
-        # 进入多行属性块: `#[` 开始 (不以 `]`/`)` 结尾的)
-        if s.startswith("#["):
-            # 单行属性 #[..)] 或 #[..]]: 一行结束
-            if s.endswith(")") or s.endswith("]"):
-                continue
-            # 多行属性: 跳过, 进入 in_attr 状态
+        # 属性块闭合行 (如 `)]`): 进入属性块状态
+        if ATTR_CLOSE_RE.match(s):
             in_attr = True
+            continue
+        # 属性开始行: 单行 `#[..]` 与多行 `#[..` 均跳过 (多行开始行只会在 in_attr 内出现)
+        if s.startswith("#["):
             continue
         # 纯注释行
         if s.startswith("//") or s.startswith("///") or s.startswith("*") or s.startswith("/*"):

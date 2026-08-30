@@ -506,13 +506,13 @@ fn endpoint_to_sockaddr(ep: NetEndpoint) -> ([u8; 28], u32) {
     match ep.addr {
         IpAddr::V4(v4) => {
             buf[0..2].copy_from_slice(&2u16.to_le_bytes()); // AF_INET = 2
-            buf[2..4].copy_from_slice(&ep.port.to_be_bytes()); // port in network byte order
+            buf[2..4].copy_from_slice(&ep.port.to_be_bytes()); // 端口按网络字节序
             buf[4..8].copy_from_slice(&v4.octets());
             (buf, 16)
         }
         IpAddr::V6(v6) => {
             buf[0..2].copy_from_slice(&10u16.to_le_bytes()); // AF_INET6 = 10
-            buf[2..4].copy_from_slice(&ep.port.to_be_bytes()); // port in network byte order
+            buf[2..4].copy_from_slice(&ep.port.to_be_bytes()); // 端口按网络字节序
             buf[4..20].copy_from_slice(&v6.octets());
             (buf, 28)
         }

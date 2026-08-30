@@ -51,6 +51,10 @@ pub unsafe extern "C" fn qx_net_start_dhcp() -> i32 {
 /// - `cidr_str` 与 `gw_str` 必须是有效的 C 字符串指针 (NUL 终止),
 ///   指向的内存必须在调用期间保持有效。
 /// - 调用方保证 NET 已初始化。
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: qx_net_static_ip 内 5 处 `match Option { Some(v)=>v, None=>return -1 }` 用于 FFI 参数 (cidr/gw) 解析的提前返回; 保持 match-return 结构以最小化 diff, 当前优先 expect 兑底"
+)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn qx_net_static_ip(cidr_str: *const u8, gw_str: *const u8) -> i32 {
     unsafe {

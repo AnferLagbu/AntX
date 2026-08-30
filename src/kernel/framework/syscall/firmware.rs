@@ -45,6 +45,7 @@ unsafe fn copy_user_bytes(ptr: u64, len: usize) -> Option<Vec<u8>> {
 }
 
 /// 从用户态写入字节切片
+// SAFETY: ptr 已由调用方/check_user_buf 校验为合法用户缓冲区; syscall 期间用户内存有效.
 unsafe fn write_user_bytes(ptr: u64, data: &[u8]) -> bool {
     if data.is_empty() {
         return true;

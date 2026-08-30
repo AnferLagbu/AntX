@@ -352,6 +352,7 @@ struct PerCpuGdt {
 }
 
 impl PerCpuGdt {
+    #[expect(clippy::large_stack_arrays, reason="PerCpuGdt 的 syscall/IST 栈数组布局于静态 PER_CPU_GDT, 非栈上分配")]
     const fn new() -> Self {
         Self {
             entries: [GdtEntry::null(); GDT_MAX_ENTRIES],

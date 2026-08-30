@@ -121,7 +121,7 @@ impl core::ops::BitAndAssign for VmFlags {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum VmaType {
-    Anonymous = 0,  // malloc / mmap(MAP_ANONYMOUS)
+    Anonymous = 0,  // 匿名映射 (malloc / mmap(MAP_ANONYMOUS))
     FileBacked = 1, // mmap file
     Stack = 2,      // 用户栈 (向下增长)
     Heap = 3,       // 堆 (brk/sbrk)

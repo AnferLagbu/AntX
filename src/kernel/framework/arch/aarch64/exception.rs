@@ -538,6 +538,7 @@ pub extern "C" fn irq_handler_el0(_frame: &ExceptionFrame) {
 
         // 仅当 scheduler 已初始化时触发调度
         if crate::kernel::framework::proc::SCHEDULER_READY.load(Ordering::Acquire) {
+            // SAFETY: scheduler_tick 由框架调度器提供, 中断路径触发调度
             unsafe extern "C" {
                 fn scheduler_tick();
             }

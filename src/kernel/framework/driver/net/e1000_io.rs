@@ -316,7 +316,7 @@ impl E1000Io {
     // ── MAC 地址 ──
 
     /// 写入 MAC 地址到 RAL0/RAH0 寄存器
-    pub fn set_mac(&self, mac: &[u8; 6]) {
+    pub fn set_mac(&self, mac: [u8; 6]) {
         let ral = u32::from(mac[0])
             | (u32::from(mac[1]) << 8)
             | (u32::from(mac[2]) << 16)
@@ -476,7 +476,7 @@ impl E1000Driver {
         self.io.write32(E1000_RCTL, rctl);
 
         // MAC 地址写入 RAL0/RAH0
-        self.io.set_mac(&self.mac);
+        self.io.set_mac(self.mac);
         klog_info!(
             Net,
             "e1000: MAC={:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",

@@ -109,7 +109,7 @@ impl VirtioNet {
 
         // 读取设备版本以判断传统/现代模式
         let version = device.read32(super::VERSION);
-        let is_legacy = version == 1; // 1=transitional, 2=modern-only
+        let is_legacy = version == 1; // 1=过渡模式 (transitional), 2=仅现代模式 (modern-only)
         klog_info!(
             Driver,
             "virtio-net: version={}, {} mode",

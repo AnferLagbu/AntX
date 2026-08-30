@@ -44,6 +44,7 @@ pub(crate) mod raw {
     #[inline(always)]
     pub unsafe fn update_current_process_ptr(ptr: u64) {
         unsafe {
+            // SAFETY: update_current_process_ptr 由调度器汇编路径提供, 供中断/上下文切换调用
             unsafe extern "C" {
                 fn update_current_process_ptr(ptr: u64);
             }
@@ -698,8 +699,8 @@ impl Scheduler {
             // SAFETY: prev/next_ptr 均派生自 PROCESS_TABLE 中活动的 Process 条目;
             // 单核 + cli 排他, 详见 get_mut_unchecked 文档.
             unsafe {
-                let prev_ctx = (*prev_ctx_ptr).get_mut_unchecked() as *mut ProcessContext;
-                let next_ctx = (*next_ctx_ptr).get_mut_unchecked() as *const ProcessContext;
+                let prev_ctx = core::ptr::addr_of_mut!(*((*prev_ctx_ptr).get_mut_unchecked()));
+                let next_ctx = core::ptr::addr_of!(*((*next_ctx_ptr).get_mut_unchecked()));
                 crate::arch!(context_switch(
                     prev_ctx as *mut u8,
                     next_ctx as *const u8

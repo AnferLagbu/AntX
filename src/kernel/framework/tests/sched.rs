@@ -176,7 +176,7 @@ fn thread_state_change_count() -> TestResult {
         2,
         "after 2 transitions"
     );
-    let _ = t.set_state_safe(ThreadState::Created); // illegal, still Running→Created
+    let _ = t.set_state_safe(ThreadState::Created); // 非法转换, 仍为 Running→Created
     let _ = t.set_state_safe(ThreadState::Created); // still illegal
     assert_eq_test!(
         t.state_change_count.load(Ordering::Relaxed),

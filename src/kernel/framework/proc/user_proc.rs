@@ -1690,7 +1690,7 @@ impl UserProcManager {
             }
         }
 
-        let ptr_count = 1 + (argc + 1) + (envc + 1); // argc(1) + argv(n+1) + envp(m+1)
+        let ptr_count = 1 + (argc + 1) + (envc + 1); // 指针数: argc(1) + argv(n+1) + envp(m+1)
         let total = ptr_count * 8 + string_bytes;
         // 确保 16 字节对齐
         let total = (total + 15) & !15;

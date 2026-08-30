@@ -247,7 +247,7 @@ mod tests {
         let policy = DefaultDhcpPolicy;
         let mut cfg = NetConfig::empty();
         cfg.static_ipv4 = Some([192, 168, 1, 100]);
-        let pc = DhcpPolicyConfig::default(); // max_retries = 4, fallback = true
+        let pc = DhcpPolicyConfig::default(); // 默认配置: max_retries=4, fallback=true
         // retry_count=4 >= 4: 回退
         assert_eq!(
             policy.decide(&DhcpState::Discovering, &cfg, &pc, 4, 0, 0),

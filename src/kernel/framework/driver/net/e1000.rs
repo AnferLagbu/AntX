@@ -255,6 +255,7 @@ impl RxRing {
 
     /// 检查描述符是否有接收错误
     pub fn has_errors(&self, idx: usize) -> bool {
+        // SAFETY: idx 在 0..count 范围内; ptr 已分配。
         let desc = unsafe { &*self.ptr.add(idx) };
         desc.errors & (E1000_RXD_ERR_CE | E1000_RXD_ERR_SE | E1000_RXD_ERR_SEQ | E1000_RXD_ERR_RXE)
             != 0

@@ -332,12 +332,12 @@ impl DmaEngine {
     // =============== 缓存同步 ===============
 
     /// 为设备访问同步 (CPU → Device)
-    pub fn sync_for_device(&self, mapping: &DmaMapping, _offset: usize, _size: usize) {
+    pub fn sync_for_device(&self, mapping: &DmaMapping, offset: usize, size: usize) {
         // B04-11: 非一致性设备需要刷写 CPU 缓存. 一致性设备仅需屏障.
         if !mapping.is_coherent {
-            let addr = VirtAddr(mapping.cpu_addr.0 + _offset as u64);
+            let addr = VirtAddr(mapping.cpu_addr.0 + offset as u64);
             // offset 后的 size 区间 → 直接刷整 cache line 区间
-            self.cache_flush(addr, _size);
+            self.cache_flush(addr, size);
         }
         Self::barrier_device();
     }

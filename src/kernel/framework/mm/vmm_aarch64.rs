@@ -33,9 +33,9 @@ const DESC_TYPE_PAGE: u64 = 0b11; // 页描述符 (L3, 与 TABLE 位相同)
 
 /// 内存属性索引 (与 mmu.rs 中 MAIR_EL1 设定对应)
 const MAIR_DEVICE_nGnRnE: u64 = 0; // Device memory
-const MAIR_NORMAL_WBWA: u64 = 1; // Normal cacheable (kernel)
+const MAIR_NORMAL_WBWA: u64 = 1; // 普通可缓存内存 (内核)
 const MAIR_NORMAL_NC: u64 = 2; // Normal non-cacheable
-const MAIR_USER_NORMAL: u64 = 4; // Normal WBWA for user pages
+const MAIR_USER_NORMAL: u64 = 4; // 用户页的 Normal WBWA (回写缓存)
 
 /// 访问权限位 `[7:6]` (描述符中)
 const AP_EL1_RW: u64 = 0 << 6; // EL1 读写, EL0 不可访问

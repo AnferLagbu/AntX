@@ -656,6 +656,7 @@ impl KmemCache {
         let page_end = unsafe { page.add(SLAB_DEFAULT_SIZE) } as *mut u8;
 
         if bitmap_end > page_end {
+            // SAFETY: pmm_free_pages 由 PMM 层提供, 释放 new_slab 中分配的页
             unsafe extern "C" {
                 fn pmm_free_pages(addr: *mut u8, count: u64);
             }
@@ -700,6 +701,7 @@ impl KmemCache {
                 clippy::items_after_statements,
                 reason = "item 紧邻使用点声明以便阅读上下文; 移至 scope 顶部会割裂逻辑块, 必要时手动重构"
             )]
+            // SAFETY: pmm_free_pages 由 PMM 层提供, 释放 destroy_slab 持有的 slab 物理页
             unsafe extern "C" {
                 fn pmm_free_pages(addr: *mut u8, count: u64);
             }

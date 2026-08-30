@@ -71,6 +71,10 @@ static NVME_CONTROLLERS: Mutex<Vec<NvmeController>> = Mutex::new(Vec::new());
     clippy::unnecessary_wraps,
     reason = "DECISION-043 pedantic 兜底: aarch64 编译目标特有 lint, 当前批量 expect 兑底"
 )]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "storage_init 内唯一 panic 点为 .expect(\"NVMe controller just pushed\") 内部不变量断言 (刚 push 必然存在), 仅在内部逻辑错误时触发, 对外部调用者不可达, 故省略 # Panics 段"
+)]
 pub fn storage_init() -> framework::Result<()> {
     // Step 1: 确保 PCI 子系统已初始化
     let pci_count = crate::kernel::framework::pci::init();
@@ -193,6 +197,10 @@ pub fn storage_init() -> framework::Result<()> {
                             // MSIX-03: 一次性打印 LAPIC + MSI-X 状态 (RFLAGS / SVR / LAPIC ID /
                             // MSI-X ctrl / Table[0] entry). 是中断路径打通的关键证据.
                             {
+                                #![expect(
+                                    clippy::items_after_statements,
+                                    reason = "use 声明位于诊断块语句之后 (MSIX-03 调试段), 前移会割裂局部上下文; 以 block 内 expect 兑底"
+                                )]
                                 let mut rflags: u64 = 0;
                                 // SAFETY: 只读 RFLAGS
                                 unsafe {
@@ -208,7 +216,7 @@ pub fn storage_init() -> framework::Result<()> {
                                             dev.bus, dev.device, dev.function, co + 0x04,
                                         );
                                         let tbar = (table_info & 0x07) as usize;
-                                        let toff = (table_info & !0x07) as u64;
+                                        let toff = u64::from(table_info & !0x07);
                                         // SAFETY: te 指向设备 MSI-X Table MMIO 区域 (由 msix_enable 刚配置)
                                         let te =
                                             (dev.bars[tbar].base_addr + toff) as *const u32;
@@ -287,6 +295,10 @@ pub fn storage_init() -> framework::Result<()> {
                         // (Ok 或 Err) 反映 MSI-X 中断路径是否真正打通.
                         {
                             // 取刚 push 的控制器原始指针, 释放全局锁后供 ISR 测试使用.
+                            #[expect(
+                                clippy::ref_as_ptr,
+                                reason = "ref_as_ptr: 需取 last_mut() 引用的裸指针, 在释放全局锁后供 ISR 测试路径继续访问控制器 (单核上下文语义已知安全)"
+                            )]
                             let ctrl_ptr = {
                                 let mut cs = NVME_CONTROLLERS.lock();
                                 cs.last_mut().expect("NVMe controller just pushed")
@@ -604,6 +616,10 @@ fn register_nvme_msix_isr(irq: u8, msi_vector: u8) -> Result<(), &'static str> {
 /// 关机 — 关闭所有存储控制器
 /// # Errors
 /// 任一存储控制器关闭失败时返回 Err。
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "storage_shutdown 保持与 storage_init 一致的 framework::Result 签名 (driver 框架统一调度入口), 各控制器 shutdown 错误已用 let _ 吞掉恒返 Ok; 当前无调用点, 简化签名会破坏公共 API 一致性"
+)]
 pub fn storage_shutdown() -> framework::Result<()> {
     for ctrl in AHCI_CONTROLLERS.lock().iter_mut() {
         let _ = ctrl.shutdown();

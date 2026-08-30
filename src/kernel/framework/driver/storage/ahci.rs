@@ -74,7 +74,7 @@ const SECTOR_SIZE: usize = 512;
 // AHCI Port 寄存器布局 (AHCI Spec §3.3, port 区域 = 0x100 + n*0x80) —
 // 通过 `AhciPortRegs` repr(C) 直接访问, 不再需要 PORT_CLB / PORT_IS 等 offset 常量.
 
-const GHC_GHC: usize = 0x04; // u32: Global Host Control
+const GHC_GHC: usize = 0x04; // u32: 全局主机控制 (Global Host Control)
 const GHC_PI: usize = 0x0C; // u32: Ports Implemented
 
 // Port 区域在 ABAR 内的基址
@@ -169,8 +169,8 @@ mod pxis {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum AtaCommand {
-    ReadDma = 0x25,  // READ DMA (LBA28) — also used as READ DMA EXT (LBA48)
-    WriteDma = 0x35, // WRITE DMA (LBA28) — also used as WRITE DMA EXT (LBA48)
+    ReadDma = 0x25,  // 读 DMA (LBA28) — 也用作 READ DMA EXT (LBA48)
+    WriteDma = 0x35, // 写 DMA (LBA28) — 也用作 WRITE DMA EXT (LBA48)
     Identify = 0xEC,
     ReadFpdmaQueued = 0x60,
     WriteFpdmaQueued = 0x61,
@@ -608,7 +608,7 @@ impl AhciPort {
 
             // ── 设置命令头 ──
             let cmd_hdr = self.dma.cmd_list_virt.0 as *mut AhciCommandHeader;
-            let flags: u32 = 5u32 // command FIS length (5 DWORDs = 20 bytes)
+            let flags: u32 = 5u32 // 命令 FIS 长度 (5 个 DWORD = 20 字节)
             | (if is_write { 1 << 6 } else { 0 }); // W bit
             (*cmd_hdr.add(slot as usize)).dw0 = flags | 1; // PRDTL = 1
             (*cmd_hdr.add(slot as usize)).prdtl = 0u32;
@@ -757,7 +757,7 @@ unsafe impl Sync for AhciController {}
 
 pub struct AhciController {
     mmio_phys: u64,       // PCI BAR physical address (for external use)
-    iomem: Option<IoMem>, // MMIO region handle (safe access proxy)
+    iomem: Option<IoMem>, // MMIO 区域句柄 (安全访问代理)
     ports: Vec<AhciPort>,
     port_bitmap: u32,
     // I-49: 设备元数据 (驱动名/类型), 供 hotplug/procfs 导出.

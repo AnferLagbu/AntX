@@ -213,6 +213,10 @@ pub fn msgq_recv_safe(
     clippy::manual_let_else,
     reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
 )]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "missing_panics_doc: msgq_destroy_safe 释放消息链表时若 head 指针本应非空却为 null 会 panic (链表不变量被破坏, 见函数内 expect)"
+)]
 /// 销毁消息队列 (策略: 释放所有消息 + 清理结构体)
 ///
 /// # Errors

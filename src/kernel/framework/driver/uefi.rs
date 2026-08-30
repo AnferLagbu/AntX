@@ -58,7 +58,7 @@ pub struct EfiTime {
     pub second: u8,
     pub nanosecond: u32,
     pub timezone: i16, // 0=UTC, -2047=未指定
-    pub daylight: u8,  // bit0=ADJUST, bit1=DST
+    pub daylight: u8,  // bit0=ADJUST (调整), bit1=DST (夏令时)
 }
 
 impl EfiTime {
