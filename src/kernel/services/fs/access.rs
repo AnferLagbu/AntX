@@ -13,6 +13,7 @@
 //! - [`unlink_syscall`] 解除链接 (删除文件)
 
 use crate::kernel::framework::credo;
+use crate::kernel::framework::credo::capability::{FS_CAP_EXECUTE, FS_CAP_READ, FS_CAP_WRITE};
 use crate::kernel::framework::fs::api as fw;
 use crate::kernel::framework::syscall::Errno;
 use crate::kernel::framework::syscall::raw;
@@ -37,12 +38,14 @@ pub const X_OK: i32 = 1;
 /// access(path, mode) — 检查当前用户对路径的访问权
 ///
 /// mode 是 `R_OK/W_OK/X_OK` 的位或, `F_OK` 表示存在性检查.
-/// Framekernel 简化: PWM 即身份, 不深入 rwx 位, 仅检查存在性.
+/// 权限语义 (DECISION-077 方案 A): 复用能力制 — `R_OK/W_OK/X_OK` 映射到
+/// FS 能力域位 (`FS_CAP_READ/WRITE/EXECUTE`), 与 open/read/write 路径
+/// (ramfs/hvfs `check_permission`) 一致; `F_OK` 仅做存在性检查.
 ///
 /// # Errors
 /// 当 `path_ptr` 为空指针或不在用户可访问范围内时返回 `EFAULT`;
 /// 当 `mode` 超出合法范围 (`0..=0o7`) 时返回 `EINVAL`;
-/// 当路径不存在或无访问权限时返回 `EACCES`.
+/// 当路径不存在或进程缺少对应 FS 能力时返回 `EACCES`.
 pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
     if path_ptr == 0 {
         return Err(Errno::EFAULT);
@@ -55,6 +58,25 @@ pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
         return Err(Errno::EINVAL);
     }
     let pwm = current_pwm()?;
+    // DECISION-077 方案 A: 能力制校验 — mode 位映射到 FS 能力域位.
+    // 与 open/read/write 路径的 check_permission (ramfs/hvfs) 语义一致:
+    // R_OK→FS_CAP_READ, W_OK→FS_CAP_WRITE, X_OK→FS_CAP_EXECUTE.
+    // F_OK (mode=0) 不要求任何能力, 仅做存在性检查.
+    let mut required_caps: u64 = 0;
+    if mode & R_OK != 0 {
+        required_caps |= FS_CAP_READ;
+    }
+    if mode & W_OK != 0 {
+        required_caps |= FS_CAP_WRITE;
+    }
+    if mode & X_OK != 0 {
+        required_caps |= FS_CAP_EXECUTE;
+    }
+    if required_caps != 0
+        && !credo::api::pwm_has_capability(pwm, credo::CAP_DOMAIN_FS, required_caps)
+    {
+        return Err(Errno::EACCES);
+    }
     // 调用 vfs_stat_safe 验证存在性; 不需要 VfsStat 内容.
     let _stat = fw::vfs_stat_safe(path_ptr as *const u8, pwm).ok_or(Errno::EACCES)?;
     Ok(0)
