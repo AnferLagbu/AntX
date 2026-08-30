@@ -3,7 +3,9 @@
 //! 创建匿名内存文件，可用于 mmap 共享内存。
 //! 使用 AnonymousFs 实现真正的匿名文件 (不依赖 tmpfs)。
 
-use crate::kernel::framework::syscall::types::Errno;
+// framework::errno 中性 re-export: ('proc','syscall') 不在 ALLOWED_INTER_DEPS,
+// 直接走 services::syscall 会触发跨模块依赖违规 (见 errno.rs 头注释).
+use crate::kernel::framework::errno::Errno;
 use crate::kernel::services::fs::anonymous::ANONYMOUS_FS;
 use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
 use crate::kernel::services::fs::vfs_types::OpenFile;

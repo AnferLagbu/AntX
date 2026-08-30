@@ -86,8 +86,10 @@ FORBIDDEN_FRAMEWORK_MODULES = [
     'framework::syscall::types',
     # proc 内部 (coredump 应通过 services/proc 顶层)
     'framework::proc::coredump',
-    # mm 内部 errno (应走 services::error)
-    'framework::errno',
+    # errno 不列入禁止: framework::errno 是刻意的中性 re-export
+    # (实际定义在 services::syscall::types, 见 framework/errno.rs 头注释),
+    # 用于消除 proc/mm/fs/io 对 syscall 子系统的直接依赖.
+    # services::error::KernelError 是另一错误类型, 不能替代 Errno.
     # driver 内部 — 子模块应在 framework/driver/mod.rs 顶层 glob re-export
     'framework::driver::idt::irq_trait',
     # debug 内部 — services 应通过 services/debug 顶层
@@ -109,9 +111,9 @@ FORBIDDEN_FRAMEWORK_MODULES = [
     'framework::arch::cet_is_initialized',
     'framework::arch::cet_subsystem',
     'framework::arch::sys_cet',
-    # userctx / usermode (syscall 直接访问)
-    'framework::userctx::UserContext',
-    'framework::usermode',
+    # userctx / usermode 不列入禁止: 类型定义已于 2026-08-03 按 I3 不变式
+    # 迁回 framework (见 services/userctx.rs 头注释), 且本脚本头「公开 API」
+    # 清单已声明 services 可直接访问 — 删除陈旧黑名单条目以恢复两者一致.
 ]
 
 # services 应该通过的安全 API
