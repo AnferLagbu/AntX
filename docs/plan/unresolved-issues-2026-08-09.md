@@ -36,7 +36,8 @@
 | lint 副作用 (已修复) | 2 | — | 🔄 已修复 |
 | 迁移中子系统状态 (2026-08-31) | 7 | MIG×7 | ⚠️ 迁移中 (有意识中间态) |
 | 分册 6 调研预存问题 (2026-08-31) | 3 | B06-PRE×3 (1 安全) | ❌ 用户裁决登记待后续 |
-| **总计** | **~80 项** | — | — |
+| socket_max_sockets flaky 排查 (2026-08-31) | 1 | B06-PRE-004 | ✅ 已修复 (非内核问题) |
+| **总计** | **~81 项** | — | — |
 
 ---
 
@@ -513,6 +514,18 @@
 | **建议** | 未来移除 `open_by_handle_at` 的 LegacyInode 回退分支（file_handle.rs:187）后删除整个 LegacyInode 类型；需确认各 FS `fs_resolve_inode` 覆盖所有挂载场景 |
 | **状态** | ❌ 登记待后续（架构清理，非紧急） |
 
+### B06-PRE-004: socket_max_sockets_test flaky（已排查确认非内核问题，测试已修复）
+
+| 字段 | 数据 |
+|---|---|
+| **位置** | [host-tests/tests/socket_max_sockets_test.rs](file:///home/anfer/Code/QueenX/host-tests/tests/socket_max_sockets_test.rs) |
+| **现象** | 全量 host-tests 偶发失败（单独跑全过），高负载必现趋势 |
+| **根因** | 测试自身 8 个 `#[test]` 共享同一 `static G_MAX_SOCKETS: AtomicUsize`（测试内镜像变量），Rust 测试默认并行执行导致测试间互相覆盖 |
+| **内核侧排查** | ✅ **无真实缺陷**——(1) 内核 [sockets.rs:38](file:///home/anfer/Code/QueenX/src/kernel/framework/net/init/sockets.rs#L38) 的 G_MAX_SOCKETS 是 `AtomicUsize`（非 static mut），store/load 用 AcqRel/Acquire，无数据竞争；(2) [sm_fi.rs:270-277](file:///home/anfer/Code/QueenX/src/kernel/framework/net/init/sm_fi.rs#L270-L277) 的活动计数 + 上限检查在 `NET_STATE.lock()` 临界区内，无 TOCTOU；(3) `set_max_sockets` 当前无任何调用方，运行时并发写路径不存在 |
+| **修复** | 删除共享 static，辅助函数参数化接收 `&AtomicUsize`，每测试独立实例（commit 28fd91d0） |
+| **启示** | host-tests 镜像测试"复刻逻辑但不复刻锁/原子性"，镜像测试 flaky 优先怀疑"镜像丢了并发保护"而非内核缺陷 |
+| **状态** | ✅ 已修复 (2026-08-31, commit 28fd91d0) |
+
 ---
 
 ## 📋 文档状态不一致清单 (跨文档矛盾专项)
@@ -573,6 +586,9 @@
 
 ## 变更历史
 
+- **2026-08-31**: 新增 B06-PRE-004（socket_max_sockets flaky 排查）
+  - 根因确认为测试自身共享镜像 static（非内核缺陷），内核侧 AtomicUsize + NET_LOCK 临界区均安全
+  - 测试已修复（commit 28fd91d0）；总览计数 ~80 → ~81
 - **2026-08-31**: 新增第 9 类"分册 6 调研预存问题"3 项（B06-PRE-001/002/003）
   - 用户裁决 3A：tmpfs `<256` 硬编码 / fchown 缺权限校验（安全缺陷，建议 P1）/ LegacyInode 删除时机，统一登记待后续处理
   - 总览计数 ~77 → ~80
