@@ -6,10 +6,14 @@
 //   2. UnixSocketError 字段数 ≤ 2 (现 = 2 字段: PathNotFound + Kernel)
 //   3. KernelError 单一来源, 共享错误 (BadFd / WouldBlock 等) 跨 2 个枚举映射一致
 //   4. From<fw::UdsError> 单一映射, 9 个变体全数下沉
+//
+// B09-12/DECISION-H13 P0-2 更新: KernelError 定义已迁回 framework/error.rs,
+// services/error.rs 改为 re-export. 静态断言指向 framework/error.rs.
 
 use std::fs;
 
 const SERVICES_ERROR: &str = "../src/kernel/services/error.rs";
+const FRAMEWORK_ERROR: &str = "../src/kernel/framework/error.rs";
 const NET_SOCKET: &str = "../src/kernel/services/net/socket.rs";
 const NET_UNIX: &str = "../src/kernel/services/net/unix.rs";
 
@@ -41,10 +45,18 @@ fn variant_count(enum_body: &str) -> usize {
 
 #[test]
 fn test_kernel_error_module_exists() {
-    let src = read(SERVICES_ERROR);
-    assert!(src.contains("pub enum KernelError"), "必须定义 KernelError");
-    assert!(src.contains("pub const fn from_i32"), "必须有 POSIX errno 映射");
-    assert!(src.contains("pub const fn as_errno"), "必须有反向 errno 映射");
+    // B09-12 P0-2: KernelError 定义在 framework/error.rs, services/error.rs re-export
+    let fw = read(FRAMEWORK_ERROR);
+    assert!(fw.contains("pub enum KernelError"), "framework/error.rs 必须定义 KernelError");
+    assert!(fw.contains("pub const fn from_i32"), "必须有 POSIX errno 映射");
+    assert!(fw.contains("pub const fn as_errno"), "必须有反向 errno 映射");
+    // services/error.rs 必须是 re-export 壳 (单向依赖)
+    let svc = read(SERVICES_ERROR);
+    assert!(
+        svc.contains("pub use crate::kernel::framework::error::KernelError"),
+        "services/error.rs 必须 re-export framework KernelError"
+    );
+    assert!(!svc.contains("pub enum KernelError"), "services/error.rs 不应再定义 KernelError");
 }
 
 #[test]
@@ -80,7 +92,7 @@ fn test_unix_socket_error_has_at_most_2_variants() {
 
 #[test]
 fn test_kernel_error_posix_round_trip() {
-    let src = read(SERVICES_ERROR);
+    let src = read(FRAMEWORK_ERROR);
     // 验证关键共享 errno 都已映射: 1, 9, 11, 12, 14, 22, 95, 97, 98, 99, 104, 107, 111
     for raw in [1, 9, 11, 12, 14, 22, 95, 97, 98, 99, 104, 107, 111] {
         let needle = format!("{} => Self::", raw);

@@ -14,7 +14,9 @@ use std::fs;
 use std::path::Path;
 
 const SIGNAL_RS: &str = "src/kernel/services/proc/signal.rs";
-const ERROR_RS: &str = "src/kernel/services/error.rs";
+// B09-12/DECISION-H13 P0-2: KernelError 定义迁回 framework/error.rs, services 侧 re-export.
+// 静态断言指向 framework/error.rs (变体/映射定义所在).
+const FRAMEWORK_ERROR_RS: &str = "src/kernel/framework/error.rs";
 
 fn read(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path);
@@ -64,7 +66,8 @@ fn four_signal_error_usages_under_kernel_error() {
 
 #[test]
 fn kernel_error_exposes_no_such_process() {
-    let src = read(ERROR_RS);
+    // B09-12 P0-2: KernelError 定义在 framework/error.rs
+    let src = read(FRAMEWORK_ERROR_RS);
     assert!(
         src.contains("NoSuchProcess"),
         "KernelError 必须暴露 NoSuchProcess 变体 (ESRCH=3) 供 SignalError::NoSuchProcess 复用"

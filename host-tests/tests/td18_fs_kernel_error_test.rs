@@ -20,7 +20,9 @@ use std::fs;
 use std::path::Path;
 
 const RAMFS_RS: &str = "src/kernel/services/fs/ramfs.rs";
-const ERROR_RS: &str = "src/kernel/services/error.rs";
+// B09-12/DECISION-H13 P0-2: KernelError 定义迁回 framework/error.rs, services 侧 re-export.
+// 静态断言指向 framework/error.rs (变体/映射定义所在).
+const ERROR_RS: &str = "src/kernel/framework/error.rs";
 
 fn read(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(path);

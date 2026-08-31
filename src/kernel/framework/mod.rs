@@ -127,6 +127,9 @@ pub mod racy_cell;
 /// POSIX Errno 统一入口 (消除子系统对 syscall 的 Errno 依赖)
 pub mod errno;
 
+/// 全内核统一错误类型 (KernelError, B09-12 P0-2 迁回 framework)
+pub mod error;
+
 /// fd 关闭通知接口 (消除 fs 对 syscall::epoll 的直接依赖)
 pub mod fd_notify;
 
