@@ -13,10 +13,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const MAX_SOCKETS: usize = 256;
 const DEFAULT_MAX_SOCKETS: usize = 1024;
 
-static G_MAX_SOCKETS: AtomicUsize = AtomicUsize::new(0);
+// 注意: 本测试不使用共享 static G_MAX_SOCKETS — 各 #[test] 默认并行执行,
+// 共享可变全局状态会导致测试间互相覆盖 (flaky). 全部辅助函数参数化接收
+// `&AtomicUsize`, 每个测试函数内局部声明独立实例.
 
 /// 镜像内核 `configure_max_sockets` 行为
-fn configure_max_sockets() {
+fn configure_max_sockets(g: &AtomicUsize) {
     let initial = if DEFAULT_MAX_SOCKETS > MAX_SOCKETS {
         MAX_SOCKETS
     } else if DEFAULT_MAX_SOCKETS == 0 {
@@ -24,11 +26,11 @@ fn configure_max_sockets() {
     } else {
         DEFAULT_MAX_SOCKETS
     };
-    G_MAX_SOCKETS.store(initial, Ordering::Release);
+    g.store(initial, Ordering::Release);
 }
 
-fn get_max_sockets() -> usize {
-    let v = G_MAX_SOCKETS.load(Ordering::Acquire);
+fn get_max_sockets(g: &AtomicUsize) -> usize {
+    let v = g.load(Ordering::Acquire);
     if v == 0 {
         1
     } else {
@@ -36,75 +38,75 @@ fn get_max_sockets() -> usize {
     }
 }
 
-fn set_max_sockets(n: usize) -> usize {
+fn set_max_sockets(g: &AtomicUsize, n: usize) -> usize {
     let target = if n == 0 {
-        return get_max_sockets();
+        return get_max_sockets(g);
     } else if n > MAX_SOCKETS {
         MAX_SOCKETS
     } else {
         n
     };
-    G_MAX_SOCKETS.store(target, Ordering::Release);
+    g.store(target, Ordering::Release);
     target
 }
 
 #[test]
 fn test_configure_clamps_to_max() {
-    // 模拟全局状态重置
-    G_MAX_SOCKETS.store(0, Ordering::Release);
-    configure_max_sockets();
+    // 每测试独立实例, 消除并行共享状态 (修复 flaky)
+    let g = AtomicUsize::new(0);
+    configure_max_sockets(&g);
     // DEFAULT 1024 > MAX 256 → 截断为 256
-    assert_eq!(get_max_sockets(), MAX_SOCKETS);
+    assert_eq!(get_max_sockets(&g), MAX_SOCKETS);
 }
 
 #[test]
 fn test_set_max_sockets_zero_rejected() {
-    G_MAX_SOCKETS.store(0, Ordering::Release);
-    configure_max_sockets();
-    let current = get_max_sockets();
+    let g = AtomicUsize::new(0);
+    configure_max_sockets(&g);
+    let current = get_max_sockets(&g);
     // 0 应被拒绝, 返回当前值
-    assert_eq!(set_max_sockets(0), current);
-    assert_eq!(get_max_sockets(), current);
+    assert_eq!(set_max_sockets(&g, 0), current);
+    assert_eq!(get_max_sockets(&g), current);
 }
 
 #[test]
 fn test_set_max_sockets_clamps_overflow() {
-    G_MAX_SOCKETS.store(0, Ordering::Release);
-    configure_max_sockets();
+    let g = AtomicUsize::new(0);
+    configure_max_sockets(&g);
     // n > MAX 应截断
-    let result = set_max_sockets(MAX_SOCKETS * 10);
+    let result = set_max_sockets(&g, MAX_SOCKETS * 10);
     assert_eq!(result, MAX_SOCKETS);
-    assert_eq!(get_max_sockets(), MAX_SOCKETS);
+    assert_eq!(get_max_sockets(&g), MAX_SOCKETS);
 }
 
 #[test]
 fn test_set_max_sockets_within_range() {
-    G_MAX_SOCKETS.store(0, Ordering::Release);
-    configure_max_sockets();
-    assert_eq!(set_max_sockets(64), 64);
-    assert_eq!(get_max_sockets(), 64);
-    assert_eq!(set_max_sockets(128), 128);
-    assert_eq!(get_max_sockets(), 128);
+    let g = AtomicUsize::new(0);
+    configure_max_sockets(&g);
+    assert_eq!(set_max_sockets(&g, 64), 64);
+    assert_eq!(get_max_sockets(&g), 64);
+    assert_eq!(set_max_sockets(&g, 128), 128);
+    assert_eq!(get_max_sockets(&g), 128);
 }
 
 #[test]
 fn test_set_max_sockets_to_one() {
-    G_MAX_SOCKETS.store(0, Ordering::Release);
-    configure_max_sockets();
+    let g = AtomicUsize::new(0);
+    configure_max_sockets(&g);
     // 边界: 1
-    assert_eq!(set_max_sockets(1), 1);
-    assert_eq!(get_max_sockets(), 1);
+    assert_eq!(set_max_sockets(&g, 1), 1);
+    assert_eq!(get_max_sockets(&g), 1);
 }
 
 #[test]
 fn test_set_max_sockets_exact_boundary() {
-    G_MAX_SOCKETS.store(0, Ordering::Release);
-    configure_max_sockets();
+    let g = AtomicUsize::new(0);
+    configure_max_sockets(&g);
     // 边界: 恰好 MAX
-    assert_eq!(set_max_sockets(MAX_SOCKETS), MAX_SOCKETS);
-    assert_eq!(get_max_sockets(), MAX_SOCKETS);
+    assert_eq!(set_max_sockets(&g, MAX_SOCKETS), MAX_SOCKETS);
+    assert_eq!(get_max_sockets(&g), MAX_SOCKETS);
     // 边界: MAX+1 → MAX
-    assert_eq!(set_max_sockets(MAX_SOCKETS + 1), MAX_SOCKETS);
+    assert_eq!(set_max_sockets(&g, MAX_SOCKETS + 1), MAX_SOCKETS);
 }
 
 #[test]
