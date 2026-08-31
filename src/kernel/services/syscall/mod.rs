@@ -147,51 +147,9 @@ pub type SyscallResult<T> = Result<T, Errno>;
 // 通用 Errno 转换
 // ============================================================================
 
-/// `Errno` 扩展: 提供 `try_from_i32` 反向查询 (Errno 没有 `std::convert::From`)
-impl Errno {
-    /// 从 i32 错误码构造 `Errno` (POSIX 反向: 整数值 = errno 编号)
-    pub fn try_from_i32(code: i32) -> Option<Self> {
-        // Errno 编号范围 1..=133 (POSIX 范围)
-        // 我们通过 #[repr(i32)] 枚举, 直接 transmute 不安全;
-        // 用 match 列举所有已知变体
-        Some(match code {
-            1 => Self::EPERM,
-            2 => Self::ENOENT,
-            3 => Self::ESRCH,
-            4 => Self::EINTR,
-            5 => Self::EIO,
-            6 => Self::ENXIO,
-            7 => Self::E2BIG,
-            8 => Self::ENOEXEC,
-            9 => Self::EBADF,
-            10 => Self::ECHILD,
-            11 => Self::EAGAIN,
-            12 => Self::ENOMEM,
-            13 => Self::EACCES,
-            14 => Self::EFAULT,
-            15 => Self::ENOTBLK,
-            16 => Self::EBUSY,
-            17 => Self::EEXIST,
-            18 => Self::EXDEV,
-            19 => Self::ENODEV,
-            20 => Self::ENOTDIR,
-            21 => Self::EISDIR,
-            22 => Self::EINVAL,
-            23 => Self::ENFILE,
-            // 大于 23 的暂不识别, 返回 None
-            _ => return None,
-        })
-    }
-}
-
-/// i64 → `Errno` (POSIX: 负数 = -errno)
-pub fn errno_from_i64(rc: i64) -> Option<Errno> {
-    if rc < 0 {
-        Errno::try_from_i32(-rc as i32)
-    } else {
-        None
-    }
-}
+// B09-12/DECISION-H13 P0-1: Errno::try_from_i32 与 errno_from_i64 已迁回
+// framework::errno (原 Errno 定义随迁), 此处 re-export 保持调用方兼容.
+pub use crate::kernel::framework::errno::errno_from_i64;
 
 /// `i64` 返回码 → `SyscallResult<u64>` (POSIX 约定)
 ///
