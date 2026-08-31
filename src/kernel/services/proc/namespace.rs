@@ -268,9 +268,18 @@ impl PidNamespace {
     }
 
     /// 在该 namespace 内分配一个 PID
+    ///
+    /// B06-23: 当前无调用者 (真实 PID 走 framework `proc_alloc_pid`, user_proc.rs:2026),
+    /// 计数漂移尚未实际触发。接入时使用方必须与 [`Self::release_pid`] 配对,
+    /// 否则 `nr_processes` 只增不减导致计数漂移。
     pub fn alloc_pid(&self) -> u32 {
         self.nr_processes.fetch_add(1, Ordering::SeqCst);
         self.next_pid.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// 进程退出时释放 PID, 与 [`Self::alloc_pid`] 配对调用 (防 `nr_processes` 计数漂移)
+    pub fn release_pid(&self) {
+        self.nr_processes.fetch_sub(1, Ordering::SeqCst);
     }
 
     /// 获取嵌套层级 (0 = 根)
@@ -378,12 +387,20 @@ impl UserNamespace {
     }
 
     /// 在该 namespace 内将 UID 映射到父 namespace
+    ///
+    /// 映射区间为 `[inner_start, inner_start + count)`, count==0 或区间溢出时返回 65534.
     pub fn map_uid(&self, inner_uid: u32) -> u32 {
         let map = self.uid_map.lock();
         match *map {
             Some((inner_start, outer_start, count)) => {
-                if inner_uid >= inner_start && inner_uid < inner_start + count {
-                    outer_start + (inner_uid - inner_start)
+                // B06-24: checked_add 防 inner_start+count 溢出回绕 (count==0 时 end=inner_start, 条件恒不满足 → 65534)
+                let Some(end) = inner_start.checked_add(count) else {
+                    return 65534;
+                };
+                if inner_uid >= inner_start && inner_uid < end {
+                    outer_start
+                        .checked_add(inner_uid - inner_start)
+                        .unwrap_or(65534)
                 } else {
                     65534
                 }
@@ -393,12 +410,20 @@ impl UserNamespace {
     }
 
     /// 在该 namespace 内将 GID 映射到父 namespace
+    ///
+    /// 映射区间为 `[inner_start, inner_start + count)`, count==0 或区间溢出时返回 65534.
     pub fn map_gid(&self, inner_gid: u32) -> u32 {
         let map = self.gid_map.lock();
         match *map {
             Some((inner_start, outer_start, count)) => {
-                if inner_gid >= inner_start && inner_gid < inner_start + count {
-                    outer_start + (inner_gid - inner_start)
+                // B06-24: checked_add 防 inner_start+count 溢出回绕 (count==0 时 end=inner_start, 条件恒不满足 → 65534)
+                let Some(end) = inner_start.checked_add(count) else {
+                    return 65534;
+                };
+                if inner_gid >= inner_start && inner_gid < end {
+                    outer_start
+                        .checked_add(inner_gid - inner_start)
+                        .unwrap_or(65534)
                 } else {
                     65534
                 }
@@ -600,6 +625,12 @@ impl NamespaceSet {
             return Err(Errno::EINVAL);
         }
 
+        // B06-22: Linux 语义 — CLONE_NEWUSER 不能与其他 CLONE_NEW* 标志同时使用 (EINVAL)
+        if new_ns_flags & CLONE_NEWUSER != 0 && new_ns_flags & (CLONE_NEW_ALL & !CLONE_NEWUSER) != 0
+        {
+            return Err(Errno::EINVAL);
+        }
+
         if new_ns_flags & CLONE_NEWUSER != 0 {
             self.user = UserNamespace::new_from(&self.user);
         }
@@ -759,7 +790,10 @@ pub fn sys_unshare(flags: u64) -> i64 {
 
 /// `sys_setns` — 切换到指定 namespace
 pub fn sys_setns(ns_type: u64, target_ns_id: u64) -> i64 {
-    let ns_t = match NsType::from_clone_flag(1 << (ns_type + 8)) {
+    // B06-18: 修正原 `1 << (ns_type + 8)` 位运算公式错误 (恒不匹配 CLONE_NEW* 导致
+    // from_clone_flag 恒 None)。现直接用 ns_type 匹配: 兼容 CLONE_NEW* 标志位
+    // (0x00020000 等) 与 QueenX 简化枚举值 (0-6) 两种语义。
+    let ns_t = match NsType::from_clone_flag(ns_type) {
         Some(t) => t,
         None => match ns_type {
             0 => NsType::Mount,
@@ -772,6 +806,12 @@ pub fn sys_setns(ns_type: u64, target_ns_id: u64) -> i64 {
             _ => return -(Errno::EINVAL as i64),
         },
     };
+
+    // B06-20: setns 切换 namespace 需 CAP_SYS_ADMIN (SYSTEM 域 0x01), 与 mount/umount2 先例一致
+    let pwm = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 0, 0x01) {
+        return -(Errno::EPERM as i64);
+    }
 
     let pid = crate::kernel::framework::proc::process_get_current_pid();
 

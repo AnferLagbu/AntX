@@ -143,6 +143,7 @@ criterion_main!(benches);
 | `td07_slab_buf_test.rs` | Slab 缓冲区 | TD-07 |
 | `td15_fd_idx_of_test.rs` | fd_alloc::idx_of 集中反查 | TD-15 |
 | `td18_fs_kernel_error_test.rs` | FS KernelError 迁移 | TD-18 |
+| `fs_permissions_regression_test.rs` | B06-02/03/07 权限与句柄回归 | B06-02/03/07 |
 
 #### 网络
 

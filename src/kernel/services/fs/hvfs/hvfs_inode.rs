@@ -87,6 +87,25 @@ impl Inode for HvfsInode {
         false
     }
 
+    // B06-08: 显式覆盖 chmod/chown (委托给底层 HvfsData, 底层支持路径级权限修改)
+    fn chmod(&self, mode: u16, pwm: u64) -> KernelResult<()> {
+        let hvfs = get_hvfs();
+        if hvfs.chmod(&self.rel_path, mode, pwm) == 0 {
+            Ok(())
+        } else {
+            Err(KernelError::PermissionDenied)
+        }
+    }
+
+    fn chown(&self, owner_pwm: u64, group_pwm: u64, pwm: u64) -> KernelResult<()> {
+        let hvfs = get_hvfs();
+        if hvfs.chown_ext(&self.rel_path, owner_pwm, group_pwm, pwm) == 0 {
+            Ok(())
+        } else {
+            Err(KernelError::PermissionDenied)
+        }
+    }
+
     fn set_times(&self, _atime: u64, _mtime: u64, _pwm: u64) -> KernelResult<()> {
         // HvFS: ZFS-like 文件系统, 时间戳由内部管理
         // TODO: 未来可接入 HvFS 时间戳更新

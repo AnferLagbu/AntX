@@ -105,7 +105,10 @@ pub fn poll_syscall(fds_ptr: u64, nfds: u32, _timeout: i32) -> i64 {
         }
         if pfd.events & POLLIN != 0 {
             let fd_table = crate::kernel::framework::fs::VFS_MANAGER.fd_table.lock();
-            if (pfd.fd as usize) < 256 && fd_table[pfd.fd as usize].used {
+            // B06-07: fd 上限用 VFS_MAX_FDS (32) 而非硬编码 256, 防止越界索引 32 长数组
+            if (pfd.fd as usize) < crate::kernel::framework::fs::VFS_MAX_FDS
+                && fd_table[pfd.fd as usize].used
+            {
                 pfd.revents |= POLLIN;
                 ready += 1;
             }
@@ -128,8 +131,15 @@ pub fn chown_syscall(path_ptr: u64, uid: u32, gid: u32) -> i64 {
     }
     let path = path_ptr as *const u8;
     let tbl = crate::kernel::framework::credo::identity::get_table();
-    let owner_pwm = tbl.find_by_uid(uid).map_or(0, |e| e.get_pwm().0);
-    let group_pwm = tbl.find_by_uid(gid).map_or(0, |e| e.get_pwm().0);
+    // B06-02: UID/GID 未注册时返回 EINVAL, 不得默认 root (原 map_or(0, ...) 存在提权漏洞)
+    let owner_pwm = match tbl.find_by_uid(uid) {
+        Some(e) => e.get_pwm().0,
+        None => return Errno::EINVAL.as_ret(),
+    };
+    let group_pwm = match tbl.find_by_uid(gid) {
+        Some(e) => e.get_pwm().0,
+        None => return Errno::EINVAL.as_ret(),
+    };
     let pwm = crate::kernel::framework::credo::pwm_get_current();
     i64::from(crate::kernel::framework::fs::vfs_chown_ext(
         path, owner_pwm, group_pwm, pwm,

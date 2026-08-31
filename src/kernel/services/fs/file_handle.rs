@@ -144,8 +144,12 @@ pub fn open_by_handle_at_syscall(
         return Err(Errno::ENOTSUP);
     }
 
-    // 权限检查: open_by_handle_at 需要 CAP_DAC_READ_SEARCH
-    // 简化: 当前允许所有已认证进程
+    // 权限检查: open_by_handle_at 按句柄绕过路径权限打开任意 inode, 属特权操作
+    // B06-03: 采用 SYSTEM 域 CAP_SYS_ADMIN (0x01), 与 mount/umount2 先例一致 (services/fs/mount.rs:52)
+    let pwm = crate::kernel::framework::credo::session::get_current_pwm();
+    if !crate::kernel::framework::credo::api::pwm_has_capability(pwm, 0, 0x01) {
+        return Err(Errno::EPERM);
+    }
 
     // 从用户空间读取句柄
     let mut handle_data = [0u8; HANDLE_SERIALIZED_SIZE];

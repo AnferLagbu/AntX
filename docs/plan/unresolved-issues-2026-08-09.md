@@ -31,10 +31,11 @@
 | 远期工程 | 6 | 远期 | ❌ 未启动 |
 | 本会话刻意维持 | 3 | 决策登记 | ⏸️ DECISION |
 | 构建/工具问题 | 3 | 工具 | ❌ 未提交 |
-| 审计基线待清零 (2026-08-23) | 2 | F2×12 + F7×67 | ❌ 无分册负责 |
+| 审计基线待清零 (2026-08-23) | 2 | F2×12 + F7×67 | 🔄 已处理 (2026-08-30) |
 | 分册 3 归档遗留 (2026-08-23) | 3 | 遗留×3 | ❌ 待下轮 |
 | lint 副作用 (已修复) | 2 | — | 🔄 已修复 |
-| **总计** | **~70 项** | — | — |
+| 迁移中子系统状态 (2026-08-31) | 7 | MIG×7 | ⚠️ 迁移中 (有意识中间态) |
+| **总计** | **~77 项** | — | — |
 
 ---
 
@@ -51,7 +52,7 @@
 | **数量** | 12 处 HIGH（黑名单补全后识别，commit 4ba454ab） |
 | **文件** | `services/debug/ebpf_verifier.rs`、`debug/mod.rs`、`io/iouring.rs`、`ipc/msgq.rs`、`mm/madvise_mlock.rs`、`proc/coredump.rs`、`proc/memfd.rs`、`proc/pidfd.rs`、`syscall/dispatch.rs`、`syscall/mod.rs` |
 | **分册覆盖核查（2026-08-23）** | 分册 03-09 无条目明确负责修复这些文件的 F2 边界违规（各分册条目只修功能/逻辑，如 B05-32 pidfd、B07-18 ebpf）；分册 09 B09-11/12/13 的"F2 治理"仅覆盖 **framework→services 反向依赖（D8）**，方向相反不覆盖本项 |
-| **建议方案** | 单独立项或并入 services 分册收尾：逐文件改走 framework 顶层 re-export 公共 API（audit_services_boundary 黑名单合规） |
+| **处理（2026-08-30）** | 🔄 已处理——5 处代理层自拦截误报经 `PROXY_ALLOWANCE` 豁免（[audit_services_boundary.py](file:///home/anfer/Code/QueenX/scripts/audit_services_boundary.py) 白名单：debug/mod.rs、ebpf_verifier.rs、ipc/msgq.rs、proc/coredump.rs）；实测 `audit_services_boundary.py` 当前 **0 违规**（黑名单补全后剩余 HIGH 均已合规或经豁免），见分册 10 B10-06 |
 | **来源** | archive/audit-fix-01 L227 + archive/audit-fix-02 L339/394 |
 
 ### BASELINE-F7-067: audit_comment_language 67 处违规（F7 中文注释强制）
@@ -62,7 +63,7 @@
 | **数量** | 67 处，涉及 34 个文件 |
 | **分布** | framework 全树英文注释（acpi/uart/gic/mmu/edid 等，见 `audit_comment_language.py` 输出） |
 | **分册覆盖核查（2026-08-23）** | 分册 03-09 无英文注释翻译条目；分册 01 声称"后续 commit 手工翻译"未落实；分册 09 仅覆盖 F1/F9/F2/D8 死代码，无 F7 条目 |
-| **建议方案** | 单独立项批量翻译（脚本列清单 → 逐文件人工翻译 → 审计 0 违规）或并入分册 09 收尾 |
+| **处理（2026-08-30）** | 🔄 已修复——按用户授权逐处中文化（34 文件，技术术语保留英文 + 中文说明），实测 `audit_comment_language.py` **0 违规**（"扫描 735 个 .rs 文件, 0 违规"），见分册 10 B10-03 |
 | **来源** | archive/audit-fix-01 L221 + archive/audit-fix-02 L342 |
 
 ---
@@ -422,6 +423,63 @@
 
 ---
 
+## 🟤 第 8 类：迁移中子系统状态（driver / chitin）
+
+> 2026-08-31 追加：记录 driver / chitin 两个"迁移中"子系统的完整状态——历史脉络、当前形态、遗留事项。
+> 触发：用户要求"记录有关迁移中的完整信息（driver 和 chitin 等）"。
+> 来源：源码头注释（services/driver/mod.rs + services/chitin/mod.rs）+ [archive/driver-service-migration.md](./archive/driver-service-migration.md) + [archive/audit-fix-04-framework-net-drivers.md](./archive/audit-fix-04-framework-net-drivers.md) B04-19/D6。
+> **关键认知**：迁移方向经历过一次反转——Phase 2.1/2.4 原方向为"framework → services"（业务逻辑迁往 services 做成 safe API）；B04 审计（2026-08-24/25）纠正为"机制留 framework + services 安全代理"（E1000 反向回迁）。因此"未迁移"≠"待迁移到 services"，多数模块的当前形态是**有意维持的中间态**。
+
+### 8.1 迁移历史脉络（三阶段）
+
+| 阶段 | 时间 | 方向 | 内容 |
+|---|---|---|---|
+| Phase 2.1 driver 迁移 | 2026-06 → 2026-07-22 | framework → services | 6/6 子系统迁移完成，统一 5 步路径（MMIO→`IoMem` / PIO→`IoPort` / DMA→`DmaStream` / IRQ→`IrqLine` / 暴露 safe API）；framework -2317 行 / -37 unsafe。见 [archive/driver-service-migration.md](./archive/driver-service-migration.md) |
+| Phase 2.4 net/chitin 迁移 | 2026-06-04 | framework → services | chitin mod + devtree + composite 迁移；net 独立迁往 services/net |
+| B04 审计反向纠正 | 2026-08-24/25 | services → framework | **B04-19**（F3 双向依赖）：E1000Driver/E1000Io 整体上移 `framework/driver/net/e1000_io.rs:364-760`，`services/driver/net/e1000.rs` 变 41 行纯 re-export shim；**D6/DECISION-062** 与 B04-09 合并理顺 framework net/driver 边界 |
+
+### 8.2 services/driver 当前状态（三种形态）
+
+| 形态 | 模块 | 位置 | 说明 |
+|---|---|---|---|
+| **A 完整安全代理**（业务逻辑在 services） | char/vga + char/serial | `services/driver/char/` | VGA 文本模式 + 16550 UART，经 IoMem + IoPort |
+| | display/ddc + hdmi + dp | `services/driver/display/` | DDC/HDMI/DP 业务逻辑（EDID 解析/时序/像素时钟），dp 已从 framework 完全迁出（framework 侧无 dp.rs） |
+| | storage/nvme + ahci | `services/driver/storage/` | 队列管理/命令提交/读写在 services，DMA 走 framework safe wrapper |
+| | virtio/transport + blk + net | `services/driver/virtio/` | VirtIO MMIO Transport + 块/网驱动 100% safe |
+| | usb/xhci | `services/driver/usb/xhci.rs` | Capability/Operational/Port/Doorbell 安全访问 |
+| | power + acpi | `services/driver/` | power：T4-4 策略主体（2026-06-16 从 framework 提取）；acpi：x86_64 安全代理（aarch64 编译为 0 内容） |
+| **B 纯 re-export shim**（逻辑上移 framework） | net/e1000 | `services/driver/net/e1000.rs` | B04-19 后 E1000Driver → `framework/driver/net/e1000_io.rs`，仅留业务常量 + 描述符 re-export |
+| | usb/enumerate + hid + ring + usb_core + mass_storage | `services/driver/usb/` | 全部 `pub use framework/driver/usb/*`（framework 侧为 0 unsafe 模块） |
+| | uefi + kexec + firmware | `services/driver/` | D5/D10/D11 安全封装 |
+| **C 桩模块** | storage/ata | `services/driver/storage/ata.rs` | 仅类型/常量，实际 ATA 逻辑保留 framework（IoPort 需 unsafe） |
+
+### 8.3 services/chitin 当前状态
+
+| 模块 | 状态 | 说明 |
+|---|---|---|
+| mod（注册表/查找/块/字符/输入 IO） | ✅ 已迁移 | `services/chitin/mod.rs`，强类型 DeviceId/Proto/DeviceState，封装 `framework::chitin` |
+| devtree | ✅ 已迁移 | `services/chitin/devtree.rs`，DevTreeNodeId 强类型 + DevTreeError |
+| composite | ✅ 已迁移 | `services/chitin/composite.rs`，仅暴露探测入口（RAID 复合设备） |
+| proto_*（proto_block/char/input/net） | ❌ 未迁移 | 协议族函数指针表（类 Linux `struct ops`），framework 内部结构 |
+| user_driver | ❌ 未迁移 | 用户态驱动接口，`framework/chitin/user_driver.rs` 已实现，services 无封装 |
+
+### 8.4 遗留事项
+
+| # | 事项 | 位置 | 建议 |
+|---|---|---|---|
+| MIG-001 | 头注释过时：services/driver/mod.rs 声称"⏳ 5/6 未迁移" + E1000 "138 行"（2026-06-04 状态表） | [services/driver/mod.rs:4-35](file:///home/anfer/Code/QueenX/src/kernel/services/driver/mod.rs#L4-L35) | 同步为实际状态：多数模块已迁（A 形态）+ B04 后 E1000 为 re-export shim（B 形态） |
+| MIG-002 | 头注释过时：services/chitin/mod.rs 声称"已完成 1/4 子系统迁移" | [services/chitin/mod.rs:4-11](file:///home/anfer/Code/QueenX/src/kernel/services/chitin/mod.rs#L4-L11) | devtree/composite 实际已迁（devtree.rs 自标 3/4、composite.rs 自标 4/4），更新为"3/5" |
+| MIG-003 | 缺 pl011（ARM 串口）安全代理 | `services/driver/char/` | char/mod.rs 头注释自标"后续添加"（Phase 2.1.5 后续） |
+| MIG-004 | 缺 proto_* + user_driver 安全代理 | `services/chitin/` | framework 已实现，services 无安全封装；若用户态驱动/协议族需开放，先评估边界 |
+| MIG-005 | 双份代码/边界未理清 | `framework/driver/storage/` ↔ `services/driver/storage/` | nvme/ahci 两边并存（framework 含 nvme_block.rs/ahci_block.rs/ata_block.rs 完整实现 + services 业务层）；需明确"机制/策略"各自归属，消除重复 |
+| | | `framework/driver/display/hdmi/` ↔ `services/driver/display/hdmi.rs` | HDMI 实现双份（framework 子目录 7 文件 vs services 业务层），边界待理清 |
+| MIG-006 | 迁移方向变化未入文档 | [archive/driver-service-migration.md](./archive/driver-service-migration.md) | 文档标记"✅ 已完成"但 B04 后方向反转（E1000 回迁 framework），需补注 B04 后的状态 |
+| MIG-007 | host-tests 无 chitin 专项集成测试 | `host-tests/tests/` | 已有 driver_display / driver_e1000_eeprom / nvme_ahci_activation / i43_block_bridge / virtio_net_arch_unify / nic_probe_arch_neutral，但 chitin 注册表/IO 无专项覆盖 |
+
+> **后续行动建议**：MIG-001/002 为纯注释同步（低风险，可随下次 driver 改动顺手修复）；MIG-003/004 属功能补齐（需按 §12.3 评估"是否需要"——若当前无调用方，登记即可不施工）；MIG-005/006/007 属架构边界治理（涉及 framework/services 归属决策，按 AGENTS.md §12.1 决策灰色地带处理，需用户裁决）。
+
+---
+
 ## 📋 文档状态不一致清单 (跨文档矛盾专项)
 
 > **本会话审计发现**: `progress-active-tasks.md` 中 B1-B6 标记 `[X]` 完成, 但 `archive/code-review-findings-2026-08-01.md` 中对应 REVIEW-FINDING 仍 `[]` 未同步. **文档漂移**.
@@ -480,6 +538,14 @@
 
 ## 变更历史
 
+- **2026-08-31**: 同步"审计基线待清零"状态（2 项已处理）
+  - BASELINE-F7-067（67 处英文注释）→ 🔄 已修复（2026-08-30 中文化清零，见分册 10 B10-03）
+  - BASELINE-F2-012（12 处 HIGH）→ 🔄 已处理（5 处 PROXY_ALLOWANCE 豁免 + 实测 boundary 0 违规，见分册 10 B10-06）
+  - 总览表对应行状态更新
+- **2026-08-31**: 新增第 8 类"迁移中子系统状态（driver / chitin）"
+  - 记录 driver / chitin 两个迁移中子系统的完整状态：三阶段历史脉络（Phase 2.1/2.4 迁出 + B04 反向纠正）、services/driver 三种形态（A 完整安全代理 / B re-export shim / C 桩）、services/chitin 5 模块状态
+  - 新增 MIG-001~007 遗留事项（头注释过时 / 缺 pl011 / 缺 proto_*+user_driver / 双份代码边界 / 迁移文档未补注 / chitin 测试缺口）
+  - 总览计数 ~70 → ~77
 - **2026-08-23**: 分册 3 归档登记
   - 新增第 0B 类"分册 3 归档遗留"3 项（COW TOCTOU / pmm-swap host-tests 缺口 / 多核 tick 测试）
   - ISSUE-TOOL-001（Makefile 跨架构清理）标记已修复（commit 3a1fba9b，戳记写入移至 arch-switch-clean 配方）

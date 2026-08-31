@@ -144,17 +144,17 @@ pub trait Inode: Send + Sync {
     /// 修改权限
     ///
     /// # Errors
-    /// 默认实现恒返回 `Ok(())`; 当无权限或底层元数据更新失败时返回 `KernelError` (具体由实现者决定).
+    /// 默认实现返回 `NotSupported` (不支持按 inode 修改权限的 FS 显式报错, 不再静默成功); 当无权限或底层元数据更新失败时返回 `KernelError` (具体由实现者决定).
     fn chmod(&self, _mode: u16, _pwm: u64) -> KernelResult<()> {
-        Ok(())
+        Err(KernelError::NotSupported)
     }
 
     /// 修改所有者
     ///
     /// # Errors
-    /// 默认实现恒返回 `Ok(())`; 当无权限或底层元数据更新失败时返回 `KernelError` (具体由实现者决定).
+    /// 默认实现返回 `NotSupported` (不支持按 inode 修改所有者的 FS 显式报错, 不再静默成功); 当无权限或底层元数据更新失败时返回 `KernelError` (具体由实现者决定).
     fn chown(&self, _owner_pwm: u64, _group_pwm: u64, _pwm: u64) -> KernelResult<()> {
-        Ok(())
+        Err(KernelError::NotSupported)
     }
 
     /// 设置文件时间戳 (atime, mtime)
@@ -192,6 +192,8 @@ use super::anonymous::ANONYMOUS_FS;
 /// 匿名文件 Inode — memfd / 无路径文件的 Inode 实现
 pub struct AnonymousInode {
     inode_id: u32,
+    /// B06-06: `u32::MAX` 为"匿名文件无挂载点"哨兵; 风险路径 (mmap) 已走 `Option<usize>`,
+    /// 本字段透传值全仓库无调用点 (见 OpenFile::mount_idx).
     mount_idx: u32,
 }
 
@@ -207,15 +209,13 @@ impl AnonymousInode {
 
 impl Inode for AnonymousInode {
     fn read(&self, offset: u64, buf: &mut [u8], _pwm: u64) -> KernelResult<usize> {
-        ANONYMOUS_FS
-            .read_at(self.inode_id, offset, buf)
-            .ok_or(KernelError::Io)
+        // B06-13: 直接透传 AnonymousFs 底层错误, 不再吞为 Io
+        ANONYMOUS_FS.read_at(self.inode_id, offset, buf)
     }
 
     fn write(&self, offset: u64, buf: &[u8], _pwm: u64) -> KernelResult<usize> {
-        ANONYMOUS_FS
-            .write_at(self.inode_id, offset, buf)
-            .ok_or(KernelError::Io)
+        // B06-13: 直接透传 AnonymousFs 底层错误, 不再吞为 Io
+        ANONYMOUS_FS.write_at(self.inode_id, offset, buf)
     }
 
     fn stat(&self, _pwm: u64) -> KernelResult<VfsStat> {
@@ -247,6 +247,8 @@ impl Inode for AnonymousInode {
     }
 
     fn is_dir(&self) -> bool {
+        // B06-14: 匿名文件恒为普通文件 — AnonymousFs::alloc_inode 仅分配 File 类型 inode (见 anonymous.rs),
+        // 故硬编码 false 是设计保证而非缺陷, 无需按类型动态判断。
         false
     }
 
@@ -376,8 +378,9 @@ impl Inode for RamFsInode {
     fn is_dir(&self) -> bool {
         use crate::kernel::framework::fs::ramfs::ramfs::RAMFS_DATA;
         let ramfs = RAMFS_DATA.lock();
-        if (self.inode_id as usize) < 256 {
-            ramfs.nodes[self.inode_id as usize].file_type == 1 // DIR
+        // B06-09: 用 RAMFS_MAX_NODES 常量替代硬编码 256, 用 VfsFileType::Dir 替代魔法数 1
+        if (self.inode_id as usize) < crate::kernel::services::fs::ramfs_core::RAMFS_MAX_NODES {
+            ramfs.nodes[self.inode_id as usize].file_type == VfsFileType::Dir.as_u8()
         } else {
             false
         }
@@ -414,12 +417,19 @@ impl Inode for RamFsInode {
 
 /// 过渡期 Inode 适配器 — 将 `FileSystem` 的 opaque handle 包装为 Inode trait
 ///
+/// **B06-12: 废弃标记** — 本类型是 Plan B 过渡产物: 原设计在 `FileSystem::fs_open`
+/// 仍返回 opaque handle 时用作适配。当前全部 8 个 FS 均已实现 `fs_resolve_inode`
+/// (返回原生 `Arc<dyn Inode>`), 本类型仅作为 `open_by_handle_at` 的防御性回退
+/// (file_handle.rs, 正常路径不会触发)。stat/chmod/chown 仍走 `rel_path` 路径级操作,
+/// 违反"Plan B Inode 不依赖路径"原则; 长期应随各 FS `fs_resolve_inode` 完善后删除。
+///
 /// 每次调用 Inode 方法时, 通过 `mount_idx` 查找 `FileSystem` trait object,
 /// 委托给对应的 `fs_*` 方法. 性能不是最优, 但保证正确性.
 pub struct LegacyInode {
     handle: u32,
     mount_idx: u32,
-    file_type: u8,
+    /// B06-15: 文件类型 (AtomicU8, stat 成功后刷新, 保证 is_dir 反映实际类型而非构造时快照)
+    file_type: core::sync::atomic::AtomicU8,
     /// 文件相对路径 (供 stat/chmod/chown 等需要路径的操作使用)
     rel_path: alloc::string::String,
 }
@@ -430,7 +440,7 @@ impl LegacyInode {
         Self {
             handle,
             mount_idx,
-            file_type,
+            file_type: core::sync::atomic::AtomicU8::new(file_type),
             rel_path: alloc::string::String::from(rel_path),
         }
     }
@@ -477,9 +487,13 @@ impl Inode for LegacyInode {
                 None
             }
         };
-        fs.map_or(Err(KernelError::NotInitialized), |f| {
+        let st = fs.map_or(Err(KernelError::NotInitialized), |f| {
             f.fs_stat(&self.rel_path, pwm)
-        })
+        })?;
+        // B06-15: stat 成功后刷新 file_type, 保证 is_dir 反映实际文件类型 (不再停留在构造时快照)
+        self.file_type
+            .store(st.file_type, core::sync::atomic::Ordering::Release);
+        Ok(st)
     }
 
     fn truncate(&self, size: u64, pwm: u64) -> KernelResult<()> {
@@ -513,7 +527,8 @@ impl Inode for LegacyInode {
     }
 
     fn is_dir(&self) -> bool {
-        self.file_type == VfsFileType::Dir.as_u8()
+        // B06-15: 读取 AtomicU8 类型 (stat 后刷新), 与 VfsFileType::Dir 比较
+        self.file_type.load(core::sync::atomic::Ordering::Acquire) == VfsFileType::Dir.as_u8()
     }
 
     fn node_id(&self) -> u32 {

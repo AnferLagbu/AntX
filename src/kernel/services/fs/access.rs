@@ -60,7 +60,7 @@ pub fn access_syscall(path_ptr: u64, mode: i32) -> Result<usize, Errno> {
     let pwm = current_pwm()?;
     // DECISION-077 方案 A: 能力制校验 — mode 位映射到 FS 能力域位.
     // 与 open/read/write 路径的 check_permission (ramfs/hvfs) 语义一致:
-    // R_OK→FS_CAP_READ, W_OK→FS_CAP_WRITE, X_OK→FS_CAP_EXECUTE.
+    // R_OK 对应 `FS_CAP_READ`, W_OK 对应 `FS_CAP_WRITE`, X_OK 对应 `FS_CAP_EXECUTE`.
     // F_OK (mode=0) 不要求任何能力, 仅做存在性检查.
     let mut required_caps: u64 = 0;
     if mode & R_OK != 0 {

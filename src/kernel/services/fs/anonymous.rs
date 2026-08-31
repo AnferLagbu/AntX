@@ -8,6 +8,8 @@
 
 use super::ramfs_core::RamFsData;
 use crate::kernel::framework::sync::IrqSpinLock;
+use crate::kernel::services::error::KernelError;
+use crate::kernel::services::fs::vfs_types::KernelResult;
 
 /// 匿名文件系统
 ///
@@ -33,26 +35,32 @@ impl AnonymousFs {
     }
 
     /// 读取 inode 数据
-    pub fn read_at(&self, node_id: u32, offset: u64, buf: &mut [u8]) -> Option<usize> {
+    ///
+    /// # Errors
+    /// 当 inode 不存在或权限不足时返回 `KernelError` (透传底层 ramfs 错误码).
+    pub fn read_at(&self, node_id: u32, offset: u64, buf: &mut [u8]) -> KernelResult<usize> {
         let mut inner = self.inner.lock();
         let mut offset = offset;
         let result = inner.read(node_id, &mut offset, buf, 0);
         if result >= 0 {
-            Some(result as usize)
+            Ok(result as usize)
         } else {
-            None
+            Err(KernelError::from_i32(result))
         }
     }
 
     /// 写入 inode 数据
-    pub fn write_at(&self, node_id: u32, offset: u64, buf: &[u8]) -> Option<usize> {
+    ///
+    /// # Errors
+    /// 当 inode 不存在或权限不足时返回 `KernelError` (透传底层 ramfs 错误码).
+    pub fn write_at(&self, node_id: u32, offset: u64, buf: &[u8]) -> KernelResult<usize> {
         let mut inner = self.inner.lock();
         let mut offset = offset;
         let result = inner.write(node_id, &mut offset, buf, 0);
         if result >= 0 {
-            Some(result as usize)
+            Ok(result as usize)
         } else {
-            None
+            Err(KernelError::from_i32(result))
         }
     }
 
