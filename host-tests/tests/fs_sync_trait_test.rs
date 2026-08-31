@@ -93,7 +93,8 @@ fn devfs_inherits_default() {
 
 #[test]
 fn vfs_sync_uses_trait_dispatch() {
-    let src = read_src("src/kernel/framework/fs/vfs/api.rs");
+    // B 方案拆分: vfs_sync 已从 api.rs 迁至 mount.rs
+    let src = read_src("src/kernel/framework/fs/vfs/mount.rs");
     let marker = "pub fn vfs_sync() -> i32 {";
     let start = src.find(marker).expect("vfs_sync not found");
     // 找下一个 pub fn 之前的范围
@@ -132,7 +133,8 @@ fn vfs_sync_uses_trait_dispatch() {
 
 #[test]
 fn vfs_sync_continues_on_error() {
-    let src = read_src("src/kernel/framework/fs/vfs/api.rs");
+    // B 方案拆分: vfs_sync 已从 api.rs 迁至 mount.rs
+    let src = read_src("src/kernel/framework/fs/vfs/mount.rs");
     let marker = "pub fn vfs_sync() -> i32 {";
     let start = src.find(marker).expect("vfs_sync not found");
     let next_fn = src[start..]
@@ -149,7 +151,8 @@ fn vfs_sync_continues_on_error() {
 
 #[test]
 fn no_naked_match_fs_type_in_vfs_sync() {
-    let src = read_src("src/kernel/framework/fs/vfs/api.rs");
+    // B 方案拆分: vfs_sync 已从 api.rs 迁至 mount.rs
+    let src = read_src("src/kernel/framework/fs/vfs/mount.rs");
     let marker = "pub fn vfs_sync() -> i32 {";
     let start = src.find(marker).expect("vfs_sync not found");
     let next_fn = src[start..]

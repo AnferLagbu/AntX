@@ -1,3 +1,4 @@
+/// B 方案拆分: 句柄操作 (open/close/read/write/...) 保留在本模块
 pub mod api;
 /// T-05: VFS 后端决策 trait
 pub mod backend_trait;
@@ -6,8 +7,12 @@ pub mod flock;
 /// B09-12/P1-B3: Inode trait 完整定义 (从 services 迁回)
 pub mod inode;
 pub mod inotify;
+/// B 方案拆分: 挂载/生命周期/同步/格式化 (从 api.rs 拆出)
+pub mod mount;
 /// B09-12/P1-B5: 全局 OpenFile 表 (从 services 迁回)
 pub mod open_file_table;
+/// B 方案拆分: 路径/目录/链接/元数据/cwd (从 api.rs 拆出)
+pub mod path;
 pub mod types;
 pub mod vfs;
 

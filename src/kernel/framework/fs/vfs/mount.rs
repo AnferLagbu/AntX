@@ -1,0 +1,255 @@
+//! VFS 挂载 / 生命周期 / barrier / 同步 / 格式化 — 从 `api.rs` 拆出的物理子模块
+//!
+//! 归属: mount 相关 `#[no_mangle] pub extern "C"` 函数 (初始化/挂载/卸载/
+//! barrier/同步/格式化), 以及 RamFS 挂载去重标志 `RAMFS_MOUNTED`.
+//! `api.rs` 通过 `pub use mount::*;` 保持对外符号名与调用路径不变
+//! (`#[no_mangle]` 全局符号不受模块位置影响).
+
+use super::api::ptr_to_str;
+use super::types::{FileSystem, FsType, IntoI32, KernelError, VFS_MAX_MOUNTS};
+use super::vfs::VFS_MANAGER;
+use crate::kernel::framework::fs::devfs::devfs::{DEVFS_DATA, DevfsData};
+use crate::kernel::framework::fs::hvfs::hvfs::get_hvfs;
+use crate::kernel::framework::fs::ramfs::ramfs::{RAMFS_DATA, RamFsData};
+
+static RAMFS_MOUNTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+// ============================================================================
+// VFS 核心接口 (内部)
+// ============================================================================
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_init_internal() {
+    super::vfs::init();
+}
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+#[expect(
+    clippy::borrow_as_ptr,
+    reason = "borrow_as_ptr: &var as *const T 是已知安全 (Rust 2024 可用 &raw const; 替换需追改调用点, 当前优先 expect"
+)]
+#[expect(
+    clippy::match_same_arms,
+    reason = "match_same_arms: match arm 重复是为可读性/调试断点; 当前优先 expect"
+)]
+pub extern "C" fn vfs_mount_internal(path: *const u8, fs_name: *const u8) -> i32 {
+    let path = ptr_to_str(path);
+    let fs_name = ptr_to_str(fs_name);
+    let fs_type = FsType::from_name(fs_name);
+
+    match fs_type {
+        FsType::RamFs => {
+            if !RAMFS_MOUNTED.swap(true, core::sync::atomic::Ordering::SeqCst) {
+                crate::klog_boot_info!("[VFS] vfs_mount_internal: before RAMFS_DATA.lock() #1");
+                {
+                    let mut ramfs = RAMFS_DATA.lock();
+                    crate::klog_boot_info!(
+                        "[VFS] vfs_mount_internal: RAMFS_DATA.lock() #1 acquired"
+                    );
+                    if ramfs.mount(path) != 0 {
+                        return KernelError::Io.as_i32();
+                    }
+                    crate::klog_boot_info!("[VFS] vfs_mount_internal: ramfs.mount() done");
+                } // 显式 drop ramfs 释放锁
+                crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #1 released");
+            }
+        }
+        FsType::HvFs => {
+            let hvfs = get_hvfs();
+            if !hvfs.is_initialized() {
+                hvfs.init();
+            }
+        }
+        FsType::DevFs => {
+            // DevFS 初始化由 init()/init_with_chitin_bridge() 完成
+        }
+        FsType::Ext2 => {
+            // ext2 挂载由 Ext2FileSystem::fs_mount 处理
+        }
+        FsType::ExFat => {
+            // exfat 挂载由 ExfatFileSystem::fs_mount 处理
+        }
+        FsType::TmpFs => {
+            // tmpfs 挂载由 TmpFsFileSystem::fs_mount 处理
+        }
+        FsType::OverlayFs => {
+            // overlayfs 挂载由 OverlayFsFileSystem::fs_mount 处理
+        }
+
+        FsType::Unknown => return KernelError::NotSupported.as_i32(),
+    }
+
+    // E6-4: 带 trait object 挂载
+    // SAFETY: RAMFS_DATA 和 HVFS_DATA 都是全局静态变量, 其内部数据的实际
+    // 生命周期为 'static. Mutex::lock() 返回的 MutexGuard 借用了 &'static Mutex,
+    // 因此通过 &*guard 获得的 &RamFsData 实际生命周期为 'static.
+    // 这里我们利用这一点将引用提升为 &'static 以存入 VfsMount.
+    crate::klog_boot_info!("[VFS] vfs_mount_internal: before E6-4 mount_with_fs");
+    let fs: &'static dyn FileSystem = match fs_type {
+        FsType::RamFs => {
+            crate::klog_boot_info!("[VFS] vfs_mount_internal: before RAMFS_DATA.lock() #2");
+            let guard = RAMFS_DATA.lock();
+            crate::klog_boot_info!("[VFS] vfs_mount_internal: RAMFS_DATA.lock() #2 acquired");
+            // SAFETY: guard 借用 &'static Mutex<RamFsData>, &*guard 生命周期为 'static
+            let fs_ref = unsafe { &*(&*guard as *const RamFsData) };
+            crate::klog_boot_info!("[VFS] vfs_mount_internal: RamFsData ref created");
+            fs_ref
+        }
+        FsType::HvFs => get_hvfs(),
+        FsType::DevFs => {
+            // SAFETY: DEVFS_DATA 是全局静态变量, &DEVFS_DATA 生命周期为 'static
+            unsafe { &*(&DEVFS_DATA as *const DevfsData) }
+        }
+        _ => return VFS_MANAGER.mount(path, fs_name).as_i32(),
+    };
+    crate::klog_boot_info!("[VFS] vfs_mount_internal: calling VFS_MANAGER.mount_with_fs");
+    let result = VFS_MANAGER.mount_with_fs(path, fs_name, fs).as_i32();
+    result
+}
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_unmount_internal(path: *const u8) -> i32 {
+    let path = ptr_to_str(path);
+    VFS_MANAGER.unmount(path).as_i32()
+}
+
+// I-22: 15 个 `hvfs_*_internal` 函数无调用方, 已随 P3-I-18 迁移至 `vfs_sync` (FileSystem
+// trait fs_sync 分发) 后彻底废弃. 旧路径仅 C-FFI 兼容, 无 FFI 调用方, 移除以减小 TCB
+// 面积 (约 150 行, 含 unsafe).
+
+// ============================================================================
+// Barrier 接口
+// ============================================================================
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_barrier_capture() {
+    VFS_MANAGER.capture_snapshot();
+}
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_barrier_restore() -> i32 {
+    VFS_MANAGER.restore_from_snapshot();
+    1
+}
+
+// ============================================================================
+// 公共 VFS API
+// ============================================================================
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_init() {
+    vfs_init_internal();
+}
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_mount(path: *const u8, fs_name: *const u8) -> i32 {
+    vfs_mount_internal(path, fs_name)
+}
+
+/// T-05: safe 挂载接口 — services 层策略调用
+///
+/// 接受 Rust 字符串切片, 返回 i32 错误码 (0=成功, 负数=errno).
+/// SAFETY: 内部将 &str 转为 null 终止的 C 字符串后调用 `vfs_mount_internal`.
+pub fn vfs_mount_safe(path: &str, fs_name: &str) -> i32 {
+    // 构造 null 终止的 C 字符串
+    let mut path_buf = alloc::vec::Vec::with_capacity(path.len() + 1);
+    path_buf.extend_from_slice(path.as_bytes());
+    path_buf.push(0);
+    let mut fs_buf = alloc::vec::Vec::with_capacity(fs_name.len() + 1);
+    fs_buf.extend_from_slice(fs_name.as_bytes());
+    fs_buf.push(0);
+    vfs_mount_internal(path_buf.as_ptr(), fs_buf.as_ptr())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_umount_internal(path: *const u8, _flags: i32) -> i32 {
+    if path.is_null() {
+        return -22; // -EINVAL
+    }
+    let path = ptr_to_str(path);
+    match VFS_MANAGER.unmount(path) {
+        Ok(()) => 0,
+        Err(_) => -2, // -ENOENT
+    }
+}
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_umount(path: *const u8, flags: i32) -> i32 {
+    vfs_umount_internal(path, flags)
+}
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+// 注意: 保持 Rust ABI — vfs_sync 为内核内部调用 (fs_sync trait 分发),
+//        P3-I-18 契约测试按 Rust ABI 签名匹配该函数.
+#[unsafe(no_mangle)]
+#[expect(clippy::no_mangle_with_rust_abi)]
+pub fn vfs_sync() -> i32 {
+    // P3-I-18: 遍历所有挂载点, 通过 FileSystem trait 的 fs_sync 分发.
+    // 替换原 hvfs_sync_internal() 单 FS 写死的实现.
+    let mounts = VFS_MANAGER.mounts.lock();
+    let mut last_err: i32 = 0;
+    let mut synced: u32 = 0;
+    for i in 0..VFS_MAX_MOUNTS {
+        let m = &mounts[i];
+        if !m.used {
+            continue;
+        }
+        if let Some(fs) = m.get_fs() {
+            // SAFETY: 见本函数旧实现, fs_sync 不引用 raw pointer, 是
+            // 内部纯粹计算 (HvFS 走 txg commit). 互斥由 VFS_MANAGER 维护.
+            match fs.fs_sync() {
+                Ok(()) => {
+                    synced += 1;
+                }
+                Err(e) => {
+                    last_err = e.as_i32();
+                    // 继续遍历其它挂载点, 不因单个 FS 失败而中断
+                }
+            }
+        }
+    }
+    if synced == 0 {
+        // 没有任何挂载点: 仍然返回 0 保持兼容性 (老代码语义)
+        // 业务上 mount 0 个 FS 时 vfs_sync 是 no-op
+    }
+    last_err
+}
+
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+pub extern "C" fn vfs_format_internal(path: *const u8, fs_type: *const u8) -> i32 {
+    let fs_type_str = ptr_to_str(fs_type);
+    let _path = ptr_to_str(path);
+
+    if fs_type_str.is_empty() {
+        return -1;
+    }
+
+    // Parse filesystem type
+    if fs_type_str == "hvfs" || fs_type_str == "HvFS" {
+        let hvfs = get_hvfs();
+        let (drive_id, part_start) = hvfs.drives_discovered.lock().first().copied().unwrap_or((
+            hvfs.disk_drive.load(core::sync::atomic::Ordering::Acquire),
+            hvfs.partition_start
+                .load(core::sync::atomic::Ordering::Acquire),
+        ));
+        hvfs.format_drive(drive_id, part_start);
+        if hvfs.is_disk_mode() {
+            return 0;
+        }
+        return -1;
+    } else if fs_type_str == "ramfs" || fs_type_str == "RamFS" {
+        // RamFS 无需格式化, 始终为内存文件系统
+        return 0;
+    }
+
+    -1
+}
