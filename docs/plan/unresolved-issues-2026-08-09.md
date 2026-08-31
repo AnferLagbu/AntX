@@ -35,7 +35,8 @@
 | 分册 3 归档遗留 (2026-08-23) | 3 | 遗留×3 | ❌ 待下轮 |
 | lint 副作用 (已修复) | 2 | — | 🔄 已修复 |
 | 迁移中子系统状态 (2026-08-31) | 7 | MIG×7 | ⚠️ 迁移中 (有意识中间态) |
-| **总计** | **~77 项** | — | — |
+| 分册 6 调研预存问题 (2026-08-31) | 3 | B06-PRE×3 (1 安全) | ❌ 用户裁决登记待后续 |
+| **总计** | **~80 项** | — | — |
 
 ---
 
@@ -480,6 +481,40 @@
 
 ---
 
+## 🟤 第 9 类：分册 6 调研预存问题（2026-08-31）
+
+> 2026-08-31 追加：分册 6（[audit-fix-06-services-fs.md](./audit-fix-06-services-fs.md)）实施过程中调研发现的 3 个**分册 6 范围外**预存问题。用户裁决（2026-08-31）：统一登记待后续处理（选项 3A），不在本分册修复。
+
+### B06-PRE-001: tmpfs.rs `<256` 硬编码（与 B06-09 同款）
+
+| 字段 | 数据 |
+|---|---|
+| **位置** | [services/fs/tmpfs.rs:79](file:///home/anfer/Code/QueenX/src/kernel/services/fs/tmpfs.rs#L79) |
+| **问题** | `TmpFsInode::is_dir` 用硬编码 `< 256` 判断 inode 范围 + `fs.inner.nodes[...].file_type == 1` 魔法数，与 B06-09 修复前的 RamFsInode 同款缺陷（B06-09 只修了 ramfs，未修 tmpfs） |
+| **建议** | 与 B06-09 同法：硬编码 256 → `RAMFS_MAX_NODES` 常量，魔法数 1 → `VfsFileType::Dir.as_u8()` |
+| **状态** | ❌ 登记待后续（低风险：tmpfs 复用 RamFsData，256 实际即 RAMFS_MAX_NODES，语义正确仅风格问题） |
+
+### B06-PRE-002: fchown_syscall 缺权限校验（安全缺陷）
+
+| 字段 | 数据 |
+|---|---|
+| **位置** | [services/fs/misc.rs:115-126](file:///home/anfer/Code/QueenX/src/kernel/services/fs/misc.rs#L115-L126) → `vfs_fchown` → `inode().chown()` |
+| **问题** | `fchown(fd, owner, group)` 直接把 owner/group 透传给底层 `Inode::chown`，**无任何权限校验**——任意进程可对自己已打开的 fd 修改为任意 owner/group（B06-02 修了 `chown` 的 uid 回退，但 `fchown` 路径的 owner 是 pwm 值、无"未注册回退"问题，却缺失"是否有权修改属主"的检查） |
+| **影响** | 权限语义缺失（非直接提权，但违背"能力制"权限模型） |
+| **建议** | 与 B06-02 对齐：fchown 前置 `FS_CAP_CHOWN` (bit5) 能力检查，或按提权语义评估 |
+| **状态** | ❌ 登记待后续（**安全缺陷，优先级建议 P1**） |
+
+### B06-PRE-003: LegacyInode 删除时机（架构清理）
+
+| 字段 | 数据 |
+|---|---|
+| **位置** | [services/fs/inode.rs:415-424](file:///home/anfer/Code/QueenX/src/kernel/services/fs/inode.rs#L415-L424) |
+| **问题** | B06-12 方案 C（废弃标记 + 推动消除）落地：LegacyInode 已加废弃标记，当前全部 8 个 FS 均实现 `fs_resolve_inode`，LegacyInode 仅作 `open_by_handle_at` 防御性回退（正常路径不触发） |
+| **建议** | 未来移除 `open_by_handle_at` 的 LegacyInode 回退分支（file_handle.rs:187）后删除整个 LegacyInode 类型；需确认各 FS `fs_resolve_inode` 覆盖所有挂载场景 |
+| **状态** | ❌ 登记待后续（架构清理，非紧急） |
+
+---
+
 ## 📋 文档状态不一致清单 (跨文档矛盾专项)
 
 > **本会话审计发现**: `progress-active-tasks.md` 中 B1-B6 标记 `[X]` 完成, 但 `archive/code-review-findings-2026-08-01.md` 中对应 REVIEW-FINDING 仍 `[]` 未同步. **文档漂移**.
@@ -538,6 +573,9 @@
 
 ## 变更历史
 
+- **2026-08-31**: 新增第 9 类"分册 6 调研预存问题"3 项（B06-PRE-001/002/003）
+  - 用户裁决 3A：tmpfs `<256` 硬编码 / fchown 缺权限校验（安全缺陷，建议 P1）/ LegacyInode 删除时机，统一登记待后续处理
+  - 总览计数 ~77 → ~80
 - **2026-08-31**: 同步"审计基线待清零"状态（2 项已处理）
   - BASELINE-F7-067（67 处英文注释）→ 🔄 已修复（2026-08-30 中文化清零，见分册 10 B10-03）
   - BASELINE-F2-012（12 处 HIGH）→ 🔄 已处理（5 处 PROXY_ALLOWANCE 豁免 + 实测 boundary 0 违规，见分册 10 B10-06）
