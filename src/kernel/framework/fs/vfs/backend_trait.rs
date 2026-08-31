@@ -23,7 +23,7 @@
 //! - 挂载权限检查
 //! - 文件系统注册表管理
 
-use crate::kernel::services::fs::vfs_types::KernelError;
+use crate::kernel::framework::fs::vfs::types::KernelError;
 
 /// 文件系统后端决策接口 — services 实现, framework 调用
 ///

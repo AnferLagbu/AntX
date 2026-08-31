@@ -18,21 +18,19 @@
 //! ## 性能特征
 //! - 静态分发,无 vtable 开销
 //! - 字符串路径解析纯栈上,无堆分配 (除路径 split 时 `alloc::string`)
+use super::open_file_table::OPEN_FILE_TABLE;
 use super::types::{
-    FileSystem, FsType, IntoI32, KernelError, KernelResult, VFS_MAX_FDS, VFS_MAX_MOUNTS,
+    FileSystem, FsType, IntoI32, KernelError, KernelResult, OpenFile, VFS_MAX_FDS, VFS_MAX_MOUNTS,
     VfsDirEntry, VfsOpenFlags, VfsSeekWhence, VfsStat,
 };
 use super::vfs::VFS_MANAGER;
 use crate::kernel::framework::fd_notify;
-use crate::kernel::framework::fs::devfs::devfs::DEVFS_DATA;
+use crate::kernel::framework::fs::devfs::devfs::{DEVFS_DATA, DevfsData};
 use crate::kernel::framework::fs::hvfs::hvfs::get_hvfs;
 use crate::kernel::framework::fs::ramfs::ramfs::{RAMFS_DATA, RamFsData};
 use crate::kernel::framework::lib::CStrExt;
 use crate::kernel::framework::mm::{PAGE_SIZE, pcache};
 use crate::kernel::framework::userptr::{UserReadPtr, UserRefMut, UserWritePtr};
-use crate::kernel::services::fs::devfs::DevfsData;
-use crate::kernel::services::fs::open_file_table::OPEN_FILE_TABLE;
-use crate::kernel::services::fs::vfs_types::OpenFile;
 
 /// B2: 4KB 对齐 read 时的 pcache 命中快路径上限 (16 页 = 64KB)
 const PCACHE_FAST_MAX_BYTES: usize = 64 * 1024;
@@ -578,7 +576,7 @@ pub extern "C" fn vfs_write_internal(fd_idx: u32, buf: *const u8, count: u32) ->
     let result = OPEN_FILE_TABLE.with_file(handle_id, |open_file| {
         // O_APPEND: 写入前自动 seek 到文件末尾 (POSIX 原子 append)
         let offset = if (open_file.get_flags()
-            & crate::kernel::services::fs::vfs_types::VfsOpenFlags::APPEND.bits())
+            & super::types::VfsOpenFlags::APPEND.bits())
             != 0
         {
             open_file
@@ -927,7 +925,7 @@ pub fn vfs_seek_safe(fd: u32, offset: i32, whence: u32) -> i32 {
 /// Safe 包装: `vfs_readdir`
 pub fn vfs_readdir_safe(
     fd: u32,
-    entry: &mut crate::kernel::services::fs::vfs_types::VfsDirEntry,
+    entry: &mut super::types::VfsDirEntry,
 ) -> i32 {
     // SAFETY: entry 是调用方拥有的有效可写结构体
     vfs_readdir(fd, entry as *mut _)

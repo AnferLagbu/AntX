@@ -3,12 +3,20 @@ pub mod api;
 pub mod backend_trait;
 pub mod dcache;
 pub mod flock;
+/// B09-12/P1-B3: Inode trait 完整定义 (从 services 迁回)
+pub mod inode;
 pub mod inotify;
+/// B09-12/P1-B5: 全局 OpenFile 表 (从 services 迁回)
+pub mod open_file_table;
 pub mod types;
 pub mod vfs;
 
 pub use types::*;
 pub use vfs::*;
+/// B09-12/P1-B3: Inode trait 顶层 re-export (framework::fs::Inode)
+pub use inode::Inode;
+/// B09-12/P1-B5: OpenFileTable 顶层 re-export (framework::fs::OPEN_FILE_TABLE)
+pub use open_file_table::{OPEN_FILE_TABLE, OpenFileTable};
 
 // 公共接口 re-export — 避免跨子系统直接访问内部子模块
 pub use api::{

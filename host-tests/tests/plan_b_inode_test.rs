@@ -20,8 +20,9 @@ fn read_file(relative_path: &str) -> String {
 
 #[test]
 fn inode_trait_defined_in_services() {
-    let src = read_file("services/fs/inode.rs");
-    assert!(src.contains("pub trait Inode: Send + Sync"), "Inode trait 必须定义在 services/fs/inode.rs");
+    // B09-12/P1-B3: Inode trait 已迁回 framework/fs/vfs/inode.rs
+    let src = read_file("framework/fs/vfs/inode.rs");
+    assert!(src.contains("pub trait Inode: Send + Sync"), "Inode trait 必须定义在 framework/fs/vfs/inode.rs");
     assert!(src.contains("fn read(&self, offset: u64, buf: &mut [u8], pwm: u64)"), "Inode::read 必须接收 offset 参数");
     assert!(src.contains("fn write(&self, offset: u64, buf: &[u8], pwm: u64)"), "Inode::write 必须接收 offset 参数");
     assert!(src.contains("fn stat(&self, pwm: u64)"), "Inode::stat 必须存在");
@@ -31,8 +32,12 @@ fn inode_trait_defined_in_services() {
 
 #[test]
 fn inode_trait_deny_unsafe() {
-    let src = read_file("services/fs/inode.rs");
-    assert!(src.contains("#![deny(unsafe_code)]"), "inode.rs 必须 #![deny(unsafe_code)]");
+    // B09-12/P1-B3: Inode trait 定义在 framework (0 unsafe), 具象实现在 services 保留 deny
+    let src = read_file("framework/fs/vfs/inode.rs");
+    assert!(src.contains("pub trait Inode: Send + Sync"), "framework/fs/vfs/inode.rs 必须定义 Inode trait");
+    assert!(!src.contains("unsafe"), "framework/fs/vfs/inode.rs 不应含 unsafe");
+    let svc = read_file("services/fs/inode.rs");
+    assert!(svc.contains("#![deny(unsafe_code)]"), "services/fs/inode.rs 必须 #![deny(unsafe_code)]");
 }
 
 // ============================================================================
@@ -41,7 +46,8 @@ fn inode_trait_deny_unsafe() {
 
 #[test]
 fn open_file_uses_arc_dyn_inode() {
-    let src = read_file("services/fs/vfs_types.rs");
+    // B09-12/P1-B3: OpenFile 定义已迁回 framework/fs/vfs/types.rs
+    let src = read_file("framework/fs/vfs/types.rs");
     // OpenFile 应持有 Arc<dyn Inode> 而非 inode_id: u32
     assert!(src.contains("inode: Arc<dyn Inode>"), "OpenFile 必须持有 Arc<dyn Inode>");
     // 不应有 inode_id 字段
@@ -52,7 +58,8 @@ fn open_file_uses_arc_dyn_inode() {
 
 #[test]
 fn open_file_has_debug_impl() {
-    let src = read_file("services/fs/vfs_types.rs");
+    // B09-12/P1-B3: OpenFile 定义已迁回 framework/fs/vfs/types.rs
+    let src = read_file("framework/fs/vfs/types.rs");
     assert!(src.contains("impl core::fmt::Debug for OpenFile"), "OpenFile 必须实现 Debug");
 }
 
@@ -93,7 +100,8 @@ fn process_fd_table_deny_unsafe() {
 
 #[test]
 fn filesystem_fs_open_returns_arc_inode() {
-    let src = read_file("services/fs/vfs_types.rs");
+    // B09-12/P1-B3: FileSystem trait 已迁回 framework/fs/vfs/types.rs
+    let src = read_file("framework/fs/vfs/types.rs");
     assert!(
         src.contains("fn fs_open(&self, rel_path: &str, flags: u32, pwm: u64) -> KernelResult<Arc<dyn Inode>>"),
         "FileSystem::fs_open 必须返回 Arc<dyn Inode>"
@@ -106,7 +114,8 @@ fn filesystem_fs_open_returns_arc_inode() {
 
 #[test]
 fn filesystem_fs_create_returns_arc_inode() {
-    let src = read_file("services/fs/vfs_types.rs");
+    // B09-12/P1-B3: FileSystem trait 已迁回 framework/fs/vfs/types.rs
+    let src = read_file("framework/fs/vfs/types.rs");
     assert!(
         src.contains("fn fs_create(&self, parent_path: &str, name: &str, pwm: u64) -> KernelResult<Arc<dyn Inode>>"),
         "FileSystem::fs_create 必须返回 Arc<dyn Inode>"
@@ -242,7 +251,8 @@ fn anonymous_inode_exists() {
 
 #[test]
 fn filesystem_has_fs_resolve_inode() {
-    let src = read_file("services/fs/vfs_types.rs");
+    // B09-12/P1-B3: FileSystem trait 已迁回 framework/fs/vfs/types.rs
+    let src = read_file("framework/fs/vfs/types.rs");
     assert!(
         src.contains("fn fs_resolve_inode(&self"),
         "FileSystem trait 必须有 fs_resolve_inode 方法"
