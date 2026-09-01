@@ -39,16 +39,16 @@
 - **B07-05. pwm_set_syscall 任意设 root（P0-07）**
   - 描述：[credo/auth.rs:119-121](file:///home/anfer/Code/QueenX/src/kernel/services/credo/auth.rs#L119-L121) `pwm_set_syscall(pwm)` 任何进程可设自身 PWM 为 root，绕过所有 UID/GID 检查。
   - 方案：检查 `credo::pwm_has_capability(pwm_current, CAP_SETUID)`，否则 EPERM。
-  - 状态：[] (2026-08-31 核实：**仍存在**——auth.rs:119-121 无校验直调 proc_set_pwm，framework/proc_ops.rs:902 亦无检查。⚠ 决策点：项目**无 CAP_SETUID 常量**，需按 B06 先例用 `pwm_has_capability(pwm, 0, 0x01)`（SYSTEM+CAP_SYS_ADMIN）或裁决新增能力位)
+  - 状态：[] (2026-08-31 核实：**仍存在**——auth.rs:119-121 无校验直调 proc_set_pwm，framework/proc_ops.rs:902 亦无检查。**DECISION-078 用户裁决 2026-08-31**：按"常量应用面重要性"决策——pwm_set 属身份安全关键操作（任意提权漏洞），**新增专用能力位**（见 DECISION-078）)
 
 - **B07-06. Ed25519 签名验证占位（TOP 20 #5 / ISSUE-SRC-002）**
   - 描述：[framework/credo/secure_boot.rs:197-210](file:///home/anfer/Code/QueenX/src/kernel/framework/credo/secure_boot.rs#L197-L210) `verify` 为占位——签名非全零即通过；含 `TODO(TRACK-7A8BAB)`。
   - 方案：短期 fail-closed（无真实验证时拒绝签名）；长期引入 curve25519 验证库。
-  - 状态：[] (2026-08-31 核实：**仍存在，且未 fail-closed**——secure_boot.rs:198 TODO 在，L201-209 签名非零即通过；信任链 enroll/verify_image (L317/352/359/367) 全链依赖该占位。**建议按方案：短期 fail-closed 优先**)
+  - 状态：[] (2026-08-31 核实：**仍存在，且未 fail-closed**——secure_boot.rs:198 TODO 在，L201-209 签名非零即通过；信任链 enroll/verify_image (L317/352/359/367) 全链依赖该占位。**DECISION-078 用户裁决 2026-08-31**：**直接引入验证库**（跳过 fail-closed 中间态）——需评估 no_std 兼容 + TCB 占比 + 许可证，见 DECISION-078)
 
 - **B07-07. cred 子系统加密原语缺口（H.3.1 P0-24）**
   - 描述：实测**密码存储侧非缺口**——`framework/credo/identity.rs:28-53` 已是 SHA-256 加盐 + 32768 轮拉伸 + 常数时间比较（`constant_time_eq`），csprng 生成盐；真实缺口为：① `services/credo/sha256.rs:112` 返回 **48 字节**（PWM_HASH_LEN）但只填充前 32 字节（异常签名）；② `secure_boot.rs` Ed25519 `verify` 占位（见上条）；③ 无 AES/ChaCha/HMAC/KDF 对称原语（中期路线）。
-  - 方案：① 修复 sha256 返回 32 字节标准输出或明确文档化前 32 字节语义（低优先）；② Ed25519 真实验证（上条 fail-closed→库）；③ 对称加密原语登记为中期独立任务（评估 TCB 影响后实施）。
+  - 方案：① 修复 sha256 返回 32 字节标准输出或明确文档化前 32 字节语义（低优先）；② Ed25519 真实验证（DECISION-078 已定直接引入验证库）；③ 对称加密原语登记为中期独立任务（评估 TCB 影响后实施）。
   - 状态：[] (2026-08-31 核实：**仍存在**——① sha256.rs:113 返回 [u8;48] 仅填前 32，且 crypto.rs:180-188 salt 未写入 full 后半段（表示语义异常）；② Ed25519 占位见 B07-06；③ 全 src/kernel 无 AES/ChaCha/HMAC/KDF，且未登记中期任务)
 
 ## 工程计划 C: IPC / wasm / barrier
@@ -80,7 +80,7 @@
 - **B07-12. wasm LinearMemory 增长无上限（P1）**
   - 描述：`wasm/runtime.rs` `memory.grow` 可增长到 4GB/16EB，当前允许任意增长 → 内存耗尽。
   - 方案：限制 max memory（如 256MB per instance）。
-  - 状态：[] (2026-08-31 核实：**部分**——runtime.rs:165-176 grow 有 max_pages 上限检查，但 LinearMemory 创建用模块声明的 `mem_type.limits.max`（不声明 max 时 = None 无界）；`InterpreterConfig.max_memory_pages: 256` 是**死值未接线**（全仓仅定义+Default 2 处命中）。**残留：默认 256 页配置接入内存创建**)
+  - 状态：[] (2026-08-31 核实：**部分**——runtime.rs:165-176 grow 有 max_pages 上限检查，但 LinearMemory 创建用模块声明的 `mem_type.limits.max`（不声明 max 时 = None 无界）；`InterpreterConfig.max_memory_pages: 256` 是**死值未接线**（全仓仅定义+Default 2 处命中）。**DECISION-078 用户裁决 2026-08-31**：**接线 256 页上限**——把 max_memory_pages 接入 LinearMemory 创建，模块不声明 max 时强制 256MB 上限，见 DECISION-078)
 
 - **B07-13. wasm call_indirect 类型检查不完整（P1）**
   - 描述：`wasm/interpreter.rs` call_indirect 可能仅校验 `index < table_size` 未校验 type → 类型混淆 → 越权调用。
@@ -133,3 +133,18 @@
   - 描述：pwm_set 修复后跑 credo host-tests（权限拒绝用例）。
   - 方案：`make test-host`。
   - 状态：[] (2026-08-31 核实：B07-05 修复后需补 pwm_set 无能力拒绝用例；现有 credo 单测已覆盖常数时间/会话限额)
+
+## DECISION-078（2026-08-31，分册 7 委托前用户裁决）
+
+分册 7 委托前的 3 个决策点，用户裁决如下（对应 AskUserQuestion 2026-08-31）：
+
+- **B07-05 pwm_set_syscall 权限校验 — 新增专用能力位**
+  - 裁决：按"常量应用面重要性"决策准则——检查常量应用面与既有先例后，pwm_set 属**身份安全关键操作**（任意提权漏洞 P0-07），重要性高，**新增专用能力位**而非复用 SYSTEM+CAP_SYS_ADMIN(0x01)。
+  - 准则（用户定义，后续常量决策沿用）：**重要或特殊用途常量采用新增，其他的采用复用既有**。既有先例对照：mount/umount2/setns/open_by_handle 均复用 SYSTEM 域 0x01（这些操作已有 CAP_SYS_ADMIN 语义可复用），而 pwm_set 改变进程身份无既有能力位可精确表达 → 新增。
+  - 实施待定：新增能力位归属域（SYSTEM 域 or USER_MGMT 域）+ 位号由委托人按 capability.rs 布局设计。
+- **B07-06 Ed25519 签名验证 — 直接引入验证库**
+  - 裁决：跳过 fail-closed 中间态，直接引入 curve25519 验证库实现真实验证。
+  - 前置评估（委托人开工前必须完成）：① no_std 兼容性（内核裸机 target 需 `#![no_std]` 可用）；② TCB 占比影响（新依赖计入 TCB，需 <30% 软目标内）；③ 许可证（需过 cargo-deny，与 MIT 内核兼容，deny.toml 已配置）；④ 候选：curve25519-dalek（ed25519-dalek）或其他 no_std 兼容实现，由委托人调研后定。
+- **B07-12 wasm memory.grow — 接线 256 页上限**
+  - 裁决：把已存在的 `InterpreterConfig.max_memory_pages: 256` 接入 LinearMemory 创建路径，模块不声明 max 时强制 256MB 上限。
+  - 实施要点：interpreter.rs:83/89 的 LinearMemory 创建改用 config.max_memory_pages 作为无声明时的默认 max_pages。
