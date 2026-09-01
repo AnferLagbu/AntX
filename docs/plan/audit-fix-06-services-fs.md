@@ -4,7 +4,7 @@
 
 > **2026-08-30 基线核实**：委托前对全部 27 项逐一对照当前磁盘代码核实（见各条目标注）。结论：已修复/虚报 4 项（B06-17/19/21/25）、**已实装 1 项（B06-04，DECISION-077 方案 A，本会话完成）**、仍存在 14 项、部分修复 3 项（B06-06/08/11）、背景收口 3 项（B06-01/05/16）。**其余待办由分册 6 委托人统一负责**（B06-04 已完成项作为实施范式参照，见 DECISION-077）。计划 B 定位信息过时：Inode trait/AnonymousInode/RamFsInode/LegacyInode 已整体迁至 `src/kernel/services/fs/inode.rs`（计划正文所述 `framework/fs/` 位置不适用）。
 >
-> **2026-08-31 分册 6 实施完成**：本轮实装/收口 B06-02/03/06/07/08/09/12/13/14/15/18/20/22/23/24（14 项），用户裁决：B06-03 CAP 映射 = SYSTEM+CAP_SYS_ADMIN、B06-12 = 方案 C（废弃标记）、B06-10/11/27 待 B09-12（跳过）。新增回归测试 `host-tests/tests/fs_permissions_regression_test.rs`（10 项）。验证：双架构 cargo check 0w0e + clippy -D pedantic 0 warning + host-tests 900 passed/0 failed + 三审计（services_boundary/safety_coverage/deadlock_matrix/coupling/comment_language）全部通过。**剩余待办仅 B06-10/11/27（依赖 B09-12 串行前置）**。
+> **2026-08-31 分册 6 委托人实施收口**：B06-02/03/07/08/09/10/11/12/13/15/18/20/22/23/24 全部实装，B06-06/14 收口（虚报/设计成立），B06-26/27 验证通过。复验（2026-08-31）确认：8 审计 0 违规、build all 5/5、clippy 0 error、host-tests 910/0、QEMU Ring 3。预存问题 B06-PRE-001/002/003 登记待后续（见 unresolved-issues 第 9 类），B06-PRE-004 已修复。
 
 ## 工程计划 A: 文件系统权限与句柄
 
@@ -67,13 +67,13 @@
 - **B06-10. vfs/api.rs 单文件 1700 行（TOP 20 #18）**
   - 描述：framework/fs/vfs/api.rs 1700 行单文件，违反简单优先（决策点 D4）。
   - 方案：拆分为 4 子模块（路径/权限/句柄/挂载），行为零变更。
-  - 状态：[] (2026-08-30 核实：**仍存在**——[framework/fs/vfs/api.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/fs/vfs/api.rs) 仍 1700 行未拆分)
-  - 详情：⚠ **同文件冲突约束**——`vfs/api.rs` 同时被 B09-12（F2 反向依赖治理）涉及。**必须串行执行，顺序：B09-12 → B06-10**（先修依赖方向再拆分）；并发委派时本条目须等 B09-12 完成后执行。（2026-08-30 核实：B09-12 状态仍 `[]` 未启动，串行约束有效）
+  - 状态：[X] (2026-08-31 实装：api.rs 1698 行 → 104 行，拆出 [mount.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/fs/vfs/mount.rs) (255 行，挂载/初始化/同步/格式化) + [path.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/fs/vfs/path.rs) (635 行，路径/目录/链接/xattr/snapshot) + [handle.rs](file:///home/anfer/Code/QueenX/src/kernel/framework/fs/vfs/handle.rs) (774 行，fd 句柄 28 函数)；api.rs 保留 Vfs trait + helpers + `pub use mount/path/handle::*` 汇聚。0 行为变更（函数体逐字搬移，#[no_mangle] 符号全局唯一）。commit a69aa8f5 + 9fb6c994)
+  - 详情：⚠ **同文件冲突约束**——`vfs/api.rs` 同时被 B09-12（F2 反向依赖治理）涉及。**必须串行执行，顺序：B09-12 → B06-10**。已按序执行（B09-12 迁回 commit 0fd608b9~5a9c69b6 → B06-10 拆分 commit a69aa8f5~9fb6c994）。同步 fs_sync_trait_test 3 处 + td03_atomic_close_test 1 处 + plan_b_inode_test 7 处路径断言
 
 - **B06-11. vfs/api.rs 直调 services 层（H.5.1 P0-31）**
   - 描述：framework/fs/vfs/api.rs 严重违反 F2（直调 services 层类型，DECISION-H13/H19）。
   - 方案：services 类型迁回 framework，或 api.rs 改经顶层 re-export 访问。
-  - 状态：[] (2026-08-30 核实：**部分**——VFS_MANAGER 已改经 re-export（[api.rs:25](file:///home/anfer/Code/QueenX/src/kernel/framework/fs/vfs/api.rs#L25) → [vfs.rs:9-11](file:///home/anfer/Code/QueenX/src/kernel/framework/fs/vfs/vfs.rs#L9-L11)）；但仍存 3 处直接 `use crate::kernel::services::fs::{devfs::DevfsData, open_file_table::OPEN_FILE_TABLE, vfs_types::OpenFile}`（[api.rs:33-35](file:///home/anfer/Code/QueenX/src/kernel/framework/fs/vfs/api.rs#L33-L35)）)
+  - 状态：[X] (2026-08-31 实装：原 3 处直接 `use crate::kernel::services::fs::{devfs::DevfsData, open_file_table::OPEN_FILE_TABLE, vfs_types::OpenFile}` 已消除——open_file_table/vfs_types 类型迁回 framework（B09-12 P1），devfs 经 vfs.rs re-export 壳访问；api.rs 现仅 `pub use super::{mount,path,handle}::*`，framework/fs/vfs 下仅剩 flock/inotify 两个 re-export 壳（既有设计）。复验：audit_services_boundary 0 违规)
 
 - **B06-12. Inode::stat 路径级操作（附录 B 4.2）**
   - 描述：`LegacyInode::stat` 使用 `rel_path`，但 `fs_stat(&rel_path, pwm)` 是路径级操作，违反"Plan B Inode trait 不依赖路径"原则。
@@ -162,7 +162,7 @@
 - **B06-27. vfs 拆分回归**
   - 描述：vfs/api.rs 拆分后全量 host-tests + 双架构编译，确认行为零变更。
   - 方案：`make test-host` + `./ci/build.sh all`。
-  - 状态：[] (2026-08-31 用户裁决本轮跳过 B06-10/11 (待 B09-12 完成后实施)，本回归随 B06-10/11 一并执行)
+  - 状态：[X] (2026-08-31 验证通过（复验 2026-08-31）：B06-10 拆分 + B09-12 迁回后——host-tests 全量 **910 passed / 0 failed**（复验实测，非仅声明的 900）、双架构 cargo check 0w0e、clippy -D pedantic 0 error、`./ci/build.sh all` 5/5、QEMU x86_64 启动到 Ring 3。fs_sync_trait_test/td03_atomic_close_test/plan_b_inode_test 路径断言已随拆分同步)
 
 ## DECISION-077（2026-08-30）
 
