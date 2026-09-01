@@ -481,3 +481,155 @@ pub extern "C" fn vfs_get_cwd(buf: *mut u8, size: u32) -> i32 {
 pub extern "C" fn vfs_set_cwd(path: *const u8) {
     vfs_set_cwd_internal(path);
 }
+
+// ============================================================================
+// 扩展属性 (xattr) — framework 层
+// ============================================================================
+
+/// 设置扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_setxattr_internal(
+    path: *const u8,
+    name: *const u8,
+    value: *const u8,
+    size: u32,
+    pwm: u64,
+) -> i32 {
+    let path = ptr_to_str(path);
+    let name = ptr_to_str(name);
+    let value = if !value.is_null() && size > 0 {
+        // SAFETY: 调用方保证 value 指向有效的 size 字节缓冲区
+        unsafe { core::slice::from_raw_parts(value, size as usize) }
+    } else {
+        &[]
+    };
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    fs_opt.map_or(-38, |fs| match fs.fs_setxattr(rel_path, name, value, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
+}
+
+/// 获取扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
+#[expect(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_getxattr_internal(
+    path: *const u8,
+    name: *const u8,
+    value: *mut u8,
+    size: u32,
+    pwm: u64,
+) -> i32 {
+    let path = ptr_to_str(path);
+    let name = ptr_to_str(name);
+
+    if value.is_null() || size == 0 {
+        return -1;
+    }
+
+    // SAFETY: 调用方保证 value 指向有效的 size 字节缓冲区
+    let buf = unsafe { core::slice::from_raw_parts_mut(value, size as usize) };
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    fs_opt.map_or(-38, |fs| {
+        fs.fs_getxattr(rel_path, name, buf, pwm)
+            .map_or(-1, |len| len as i32)
+    })
+}
+
+/// 列出扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+// 有意窄化: 资源类型转换, POSIX/Linux ABI 约定
+#[expect(clippy::cast_possible_truncation)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_listxattr_internal(
+    path: *const u8,
+    list: *mut u8,
+    size: u32,
+    pwm: u64,
+) -> i32 {
+    let path = ptr_to_str(path);
+
+    if list.is_null() || size == 0 {
+        return -1;
+    }
+
+    // SAFETY: 调用方保证 list 指向有效的 size 字节缓冲区
+    let buf = unsafe { core::slice::from_raw_parts_mut(list, size as usize) };
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    fs_opt.map_or(-38, |fs| {
+        fs.fs_listxattr(rel_path, buf, pwm)
+            .map_or(-1, |len| len as i32)
+    })
+}
+
+/// 删除扩展属性
+// SAFETY: FFI 导出函数，通过 C ABI 与外部代码互操作
+#[unsafe(no_mangle)]
+#[expect(
+    clippy::manual_let_else,
+    reason = "manual_let_else: if-let + unwrap 模式改 let-else 语法; 部分场景有 return value 需改 match, 当前优先 expect 兑底"
+)]
+pub extern "C" fn vfs_removexattr_internal(path: *const u8, name: *const u8, pwm: u64) -> i32 {
+    let path = ptr_to_str(path);
+    let name = ptr_to_str(name);
+
+    let (mount_idx, _fs_type, fs_opt) = match VFS_MANAGER.resolve_mount_fs(path) {
+        Some(r) => r,
+        None => return -2, // ENOENT
+    };
+    let rel_path = VFS_MANAGER.get_relative_path(path, mount_idx);
+
+    fs_opt.map_or(-38, |fs| match fs.fs_removexattr(rel_path, name, pwm) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    })
+}
+
+// ============================================================================
+// 快照 (snapshot) — framework 层
+// ============================================================================
+
+/// 从原始指针获取快照名称字符串
+///
+/// # Safety
+/// 调用方必须保证 `ptr` 指向有效的以 null 结尾的 UTF-8 字符串。
+pub fn snapshot_get_name(ptr: u64) -> alloc::string::String {
+    if ptr == 0 {
+        return alloc::string::String::new();
+    }
+    let s = ptr_to_str(ptr as *const u8);
+    alloc::string::String::from(s)
+}

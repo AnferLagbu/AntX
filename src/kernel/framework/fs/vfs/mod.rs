@@ -4,6 +4,8 @@ pub mod api;
 pub mod backend_trait;
 pub mod dcache;
 pub mod flock;
+/// B 方案拆分: fd 句柄操作 (open/close/read/write/seek/...)
+pub mod handle;
 /// B09-12/P1-B3: Inode trait 完整定义 (从 services 迁回)
 pub mod inode;
 pub mod inotify;

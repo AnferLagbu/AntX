@@ -9,7 +9,8 @@
 use std::fs;
 use std::path::Path;
 
-const VFS_API: &str = "src/kernel/framework/fs/vfs/api.rs";
+// vfs_close_internal 已在 B 方案拆分第二步从 api.rs 物理迁至 handle.rs
+const VFS_HANDLE: &str = "src/kernel/framework/fs/vfs/handle.rs";
 const HVFS: &str = "src/kernel/services/fs/hvfs/hvfs_data.rs";
 
 fn read(path: &str) -> String {
@@ -21,7 +22,7 @@ fn read(path: &str) -> String {
 #[test]
 fn test_vfs_close_uses_atomic_claim_and_clear() {
     // TD-03: vfs_close_internal 必须在单一锁内同时检查 used + 清零 (atomic claim-and-clear)
-    let src = read(VFS_API);
+    let src = read(VFS_HANDLE);
     // 截取 vfs_close_internal 函数体 (下一个 pub fn 之前)
     let body_start = src.find("pub fn vfs_close_internal")
         .expect("vfs_close_internal 必须存在");
@@ -67,7 +68,7 @@ fn test_hvfs_close_uses_atomic_claim_and_clear() {
 fn test_vfs_close_second_call_is_noop() {
     // TD-03: 静态分析 vfs_close_internal 在第二次 close 同一 fd 时不应再触发
     // pcache_invalidate_inode / inotify_notify. 由 "let snapshot = ..." 的 None 分支保证.
-    let src = read(VFS_API);
+    let src = read(VFS_HANDLE);
     let body_start = src.find("pub fn vfs_close_internal").unwrap();
     let body = &src[body_start..];
     // 必须有 snapshot 模式 + match

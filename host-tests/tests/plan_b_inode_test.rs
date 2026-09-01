@@ -181,7 +181,8 @@ fn exfat_has_native_inode() {
 
 #[test]
 fn vfs_read_uses_inode_trait() {
-    let src = read_file("framework/fs/vfs/api.rs");
+    // B 方案拆分第二步: vfs_read_internal 已从 api.rs 迁至 handle.rs
+    let src = read_file("framework/fs/vfs/handle.rs");
     // 鲁棒匹配: rustfmt 拆行时链式调用分散在多行, 用独立子串 + 同函数体检查
     assert!(
         src.contains(".inode()") && src.contains(".read(") && src.contains("open_file"),
@@ -192,7 +193,8 @@ fn vfs_read_uses_inode_trait() {
 
 #[test]
 fn vfs_write_uses_inode_trait() {
-    let src = read_file("framework/fs/vfs/api.rs");
+    // B 方案拆分第二步: vfs_write_internal 已从 api.rs 迁至 handle.rs
+    let src = read_file("framework/fs/vfs/handle.rs");
     // 鲁棒匹配: rustfmt 拆行时链式调用分散在多行, 用独立子串 + 同函数体检查
     assert!(
         src.contains(".inode()") && src.contains(".write(") && src.contains("open_file"),
@@ -203,13 +205,15 @@ fn vfs_write_uses_inode_trait() {
 
 #[test]
 fn vfs_fstat_uses_inode_trait() {
-    let src = read_file("framework/fs/vfs/api.rs");
+    // B 方案拆分第二步: vfs_fstat 已从 api.rs 迁至 handle.rs
+    let src = read_file("framework/fs/vfs/handle.rs");
     assert!(src.contains("open_file.inode().stat("), "vfs_fstat 必须使用 Inode::stat");
 }
 
 #[test]
 fn vfs_seek_uses_inode_trait() {
-    let src = read_file("framework/fs/vfs/api.rs");
+    // B 方案拆分第二步: vfs_seek 已从 api.rs 迁至 handle.rs
+    let src = read_file("framework/fs/vfs/handle.rs");
     // rustfmt 可能将链式调用拆为多行; 匹配 `.inode()` 与 `.seek(` 在同一函数体内
     // (两者间隔 ≤ 200 字符, 适配 rustfmt 拆行格式).
     assert!(
@@ -220,7 +224,8 @@ fn vfs_seek_uses_inode_trait() {
 
 #[test]
 fn vfs_truncate_uses_inode_trait() {
-    let src = read_file("framework/fs/vfs/api.rs");
+    // B 方案拆分第二步: vfs_truncate_internal 已从 api.rs 迁至 handle.rs
+    let src = read_file("framework/fs/vfs/handle.rs");
     // 鲁棒匹配: rustfmt 拆行时链式调用分散在多行, 用独立子串 + 同函数体检查
     assert!(
         src.contains(".inode()") && src.contains(".truncate(") && src.contains("open_file"),
@@ -230,7 +235,8 @@ fn vfs_truncate_uses_inode_trait() {
 
 #[test]
 fn get_fd_info_removed() {
-    let src = read_file("framework/fs/vfs/api.rs");
+    // B 方案拆分第二步: fd 句柄操作已迁至 handle.rs
+    let src = read_file("framework/fs/vfs/handle.rs");
     assert!(!src.contains("fn get_fd_info"), "旧的 get_fd_info 函数应已删除");
 }
 
@@ -277,7 +283,8 @@ fn ext2_implements_fs_resolve_inode() {
 
 #[test]
 fn vfs_write_checks_append_flag() {
-    let src = read_file("framework/fs/vfs/api.rs");
+    // B 方案拆分第二步: vfs_write_internal 已从 api.rs 迁至 handle.rs
+    let src = read_file("framework/fs/vfs/handle.rs");
     assert!(
         src.contains("VfsOpenFlags::APPEND"),
         "vfs_write_internal 必须检查 O_APPEND flag"
