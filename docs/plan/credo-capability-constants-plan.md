@@ -59,7 +59,33 @@
 4. host-tests 全量通过（cred 相关回归）。
 5. 涉及 B2 时，补充 open_by_handle_at 权限拒绝 host-tests（B06-03 已有先例）。
 
+## 架构裁决：sensitivity（对象敏感级别）与 privilege_level（身份等级）归属（2026-08-31 用户裁决）
+
+### 调研结论（两模型现状）
+
+- **privilege_level**：已属 credo 权威——定义于 [credo/types.rs:240](file:///home/anfer/Code/QueenX/src/kernel/services/credo/types.rs#L240)（PwmEntry 身份字段），API 由 credo 提供（[engine.rs:54](file:///home/anfer/Code/QueenX/src/kernel/framework/credo/engine.rs#L54)），ramfs/hvfs/signal 均为消费者（经 `pwm_get_privilege_level` 读取），**无副本**。现状已统一，无需处置。
+- **sensitivity**：真正独立模型——定义分散于各 FS 节点结构（[ramfs_node.rs:11](file:///home/anfer/Code/QueenX/src/kernel/services/fs/ramfs_core/ramfs_node.rs#L11)、hvfs dmu.rs:59、dataset.rs:30），**不在 credo 类型**；仅 ramfs/hvfs 实际使用（check_permission 的 clearance 比较），其余 FS（tmpfs/devfs/overlayfs/ext2/exfat）字段恒 0；cred 无敏感性概念。属类 Bell-LaPadula/MLS 多级安全模型，当前为半成品。
+
+### 方案评估（长期视角）
+
+| 方案 | 内容 | 长期评估 |
+|---|---|---|
+| 1 统一到 cred | sensitivity 并入 credo | ❌ 架构债——cred 变 monolith（身份+对象+策略混杂），违反单一职责；TCB 上升；Linux 用 LSM 分离的教训 |
+| 2 独立补全 | 独立"对象访问控制层"，与 cred 平级 | ✅ **长期最优**——与 Linux capabilities↔LSM 分离同构；新 FS/新策略（Biba 等）只需接独立层；审计边界清晰 |
+| 3 折中 | cred 定义语义 + FS 存储 | ⚠️ 过渡形态——权威与状态分离，产生新的分散 |
+
+### 用户裁决（2026-08-31）
+
+- **长期方向**：**方案 2（独立对象访问控制层）**——sensitivity 作为对象级安全属性，定义统一 API、接入全部 FS、可审计；cred 继续专注身份能力。方案 3 可作为过渡，方案 1 否决。
+- **signal.rs 策略**：用 `get_privilege_level` 判断信号权限（signal.rs:50）**单独评估**——倾向改为能力位判定或明确等级策略归属，不混入对象安全层。
+- **实施范围**：本裁决仅登记架构方向，落地（新建对象安全子系统/API、FS 接入）作为独立工程，不在当前常量治理计划内实施。
+
+### 关联
+
+- 与 [DECISION-078](./audit-fix-07-services-net-ipc-credo.md) 常量准则（重要/特殊用途新增）互补：本裁决是**系统级归属**决策，DECISION-078 是**常量级命名**决策。
+
 ## 变更历史
 
 - **2026-08-31**：创建本计划。用户确认决策倾向 1① 2① 3① 4① 5②（B1/B2 新增专用位、B3 修魔法数、B4 补命名、B5 待澄清）；A 类 3 项保持复用。**仅登记计划，不修改代码**。
 - **2026-08-31**：追加 C 类 2 项（域号冲突/语义错位）——C1 credo disk storage 域 4 与 DEVICE 域冲突 + required=1 语义错位（严重）；C2 裸数字域号规范问题（8 处）。合并 B5 与 C1 排查。待办共 B 类 5 项 + C 类 2 项。
+- **2026-08-31**：登记架构裁决——sensitivity/privilege_level 归属：privilege_level 已 cred 权威无需处置；sensitivity 长期采用**方案 2（独立对象访问控制层）**，方案 3 可作过渡，方案 1 否决；signal.rs 信号权限策略单独评估。仅登记方向，落地另立工程。
