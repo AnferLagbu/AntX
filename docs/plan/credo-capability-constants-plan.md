@@ -32,6 +32,15 @@
 | B4 | mmap | `services/mm/mmap.rs:304` | MEM 域 `0x01` **无命名常量**（capability.rs 无 MEM_CAP_* 定义） | **新增 MEM_CAP_* 命名位**（补 capability.rs MEM 域常量） | [] 待实施 |
 | B5 | sys_boot_install | `framework/syscall/dispatch.rs:1188` | `pwm_has_capability(pwm, 4, 0)` **required=0 可疑**（无实际位要求） | **留待澄清**——先确认意图（缺位 bug 还是有意为之）再定 | [] 待澄清 |
 
+### C 类：域号冲突 / 语义错位（2026-08-31 追加核实，比 B 类更严重）
+
+| # | 先例 | 位置 | 现状问题 | 治理决策 | 状态 |
+|---|---|---|---|---|---|
+| C1 | **credo disk storage 域冲突** | `services/credo/storage/disk.rs:23-24` | `PWM_DOMAIN_STORAGE = 4` 与 `CAP_DOMAIN_DEVICE = 4`（capability.rs:17）**编号冲突**——storage"域"实际就是 DEVICE 域；且用 `required=1`（= DEVICE_CAP_MMIO bit0）保护磁盘格式化，**语义错位**（格式化是存储操作，非 MMIO 访问） | **澄清 + 命名**：要么归属 DEVICE 域并新增 DEVICE_CAP_STORAGE 位，要么独立域；消除本地重复常量，改用公共命名 | [] 待澄清+实施 |
+| C2 | **裸数字域号**（非语义 bug，规范问题） | `mount.rs:52/86`（0）、`namespace.rs:812`（0）、`file_handle.rs:150`（0）、`mmap.rs:304`（7）、`ramfs_data.rs:345`（1）、`hvfs_data.rs:530`（3）、`dispatch.rs:1188`（4）、`sysinfo.rs:136/155`（0） | 域号本身正确（0=SYSTEM,7=MEM,1=FS,3=PROC,4=DEVICE），但用**裸数字**而非 `CAP_DOMAIN_*` 命名常量，可读性差、易写错 | **统一改用 `CAP_DOMAIN_*` 命名常量**（纯规范，低风险） | [] 待实施 |
+
+> 注：C1 与 B5 同处 dispatch.rs:1188 的 `4` 域，合并排查。A/B/C 类合计，除已治理的 A 类 3 项外，待办共 B 类 5 项 + C 类 2 项。
+
 ## 实施规划（供后续委托人执行，本计划不落地代码）
 
 ### 新增能力位布局建议（待实施时按 capability.rs 实际布局设计）
@@ -53,3 +62,4 @@
 ## 变更历史
 
 - **2026-08-31**：创建本计划。用户确认决策倾向 1① 2① 3① 4① 5②（B1/B2 新增专用位、B3 修魔法数、B4 补命名、B5 待澄清）；A 类 3 项保持复用。**仅登记计划，不修改代码**。
+- **2026-08-31**：追加 C 类 2 项（域号冲突/语义错位）——C1 credo disk storage 域 4 与 DEVICE 域冲突 + required=1 语义错位（严重）；C2 裸数字域号规范问题（8 处）。合并 B5 与 C1 排查。待办共 B 类 5 项 + C 类 2 项。
