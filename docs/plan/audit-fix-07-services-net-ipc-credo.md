@@ -142,6 +142,7 @@
   - 裁决：按"常量应用面重要性"决策准则——检查常量应用面与既有先例后，pwm_set 属**身份安全关键操作**（任意提权漏洞 P0-07），重要性高，**新增专用能力位**而非复用 SYSTEM+CAP_SYS_ADMIN(0x01)。
   - 准则（用户定义，后续常量决策沿用）：**重要或特殊用途常量采用新增，其他的采用复用既有**。既有先例对照：mount/umount2/setns/open_by_handle 均复用 SYSTEM 域 0x01（这些操作已有 CAP_SYS_ADMIN 语义可复用），而 pwm_set 改变进程身份无既有能力位可精确表达 → 新增。
   - 实施待定：新增能力位归属域（SYSTEM 域 or USER_MGMT 域）+ 位号由委托人按 capability.rs 布局设计。
+  - 后续：2026-08-31 对既有复用先例回溯治理，见独立计划 [credo-capability-constants-plan.md](./credo-capability-constants-plan.md)（B1 reboot/B2 open_by_handle 新增专用位、B3 sethostname 修魔法数、B4 mmap 补 MEM_CAP 命名、B5 sys_boot_install 待澄清；A 类 mount/setns/ramfs-hvfs 保持复用）。
 - **B07-06 Ed25519 签名验证 — 直接引入验证库**
   - 裁决：跳过 fail-closed 中间态，直接引入 curve25519 验证库实现真实验证。
   - 前置评估（委托人开工前必须完成）：① no_std 兼容性（内核裸机 target 需 `#![no_std]` 可用）；② TCB 占比影响（新依赖计入 TCB，需 <30% 软目标内）；③ 许可证（需过 cargo-deny，与 MIT 内核兼容，deny.toml 已配置）；④ 候选：curve25519-dalek（ed25519-dalek）或其他 no_std 兼容实现，由委托人调研后定。
