@@ -46,8 +46,8 @@ pub use capability::{
     DEVICE_CAP_DMA, DEVICE_CAP_IRQ, DEVICE_CAP_MMIO,
 };
 pub use grants::{
-    DelegationDeny, DelegationEngine, DelegationResult, GrantFlags, GrantRecord, GrantTable,
-    MAX_GRANT_RECORDS,
+    DelegationDeny, DelegationEngine, DelegationResult, GRANT_TABLE_CAPACITY, GrantFlags,
+    GrantRecord, GrantTable,
 };
 pub use identity::{PwmError, PwmId, PwmResult};
 pub use policy::{
@@ -55,6 +55,6 @@ pub use policy::{
     PolicyEngine, PolicyResult, RevokeResult, VIABLE_FLOOR,
 };
 pub use sessions::{
-    LoginDeny, LoginResult, MAX_SESSIONS, Session, SessionError, SessionId, SessionManager,
+    CREDO_MAX_SESSIONS, LoginDeny, LoginResult, Session, SessionError, SessionId, SessionManager,
     SessionState, SessionTable,
 };

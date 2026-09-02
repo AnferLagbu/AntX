@@ -168,10 +168,8 @@ impl Default for PasswordHash {
 /// **返回**: 32 字节 SHA-256 哈希
 #[inline]
 pub fn sha256(data: &[u8]) -> Sha256Hash {
-    let arr = credo::sha256::sha256(data);
-    let mut h = [0u8; SHA256_LEN];
-    h.copy_from_slice(&arr[..SHA256_LEN]);
-    Sha256Hash(h)
+    // B07-07: credo::sha256::sha256 返回标准 32 字节, 直接包装.
+    Sha256Hash(credo::sha256::sha256(data))
 }
 
 /// 计算 SHA-256 → 密码哈希 (含盐拉伸)
@@ -182,9 +180,11 @@ pub fn password_hash(password: &[u8], salt: Salt) -> PasswordHash {
     let pwd_len = password.len().min(40);
     stretched[..pwd_len].copy_from_slice(&password[..pwd_len]);
     stretched[40..40 + SALT_LEN].copy_from_slice(&salt.0);
-    let full = credo::sha256::sha256(&stretched[..40 + SALT_LEN]);
-    // 完整 48 字节 (sha256[..32] + salt[..16]) = full[..48]
-    PasswordHash { full }
+    // B07-07: salt 经 from_parts 显式写入 full[32..48].
+    // 原实现把 sha256 的 48 字节返回直接当 full, salt 部分恒 0, 加盐失效
+    // (相同密码产生相同存储值, 失去防彩虹表能力).
+    let digest = credo::sha256::sha256(&stretched[..40 + SALT_LEN]);
+    PasswordHash::from_parts(Sha256Hash(digest), salt)
 }
 
 // ============================================================================

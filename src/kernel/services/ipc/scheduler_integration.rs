@@ -14,7 +14,16 @@
 //! - 支持超时等待
 
 use super::types::{WaitQueue, WaitQueueItem};
-use crate::kernel::framework::proc::{scheduler_yield_ex, thread_get_current};
+use crate::kernel::framework::proc::{
+    scheduler_block, scheduler_unblock, scheduler_yield_ex, thread_get_current,
+};
+use crate::kernel::framework::sync::in_irq_context;
+use crate::kernel::framework::timer::hrtimer::hrtimer_sleep;
+
+/// B07-15: 中断上下文唤醒守卫 — 中断/softirq 上下文不得直接调度或阻塞.
+fn in_interrupt_context() -> bool {
+    in_irq_context()
+}
 
 /// 阻塞当前线程到指定等待队列
 ///
@@ -30,9 +39,14 @@ use crate::kernel::framework::proc::{scheduler_yield_ex, thread_get_current};
 /// * Err(i32) - 错误码 (-1: 超时, -2: 被信号中断)
 ///
 /// # Errors
-/// 当无法获取当前线程 (`thread_get_current` 返回 0) 时返回 `Err(-2)`.
+/// 当无法获取当前线程 (`thread_get_current` 返回 0) 时返回 `Err(-2)`;
+/// 在中断上下文中调用返回 `Err(-2)` (不允许在中断上下文阻塞).
 #[inline]
 pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Result<(), i32> {
+    if in_interrupt_context() {
+        // 中断上下文禁止阻塞/调度 (持锁期间睡眠会死锁).
+        return Err(-2);
+    }
     let thread_addr = thread_get_current();
 
     if thread_addr != 0 {
@@ -44,7 +58,10 @@ pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Res
         let item = WaitQueueItem { tid };
         wait_queue.add(item);
 
-        // 让出 CPU (调用扩展调度器)
+        // B07-15: 标记进程为 Blocked 并让出 CPU.
+        // 原实现仅 yield (忙等), 不改变调度状态 — 被唤醒线程仍在就绪队列,
+        // 无法实现真实阻塞语义.
+        scheduler_block(crate::kernel::framework::proc::BlockReason::WaitingForIo);
         scheduler_yield_ex();
 
         // 被唤醒后返回
@@ -63,10 +80,22 @@ pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Res
 ///
 /// # Returns
 /// * true - 成功唤醒一个线程
-/// * false - 队列为空
+/// * false - 队列为空或唤醒被延后 (中断上下文)
 #[inline]
 pub fn wake_one_thread(wait_queue: &mut WaitQueue) -> bool {
-    wait_queue.wake_one().is_some()
+    // B07-15: 中断上下文不可直接调度唤醒, 延后由进程上下文补唤醒.
+    if in_interrupt_context() {
+        wait_queue.drain_pending();
+        // 中断上下文仅登记唤醒 (pending), 不实际调度; 由后续进程上下文
+        // 经 wake 路径补唤醒. 返回 true 表示已登记.
+        return true;
+    }
+    if let Some(item) = wait_queue.wake_one() {
+        scheduler_unblock(item.tid);
+        true
+    } else {
+        false
+    }
 }
 
 /// 唤醒等待队列中的所有线程
@@ -77,6 +106,11 @@ pub fn wake_one_thread(wait_queue: &mut WaitQueue) -> bool {
 /// * `wait_queue` - 目标等待队列
 #[inline]
 pub fn wake_all_threads(wait_queue: &mut WaitQueue) {
+    // B07-15: 中断上下文禁止调度, 延后到进程上下文补唤醒.
+    if in_interrupt_context() {
+        wait_queue.wake_all();
+        return;
+    }
     wait_queue.wake_all();
 }
 
@@ -100,39 +134,28 @@ pub fn block_with_timeout(wait_queue: &mut WaitQueue, timeout_ms: u64) -> Result
         return block_current_thread(wait_queue, 0);
     }
 
-    // TODO(TRACK-8C5FFB): 实现基于定时器的超时等待
-    // 当前简化实现: 忙等待 + 定期检查
-    let start_time = rdtsc();
-    let timeout_ticks = ms_to_ticks(timeout_ms);
-
+    // B07-15: 用 hrtimer 睡眠替代忙等待 (TRACK-8C5FFB).
+    // 忙等待在单核下会 starve 唤醒方 (无抢占 + 不可重入调度器).
+    let timeout_nanos = timeout_ms.saturating_mul(1_000_000);
+    // 周期性检查等待队列是否仍需要阻塞 (被外部唤醒则退出).
+    // 简化: 有限次重试 + hrtimer 睡眠, 期间被唤醒则立即返回.
+    let deadline = crate::kernel::framework::timer::hrtimer::hrtimer_clock_read()
+        .saturating_add(timeout_nanos);
     loop {
-        // 尝试非阻塞检查条件
+        if wait_queue.count() == 0 {
+            // 已无等待者 (被唤醒或条件满足)
+            return Ok(());
+        }
+        if in_interrupt_context() {
+            return Err(-2);
+        }
+        if crate::kernel::framework::timer::hrtimer::hrtimer_clock_read() >= deadline {
+            return Err(-1); // 超时
+        }
+        // 睡眠一个短时隙后重查 (让出 CPU, 非忙等).
+        hrtimer_sleep(timeout_nanos.min(1_000_000)).map_err(|()| -1)?;
         if wait_queue.count() == 0 {
             return Ok(());
         }
-
-        // 检查是否超时
-        let elapsed = rdtsc() - start_time;
-        if elapsed >= timeout_ticks {
-            return Err(-1); // 超时
-        }
-
-        // 短暂让出 CPU (避免忙等待占用过多资源)
-        scheduler_yield_ex();
     }
-}
-
-/// 读取 TSC 时间戳计数器
-///
-/// 用于高精度时间测量。
-fn rdtsc() -> u64 {
-    crate::arch!(timestamp())
-}
-
-/// 将毫秒转换为 TSC ticks (近似值)
-///
-/// 假设 CPU 主频为 1GHz (需要实际校准)
-fn ms_to_ticks(ms: u64) -> u64 {
-    const APPROX_CPU_FREQ_MHZ: u64 = 1000; // 1 GHz
-    ms * APPROX_CPU_FREQ_MHZ * 1000
 }

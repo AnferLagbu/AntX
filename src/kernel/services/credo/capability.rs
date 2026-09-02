@@ -27,6 +27,13 @@ pub const CAP_DOMAIN_MSGQ: u16 = 13;
 pub const CAP_DOMAIN_DMA: u16 = 14;
 pub const CAP_DOMAIN_RESERVED: u16 = 15;
 
+/// SYSTEM 域 bit1 — 设置进程 PWM 身份 (B07-05, DECISION-078 新增专用位)
+///
+/// `pwm_set` 会改变进程身份, 无既有能力位可精确表达, 故新增专用位而非复用
+/// SYSTEM 域 bit0 (mount/setns 等复用的 CAP_SYS_ADMIN 语义). 任意进程不可
+/// 自行设置自身 PWM (防任意提权).
+pub const SYSTEM_CAP_SET_PWM: u64 = 1 << 1;
+
 pub const FS_CAP_READ: u64 = 1 << 0;
 pub const FS_CAP_WRITE: u64 = 1 << 1;
 pub const FS_CAP_EXECUTE: u64 = 1 << 2;

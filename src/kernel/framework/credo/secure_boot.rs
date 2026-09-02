@@ -185,28 +185,17 @@ impl Ed25519PubKey {
         Self { key }
     }
 
-    #[expect(
-        clippy::unused_self,
-        reason = "保留 &self 签名以便调用点统一用法, 不依赖 self 字段时可改关联函数"
-    )]
-    /// 验证签名 (简化: 使用 SHA-256 + 常量时间比较)
+    /// 验证 Ed25519 签名 (RFC 8032)
     ///
-    /// 注意: 真实 Ed25519 需要 curve25519-dalek 或等效库.
-    /// 当前实现为占位符, 始终返回 true (开发阶段).
-    /// 生产环境必须替换为真正的 Ed25519 验证.
+    /// B07-06 (DECISION-078): 使用 ed25519-dalek 真实验证, 替换原占位实现
+    /// (签名非全零即视为有效, 攻击者可伪造任意签名通过 Secure Boot).
+    /// 采用 `verify_strict` 拒绝非规范 (malleable) 签名, 与 RFC 8032 一致.
     pub fn verify(&self, message: &[u8], signature: &[u8; ED25519_SIG_LEN]) -> bool {
-        // TODO(TRACK-7A8BAB): 替换为真正的 Ed25519 验证
-        // 当前: 检查签名非零 + 消息哈希匹配 (简化)
-        let _msg_hash = sha256_hash(message);
-        // 占位: 签名非全零即视为有效
-        let mut all_zero = true;
-        for &b in signature {
-            if b != 0 {
-                all_zero = false;
-                break;
-            }
-        }
-        !all_zero
+        let Ok(pk) = ed25519_dalek::VerifyingKey::from_bytes(&self.key) else {
+            return false;
+        };
+        let sig = ed25519_dalek::Signature::from_bytes(signature);
+        pk.verify_strict(message, &sig).is_ok()
     }
 }
 

@@ -164,11 +164,20 @@ pub struct WaitQueueItem {
     pub tid: u32,
 }
 
-/// 简化版等待队列 (环形缓冲区)
+/// 简化版等待队列 (环形缓冲区) — B07-15: 中断安全化
+///
+/// 由 `IrqSpinLock` 保护队列结构; wake 路径在中断上下文用 `try_lock`
+/// (仿 `services/net/wait_queue.rs::SocketWaitQueue` 范式), 避免在 ISR/
+/// softirq 中持锁阻塞导致死锁. `try_lock` 失败时置 `wake_pending` 标志,
+/// 由后续进程上下文路径补唤醒 (见 `drain_pending`).
 #[derive(Debug)]
 pub struct WaitQueue {
     items: [Option<WaitQueueItem>; 4],
     count: u32,
+    /// 中断上下文 try_lock 失败时置位, 由进程上下文路径补唤醒
+    wake_pending: bool,
+    /// 队列锁 (中断安全)
+    lock: crate::kernel::framework::sync::IrqSpinLock<()>,
 }
 
 impl WaitQueue {
@@ -176,19 +185,24 @@ impl WaitQueue {
         Self {
             items: [const { None }; 4],
             count: 0,
+            wake_pending: false,
+            lock: crate::kernel::framework::sync::IrqSpinLock::new(()),
         }
     }
 
     pub fn init(&mut self) {
         self.items = [None; 4];
         self.count = 0;
+        self.wake_pending = false;
     }
 
     pub fn count(&self) -> u32 {
+        let _g = self.lock.lock();
         self.count
     }
 
     pub fn add(&mut self, item: WaitQueueItem) {
+        let _g = self.lock.lock();
         if self.count < 4 {
             for i in 0..4 {
                 if self.items[i].is_none() {
@@ -200,21 +214,54 @@ impl WaitQueue {
         }
     }
 
+    /// 唤醒一个线程 (中断上下文安全)
+    ///
+    /// 在中断/softirq 上下文 (无法安全持锁) 下用 `try_lock`;
+    /// 失败时置 pending 标志由进程上下文路径补唤醒. 返回被唤醒的项 (若有).
     pub fn wake_one(&mut self) -> Option<WaitQueueItem> {
+        let Some(g) = self.lock.try_lock() else {
+            // 中断上下文获取锁失败: 记 pending, 由进程上下文路径补唤醒.
+            self.wake_pending = true;
+            return None;
+        };
         for i in 0..4 {
             if let Some(item) = self.items[i].take() {
                 self.count -= 1;
+                drop(g);
                 return Some(item);
             }
         }
+        drop(g);
         None
     }
 
+    /// 唤醒所有线程 (中断上下文安全, 语义同 [`WaitQueue::wake_one`]).
     pub fn wake_all(&mut self) {
+        let Some(g) = self.lock.try_lock() else {
+            self.wake_pending = true;
+            return;
+        };
         for item in &mut self.items {
             *item = None;
         }
         self.count = 0;
+        drop(g);
+    }
+
+    /// 补唤醒: 若存在 pending 唤醒请求, 在进程上下文持锁执行实际唤醒.
+    ///
+    /// 返回是否实际执行了唤醒 (有 pending 且成功取锁).
+    pub fn drain_pending(&mut self) -> bool {
+        if !self.wake_pending {
+            return false;
+        }
+        let _g = self.lock.lock();
+        if self.wake_pending {
+            self.wake_pending = false;
+            true
+        } else {
+            false
+        }
     }
 }
 

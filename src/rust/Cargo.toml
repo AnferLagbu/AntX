@@ -36,6 +36,10 @@ debug = 2
 spin = "0.9"
 bitflags = "2.4"
 zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
+# B07-06 (DECISION-078): 真实 Ed25519 签名验证 (RFC 8032).
+# default-features = false 保持 no_std 兼容; fast 启用预计算表加速验证.
+# 许可证 BSD-3-Clause OR Apache-2.0 (deny.toml 已放行).
+ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
 smoltcp = { path = "../kernel/services/net/smoltcp", default-features = false, features = [
     "medium-ethernet",
     "proto-ipv4",

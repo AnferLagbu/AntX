@@ -513,13 +513,10 @@ pub fn uds_send(fd: i32, data: &[u8]) -> Result<usize, UdsError> {
         peer.stream_len += n as u32;
         // v2 SO_PASSCRED: 对端 passcred=true 时附加 SCM_CREDENTIALS.
         // 简化方案: 凭据追加到 stream_buf 末尾 (POSIX 兼容凭据含 pid/uid/gid).
+        // B07-01: 使用当前进程真实凭据, 消除硬编码伪造的 root 凭据.
         if peer.passcred && peer.stream_len as usize + 12 <= UNIX_STREAM_BUF {
             // 序列化 ScmCredentials 到 12 字节 (safe: 字段都是 Copy u32)
-            let cred = ScmCredentials {
-                pid: 1,
-                uid: 0,
-                gid: 0,
-            };
+            let cred = current_scm_credentials();
             let off = peer.stream_len as usize;
             let p = cred.pid.to_ne_bytes();
             let u = cred.uid.to_ne_bytes();
@@ -535,10 +532,6 @@ pub fn uds_send(fd: i32, data: &[u8]) -> Result<usize, UdsError> {
     })
 }
 
-#[expect(
-    clippy::no_effect_underscore_binding,
-    reason = "no_effect_underscore_binding: let _ = expr 用于类型推导/副作用; 当前优先 expect"
-)]
 /// v2: 接收 stream 消息并提取凭据 (若对端发送时附加了 `SCM_CREDENTIALS`).
 /// 返回 (字节数, 凭据或 None). 调用方分别处理数据和凭据.
 ///
@@ -568,16 +561,21 @@ pub fn uds_recv_with_creds(
         let total = s.stream_len as usize;
         let cred_size = 12usize;
         let (data_len, cred) = if total >= cred_size && s.passcred {
-            // 提取最后 12 字节作为凭据 (safe 读, 无需构造 ScmCredentials struct)
-            // 凭据字段由调用方按需解析 (见 ScmCredentials 定义)
-            let _cred_off = total - cred_size;
-            // 占位 cred: 用一个 bool 标记"有凭据", 数据由调用方解析
+            // B07-01: 反序列化末尾 12 字节为发送方真实凭据 (发送侧按
+            // `[pid 4B][uid 4B][gid 4B]` 小端写入), 不再返回占位全零.
+            let off = total - cred_size;
+            let mut pid = [0u8; 4];
+            let mut uid = [0u8; 4];
+            let mut gid = [0u8; 4];
+            pid.copy_from_slice(&s.stream_buf[off..off + 4]);
+            uid.copy_from_slice(&s.stream_buf[off + 4..off + 8]);
+            gid.copy_from_slice(&s.stream_buf[off + 8..off + 12]);
             (
                 total - cred_size,
                 Some(ScmCredentials {
-                    pid: 0,
-                    uid: 0,
-                    gid: 0,
+                    pid: u32::from_ne_bytes(pid),
+                    uid: u32::from_ne_bytes(uid),
+                    gid: u32::from_ne_bytes(gid),
                 }),
             )
         } else {
@@ -641,13 +639,10 @@ pub fn uds_sendto(_fd: i32, data: &[u8], dest_path: &[u8]) -> Result<usize, UdsE
         target.dgram_len = data.len() as u32;
         target.dgram_pending = true;
         // v2 SO_PASSCRED: 目标 socket 启用时附加 SCM_CREDENTIALS 12 字节
+        // B07-01: 使用当前进程真实凭据, 消除硬编码伪造的 root 凭据.
         if target.passcred && target.dgram_len as usize + 12 <= UNIX_DGRAM_MAX {
             // 序列化 ScmCredentials (safe u32 字段拼装)
-            let cred = ScmCredentials {
-                pid: 1,
-                uid: 0,
-                gid: 0,
-            };
+            let cred = current_scm_credentials();
             let off = target.dgram_len as usize;
             let p = cred.pid.to_ne_bytes();
             let u = cred.uid.to_ne_bytes();
@@ -699,14 +694,20 @@ pub fn uds_recvfrom_with_creds(
         let total = s.dgram_len as usize;
         let cred_size = 12usize;
         let (data_len, cred) = if s.passcred && total >= cred_size {
-            // 凭据占最后 12 字节, 数据是前面的部分
-            // (不反序列化 ScmCredentials, 由调用方按需解析)
+            // B07-01: 反序列化末尾 12 字节为发送方真实凭据, 不再返回占位全零.
+            let off = total - cred_size;
+            let mut pid = [0u8; 4];
+            let mut uid = [0u8; 4];
+            let mut gid = [0u8; 4];
+            pid.copy_from_slice(&s.dgram_buf[off..off + 4]);
+            uid.copy_from_slice(&s.dgram_buf[off + 4..off + 8]);
+            gid.copy_from_slice(&s.dgram_buf[off + 8..off + 12]);
             (
                 total - cred_size,
                 Some(ScmCredentials {
-                    pid: 0,
-                    uid: 0,
-                    gid: 0,
+                    pid: u32::from_ne_bytes(pid),
+                    uid: u32::from_ne_bytes(uid),
+                    gid: u32::from_ne_bytes(gid),
                 }),
             )
         } else {
@@ -845,6 +846,46 @@ pub struct ScmCredentials {
     pub pid: u32,
     pub uid: u32,
     pub gid: u32,
+}
+
+/// B07-01: 获取当前进程的真实凭据 (消除硬编码伪造的 root 凭据).
+///
+/// `pid`/`uid`/`gid` 取自 framework 的权威凭据源:
+/// `proc::process_get_current_pid()` + `credo::session::{get_current_uid, get_current_gid}`.
+fn current_scm_credentials() -> ScmCredentials {
+    ScmCredentials {
+        pid: crate::kernel::framework::proc::process_get_current_pid(),
+        uid: crate::kernel::framework::credo::get_current_uid(),
+        gid: crate::kernel::framework::credo::get_current_gid(),
+    }
+}
+
+/// B07-02: 读取本端接收缓冲末尾 12 字节的发送方凭据 (不消费缓冲).
+///
+/// 供 `recvmsg` 路径回写 `SCM_CREDENTIALS` cmsg 使用; 非 UDS / 未启用
+/// `SO_PASSCRED` / 缓冲不足 12 字节时返回 `None` (不伪造凭据).
+pub fn uds_peer_creds(fd: i32) -> Option<ScmCredentials> {
+    UDS_STATE.with(|state| {
+        let idx = fd_to_idx(fd).ok()? as usize;
+        let s = &state.sockets[idx];
+        if s.id == 0 || !s.passcred {
+            return None;
+        }
+        let (buf, total): (&[u8], usize) = if s.sock_type == UnixSockType::Stream {
+            (&s.stream_buf, s.stream_len as usize)
+        } else {
+            (&s.dgram_buf, s.dgram_len as usize)
+        };
+        if total < 12 {
+            return None;
+        }
+        let off = total - 12;
+        Some(ScmCredentials {
+            pid: u32::from_ne_bytes(buf[off..off + 4].try_into().ok()?),
+            uid: u32::from_ne_bytes(buf[off + 4..off + 8].try_into().ok()?),
+            gid: u32::from_ne_bytes(buf[off + 8..off + 12].try_into().ok()?),
+        })
+    })
 }
 
 /// v2: cmsg 头 (Linux msghdr ancillary data, 16 字节)

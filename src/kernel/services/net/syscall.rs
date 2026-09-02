@@ -401,12 +401,12 @@ pub fn sendmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
             // [0-7]   cmsg_len = 28
             // [8-11]  cmsg_level = 1 (SOL_SOCKET)
             // [12-15] cmsg_type = 2 (SCM 凭据)
-            // [16-19] pid = 1
-            // [20-23] uid = 0
-            // [24-27] gid = 0
-            let pid: u64 = 1;
-            let uid: u64 = 0;
-            let gid: u64 = 0;
+            // [16-19] pid (高 32 位) | uid (低 32 位)
+            // [24-27] gid
+            // B07-02: 使用当前进程真实凭据, 消除硬编码伪造的 root 凭据.
+            let pid: u64 = u64::from(crate::kernel::framework::proc::process_get_current_pid());
+            let uid: u64 = u64::from(crate::kernel::framework::credo::get_current_uid());
+            let gid: u64 = u64::from(crate::kernel::framework::credo::get_current_gid());
             raw::write_u64_to_user(msg_control_ptr, 28u64);
             raw::write_u64_to_user(msg_control_ptr + 8, (2u64 << 32) | 1u64);
             raw::write_u64_to_user(msg_control_ptr + 16, (pid << 32) | uid);
@@ -484,12 +484,19 @@ pub fn recvmsg_syscall(fd: i32, msg_ptr: u64, flags: i32) -> Result<usize, Errno
         if !raw::check_user_buf(msg_control_ptr, msg_controllen as u64) {
             return Err(Errno::EFAULT);
         }
-        // 写回 SCM_CREDENTIALS cmsghdr + 12 字节凭据 (与 send 路径相同编码)
-        raw::write_u64_to_user(msg_control_ptr, 28u64);
-        raw::write_u64_to_user(msg_control_ptr + 8, (2u64 << 32) | 1u64);
-        raw::write_u64_to_user(msg_control_ptr + 16, 1u64 << 32);
-        raw::write_u64_to_user(msg_control_ptr + 24, 0u64);
-        raw::write_u64_to_user(msg_ptr + 40, 28u64);
+        // B07-02: 从 UDS 接收缓冲反序列化真实发送方凭据; 非 UDS / 无凭据
+        // 时不伪造 root, 保持 msg_controllen 原样 (无凭据).
+        if let Some(cred) = uds::uds_peer_creds(fd) {
+            // 写回 SCM_CREDENTIALS cmsghdr + 12 字节凭据 (与 send 路径相同编码)
+            raw::write_u64_to_user(msg_control_ptr, 28u64);
+            raw::write_u64_to_user(msg_control_ptr + 8, (2u64 << 32) | 1u64);
+            raw::write_u64_to_user(
+                msg_control_ptr + 16,
+                (u64::from(cred.pid) << 32) | u64::from(cred.uid),
+            );
+            raw::write_u64_to_user(msg_control_ptr + 24, u64::from(cred.gid));
+            raw::write_u64_to_user(msg_ptr + 40, 28u64);
+        }
     }
     let r = fw::recvmsg_syscall(fd, msg_ptr, flags);
     if r < 0 {

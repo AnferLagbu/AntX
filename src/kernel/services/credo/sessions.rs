@@ -30,8 +30,9 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use super::policy::{CAP_DOMAINS, CapBits, CapDomain, PolicyEngine, PolicyResult};
 
-/// 最大并发会话数
-pub const MAX_SESSIONS: usize = 64;
+/// 最大并发会话数 (B07-16: 改名消除与 `config::MAX_SESSIONS`(16, POSIX
+/// 进程会话表) 的同名冲突 — 认证会话 vs 进程会话是不同职责)
+pub const CREDO_MAX_SESSIONS: usize = 64;
 
 /// 会话状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,7 +74,7 @@ pub struct Session {
 
 /// 会话表
 pub struct SessionTable {
-    records: [Option<Session>; MAX_SESSIONS],
+    records: [Option<Session>; CREDO_MAX_SESSIONS],
     next_id: AtomicU32,
     active: AtomicU64,
     next_slot: AtomicU32,
@@ -85,7 +86,7 @@ impl SessionTable {
         const EMPTY_CAPS: [CapBits; CAP_DOMAINS] = [CapBits(0); CAP_DOMAINS];
         let _ = EMPTY_CAPS;
         Self {
-            records: [NONE; MAX_SESSIONS],
+            records: [NONE; CREDO_MAX_SESSIONS],
             next_id: AtomicU32::new(1),
             active: AtomicU64::new(0),
             next_slot: AtomicU32::new(0),
@@ -123,8 +124,8 @@ impl SessionTable {
         }
         // 查找空槽
         let start = self.next_slot.load(Ordering::Acquire) as usize;
-        for i in 0..MAX_SESSIONS {
-            let idx = (start + i) % MAX_SESSIONS;
+        for i in 0..CREDO_MAX_SESSIONS {
+            let idx = (start + i) % CREDO_MAX_SESSIONS;
             if self.records[idx].is_none() {
                 let id = SessionId(self.next_id.fetch_add(1, Ordering::AcqRel));
                 self.records[idx] = Some(Session {
@@ -139,7 +140,7 @@ impl SessionTable {
                     pid,
                 });
                 self.next_slot
-                    .store(((idx + 1) % MAX_SESSIONS) as u32, Ordering::Release);
+                    .store(((idx + 1) % CREDO_MAX_SESSIONS) as u32, Ordering::Release);
                 self.active.fetch_add(1, Ordering::AcqRel);
                 return Ok(id);
             }
@@ -459,7 +460,7 @@ mod tests {
     #[test]
     fn session_table_full() {
         let mut t = SessionTable::new();
-        for i in 0..MAX_SESSIONS {
+        for i in 0..CREDO_MAX_SESSIONS {
             t.create(i as u64, default_caps(), 100, 0, 0).unwrap();
         }
         let r = t.create(999, default_caps(), 100, 0, 0);

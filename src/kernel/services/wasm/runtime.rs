@@ -161,17 +161,23 @@ impl LinearMemory {
     ///
     /// # Errors
     ///
-    /// 本函数当前不返回 `Err`; 超过上限时返回 `u32::MAX`(WASM 约定)表示失败.
+    /// 本函数当前不返回 `Err`; 超过上限或页数/字节数溢出时返回 `u32::MAX`(WASM 约定)表示失败.
     pub fn grow(&mut self, additional_pages: u32) -> Result<u32, WasmError> {
         let current_pages = (self.data.len() / WASM_PAGE_SIZE as usize) as u32;
-        let new_pages = current_pages + additional_pages;
+        // B07-12: checked_add 防页数回绕 (恶意 huge additional_pages 不再静默回绕增长).
+        let Some(new_pages) = current_pages.checked_add(additional_pages) else {
+            return Ok(u32::MAX);
+        };
         if let Some(max) = self.max_pages {
             if new_pages > max {
                 return Ok(u32::MAX);
             }
         }
-        self.data
-            .resize(new_pages as usize * WASM_PAGE_SIZE as usize, 0);
+        // B07-12: checked_mul 防字节数溢出导致 resize panic.
+        let Some(new_size) = (new_pages as usize).checked_mul(WASM_PAGE_SIZE as usize) else {
+            return Ok(u32::MAX);
+        };
+        self.data.resize(new_size, 0);
         Ok(current_pages)
     }
 

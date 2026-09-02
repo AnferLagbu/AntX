@@ -95,13 +95,18 @@ pub fn sem_wait_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32>
         None => return Err(-1),
     };
 
-    // 等待直到计数 > 0
+    // 等待直到计数 > 0 (B07-15: 真实阻塞替代忙等待)
     // sem.count 由另一个执行上下文（sem_post）修改，这是信号量同步原语
-    #[allow(clippy::while_immutable_condition)]
     while sem.count <= 0 {
-        // TODO(TRACK-21BAF1): 阻塞当前线程到 wait 队列
-        // 当前实现为忙等待 (spinlock 模式)
-        core::hint::spin_loop();
+        // B07-15: 阻塞当前线程到信号量等待队列, 由 sem_post 唤醒.
+        // 原实现为忙等待 (spin_loop), 单核下 starve 唤醒方.
+        match super::scheduler_integration::block_current_thread(&mut sem.wait, 0) {
+            Ok(()) => {} // 被唤醒, 循环重新检查计数
+            Err(_) => {
+                // 中断上下文或无效线程: 退回忙等待 (保守).
+                core::hint::spin_loop();
+            }
+        }
     }
 
     sem.count -= 1;
@@ -138,9 +143,9 @@ pub fn sem_post_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i32>
         sem.count += 1;
     }
 
-    // 唤醒一个等待的线程
+    // 唤醒一个等待的线程 (B07-15: 经调度器真实唤醒, 中断上下文安全)
     if sem.wait.count() > 0 {
-        sem.wait.wake_one();
+        super::scheduler_integration::wake_one_thread(&mut sem.wait);
     }
 
     Ok(())
@@ -168,8 +173,8 @@ pub fn sem_destroy_safe(namespace: &mut IpcNamespace, id: IpcId) -> Result<(), i
         None => return Err(-1),
     };
 
-    // 唤醒所有等待的线程
-    sem.wait.wake_all();
+    // 唤醒所有等待的线程 (B07-15: 经调度器真实唤醒)
+    super::scheduler_integration::wake_all_threads(&mut sem.wait);
 
     // 清理结构体
     sem.id = 0;

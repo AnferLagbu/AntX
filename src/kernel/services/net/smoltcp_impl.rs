@@ -200,13 +200,29 @@ impl SmoltcpNetStack {
     }
 
     /// 分配下一个 user 句柄 ID.
-    fn alloc_user_id(&mut self) -> u32 {
-        let id = self.next_user_id;
-        self.next_user_id = self.next_user_id.wrapping_add(1);
-        if self.next_user_id == 0 {
-            self.next_user_id = 1;
+    ///
+    /// 返回一个未被任何存活 socket 占用的句柄值; 句柄空间耗尽时返回 `None`.
+    /// (B07-03 修复: 原实现 `wrapping_add` 回绕后可能复用仍存活的句柄,
+    /// 造成 use-after-close / 跨 socket 串扰. 现在线性探测跳过已占用值,
+    /// 冲突即报错 (由调用方转为 `NoFreeSocket`), 不静默复用.)
+    fn alloc_user_id(&mut self) -> Option<u32> {
+        // 存活句柄至多 MAX_SOCKETS 个; 探测超过该数量仍未找到空闲值即视为耗尽.
+        let mut id = self.next_user_id;
+        for _ in 0..=MAX_SOCKETS {
+            if id == 0 {
+                id = 1; // 0 = INVALID, 跳过
+            }
+            if !self
+                .handle_map
+                .iter()
+                .any(|slot| matches!(slot, Some((u, _)) if *u == id))
+            {
+                self.next_user_id = if id == u32::MAX { 1 } else { id + 1 };
+                return Some(id);
+            }
+            id = if id == u32::MAX { 1 } else { id + 1 };
         }
-        id
+        None
     }
 
     /// 检查 user 句柄是否对应 DHCP socket.
@@ -590,7 +606,7 @@ impl NetStack for SmoltcpNetStack {
                 return Err(NetError::NoFreeSocket);
             }
             // 分配 DHCP 句柄槽位
-            let user_id = self.alloc_user_id();
+            let user_id = self.alloc_user_id().ok_or(NetError::NoFreeSocket)?;
             let slot_idx = self
                 .find_free_slot()
                 .expect("刚才检查过有空槽位, 现在应该有");
@@ -687,8 +703,8 @@ impl NetStack for SmoltcpNetStack {
         let smol_handle_u32 = fw_init::smoltcp_net_stack_socket_open(kind, smol_slot_idx)
             .ok_or(NetError::NoFreeSocket)?;
 
-        // 分配 user 句柄 (W3.2 alloc_user_id 跳过 0 = INVALID)
-        let user_id = self.alloc_user_id();
+        // 分配 user 句柄 (W3.2 alloc_user_id 跳过 0 = INVALID; B07-03 冲突即报错)
+        let user_id = self.alloc_user_id().ok_or(NetError::NoFreeSocket)?;
 
         // 记录 (user_id, smol_handle_u32) 到 handle_map
         self.handle_map[handle_map_idx] = Some((user_id, smol_handle_u32));

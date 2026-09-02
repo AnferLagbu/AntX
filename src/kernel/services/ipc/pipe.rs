@@ -132,7 +132,7 @@ pub fn pipe_read_safe(
         read_count += 1;
 
         if pipe.write_wait.count() > 0 {
-            pipe.write_wait.wake_one();
+            super::scheduler_integration::wake_one_thread(&mut pipe.write_wait);
         }
     }
 
@@ -188,7 +188,7 @@ pub fn pipe_write_safe(
         written += 1;
 
         if pipe.read_wait.count() > 0 {
-            pipe.read_wait.wake_one();
+            super::scheduler_integration::wake_one_thread(&mut pipe.read_wait);
         }
     }
 
@@ -217,13 +217,13 @@ pub fn pipe_close_safe(namespace: &mut IpcNamespace, fd: i32) -> Result<(), i32>
         pipe.readers -= 1;
         pipe.read_fd = 0;
         if pipe.readers == 0 {
-            pipe.write_wait.wake_all();
+            super::scheduler_integration::wake_all_threads(&mut pipe.write_wait);
         }
     } else if fd == pipe.write_fd {
         pipe.writers -= 1;
         pipe.write_fd = 0;
         if pipe.writers == 0 {
-            pipe.read_wait.wake_all();
+            super::scheduler_integration::wake_all_threads(&mut pipe.read_wait);
         }
     }
 

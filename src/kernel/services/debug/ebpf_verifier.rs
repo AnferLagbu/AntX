@@ -27,7 +27,7 @@
 
 #[allow(unused_imports)]
 use crate::kernel::framework::debug::{
-    BPF_MAX_INSNS, BPF_REG_NUM, BpfInsn, BpfProg, BpfVerifier, VerifyResult,
+    BPF_MAX_INSNS, BPF_REG_NUM, BPF_STACK_SIZE, BpfInsn, BpfProg, BpfVerifier, VerifyResult,
 };
 
 /// 寄存器类型 (验证器内部状态, 策略相关, 不导出)
@@ -44,20 +44,41 @@ enum RegType {
 }
 
 /// 验证器寄存器状态 (验证器内部状态)
+///
+/// B07-18: 新增 `range` 字段 — 标量值的精确范围 (单点常量), 用于 ALU
+/// 溢出检测. 非单点/未知范围置 `None` (运行时按 64 位 wrapping 截断,
+/// 不参与指针运算, 无内存破坏风险).
 #[derive(Debug, Clone, Copy)]
 struct RegState {
     r#type: RegType,
+    range: Option<(u64, u64)>,
 }
 
 impl RegState {
     fn new() -> Self {
         Self {
             r#type: RegType::NotInit,
+            range: None,
         }
     }
     fn scalar() -> Self {
         Self {
             r#type: RegType::Scalar,
+            range: None,
+        }
+    }
+    /// 已知单点常量值 (用于溢出检测)
+    fn const_value(v: u64) -> Self {
+        Self {
+            r#type: RegType::Scalar,
+            range: Some((v, v)),
+        }
+    }
+    /// 以已知范围构造
+    fn with_range(range: Option<(u64, u64)>) -> Self {
+        Self {
+            r#type: RegType::Scalar,
+            range,
         }
     }
 }
@@ -86,6 +107,9 @@ mod opcode {
     pub const JMP32: u8 = 0x06;
     pub const ALU64: u8 = 0x07;
     pub const MOV: u8 = 0xb0; // ALU 操作子码
+    pub const ADD: u8 = 0x00; // ALU 操作子码
+    pub const SUB: u8 = 0x10; // ALU 操作子码
+    pub const MUL: u8 = 0x20; // ALU 操作子码
     pub const JA: u8 = 0x00; // JMP 操作子码: 无条件跳转
     pub const CALL: u8 = 0x80; // JMP 操作子码: helper 调用
     pub const EXIT: u8 = 0x90; // JMP 操作子码: 退出
@@ -105,6 +129,57 @@ mod helper_id {
     pub const MAP_LOOKUP_ELEM: u32 = 1;
     pub const MAP_UPDATE_ELEM: u32 = 2;
     pub const MAP_DELETE_ELEM: u32 = 3;
+}
+
+/// B07-18: helper 签名 — 每个 helper 最少需要的已初始化参数寄存器数.
+///
+/// 按 helper 的实际参数契约 (R1=map/R2=key/R3=value 等), 校验调用前
+/// R1..Rn 全部已初始化, 拒绝参数缺失 (原实现 R2-R5 未初始化仅 break 不拒绝).
+fn helper_min_args(id: u32) -> usize {
+    match id {
+        helper_id::MAP_UPDATE_ELEM => 3, // R1=map, R2=key, R3=value
+        helper_id::MAP_LOOKUP_ELEM | helper_id::MAP_DELETE_ELEM => 2, // R1=map, R2=key
+        helper_id::TRACE_PRINTK => 1, // R1=fmt
+        _ => 0,                       // KTIME_GET_NS / GET_SMP_PROCESSOR 无参数
+    }
+}
+
+/// B07-18: ALU64 单点常量运算的溢出检测.
+///
+/// 仅当 dst 与 (寄存器源或立即数) 均为已知单点常量时做 checked 运算;
+/// 溢出/下溢返回 `Err`(拒绝). 其他操作 (位运算/移位/未知范围) 返回
+/// `Ok(None)` (结果范围未知, 运行时 64 位 wrapping 截断, 不参与指针运算).
+fn alu_checked_range(
+    op_low: u8,
+    dst_range: Option<(u64, u64)>,
+    src_range: Option<(u64, u64)>,
+    src_is_reg: bool,
+    imm: i32,
+) -> Result<Option<(u64, u64)>, ()> {
+    let Some((a0, a1)) = dst_range else {
+        return Ok(None);
+    };
+    if a0 != a1 {
+        return Ok(None); // 非单点, 不精确判断
+    }
+    let b = if src_is_reg {
+        let Some((b0, b1)) = src_range else {
+            return Ok(None);
+        };
+        if b0 != b1 {
+            return Ok(None);
+        }
+        b0
+    } else {
+        imm as u64
+    };
+    let v = match op_low {
+        opcode::ADD => a0.checked_add(b).ok_or(())?,
+        opcode::SUB => a0.checked_sub(b).ok_or(())?,
+        opcode::MUL => a0.checked_mul(b).ok_or(())?,
+        _ => return Ok(None),
+    };
+    Ok(Some((v, v)))
 }
 
 /// 最大回边深度 (策略)
@@ -139,9 +214,11 @@ impl BpfVerifier for StandardBpfVerifier {
         let mut regs = [RegState::new(); BPF_REG_NUM];
         regs[reg::R1] = RegState {
             r#type: RegType::CtxPtr,
+            range: None,
         };
         regs[reg::R10] = RegState {
             r#type: RegType::StackPtr,
+            range: None,
         };
 
         // 逐条验证
@@ -216,16 +293,18 @@ impl BpfVerifier for StandardBpfVerifier {
                                 .into_bytes(),
                         );
                     }
-                    // EBPF-6 规则 11: helper 调用前 R1-R5 全部必须已初始化
-                    // (Linux verifier 严格版本要求; 简化版仅检查 R1,
-                    //  此处扩展到 R1-R5 一致性约束)
-                    // 注: 大多数 helper 实际只用 R1, 但严格 verifier 仍校验 R1-R5
-                    for arg_reg in [reg::R1, 2, 3, 4, 5] {
+                    // B07-18 规则 12: 按 helper 签名校验 R1..Rn 已初始化.
+                    // 原实现 R2-R5 未初始化仅 break (不拒绝), 恶意程序可绕过
+                    // 参数契约调用 helper (如 map 操作缺 key 指针).
+                    let min_args = helper_min_args(helper_id);
+                    for arg_reg in 1..=min_args {
                         if regs[arg_reg].r#type == RegType::NotInit {
-                            // 弱化: R2-R5 未初始化, 视为可接受 (eBPF 实际允许)
-                            // 因为 helper 调用将 R1-R5 视为输入, 未使用的参数未定义
-                            // 注: 此处选择**不**拒绝, 与 Linux 早期 verifier 行为一致
-                            break;
+                            return VerifyResult::Err(
+                                alloc::format!(
+                                    "helper {helper_id} at pc={pc} requires R{arg_reg} initialized"
+                                )
+                                .into_bytes(),
+                            );
                         }
                     }
                     regs[reg::R1] = RegState::scalar();
@@ -285,12 +364,38 @@ impl BpfVerifier for StandardBpfVerifier {
                         }
                         regs[dst] = regs[src];
                     } else {
-                        // MOV immediate
-                        regs[dst] = RegState::scalar();
+                        // B07-18: MOV imm 记录单点常量范围 (供后续 ALU 溢出检测)
+                        regs[dst] = RegState::const_value(insn.imm as u64);
                     }
                 } else {
-                    // 其他 ALU: 结果是标量
-                    regs[dst] = RegState::scalar();
+                    // B07-18 规则 13: ALU64 单点常量运算溢出检测.
+                    // 原实现一律置 Scalar, 无法拦截 u64::MAX+1 等常量折叠溢出.
+                    if class == opcode::ALU64 {
+                        let src_is_reg = (insn.op & opcode::X) != 0;
+                        if src_is_reg && regs[src].r#type == RegType::NotInit {
+                            return VerifyResult::Err(
+                                alloc::format!("use of uninitialized R{src} at pc={pc}")
+                                    .into_bytes(),
+                            );
+                        }
+                        match alu_checked_range(
+                            op_low,
+                            regs[dst].range,
+                            regs[src].range,
+                            src_is_reg,
+                            insn.imm,
+                        ) {
+                            Ok(range) => regs[dst] = RegState::with_range(range),
+                            Err(()) => {
+                                return VerifyResult::Err(
+                                    alloc::format!("ALU overflow at pc={pc}").into_bytes(),
+                                );
+                            }
+                        }
+                    } else {
+                        // ALU32: 32 位截断运算, 结果范围未知
+                        regs[dst] = RegState::scalar();
+                    }
                 }
             }
 
@@ -316,7 +421,21 @@ impl BpfVerifier for StandardBpfVerifier {
                 // EBPF-4 规则 10: LDX 加载要求 src 必须是已知指针 (StackPtr 或 MapValue)
                 // 简化: 拒绝从 scalar 加载 (避免将标量当指针)
                 match regs[src].r#type {
-                    RegType::StackPtr | RegType::CtxPtr => {
+                    RegType::StackPtr => {
+                        // B07-18 规则 14: 栈读偏移深度验证 — R10 基地址的 off
+                        // 必须在 [-BPF_STACK_SIZE, 0] (R10 指向栈底+512, 负偏移访问栈内).
+                        // 原实现不校验 off, 恶意程序可 [R10+large] 越界读.
+                        if insn.off < -(BPF_STACK_SIZE as i16) || insn.off > 0 {
+                            return VerifyResult::Err(
+                                alloc::format!(
+                                    "stack load offset out of range at pc={pc}: off={}",
+                                    insn.off
+                                )
+                                .into_bytes(),
+                            );
+                        }
+                    }
+                    RegType::CtxPtr => {
                         // 合法: 已知指针
                     }
                     _ => {
@@ -600,7 +719,7 @@ mod tests {
         assert!(matches!(STANDARD_VERIFIER.verify(&prog), VerifyResult::Ok));
     }
 
-    /// 6. 全部 6 个合法 helper 都被识别
+    /// 6. 全部 6 个合法 helper 都被识别 (B07-18: 按签名初始化所需参数)
     #[test]
     fn test_all_legal_helpers_accepted() {
         let legal = [
@@ -612,10 +731,22 @@ mod tests {
             helper_id::GET_SMP_PROCESSOR as i32,
         ];
         for h in legal {
-            let insns = vec![
-                make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, h),
-                make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
-            ];
+            let mut insns = Vec::new();
+            // B07-18: 按 helper 签名初始化参数寄存器 (R1=map, R2=key, R3=value).
+            match h as u32 {
+                helper_id::MAP_UPDATE_ELEM => {
+                    insns.push(make_insn(opcode::ALU64 | opcode::MOV, 1, 0, 0, 0));
+                    insns.push(make_insn(opcode::ALU64 | opcode::MOV, 2, 0, 0, 0));
+                    insns.push(make_insn(opcode::ALU64 | opcode::MOV, 3, 0, 0, 0));
+                }
+                helper_id::MAP_LOOKUP_ELEM | helper_id::MAP_DELETE_ELEM => {
+                    insns.push(make_insn(opcode::ALU64 | opcode::MOV, 1, 0, 0, 0));
+                    insns.push(make_insn(opcode::ALU64 | opcode::MOV, 2, 0, 0, 0));
+                }
+                _ => {}
+            }
+            insns.push(make_insn(opcode::JMP | opcode::CALL, 0, 0, 0, h));
+            insns.push(make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0));
             let prog = make_prog(insns);
             assert!(
                 matches!(STANDARD_VERIFIER.verify(&prog), VerifyResult::Ok),
@@ -750,5 +881,87 @@ mod tests {
         ];
         let prog = make_prog(insns);
         assert!(matches!(STANDARD_VERIFIER.verify(&prog), VerifyResult::Ok));
+    }
+
+    // B07-18 回归: ALU64 常量折叠溢出被拒绝 (u64::MAX + 1)
+    #[test]
+    fn test_alu_overflow_rejected() {
+        // R0 = u64::MAX; R0 += 1 → 无符号溢出, 应拒绝
+        let insns = vec![
+            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, -1), // R0 = 0xFFFFFFFFFFFFFFFF
+            make_insn(opcode::ALU64 | opcode::ADD, 0, 0, 0, 1),  // R0 += 1 (溢出)
+            make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
+        ];
+        let prog = make_prog(insns);
+        let result = STANDARD_VERIFIER.verify(&prog);
+        assert!(
+            matches!(result, VerifyResult::Err(_)),
+            "ALU overflow should be rejected"
+        );
+    }
+
+    // B07-18 回归: 合法常量链仍通过 (1 + 2 = 3)
+    #[test]
+    fn test_alu_constant_chain_valid() {
+        let insns = vec![
+            make_insn(opcode::ALU64 | opcode::MOV, 0, 0, 0, 1),
+            make_insn(opcode::ALU64 | opcode::ADD, 0, 0, 0, 2), // 1+2=3, 不溢出
+            make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
+        ];
+        let prog = make_prog(insns);
+        assert!(matches!(STANDARD_VERIFIER.verify(&prog), VerifyResult::Ok));
+    }
+
+    // B07-18 回归: 栈读偏移越界被拒绝 (LDX [R10+100] 超出 512 字节栈)
+    #[test]
+    fn test_stack_load_offset_oob_rejected() {
+        let insns = vec![
+            make_insn(opcode::LDX, 0, 10, 100, 0), // R0 = [R10+100] (越界)
+            make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
+        ];
+        let prog = make_prog(insns);
+        let result = STANDARD_VERIFIER.verify(&prog);
+        assert!(
+            matches!(result, VerifyResult::Err(_)),
+            "stack load offset out of range should be rejected"
+        );
+    }
+
+    // B07-18 回归: 栈读偏移下界越界被拒绝 (LDX [R10-513])
+    #[test]
+    fn test_stack_load_offset_negative_oob_rejected() {
+        let insns = vec![
+            make_insn(opcode::LDX, 0, 10, -513, 0), // R0 = [R10-513] (越界)
+            make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
+        ];
+        let prog = make_prog(insns);
+        let result = STANDARD_VERIFIER.verify(&prog);
+        assert!(
+            matches!(result, VerifyResult::Err(_)),
+            "stack load offset below floor should be rejected"
+        );
+    }
+
+    // B07-18 回归: helper 参数缺失被拒绝 (MAP_LOOKUP_ELEM 缺 R2=key)
+    #[test]
+    fn test_helper_missing_arg_rejected() {
+        // 只初始化 R1 (map), 未初始化 R2 (key) → 应拒绝
+        let insns = vec![
+            make_insn(opcode::ALU64 | opcode::MOV, 1, 0, 0, 0), // R1 = 0
+            make_insn(
+                opcode::JMP | opcode::CALL,
+                0,
+                0,
+                0,
+                helper_id::MAP_LOOKUP_ELEM as i32,
+            ),
+            make_insn(opcode::JMP | opcode::EXIT, 0, 0, 0, 0),
+        ];
+        let prog = make_prog(insns);
+        let result = STANDARD_VERIFIER.verify(&prog);
+        assert!(
+            matches!(result, VerifyResult::Err(_)),
+            "helper missing required arg should be rejected"
+        );
     }
 }

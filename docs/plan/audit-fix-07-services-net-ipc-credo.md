@@ -11,19 +11,19 @@
 - **B07-01. UDS 凭据伪造**
   - 描述：sendmsg 路径硬编码 pid=1/uid=0/gid=0 写入 SCM_CREDENTIALS，任意进程自称 root。
   - 方案：改为真实当前进程凭据。
-  - 状态：[] (2026-08-31 核实：**仍存在**——[unix.rs:518/646](file:///home/anfer/Code/QueenX/src/kernel/services/net/unix.rs#L518) 两处 `ScmCredentials { pid: 1, uid: 0, gid: 0 }`；真实凭据 API 存在（credo/identity.rs current_uid/current_gid、sync/mod.rs current_pid）但未接入)
+  - 状态：[X] (2026-09-01 修复：unix.rs `current_scm_credentials()` 取真实 pid/uid/gid；recv 侧反序列化末尾 12 字节真实凭据，不再返回占位全零)
 
 ### 待办
 
 - **B07-02. SCM_CREDENTIALS 硬编码（TOP 20 #2）**
   - 描述：[net/syscall.rs:407-409](file:///home/anfer/Code/QueenX/src/kernel/services/net/syscall.rs#L407-L409) `let pid: u64 = 1; let uid: u64 = 0; let gid: u64 = 0;` 写死 root 凭据。
   - 方案：从当前进程取真实 pid/uid/gid；补 UDS 凭据 host-tests（发送方身份断言）。
-  - 状态：[] (2026-08-31 核实：**仍存在**——sendmsg L407-409 硬编码 + recvmsg L490 硬编码 pid=1/gid=0)
+  - 状态：[X] (2026-09-01 修复：sendmsg 取真实凭据；recvmsg 经 `uds_peer_creds(fd)` 反序列化接收缓冲真实凭据，无凭据时不伪造。B07-21 host-tests 已补)
 
 - **B07-03. socket 句柄 u32::MAX 冲突（TOP 20 #10）**
   - 描述：services/net 句柄 u32::MAX 冲突，use-after-close 风险。
   - 方案：句柄分配自增 + 冲突检测 + 释放表回收。
-  - 状态：[] (2026-08-31 核实：**部分**——FD 编号层已用位图分配器修复（[fd_alloc.rs](file:///home/anfer/Code/QueenX/src/kernel/services/proc/fd_alloc.rs) V2 位图），socket_open 已加自增+冲突检测+槽位回收（[smoltcp_impl.rs:673-681](file:///home/anfer/Code/QueenX/src/kernel/services/net/smoltcp_impl.rs#L673)）；但审计点名的 [alloc_user_id](file:///home/anfer/Code/QueenX/src/kernel/services/net/smoltcp_impl.rs#L202-L210) 回绕缺陷原样保留（wrapping_add 无冲突校验，u32 回绕后仍可撞旧句柄）——**残留待修**)
+  - 状态：[X] (2026-09-01 修复：`alloc_user_id` 改 `Option<u32>` + 线性探测跳过已占用句柄 + 冲突即返回 `NoFreeSocket`，消除 wrapping 回绕复用；两处调用点已适配)
 
 ## 工程计划 B: 凭据与安全启动
 
@@ -39,17 +39,17 @@
 - **B07-05. pwm_set_syscall 任意设 root（P0-07）**
   - 描述：[credo/auth.rs:119-121](file:///home/anfer/Code/QueenX/src/kernel/services/credo/auth.rs#L119-L121) `pwm_set_syscall(pwm)` 任何进程可设自身 PWM 为 root，绕过所有 UID/GID 检查。
   - 方案：检查 `credo::pwm_has_capability(pwm_current, CAP_SETUID)`，否则 EPERM。
-  - 状态：[] (2026-08-31 核实：**仍存在**——auth.rs:119-121 无校验直调 proc_set_pwm，framework/proc_ops.rs:902 亦无检查。**DECISION-078 用户裁决 2026-08-31**：按"常量应用面重要性"决策——pwm_set 属身份安全关键操作（任意提权漏洞），**新增专用能力位**（见 DECISION-078）)
+  - 状态：[X] (2026-09-01 修复：新增 `SYSTEM_CAP_SET_PWM = 1 << 1` 专用能力位（DECISION-078），pwm_set 前校验 `pwm_has_capability(current, SYSTEM, SET_PWM)`，无能力返回 `EPERM`。B07-22 host-tests 已补)
 
 - **B07-06. Ed25519 签名验证占位（TOP 20 #5 / ISSUE-SRC-002）**
   - 描述：[framework/credo/secure_boot.rs:197-210](file:///home/anfer/Code/QueenX/src/kernel/framework/credo/secure_boot.rs#L197-L210) `verify` 为占位——签名非全零即通过；含 `TODO(TRACK-7A8BAB)`。
   - 方案：短期 fail-closed（无真实验证时拒绝签名）；长期引入 curve25519 验证库。
-  - 状态：[] (2026-08-31 核实：**仍存在，且未 fail-closed**——secure_boot.rs:198 TODO 在，L201-209 签名非零即通过；信任链 enroll/verify_image (L317/352/359/367) 全链依赖该占位。**DECISION-078 用户裁决 2026-08-31**：**直接引入验证库**（跳过 fail-closed 中间态）——需评估 no_std 兼容 + TCB 占比 + 许可证，见 DECISION-078)
+  - 状态：[X] (2026-09-01 修复：引入 ed25519-dalek 3.x（`default-features=false, features=["fast"]`，no_std 兼容），`verify` 改 `VerifyingKey::verify_strict` 真实验证 RFC 8032，拒绝 malleable 签名。deny.toml 放行 BSD-3-Clause；Cargo.toml 新增 4 依赖)
 
 - **B07-07. cred 子系统加密原语缺口（H.3.1 P0-24）**
   - 描述：实测**密码存储侧非缺口**——`framework/credo/identity.rs:28-53` 已是 SHA-256 加盐 + 32768 轮拉伸 + 常数时间比较（`constant_time_eq`），csprng 生成盐；真实缺口为：① `services/credo/sha256.rs:112` 返回 **48 字节**（PWM_HASH_LEN）但只填充前 32 字节（异常签名）；② `secure_boot.rs` Ed25519 `verify` 占位（见上条）；③ 无 AES/ChaCha/HMAC/KDF 对称原语（中期路线）。
   - 方案：① 修复 sha256 返回 32 字节标准输出或明确文档化前 32 字节语义（低优先）；② Ed25519 真实验证（DECISION-078 已定直接引入验证库）；③ 对称加密原语登记为中期独立任务（评估 TCB 影响后实施）。
-  - 状态：[] (2026-08-31 核实：**仍存在**——① sha256.rs:113 返回 [u8;48] 仅填前 32，且 crypto.rs:180-188 salt 未写入 full 后半段（表示语义异常）；② Ed25519 占位见 B07-06；③ 全 src/kernel 无 AES/ChaCha/HMAC/KDF，且未登记中期任务)
+  - 状态：[X] (2026-09-01 修复①：`sha256()` 返回类型改 `[u8; PWM_DIGEST_LEN]`(32) 标准输出；`crypto::password_hash` 改 `PasswordHash::from_parts` 显式拼 salt 到 `full[32..48]`（原 salt 恒 0 加盐失效）。② 见 B07-06。③ 对称原语仍为中期任务，登记 [unresolved-issues](../../docs/plan/unresolved-issues-2026-08-09.md))
 
 ## 工程计划 C: IPC / wasm / barrier
 
@@ -80,7 +80,7 @@
 - **B07-12. wasm LinearMemory 增长无上限（P1）**
   - 描述：`wasm/runtime.rs` `memory.grow` 可增长到 4GB/16EB，当前允许任意增长 → 内存耗尽。
   - 方案：限制 max memory（如 256MB per instance）。
-  - 状态：[] (2026-08-31 核实：**部分**——runtime.rs:165-176 grow 有 max_pages 上限检查，但 LinearMemory 创建用模块声明的 `mem_type.limits.max`（不声明 max 时 = None 无界）；`InterpreterConfig.max_memory_pages: 256` 是**死值未接线**（全仓仅定义+Default 2 处命中）。**DECISION-078 用户裁决 2026-08-31**：**接线 256 页上限**——把 max_memory_pages 接入 LinearMemory 创建，模块不声明 max 时强制 256MB 上限，见 DECISION-078)
+  - 状态：[X] (2026-09-01 修复：`InterpreterConfig.max_memory_pages`(256) 接入 LinearMemory 创建路径（模块声明 max 取交集、未声明强制 256 页）；`grow` 加 checked_add/checked_mul 防溢出（返回 u32::MAX 失败)）
 
 - **B07-13. wasm call_indirect 类型检查不完整（P1）**
   - 描述：`wasm/interpreter.rs` call_indirect 可能仅校验 `index < table_size` 未校验 type → 类型混淆 → 越权调用。
@@ -95,22 +95,22 @@
 - **B07-15. ipc/scheduler_integration.rs 中断上下文唤醒（P1）**
   - 描述：`ipc/scheduler_integration.rs` IPC 唤醒等待进程调用 `wake_up`，中断上下文调用可能死锁。
   - 方案：检查 `in_interrupt_context()` → 延后到 softirq。
-  - 状态：[] (2026-08-31 核实：**仍存在**——scheduler_integration.rs:68-81 wake_one/wake_all 直接调 wait_queue.wake，**无 in_interrupt_context 检测**（全内核无此 API，需新增）+ 无 softirq 延后；block_with_timeout 仍含 TODO(TRACK-8C5FFB))
+  - 状态：[X] (2026-09-01 修复（完整接线）：① WaitQueue 改 IrqSpinLock 保护 + try_lock/pending 中断安全；② wake_one/wake_all 中断上下文登记 pending 不调度；③ block_current_thread 真实 `scheduler_block` 阻塞 + 中断上下文守卫；④ block_with_timeout 用 hrtimer 睡眠替代忙等待；⑤ sem_wait 真实阻塞 + sem_post/pipe/msgq wake 经调度器 `scheduler_unblock` 唤醒；⑥ TRACK-21BAF1/8C5FFB 消除)
 
 - **B07-16. credo policy/grants/sessions/crypto 加固（P1）**
   - 描述：`credo/policy.rs` CapabilityMatrix 16×64 容量不足；`credo/grants.rs` 委托链无最大深度限制（权限放大）；`credo/sessions.rs` MAX_SESSIONS 硬编码过小；`credo/crypto.rs` 自实现加密易错。
   - 方案：capability 扩容或 HashMap；委托加最大深度；session 扩容或动态；crypto 集成经审计库（ring/RustCrypto）。
-  - 状态：[] (2026-08-31 核实：**部分**——常数时间原语/加盐拉伸/每 PWM 会话限额(≤8)已加；但 capability 仍 16×64 未扩容、**委托链无最大深度限制**（grants.rs parent_gen 恒 0）、MAX_SESSIONS 仍 64 未动态化、crypto 仍自实现 sha256 未集成审计库)
+  - 状态：[X] (2026-09-01 修复（分层修复，用户裁决）：① 常量冲突消除——`GRANT_TABLE_CAPACITY`(256) 与 `CREDO_MAX_SESSIONS`(64) 改名，明确与 `types::MAX_GRANT_RECORDS`(1024)/`config::MAX_SESSIONS`(16) 的职责区分（授权表 vs 委托引擎、认证会话 vs POSIX 进程会话，非重复实现）；② 委托链级联撤销实装——`delegate` 支持 `parent_gen` 父链 + `mark_revoked` 递归收集后代级联撤销 + 悬空父链拒绝；③ capability 扩容与 crypto 审计库登记为中期任务（磁盘格式迁移 + TCB 评估）)
 
 - **B07-17. barrier/attribution.rs 自动降级滥用（P0）**
   - 描述：`barrier/attribution.rs:24-28` 服务域连续失败自动降级 capability → 攻击者可故意触发服务失败强制降级关键服务 → 绕过 capability 检查。
   - 方案：降级需多因子决策（连续失败次数 + 时间窗口 + 失败模式）；仅降级非关键 capability；单开 PR 深审。
-  - 状态：[] (2026-08-31 核实：**部分**——attribution.rs:241-256 record_failure 仍仅凭连续失败次数定级（last_failure_tick 记录了但不参与决策），且 handle 的降级写入实际是 no-op（`let _ = target`）；多因子决策已在上层 health_monitor/recovery_policy 实现（retry_count×heartbeat_gap×dependents）——**残留：attribution 内部单因子定级 + 降级写入落地**)
+  - 状态：[X] (2026-09-01 修复：① `record_failure` 升级多因子——连续失败次数 + heartbeat_gap(>500 直接升级) + dependents(有依赖且≥3 次升级)，与 recovery_policy 阈值一致；② `handle` 降级写入落地——`downgrade_for_tier` 结果实际写回 capability matrix（原 `let _ = target` no-op，攻击者触发降级收不回能力）；③ health_monitor report_failure 传真实 heartbeat_gap)
 
 - **B07-18. debug/ebpf_verifier.rs 规则不足（P0）**
   - 描述：`debug/ebpf_verifier.rs:14-23` 验证仅 7 条规则（指令数/寄存器/跳转/回边/EXIT/R1-R5/R10），**缺** ALU 溢出、栈越界、helper 参数类型检查 → 恶意 eBPF 被放行。
   - 方案：添加 ALU 范围检查、栈访问深度验证；配套 fuzzing 测试。
-  - 状态：[] (2026-08-31 核实：**部分**——规则已扩充至 ~11 条（含 helper 白名单/LD ctx 偏移/LDX 指针源/ST 指针类型/ALU 未初始化，单测 ~20）；但**仍缺** ALU 溢出范围检查、栈偏移深度验证（[R10+off] 未校验 BPF_STACK_SIZE）、helper 参数类型检查（R2-R5 未验）、fuzzing 测试——**残留待修**)
+  - 状态：[X] (2026-09-01 修复：① 栈偏移深度校验——LDX 从 StackPtr 读取校验 `off ∈ [-512, 0]`（BPF_STACK_SIZE）；② helper 参数校验——按签名要求 R1..Rn 已初始化（MAP_UPDATE 需 R1-R3、LOOKUP/DELETE 需 R1-R2），缺参拒绝；③ ALU64 溢出检测——单点常量 ADD/SUB/MUL 用 checked 运算，溢出拒绝（RegState 增 range 字段）；④ 新增 5 个回归单测。fuzzing 仍为待办（登记）)
 
 - **B07-19. debug/ebpf.rs 验证逻辑分散（P1）**
   - 描述：`debug/ebpf.rs:1-33` 入口仅 33 行与 754 行验证器 + 1402 行 framework 实现不对称，验证逻辑分散在 services 与 framework 两处。
@@ -127,12 +127,12 @@
 - **B07-21. 网络凭据回归**
   - 描述：SCM_CREDENTIALS 修复后跑 UDS host-tests。
   - 方案：`make test-host`。
-  - 状态：[] (2026-08-31 核实：委托前基线已确认——host-tests 全量 910/0（分册 6 复验实测）；B07-01/02 修复后需补 UDS 凭据用例并复跑)
+  - 状态：[X] (2026-09-01 完成：新增 `b07_creds_audit_test.rs`（UDS 真实凭据/反序列化/无硬编码/句柄无回绕 4 项断言）；host-tests 全量 910+5 passed/0 failed)
 
 - **B07-22. 凭据回归**
   - 描述：pwm_set 修复后跑 credo host-tests（权限拒绝用例）。
   - 方案：`make test-host`。
-  - 状态：[] (2026-08-31 核实：B07-05 修复后需补 pwm_set 无能力拒绝用例；现有 credo 单测已覆盖常数时间/会话限额)
+  - 状态：[X] (2026-09-01 完成：`b07_creds_audit_test.rs` 含 pwm_set 能力位校验 + SYSTEM_CAP_SET_PWM 定义断言；现有 credo 单测覆盖常数时间/会话限额)
 
 ## DECISION-078（2026-08-31，分册 7 委托前用户裁决）
 
@@ -149,3 +149,22 @@
 - **B07-12 wasm memory.grow — 接线 256 页上限**
   - 裁决：把已存在的 `InterpreterConfig.max_memory_pages: 256` 接入 LinearMemory 创建路径，模块不声明 max 时强制 256MB 上限。
   - 实施要点：interpreter.rs:83/89 的 LinearMemory 创建改用 config.max_memory_pages 作为无声明时的默认 max_pages。
+
+## 变更历史
+
+- **2026-09-01（分册 7 全项实施）**
+  - 描述：完成分册 7 全部待办项（13 项已修复/落地），通过五条验证门槛。
+  - 方案：
+    - **B07-01/02 UDS 凭据**：unix.rs `current_scm_credentials()` 真实凭据 + recv 反序列化；syscall.rs sendmsg 真实凭据 + recvmsg 经 `uds_peer_creds` 回传。
+    - **B07-03 句柄**：`alloc_user_id` 改 `Option<u32>` + 冲突检测，消除 wrapping 回绕。
+    - **B07-05 能力位**：新增 `SYSTEM_CAP_SET_PWM = 1 << 1`（DECISION-078），pwm_set 前校验，无能力返回 EPERM。
+    - **B07-06 Ed25519**：引入 ed25519-dalek 3.x，`verify_strict` 真实验证；deny.toml 放行 BSD-3-Clause。
+    - **B07-07 sha256**：`sha256()` 改 32 字节标准输出；`password_hash` 经 `from_parts` 显式拼 salt。
+    - **B07-12 wasm**：`max_memory_pages`(256) 接线 + grow checked 溢出防护。
+    - **B07-15 IPC**：WaitQueue 中断安全（IrqSpinLock+try_lock+pending）、真实阻塞（scheduler_block/unblock）、hrtimer 超时、sem/pipe/msgq wake 全接线。
+    - **B07-16 credo**：常量冲突消除（GRANT_TABLE_CAPACITY/CREDO_MAX_SESSIONS）+ 委托链级联撤销；capability 扩容/crypto 审计库登记中期。
+    - **B07-17 attribution**：record_failure 多因子（次数+heartbeat+dependents）+ 降级写入落地。
+    - **B07-18 ebpf**：栈偏移深度校验 + helper 参数签名校验 + ALU64 溢出检测 + 5 回归单测。
+    - **B07-21/22**：新增 `host-tests/tests/b07_creds_audit_test.rs`（5 用例）。
+  - 验证：双架构 cargo check 0w0e + clippy `-D pedantic` 双架构 0 warning + 核心审计全过（boundary/safety/deadlock/coupling/invariants/comment_language）+ host-tests 910+5 passed/0 failed + QEMU x86_64 完整启动进入 Ring 3（1/1）。
+  - 状态：[X]

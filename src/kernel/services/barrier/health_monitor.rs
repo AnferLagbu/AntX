@@ -169,7 +169,14 @@ impl<'a> HealthMonitor<'a> {
     pub fn report_failure(&self, domain_id: u64, tick: u64) -> u32 {
         for rec in self.records.iter() {
             if rec.domain_id == domain_id {
-                return rec.record_failure(tick);
+                // B07-17: 距上次失败的时间间隔作为心跳因子 (失联检测),
+                // 与 recovery_policy 的 heartbeat_gap 语义一致.
+                let last = rec
+                    .last_failure_tick
+                    .load(core::sync::atomic::Ordering::Acquire);
+                let gap = tick.saturating_sub(last);
+                // dependents 当前无数据源 (快照内硬编码 0), 传 0.
+                return rec.record_failure(tick, gap, 0);
             }
         }
         0

@@ -77,16 +77,26 @@ impl Interpreter {
 
         let module_globals = module.globals.clone();
 
+        // B07-12: 把配置的 `max_memory_pages` 硬上限接入内存创建路径 —
+        // 模块声明的 max 与配置上限取交集; 未声明时强制配置上限 (256 页),
+        // 防止恶意 bytecode 声明无界 max 后无限增长线性内存 (DoS).
+        let cap_max = |declared: Option<u32>| {
+            Some(match declared {
+                Some(d) => d.min(config.max_memory_pages),
+                None => config.max_memory_pages,
+            })
+        };
+
         let mut memory = None;
         for imp in &module.imports {
             if let ImportKind::Memory(mem_type) = &imp.desc {
-                memory = LinearMemory::new(mem_type.limits.min, mem_type.limits.max).ok();
+                memory = LinearMemory::new(mem_type.limits.min, cap_max(mem_type.limits.max)).ok();
                 break;
             }
         }
         if memory.is_none() {
             if let Some(mem) = module.memories.first() {
-                memory = LinearMemory::new(mem.limits.min, mem.limits.max).ok();
+                memory = LinearMemory::new(mem.limits.min, cap_max(mem.limits.max)).ok();
             }
         }
 

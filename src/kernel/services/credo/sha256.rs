@@ -8,7 +8,7 @@
 //! 纯算法实现 (SHA-256 哈希), 0 unsafe.
 //! framework 仅保留 re-export.
 
-use super::types::PWM_HASH_LEN;
+use super::types::PWM_DIGEST_LEN;
 
 /// SHA-256 轮常量 (前 64 个素数立方根小数部分的前 32 位)
 const K: [u32; 64] = [
@@ -110,7 +110,10 @@ fn sha256_transform(state: &mut [u32; 8], block: &[u8; 64]) {
 ///
 /// # 返回
 /// 32 字节哈希数组
-pub fn sha256(data: &[u8]) -> [u8; PWM_HASH_LEN] {
+///
+/// B07-07: 返回类型由 `[u8; PWM_HASH_LEN]`(48) 修正为标准 32 字节输出.
+/// 原实现返回 48 字节数组但仅填充前 32 字节, 尾部 16 字节恒 0, 属误导性契约.
+pub fn sha256(data: &[u8]) -> [u8; PWM_DIGEST_LEN] {
     let mut state = INITIAL_STATE;
     let len = data.len();
 
@@ -149,7 +152,7 @@ pub fn sha256(data: &[u8]) -> [u8; PWM_HASH_LEN] {
     sha256_transform(&mut state, &block);
 
     // 生成最终哈希值 (大端序)
-    let mut hash = [0u8; PWM_HASH_LEN];
+    let mut hash = [0u8; PWM_DIGEST_LEN];
     for j in 0..8 {
         hash[j * 4] = (state[j] >> 24) as u8;
         hash[j * 4 + 1] = (state[j] >> 16) as u8;

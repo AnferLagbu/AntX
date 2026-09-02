@@ -31,7 +31,9 @@
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use crate::kernel::services::credo::policy::{CapBits, InMemoryMatrix};
+use crate::kernel::services::credo::policy::{
+    CapBits, CapDomain, CapabilityMatrix, InMemoryMatrix,
+};
 
 /// 故障归属决策
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,18 +237,26 @@ impl DomainFailureRecord {
         }
     }
 
-    /// 记录一次失败
+    /// 记录一次失败 (B07-17: 多因子定级)
     ///
     /// 返回: 建议降级到哪个 tier
-    pub fn record_failure(&self, current_tick: u64) -> u32 {
+    ///
+    /// 决策因子:
+    /// - 连续失败次数: ≥3 → tier 1, ≥5 → tier 2 (基础)
+    /// - 心跳间隔 `heartbeat_gap`: >500 tick 视为域失联, 直接升级 (与
+    ///   `recovery_policy` 阈值一致)
+    /// - 依赖者数 `dependents`: 被 ≥1 个域依赖且已连续失败 ≥3 次 → 升级
+    ///   (快速隔离防级联扩散)
+    pub fn record_failure(&self, current_tick: u64, heartbeat_gap: u64, dependents: u32) -> u32 {
         self.total_failures.fetch_add(1, Ordering::AcqRel);
         self.consecutive_failures.fetch_add(1, Ordering::AcqRel);
         self.last_failure_tick
             .store(current_tick, Ordering::Release);
         let n = self.consecutive_failures.load(Ordering::Acquire);
-        // tier 0 → 1: 3 次连续失败
-        // tier 1 → 2: 5 次连续失败
-        let new_tier = if n >= 5 { 2 } else { u32::from(n >= 3) };
+        let base = if n >= 5 { 2 } else { u32::from(n >= 3) };
+        let hb_escalate = u32::from(heartbeat_gap > 500);
+        let dep_escalate = u32::from(dependents > 0 && n >= 3);
+        let new_tier = base.max(hb_escalate).max(dep_escalate).min(2);
         let old = self.current_tier.load(Ordering::Acquire);
         if new_tier > old {
             self.current_tier.store(new_tier, Ordering::Release);
@@ -313,14 +323,20 @@ impl<'a> CrossLayerHandler<'a> {
     /// 处理故障: 降级 + 审计
     ///
     /// 返回: 新 tier
+    ///
+    /// B07-17: 落地降级写入 — 原实现 `let _ = target` 为 no-op, 降级从未
+    /// 生效 (攻击者可故意触发服务失败强制降级却收不回能力). 现在把
+    /// `downgrade_for_tier` 结果实际写回 capability matrix.
     pub fn handle(&mut self, domain_id: u64) -> u32 {
         // 查找记录
         let idx = (domain_id as usize) % MAX_SERVICE_DOMAINS;
         let rec = &self.records[idx];
-        let new_tier = rec.record_failure(self.current_tick);
-        // 应用降级
+        // 事件路径无心跳/依赖上下文, 传 0 (等价原单因子行为); 时间窗口与
+        // 依赖因子由上层 health_monitor 的 RecoveryPolicy 决策补充.
+        let new_tier = rec.record_failure(self.current_tick, 0, 0);
+        // 应用降级: 实际写回 capability matrix (不再丢弃)
         let target = downgrade_for_tier(new_tier);
-        let _ = target; // 实际写入由 matrix.set 处理
+        let _ = self.matrix.set(CapDomain(idx as u8), target);
         new_tier
     }
 }
@@ -397,22 +413,39 @@ mod tests {
     #[test]
     fn failure_record_basic() {
         let rec = DomainFailureRecord::new(1);
-        assert_eq!(rec.record_failure(100), 0);
-        assert_eq!(rec.record_failure(101), 0);
-        assert_eq!(rec.record_failure(102), 1); // 3 次 → tier 1
-        assert_eq!(rec.record_failure(103), 1);
-        assert_eq!(rec.record_failure(104), 2); // 5 次 → tier 2
+        assert_eq!(rec.record_failure(100, 0, 0), 0);
+        assert_eq!(rec.record_failure(101, 0, 0), 0);
+        assert_eq!(rec.record_failure(102, 0, 0), 1); // 3 次 → tier 1
+        assert_eq!(rec.record_failure(103, 0, 0), 1);
+        assert_eq!(rec.record_failure(104, 0, 0), 2); // 5 次 → tier 2
         assert_eq!(rec.total_failures.load(Ordering::Acquire), 5);
     }
 
     #[test]
     fn failure_record_recovery() {
         let rec = DomainFailureRecord::new(1);
-        rec.record_failure(100);
-        rec.record_failure(101);
-        rec.record_failure(102); // → tier 1
+        rec.record_failure(100, 0, 0);
+        rec.record_failure(101, 0, 0);
+        rec.record_failure(102, 0, 0); // → tier 1
         rec.record_success();
         assert_eq!(rec.consecutive_failures.load(Ordering::Acquire), 0);
+    }
+
+    // B07-17: 心跳间隔因子 — 单次失败 + 长时间无心跳 (域失联) 即升级
+    #[test]
+    fn failure_record_heartbeat_escalate() {
+        let rec = DomainFailureRecord::new(1);
+        assert_eq!(rec.record_failure(1000, 600, 0), 1); // 失联 → tier 1
+        assert_eq!(rec.current_tier.load(Ordering::Acquire), 1);
+    }
+
+    // B07-17: 依赖者因子 — 被依赖域连续失败 → 快速升级防级联
+    #[test]
+    fn failure_record_dependents_escalate() {
+        let rec = DomainFailureRecord::new(1);
+        assert_eq!(rec.record_failure(100, 0, 1), 0);
+        assert_eq!(rec.record_failure(101, 0, 1), 0);
+        assert_eq!(rec.record_failure(102, 0, 1), 1); // 3 次 + 有依赖 → tier 1
     }
 
     #[test]

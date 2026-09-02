@@ -116,7 +116,23 @@ pub fn pwm_get_syscall() -> i64 {
 }
 
 /// `pwm_set(pwm)` 策略
+///
+/// B07-05 (DECISION-078): 设置进程 PWM 属身份安全关键操作, 调用方必须持有
+/// SYSTEM 域 `SET_PWM` 能力位 (PWM 0/bootstrap 经 `engine::check` 恒全权).
+/// 原实现无任何校验, 任意进程可把自身 PWM 改为 root, 绕过全部 UID/GID 检查
+/// (任意提权漏洞 P0-07).
 pub fn pwm_set_syscall(pwm: u64) -> i64 {
+    use crate::kernel::services::credo::capability::{
+        CAP_DOMAIN_SYSTEM, SYSTEM_CAP_SET_PWM,
+    };
+    let current = crate::kernel::framework::credo::pwm_get_current();
+    if !crate::kernel::framework::credo::pwm_has_capability(
+        current,
+        CAP_DOMAIN_SYSTEM,
+        SYSTEM_CAP_SET_PWM,
+    ) {
+        return Errno::EPERM.as_ret();
+    }
     let pid = crate::kernel::framework::proc::process_get_current_pid();
     i64::from(crate::kernel::framework::proc::proc_set_pwm(pid, pwm))
 }

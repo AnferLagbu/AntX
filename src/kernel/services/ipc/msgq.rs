@@ -130,9 +130,9 @@ pub fn msgq_send_safe(
     }
     mq.count += 1;
 
-    // 唤醒等待接收的线程
+    // 唤醒等待接收的线程 (B07-15: 经调度器真实唤醒, 中断上下文安全)
     if mq.recv_wait.count() > 0 {
-        mq.recv_wait.wake_one();
+        super::scheduler_integration::wake_one_thread(&mut mq.recv_wait);
     }
 
     Ok(())
@@ -201,9 +201,9 @@ pub fn msgq_recv_safe(
     // 通过 MessageRef 释放内存
     msg_ref.free();
 
-    // 唤醒等待发送的线程
+    // 唤醒等待发送的线程 (B07-15: 经调度器真实唤醒, 中断上下文安全)
     if mq.send_wait.count() > 0 {
-        mq.send_wait.wake_one();
+        super::scheduler_integration::wake_one_thread(&mut mq.send_wait);
     }
 
     Ok(read_size)

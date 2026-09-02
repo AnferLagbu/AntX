@@ -9,6 +9,9 @@ allow = [
     "Apache-2.0",
     "0BSD",
     "Unicode-3.0",
+    # B07-06 (DECISION-078): ed25519-dalek/curve25519-dalek/subtle 采用
+    # "BSD-3-Clause OR Apache-2.0" 双许可, 引入真实 Ed25519 验证需要放行.
+    "BSD-3-Clause",
 ]
 private = { ignore = true }
 
