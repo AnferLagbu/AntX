@@ -15,7 +15,7 @@
 
 use super::types::{WaitQueue, WaitQueueItem};
 use crate::kernel::framework::proc::{
-    scheduler_block, scheduler_unblock, scheduler_yield_ex, thread_get_current,
+    process_get_current_pid, scheduler_block, scheduler_unblock, scheduler_yield_ex,
 };
 use crate::kernel::framework::sync::in_irq_context;
 use crate::kernel::framework::timer::hrtimer::hrtimer_sleep;
@@ -25,10 +25,10 @@ fn in_interrupt_context() -> bool {
     in_irq_context()
 }
 
-/// 阻塞当前线程到指定等待队列
+/// 阻塞当前进程到指定等待队列
 ///
-/// 将当前线程加入等待队列并让出 CPU，
-/// 直到被其他线程唤醒或超时。
+/// 将当前进程加入等待队列并让出 CPU，
+/// 直到被其他进程唤醒或超时。
 ///
 /// # Arguments
 /// * `wait_queue` - 目标等待队列
@@ -36,82 +36,92 @@ fn in_interrupt_context() -> bool {
 ///
 /// # Returns
 /// * Ok(()) - 成功被唤醒
-/// * Err(i32) - 错误码 (-1: 超时, -2: 被信号中断)
+/// * Err(i32) - 错误码 (-1: 队列已满/超时, -2: 无进程上下文/中断上下文)
 ///
 /// # Errors
-/// 当无法获取当前线程 (`thread_get_current` 返回 0) 时返回 `Err(-2)`;
-/// 在中断上下文中调用返回 `Err(-2)` (不允许在中断上下文阻塞).
+/// 当无法获取当前进程 (`process_get_current_pid` 返回 0) 或处于中断上下文时
+/// 返回 `Err(-2)`; 等待队列已满时返回 `Err(-1)` (调用方须回退忙等, 避免
+/// 等待项丢失导致永久睡眠).
 #[inline]
 pub fn block_current_thread(wait_queue: &mut WaitQueue, _timeout_ms: u64) -> Result<(), i32> {
     if in_interrupt_context() {
         // 中断上下文禁止阻塞/调度 (持锁期间睡眠会死锁).
         return Err(-2);
     }
-    let thread_addr = thread_get_current();
-
-    if thread_addr != 0 {
-        // WaitQueueItem 中线程 ID 以 u32 存储; thread_get_current 返回的 u64
-        // 对所有有效线程 ID 均可安全截断为 u32。
-        let tid = thread_addr as u32;
-
-        // 创建等待项并加入队列
-        let item = WaitQueueItem { tid };
-        wait_queue.add(item);
-
-        // B07-15: 标记进程为 Blocked 并让出 CPU.
-        // 原实现仅 yield (忙等), 不改变调度状态 — 被唤醒线程仍在就绪队列,
-        // 无法实现真实阻塞语义.
-        scheduler_block(crate::kernel::framework::proc::BlockReason::WaitingForIo);
-        scheduler_yield_ex();
-
-        // 被唤醒后返回
-        Ok(())
-    } else {
-        Err(-2) // 无效线程
+    // B07-15 修复①: 入队/唤醒统一以 pid 为准 — `scheduler_block`/`scheduler_unblock`
+    // 均按 pid 操作进程表, 入队项必须存 pid (对齐 epoll 范式 `tid: current_pid`).
+    // 原实现误用 `thread_get_current()` (线程 tid, 独立 id 空间), 唤醒时
+    // `scheduler_unblock(tid)` 按 pid 查找导致唤醒错位 (死锁或唤醒错误进程).
+    let pid = process_get_current_pid();
+    if pid == 0 {
+        return Err(-2); // idle/无进程上下文, 无法真实阻塞
     }
+    // B07-15 修复④: 队列满时禁止阻塞 — 若入队失败仍 `scheduler_block`,
+    // 该进程不在任何队列中, 无人能唤醒 (永久睡眠).
+    if !wait_queue.add(WaitQueueItem { pid }) {
+        return Err(-1);
+    }
+
+    // 标记进程为 Blocked 并让出 CPU.
+    scheduler_block(crate::kernel::framework::proc::BlockReason::WaitingForIo);
+    scheduler_yield_ex();
+
+    // 被唤醒后返回
+    Ok(())
 }
 
-/// 唤醒等待队列中的一个线程
+/// 唤醒等待队列中的一个进程
 ///
-/// 从等待队列头部取出一个线程并标记为可运行。
+/// 从等待队列头部取出一个进程并标记为可运行。
 ///
 /// # Arguments
 /// * `wait_queue` - 目标等待队列
 ///
 /// # Returns
-/// * true - 成功唤醒一个线程
-/// * false - 队列为空或唤醒被延后 (中断上下文)
+/// * true - 成功唤醒一个进程 (或已在中断上下文登记唤醒)
+/// * false - 队列为空
 #[inline]
 pub fn wake_one_thread(wait_queue: &mut WaitQueue) -> bool {
-    // B07-15: 中断上下文不可直接调度唤醒, 延后由进程上下文补唤醒.
+    // B07-15 修复③: 中断上下文不可直接调度唤醒, 仅登记 pending,
+    // 由后续进程上下文路径补唤醒 (原实现仅清标志, 唤醒被静默丢弃).
     if in_interrupt_context() {
-        wait_queue.drain_pending();
-        // 中断上下文仅登记唤醒 (pending), 不实际调度; 由后续进程上下文
-        // 经 wake 路径补唤醒. 返回 true 表示已登记.
+        wait_queue.request_wake();
         return true;
     }
+    // 进程上下文: 先补唤醒中断上下文遗留的 pending 请求.
+    for item in wait_queue.drain_pending() {
+        scheduler_unblock(item.pid);
+    }
     if let Some(item) = wait_queue.wake_one() {
-        scheduler_unblock(item.tid);
+        scheduler_unblock(item.pid);
         true
     } else {
         false
     }
 }
 
-/// 唤醒等待队列中的所有线程
+/// 唤醒等待队列中的所有进程
 ///
-/// 标记队列中所有线程为可运行状态。
+/// 标记队列中所有进程为可运行状态。
 ///
 /// # Arguments
 /// * `wait_queue` - 目标等待队列
 #[inline]
 pub fn wake_all_threads(wait_queue: &mut WaitQueue) {
-    // B07-15: 中断上下文禁止调度, 延后到进程上下文补唤醒.
+    // B07-15 修复③: 中断上下文仅登记 pending, 由进程上下文补唤醒.
     if in_interrupt_context() {
-        wait_queue.wake_all();
+        wait_queue.request_wake();
         return;
     }
-    wait_queue.wake_all();
+    // B07-15 修复②: 先补 pending, 再逐个出队并调度唤醒.
+    // 原实现仅 `wake_all()` 清空队列、从不调用 `scheduler_unblock`,
+    // 阻塞进程永不被唤醒 (死锁).
+    for item in wait_queue.drain_pending() {
+        scheduler_unblock(item.pid);
+    }
+    while let Some(item) = wait_queue.wake_one() {
+        scheduler_unblock(item.pid);
+    }
 }
 
 /// 带超时的阻塞等待

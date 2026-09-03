@@ -44,9 +44,14 @@ pub use crate::kernel::framework::driver::net::dma_ring::{
 // E1000Io + 寄存器常量 + E1000Driver 业务逻辑 + E1000Device 全部在 framework 层.
 // services 仅保留描述符状态/命令常量 + re-export shim (services/driver/net/e1000.rs).
 // 严格 framekernel 单向数据流: framework 不依赖 services.
+// E1000Driver 在 kernel_test 构建下仍被使用 (E1000Device.driver 字段/访问器).
+use crate::kernel::framework::driver::net::e1000_io::E1000Driver;
+// kernel_test 构建下 E1000Io / E1000_ICR_* / E1000_RDT 仅被
+// #[cfg(not(feature = "kernel_test"))] 门控的 probe/handle_interrupt 使用,
+// 与使用点对齐, 避免 kernel_test 构建产生 unused_imports warning.
+#[cfg(not(feature = "kernel_test"))]
 use crate::kernel::framework::driver::net::e1000_io::{
-    E1000_ICR_LSC, E1000_ICR_RXDMT0, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_RDT, E1000Driver,
-    E1000Io,
+    E1000_ICR_LSC, E1000_ICR_RXDMT0, E1000_ICR_RXO, E1000_ICR_RXT0, E1000_RDT, E1000Io,
 };
 
 // ============================================================================

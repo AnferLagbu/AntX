@@ -96,6 +96,12 @@
   - 描述：`ipc/scheduler_integration.rs` IPC 唤醒等待进程调用 `wake_up`，中断上下文调用可能死锁。
   - 方案：检查 `in_interrupt_context()` → 延后到 softirq。
   - 状态：[X] (2026-09-01 修复（完整接线）：① WaitQueue 改 IrqSpinLock 保护 + try_lock/pending 中断安全；② wake_one/wake_all 中断上下文登记 pending 不调度；③ block_current_thread 真实 `scheduler_block` 阻塞 + 中断上下文守卫；④ block_with_timeout 用 hrtimer 睡眠替代忙等待；⑤ sem_wait 真实阻塞 + sem_post/pipe/msgq wake 经调度器 `scheduler_unblock` 唤醒；⑥ TRACK-21BAF1/8C5FFB 消除)
+  - 审查发现（2026-09-02 复审）：
+    - **复审缺陷①（tid/pid 错位）**：`block_current_thread` 用 `thread_get_current()`（线程 tid，独立 id 空间）入队，而 `scheduler_unblock` 按 **pid** 查找进程表 → 唤醒错位（丢失→死锁 或 唤醒错误进程）。epoll.rs:317 既有范式是 `tid: current_pid`（字段名 tid 实存 pid）。
+    - **复审缺陷②（wake_all 不调度）**：`wake_all_threads` 仅 `wait_queue.wake_all()` 清空队列、从不 `scheduler_unblock` → pipe_close/sem_destroy 唤醒的进程永不被唤醒（死锁）。
+    - **复审缺陷③（中断上下文唤醒被丢弃）**：IRQ 路径 `drain_pending()` 仅清标志不做实际唤醒（文档声称"补唤醒"但实现无动作）→ 中断上下文唯一唤醒丢失。
+    - **复审缺陷④（队列满死锁）**：WaitQueue 4 槽 + `add` 静默丢弃；改真实阻塞后第 5 个等待者 `scheduler_block` 但不在任何队列 → 永久睡眠。
+    - **修复（2026-09-02，方案 B）**：① 入队/唤醒统一以 pid 为准（`process_get_current_pid`，字段 `tid`→`pid` 重命名，同步 epoll.rs 两处）；② `wake_all_threads` 改 `while let Some(item) = wake_one() { scheduler_unblock(pid) }`；③ IRQ 上下文仅 `request_wake()` 登记，进程上下文 `drain_pending()` 真实补唤醒（返回全部待唤醒项）；④ `add` 返回 `bool`，队列满时 `block_current_thread` 返回 `Err(-1)` 由调用方回退忙等；补 WaitQueue 行为单测 4 例（types.rs `#[cfg(test)]`）。
 
 - **B07-16. credo policy/grants/sessions/crypto 加固（P1）**
   - 描述：`credo/policy.rs` CapabilityMatrix 16×64 容量不足；`credo/grants.rs` 委托链无最大深度限制（权限放大）；`credo/sessions.rs` MAX_SESSIONS 硬编码过小；`credo/crypto.rs` 自实现加密易错。
@@ -168,3 +174,13 @@
     - **B07-21/22**：新增 `host-tests/tests/b07_creds_audit_test.rs`（5 用例）。
   - 验证：双架构 cargo check 0w0e + clippy `-D pedantic` 双架构 0 warning + 核心审计全过（boundary/safety/deadlock/coupling/invariants/comment_language）+ host-tests 910+5 passed/0 failed + QEMU x86_64 完整启动进入 Ring 3（1/1）。
   - 状态：[X]
+
+- **2026-09-02（复审修复 + 预存编译错误修复）**
+  - 描述：分册 7 复审（委托提交 62335c40）发现 B07-15 IPC 阻塞/唤醒 4 缺陷（方案 B 修复）；修复 `kernel_test` 模式预存编译错误，`test-unit` 首次可构建运行。
+  - 方案：
+    - **B07-15 复审修复**：① 入队/唤醒统一以 pid 为准（`WaitQueueItem.tid`→`pid` 重命名，`process_get_current_pid` 入队，同步 epoll.rs 两处）；② `wake_all_threads` 改逐个 `wake_one`+`scheduler_unblock`；③ 中断上下文仅 `request_wake()` 登记、进程上下文 `drain_pending()` 真实补唤醒；④ `WaitQueue::add` 返回 `bool`，队列满 `block_current_thread` 返回 `Err(-1)` 回退忙等；补 4 例 WaitQueue 行为单测（`#[cfg(test)]`）。
+    - **预存编译错误（kernel_test）**：`framework/tests/sys.rs` 按旧 API 编写（`E_` 前缀变体 + `as_i64`/`from_i64` + 48 字节 sha256），修复为现 API（`EPERM`/`as_ret`/模块级 `errno_from_i64`/`[u8; 32]`），消除 12 处编译错误。
+  - 验证：双架构 cargo check 0w0e + clippy 0 warning + 核心审计全过 + host-tests 915/0 + QEMU x86_64 1/1 + **`make test-unit` 全量 256 passed / 0 FAILED**（含预存 `PI_MUTEX::basic_lock_unlock` 修复，见下）。
+  - 状态：[X]
+
+  > **预存问题（2026-09-02 裁决修复）**：`make test-unit` 首次运行暴露 `PI_MUTEX::basic_lock_unlock` 失败（`should be unlocked after drop`）。根因：`pi_mutex.rs::unlock_internal` 用 `current_pid()` 校验 holder（合法生产安全逻辑，防非持有者释放），而测试硬编码 holder=1 与 kernel_test 环境 `current_pid()` 不符，`drop(g)` 提前 return、锁未释放。处置（用户裁决：修测试，环境 pid + RAII 路径）：`test_basic_lock_unlock` 改用 `sync::raw::current_pid()` 持锁，使 `PiMutexGuard::drop → unlock_internal` 的 holder 校验通过，真实覆盖 RAII 释放路径（不再依赖 `force_unlock`）。其余走 `force_unlock` 的用例保持 v2.1 既有设计。附带预存问题（用户裁决：规划方案并修复）：`make test-unit`（kernel_test 构建）暴露 e1000.rs `unused_imports` warning（`E1000Io`/`E1000_ICR_*`/`E1000_RDT` 仅被 `#[cfg(not(feature="kernel_test"))]` 门控的 probe/handle_interrupt 使用），已拆分为两条 use（`E1000Driver` 常驻 + 其余符号整组门控），kernel_test 构建 0 warning。修复后 `make test-unit` 全量 256 passed / 0 FAILED，`./ci/build.sh all` + `./ci/audit.sh quick` + 核心审计全过。

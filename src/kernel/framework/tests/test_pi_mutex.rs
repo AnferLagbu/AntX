@@ -32,12 +32,16 @@ fn test_basic_lock_unlock() -> TestResult {
     if m.is_locked() {
         return TestResult::Fail("initial should be unlocked");
     }
-    let g = m.lock(1, 5);
+    // 环境 pid: kernel_test 环境无调度器, current_pid() 返回 0 (PID_NONE)。
+    // 必须用环境 pid 持锁, 否则 RAII drop 走 unlock_internal (校验 holder==current_pid)
+    // 会因硬编码 pid 与环境不符而提前返回, 无法覆盖 RAII 释放路径。
+    let my_pid = crate::kernel::framework::sync::raw::current_pid();
+    let g = m.lock(my_pid, 5);
     if !m.is_locked() {
         return TestResult::Fail("should be locked after lock()");
     }
-    if m.holder() != 1 {
-        return TestResult::Fail("holder should be 1");
+    if m.holder() != my_pid {
+        return TestResult::Fail("holder should be current pid");
     }
     if *g != 42 {
         return TestResult::Fail("data mismatch");

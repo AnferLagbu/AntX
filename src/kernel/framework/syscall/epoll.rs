@@ -314,7 +314,7 @@ pub fn sys_epoll_wait(epfd: i64, events: *mut EpollEvent, maxevents: i32, timeou
         if current_pid != 0 && timeout == -1 {
             // 1. 挂入 wait_queue (持锁, 避免与 epoll_pwake 竞态)
             instances[idx].wait_queue.add(WaitQueueItem {
-                tid: current_pid as u32,
+                pid: current_pid as u32,
             });
             // 2. 释放锁, 再阻塞 (与 futex 模式一致: unlock → block → schedule)
             drop(instances);
@@ -402,7 +402,7 @@ pub fn epoll_pwake(fd: i32) {
 
         // 机制: 唤醒 wait_queue 中的所有等待者
         while let Some(item) = instances[i].wait_queue.wake_one() {
-            crate::kernel::framework::proc::scheduler_unblock(item.tid);
+            crate::kernel::framework::proc::scheduler_unblock(item.pid);
         }
     }
 }

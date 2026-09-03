@@ -1,5 +1,5 @@
 use crate::kernel::framework::credo::sha256::sha256;
-use crate::kernel::framework::errno::Errno;
+use crate::kernel::framework::errno::{errno_from_i64, Errno};
 use crate::kernel::framework::mm::slab::{
     GENERAL_CACHE_SIZES, KmemCache, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE,
     find_general_cache_index,
@@ -52,42 +52,42 @@ fn slab_find_general_cache_index() -> TestResult {
 }
 
 fn syscall_error_conversion() -> TestResult {
-    assert_eq_test!(Errno::E_PERM.as_i64(), -1, "E_PERM");
-    assert_eq_test!(Errno::E_NOMEM.as_i64(), -12, "E_NOMEM");
-    assert_eq_test!(Errno::E_INVAL.as_i64(), -22, "E_INVAL");
+    assert_eq_test!(Errno::EPERM.as_ret(), -1, "EPERM");
+    assert_eq_test!(Errno::ENOMEM.as_ret(), -12, "ENOMEM");
+    assert_eq_test!(Errno::EINVAL.as_ret(), -22, "EINVAL");
     TestResult::Pass
 }
 
 fn syscall_error_from_i64() -> TestResult {
-    assert_eq_test!(Errno::from_i64(-1), Some(Errno::E_PERM), "from -1");
-    assert_eq_test!(Errno::from_i64(-22), Some(Errno::E_INVAL), "from -22");
-    assert_eq_test!(Errno::from_i64(-999), None, "from -999");
+    assert_eq_test!(errno_from_i64(-1), Some(Errno::EPERM), "from -1");
+    assert_eq_test!(errno_from_i64(-22), Some(Errno::EINVAL), "from -22");
+    assert_eq_test!(errno_from_i64(-999), None, "from -999");
     TestResult::Pass
 }
 
 fn syscall_error_display() -> TestResult {
-    let s = alloc::format!("{}", Errno::E_PERM);
-    assert_eq_test!(s.as_str(), "Operation not permitted", "E_PERM display");
-    let s = alloc::format!("{}", Errno::E_NOSYS);
-    assert_eq_test!(s.as_str(), "Function not implemented", "E_NOSYS display");
+    let s = alloc::format!("{}", Errno::EPERM);
+    assert_eq_test!(s.as_str(), "Operation not permitted", "EPERM display");
+    let s = alloc::format!("{}", Errno::ENOSYS);
+    assert_eq_test!(s.as_str(), "Function not implemented", "ENOSYS display");
     TestResult::Pass
 }
 
 fn sha256_empty() -> TestResult {
-    let expected: [u8; 48] = [
+    let expected: [u8; 32] = [
         0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9,
         0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52,
-        0xb8, 0x55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0xb8, 0x55,
     ];
     assert_eq_test!(sha256(b""), expected, "SHA256 empty");
     TestResult::Pass
 }
 
 fn sha256_abc() -> TestResult {
-    let expected: [u8; 48] = [
+    let expected: [u8; 32] = [
         0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22,
         0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
-        0x15, 0xad, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0x15, 0xad,
     ];
     assert_eq_test!(sha256(b"abc"), expected, "SHA256 abc");
     TestResult::Pass

@@ -160,21 +160,22 @@ pub enum SignalAction {
 /// 在完整实现中应使用内核的 `wait_queue` 机制
 #[derive(Debug, Clone, Copy)]
 pub struct WaitQueueItem {
-    /// 线程 ID
-    pub tid: u32,
+    /// 被阻塞进程的 PID (B07-15 修复: 以 pid 入队/唤醒, 与调度器
+    /// `scheduler_unblock(pid)` 语义一致 — 原实现误存线程 tid, 唤醒错位)
+    pub pid: u32,
 }
 
 /// 简化版等待队列 (环形缓冲区) — B07-15: 中断安全化
 ///
-/// 由 `IrqSpinLock` 保护队列结构; wake 路径在中断上下文用 `try_lock`
-/// (仿 `services/net/wait_queue.rs::SocketWaitQueue` 范式), 避免在 ISR/
-/// softirq 中持锁阻塞导致死锁. `try_lock` 失败时置 `wake_pending` 标志,
-/// 由后续进程上下文路径补唤醒 (见 `drain_pending`).
+/// 由 `IrqSpinLock` 保护队列结构。中断上下文只能登记唤醒请求
+/// ([`WaitQueue::request_wake`]), 不触碰队列/调度器; 实际出队 + 调度唤醒
+/// 统一由进程上下文路径执行 ([`WaitQueue::drain_pending`] / `wake_one`),
+/// 避免在 ISR/softirq 中持锁调用调度器导致死锁。
 #[derive(Debug)]
 pub struct WaitQueue {
     items: [Option<WaitQueueItem>; 4],
     count: u32,
-    /// 中断上下文 try_lock 失败时置位, 由进程上下文路径补唤醒
+    /// 中断上下文登记的唤醒请求, 由进程上下文 `drain_pending` 补唤醒
     wake_pending: bool,
     /// 队列锁 (中断安全)
     lock: crate::kernel::framework::sync::IrqSpinLock<()>,
@@ -196,72 +197,67 @@ impl WaitQueue {
         self.wake_pending = false;
     }
 
+    /// 队列中等待者数量 (进程上下文; 中断上下文禁止调用, 应改用
+    /// [`WaitQueue::request_wake`]).
     pub fn count(&self) -> u32 {
         let _g = self.lock.lock();
         self.count
     }
 
-    pub fn add(&mut self, item: WaitQueueItem) {
+    /// 入队 (进程上下文). 队列已满时返回 `false` — 调用方必须避免阻塞
+    /// (否则等待项丢失, 进程永久睡眠, B07-15 修复).
+    pub fn add(&mut self, item: WaitQueueItem) -> bool {
         let _g = self.lock.lock();
-        if self.count < 4 {
-            for i in 0..4 {
-                if self.items[i].is_none() {
-                    self.items[i] = Some(item);
-                    self.count += 1;
-                    return;
-                }
+        if self.count >= 4 {
+            return false;
+        }
+        for i in 0..4 {
+            if self.items[i].is_none() {
+                self.items[i] = Some(item);
+                self.count += 1;
+                return true;
             }
         }
+        false
     }
 
-    /// 唤醒一个线程 (中断上下文安全)
-    ///
-    /// 在中断/softirq 上下文 (无法安全持锁) 下用 `try_lock`;
-    /// 失败时置 pending 标志由进程上下文路径补唤醒. 返回被唤醒的项 (若有).
+    /// 中断上下文: 登记一次唤醒请求, 不触碰队列/调度器.
+    /// 实际唤醒由后续进程上下文 `drain_pending` 完成 (B07-15 修复:
+    /// 原实现仅清标志不唤醒, 中断上下文唤醒被静默丢弃).
+    pub fn request_wake(&mut self) {
+        self.wake_pending = true;
+    }
+
+    /// 进程上下文: 补唤醒 — 取出全部剩余等待项并清除 pending 标志.
+    /// 返回的项由调用方逐个 `scheduler_unblock(pid)` (B07-15 修复:
+    /// 原 `drain_pending` 只清标志不做实际唤醒, 文档与实现不符).
+    pub fn drain_pending(&mut self) -> alloc::vec::Vec<WaitQueueItem> {
+        if !self.wake_pending {
+            return alloc::vec::Vec::new();
+        }
+        let _g = self.lock.lock();
+        self.wake_pending = false;
+        let mut out = alloc::vec::Vec::new();
+        for slot in &mut self.items {
+            if let Some(item) = slot.take() {
+                self.count -= 1;
+                out.push(item);
+            }
+        }
+        out
+    }
+
+    /// 进程上下文: 唤醒一个等待项 (出队, 不调用调度器).
+    /// 调度器唤醒由调用方执行 (持锁期间不得调用调度器).
     pub fn wake_one(&mut self) -> Option<WaitQueueItem> {
-        let Some(g) = self.lock.try_lock() else {
-            // 中断上下文获取锁失败: 记 pending, 由进程上下文路径补唤醒.
-            self.wake_pending = true;
-            return None;
-        };
+        let _g = self.lock.lock();
         for i in 0..4 {
             if let Some(item) = self.items[i].take() {
                 self.count -= 1;
-                drop(g);
                 return Some(item);
             }
         }
-        drop(g);
         None
-    }
-
-    /// 唤醒所有线程 (中断上下文安全, 语义同 [`WaitQueue::wake_one`]).
-    pub fn wake_all(&mut self) {
-        let Some(g) = self.lock.try_lock() else {
-            self.wake_pending = true;
-            return;
-        };
-        for item in &mut self.items {
-            *item = None;
-        }
-        self.count = 0;
-        drop(g);
-    }
-
-    /// 补唤醒: 若存在 pending 唤醒请求, 在进程上下文持锁执行实际唤醒.
-    ///
-    /// 返回是否实际执行了唤醒 (有 pending 且成功取锁).
-    pub fn drain_pending(&mut self) -> bool {
-        if !self.wake_pending {
-            return false;
-        }
-        let _g = self.lock.lock();
-        if self.wake_pending {
-            self.wake_pending = false;
-            true
-        } else {
-            false
-        }
     }
 }
 
@@ -539,4 +535,58 @@ pub struct IpcNamespace {
     pub msg_queues: [MsgQueue; IPC_MAX_MSG_QUEUES],
     /// 信号量数组
     pub semaphores: [Semaphore; IPC_MAX_SEMAPHORES],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec::Vec;
+
+    // B07-15 修复④: 队列满 4 个后 add 返回 false.
+    // 原实现静默丢弃, 在真实阻塞语义下第 5 个等待者会永久睡眠 (不在任何队列中).
+    #[test]
+    fn wait_queue_full_rejected() {
+        let mut wq = WaitQueue::new();
+        for i in 0..4 {
+            assert!(wq.add(WaitQueueItem { pid: 10 + i }));
+        }
+        assert!(!wq.add(WaitQueueItem { pid: 99 }));
+        assert_eq!(wq.count(), 4);
+    }
+
+    // B07-15 修复①: 入队/唤醒以 pid 为准, 出队项 pid 不变.
+    // 原实现误存线程 tid, 唤醒时 `scheduler_unblock(tid)` 按 pid 查找错位.
+    #[test]
+    fn wait_queue_wake_one_pid_roundtrip() {
+        let mut wq = WaitQueue::new();
+        wq.add(WaitQueueItem { pid: 42 });
+        let item = wq.wake_one().expect("应取出等待项");
+        assert_eq!(item.pid, 42);
+        assert_eq!(wq.count(), 0);
+        assert!(wq.wake_one().is_none(), "空队列 wake_one 应返回 None");
+    }
+
+    // B07-15 修复③: request_wake (中断上下文登记) 后,
+    // 进程上下文 drain_pending 补唤醒全部等待项并清除 pending 标志.
+    #[test]
+    fn wait_queue_pending_drain() {
+        let mut wq = WaitQueue::new();
+        wq.add(WaitQueueItem { pid: 1 });
+        wq.add(WaitQueueItem { pid: 2 });
+        wq.request_wake();
+        let drained = wq.drain_pending();
+        let mut pids: Vec<u32> = drained.iter().map(|i| i.pid).collect();
+        pids.sort_unstable();
+        assert_eq!(pids.as_slice(), [1u32, 2].as_slice());
+        assert_eq!(wq.count(), 0);
+        // pending 已清, 再次 drain 返回空
+        assert!(wq.drain_pending().is_empty());
+    }
+
+    // B07-15 修复③: 无 pending 请求时 drain 返回空.
+    #[test]
+    fn wait_queue_drain_empty_when_no_pending() {
+        let mut wq = WaitQueue::new();
+        assert!(wq.drain_pending().is_empty());
+    }
 }
