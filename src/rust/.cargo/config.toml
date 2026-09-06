@@ -13,3 +13,12 @@ rustflags = [
 [unstable]
 build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
+
+# G-01/G-05 (2026-09-06 用户决策委托修复): 固化 curve25519-dalek 后端为 serial.
+# 背景: LLVM 22 (滚动 nightly, 2026-06-15 起) 对 curve25519-dalek 5.0.0 的
+# SIMD/AVX2 后端代码生成崩溃 (rustc SIGILL, 信号 4); serial 后端全量构建+链接通过.
+# 仅编译配置, 不改内核代码, 零语义风险; 官方支持 env 选择后端.
+# 作用域: 本 config 仅对 src/rust 目录内裸机构建生效, host-tests 从仓库根构建
+# 不加载本 config (serial env 不生效, host 正常 SIMD 无问题).
+[env]
+CARGO_CFG_CURVE25519_DALEK_BACKEND = "serial"

@@ -238,7 +238,7 @@ impl DmaStream {
     /// 设备→CPU: invalidate CPU cache, 确保 CPU 看到设备写入。
     ///
     /// `x86_64`: 空操作。
-    /// aarch64: 需要 DC IVAU (Data Cache Invalidate to Point of Unification)。
+    /// aarch64: 需要 DC CIVAC (Data Cache Clean and Invalidate to Point of Coherency)。
     /// # Errors
     /// 当前方向不支持该同步或同步状态机不允许此转换时返回 Err。
     pub fn sync_for_cpu(&mut self) -> Result<(), DmaError> {
@@ -250,17 +250,20 @@ impl DmaStream {
                     self.sync_state = SyncState::CpuReady;
                     #[cfg(target_arch = "aarch64")]
                     {
-                        // SAFETY: DC IVAU 按 cache line 遍历, 使 CPU cache 行无效,
-                        // 确保后续 CPU 读取从主存获取设备写入的数据.
+                        // SAFETY: DC CIVAC 按 cache line 遍历, clean+invalidate 到 PoC,
+                        // 确保后续 CPU 读取从主存获取设备写入的数据 (DMA 设备→CPU 方向语义).
                         // cpu_addr 是 DmaStream 持有的有效虚拟地址, size 已校验.
+                        // G-04 (2026-09-06): `dc ivau` 在 AArch64 中不存在 — DC 指令族
+                        // 无 IVAU 变体 (ivau 是 IC 指令族操作); 原代码混淆 IC/DC 指令族.
+                        // 改 `dc civac` (clean+invalidate to PoC) 正是设备→CPU 所需语义.
                         let start = self.cpu_addr.as_ptr() as u64;
                         let end = start + self.size as u64;
                         let mut addr = start & !(CACHE_LINE_SIZE - 1);
                         while addr < end {
-                            // SAFETY: dc ivau 是 aarch64 标准 cache 维护指令,
+                            // SAFETY: dc civac 是 aarch64 标准 cache 维护指令,
                             // 输入地址已对齐到 cache line, 无副作用.
                             unsafe {
-                                core::arch::asm!("dc ivau, {}", in(reg) addr);
+                                core::arch::asm!("dc civac, {}", in(reg) addr);
                             }
                             addr += CACHE_LINE_SIZE;
                         }
