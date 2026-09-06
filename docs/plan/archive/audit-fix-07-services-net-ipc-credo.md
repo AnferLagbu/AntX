@@ -1,6 +1,6 @@
 # 审计修复分册 07：services 网络、IPC 与凭据
 
-> 修复 services/net（SCM_CREDENTIALS/句柄重用）、services/credo（pwm_set 提权/加密原语）、framework/credo（Ed25519 占位）与 wasm/ipc/barrier 的审计缺陷。来源：[code-audit-final-summary.md](./code-audit-final-summary.md) 第 3.3 节 + 第 7 章 TOP 20 + 附录 H（H.3.1）+ 附录 C（subsystem-services-net / services-wasm-ipc-credo / framework-credo 报告）。
+> 修复 services/net（SCM_CREDENTIALS/句柄重用）、services/credo（pwm_set 提权/加密原语）、framework/credo（Ed25519 占位）与 wasm/ipc/barrier 的审计缺陷。来源：[code-audit-final-summary.md](../code-audit-final-summary.md) 第 3.3 节 + 第 7 章 TOP 20 + 附录 H（H.3.1）+ 附录 C（subsystem-services-net / services-wasm-ipc-credo / framework-credo 报告）。
 
 > **2026-08-31 基线核实**：委托前对全部 22 项逐一对照当前磁盘代码核实（见各条目标注）。结论：**已修复/实装 7 项**（B07-09/10/11/13/14/19/20）、**部分修复 5 项**（B07-03/12/16/17/18）、**仍存在 7 项**（B07-01/02/05/06/07/15 + B07-03 残留 alloc_user_id）、背景 2 项（B07-04/08）+ 验证门槛 2 项（B07-21/22）。**已实装项标注 `[X]`，委托时跳过；仍存在/部分项为待办**。关键决策点：B07-05 项目无 CAP_SETUID 常量（需按先例 SYSTEM+0x01 或裁决）、B07-06 建议 fail-closed（短期）+ 真实验证库（长期）、B07-12 max_memory_pages 死值需接线。
 
@@ -49,7 +49,7 @@
 - **B07-07. cred 子系统加密原语缺口（H.3.1 P0-24）**
   - 描述：实测**密码存储侧非缺口**——`framework/credo/identity.rs:28-53` 已是 SHA-256 加盐 + 32768 轮拉伸 + 常数时间比较（`constant_time_eq`），csprng 生成盐；真实缺口为：① `services/credo/sha256.rs:112` 返回 **48 字节**（PWM_HASH_LEN）但只填充前 32 字节（异常签名）；② `secure_boot.rs` Ed25519 `verify` 占位（见上条）；③ 无 AES/ChaCha/HMAC/KDF 对称原语（中期路线）。
   - 方案：① 修复 sha256 返回 32 字节标准输出或明确文档化前 32 字节语义（低优先）；② Ed25519 真实验证（DECISION-078 已定直接引入验证库）；③ 对称加密原语登记为中期独立任务（评估 TCB 影响后实施）。
-  - 状态：[X] (2026-09-01 修复①：`sha256()` 返回类型改 `[u8; PWM_DIGEST_LEN]`(32) 标准输出；`crypto::password_hash` 改 `PasswordHash::from_parts` 显式拼 salt 到 `full[32..48]`（原 salt 恒 0 加盐失效）。② 见 B07-06。③ 对称原语仍为中期任务，登记 [unresolved-issues](../../docs/plan/unresolved-issues-2026-08-09.md))
+  - 状态：[X] (2026-09-01 修复①：`sha256()` 返回类型改 `[u8; PWM_DIGEST_LEN]`(32) 标准输出；`crypto::password_hash` 改 `PasswordHash::from_parts` 显式拼 salt 到 `full[32..48]`（原 salt 恒 0 加盐失效）。② 见 B07-06。③ 对称原语仍为中期任务，登记 [unresolved-issues](../../../docs/plan/unresolved-issues-2026-08-09.md))
 
 ## 工程计划 C: IPC / wasm / barrier
 
@@ -148,7 +148,7 @@
   - 裁决：按"常量应用面重要性"决策准则——检查常量应用面与既有先例后，pwm_set 属**身份安全关键操作**（任意提权漏洞 P0-07），重要性高，**新增专用能力位**而非复用 SYSTEM+CAP_SYS_ADMIN(0x01)。
   - 准则（用户定义，后续常量决策沿用）：**重要或特殊用途常量采用新增，其他的采用复用既有**。既有先例对照：mount/umount2/setns/open_by_handle 均复用 SYSTEM 域 0x01（这些操作已有 CAP_SYS_ADMIN 语义可复用），而 pwm_set 改变进程身份无既有能力位可精确表达 → 新增。
   - 实施待定：新增能力位归属域（SYSTEM 域 or USER_MGMT 域）+ 位号由委托人按 capability.rs 布局设计。
-  - 后续：2026-08-31 对既有复用先例回溯治理，见独立计划 [credo-capability-constants-plan.md](./credo-capability-constants-plan.md)（B1 reboot/B2 open_by_handle 新增专用位、B3 sethostname 修魔法数、B4 mmap 补 MEM_CAP 命名、B5 sys_boot_install 待澄清；A 类 mount/setns/ramfs-hvfs 保持复用）。
+  - 后续：2026-08-31 对既有复用先例回溯治理，见独立计划 [credo-capability-constants-plan.md](../credo-capability-constants-plan.md)（B1 reboot/B2 open_by_handle 新增专用位、B3 sethostname 修魔法数、B4 mmap 补 MEM_CAP 命名、B5 sys_boot_install 待澄清；A 类 mount/setns/ramfs-hvfs 保持复用）。
 - **B07-06 Ed25519 签名验证 — 直接引入验证库**
   - 裁决：跳过 fail-closed 中间态，直接引入 curve25519 验证库实现真实验证。
   - 前置评估（委托人开工前必须完成）：① no_std 兼容性（内核裸机 target 需 `#![no_std]` 可用）；② TCB 占比影响（新依赖计入 TCB，需 <30% 软目标内）；③ 许可证（需过 cargo-deny，与 MIT 内核兼容，deny.toml 已配置）；④ 候选：curve25519-dalek（ed25519-dalek）或其他 no_std 兼容实现，由委托人调研后定。
