@@ -1,9 +1,12 @@
+use crate::kernel::framework::credo::constant_time_eq;
+use crate::kernel::framework::credo::secure_boot::{sha256_extend, sha256_hash};
 use crate::kernel::framework::credo::sha256::sha256;
 use crate::kernel::framework::errno::{errno_from_i64, Errno};
 use crate::kernel::framework::mm::slab::{
     GENERAL_CACHE_SIZES, KmemCache, SLAB_MAX_OBJECT_SIZE, SLAB_MIN_OBJECT_SIZE,
     find_general_cache_index,
 };
+use crate::kernel::framework::proc::elf::{Elf64Header, Elf64Phdr};
 use crate::kernel::framework::tests::{TestResult, assert_eq_test, check, runner};
 use crate::kernel::framework::timer::pit::{
     DEFAULT_INTERRUPT_FREQ_HZ, PIT_BASE_FREQUENCY, PIT_MAX_COUNT, PIT_MIN_COUNT,
@@ -93,6 +96,44 @@ fn sha256_abc() -> TestResult {
     TestResult::Pass
 }
 
+// B08-19 专项: secure_boot 侧 sha256_hash 委托规范实现, 输出与已知向量一致
+fn secure_boot_sha256_hash_consistency() -> TestResult {
+    let expected: [u8; 32] = [
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22,
+        0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
+        0x15, 0xad,
+    ];
+    assert_eq_test!(sha256_hash(b"abc"), expected, "secure_boot sha256_hash == 规范向量");
+    TestResult::Pass
+}
+
+// B08-19 专项: sha256_extend(A, B) == sha256(A || B) 组合语义
+fn secure_boot_sha256_extend_combine() -> TestResult {
+    let a = *b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    let b = *b"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    let mut combined = [0u8; 64];
+    combined[..32].copy_from_slice(&a);
+    combined[32..].copy_from_slice(&b);
+    assert_eq_test!(sha256_extend(&a, &b), sha256(&combined), "extend == hash(A||B)");
+    TestResult::Pass
+}
+
+// B08-22a 专项: framework 权威 constant_time_eq 行为 (services ct_eq 委托链由 crypto.rs 单测覆盖)
+fn constant_time_eq_authority() -> TestResult {
+    check!(constant_time_eq(b"abc", b"abc"), "equal 相等");
+    check!(!constant_time_eq(b"abc", b"abd"), "末尾位不同");
+    check!(!constant_time_eq(b"abc", b"ab"), "长度不同");
+    check!(constant_time_eq(b"", b""), "空切片相等");
+    TestResult::Pass
+}
+
+// B08-22b 专项: ELF64 头统一定义布局 (coredump 与 loader 共用 elf/mod.rs)
+fn elf64_header_layout() -> TestResult {
+    assert_eq_test!(core::mem::size_of::<Elf64Header>(), 64, "ELF64 header 64B");
+    assert_eq_test!(core::mem::size_of::<Elf64Phdr>(), 56, "ELF64 phdr 56B");
+    TestResult::Pass
+}
+
 fn pit_constants() -> TestResult {
     assert_eq_test!(PIT_BASE_FREQUENCY, 1_193_182, "PIT base freq");
     check!(DEFAULT_INTERRUPT_FREQ_HZ > 0, "default freq positive");
@@ -152,6 +193,17 @@ pub fn register_sha256_tests() {
         "pwm::sha256": {
             "empty": sha256_empty,
             "abc": sha256_abc,
+        },
+        // B08-19/B08-22 专项 (重复实现合并后的一致性测试)
+        "pwm::secure_boot_sha256": {
+            "hash_consistency": secure_boot_sha256_hash_consistency,
+            "extend_combine": secure_boot_sha256_extend_combine,
+        },
+        "pwm::ct_eq_authority": {
+            "constant_time_eq": constant_time_eq_authority,
+        },
+        "proc::elf64_header": {
+            "layout": elf64_header_layout,
         },
     }
 }

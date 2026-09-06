@@ -1,6 +1,9 @@
-#![no_std]
-#![no_main]
-#![feature(alloc_error_handler)]
+// B08-12: 顶层约束按 host-test feature 门控 — host 编译 (std) 时剥离裸机专属约束:
+// no_std → std (host-test 下启用 std 提供 panic/alloc handler); no_main → 测试 harness 提供 main;
+// alloc_error_handler 为 no_std 专属 nightly feature, host-test 下 std 自带.
+#![cfg_attr(not(feature = "host-test"), no_std)]
+#![cfg_attr(not(feature = "host-test"), no_main)]
+#![cfg_attr(not(feature = "host-test"), feature(alloc_error_handler))]
 // I-09: 移除 `#![feature(asm)]`. nightly 1.97 中 `core::arch::asm!` 已稳定,
 // 源码中所有 asm 调用已走 `core::arch::asm!`, 顶层 feature gate 不再需要.
 // ============================================================================
@@ -127,8 +130,15 @@
 // 52. Clippy: cast_lossless — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 // 53. Clippy: duplicated_attributes — 已迁出 (经脚本逐个审查确认无触发, 移除 allow)
 
+// B08-12 注: host-test (std) 下 alloc 经 extern prelude 可见, 此处无条件声明不会产生
+// 重复 lang item — 之前观察到的 E0152 duplicate lang item 是 src/rust/.cargo/config.toml
+// 的 build-std 配置在 src/rust 目录内运行时的假象 (host-tests 从仓库根/host-tests 构建时
+// 不加载该 config). 门控掉 extern crate alloc 反而导致 std 模式下 alloc:: 路径不可解析.
 extern crate alloc;
 
+// B08-12: 全局分配器 (KernelAllocator) 为裸机专属 — host-test (std) 下禁用,
+// 避免 Rust 全局分配 (含 std 自身初始化) 走内核 kmalloc → IrqSpinLock → cli (SIGSEGV).
+#[cfg(not(feature = "host-test"))]
 mod memory_allocator;
 
 // ============================================================================
@@ -141,20 +151,39 @@ mod memory_allocator;
 ///
 /// ```text
 /// kernel/
-/// ├── arch/       # 架构相关 (x86_64)
-/// ├── cpu/        # CPU 管理
-/// ├── mm/         # 内存管理
-/// ├── proc/       # 进程/线程
-/// ├── fs/         # 文件系统
-/// ├── net/        # 网络协议栈
-/// ├── idt/        # 中断处理
-/// ├── sync/       # 同步原语
-/// ├── pwm/       # 安全框架
-/// ├── dma/        # DMA 引擎
-/// ├── barrier/    # 故障恢复
-/// ├── pci/        # PCI 管理
-/// ├── syscall/    # 系统调用
-/// └── driver/     # 设备驱动
+/// ├── framework/   # 特权 TCB (唯一允许 unsafe, 硬件/MMU/中断/上下文切换)
+/// │   ├── arch/     # 架构相关 (x86_64 + aarch64: gdt/idt/tss/apic/mmu/gic/...)
+/// │   ├── boot/     # 引导协议 (multiboot2 / aarch64 entry)
+/// │   ├── cpu/      # CPU 探测 (cpuid/msr/tsc/拓扑)
+/// │   ├── mm/       # 内存管理 (PMM/VMM/Kmalloc/KPTI)
+/// │   ├── proc/     # 进程/线程 TCB (user_proc/switch.asm)
+/// │   ├── idt/irq/  # 中断与异常处理
+/// │   ├── sync/     # 同步原语 (spinlock/mutex/rwlock/rcu)
+/// │   ├── driver/   # 原生硬件驱动 (display/net/input/char/bus)
+/// │   ├── net/      # 网络硬件 + 协议栈
+/// │   ├── fs/       # 文件系统底层 (VFS 抽象)
+/// │   ├── dma/      # DMA 引擎
+/// │   ├── credo/    # 身份/密码学 (能力矩阵/secure_boot)
+/// │   ├── chitin/   # 设备驱动框架 (user_driver/composite/devtree)
+/// │   ├── barrier/  # 弹性恢复底层
+/// │   ├── wasm/     # WASM 沙箱
+/// │   ├── syscall/  # 系统调用入口 (TCB 侧)
+/// │   └── ...       # alloc/console/klog/config/smp/io/ipc/pci/timer 等
+/// └── services/     # 去特权业务层 (100% safe Rust, #![deny(unsafe_code)])
+///     ├── syscall/  # 系统调用分发策略 (完整 syscall→handler 映射)
+///     ├── proc/     # 进程管理策略 (CFS 调度/进程表安全代理)
+///     ├── fs/       # VFS + ramfs + HvFS + devfs + procfs
+///     ├── net/      # 网络栈 (smoltcp) + socket 层
+///     ├── ipc/      # 管道/共享内存/消息队列/信号
+///     ├── mm/       # Page Cache/Swap/mmap 安全代理
+///     ├── credo/    # 身份与权限策略
+///     ├── barrier/  # 栏栈恢复策略
+///     ├── chitin/   # 设备驱动框架
+///     ├── driver/   # 设备驱动业务 (HDMI 时序等)
+///     ├── io/       # io_uring 异步 I/O
+///     ├── timer/    # 定时器子系统
+///     ├── wasm/     # WASM 沙箱
+///     └── ...       # config/console/klog/sync/init/debug/userctx 等
 /// ```
 #[path = "../../kernel/mod.rs"]
 pub mod kernel;
@@ -163,9 +192,14 @@ pub mod kernel;
 pub use kernel::framework::cpu::CpuInfo;
 pub use kernel::framework::klog::LogLevel;
 
+// B08-12: 以下符号仅 panic_handler/kernel_test 路径使用, host-test 下为死代码
+#[cfg(not(feature = "host-test"))]
 use core::panic::PanicInfo;
+#[cfg(not(feature = "host-test"))]
 use core::sync::atomic::Ordering;
 
+// B08-12: host-test 下 panic 由 std 提供, 内核 panic_handler 仅裸机/内核测试模式生效
+#[cfg(not(feature = "host-test"))]
 #[panic_handler]
 #[expect(
     clippy::too_many_lines,
@@ -409,6 +443,8 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
+// B08-12: 仅 panic_handler 使用, host-test 下为死代码
+#[cfg(not(feature = "host-test"))]
 fn write_hex_to_buf(buf: &mut [u8], cursor: &mut usize, value: u64) {
     for d in 0..16 {
         if *cursor >= buf.len() {
@@ -425,6 +461,8 @@ fn write_hex_to_buf(buf: &mut [u8], cursor: &mut usize, value: u64) {
 }
 
 #[cfg(not(test))]
+// B08-12: host-test 下 std 自带 alloc error handler, 内核版仅裸机/内核测试模式生效
+#[cfg(not(feature = "host-test"))]
 #[alloc_error_handler]
 fn alloc_error(layout: alloc::alloc::Layout) -> ! {
     panic!("Allocation error: {layout:?}");

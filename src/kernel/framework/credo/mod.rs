@@ -27,6 +27,8 @@ pub mod types;
 
 pub use audit::AuditLog;
 pub use identity::IdentityTable;
+// B08-22: 常数时间比较权威位 (framework TCB 安全原语), services::credo::crypto::ct_eq 委托
+pub use identity::constant_time_eq;
 pub use types::*;
 
 // api 公共接口 re-export — 避免跨子系统直接访问 credo::api 内部

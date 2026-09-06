@@ -125,6 +125,24 @@ sync_make_state() {
 }
 
 # ---------------------------------------------------------------------------
+# kernel.flat 陈旧检测 (B08-16 / ISSUE-TOOL-002)
+# Makefile 依赖已保证 make 层面自动重建, 此处为 QEMU 脚本独立防线:
+# 源码 (内核 + 用户态) 比镜像新时提示先 make, 避免跑陈旧镜像误判.
+# 返回: 0 = 镜像新鲜或缺失, 1 = 镜像可能过期
+# ---------------------------------------------------------------------------
+check_kernel_fresh() {
+    local image="build/kernel.flat"
+    [ -f "$image" ] || return 0
+    local newest
+    newest=$(find src/rust/src src/kernel src/user -name '*.rs' -newer "$image" 2>/dev/null | head -1)
+    if [ -n "$newest" ]; then
+        warn "kernel.flat 可能过期 (源码 $newest 比镜像新), 建议先运行 make"
+        return 1
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # 测试: 全部架构
 # ---------------------------------------------------------------------------
 RESULT=0
@@ -172,6 +190,8 @@ if [ "$ARCH" = "all" ] || [ "$ARCH" = "aarch64" ]; then
     # 架构同步: 确保 build/ 中间产物 + .arch 戳记与 aarch64 一致
     # (防止 x86_64 测试残留导致 EM 183 反向误用)
     sync_make_state "aarch64" || RESULT=1
+
+    check_kernel_fresh || true
 
     if [ ! -f build/kernel.flat ]; then
         err "aarch64 kernel.flat 缺失, 跳过测试"

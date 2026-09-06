@@ -194,15 +194,9 @@ pub fn password_hash(password: &[u8], salt: Salt) -> PasswordHash {
 /// 常数时间比较两个字节数组
 ///
 /// **安全**: 不因数据差异而早返回, 防止计时攻击
+// B08-22: 委托 framework::credo::constant_time_eq 权威实现, 消除 services 侧重复体
 pub fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff: u8 = 0;
-    for i in 0..a.len() {
-        diff |= a[i] ^ b[i];
-    }
-    diff == 0
+    credo::constant_time_eq(a, b)
 }
 
 /// 常数时间比较 SHA-256 哈希

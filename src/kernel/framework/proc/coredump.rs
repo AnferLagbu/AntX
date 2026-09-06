@@ -28,6 +28,8 @@ use crate::kernel::framework::mm::{PAGE_SIZE, PageFlags};
 use crate::kernel::framework::proc::{
     RLIM_INFINITY, RLIMIT_CORE, process_get_current_pid, process_with,
 };
+// B08-22: ELF64 头统一引用 elf/mod.rs 单一定义, 消除 coredump 侧重复布局
+use crate::kernel::framework::proc::elf::{Elf64Header, Elf64Phdr};
 use core::sync::atomic::Ordering;
 
 // SAFETY: C ABI 互操作，函数签名与外部代码约定一致
@@ -88,38 +90,8 @@ const PF_X: u32 = 1;
 const MAX_CORE_SEGMENTS: usize = 64;
 
 // ============================================================================
-// ELF 结构体定义
+// ELF Core 结构体 (引用 elf/mod.rs 单一定义, B08-22)
 // ============================================================================
-
-#[repr(C)]
-struct Elf64Ehdr {
-    e_ident: [u8; 16],
-    e_type: u16,
-    e_machine: u16,
-    e_version: u32,
-    e_entry: u64,
-    e_phoff: u64,
-    e_shoff: u64,
-    e_flags: u32,
-    e_ehsize: u16,
-    e_phentsize: u16,
-    e_phnum: u16,
-    e_shentsize: u16,
-    e_shnum: u16,
-    e_shstrndx: u16,
-}
-
-#[repr(C)]
-struct Elf64Phdr {
-    p_type: u32,
-    p_flags: u32,
-    p_offset: u64,
-    p_vaddr: u64,
-    p_paddr: u64,
-    p_filesz: u64,
-    p_memsz: u64,
-    p_align: u64,
-}
 
 /// `siginfo_t` 简化 (仅用于 core dump note)
 #[repr(C)]
@@ -249,7 +221,7 @@ pub fn do_coredump(pid: u32, sig: u8, frame: u64) -> bool {
 
     // 4. 计算 program header 数量和偏移
     let phnum = 1 + segments.len() as u16; // PT_NOTE + PT_LOADs
-    let ehdr_size = core::mem::size_of::<Elf64Ehdr>() as u64;
+    let ehdr_size = core::mem::size_of::<Elf64Header>() as u64;
     let phdr_size = core::mem::size_of::<Elf64Phdr>() as u64;
     let phdr_total = phdr_size * u64::from(phnum);
     let note_offset = ehdr_size + phdr_total;
@@ -419,23 +391,23 @@ fn collect_segments(pid: u32) -> alloc::vec::Vec<CoreSegment> {
 }
 
 /// 构建 ELF header
-fn build_ehdr(phnum: u16, _phoff: u64) -> Elf64Ehdr {
+fn build_ehdr(phnum: u16, _phoff: u64) -> Elf64Header {
     let mut e_ident = [0u8; 16];
     e_ident[0..4].copy_from_slice(&ELFMAG);
     e_ident[4] = ELFCLASS64;
     e_ident[5] = ELFDATA2LSB;
     e_ident[6] = EV_CURRENT as u8;
 
-    Elf64Ehdr {
+    Elf64Header {
         e_ident,
         e_type: ET_CORE,
         e_machine: EM_MACHINE,
         e_version: EV_CURRENT,
         e_entry: 0,
-        e_phoff: core::mem::size_of::<Elf64Ehdr>() as u64,
+        e_phoff: core::mem::size_of::<Elf64Header>() as u64,
         e_shoff: 0,
         e_flags: 0,
-        e_ehsize: core::mem::size_of::<Elf64Ehdr>() as u16,
+        e_ehsize: core::mem::size_of::<Elf64Header>() as u16,
         e_phentsize: core::mem::size_of::<Elf64Phdr>() as u16,
         e_phnum: phnum,
         e_shentsize: 0,

@@ -113,7 +113,7 @@ arch-switch-clean:
 	@echo "[make] cross-arch switch: $(PREVIOUS_ARCH) → $(ARCH), removing arch-specific build/ artifacts (preserving build/log/)"
 	@rm -f build/boot.o build/entry.o build/isr.o build/switch.o \
 	       build/arch/x86_64/trampoline.o build/gdt_asm.o \
-	       build/kernel.bin build/kernel.flat build/kernel.map build/stage1.bin
+	       build/kernel.bin build/kernel.flat build/kernel.map
 	@cd src/rust && cargo clean >/dev/null 2>&1 || true
 	@cd src/user && cargo clean >/dev/null 2>&1 || true
 	@rm -f build/user/*.bin

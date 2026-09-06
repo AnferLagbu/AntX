@@ -30,7 +30,7 @@ queenx 内核 100% Rust（framework unsafe + services safe），但 ABI 层面�
 
 ### 编号设计
 
-直接使用 Linux syscall 编号，无需翻译层。(1) 标准 POSIX/Linux syscall 使用 Linux 原始编号（0-299）；(2) QueenX 私有扩展使用 500+ 编号；(3) 无需 linuxulator 翻译层。
+直接使用 Linux syscall 编号，无需翻译层。(1) 标准 POSIX/Linux syscall 使用 Linux 原始编号（0-299）；(2) QueenX 私有扩展使用 400+（用户态 credo）与 700+（内核态）两段编号；(3) 无需 linuxulator 翻译层。
 
 ```rust
 // Linux 标准编号（直接使用）
@@ -45,14 +45,15 @@ pub const SYS_FORK: u64    = 57;
 pub const SYS_EXECVE: u64  = 59;
 pub const SYS_SOCKET: u64  = 41;
 
-// QueenX 私有扩展（500+）
-pub const QX_CAPABILITY: u64 = 500;
+// QueenX 私有扩展（400+/700+）
+pub const SYS_CREDO_LOGIN: u64 = 400;
+pub const QX_UNAME: u64 = 700;
 // ...
 ```
 
 ### 编号空间分配
 
-2 段编号空间。0-299 Linux 标准（直接兼容）/ 500+ QueenX 私有扩展（能力系统/弹性恢复等）。
+2 段编号空间。0-299 Linux 标准（直接兼容）/ 400+ 用户态私有扩展（credo 系统）与 700+ 内核态私有扩展（弹性恢复等）。
 
 ### 关键认知
 

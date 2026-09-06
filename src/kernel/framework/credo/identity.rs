@@ -10,7 +10,10 @@ use super::types::{
 };
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
-pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+/// 常数时间比较两个字节数组 (B08-22: framework 权威实现, services::credo::crypto::ct_eq 委托本函数)
+///
+/// **安全**: 不因数据差异而早返回, 防止计时攻击
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }

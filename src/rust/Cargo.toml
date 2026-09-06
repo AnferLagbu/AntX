@@ -11,7 +11,11 @@ categories = ["os", "no-std", "embedded"]
 
 [lib]
 name = "queenx"
-crate-type = ["staticlib"]
+# B08-04: 显式声明 lib 路径, 消除 src/rust/lib.rs 空文件歧义
+path = "src/lib.rs"
+# B08-12: 追加 rlib — host-tests 以 path 依赖引用 queenx (host-test feature) 时,
+# 需 rlib 才能作为 Rust crate 链接; 裸机 Makefile 仍取 staticlib (libqueenx.a), 不受影响.
+crate-type = ["staticlib", "rlib"]
 test = false
 
 [profile.dev]
@@ -65,6 +69,11 @@ default = []
 # 真实硬件 (i210/i219/i211 等) 需要打开此 feature 才能读取 NIC EEPROM 中的真实 MAC.
 e1000-real-hw = []
 e1000-verbose = []
+# B08-12 (DECISION-052): host-test 宿主编译 feature.
+# 启用后剥离裸机专属顶层约束 (no_std/no_main/alloc_error_handler/panic_handler),
+# 使内核 crate 可在 host (std) 环境编译, 供 host-tests 直接引用 services 真实源码.
+# 门控语义与 kernel_test (QEMU 裸机测试模式) 正交: 见 audit-fix-08 工程计划 E-03.
+host-test = []
 kernel_test = []
 fault_injection = []
 smp = []
