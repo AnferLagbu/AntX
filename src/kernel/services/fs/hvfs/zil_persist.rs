@@ -380,6 +380,12 @@ impl HvZilPersist {
 
         let data_end = record_area + count * ZIL_RECORD_DISK_SIZE;
         header.data_checksum = crc32_checksum(&block[ZIL_HEADER_SIZE..data_end]);
+        // B08-14 修复 (2026-09-06): data_checksum 更新后必须重算 header_checksum.
+        // 此前 header_checksum 在 data_checksum=0 时计算并写入, 更新 data_checksum
+        // 后未重算, 导致 deserialize 侧 verify_header 用新 data_checksum 重算 CRC
+        // 与存储的旧 header_checksum 不匹配 → 合法 block 回放返回空 (序列化/反序列化
+        // 不一致). compute_header_checksum 内部先清 0 再算, 重复调用安全.
+        header.compute_header_checksum();
         let header_bytes = header.as_bytes();
         block[..ZIL_HEADER_SIZE].copy_from_slice(header_bytes);
 

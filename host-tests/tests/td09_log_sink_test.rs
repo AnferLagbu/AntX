@@ -80,7 +80,12 @@ fn test_broadcast_apis() {
 #[test]
 fn test_klog_output_routes_through_broadcast() {
     let src = read(KLOG);
-    let body_start = src.find("fn klog_output(").expect("klog_output 必须存在");
+    // B08-14 (2026-09-06): host-test 桩将 klog_output 拆为薄包装 + klog_output_baremetal.
+    // 裸机广播逻辑在 klog_output_baremetal 中 (host 下 klog no-op, 见 klog/mod.rs 注释).
+    // 本契约验证"日志输出走 sink 广播而非串口直写", 解析 baremetal 实现体.
+    let body_start = src
+        .find("fn klog_output_baremetal(")
+        .expect("klog_output_baremetal 必须存在 (B08-14 抽离裸机路径)");
     let body_end_rel = src[body_start..].find("\n}\n").unwrap_or(usize::MAX);
     let body = &src[body_start..body_start + body_end_rel];
     // 不再直接 serial_write_bytes

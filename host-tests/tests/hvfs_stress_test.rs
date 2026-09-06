@@ -13,8 +13,13 @@
 //! ## 与性能基准的分工
 //! - `framekernel_bench` 测量 ns_per_op 微基准
 //! - 本文件验证 `assert!(rc >= 1)` 等业务正确性约束
+//!
+//! ## B08-14 迁移 (2026-09-06)
+//! 改引内核 `services::fs::hvfs` 真实实现 (host-test feature 暴露), 消除
+//! 平行实现依赖. API 与测试版同构 (get_cas/sha256/CasIndex/CasHash/
+//! HvBlockPointer/HvZap/HvZil), 仅 import 路径变化.
 
-use queenx_host_tests::hvfs::{bp, dedup, zap, zil};
+use queenx::kernel::services::fs::hvfs::{bp, dedup, zap, zil};
 
 #[test]
 fn stress_cas_insert_lookup_100() {

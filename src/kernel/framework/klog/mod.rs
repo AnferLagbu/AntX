@@ -405,9 +405,14 @@ pub fn klog_register_defaults() {
 // ============================================================================
 // 环形缓冲区
 // ============================================================================
+//
+// B08-14: 环形缓冲区仅裸机日志路径 (klog_output_baremetal) 使用, host-test 下
+// klog no-op, 整体 cfg 掉消除 dead_code 警告.
 
+#[cfg(not(feature = "host-test"))]
 const RING_SIZE: usize = 128 * 1024;
 
+#[cfg(not(feature = "host-test"))]
 struct RingBuf {
     data: [u8; RING_SIZE],
     head: usize,
@@ -415,6 +420,7 @@ struct RingBuf {
     total: u64,
 }
 
+#[cfg(not(feature = "host-test"))]
 impl RingBuf {
     #[expect(
         clippy::large_stack_arrays,
@@ -445,12 +451,15 @@ impl RingBuf {
     }
 }
 
+#[cfg(not(feature = "host-test"))]
 struct RingLock {
     inner: core::cell::UnsafeCell<RingBuf>,
 }
 // SAFETY: 调用方保证指针/类型有效 (详见上下文)
+#[cfg(not(feature = "host-test"))]
 unsafe impl Sync for RingLock {}
 
+#[cfg(not(feature = "host-test"))]
 static RING: RingLock = RingLock {
     inner: core::cell::UnsafeCell::new(RingBuf::new()),
 };
@@ -498,6 +507,8 @@ pub enum LogCategory {
     Timer = 14,
 }
 
+// B08-14: prefix/name 仅裸机日志路径 (klog_output_baremetal) 使用, host-test 下 cfg 掉.
+#[cfg(not(feature = "host-test"))]
 impl LogLevel {
     fn prefix(&self) -> &[u8] {
         match self {
@@ -511,6 +522,7 @@ impl LogLevel {
     }
 }
 
+#[cfg(not(feature = "host-test"))]
 impl LogCategory {
     fn name(&self) -> &[u8] {
         match self {
@@ -554,11 +566,14 @@ unsafe fn cstr_slice(ptr: *const u8) -> &'static [u8] {
     }
 }
 
+// B08-14: 仅裸机路径使用 (klog_output_baremetal), host-test 下 cfg 掉消除 dead_code 警告.
+#[cfg(not(feature = "host-test"))]
 fn rdtsc() -> u64 {
     crate::arch!(timestamp())
 }
 
 /// 格式化 u64 → 栈上 buffer (最小化依赖)
+#[cfg(not(feature = "host-test"))]
 fn format_ts(buf: &mut [u8; 32], tsc: u64) -> &[u8] {
     // 假设 ~3GHz TSC, 显示秒.微秒
     let total_us = tsc / 3000;
@@ -603,6 +618,20 @@ fn format_ts(buf: &mut [u8; 32], tsc: u64) -> &[u8] {
 // ============================================================================
 
 fn klog_output(level: LogLevel, cat: LogCategory, msg: &[u8]) {
+    // B08-14 前置: host-test (std) 下 klog no-op — rdtsc/cli/MMIO sink 为裸机专属
+    // (host 用户态执行特权指令 SIGSEGV). 日志功能在 host 测试非被测对象, 丢弃即可.
+    #[cfg(feature = "host-test")]
+    {
+        let _ = (level, cat, msg);
+    }
+    #[cfg(not(feature = "host-test"))]
+    {
+        klog_output_baremetal(level, cat, msg);
+    }
+}
+
+#[cfg(not(feature = "host-test"))]
+fn klog_output_baremetal(level: LogLevel, cat: LogCategory, msg: &[u8]) {
     let tsc = rdtsc();
     let mut ts_buf = [0u8; 32];
     let ts = format_ts(&mut ts_buf, tsc);

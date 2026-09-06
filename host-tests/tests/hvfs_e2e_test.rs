@@ -14,12 +14,17 @@
 //!   - HvZil::add_record: 追加到 records, 分配递增 seq
 //!   - HvZil::commit(txg): 移除所有 txg <= txg 的 records
 //!   - HvZil::replay(): 返回当前 records (模拟"重启后重放未提交日志")
+//!
+//! ## B08-14 迁移 (2026-09-06)
+//! 改引内核 `services::fs::hvfs` 真实实现 (host-test feature 暴露), 消除
+//! 平行实现依赖. API 与测试版同构 (HvDataset/HvSnapshotManager/HvZil/HvZap/
+//! HvDva/HvBlockPointer), 仅 import 路径变化.
 
-use queenx_host_tests::hvfs::bp::HvDva;
-use queenx_host_tests::hvfs::dataset::HvDataset;
-use queenx_host_tests::hvfs::snapshot::HvSnapshotManager;
-use queenx_host_tests::hvfs::zil::{HvZil, HvZilRecord, HvZilRecordType};
-use queenx_host_tests::hvfs::zap::HvZap;
+use queenx::kernel::services::fs::hvfs::bp::HvDva;
+use queenx::kernel::services::fs::hvfs::dataset::HvDataset;
+use queenx::kernel::services::fs::hvfs::snapshot::HvSnapshotManager;
+use queenx::kernel::services::fs::hvfs::zil::{HvZil, HvZilRecord, HvZilRecordType};
+use queenx::kernel::services::fs::hvfs::zap::HvZap;
 use std::time::Instant;
 
 const ROOT_OWNER: u64 = 0;
