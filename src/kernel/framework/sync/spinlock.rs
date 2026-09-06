@@ -314,8 +314,17 @@ impl Default for SpinLock {
 /// 禁用中断并返回当前中断标志
 ///
 /// 通过 Arch trait 的 `interrupt_disable` 实现，架构无关。
+#[cfg(not(feature = "host-test"))]
 pub fn disable_interrupts() -> IrqSaveFlags {
     IrqSaveFlags(crate::arch!(interrupt_disable()) as u64)
+}
+
+// B08-14 前置: host-test (std) 下中断禁用为 no-op — host 无中断语义,
+// 且执行 cli 特权指令在用户态会 SIGSEGV. IrqSpinLock/SpinLock 的原子自旋
+// 在 host 多线程下仍正确互斥. 裸机 (非 host-test) 行为不变.
+#[cfg(feature = "host-test")]
+pub fn disable_interrupts() -> IrqSaveFlags {
+    IrqSaveFlags(0)
 }
 
 #[expect(
@@ -325,9 +334,14 @@ pub fn disable_interrupts() -> IrqSaveFlags {
 /// 恢复中断标志
 ///
 /// 通过 Arch trait 的 `interrupt_restore` 实现，架构无关。
+#[cfg(not(feature = "host-test"))]
 pub fn restore_interrupts(flags: &IrqSaveFlags) {
     crate::arch!(interrupt_restore(flags.0 as usize));
 }
+
+// B08-14 前置: host-test no-op (与 disable_interrupts host 变体对应).
+#[cfg(feature = "host-test")]
+pub fn restore_interrupts(_flags: &IrqSaveFlags) {}
 
 // ============================================================================
 // 内存屏障辅助函数
